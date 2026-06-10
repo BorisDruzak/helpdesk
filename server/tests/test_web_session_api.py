@@ -216,6 +216,7 @@ async def test_web_session_cookie_auth_bridges_react_workbench_paths(monkeypatch
         }
 
     monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_agent_token", lambda _self, _token: None)
 
     async def protected_handler(request: web.Request):
         auth_context = request["auth_context"]
@@ -295,10 +296,13 @@ async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(
     app.router.add_route(method, route_path, protected_handler)
 
     async with TestClient(TestServer(app)) as client:
+        headers = {"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"}
+        if method not in {"GET", "HEAD", "OPTIONS", "TRACE"}:
+            headers["Origin"] = str(client.make_url("/")).rstrip("/")
         response = await client.request(
             method,
             request_path,
-            headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
+            headers=headers,
         )
         payload = await response.json()
 
@@ -310,6 +314,100 @@ async def test_web_session_cookie_auth_bridges_legacy_attachment_paths(
         "auth_type": "ui_token",
         "path": route_path,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_cookie_auth_unsafe_requests_require_same_origin(monkeypatch):
+    async def fake_verify_ui_token(_self, token: str):
+        if token != "cookie-token":
+            return None
+        return {
+            "user_login": "requester-cookie",
+            "actor_role": "user",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "ui",
+        }
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+
+    async def protected_handler(request: web.Request):
+        return web.json_response({"status": "ok", "actor_id": request["auth_context"].actor_id})
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    app.router.add_post("/api/web/requester/tickets", protected_handler)
+
+    async with TestClient(TestServer(app)) as client:
+        missing_origin = await client.post(
+            "/api/web/requester/tickets",
+            headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
+            json={"title": "csrf check"},
+        )
+        missing_payload = await missing_origin.json()
+        wrong_origin = await client.post(
+            "/api/web/requester/tickets",
+            headers={
+                "Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token",
+                "Origin": "https://evil.example.test",
+            },
+            json={"title": "csrf check"},
+        )
+        wrong_payload = await wrong_origin.json()
+        same_origin = await client.post(
+            "/api/web/requester/tickets",
+            headers={
+                "Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token",
+                "Origin": str(client.make_url("/")).rstrip("/"),
+            },
+            json={"title": "csrf check"},
+        )
+        same_payload = await same_origin.json()
+
+    assert missing_origin.status == 403
+    assert missing_payload["error_code"] == "CSRF_ORIGIN_REQUIRED"
+    assert wrong_origin.status == 403
+    assert wrong_payload["error_code"] == "CSRF_ORIGIN_MISMATCH"
+    assert same_origin.status == 200
+    assert same_payload == {"status": "ok", "actor_id": "requester-cookie"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_bearer_ui_token_unsafe_request_is_not_origin_gated(monkeypatch):
+    async def fake_verify_ui_token(_self, token: str):
+        if token != "bearer-token":
+            return None
+        return {
+            "user_login": "requester-bearer",
+            "actor_role": "user",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "ui",
+        }
+
+    async def fake_verify_agent_token(_self, _token: str):
+        return None
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_agent_token", fake_verify_agent_token)
+
+    async def protected_handler(request: web.Request):
+        return web.json_response({"status": "ok", "actor_id": request["auth_context"].actor_id})
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    app.router.add_post("/api/web/requester/tickets", protected_handler)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/requester/tickets",
+            headers={"Authorization": "Bearer bearer-token"},
+            json={"title": "bearer check"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {"status": "ok", "actor_id": "requester-bearer"}
 
 
 @pytest.mark.asyncio

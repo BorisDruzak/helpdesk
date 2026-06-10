@@ -1,28 +1,58 @@
 """Integration tests for policy-aware operation retry."""
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import func, select, update
 
 from app.db.engine import async_sessionmaker
-from app.db.models import DeviceOutbox, Operation, Ticket, TicketEvent
+from app.db.models import Device, DeviceOutbox, Operation, RegistryPerson, Ticket, TicketEvent, UserConsentRequest
 from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.operations_repo import OperationsRepo
 from tests.test_helpers import TEST_ECHO_TOOL
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
 
-async def _seed_retry_ticket(test_engine, *, device_id: str) -> str:
+def _device(device_id: str) -> Device:
+    now = datetime.now(timezone.utc)
+    return Device(
+        device_id=device_id,
+        protocol_version="ws_ticket_v3",
+        agent_version="3.1.61",
+        hostname="retry-device",
+        os="Windows",
+        capabilities={},
+        device_metadata={},
+        first_seen_at=now,
+        last_seen_at=now,
+        last_handshake_at=now,
+    )
+
+
+async def _seed_retry_ticket(test_engine, *, device_id: str, create_device: bool = False) -> str:
     ticket_id = str(uuid.uuid4())
+    requester_person_id = str(uuid.uuid4())
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
+        if create_device:
+            session.add(_device(device_id))
         queue = await _seed_queue(
             session,
             code=f"retry_{uuid.uuid4().hex[:8]}",
             name="Retry tests",
             members=["support-test"],
             auto_assign_enabled=False,
+        )
+        session.add(
+            RegistryPerson(
+                person_id=requester_person_id,
+                display_name="Retry Requester",
+                full_name="Retry Requester",
+                email=f"retry-{requester_person_id}@example.test",
+                source="test",
+                status="active",
+            )
         )
         session.add(
             Ticket(
@@ -32,6 +62,7 @@ async def _seed_retry_ticket(test_engine, *, device_id: str) -> str:
                 description="Ticket with explicit queue for operation retry tests.",
                 status="in_progress",
                 requester_id="retry-user",
+                requester_person_id=requester_person_id,
                 queue_id=queue.id,
                 observer_root_trace_id=str(uuid.uuid4()),
             )
@@ -169,12 +200,12 @@ async def test_retry_failed_operation_revalidates_and_creates_new_operation(test
 @pytest.mark.asyncio
 async def test_retry_consent_required_operation_creates_waiting_consent_without_dispatch(
     test_client,
-    test_agent,
     test_engine,
     monkeypatch,
 ):
-    device_id = test_agent.device_id
-    ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id)
+    device_id = str(uuid.uuid4())
+    test_client.app["state"].connected_agents[device_id] = {"ws": None, "metadata": {}}
+    ticket_id = await _seed_retry_ticket(test_engine, device_id=device_id, create_device=True)
     original_operation_id = await _seed_failed_tool_operation(
         test_engine,
         device_id=device_id,
@@ -232,6 +263,19 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         assert retried.status == "waiting_consent"
         assert retried.retry_of_operation_id == original_operation_id
         assert retried.tool_name == "observer_canary.consent_probe"
+        consent = (
+            await session.execute(
+                select(UserConsentRequest).where(
+                    UserConsentRequest.subject_type == "operation",
+                    UserConsentRequest.subject_id == retry_operation_id,
+                )
+            )
+        ).scalar_one_or_none()
+        assert consent is not None
+        assert consent.status == "pending"
+        assert consent.ticket_id == ticket_id
+        assert consent.device_id == device_id
+        assert consent.requester_person_id is not None
 
         outbox_count = (
             await session.execute(

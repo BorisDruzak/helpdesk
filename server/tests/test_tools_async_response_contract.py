@@ -1,13 +1,33 @@
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
+from sqlalchemy import select
 
 from app_keys import STATE_APP_KEY, bind_app_value
+from app.db.engine import async_sessionmaker
+from app.db.models import Device, RegistryPerson, Ticket, UserConsentRequest
 from auth.context import AuthContext, AuthType
 from tools.handlers import handle_tools_run
 from tests.test_helpers import TEST_ECHO_TOOL
+
+
+def _device(device_id: str) -> Device:
+    now = datetime.now(timezone.utc)
+    return Device(
+        device_id=device_id,
+        protocol_version="ws_ticket_v3",
+        agent_version="3.1.61",
+        hostname="legacy-tools-device",
+        os="Windows",
+        capabilities={},
+        device_metadata={},
+        first_seen_at=now,
+        last_seen_at=now,
+        last_handshake_at=now,
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -366,3 +386,92 @@ async def test_tools_run_wait_mode_surfaces_dispatch_error(test_client_no_db, mo
     assert payload["operation_id"]
     assert payload["poll_url"] == f"/api/operations/{payload['operation_id']}"
     assert payload["trace_id"] == "trace-sync-failure"
+
+
+@pytest.mark.asyncio
+async def test_legacy_tools_run_creates_user_consent_for_waiting_operation(
+    test_client,
+    test_engine,
+    monkeypatch,
+):
+    device_id = str(uuid.uuid4())
+    ticket_id = str(uuid.uuid4())
+    requester_person_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        session.add(
+            RegistryPerson(
+                person_id=requester_person_id,
+                display_name="Legacy Tool Requester",
+                full_name="Legacy Tool Requester",
+                email=f"legacy-tool-{requester_person_id}@example.test",
+                source="test",
+                status="active",
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Legacy consent ticket",
+                description="Ticket for legacy tools/run consent coverage.",
+                status="in_progress",
+                requester_id="legacy-tool-requester",
+                requester_person_id=requester_person_id,
+            )
+        )
+        await session.commit()
+
+    async def _fake_get_tools_list(self, device_id_arg):
+        assert device_id_arg == device_id
+        return [
+            {
+                "tool": "observer_canary.consent_probe",
+                "spec": {
+                    "metadata": {
+                        "risk_level": "safe_read",
+                        "requires_consent": True,
+                    }
+                },
+            }
+        ]
+
+    async def _fake_get_tools_from_server(self, device_id_arg):
+        assert device_id_arg == device_id
+        return []
+
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_list", _fake_get_tools_list)
+    monkeypatch.setattr("tools.handlers.ToolExecutionService.get_tools_from_server", _fake_get_tools_from_server)
+
+    response = await test_client.post(
+        "/api/tools/run",
+        json={
+            "device_id": device_id,
+            "ticket_id": ticket_id,
+            "tool_name": "observer_canary.consent_probe",
+            "params": {"label": "legacy-consent", "session_token": "must-redact"},
+        },
+    )
+
+    assert response.status == 202, await response.text()
+    payload = await response.json()
+    assert payload["status"] == "waiting_consent"
+    operation_id = payload["operation_id"]
+
+    async with session_maker() as session:
+        consent = (
+            await session.execute(
+                select(UserConsentRequest).where(
+                    UserConsentRequest.subject_type == "operation",
+                    UserConsentRequest.subject_id == operation_id,
+                )
+            )
+        ).scalar_one_or_none()
+        assert consent is not None
+        assert consent.status == "pending"
+        assert consent.ticket_id == ticket_id
+        assert consent.device_id == device_id
+        assert consent.requester_person_id == requester_person_id
+        assert consent.requested_action_payload_redacted["tool_name"] == "observer_canary.consent_probe"
+        assert consent.requested_action_payload_redacted["params"]["session_token"] == "<redacted>"

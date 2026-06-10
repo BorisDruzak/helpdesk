@@ -155,6 +155,12 @@ class RemoteAssistService:
             raise RemoteAssistError("TICKET_CLOSED", "Ticket is closed or canceled", status=409)
         if str(ticket.device_id or "") != str(device_id or ""):
             raise RemoteAssistError("DEVICE_NOT_LINKED", "Device is not linked to ticket", status=403)
+        if not getattr(ticket, "requester_person_id", None):
+            raise RemoteAssistError(
+                "REQUESTER_SCOPE_REQUIRED",
+                "Remote Assist consent requires a requester-scoped ticket",
+                status=409,
+            )
 
         device = await DevicesRepo(self.session).get_by_device_id(device_id, include_deleted=False)
         if device is None:

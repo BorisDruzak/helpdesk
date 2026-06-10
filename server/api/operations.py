@@ -18,6 +18,8 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.operation_service import OperationService
 from auth.context import AuthContext
 from auth.middleware import require_auth
+from consent.operation_consent import create_operation_user_consent
+from consent.service import ConsentAccessError
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
 from shared.tool_contracts import normalize_risk_level
@@ -568,6 +570,21 @@ async def handle_retry_operation(request: web.Request) -> web.Response:
                     max_retries=max_retries,
                     initial_status="waiting_consent",
                 )
+                try:
+                    await create_operation_user_consent(
+                        session,
+                        operation=retry_operation,
+                        ticket=ticket,
+                        requested_by_actor_id=auth_context.actor_id,
+                        requested_by_role=auth_context.actor_role,
+                        risk_level=risk_level,
+                        tool_name=tool_name,
+                        params=replay_params,
+                        policy_decision=policy_decision,
+                    )
+                except ConsentAccessError as exc:
+                    await session.rollback()
+                    return _json_error(str(exc), status=exc.status, error_code=exc.error_code)
                 event_trace_id = str(getattr(retry_operation, "trace_id", None) or retry_trace_id)
                 event_params = dict(replay_params)
                 event_payload = {

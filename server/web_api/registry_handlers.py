@@ -272,7 +272,7 @@ async def handle_registry_agent_browser_pairing_create(request: web.Request) -> 
 
 
 async def _browser_pairing_payload_with_device(session, service: BrowserPairingService, pairing_id: str) -> dict | None:
-    row = await service.repo.get_pairing(pairing_id)
+    row = await service.get_browser_visible_pairing(pairing_id)
     if row is None:
         return None
     payload = await service.serialize_pairing(row)
@@ -327,10 +327,15 @@ async def handle_web_registry_browser_pairing_code_lookup(request: web.Request) 
 
 @require_auth("user")
 async def handle_web_registry_browser_pairing_get(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    rate_key = f"{client_ip(request)}:{auth_context.actor_id}:direct"
+    if not check_rate_limit("browser_pairing_direct_get", rate_key, limit=30, window_seconds=60):
+        return rate_limited_response()
     pairing_id = str(request.match_info.get("pairing_id") or "").strip()
     async with get_session() as session:
         service = BrowserPairingService(session)
         payload = await _browser_pairing_payload_with_device(session, service, pairing_id)
+        await session.commit()
         if payload is None:
             return web.json_response({"status": "error", "error": "pairing not found", "error_code": "NOT_FOUND"}, status=404)
     return _success(payload)

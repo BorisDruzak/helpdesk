@@ -53,6 +53,7 @@ _default_secure_cookie = "true" if _strict_profile else ("false" if ALLOW_INSECU
 WEB_SESSION_COOKIE_SECURE = os.getenv("WEB_SESSION_COOKIE_SECURE", _default_secure_cookie).lower() == "true"
 WEB_SESSION_COOKIE_HTTPONLY = os.getenv("WEB_SESSION_COOKIE_HTTPONLY", "true").lower() == "true"
 WEB_SESSION_COOKIE_SAMESITE = (os.getenv("WEB_SESSION_COOKIE_SAMESITE", "Lax") or "Lax").strip()
+WEB_CSRF_SAME_ORIGIN_ENABLED = os.getenv("WEB_CSRF_SAME_ORIGIN_ENABLED", "true").lower() == "true"
 LEGACY_UI_TOKEN_LOGIN_ENABLED = os.getenv("LEGACY_UI_TOKEN_LOGIN_ENABLED", "false").lower() == "true"
 ACCOUNT_SESSION_ALLOW_QUERY_TOKEN = os.getenv("ACCOUNT_SESSION_ALLOW_QUERY_TOKEN", "false").lower() == "true"
 AGENT_TOKEN_MAX_ACTIVE_TOKENS = int(os.getenv("AGENT_TOKEN_MAX_ACTIVE_TOKENS", "2"))

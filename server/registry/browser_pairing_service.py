@@ -150,6 +150,16 @@ class BrowserPairingService:
             return None
         return await self.serialize_pairing(row)
 
+    async def get_browser_visible_pairing(self, pairing_id: str) -> DeviceBrowserPairing | None:
+        row = await self.repo.get_pairing(pairing_id)
+        if row is None:
+            return None
+        if await self._expire_if_needed(row):
+            return None
+        if row.status not in {"pending", "confirmed"}:
+            return None
+        return row
+
     async def _require_pending_pairing(self, pairing_id: str, pairing_token: str | None) -> DeviceBrowserPairing:
         row = await self.repo.get_pairing(pairing_id)
         if row is None:

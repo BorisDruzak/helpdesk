@@ -9,6 +9,7 @@ from collections import deque
 from datetime import datetime, timezone
 from loguru import logger
 from typing import Optional
+from urllib.parse import urlsplit
 import config
 from auth.context import AuthContext, AuthType
 from auth.service import AuthService
@@ -30,6 +31,7 @@ WEB_SESSION_AUTH_PATH_PREFIXES = (
     "/api/ticket_forms/",
     "/api/notifications",
 )
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 QUERY_TOKEN_ATTEMPT_MAX = 500
 _QUERY_TOKEN_AUTH_ATTEMPTS: deque[dict[str, object]] = deque(maxlen=QUERY_TOKEN_ATTEMPT_MAX)
 
@@ -141,6 +143,38 @@ def extract_token_from_web_cookie(request: web.Request) -> Optional[str]:
     return None
 
 
+def _origin_value(value: str | None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    parsed = urlsplit(raw)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
+
+
+def _same_origin_error(request: web.Request) -> tuple[str, str] | None:
+    if not bool(getattr(config, "WEB_CSRF_SAME_ORIGIN_ENABLED", True)):
+        return None
+    if request.method.upper() in SAFE_METHODS:
+        return None
+    if not any(request.path.startswith(prefix) for prefix in WEB_SESSION_AUTH_PATH_PREFIXES):
+        return None
+
+    supplied = _origin_value(request.headers.get("Origin")) or _origin_value(request.headers.get("Referer"))
+    if supplied is None:
+        return "CSRF_ORIGIN_REQUIRED", "Origin or Referer header is required for cookie-auth state changes"
+
+    scheme = "https" if request.secure else "http"
+    allowed = {f"{scheme}://{request.host.lower()}"}
+    public_base = _origin_value(getattr(config, "SERVER_PUBLIC_BASE_URL", ""))
+    if public_base:
+        allowed.add(public_base)
+    if supplied not in allowed:
+        return "CSRF_ORIGIN_MISMATCH", "Origin or Referer does not match this server"
+    return None
+
+
 async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     """
     Extract AuthContext from request.
@@ -154,6 +188,7 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
         AuthContext if authentication successful, None otherwise
     """
     web_session_token = extract_token_from_web_cookie(request)
+    request["web_session_auth"] = bool(web_session_token)
     token = web_session_token or extract_token_from_header(request)
     if not token:
         return None
@@ -299,6 +334,8 @@ async def auth_middleware(request: web.Request, handler):
     if request.path.startswith("/api/connection_request"):
         return await handler(request)
 
+    web_session_auth = bool(extract_token_from_web_cookie(request))
+
     # Extract and verify token
     auth_context = await extract_auth_context(request)
     
@@ -335,7 +372,33 @@ async def auth_middleware(request: web.Request, handler):
     
     # Attach AuthContext to request for handler access
     request['auth_context'] = auth_context
-    
+    request["web_session_auth"] = web_session_auth
+
+    if web_session_auth:
+        same_origin_error = _same_origin_error(request)
+        if same_origin_error is not None:
+            error_code, message = same_origin_error
+            logger.warning(
+                f"[AuthMiddleware] Cookie-auth same-origin check failed: "
+                f"path={request.path}, method={request.method}, error_code={error_code}"
+            )
+            await _write_web_auth_audit(
+                request,
+                event_type="web_csrf_failed",
+                error_code=error_code,
+                auth_state="cookie_authenticated_origin_failed",
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+            )
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": message,
+                    "error_code": error_code,
+                },
+                status=403,
+            )
+
     logger.debug(
         f"[AuthMiddleware] Authenticated: path={request.path}, "
         f"actor_id={auth_context.actor_id}, actor_role={auth_context.actor_role}"

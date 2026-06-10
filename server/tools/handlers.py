@@ -376,11 +376,20 @@ async def handle_tools_run(request):
             
             # Создаем operation со статусом waiting_consent
             from app.db import get_session
+            from app.repos.ticket_events_repo import TicketEventsRepo
             from app.services.operation_service import OperationService
+            from consent.operation_consent import create_operation_user_consent
+            from consent.service import ConsentAccessError
             
             async with get_session() as session:
                 ui_publisher = state.ui_publisher if hasattr(state, 'ui_publisher') else None
                 op_service = OperationService(session, publisher=ui_publisher)
+                ticket = await TicketEventsRepo(session).get_ticket(ticket_id)
+                if ticket is None:
+                    return web.json_response(
+                        {"status": "error", "error": "Ticket not found", "error_code": "TICKET_NOT_FOUND"},
+                        status=404,
+                    )
                 
                 operation = await op_service.enqueue_operation(
                     operation_id=operation_id,
@@ -393,7 +402,25 @@ async def handle_tools_run(request):
                     trace_id=str(uuid.uuid4()),
                     initial_status="waiting_consent"  # КРИТИЧНО: статус waiting_consent
                 )
-                
+                try:
+                    await create_operation_user_consent(
+                        session,
+                        operation=operation,
+                        ticket=ticket,
+                        requested_by_actor_id=auth_context.actor_id,
+                        requested_by_role=auth_context.actor_role,
+                        risk_level=getattr(tool_metadata, "risk_level", None),
+                        tool_name=tool_name,
+                        params=params,
+                        policy_decision=policy_decision,
+                    )
+                except ConsentAccessError as exc:
+                    await session.rollback()
+                    return web.json_response(
+                        {"status": "error", "error": str(exc), "error_code": exc.error_code},
+                        status=exc.status,
+                    )
+
                 await session.commit()
             
             # Возвращаем operation_id, но не запускаем tool

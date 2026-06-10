@@ -18,6 +18,11 @@ Security update 2026-05-25:
 - If database initialization fails in a strict runtime profile, server startup raises the original DB error instead of continuing as an in-memory server.
 - Real `server/.env` and `db_config.json` are local files only and must not be tracked by git; `scripts/verify_workspace.py` checks this hygiene rule.
 
+Security update 2026-06-10:
+- HttpOnly web-session cookie authentication now has a same-origin guard for unsafe methods on browser bridge paths (`/api/web/*`, `/api/upload`, `/api/artifacts/*`, `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/ticket_forms/*`, `/api/notifications`). When the request is authenticated by the web-session cookie, unsafe methods require an `Origin` or `Referer` whose origin matches the current host or `SERVER_PUBLIC_BASE_URL`; missing or mismatched origin returns 403.
+- The guard is controlled by `WEB_CSRF_SAME_ORIGIN_ENABLED=true` by default. Bearer UI tokens, agent tokens and public ticket token paths are not treated as cookie-auth browser requests by this guard.
+- Direct browser pairing lookup by `pairing_id` is safe-projected: expired, consumed, superseded, failed, canceled and unknown pairings do not return device facts or raw pairing secrets. The endpoint also rate-limits direct pairing-id probes.
+
 ---
 
 ## Обзор

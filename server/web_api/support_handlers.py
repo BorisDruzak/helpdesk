@@ -46,6 +46,8 @@ from app.repos.ticket_passport_repo import TicketPassportRepo
 from app.services.operation_service import OperationService
 from app.services.playbook_engine import start_run
 from auth.middleware import require_auth
+from consent.operation_consent import create_operation_user_consent
+from consent.service import ConsentAccessError
 from core.policy_engine import PolicyDecision, PolicyEngine
 from core.tool_metadata import ToolMetadata
 from observer.service import ObserverOverlayService
@@ -6271,6 +6273,24 @@ async def handle_web_support_run_tool(request: web.Request):
                     trace_id=str(uuid.uuid4()),
                     initial_status="waiting_consent",
                 )
+                try:
+                    await create_operation_user_consent(
+                        session,
+                        operation=operation,
+                        ticket=ticket,
+                        requested_by_actor_id=auth_context.actor_id,
+                        requested_by_role=auth_context.actor_role,
+                        risk_level=risk_level,
+                        tool_name=tool_name,
+                        params=params,
+                        policy_decision=policy_decision,
+                    )
+                except ConsentAccessError as exc:
+                    await session.rollback()
+                    return web.json_response(
+                        {"status": "error", "error": str(exc), "error_code": exc.error_code},
+                        status=exc.status,
+                    )
                 await session.commit()
                 result = {
                     "status": "waiting_consent",

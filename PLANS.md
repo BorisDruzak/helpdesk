@@ -5,8 +5,27 @@ Status:
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
 - Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy is implemented and live-verified; admin UI user to RegistryPerson linking is implemented.
-- Stage 3: unified browser/agent requester consent layer is implemented and live-verified for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent account-session decision boundary, operation side effects and Remote Assist deny integration.
+- Stage 3: unified browser/agent requester consent layer is implemented and previously live-verified for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent account-session decision boundary, operation side effects and Remote Assist deny integration. The 2026-06-10 audit found additional hardening gaps; do not mark the whole plan finally complete until the renewed full live evidence set is captured.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
+
+Audit update, 2026-06-10:
+
+- Browser cookie-auth unsafe requests are same-origin protected in auth middleware for web-session bridge paths. Missing `Origin`/`Referer` returns 403; mismatched origin returns 403; bearer/agent token paths remain outside this cookie-auth guard.
+- Direct browser pairing GET now uses pairing service visibility rules, expires stale rows before response, returns no device facts for expired/consumed/superseded/unknown pairings, and is rate-limited.
+- Consent-required support tool runs, legacy `/api/tools/run` and operation retries create canonical `UserConsentRequest` rows in the same transaction as `Operation(status='waiting_consent')`; missing requester scope rolls back instead of creating an orphan waiting operation.
+- Remote Assist request creation rejects tickets without requester scope before creating a pending remote session or user consent.
+- DB uniqueness for one active pending consent per subject is present in migration `20260610_109_user_consent_requests.py` through partial unique index `ux_user_consent_requests_pending_subject`.
+
+Current audit coverage matrix:
+
+| Flow | Backend endpoint | Frontend route | Agent path | Tests | Live evidence | Status | Gaps |
+|---|---|---|---|---|---|---|---|
+| Direct pairing GET inactive states | `GET /api/web/registry/browser-pairings/{pairing_id}` | `/app/device/register`, `/app/device/login` | pairing pickup polling | `test_web_user_direct_pairing_get_rejects_inactive_pairings_without_device_facts` | pending renewed run | hardened | Re-run expired/consumed/superseded live screenshots/API evidence. |
+| Browser cookie-auth state changes | auth middleware for `/api/web/*`, upload/artifact bridge paths | requester/admin/support webapp | none | `test_web_session_cookie_auth_unsafe_requests_require_same_origin`, bearer bypass test | pending renewed run | hardened | Re-run browser network evidence for representative requester POST. |
+| Support operation consent | `POST /api/web/support/tickets/{ticket_id}/tools/run` | `/app/tickets` | none until approve | `test_web_support_tool_action_keeps_consent_required_tool_waiting` | previous Stage 3 evidence; pending renewed run | hardened | Re-run DB orphan check. |
+| Legacy operation consent | `POST /api/tools/run` | legacy/API clients | none until approve | `test_legacy_tools_run_creates_user_consent_for_waiting_operation` | pending renewed run | hardened | Re-run DB orphan check. |
+| Retry operation consent | `POST /api/operations/{operation_id}/retry` | `/app/tickets` operation retry | none until approve | `test_retry_consent_required_operation_creates_waiting_consent_without_dispatch` | pending renewed run | hardened | Re-run approve path DB/outbox evidence. |
+| Remote Assist under-scoped ticket | remote assist service boundary | `/app/tickets`, consent center | start command only after approve | `test_remote_assist_rejects_ticket_without_requester_scope` | pending renewed run | hardened | Re-run real online agent approve path and deny path. |
 
 Latest live verification, 2026-06-08/09:
 
@@ -45,6 +64,7 @@ Stage 3:
 - [x] requester browser consent prompts;
 - [x] agent GUI consent prompts;
 - [x] Remote Assist browser/agent consent integration.
+- [ ] Renewed full live audit evidence after 2026-06-10 hardening: browser screenshots, console/network, API and DB checks for pairing, requester lifecycle/privacy, operation consent and Remote Assist approve/deny.
 
 ## Goal
 
@@ -70,7 +90,7 @@ Existing implementation capabilities to preserve and extend:
 - Agent profile registration already creates or finds a person, identities and registration claim, then moves the claim into `pending_user_confirmation`, `pending_admin_review` or `conflict`.
 - User claim confirmation already checks web user identity against claim/person identities.
 - Web login already exists through `/api/web/session/login`, creates a UI token and stores it in an HttpOnly cookie.
-- Role `user` already exists as a valid role, but does not yet have a full requester workspace model.
+- Role `user` has requester workspace permissions and implemented requester workspace flows; remaining gaps are tracked explicitly in this plan.
 - Public requester flow already partially exists through `/app/help`, `/app/ticket/:ticketId` and public ticket token/code.
 
 Completed Stage 1 backend foundation:

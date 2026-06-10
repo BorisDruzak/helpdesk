@@ -157,6 +157,43 @@ async def test_web_user_lookup_browser_pairing_code_rejects_inactive_pairings(te
 
 
 @pytest.mark.asyncio
+async def test_web_user_direct_pairing_get_rejects_inactive_pairings_without_device_facts(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    expired_device_id = str(uuid.uuid4())
+    consumed_device_id = str(uuid.uuid4())
+    superseded_device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add_all([
+            _device(expired_device_id),
+            _device(consumed_device_id),
+            _device(superseded_device_id),
+        ])
+        service = BrowserPairingService(session)
+        expired = await service.create_pairing(device_id=expired_device_id, purpose="login", actor_id=expired_device_id)
+        expired_row = await session.get(DeviceBrowserPairing, expired["pairing_id"])
+        expired_row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        consumed = await service.create_pairing(device_id=consumed_device_id, purpose="login", actor_id=consumed_device_id)
+        consumed_row = await session.get(DeviceBrowserPairing, consumed["pairing_id"])
+        consumed_row.status = "consumed"
+        consumed_row.completed_at = datetime.now(timezone.utc)
+        superseded = await service.create_pairing(device_id=superseded_device_id, purpose="login", actor_id=superseded_device_id)
+        await service.create_pairing(device_id=superseded_device_id, purpose="login", actor_id=superseded_device_id)
+        await session.commit()
+
+    for pairing_id in [expired["pairing_id"], consumed["pairing_id"], superseded["pairing_id"], str(uuid.uuid4())]:
+        response = await test_client.get(
+            f"/api/web/registry/browser-pairings/{pairing_id}",
+            headers=_headers(f"{TEST_UI_USER_PREFIX}inactive-direct@example.test"),
+        )
+        payload = await response.json()
+
+        assert response.status == 404, payload
+        assert payload["error_code"] == "NOT_FOUND"
+        assert "device" not in payload
+        assert "device_id" not in payload
+
+
+@pytest.mark.asyncio
 async def test_web_user_lookup_browser_pairing_code_rate_limits_invalid_attempts(test_client):
     reset_rate_limits()
     try:

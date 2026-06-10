@@ -32,6 +32,7 @@ from app.db.models import (
     TicketEvent,
     TicketNotification,
     UiUser,
+    UserConsentRequest,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
@@ -3593,6 +3594,32 @@ async def test_web_support_tool_action_keeps_consent_required_tool_waiting(test_
     async with session_maker() as session:
         session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
         queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        now = datetime.now(timezone.utc)
+        requester_person_id = str(uuid.uuid4())
+        session.add(
+            Device(
+                device_id="device-tool-consent",
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.61",
+                hostname="tool-consent-host",
+                os="Windows",
+                capabilities={},
+                device_metadata={},
+                first_seen_at=now,
+                last_seen_at=now,
+                last_handshake_at=now,
+            )
+        )
+        session.add(
+            RegistryPerson(
+                person_id=requester_person_id,
+                display_name="Tool Consent Requester",
+                full_name="Tool Consent Requester",
+                email="user-tool-consent@example.test",
+                source="test",
+                status="active",
+            )
+        )
         ticket = Ticket(
             ticket_id=str(uuid.uuid4()),
             device_id="device-tool-consent",
@@ -3600,6 +3627,7 @@ async def test_web_support_tool_action_keeps_consent_required_tool_waiting(test_
             description="Typed support endpoint должен остановить consent-required tool до dispatch.",
             status="in_progress",
             requester_id="user-tool-consent",
+            requester_person_id=requester_person_id,
             queue_id=queue.id,
             assignee_id="support-test",
         )
@@ -3669,6 +3697,14 @@ async def test_web_support_tool_action_keeps_consent_required_tool_waiting(test_
         assert operation.ticket_id == ticket_id
         assert operation.device_id == "device-tool-consent"
         assert operation.tool_name == "observer_canary.consent_probe"
+        consent = await session.scalar(select(UserConsentRequest).where(UserConsentRequest.subject_id == operation_id))
+        assert consent is not None
+        assert consent.status == "pending"
+        assert consent.subject_type == "operation"
+        assert consent.ticket_id == ticket_id
+        assert consent.device_id == "device-tool-consent"
+        assert consent.requester_person_id is not None
+        assert consent.requested_action_payload_redacted["tool_name"] == "observer_canary.consent_probe"
 
 
 @pytest.mark.asyncio
