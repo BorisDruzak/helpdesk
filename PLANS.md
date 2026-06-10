@@ -5,7 +5,7 @@ Status:
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
 - Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy is implemented and live-verified; admin UI user to RegistryPerson linking is implemented.
-- Stage 3: unified browser/agent requester consent layer is implemented locally for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent GUI prompts, operation side effects and Remote Assist consent integration; live verification is in progress.
+- Stage 3: unified browser/agent requester consent layer is implemented and live-verified for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent account-session decision boundary, operation side effects and Remote Assist deny integration.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
 Latest live verification, 2026-06-08/09:
@@ -761,11 +761,11 @@ Common checks:
 - [x] Stage 3 tests: added consent ownership, idempotency, expiry and browser/agent decision coverage in `server/tests/test_user_consent_api.py`; local DB pytest execution currently times out in the existing harness even for older requester tests, while collection passes.
 - [x] Stage 3 backend: implemented `UserConsentRequest`, migration `109`, requester/agent consent APIs, active binding/session checks, one pending consent per subject, atomic first-decision-wins transitions and operation approve/deny side effects.
 - [x] Stage 3 frontend/agent: implemented requester consent center, agent prompt polling/dialogs and shared API client methods.
-- [ ] Stage 3 verification and docs: local tests/docs passed; remote live/API/DB/browser checks are in progress.
+- [x] Stage 3 verification and docs: local tests/docs passed; remote Linux stand was deployed at `fec5b78d`; live API/DB checks passed for requester browser consent approve, agent consent approve with requester account-session headers, missing account-session denial, one pending requester UI consent, operation queue/outbox side effects, ticket timeline events and Remote Assist canonical deny. Browser MCP verified `/app/requester` shows the pending consent, approves it through the real UI, removes the panel and displays "Согласие подтверждено".
 
 ## Handoff
 
-Continue with Stage 3 live verification unless a regression is found. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
+Stage 3 live verification is complete. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
 
 Done in this slice:
 
@@ -792,11 +792,11 @@ Done in this slice:
 Deferred / next:
 
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
-- Stage 3 follow-up: finish live browser/agent smoke and remote DB verification for requester/agent consent prompts and Remote Assist consent integration. Backend `UserConsentRequest`, requester/agent APIs, operation consent integration, requester browser prompts, agent GUI prompts and Remote Assist canonical consent integration are implemented locally.
+- Stage 3 follow-up: approve-path Remote Assist command dispatch still depends on a real online agent; this slice live-verified the canonical Remote Assist consent creation/deny path and DB/timeline state, while local tests cover the approve dispatch integration.
 
 Immediate next work:
 
-1. Continue Stage 3 with remote live verification for browser requester consent, agent GUI consent and Remote Assist canonical approval.
+1. Move to the next planned slice after Stage 3; keep a future live smoke for Remote Assist approve with a real online agent when the stand has an interactive agent available.
 
 Before code changes, read the nested instructions for the target area:
 
