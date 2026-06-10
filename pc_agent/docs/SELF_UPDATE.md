@@ -8,6 +8,8 @@ PC Agent поддерживает удалённое обновление чер
 
 Важно: server-side assigned rollout является source of truth и может указывать как на upgrade, так и на controlled rollback. Для агента это один и тот же self-update flow: если рекомендованная release-версия с сервера отличается от текущей, GUI должен показывать action-кнопку, а launcher после restart применяет запрошенный архив и переключает `current.json` на указанную версию.
 
+2026-06-10 Stage 3 consent GUI changes are ordinary application code inside the distributed agent artifact. They do not alter the self-update command, launcher staging, rollback or assigned rollout protocol.
+
 ## Layout (per-user)
 
 - **install_root** (по умолчанию: Windows `%LOCALAPPDATA%\PCClientAgent\install`, Linux `~/.local/opt/pcclient-agent`):

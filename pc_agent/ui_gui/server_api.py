@@ -913,6 +913,57 @@ class TicketApiClient:
             logger.info("Registration claim confirm error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def list_user_consents(
+        self,
+        *,
+        account_session: Optional[dict] = None,
+        statuses: Optional[list[str]] = None,
+    ) -> dict:
+        url = f"{self.base_url}/registry/agent/consents"
+        params: dict[str, Any] = {}
+        if statuses:
+            params["status"] = ",".join(str(item).strip() for item in statuses if str(item).strip())
+        params = self._with_account_params(params, account_session)
+        session = await self._get_session()
+        headers = self._with_account_headers(self._get_headers(), account_session)
+        try:
+            async with session.get(url, params=params, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось загрузить согласия")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("User consents fetch error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
+    async def decide_user_consent(
+        self,
+        consent_id: str,
+        decision: str,
+        *,
+        account_session: Optional[dict] = None,
+        reason: Optional[str] = None,
+    ) -> dict:
+        action = "approve" if str(decision).strip().lower() == "approved" else "deny"
+        url = f"{self.base_url}/registry/agent/consents/{consent_id}/{action}"
+        payload: dict[str, Any] = {}
+        if reason:
+            payload["reason"] = reason
+        account_payload = self._account_session_payload(account_session)
+        if account_payload:
+            payload.update(account_payload)
+        session = await self._get_session()
+        headers = self._with_account_headers(self._get_headers(), account_session)
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(response.status, response_text, fallback="Не удалось сохранить решение")
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("User consent decision error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
     @staticmethod
     def _unwrap_success_data(payload: dict) -> dict:
         if isinstance(payload, dict) and payload.get("status") == "success" and isinstance(payload.get("data"), dict):

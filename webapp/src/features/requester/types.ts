@@ -200,6 +200,41 @@ export type PublicTicketEvent = {
   requester_timeline_style?: string | null;
 };
 
+export type RequesterConsentStatus = "pending" | "approved" | "denied" | "expired" | "superseded" | "canceled";
+
+export type RequesterConsent = {
+  consent_id: string;
+  subject_type: string;
+  subject_id: string;
+  ticket_id?: string | null;
+  device_id?: string | null;
+  requester_person_id?: string | null;
+  requester_binding_id?: string | null;
+  requester_account_session_id?: string | null;
+  requested_by_actor_id?: string | null;
+  requested_by_role?: string | null;
+  risk_level?: string | null;
+  policy_snapshot?: Record<string, unknown>;
+  risk_explanation?: string | null;
+  requested_action_payload_redacted?: Record<string, unknown>;
+  title?: string | null;
+  description?: string | null;
+  reason?: string | null;
+  status: RequesterConsentStatus | string;
+  expires_at?: string | null;
+  decided_by_actor_id?: string | null;
+  decided_by_role?: string | null;
+  decided_from_surface?: string | null;
+  decided_at?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type RequesterConsentDecisionResult = {
+  consent: RequesterConsent;
+};
+
 export type PublicTicketCreatePayload = {
   title: string;
   description: string;

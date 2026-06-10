@@ -29,6 +29,10 @@ class _FakeSession:
         self.response = response
         self.calls = []
 
+    def get(self, url, **kwargs):
+        self.calls.append({"method": "GET", "url": url, **kwargs})
+        return self.response
+
     def post(self, url, **kwargs):
         self.calls.append({"method": "POST", "url": url, **kwargs})
         return self.response
@@ -83,3 +87,60 @@ def test_server_api_error_derives_error_code_from_error_name():
     assert error.error == "ticket_closed"
     assert error.error_code == "TICKET_CLOSED"
     assert error.details == {"state": "closed"}
+
+
+@pytest.mark.asyncio
+async def test_ticket_api_client_lists_user_consents_with_account_session_headers():
+    response = _FakeResponse(
+        status=200,
+        text='{"status":"success","data":{"consents":[{"consent_id":"consent-1","status":"pending"}],"count":1}}',
+    )
+    session = _FakeSession(response)
+    client = TicketApiClient(base_url="https://server.test/api", device_id="device-1", auth_token="agent-token")
+
+    async def _get_session():
+        return session
+
+    client._get_session = _get_session
+
+    result = await client.list_user_consents(
+        account_session={"account_session_id": "session-1", "session_token": "secret-token"},
+        statuses=["pending"],
+    )
+
+    assert result["consents"][0]["consent_id"] == "consent-1"
+    call = session.calls[0]
+    assert call["method"] == "GET"
+    assert call["url"] == "https://server.test/api/registry/agent/consents"
+    assert call["params"]["status"] == "pending"
+    assert call["params"]["account_session_id"] == "session-1"
+    assert call["headers"]["X-Account-Session-Id"] == "session-1"
+    assert call["headers"]["X-Account-Session-Token"] == "secret-token"
+
+
+@pytest.mark.asyncio
+async def test_ticket_api_client_decides_user_consent_with_account_session_payload():
+    response = _FakeResponse(
+        status=200,
+        text='{"status":"success","data":{"consent":{"consent_id":"consent-1","status":"approved"}}}',
+    )
+    session = _FakeSession(response)
+    client = TicketApiClient(base_url="https://server.test/api", device_id="device-1", auth_token="agent-token")
+
+    async def _get_session():
+        return session
+
+    client._get_session = _get_session
+
+    result = await client.decide_user_consent(
+        "consent-1",
+        "approved",
+        account_session={"account_session_id": "session-1", "session_token": "secret-token"},
+    )
+
+    assert result["consent"]["status"] == "approved"
+    call = session.calls[0]
+    assert call["method"] == "POST"
+    assert call["url"] == "https://server.test/api/registry/agent/consents/consent-1/approve"
+    assert call["json"]["session_id"] == "session-1"
+    assert call["json"]["session_token"] == "secret-token"

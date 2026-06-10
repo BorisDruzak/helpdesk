@@ -2,11 +2,14 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  approveRequesterConsent,
   closeRequesterTicket,
   claimPublicRequesterTicket,
   createRequesterTicket,
+  denyRequesterConsent,
   fetchPublicFormPack,
   fetchRequesterBootstrap,
+  fetchRequesterConsents,
   fetchRequesterDevice,
   fetchRequesterProfile,
   fetchRequesterTicket,
@@ -29,6 +32,7 @@ import type {
   RequestFormDefinition,
   RequestFormField,
   RequesterBootstrap,
+  RequesterConsent,
   RequesterDevice,
   RequesterDeviceDetail,
   RequesterProfileDetail,
@@ -65,6 +69,37 @@ function relationshipLabel(value?: string | null): string {
 
 function ticketStatus(ticket: AuthenticatedRequesterTicket): string {
   return ticket.requester_status_label || ticket.status_label || ticket.requester_status || ticket.status || "open";
+}
+
+function consentRiskLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    diagnostic: "Диагностика",
+    remote_view: "Просмотр экрана",
+    remote_control: "Удаленное управление",
+    remote_admin: "Административный доступ",
+  };
+  return labels[value || ""] || value || "Требуется решение";
+}
+
+function consentSubjectLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    diagnostic: "Диагностика",
+    operation: "Операция",
+    remote_assist: "Удаленная помощь",
+    tool_run: "Запуск инструмента",
+  };
+  return labels[value || ""] || value || "Запрос согласия";
+}
+
+function formatConsentExpiresAt(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
 }
 
 function isFieldVisible(field: RequestFormField, values: FieldValues): boolean {
@@ -203,6 +238,9 @@ function RequestFormFieldControl({
 export function RequesterWorkspacePage() {
   const [bootstrap, setBootstrap] = useState<RequesterBootstrap | null>(null);
   const [tickets, setTickets] = useState<AuthenticatedRequesterTicket[]>([]);
+  const [consents, setConsents] = useState<RequesterConsent[]>([]);
+  const [consentSubmittingId, setConsentSubmittingId] = useState<string | null>(null);
+  const [consentNotice, setConsentNotice] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [title, setTitle] = useState("Проверка рабочего места");
   const [description, setDescription] = useState("");
@@ -258,6 +296,8 @@ export function RequesterWorkspacePage() {
 
   const devices = bootstrap?.devices ?? [];
   const visibleTickets = tickets.length ? tickets : bootstrap?.recent_tickets ?? [];
+  const pendingConsents = consents.filter((consent) => consent.status === "pending");
+  const actionCount = (bootstrap?.tickets_requiring_user_action_count ?? 0) + pendingConsents.length;
   const profileName = bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || bootstrap?.profile?.email || "Пользователь";
   const services = catalog?.services ?? [];
   const noDeviceCreateEnabled = bootstrap?.feature_flags?.requester_no_device_create === true;
@@ -332,11 +372,15 @@ export function RequesterWorkspacePage() {
     setError(null);
     setCatalogNotice(null);
     try {
-      const nextBootstrap = await fetchRequesterBootstrap();
-      const nextTickets = await fetchRequesterTickets();
+      const [nextBootstrap, nextTickets] = await Promise.all([fetchRequesterBootstrap(), fetchRequesterTickets()]);
       setBootstrap(nextBootstrap);
       setTickets(nextTickets);
       setSelectedDeviceId((current) => current || nextBootstrap.devices[0]?.device_id || "");
+      try {
+        setConsents(await fetchRequesterConsents());
+      } catch {
+        setConsents([]);
+      }
       try {
         const [nextForms, nextCatalog] = await Promise.all([fetchPublicFormPack(), fetchServiceCatalogCurrent()]);
         setForms(nextForms.forms ?? []);
@@ -359,6 +403,35 @@ export function RequesterWorkspacePage() {
     ]);
     setSelectedTicketDetail(nextDetail);
     setTickets(nextTickets);
+  }
+
+  async function handleConsentDecision(consent: RequesterConsent, decision: "approved" | "denied") {
+    setConsentSubmittingId(consent.consent_id);
+    setConsentNotice(null);
+    setError(null);
+    try {
+      if (decision === "approved") {
+        await approveRequesterConsent(consent.consent_id);
+      } else {
+        await denyRequesterConsent(consent.consent_id, "requester_denied");
+      }
+      setConsentNotice(decision === "approved" ? "Согласие подтверждено" : "Согласие отклонено");
+      const [nextBootstrap, nextTickets, nextConsents] = await Promise.all([
+        fetchRequesterBootstrap(),
+        fetchRequesterTickets(),
+        fetchRequesterConsents(),
+      ]);
+      setBootstrap(nextBootstrap);
+      setTickets(nextTickets);
+      setConsents(nextConsents);
+      if (selectedTicketId) {
+        setSelectedTicketDetail(await fetchRequesterTicket(selectedTicketId));
+      }
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось сохранить решение");
+    } finally {
+      setConsentSubmittingId(null);
+    }
   }
 
   useEffect(() => {
@@ -806,12 +879,17 @@ export function RequesterWorkspacePage() {
           </div>
           <div>
             <dt>Действия</dt>
-            <dd>{bootstrap?.tickets_requiring_user_action_count ?? 0}</dd>
+            <dd>{actionCount}</dd>
           </div>
         </dl>
       </header>
 
       {error ? <div className="rounded-panel border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
+      {consentNotice ? (
+        <div className="rounded-panel border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {consentNotice}
+        </div>
+      ) : null}
       {createdTicketId ? (
         <div className="rounded-panel border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
           Создано обращение {createdTicketId}
@@ -820,6 +898,68 @@ export function RequesterWorkspacePage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
+          {pendingConsents.length ? (
+            <section aria-label="Requester pending consents" className="support-workspace__panel">
+              <div className="support-workspace__panel-head">
+                <div>
+                  <p className="support-workspace__eyebrow">Согласие пользователя</p>
+                  <h2>Ожидают вашего подтверждения</h2>
+                </div>
+                <span className="rounded-panel bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
+                  {pendingConsents.length}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {pendingConsents.map((consent) => {
+                  const expiresAt = formatConsentExpiresAt(consent.expires_at);
+                  return (
+                    <article className="rounded-panel border border-amber-200 bg-amber-50 px-4 py-3" key={consent.consent_id}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase text-amber-700">
+                            {consentSubjectLabel(consent.subject_type)} · {consentRiskLabel(consent.risk_level)}
+                          </p>
+                          <h3 className="mt-1 break-words text-sm font-semibold text-slate-950">
+                            {consent.title || "Требуется ваше согласие"}
+                          </h3>
+                          {consent.description ? (
+                            <p className="mt-1 break-words text-sm text-slate-700">{consent.description}</p>
+                          ) : null}
+                          <p className="mt-2 text-xs text-slate-600">
+                            {consent.ticket_id ? `Обращение: ${consent.ticket_id}` : "Обращение не указано"}
+                            {consent.device_id ? ` · Устройство: ${consent.device_id}` : ""}
+                            {expiresAt ? ` · До: ${expiresAt}` : ""}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            aria-label={`Deny requester consent ${consent.consent_id}`}
+                            className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={consentSubmittingId === consent.consent_id}
+                            onClick={() => void handleConsentDecision(consent, "denied")}
+                            type="button"
+                          >
+                            <X className="h-4 w-4" />
+                            Отклонить
+                          </button>
+                          <button
+                            aria-label={`Approve requester consent ${consent.consent_id}`}
+                            className="inline-flex items-center justify-center gap-2 rounded-panel bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                            disabled={consentSubmittingId === consent.consent_id}
+                            onClick={() => void handleConsentDecision(consent, "approved")}
+                            type="button"
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                            Разрешить
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
         <section className="support-workspace__panel">
           <div className="support-workspace__panel-head">
             <div>

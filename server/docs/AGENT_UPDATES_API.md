@@ -8,6 +8,8 @@
 
 Бинарные данные **не** передаются по WebSocket.
 
+2026-06-10 Stage 3 consent GUI changes are delivered as normal agent artifact contents when a new build is published. They do not change build upload/download APIs, rollout assignment or the update command contract.
+
 ## Upload build
 
 `POST /api/agent_builds/upload`

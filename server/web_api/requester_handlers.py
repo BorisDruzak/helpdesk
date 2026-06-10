@@ -211,7 +211,7 @@ async def _handle_web_requester_consent_decision(request: web.Request, decision:
         resolver = RequesterIdentityResolver(session)
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         try:
-            row = await UserConsentService(session).decide_from_browser(
+            row = await UserConsentService(session, state=request.app.get("state")).decide_from_browser(
                 consent_id=consent_id,
                 decision=decision,
                 requester_person_id=person.person_id if person else None,

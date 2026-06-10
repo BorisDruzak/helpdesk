@@ -5,7 +5,7 @@ Status:
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
 - Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy is implemented and live-verified; admin UI user to RegistryPerson linking is implemented.
-- Stage 3: unified browser/agent requester consent backend slice is implemented for `UserConsentRequest`, requester/agent APIs and operation approval/deny side effects; requester/agent UI prompts and Remote Assist integration remain follow-up.
+- Stage 3: unified browser/agent requester consent layer is implemented locally for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent GUI prompts, operation side effects and Remote Assist consent integration; live verification is in progress.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
 Latest live verification, 2026-06-08/09:
@@ -37,13 +37,14 @@ Stage 2B follow-up:
 
 Stage 3:
 
-- `UserConsentRequest`;
-- requester consent APIs;
-- agent consent APIs;
-- operation consent integration;
-- Remote Assist browser consent integration;
-- requester/agent UI prompts;
-- atomic/idempotent consent decisions.
+- [x] `UserConsentRequest`;
+- [x] requester consent APIs;
+- [x] agent consent APIs;
+- [x] operation consent integration;
+- [x] atomic/idempotent consent decisions;
+- [x] requester browser consent prompts;
+- [x] agent GUI consent prompts;
+- [x] Remote Assist browser/agent consent integration.
 
 ## Goal
 
@@ -729,6 +730,10 @@ Common checks:
 
 ## Execution Checkpoints
 
+- [x] Stage 3 requester prompts: add `/app/requester` pending consent panel, approve/deny actions and frontend tests.
+- [x] Stage 3 agent prompts: add canonical `consent_id` API calls and GUI prompt polling for active account sessions.
+- [x] Stage 3 Remote Assist integration: create `UserConsentRequest` for Remote Assist, start agent technical session only after canonical approval, preserve deny/expiry semantics.
+
 - [x] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
 - [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, approval-to-confirmed-binding account-state transition, web route behavior, webapp confirm pages, manual pairing-code lookup/rate-limit/inactive rejection and agent polling. Linux stand smoke covered live API/DB behavior.
 - [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated manual code lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
@@ -755,12 +760,12 @@ Common checks:
 - [x] Stage 3 design: confirmed canonical `UserConsentRequest`, requester/agent API ownership model, operation transition side effect boundary and deferred Remote Assist boundary.
 - [x] Stage 3 tests: added consent ownership, idempotency, expiry and browser/agent decision coverage in `server/tests/test_user_consent_api.py`; local DB pytest execution currently times out in the existing harness even for older requester tests, while collection passes.
 - [x] Stage 3 backend: implemented `UserConsentRequest`, migration `109`, requester/agent consent APIs, active binding/session checks, one pending consent per subject, atomic first-decision-wins transitions and operation approve/deny side effects.
-- [ ] Stage 3 frontend/agent: implement requester consent center and agent prompts.
-- [ ] Stage 3 verification and docs.
+- [x] Stage 3 frontend/agent: implemented requester consent center, agent prompt polling/dialogs and shared API client methods.
+- [ ] Stage 3 verification and docs: local tests/docs passed; remote live/API/DB/browser checks are in progress.
 
 ## Handoff
 
-Continue with Stage 3 frontend/agent consent prompts and Remote Assist consent integration unless a backend live check finds a regression. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
+Continue with Stage 3 live verification unless a regression is found. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
 
 Done in this slice:
 
@@ -787,11 +792,11 @@ Done in this slice:
 Deferred / next:
 
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
-- Stage 3 follow-up: requester browser consent center, agent GUI consent prompts, Remote Assist consent integration, live browser/agent smoke and remote DB verification. Backend `UserConsentRequest`, requester/agent APIs, operation consent integration and atomic/idempotent decisions are implemented.
+- Stage 3 follow-up: finish live browser/agent smoke and remote DB verification for requester/agent consent prompts and Remote Assist consent integration. Backend `UserConsentRequest`, requester/agent APIs, operation consent integration, requester browser prompts, agent GUI prompts and Remote Assist canonical consent integration are implemented locally.
 
 Immediate next work:
 
-1. Continue Stage 3 with requester browser consent center and agent GUI consent prompts.
+1. Continue Stage 3 with remote live verification for browser requester consent, agent GUI consent and Remote Assist canonical approval.
 
 Before code changes, read the nested instructions for the target area:
 

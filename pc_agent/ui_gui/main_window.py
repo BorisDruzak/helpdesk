@@ -23,6 +23,7 @@ from loguru import logger
 
 from .consent_dialog import ConsentDialog
 from .remote_assist_dialog import RemoteAssistConsentDialog
+from .user_consent_dialog import UserConsentPromptDialog
 from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
 from .accessibility import account_description, connection_description, normalize_connection_state, set_uia_metadata
 from .account_gate import AccountGateWidget
@@ -114,6 +115,8 @@ class MainWindow(QMainWindow):
         self._remote_assist_banner_labels: Dict[str, QLabel] = {}
         self._remote_assist_modes: Dict[str, str] = {}
         self._remote_assist_dialogs: Dict[str, RemoteAssistConsentDialog] = {}
+        self._user_consent_dialogs: Dict[str, UserConsentPromptDialog] = {}
+        self._user_consent_refreshing: bool = False
         
         # Текущий job_id активного чата (для привязки consent к чату)
         # session_key == текущий chat job_id, полученный из /api/chat_start
@@ -837,7 +840,12 @@ class MainWindow(QMainWindow):
         self._runtime_refresh_timer.setInterval(15000)
         self._runtime_refresh_timer.timeout.connect(lambda: self._queue_runtime_status_refresh(update_panel=False))
         self._runtime_refresh_timer.start()
+        self._user_consent_timer = QTimer(self)
+        self._user_consent_timer.setInterval(10000)
+        self._user_consent_timer.timeout.connect(self._refresh_user_consents)
+        self._user_consent_timer.start()
         QTimer.singleShot(250, lambda: asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=False)))
+        QTimer.singleShot(1000, self._refresh_user_consents)
 
     def _on_list_navigation_visibility_changed(self, list_mode: bool) -> None:
         """Возвращаем пользователя к панели тикетов, когда чат просит список."""
@@ -979,6 +987,110 @@ class MainWindow(QMainWindow):
         if self._account_session.get("account_mode") in {"confirmed_binding", "verified_other_account"}:
             return self._account_session
         return None
+
+    def _refresh_user_consents(self) -> None:
+        if not self.auth_token:
+            return
+        if not self._active_account_session_for_tickets():
+            self._close_user_consent_dialogs()
+            return
+        self._spawn_gui_task(self._async_refresh_user_consents(), name="user_consent.refresh")
+
+    async def _async_refresh_user_consents(self) -> None:
+        if self._user_consent_refreshing:
+            return
+        session = self._active_account_session_for_tickets()
+        if not session:
+            self._close_user_consent_dialogs()
+            return
+        self._user_consent_refreshing = True
+        try:
+            payload = await self.chat_panel.ticket_client.list_user_consents(
+                account_session=session,
+                statuses=["pending"],
+            )
+            if isinstance(payload, dict) and payload.get("status") == "error":
+                self.handle_account_session_error(payload)
+                logger.debug(f"[user_consent] refresh failed: {payload}")
+                return
+            consents = payload.get("consents") if isinstance(payload, dict) else []
+            if not isinstance(consents, list):
+                consents = []
+            pending_ids = {
+                str(consent.get("consent_id"))
+                for consent in consents
+                if isinstance(consent, dict) and str(consent.get("status") or "") == "pending"
+            }
+            for consent_id, dialog in list(self._user_consent_dialogs.items()):
+                if consent_id not in pending_ids:
+                    dialog.close()
+                    self._user_consent_dialogs.pop(consent_id, None)
+                    self.open_dialogs.discard(f"user_consent:{consent_id}")
+            for consent in consents:
+                if isinstance(consent, dict) and str(consent.get("status") or "") == "pending":
+                    self._show_user_consent_dialog(consent)
+        finally:
+            self._user_consent_refreshing = False
+
+    def _close_user_consent_dialogs(self) -> None:
+        for consent_id, dialog in list(self._user_consent_dialogs.items()):
+            dialog.close()
+            self._user_consent_dialogs.pop(consent_id, None)
+            self.open_dialogs.discard(f"user_consent:{consent_id}")
+
+    def _show_user_consent_dialog(self, consent: dict) -> None:
+        consent_id = str(consent.get("consent_id") or "").strip()
+        if not consent_id:
+            return
+        dialog_key = f"user_consent:{consent_id}"
+        if dialog_key in self.open_dialogs:
+            return
+        self.open_dialogs.add(dialog_key)
+        dialog = UserConsentPromptDialog(consent, self)
+        dialog.setWindowFlags(dialog.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
+        self._user_consent_dialogs[consent_id] = dialog
+
+        def cleanup() -> None:
+            self.open_dialogs.discard(dialog_key)
+            self._user_consent_dialogs.pop(consent_id, None)
+
+        def approve() -> None:
+            self._spawn_gui_task(
+                self._post_user_consent_decision(consent_id, approve=True),
+                name="user_consent.approve",
+            )
+
+        def deny() -> None:
+            self._spawn_gui_task(
+                self._post_user_consent_decision(consent_id, approve=False),
+                name="user_consent.deny",
+            )
+
+        dialog.approved.connect(approve)
+        dialog.denied.connect(deny)
+        dialog.finished.connect(lambda _result: cleanup())
+        dialog.open()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    async def _post_user_consent_decision(self, consent_id: str, *, approve: bool) -> None:
+        session = self._active_account_session_for_tickets()
+        if not session:
+            self._add_log("user_consent | account session missing", "error")
+            return
+        decision = "approved" if approve else "denied"
+        payload = await self.chat_panel.ticket_client.decide_user_consent(
+            consent_id,
+            decision,
+            account_session=session,
+            reason=None if approve else "user_denied",
+        )
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            self.handle_account_session_error(payload)
+            self._add_log(f"user_consent | {decision} failed | {payload.get('error_code') or payload.get('error')}", "error")
+            return
+        self._add_log("Согласие подтверждено" if approve else "Согласие отклонено", "success" if approve else "warning")
+        await self._async_refresh_user_consents()
 
     def _account_summary(self) -> str:
         session = self._active_account_session_for_tickets()
@@ -3093,6 +3205,16 @@ class MainWindow(QMainWindow):
         if not session_id:
             logger.warning("Remote Assist request received without session_id")
             return
+        if str(data.get("consent_status") or "").strip().lower() == "approved":
+            existing = self._remote_assist_threads.get(session_id)
+            if existing and existing.isRunning():
+                return
+            self._add_log(f"remote_assist | approved consent received | {session_id[:8]}", "info")
+            self._spawn_gui_task(
+                self._post_remote_assist_decision(session_id, approve=True),
+                name="remote_assist.start_after_consent",
+            )
+            return
         dialog_key = f"remote_assist:{session_id}"
         if dialog_key in self.open_dialogs:
             logger.debug(f"Remote Assist dialog already open for session_id={session_id}")
@@ -3361,6 +3483,12 @@ class MainWindow(QMainWindow):
                 self.chat_panel._stop_ticket_detail_polling()
         except Exception as e:
             logger.debug(f"closeEvent: stop polling failed: {e}")
+        try:
+            if hasattr(self, "_user_consent_timer") and self._user_consent_timer:
+                self._user_consent_timer.stop()
+            self._close_user_consent_dialogs()
+        except Exception as e:
+            logger.debug(f"closeEvent: stop consent polling failed: {e}")
         self._hide_stop_button()
         for session_id, thread in list(self._remote_assist_threads.items()):
             try:

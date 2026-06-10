@@ -18,6 +18,8 @@
    - controlled restart/update flow
 4. `pc_agent/ui_bridge/api_server.py` считается локальной control/diagnostics поверхностью для GUI и локальных проверок.
 
+2026-06-10 Stage 3 consent GUI polling is part of the always-on runtime surface: `pc_agent/ui_gui/main_window.py` polls `/api/registry/agent/consents` only when an active requester account session exists, shows `pc_agent/ui_gui/user_consent_dialog.py` for pending canonical `UserConsentRequest` rows, and posts approve/deny with the same account-session headers used by ticket actions. This does not change tray/shutdown/update lifecycle; consent polling must not block the WebSocket loop.
+
 ### Recommended update surface в локальном UI bridge
 
 Локальный `ui_bridge` теперь отдаёт GUI не только connection/runtime diagnostics, но и update-related surface:

@@ -2,10 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   authorizePublicTicket,
+  approveRequesterConsent,
   claimPublicRequesterTicket,
   closeRequesterTicket,
   createPublicTicket,
   createRequesterTicket,
+  denyRequesterConsent,
+  fetchRequesterConsents,
   fetchRequesterDevice,
   fetchRequesterProfile,
   fetchRequesterTicket,
@@ -199,6 +202,58 @@ describe("requester public api", () => {
 });
 
 describe("authenticated requester api", () => {
+  it("loads and decides requester consents through the requester boundary", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            consents: [
+              {
+                consent_id: "consent-1",
+                subject_type: "remote_assist",
+                subject_id: "remote-1",
+                status: "pending",
+                title: "Remote Assist",
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/api/web/requester/consents/consent-1/approve") {
+        return jsonResponse({
+          status: "success",
+          data: { consent: { consent_id: "consent-1", status: "approved", subject_type: "remote_assist", subject_id: "remote-1" } },
+        });
+      }
+      if (url === "/api/web/requester/consents/consent-2/deny") {
+        return jsonResponse({
+          status: "success",
+          data: { consent: { consent_id: "consent-2", status: "denied", subject_type: "operation", subject_id: "op-1" } },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const consents = await fetchRequesterConsents();
+    const approved = await approveRequesterConsent("consent-1");
+    const denied = await denyRequesterConsent("consent-2", "no");
+
+    expect(consents[0]?.consent_id).toBe("consent-1");
+    expect(approved.consent.status).toBe("approved");
+    expect(denied.consent.status).toBe("denied");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/consents/consent-2/deny",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({ reason: "no" }),
+      }),
+    );
+  });
+
   it("loads authenticated requester profile through the requester boundary", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({

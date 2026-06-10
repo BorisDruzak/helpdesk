@@ -18,6 +18,8 @@ import type {
   RequesterAttachmentUploadResult,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
+  RequesterConsent,
+  RequesterConsentDecisionResult,
   RequesterTicketClaimPublicResult,
   RequesterTicketDetail,
   RequesterTicketPreviewPayload,
@@ -147,6 +149,51 @@ export async function fetchRequesterTickets(): Promise<AuthenticatedRequesterTic
     "Не удалось загрузить обращения",
   );
   return payload.tickets ?? [];
+}
+
+export async function fetchRequesterConsents(statuses: string[] = ["pending"]): Promise<RequesterConsent[]> {
+  const params = statuses.length ? `?status=${encodeURIComponent(statuses.join(","))}` : "";
+  const response = await fetch(`/api/web/requester/consents${params}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  const payload = await readSuccess<{ consents: RequesterConsent[] }>(
+    response,
+    "Не удалось загрузить запросы согласия",
+  );
+  return payload.consents ?? [];
+}
+
+async function decideRequesterConsent(
+  consentId: string,
+  decision: "approve" | "deny",
+  reason?: string | null,
+): Promise<RequesterConsentDecisionResult> {
+  const body: { reason?: string } = {};
+  if (reason?.trim()) {
+    body.reason = reason.trim();
+  }
+  const response = await fetch(`/api/web/requester/consents/${encodeURIComponent(consentId)}/${decision}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(body),
+  });
+  return readSuccess<RequesterConsentDecisionResult>(response, "Не удалось сохранить решение по согласию");
+}
+
+export function approveRequesterConsent(
+  consentId: string,
+  reason?: string | null,
+): Promise<RequesterConsentDecisionResult> {
+  return decideRequesterConsent(consentId, "approve", reason);
+}
+
+export function denyRequesterConsent(
+  consentId: string,
+  reason?: string | null,
+): Promise<RequesterConsentDecisionResult> {
+  return decideRequesterConsent(consentId, "deny", reason);
 }
 
 export async function fetchRequesterDevice(deviceId: string): Promise<RequesterDeviceDetail> {

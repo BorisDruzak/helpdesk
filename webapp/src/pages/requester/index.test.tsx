@@ -17,6 +17,83 @@ afterEach(() => {
 });
 
 describe("RequesterWorkspacePage", () => {
+  it("shows pending requester consent and approves it", async () => {
+    let approved = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-1", display_name: "Requester One" },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: approved ? 0 : 1,
+            recent_tickets: [],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            consents: approved
+              ? []
+              : [
+                  {
+                    consent_id: "consent-1",
+                    subject_type: "remote_assist",
+                    subject_id: "remote-1",
+                    ticket_id: "T-1",
+                    device_id: "device-1",
+                    risk_level: "remote_view",
+                    status: "pending",
+                    title: "Просмотр экрана",
+                    description: "Специалист просит доступ",
+                  },
+                ],
+          },
+        });
+      }
+      if (url === "/api/web/requester/consents/consent-1/approve") {
+        approved = true;
+        return jsonResponse({
+          status: "success",
+          data: { consent: { consent_id: "consent-1", subject_type: "remote_assist", subject_id: "remote-1", status: "approved" } },
+        });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("Ожидают вашего подтверждения");
+    await screen.findByText("Просмотр экрана");
+    fireEvent.click(screen.getByLabelText("Approve requester consent consent-1"));
+
+    await screen.findByText("Согласие подтверждено");
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/requester/consents/consent-1/approve",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+  });
+
   it("opens requester profile detail from the requester workspace", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

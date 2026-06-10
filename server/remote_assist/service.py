@@ -14,6 +14,7 @@ from app.db.models import Device, RemoteAccessSession, Ticket
 from app.repos.devices_repo import DevicesRepo
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
+from consent.service import UserConsentService
 from remote_assist.features import build_remote_assist_features
 from remote_assist.ice import build_remote_assist_ice_servers
 from remote_assist.media import build_remote_assist_media_options
@@ -57,6 +58,36 @@ def verify_token_hash(token: str, expected_hash: str | None) -> bool:
     if not token or not expected_hash:
         return False
     return secrets.compare_digest(_hash_token(token), expected_hash)
+
+
+def _remote_assist_risk_level(mode: str) -> str:
+    if mode == "view_only":
+        return "remote_view"
+    if mode in {"interactive_control", "file_transfer"}:
+        return "remote_control"
+    if mode == "elevated_admin":
+        return "remote_admin"
+    return "remote_assist"
+
+
+def _remote_assist_title(mode: str) -> str:
+    labels = {
+        "view_only": "Подтвердите просмотр экрана",
+        "interactive_control": "Подтвердите удаленное управление",
+        "file_transfer": "Подтвердите передачу файлов",
+        "elevated_admin": "Подтвердите административную удаленную помощь",
+    }
+    return labels.get(mode, "Подтвердите удаленную помощь")
+
+
+def _remote_assist_description(mode: str, duration_minutes: int) -> str:
+    labels = {
+        "view_only": "Специалист сможет видеть экран этого устройства.",
+        "interactive_control": "Специалист сможет видеть экран и управлять мышью и клавиатурой.",
+        "file_transfer": "Специалист сможет видеть экран и использовать канал передачи файлов.",
+        "elevated_admin": "Специалист запросил административный режим удаленной помощи.",
+    }
+    return f"{labels.get(mode, 'Специалист запросил удаленную помощь.')} Максимальная длительность: {duration_minutes} мин."
 
 
 def remote_session_to_dict(session: RemoteAccessSession) -> dict[str, Any]:
@@ -146,7 +177,7 @@ class RemoteAssistService:
             ticket_id=ticket.ticket_id,
             device_id=device.device_id,
             operator_id=operator_id,
-            requester_id=requester_id,
+            requester_id=requester_id or getattr(ticket, "requester_id", None),
             mode=mode,
             status="waiting_consent" if consent_required else "approved",
             reason=(reason or "").strip() or None,
@@ -168,9 +199,52 @@ class RemoteAssistService:
             payload={"mode": mode, "reason": reason, "duration_minutes": duration},
             write_timeline=True,
         )
+        await UserConsentService(self.session).create_request(
+            subject_type="remote_assist",
+            subject_id=remote_session.id,
+            ticket_id=remote_session.ticket_id,
+            device_id=remote_session.device_id,
+            requester_person_id=getattr(ticket, "requester_person_id", None),
+            requester_binding_id=getattr(ticket, "requester_binding_id", None),
+            requester_account_session_id=getattr(ticket, "requester_account_session_id", None),
+            requested_by_actor_id=operator_id,
+            requested_by_role="support",
+            risk_level=_remote_assist_risk_level(mode),
+            policy_snapshot={
+                "mode": mode,
+                "duration_minutes": duration,
+                "consent_timeout_minutes": config.REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES,
+                "features": get_remote_assist_feature_flags(),
+            },
+            risk_explanation=_remote_assist_description(mode, duration),
+            requested_action_payload_redacted={
+                "session_id": remote_session.id,
+                "mode": mode,
+                "duration_minutes": duration,
+                "reason": reason,
+                "media": (remote_session.ice_config or {}).get("media", {}),
+                "features": (remote_session.ice_config or {}).get("features", {}),
+            },
+            title=_remote_assist_title(mode),
+            description=_remote_assist_description(mode, duration),
+            reason=reason,
+            expires_at=expires_at,
+            metadata={
+                "remote_assist_session_id": remote_session.id,
+                "mode": mode,
+                "operator_id": operator_id,
+            },
+        )
         return remote_session
 
-    async def send_request_to_agent(self, *, state: Any, remote_session: RemoteAccessSession) -> str:
+    async def send_request_to_agent(
+        self,
+        *,
+        state: Any,
+        remote_session: RemoteAccessSession,
+        consent_id: str | None = None,
+        consent_status: str | None = None,
+    ) -> str:
         ticket = await self.session.get(Ticket, remote_session.ticket_id)
         if ticket is None:
             raise RemoteAssistError("TICKET_NOT_FOUND", "Ticket not found", status=404)
@@ -191,6 +265,8 @@ class RemoteAssistService:
                 "reason": remote_session.reason,
                 "duration_minutes": max(1, int(remote_session.max_duration_sec / 60)),
                 "expires_at": remote_session.expires_at.isoformat(),
+                "consent_id": consent_id,
+                "consent_status": consent_status,
                 "features": get_remote_assist_feature_flags(),
                 "session_features": (remote_session.ice_config or {}).get("features", build_remote_assist_features()),
                 "media": (remote_session.ice_config or {}).get("media", build_remote_assist_media_options()),
@@ -208,6 +284,70 @@ class RemoteAssistService:
             write_timeline=False,
         )
         return command_id
+
+    async def approve_user_consent(
+        self,
+        *,
+        session_id: str,
+        state: Any,
+        actor_type: str,
+        actor_id: str | None,
+        consent_id: str,
+        reason: str | None = None,
+    ) -> RemoteAccessSession:
+        remote_session = await self._get_or_404(session_id)
+        if remote_session.status in {"ended", "denied", "expired", "failed", "canceled"}:
+            return remote_session
+        if remote_session.expires_at <= _utcnow():
+            await self.expire_session(remote_session, actor_type="system", reason="consent_timeout")
+            raise RemoteAssistError("CONSENT_TIMEOUT", "Remote Assist request expired", status=409)
+        remote_session.consent_status = "approved"
+        remote_session.updated_at = _utcnow()
+        await self.session.flush()
+        await self.log_event(
+            remote_session,
+            "consent_approved",
+            actor_type=actor_type,
+            actor_id=actor_id,
+            payload={"consent_id": consent_id, "reason": reason, "source": "user_consent"},
+            write_timeline=True,
+        )
+        await self.send_request_to_agent(
+            state=state,
+            remote_session=remote_session,
+            consent_id=consent_id,
+            consent_status="approved",
+        )
+        return remote_session
+
+    async def deny_user_consent(
+        self,
+        *,
+        session_id: str,
+        actor_type: str,
+        actor_id: str | None,
+        consent_id: str,
+        reason: str | None = None,
+    ) -> RemoteAccessSession:
+        remote_session = await self._get_or_404(session_id)
+        if remote_session.status in {"ended", "denied", "expired", "failed", "canceled"}:
+            return remote_session
+        await self.repo.set_status(
+            remote_session,
+            status="denied",
+            consent_status="denied",
+            close_reason=reason or "user_denied",
+            error_code="USER_DENIED",
+        )
+        await self.log_event(
+            remote_session,
+            "consent_denied",
+            actor_type=actor_type,
+            actor_id=actor_id,
+            payload={"consent_id": consent_id, "reason": reason or "user_denied", "source": "user_consent"},
+            write_timeline=True,
+        )
+        return remote_session
 
     async def approve_session(self, *, session_id: str, device_id: str) -> tuple[RemoteAccessSession, str]:
         remote_session = await self._get_or_404(session_id)

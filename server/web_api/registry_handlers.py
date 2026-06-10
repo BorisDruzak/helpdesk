@@ -681,7 +681,7 @@ async def _handle_registry_agent_consent_decision(request: web.Request, decision
             return validation
         device_id, account_session = validation
         try:
-            row = await UserConsentService(session).decide_from_agent(
+            row = await UserConsentService(session, state=request.app.get("state")).decide_from_agent(
                 consent_id=consent_id,
                 decision=decision,
                 device_id=device_id,

@@ -75,10 +75,11 @@ def serialize_user_consent(row: UserConsentRequest) -> dict[str, Any]:
 
 
 class UserConsentService:
-    def __init__(self, session: AsyncSession, *, publisher: Any = None):
+    def __init__(self, session: AsyncSession, *, publisher: Any = None, state: Any = None):
         self.session = session
         self.repo = UserConsentRepo(session)
         self.publisher = publisher
+        self.state = state
 
     async def create_request(
         self,
@@ -284,6 +285,9 @@ class UserConsentService:
         return changed
 
     async def _apply_subject_decision(self, row: UserConsentRequest, *, decision: str, actor_id: str, reason: str | None) -> None:
+        if row.subject_type == "remote_assist":
+            await self._apply_remote_assist_decision(row, decision=decision, actor_id=actor_id, reason=reason)
+            return
         if row.subject_type not in OPERATION_SUBJECT_TYPES:
             return
         operation = await OperationsRepo(self.session).get_by_operation_id(row.subject_id)
@@ -294,6 +298,43 @@ class UserConsentService:
             await service.approve_consent(row.subject_id, decided_by=actor_id, reason=reason)
         else:
             await service.deny_consent(row.subject_id, decided_by=actor_id, reason=reason)
+
+    async def _apply_remote_assist_decision(
+        self,
+        row: UserConsentRequest,
+        *,
+        decision: str,
+        actor_id: str,
+        reason: str | None,
+    ) -> None:
+        from remote_assist.service import RemoteAssistError, RemoteAssistService
+
+        service = RemoteAssistService(self.session)
+        if decision == "approved":
+            if self.state is None:
+                raise ConsentAccessError("remote assist state is unavailable", error_code="REMOTE_ASSIST_STATE_UNAVAILABLE", status=409)
+            try:
+                await service.approve_user_consent(
+                    session_id=row.subject_id,
+                    state=self.state,
+                    actor_type=row.decided_from_surface or "user_consent",
+                    actor_id=actor_id,
+                    consent_id=row.consent_id,
+                    reason=reason,
+                )
+            except RemoteAssistError as exc:
+                raise ConsentAccessError(exc.message, error_code=exc.error_code, status=exc.status) from exc
+        else:
+            try:
+                await service.deny_user_consent(
+                    session_id=row.subject_id,
+                    actor_type=row.decided_from_surface or "user_consent",
+                    actor_id=actor_id,
+                    consent_id=row.consent_id,
+                    reason=reason,
+                )
+            except RemoteAssistError as exc:
+                raise ConsentAccessError(exc.message, error_code=exc.error_code, status=exc.status) from exc
 
     async def _append_ticket_event(
         self,

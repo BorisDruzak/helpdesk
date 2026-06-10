@@ -118,28 +118,15 @@ async def handle_remote_assist_request(request: web.Request) -> web.Response:
                 feature_options=feature_options,
             )
             await session.commit()
-            try:
-                await service.send_request_to_agent(state=request.app["state"], remote_session=remote_session)
-                await session.commit()
-            except Exception as exc:
-                logger.warning(f"[remote_assist] consent command failed: session_id={remote_session.id} error={exc}")
-                await service.fail_session(
-                    session_id=remote_session.id,
-                    actor_type="system",
-                    actor_id=None,
-                    error_code="DEVICE_OFFLINE",
-                    error_message="Failed to deliver consent prompt",
-                )
-                await session.commit()
-                raise RemoteAssistError("DEVICE_OFFLINE", "Failed to deliver request to device", status=409) from exc
             return web.json_response(
                 {
                     "status": "ok",
                     "data": {
                         "session_id": remote_session.id,
                         "status": remote_session.status,
+                        "consent_status": remote_session.consent_status,
                         "expires_at": remote_session.expires_at.isoformat(),
-                        "message": "Запрос отправлен пользователю",
+                        "message": "Запрос согласия создан и ожидает решения пользователя",
                     },
                 }
             )
