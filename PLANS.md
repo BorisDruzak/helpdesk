@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy regression coverage is implemented locally and pending live verification.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy is implemented and live-verified.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -25,13 +25,13 @@ Latest live verification, 2026-06-08/09:
 - Authenticated requester no-device creation check used isolated requester `codex_stage2b_nodev_20260609153139@example.test` with no active bindings/devices and created ticket `T-000655`: Browser MCP/Playwright verified `/app/requester` login, no-device notice, required form completion, preview/submit, created-ticket notice, fresh reload persistence, and 0 console errors. Remote DB verification confirmed `requester_id`/`requester_person_id` match the live requester/person, `requester_binding_id IS NULL`, `requester_registration_status=no_device`, `requester_account_mode=browser_no_device`, `custom_fields.request_context=no_device`, `requester_account_context.account_mode=browser_no_device`, no `devices` row exists for the placeholder device id, and active binding count for the requester person is 0. Temporary no-device live users were deactivated after verification.
 - Authenticated requester device detail check used isolated requester `codex_stage2b_device_20260609182934@example.test`, owned device `stage2b-device-detail-20260609182934` and ticket `T-000656`: Browser MCP/Playwright verified `/app/requester` login, owned device list, opening device detail, safe hostname/asset facts, recent requester-owned ticket, 0 console errors, and screenshot `artifacts/requester-stage2b-device-detail/requester-device-detail-live.png`. Direct browser-authenticated API verified `GET /api/web/requester/devices/{device_id}` returns 200 with the expected device id, `open_ticket_count=1`, recent ticket id `84b3404c-7730-4579-9445-6ca11e0b5eaa`, no raw discovery marker leak, and unknown device returns 404. Remote DB verification confirmed user/person/device/asset/binding/ticket links, ticket `requester_account_mode=confirmed_binding`, the raw discovery marker exists only in `registry_assets.discovery_payload`, and cleanup deactivated the temporary UI user plus revoked the live binding.
 - Authenticated requester profile check used isolated requester `codex_stage2b_profile_20260609201103@example.test`, owned device `stage2b-profile-20260609201103`, active binding `89061f1c-ad5f-43cd-864e-8ee52b2f2c20` and pending claim `ee3eeb27-b133-49ca-a08e-a514e930c84b`: MCP/Playwright verified `/app/requester` login, opening profile detail, safe full name/phone/identity/device rendering, 0 console errors, and screenshot `artifacts/requester-stage2b-profile/requester-profile-live.png`. Browser-authenticated API verified `GET /api/web/requester/profile` returns 200, expected person id, identity providers `employee_id`/`ui_login`, one owned device, one active binding, one pending claim, `profile_policy.editable=false`, no raw `metadata_json`/`normalized_identifier`/marker leak, and `GET /api/web/requester/devices` count 1. Remote DB verification confirmed the UI user/person/device/binding/claim/identity links and raw marker exists only in `registry_person_identities.metadata_json`; cleanup deactivated the temporary UI user, revoked the binding, expired the pending claim and revoked active UI tokens.
+- Authenticated requester shared-device privacy check used isolated requesters `codex_stage2b_shared_fixed_20260610140948_primary@example.test` and `codex_stage2b_shared_fixed_20260610140948_shared@example.test`, one shared device `d687a3bb-1726-4efe-8740-3b8d0e47fa48`, active primary binding `8ea63735-1f3d-49c1-bfc5-e8c089a5d183` and active shared-user binding `2f6a8b00-30c1-4a82-98f8-42feb1249c88`. Browser-authenticated requester API created tickets `T-000659` and `T-000660` through `/api/web/requester/tickets`; MCP/Playwright verified `/app/requester` shows only the current requester's own ticket, `GET /api/web/requester/tickets` returns only the own ticket, `GET /api/web/requester/devices/{device_id}` returns `open_ticket_count=1` and only own recent ticket, and direct foreign `GET /api/web/requester/tickets/{ticket_id}` returns 404. The only console errors were the intentional negative 404 fetches. Screenshot saved as `requester-stage2b-shared-privacy-live.png`. Remote DB verification confirmed both tickets share the device but have distinct `requester_person_id`/`requester_binding_id`, `requester_account_mode=confirmed_binding`, binding relationships `primary_user`/`shared_user`; cleanup deactivated four temporary UI users from the fixed run and pre-fix setup run, revoked live bindings and active UI tokens. Pre-fix setup contamination tickets `T-000657`/`T-000658` remain as live-test artifacts tied to deactivated users.
 
 ## Remaining Work
 
 Stage 2B follow-up:
 
-- admin user to registry person linking workflow;
-- shared-device privacy live verification.
+- admin user to registry person linking workflow.
 
 Stage 3:
 
@@ -748,7 +748,7 @@ Common checks:
 - [x] Stage 2B no-device creation: authenticated requester create/preview now allows users with a resolved registry person and no registered devices to create a general request without browser-supplied `device_id`; the server assigns a placeholder `device_id`, stores `requester_account_mode=browser_no_device`, `request_context=no_device`, no binding id, and keeps requester visibility through `requester_person_id`; `/app/requester` enables the create form when no devices exist and omits `device_id` from the payload.
 - [x] Stage 2B requester device detail: authenticated `GET /api/web/requester/devices/{device_id}` returns owned-only safe device facts, open ticket count, available actions and recent requester-owned tickets; `/app/requester` opens the detail panel from the owned devices list; live browser/API/DB verification passed.
 - [x] Stage 2B requester profile: authenticated `GET /api/web/requester/profile` returns read-only safe requester profile detail, identity aliases, owned devices, active bindings, pending claims and profile edit policy; `/app/requester` opens the profile detail panel; live browser/API/DB verification passed.
-- [x] Stage 2B shared-device privacy coverage: authenticated requester bootstrap/ticket list/device detail/direct ticket access now has explicit regression coverage for two active users on one device, proving tickets stay scoped by requester person/binding instead of leaking by shared `device_id`. Local collect/compile/workspace sanity passed; live verification is pending.
+- [x] Stage 2B shared-device privacy: authenticated requester bootstrap/ticket list/device detail/direct ticket access now has explicit regression coverage for two active users on one device, proving tickets stay scoped by requester person/binding instead of leaking by shared `device_id`; browser requester create now persists non-primary shared-user confirmed bindings only after the requester wrapper validates ownership. Live browser/API/DB verification passed.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
@@ -784,13 +784,12 @@ Done in this slice:
 
 Deferred / next:
 
-- Stage 2B follow-up: shared-device privacy live verification.
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
 - Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
 
 Immediate next work:
 
-1. Complete Stage 2B shared-device privacy live verification, then continue the admin workflow for linking existing UI users to registry persons.
+1. Continue the Stage 2B admin workflow for linking existing UI users to registry persons.
 
 Before code changes, read the nested instructions for the target area:
 
