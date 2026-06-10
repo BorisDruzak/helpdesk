@@ -16,16 +16,24 @@ Audit update, 2026-06-10:
 - Remote Assist request creation rejects tickets without requester scope before creating a pending remote session or user consent.
 - DB uniqueness for one active pending consent per subject is present in migration `20260610_109_user_consent_requests.py` through partial unique index `ux_user_consent_requests_pending_subject`.
 
+Audit update, 2026-06-11:
+
+- Live Remote Assist approve-path on `https://192.168.100.17:9443` found and fixed a proxy-origin CSRF mismatch: browser cookie-auth approve with public origin `https://192.168.100.17:9443` was rejected before `server/auth/middleware.py` trusted reverse-proxy `Forwarded` / `X-Forwarded-Proto` + `X-Forwarded-Host` origins. Regression coverage: `test_web_session_cookie_auth_accepts_forwarded_public_origin`.
+- Renewed live Remote Assist browser approval now succeeds through cookie auth: support request creates one canonical `UserConsentRequest`, browser approve returns 200 without agent/session/signaling secrets, consent becomes `approved`, and `remote_assist.request` is delivered to the real online agent `7a3429ec-1c0b-5495-9aad-b284f08ae965`. Evidence: `artifacts/requester-agent-consent-audit-20260611-002201/api/live-remote-assist-http-after-csrf-fix.json` and `artifacts/requester-agent-consent-audit-20260611-002201/api/remote-assist-outbox-after-wait.json`.
+- The same live run exposed a remaining runtime gap: the real agent acknowledged and completed the delivered `remote_assist.request`, but the agent GUI/runtime did not call the technical `/api/remote-assist/{session_id}/approve`; `remote_access_sessions.status` stayed `waiting_consent` with `consent_status=approved` and no `agent_token_hash`. Do not mark Remote Assist approve-path fully complete until the agent starts/accepts the technical session.
+- DB integrity checks on the stand show no waiting tool consent orphans, no duplicate pending consent subjects, no missing pairing hashes, and no public-claim access-code event leak. One pre-hardening pending Remote Assist consent without `requester_person_id` remains from an older live run (`subject_id=cd96935c-1b37-4b59-a391-855757302565`) and must be expired/cleaned or explained before using global `pending_missing_requester_person=0` as a final gate.
+
 Current audit coverage matrix:
 
 | Flow | Backend endpoint | Frontend route | Agent path | Tests | Live evidence | Status | Gaps |
 |---|---|---|---|---|---|---|---|
 | Direct pairing GET inactive states | `GET /api/web/registry/browser-pairings/{pairing_id}` | `/app/device/register`, `/app/device/login` | pairing pickup polling | `test_web_user_direct_pairing_get_rejects_inactive_pairings_without_device_facts` | pending renewed run | hardened | Re-run expired/consumed/superseded live screenshots/API evidence. |
-| Browser cookie-auth state changes | auth middleware for `/api/web/*`, upload/artifact bridge paths | requester/admin/support webapp | none | `test_web_session_cookie_auth_unsafe_requests_require_same_origin`, bearer bypass test | pending renewed run | hardened | Re-run browser network evidence for representative requester POST. |
+| Browser cookie-auth state changes | auth middleware for `/api/web/*`, upload/artifact bridge paths | requester/admin/support webapp | none | `test_web_session_cookie_auth_unsafe_requests_require_same_origin`, `test_web_session_cookie_auth_accepts_forwarded_public_origin`, bearer bypass test | `live-remote-assist-http-after-csrf-fix.json` | live-verified for requester consent approve | Add browser screenshot/network evidence for broader requester POSTs. |
 | Support operation consent | `POST /api/web/support/tickets/{ticket_id}/tools/run` | `/app/tickets` | none until approve | `test_web_support_tool_action_keeps_consent_required_tool_waiting` | previous Stage 3 evidence; pending renewed run | hardened | Re-run DB orphan check. |
 | Legacy operation consent | `POST /api/tools/run` | legacy/API clients | none until approve | `test_legacy_tools_run_creates_user_consent_for_waiting_operation` | pending renewed run | hardened | Re-run DB orphan check. |
 | Retry operation consent | `POST /api/operations/{operation_id}/retry` | `/app/tickets` operation retry | none until approve | `test_retry_consent_required_operation_creates_waiting_consent_without_dispatch` | pending renewed run | hardened | Re-run approve path DB/outbox evidence. |
-| Remote Assist under-scoped ticket | remote assist service boundary | `/app/tickets`, consent center | start command only after approve | `test_remote_assist_rejects_ticket_without_requester_scope` | pending renewed run | hardened | Re-run real online agent approve path and deny path. |
+| Remote Assist approve path | `POST /api/web/support/tickets/{ticket_id}/remote-assist/request`, `POST /api/web/requester/consents/{consent_id}/approve` | `/app/tickets`, requester consent center | `remote_assist.request` delivered to online agent | `test_remote_assist_rejects_ticket_without_requester_scope`, remote assist service tests | `live-remote-assist-http-after-csrf-fix.json`, `remote-assist-outbox-after-wait.json` | partially live-verified | Browser approve and command delivery pass; agent technical `/api/remote-assist/{session_id}/approve` did not run, so session does not start yet. Re-run deny path. |
+| Remote Assist under-scoped ticket | remote assist service boundary | `/app/tickets`, consent center | start command only after approve | `test_remote_assist_rejects_ticket_without_requester_scope` | service tests; renewed request path evidence | hardened | Add renewed live negative request evidence. |
 
 Latest live verification, 2026-06-08/09:
 
@@ -63,8 +71,10 @@ Stage 3:
 - [x] atomic/idempotent consent decisions;
 - [x] requester browser consent prompts;
 - [x] agent GUI consent prompts;
-- [x] Remote Assist browser/agent consent integration.
+- [x] Remote Assist canonical browser consent creation/approve dispatch integration.
+- [ ] Remote Assist technical agent start after browser approval: real online agent currently receives and completes `remote_assist.request`, but does not call `/api/remote-assist/{session_id}/approve`, so the technical session does not move to `approved/starting`.
 - [ ] Renewed full live audit evidence after 2026-06-10 hardening: browser screenshots, console/network, API and DB checks for pairing, requester lifecycle/privacy, operation consent and Remote Assist approve/deny.
+- [ ] Clean up or explicitly classify the stale pre-hardening pending Remote Assist consent without `requester_person_id` before final global DB integrity signoff.
 
 ## Goal
 
