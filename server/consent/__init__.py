@@ -1,0 +1,1 @@
+"""User consent domain services."""

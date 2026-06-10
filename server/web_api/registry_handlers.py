@@ -8,6 +8,7 @@ from app.db import get_session
 from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser
 from auth.middleware import require_auth
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
+from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
@@ -49,6 +50,57 @@ def _forbidden(message: str = "forbidden") -> web.Response:
 def _browser_pairing_next_url(payload: dict) -> str:
     route_purpose = "register" if payload.get("purpose") == "registration" else "login"
     return f"/app/device/{route_purpose}?pairing_id={payload['pairing_id']}"
+
+
+def _consent_status_filter(request: web.Request) -> list[str] | None:
+    raw = str(request.query.get("status") or "").strip()
+    if not raw:
+        return None
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def _account_session_credentials(request: web.Request, data: dict | None = None) -> tuple[str | None, str | None]:
+    data = data or {}
+    session_id = (
+        str(request.headers.get("X-Account-Session-Id") or "").strip()
+        or str(request.query.get("account_session_id") or "").strip()
+        or str(data.get("account_session_id") or data.get("session_id") or "").strip()
+        or None
+    )
+    token = (
+        str(request.headers.get("X-Account-Session-Token") or "").strip()
+        or str(data.get("session_token") or "").strip()
+        or None
+    )
+    return session_id, token
+
+
+async def _validate_agent_account_session(request: web.Request, session, data: dict | None = None) -> tuple[str, dict] | web.Response:
+    auth_context = request["auth_context"]
+    try:
+        device_id = _validate_uuid_device_id(auth_context.actor_id)
+    except RegistrationValidationError as exc:
+        return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    if not device_id:
+        return web.json_response({"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"}, status=400)
+    session_id, session_token = _account_session_credentials(request, data)
+    if not session_id:
+        return web.json_response({"status": "error", "error": "account session is required", "error_code": "ACCOUNT_SESSION_REQUIRED"}, status=403)
+    validation = await AccountSessionService(session).validate_session(
+        device_id=device_id,
+        session_id=session_id,
+        session_token=session_token,
+    )
+    if not validation.get("valid"):
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "account_session_invalid",
+                "error_code": str(validation.get("error_code") or "ACCOUNT_SESSION_INVALID"),
+            },
+            status=403,
+        )
+    return device_id, validation.get("session") or {}
 
 
 async def _resolve_submit_device_id(request: web.Request, data: dict, *, legacy: bool = False) -> str | web.Response:
@@ -581,6 +633,80 @@ async def handle_registry_agent_account_session_validate(request: web.Request) -
         )
     status = 200 if payload.get("valid") else 403
     return _success(payload) if status == 200 else web.json_response({"status": "error", "data": payload, "error_code": payload.get("error_code")}, status=status)
+
+
+@require_auth("agent")
+async def handle_registry_agent_consents(request: web.Request) -> web.Response:
+    async with get_session() as session:
+        validation = await _validate_agent_account_session(request, session)
+        if isinstance(validation, web.Response):
+            return validation
+        device_id, account_session = validation
+        items = await UserConsentService(session).list_for_agent(
+            device_id=device_id,
+            account_session=account_session,
+            statuses=_consent_status_filter(request),
+        )
+        await session.commit()
+    return _success({"consents": items, "count": len(items)})
+
+
+@require_auth("agent")
+async def handle_registry_agent_consent_detail(request: web.Request) -> web.Response:
+    consent_id = str(request.match_info.get("consent_id") or "").strip()
+    async with get_session() as session:
+        validation = await _validate_agent_account_session(request, session)
+        if isinstance(validation, web.Response):
+            return validation
+        device_id, account_session = validation
+        row = await UserConsentService(session).get_for_agent(
+            consent_id=consent_id,
+            device_id=device_id,
+            account_session=account_session,
+        )
+        await session.commit()
+    if row is None:
+        return web.json_response({"status": "error", "error": "consent not found", "error_code": "NOT_FOUND"}, status=404)
+    return _success({"consent": serialize_user_consent(row)})
+
+
+async def _handle_registry_agent_consent_decision(request: web.Request, decision: str) -> web.Response:
+    consent_id = str(request.match_info.get("consent_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    if not isinstance(data, dict):
+        data = {}
+    async with get_session() as session:
+        validation = await _validate_agent_account_session(request, session, data)
+        if isinstance(validation, web.Response):
+            return validation
+        device_id, account_session = validation
+        try:
+            row = await UserConsentService(session).decide_from_agent(
+                consent_id=consent_id,
+                decision=decision,
+                device_id=device_id,
+                account_session=account_session,
+                actor_id=str(account_session.get("person_id") or request["auth_context"].actor_id),
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+        except ConsentAccessError as exc:
+            await session.rollback()
+            return web.json_response({"status": "error", "error": str(exc), "error_code": exc.error_code}, status=exc.status)
+        except ValueError as exc:
+            await session.rollback()
+            return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success({"consent": serialize_user_consent(row)})
+
+
+@require_auth("agent")
+async def handle_registry_agent_consent_approve(request: web.Request) -> web.Response:
+    return await _handle_registry_agent_consent_decision(request, "approved")
+
+
+@require_auth("agent")
+async def handle_registry_agent_consent_deny(request: web.Request) -> web.Response:
+    return await _handle_registry_agent_consent_decision(request, "denied")
 
 
 @require_auth("admin", "support", "agent")

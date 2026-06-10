@@ -11,6 +11,7 @@ from app.db import get_session
 from app.repos import ArtifactsRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
+from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
 from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
 from knowledge.feedback_service import KnowledgeFeedbackService
 from quality.feedback_service import TicketFeedbackService
@@ -88,6 +89,13 @@ async def _json_body(request: web.Request) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def _status_filter(request: web.Request) -> list[str] | None:
+    raw = _clean(request.query.get("status"), max_length=120)
+    if not raw:
+        return None
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 @require_auth("user")
 async def handle_web_requester_bootstrap(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
@@ -161,6 +169,73 @@ async def handle_web_requester_ticket_detail(request: web.Request) -> web.Respon
             "events": [_serialize_event_for_requester(event, ticket=ticket) for event in visible_events],
         }
     )
+
+
+@require_auth("user")
+async def handle_web_requester_consents(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        items = await UserConsentService(session).list_for_requester(
+            requester_person_id=person.person_id if person else None,
+            statuses=_status_filter(request),
+        )
+        await session.commit()
+    return _success({"consents": items, "count": len(items)})
+
+
+@require_auth("user")
+async def handle_web_requester_consent_detail(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    consent_id = _clean(request.match_info.get("consent_id"), max_length=80)
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        row = await UserConsentService(session).get_for_requester(
+            consent_id=consent_id,
+            requester_person_id=person.person_id if person else None,
+        )
+        await session.commit()
+    if row is None:
+        return _error("consent not found", status=404, error_code="NOT_FOUND")
+    return _success({"consent": serialize_user_consent(row)})
+
+
+async def _handle_web_requester_consent_decision(request: web.Request, decision: str) -> web.Response:
+    auth_context = request["auth_context"]
+    consent_id = _clean(request.match_info.get("consent_id"), max_length=80)
+    data = await _json_body(request)
+    reason = _clean(data.get("reason"), max_length=1000)
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        try:
+            row = await UserConsentService(session).decide_from_browser(
+                consent_id=consent_id,
+                decision=decision,
+                requester_person_id=person.person_id if person else None,
+                actor_id=auth_context.actor_id,
+                reason=reason,
+            )
+            await session.commit()
+        except ConsentAccessError as exc:
+            await session.rollback()
+            return _error(str(exc), status=exc.status, error_code=exc.error_code)
+        except ValueError as exc:
+            await session.rollback()
+            return _error(str(exc), status=400, error_code="VALIDATION_ERROR")
+    return _success({"consent": serialize_user_consent(row)})
+
+
+@require_auth("user")
+async def handle_web_requester_consent_approve(request: web.Request) -> web.Response:
+    return await _handle_web_requester_consent_decision(request, "approved")
+
+
+@require_auth("user")
+async def handle_web_requester_consent_deny(request: web.Request) -> web.Response:
+    return await _handle_web_requester_consent_decision(request, "denied")
 
 
 @require_auth("user")

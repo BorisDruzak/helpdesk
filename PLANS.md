@@ -5,7 +5,7 @@ Status:
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
 - Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy is implemented and live-verified; admin UI user to RegistryPerson linking is implemented.
-- Stage 3: unified browser/agent requester consent layer is not implemented yet.
+- Stage 3: unified browser/agent requester consent backend slice is implemented for `UserConsentRequest`, requester/agent APIs and operation approval/deny side effects; requester/agent UI prompts and Remote Assist integration remain follow-up.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
 Latest live verification, 2026-06-08/09:
@@ -751,16 +751,16 @@ Common checks:
 - [x] Stage 2B requester device detail: authenticated `GET /api/web/requester/devices/{device_id}` returns owned-only safe device facts, open ticket count, available actions and recent requester-owned tickets; `/app/requester` opens the detail panel from the owned devices list; live browser/API/DB verification passed.
 - [x] Stage 2B requester profile: authenticated `GET /api/web/requester/profile` returns read-only safe requester profile detail, identity aliases, owned devices, active bindings, pending claims and profile edit policy; `/app/requester` opens the profile detail panel; live browser/API/DB verification passed.
 - [x] Stage 2B shared-device privacy: authenticated requester bootstrap/ticket list/device detail/direct ticket access now has explicit regression coverage for two active users on one device, proving tickets stay scoped by requester person/binding instead of leaking by shared `device_id`; browser requester create now persists non-primary shared-user confirmed bindings only after the requester wrapper validates ownership. Live browser/API/DB verification passed.
-- [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
-- [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
-- [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
-- [ ] Stage 3 backend: implement `UserConsentRequest`, requester/agent APIs and operation transition integration.
+- [x] Stage 2B admin: connected UI users to registry persons through explicit admin workflow and live-verified the admin Registry People UI/API/DB path.
+- [x] Stage 3 design: confirmed canonical `UserConsentRequest`, requester/agent API ownership model, operation transition side effect boundary and deferred Remote Assist boundary.
+- [x] Stage 3 tests: added consent ownership, idempotency, expiry and browser/agent decision coverage in `server/tests/test_user_consent_api.py`; local DB pytest execution currently times out in the existing harness even for older requester tests, while collection passes.
+- [x] Stage 3 backend: implemented `UserConsentRequest`, migration `109`, requester/agent consent APIs, active binding/session checks, one pending consent per subject, atomic first-decision-wins transitions and operation approve/deny side effects.
 - [ ] Stage 3 frontend/agent: implement requester consent center and agent prompts.
 - [ ] Stage 3 verification and docs.
 
 ## Handoff
 
-Continue with a Stage 2B requester-workspace slice unless the user explicitly asks for Stage 3 consent work first. Stage 1 and Stage 2A live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
+Continue with Stage 3 frontend/agent consent prompts and Remote Assist consent integration unless a backend live check finds a regression. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
 
 Done in this slice:
 
@@ -787,11 +787,11 @@ Done in this slice:
 Deferred / next:
 
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
-- Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
+- Stage 3 follow-up: requester browser consent center, agent GUI consent prompts, Remote Assist consent integration, live browser/agent smoke and remote DB verification. Backend `UserConsentRequest`, requester/agent APIs, operation consent integration and atomic/idempotent decisions are implemented.
 
 Immediate next work:
 
-1. Continue the Stage 2B admin workflow for linking existing UI users to registry persons.
+1. Continue Stage 3 with requester browser consent center and agent GUI consent prompts.
 
 Before code changes, read the nested instructions for the target area:
 

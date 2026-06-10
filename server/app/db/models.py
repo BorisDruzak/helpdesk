@@ -5565,6 +5565,79 @@ class ConsentDecision(Base):
         )
 
 
+class UserConsentRequest(Base):
+    """Canonical requester consent request shared by browser and agent surfaces."""
+
+    __tablename__ = "user_consent_requests"
+
+    consent_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    subject_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="SET NULL"), nullable=True)
+    requester_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
+    requester_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
+    requester_account_session_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("device_account_sessions.session_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    requested_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_by_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    risk_level: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    policy_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    risk_explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requested_action_payload_redacted: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    expires_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    decided_by_actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decided_by_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    decided_from_surface: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    decided_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "subject_type IN ('operation', 'remote_assist', 'diagnostic', 'tool_run', 'file_transfer', 'clipboard', 'elevated')",
+            name="ck_user_consent_requests_subject_type",
+        ),
+        sa.CheckConstraint(
+            "status IN ('pending', 'approved', 'denied', 'expired', 'superseded', 'canceled')",
+            name="ck_user_consent_requests_status",
+        ),
+        sa.CheckConstraint(
+            "decided_from_surface IS NULL OR decided_from_surface IN ('browser', 'agent_gui', 'api')",
+            name="ck_user_consent_requests_surface",
+        ),
+        Index("ix_user_consent_requests_status_expires", "status", "expires_at"),
+        Index("ix_user_consent_requests_person_status", "requester_person_id", "status"),
+        Index("ix_user_consent_requests_device_status", "device_id", "status"),
+        Index("ix_user_consent_requests_ticket", "ticket_id"),
+        Index("ix_user_consent_requests_subject", "subject_type", "subject_id"),
+        Index(
+            "ux_user_consent_requests_pending_subject",
+            "subject_type",
+            "subject_id",
+            unique=True,
+            postgresql_where=sa.text("status = 'pending'"),
+        ),
+    )
+
+
 class DownloadAudit(Base):
     """
     Download audit model for tracking module downloads.

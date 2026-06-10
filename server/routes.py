@@ -126,6 +126,10 @@ from web_api.change_handlers import (
 from web_api.approval_handlers import handle_web_support_approvals
 from web_api.requester_handlers import (
     handle_web_requester_bootstrap,
+    handle_web_requester_consent_approve,
+    handle_web_requester_consent_deny,
+    handle_web_requester_consent_detail,
+    handle_web_requester_consents,
     handle_web_requester_device_detail,
     handle_web_requester_devices,
     handle_web_requester_profile,
@@ -489,6 +493,10 @@ from web_api.knowledge_handlers import (
 )
 from web_api.registry_handlers import (
     handle_registry_agent_claim_confirm,
+    handle_registry_agent_consent_approve,
+    handle_registry_agent_consent_deny,
+    handle_registry_agent_consent_detail,
+    handle_registry_agent_consents,
     handle_registry_agent_account_state,
     handle_registry_agent_account_login_request_create,
     handle_registry_agent_account_login_request_get,
@@ -1021,6 +1029,10 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/registry/agent/browser-pairings/{pairing_id}', handle_registry_agent_browser_pairing_get),
         web.post('/api/registry/agent/account-login-requests', handle_registry_agent_account_login_request_create),
         web.get('/api/registry/agent/account-login-requests/{request_id}', handle_registry_agent_account_login_request_get),
+        web.get('/api/registry/agent/consents', handle_registry_agent_consents),
+        web.get('/api/registry/agent/consents/{consent_id}', handle_registry_agent_consent_detail),
+        web.post('/api/registry/agent/consents/{consent_id}/approve', handle_registry_agent_consent_approve),
+        web.post('/api/registry/agent/consents/{consent_id}/deny', handle_registry_agent_consent_deny),
         web.get('/api/registry/agent/registration-form', handle_registry_agent_registration_form),
         web.get('/api/registry/agent/registration-status', handle_registry_agent_registration_status),
         web.post('/api/registry/agent/claims/{claim_id}/confirm', handle_registry_agent_claim_confirm),
@@ -1030,6 +1042,10 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/registry/browser-pairings/{pairing_id}/registration/confirm', handle_web_registry_browser_pairing_registration_confirm),
         web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
+        web.get('/api/web/requester/consents', handle_web_requester_consents),
+        web.get('/api/web/requester/consents/{consent_id}', handle_web_requester_consent_detail),
+        web.post('/api/web/requester/consents/{consent_id}/approve', handle_web_requester_consent_approve),
+        web.post('/api/web/requester/consents/{consent_id}/deny', handle_web_requester_consent_deny),
         web.get('/api/web/requester/devices', handle_web_requester_devices),
         web.get('/api/web/requester/devices/{device_id}', handle_web_requester_device_detail),
         web.get('/api/web/requester/tickets', handle_web_requester_tickets),
