@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import (
     Artifact,
     Device,
+    DeviceUserBinding,
     KnowledgeFeedbackEvent,
     RegistryAsset,
     RegistryPerson,
@@ -188,6 +189,121 @@ async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_
     tickets_payload = await tickets.json()
     assert tickets.status == 200, tickets_payload
     assert session_payload["ticket_id"] in {item["ticket_id"] for item in tickets_payload["data"]["tickets"]}
+
+
+@pytest.mark.asyncio
+async def test_requester_shared_device_tickets_stay_scoped_to_person_and_binding(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    primary_login = "requester-shared-primary@example.test"
+    shared_login = "requester-shared-secondary@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "shared-privacy-device"))
+        primary = await _approved_binding(session, device_id=device_id, login=primary_login)
+        shared_person = await _person_for_login(session, login=shared_login)
+        shared_binding = DeviceUserBinding(
+            binding_id=str(uuid.uuid4()),
+            device_id=device_id,
+            person_id=shared_person.person_id,
+            relationship_type="shared_user",
+            status="active",
+            source="test",
+            confirmed_at=datetime.now(timezone.utc),
+        )
+        session.add(shared_binding)
+        primary_ticket = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=primary_login,
+            title="Primary shared device ticket",
+            description="Visible only to the primary requester",
+            user_display_name="Requester Shared Primary",
+            requester_profile={"full_name": "Requester Shared Primary", "email": primary_login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": primary["person"]["person_id"],
+                "binding_id": primary["binding"]["binding_id"],
+                "validation": "web_requester_identity_resolved",
+            },
+            include_public_access=True,
+        )
+        shared_ticket = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=shared_login,
+            title="Secondary shared device ticket",
+            description="Visible only to the shared requester",
+            user_display_name="Requester Shared Secondary",
+            requester_profile={"full_name": "Requester Shared Secondary", "email": shared_login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": shared_person.person_id,
+                "binding_id": shared_binding.binding_id,
+                "validation": "web_requester_identity_resolved",
+            },
+            include_public_access=True,
+        )
+        await session.commit()
+
+    primary_headers = _headers(f"{TEST_UI_USER_PREFIX}{primary_login}")
+    shared_headers = _headers(f"{TEST_UI_USER_PREFIX}{shared_login}")
+    primary_ticket_id = primary_ticket["ticket_id"]
+    shared_ticket_id = shared_ticket["ticket_id"]
+
+    primary_list = await test_client.get("/api/web/requester/tickets", headers=primary_headers)
+    primary_payload = await primary_list.json()
+    assert primary_list.status == 200, primary_payload
+    primary_ids = {item["ticket_id"] for item in primary_payload["data"]["tickets"]}
+    assert primary_ticket_id in primary_ids
+    assert shared_ticket_id not in primary_ids
+
+    shared_list = await test_client.get("/api/web/requester/tickets", headers=shared_headers)
+    shared_payload = await shared_list.json()
+    assert shared_list.status == 200, shared_payload
+    shared_ids = {item["ticket_id"] for item in shared_payload["data"]["tickets"]}
+    assert shared_ticket_id in shared_ids
+    assert primary_ticket_id not in shared_ids
+
+    shared_bootstrap = await test_client.get("/api/web/requester/bootstrap", headers=shared_headers)
+    shared_bootstrap_payload = await shared_bootstrap.json()
+    assert shared_bootstrap.status == 200, shared_bootstrap_payload
+    assert shared_bootstrap_payload["data"]["devices"][0]["device_id"] == device_id
+    assert shared_bootstrap_payload["data"]["active_bindings"][0]["relationship_type"] == "shared_user"
+    shared_bootstrap_ticket_ids = {
+        item["ticket_id"] for item in shared_bootstrap_payload["data"]["recent_tickets"]
+    }
+    assert shared_ticket_id in shared_bootstrap_ticket_ids
+    assert primary_ticket_id not in shared_bootstrap_ticket_ids
+
+    shared_device = await test_client.get(
+        f"/api/web/requester/devices/{device_id}",
+        headers=shared_headers,
+    )
+    shared_device_payload = await shared_device.json()
+    assert shared_device.status == 200, shared_device_payload
+    assert shared_device_payload["data"]["device"]["relationship_type"] == "shared_user"
+    assert shared_device_payload["data"]["device"]["open_ticket_count"] == 1
+    shared_recent_ids = {item["ticket_id"] for item in shared_device_payload["data"]["recent_tickets"]}
+    assert shared_ticket_id in shared_recent_ids
+    assert primary_ticket_id not in shared_recent_ids
+
+    primary_detail = await test_client.get(
+        f"/api/web/requester/tickets/{shared_ticket_id}",
+        headers=primary_headers,
+    )
+    primary_detail_payload = await primary_detail.json()
+    assert primary_detail.status == 404, primary_detail_payload
+    assert primary_detail_payload["error_code"] == "NOT_FOUND"
+
+    shared_detail = await test_client.get(
+        f"/api/web/requester/tickets/{primary_ticket_id}",
+        headers=shared_headers,
+    )
+    shared_detail_payload = await shared_detail.json()
+    assert shared_detail.status == 404, shared_detail_payload
+    assert shared_detail_payload["error_code"] == "NOT_FOUND"
 
 
 @pytest.mark.asyncio

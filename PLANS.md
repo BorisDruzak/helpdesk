@@ -4,7 +4,7 @@ Status:
 
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified.
+- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy regression coverage is implemented locally and pending live verification.
 - Stage 3: unified browser/agent requester consent layer is not implemented yet.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
@@ -31,7 +31,7 @@ Latest live verification, 2026-06-08/09:
 Stage 2B follow-up:
 
 - admin user to registry person linking workflow;
-- shared-device privacy coverage.
+- shared-device privacy live verification.
 
 Stage 3:
 
@@ -748,6 +748,7 @@ Common checks:
 - [x] Stage 2B no-device creation: authenticated requester create/preview now allows users with a resolved registry person and no registered devices to create a general request without browser-supplied `device_id`; the server assigns a placeholder `device_id`, stores `requester_account_mode=browser_no_device`, `request_context=no_device`, no binding id, and keeps requester visibility through `requester_person_id`; `/app/requester` enables the create form when no devices exist and omits `device_id` from the payload.
 - [x] Stage 2B requester device detail: authenticated `GET /api/web/requester/devices/{device_id}` returns owned-only safe device facts, open ticket count, available actions and recent requester-owned tickets; `/app/requester` opens the detail panel from the owned devices list; live browser/API/DB verification passed.
 - [x] Stage 2B requester profile: authenticated `GET /api/web/requester/profile` returns read-only safe requester profile detail, identity aliases, owned devices, active bindings, pending claims and profile edit policy; `/app/requester` opens the profile detail panel; live browser/API/DB verification passed.
+- [x] Stage 2B shared-device privacy coverage: authenticated requester bootstrap/ticket list/device detail/direct ticket access now has explicit regression coverage for two active users on one device, proving tickets stay scoped by requester person/binding instead of leaking by shared `device_id`. Local collect/compile/workspace sanity passed; live verification is pending.
 - [ ] Stage 2B admin: connect UI users to registry persons through explicit admin workflow.
 - [ ] Stage 3 design: confirm consent entity, operation integration and Remote Assist boundary.
 - [ ] Stage 3 tests: add consent ownership, idempotency, expiry and browser/agent decision coverage.
@@ -779,17 +780,17 @@ Done in this slice:
 - requester knowledge suggestions reuse in authenticated create flow with sanitized attempts and deflection metrics;
 - requester attachment upload/message/download through owned-ticket browser workspace controls;
 - public ticket claim-to-account through `/api/web/requester/tickets/claim-public` and `/app/requester`;
-- local backend/frontend coverage for owned visibility, foreign-device denial and foreign-ticket lifecycle denial.
+- local backend/frontend coverage for owned visibility, shared-device privacy, foreign-device denial and foreign-ticket lifecycle denial.
 
 Deferred / next:
 
-- Stage 2B follow-up: shared-device privacy coverage.
+- Stage 2B follow-up: shared-device privacy live verification.
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
 - Stage 3 follow-up: canonical `UserConsentRequest`, requester/agent consent APIs, operation/Remote Assist integration, browser requester prompts, agent GUI prompts and atomic/idempotent decisions.
 
 Immediate next work:
 
-1. Continue Stage 2B shared-device privacy coverage or the admin workflow for linking existing UI users to registry persons.
+1. Complete Stage 2B shared-device privacy live verification, then continue the admin workflow for linking existing UI users to registry persons.
 
 Before code changes, read the nested instructions for the target area:
 
