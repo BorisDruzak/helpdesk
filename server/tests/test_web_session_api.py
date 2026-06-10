@@ -374,6 +374,45 @@ async def test_web_session_cookie_auth_unsafe_requests_require_same_origin(monke
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_web_session_cookie_auth_accepts_forwarded_public_origin(monkeypatch):
+    async def fake_verify_ui_token(_self, token: str):
+        if token != "cookie-token":
+            return None
+        return {
+            "user_login": "requester-cookie",
+            "actor_role": "user",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "ui",
+        }
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+
+    async def protected_handler(request: web.Request):
+        return web.json_response({"status": "ok", "actor_id": request["auth_context"].actor_id})
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    app.router.add_post("/api/web/requester/consents/consent-1/approve", protected_handler)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/requester/consents/consent-1/approve",
+            headers={
+                "Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token",
+                "Origin": "https://192.168.100.17:9443",
+                "X-Forwarded-Proto": "https",
+                "X-Forwarded-Host": "192.168.100.17:9443",
+            },
+            json={"reason": "approve"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {"status": "ok", "actor_id": "requester-cookie"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_bearer_ui_token_unsafe_request_is_not_origin_gated(monkeypatch):
     async def fake_verify_ui_token(_self, token: str):
         if token != "bearer-token":

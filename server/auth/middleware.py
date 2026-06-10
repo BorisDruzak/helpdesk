@@ -153,6 +153,67 @@ def _origin_value(value: str | None) -> str | None:
     return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
 
 
+def _first_header_value(value: str | None) -> str | None:
+    first = str(value or "").split(",", 1)[0].strip()
+    return first or None
+
+
+def _clean_forwarded_part(value: str | None) -> str | None:
+    clean = str(value or "").strip().strip('"').strip("'")
+    return clean or None
+
+
+def _origin_from_parts(scheme: str | None, host: str | None) -> str | None:
+    scheme = str(scheme or "").strip().lower()
+    host = str(host or "").strip().lower()
+    if not scheme or not host or scheme not in {"http", "https"}:
+        return None
+    return f"{scheme}://{host}"
+
+
+def _forwarded_origin(request: web.Request) -> str | None:
+    forwarded = _first_header_value(request.headers.get("Forwarded"))
+    if forwarded:
+        parts: dict[str, str] = {}
+        for item in forwarded.split(";"):
+            if "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            parts[key.strip().lower()] = _clean_forwarded_part(value) or ""
+        origin = _origin_from_parts(parts.get("proto"), parts.get("host"))
+        if origin:
+            return origin
+
+    forwarded_host = _first_header_value(request.headers.get("X-Forwarded-Host"))
+    forwarded_proto = _first_header_value(request.headers.get("X-Forwarded-Proto"))
+    if not forwarded_proto and str(request.headers.get("X-Forwarded-Ssl", "")).lower() == "on":
+        forwarded_proto = "https"
+    return _origin_from_parts(forwarded_proto, forwarded_host)
+
+
+def _configured_csrf_origins() -> set[str]:
+    origins: set[str] = set()
+    raw = str(getattr(config, "WEB_CSRF_TRUSTED_ORIGINS", "") or "")
+    for item in raw.split(","):
+        origin = _origin_value(item)
+        if origin:
+            origins.add(origin)
+    return origins
+
+
+def _request_allowed_origins(request: web.Request) -> set[str]:
+    scheme = "https" if request.secure else "http"
+    allowed = {_origin_from_parts(scheme, request.host)}
+    forwarded = _forwarded_origin(request)
+    if forwarded:
+        allowed.add(forwarded)
+    public_base = _origin_value(getattr(config, "SERVER_PUBLIC_BASE_URL", ""))
+    if public_base:
+        allowed.add(public_base)
+    allowed.update(_configured_csrf_origins())
+    return {origin for origin in allowed if origin}
+
+
 def _same_origin_error(request: web.Request) -> tuple[str, str] | None:
     if not bool(getattr(config, "WEB_CSRF_SAME_ORIGIN_ENABLED", True)):
         return None
@@ -165,12 +226,7 @@ def _same_origin_error(request: web.Request) -> tuple[str, str] | None:
     if supplied is None:
         return "CSRF_ORIGIN_REQUIRED", "Origin or Referer header is required for cookie-auth state changes"
 
-    scheme = "https" if request.secure else "http"
-    allowed = {f"{scheme}://{request.host.lower()}"}
-    public_base = _origin_value(getattr(config, "SERVER_PUBLIC_BASE_URL", ""))
-    if public_base:
-        allowed.add(public_base)
-    if supplied not in allowed:
+    if supplied not in _request_allowed_origins(request):
         return "CSRF_ORIGIN_MISMATCH", "Origin or Referer does not match this server"
     return None
 
