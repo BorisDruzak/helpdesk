@@ -5,7 +5,7 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity
+from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser
 from auth.middleware import require_auth
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from registry.account_state_service import build_agent_account_state
@@ -1122,6 +1122,100 @@ async def handle_web_admin_registry_person_identity_create(request: web.Request)
             "source": identity.source,
             "last_seen_at": identity.last_seen_at.isoformat() if identity.last_seen_at else None,
         }}
+        await session.commit()
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_ui_user_link_person(request: web.Request) -> web.Response:
+    user_login = str(request.match_info.get("user_login") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    person_id = str(data.get("person_id") or "").strip()
+    auth_context = request["auth_context"]
+    if not user_login or not person_id:
+        return web.json_response({"status": "error", "error": "user_login and person_id are required", "error_code": "VALIDATION_ERROR"}, status=400)
+    async with get_session() as session:
+        user = await session.get(UiUser, user_login)
+        if user is None:
+            return web.json_response({"status": "error", "error": "ui user not found", "error_code": "NOT_FOUND"}, status=404)
+        person = await session.get(RegistryPerson, person_id)
+        if person is None:
+            return web.json_response({"status": "error", "error": "person not found", "error_code": "NOT_FOUND"}, status=404)
+        repo = RegistrationService(session).repo
+        before_identity = await repo.find_identity("ui_login", user.user_login)
+        before_verified = bool(before_identity.verified) if before_identity is not None else False
+        identity = await repo.create_or_update_person_identity(
+            person_id=person_id,
+            provider="ui_login",
+            identifier=user.user_login,
+            verified=True,
+            source="admin_manual",
+            metadata={"reason": _text(data.get("reason"), max_length=1000), "ui_user_login": user.user_login},
+        )
+        if identity is None:
+            return web.json_response({"status": "error", "error": "identity is empty", "error_code": "VALIDATION_ERROR"}, status=400)
+        if identity.person_id != person_id:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "ui user login already belongs to another person",
+                    "error_code": "IDENTITY_COLLISION",
+                    "collision_person_id": identity.person_id,
+                },
+                status=409,
+            )
+        event_type = "identity_added" if before_identity is None else ("identity_verified" if not before_verified else "identity_updated")
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="identity",
+            object_id=identity.identity_id,
+            event_type=event_type,
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=_text(data.get("reason"), max_length=1000),
+            related_person_id=person_id,
+            payload={
+                "identity_id": identity.identity_id,
+                "person_id": person_id,
+                "ui_user_login": user.user_login,
+                "after": {
+                    "provider": identity.provider,
+                    "identifier": identity.identifier,
+                    "normalized_identifier": identity.normalized_identifier,
+                    "verified": identity.verified,
+                    "source": identity.source,
+                },
+            },
+        )
+        payload = {
+            "ui_user": {
+                "user_login": user.user_login,
+                "actor_role": user.actor_role,
+                "is_active": bool(user.is_active),
+                "failed_attempts": int(user.failed_attempts or 0),
+                "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+                "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                "linked_person_id": person.person_id,
+                "linked_person_name": person.display_name,
+                "linked_identity_id": identity.identity_id,
+                "linked_identity_verified": bool(identity.verified),
+            },
+            "person": {
+                "person_id": person.person_id,
+                "display_name": person.display_name,
+                "email": person.email,
+                "status": person.status,
+            },
+            "identity": {
+                "identity_id": identity.identity_id,
+                "person_id": identity.person_id,
+                "provider": identity.provider,
+                "identifier": identity.identifier,
+                "normalized_identifier": identity.normalized_identifier,
+                "verified": identity.verified,
+                "source": identity.source,
+                "last_seen_at": identity.last_seen_at.isoformat() if identity.last_seen_at else None,
+            },
+        }
         await session.commit()
     return _success(payload)
 

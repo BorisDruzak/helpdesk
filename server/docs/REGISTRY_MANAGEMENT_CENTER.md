@@ -7,6 +7,7 @@
 - Active device-user relations live in `device_user_bindings`.
 - `registry_assets.assigned_person_id` and `device_inventory_bindings.person_id/source_binding_id/registration_status` are derived state.
 - Binding lifecycle operations must go through `RegistrationService`.
+- UI login to registry-person links are represented only as verified `registry_person_identities(provider='ui_login')`; `ui_users` rows are not duplicated into person records.
 - Account sessions are revoked through `AccountSessionService` when bindings are revoked or transferred.
 - Location, department, policy, merge and bulk admin actions write `registry_admin_events`.
 - Person and identity admin mutations write `registry_admin_events` (`person_created`, `person_updated`, `identity_added`, `identity_verified`, `identity_deleted`).
@@ -28,6 +29,7 @@
   - `POST /api/web/admin/registry/people`
   - `PATCH /api/web/admin/registry/people/{person_id}`
   - `POST /api/web/admin/registry/people/{person_id}/identities`
+  - `POST /api/web/admin/registry/ui-users/{user_login}/link-person`
   - `PATCH /api/web/admin/registry/identities/{identity_id}`
   - `DELETE /api/web/admin/registry/identities/{identity_id}`
   - `POST /api/web/admin/registry/people/merge/preview`

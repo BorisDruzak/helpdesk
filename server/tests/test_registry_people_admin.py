@@ -4,9 +4,11 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryAsset, RegistryPerson
+from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryAdminEvent, RegistryAsset, RegistryPerson, RegistryPersonIdentity, UiUser
+from requester.identity_service import RequesterIdentityResolver
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
@@ -106,6 +108,108 @@ async def test_admin_identity_collision_does_not_steal_verified_identity(test_cl
     payload = await collision.json()
     assert payload["error_code"] == "IDENTITY_COLLISION"
     assert payload["collision_person_id"] == first_id
+
+
+@pytest.mark.asyncio
+async def test_admin_links_ui_user_to_registry_person(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_login = "Requester.Link@Example.Test"
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login=user_login, password_hash="test", actor_role="user", is_active=True))
+        person = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Requester Link",
+            email="requester.link@example.test",
+            source="manual",
+            status="active",
+        )
+        session.add(person)
+        await session.commit()
+        person_id = person.person_id
+
+    response = await test_client.post(
+        f"/api/web/admin/registry/ui-users/{user_login}/link-person",
+        json={"person_id": person_id, "reason": "verified requester account"},
+        headers=ADMIN_HEADERS,
+    )
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["data"]["ui_user"]["user_login"] == user_login
+    assert payload["data"]["ui_user"]["linked_person_id"] == person_id
+    identity = payload["data"]["identity"]
+    assert identity["provider"] == "ui_login"
+    assert identity["identifier"] == user_login
+    assert identity["normalized_identifier"] == user_login.lower()
+    assert identity["verified"] is True
+
+    async with session_maker() as session:
+        stored_identity = (
+            await session.execute(
+                select(RegistryPersonIdentity).where(
+                    RegistryPersonIdentity.provider == "ui_login",
+                    RegistryPersonIdentity.normalized_identifier == user_login.lower(),
+                )
+            )
+        ).scalar_one()
+        event = (
+            await session.execute(
+                select(RegistryAdminEvent)
+                .where(RegistryAdminEvent.event_type == "identity_added")
+                .where(RegistryAdminEvent.related_person_id == person_id)
+            )
+        ).scalar_one()
+        resolved_person = await RequesterIdentityResolver(session).resolve_person_for_web_user(user_login.lower())
+
+    assert stored_identity.person_id == person_id
+    assert stored_identity.verified is True
+    assert event.payload["ui_user_login"] == user_login
+    assert resolved_person is not None
+    assert resolved_person.person_id == person_id
+
+
+@pytest.mark.asyncio
+async def test_admin_ui_user_link_collision_does_not_steal_login(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_login = "collision-ui@example.test"
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login=user_login, password_hash="test", actor_role="user", is_active=True))
+        first = RegistryPerson(person_id=str(uuid.uuid4()), display_name="UI Owner", source="manual", status="active")
+        second = RegistryPerson(person_id=str(uuid.uuid4()), display_name="UI Collision", source="manual", status="active")
+        session.add_all([first, second])
+        await session.flush()
+        await RegistrationService(session).repo.create_or_update_person_identity(
+            person_id=first.person_id,
+            provider="ui_login",
+            identifier=user_login,
+            verified=True,
+            source="admin_manual",
+        )
+        await session.commit()
+        first_id = first.person_id
+        second_id = second.person_id
+
+    response = await test_client.post(
+        f"/api/web/admin/registry/ui-users/{user_login}/link-person",
+        json={"person_id": second_id, "reason": "wrong target"},
+        headers=ADMIN_HEADERS,
+    )
+    assert response.status == 409
+    payload = await response.json()
+    assert payload["error_code"] == "IDENTITY_COLLISION"
+    assert payload["collision_person_id"] == first_id
+
+    async with session_maker() as session:
+        identity = (
+            await session.execute(
+                select(RegistryPersonIdentity).where(
+                    RegistryPersonIdentity.provider == "ui_login",
+                    RegistryPersonIdentity.normalized_identifier == user_login,
+                )
+            )
+        ).scalar_one()
+    assert identity.person_id == first_id
 
 
 @pytest.mark.asyncio

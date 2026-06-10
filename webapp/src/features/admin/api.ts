@@ -364,6 +364,9 @@ export type AdminRegistryPayload = {
     sessions_active?: number;
     sessions_other_account?: number;
     other_account_requests?: number;
+    ui_users?: number;
+    ui_users_linked?: number;
+    ui_users_unlinked?: number;
     claims_pending?: number;
     claims_conflict?: number;
     shared_devices?: number;
@@ -518,6 +521,7 @@ export type AdminRegistryPayload = {
   bindings?: AdminDeviceUserBinding[];
   account_sessions?: AdminDeviceAccountSession[];
   account_login_requests?: AdminAccountLoginRequest[];
+  ui_users?: AdminRegistryUiUser[];
 };
 
 export type AdminRegistryPersonIdentity = {
@@ -529,6 +533,21 @@ export type AdminRegistryPersonIdentity = {
   verified: boolean;
   source: string;
   last_seen_at: string | null;
+};
+
+export type AdminRegistryUiUser = {
+  user_login: string;
+  actor_role: string;
+  is_active: boolean;
+  failed_attempts: number;
+  locked_until: string | null;
+  last_login_at: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  linked_person_id: string | null;
+  linked_person_name: string | null;
+  linked_identity_id: string | null;
+  linked_identity_verified: boolean;
 };
 
 export type AdminRegistrationClaim = {
@@ -1085,6 +1104,19 @@ export async function updateAdminRegistryPersonIdentity(identityId: string, payl
     body: JSON.stringify(payload),
   });
   await readSuccessResponse(response, "Не удалось обновить identity");
+}
+
+export async function linkAdminRegistryUiUserPerson(userLogin: string, payload: {
+  person_id: string;
+  reason?: string | null;
+}): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/ui-users/${encodeURIComponent(userLogin)}/link-person`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  await readSuccessResponse(response, "Не удалось привязать UI аккаунт");
 }
 
 export async function deleteAdminRegistryPersonIdentity(identityId: string): Promise<void> {

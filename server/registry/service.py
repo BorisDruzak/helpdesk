@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DevicePresenceSnapshot, RegistryPersonIdentity, RegistryQualityIssueOverride
+from app.db.models import DevicePresenceSnapshot, RegistryPersonIdentity, RegistryQualityIssueOverride, UiUser
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
 from registry.account_session_service import AccountSessionService
@@ -183,6 +183,13 @@ class RegistrySnapshotService:
         account_service = AccountSessionService(self.session)
         account_sessions = await account_service.list_sessions_admin(limit=500)
         account_login_requests = await account_service.list_login_requests(limit=300)
+        ui_users = list(
+            (
+                await self.session.execute(
+                    select(UiUser).order_by(UiUser.user_login).limit(500)
+                )
+            ).scalars().all()
+        )
 
         people_by_id = {person.person_id: person for person in people}
         locations_by_id = {location.location_id: location for location in locations}
@@ -466,6 +473,32 @@ class RegistrySnapshotService:
                 "last_seen_at": identity.last_seen_at.isoformat() if identity.last_seen_at else None,
             }
 
+        ui_login_identity_by_normalized = {
+            identity.normalized_identifier: identity
+            for identities in identities_by_person.values()
+            for identity in identities
+            if identity.provider == "ui_login" and identity.normalized_identifier
+        }
+
+        def ui_user_payload(user: UiUser) -> dict[str, Any]:
+            normalized_login = normalize_identifier("ui_login", user.user_login)
+            identity = ui_login_identity_by_normalized.get(normalized_login)
+            person = people_by_id.get(identity.person_id if identity else "")
+            return {
+                "user_login": user.user_login,
+                "actor_role": user.actor_role,
+                "is_active": bool(user.is_active),
+                "failed_attempts": int(user.failed_attempts or 0),
+                "locked_until": user.locked_until.isoformat() if user.locked_until else None,
+                "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                "created_at": user.created_at.isoformat() if user.created_at else None,
+                "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+                "linked_person_id": identity.person_id if identity else None,
+                "linked_person_name": person.display_name if person else None,
+                "linked_identity_id": identity.identity_id if identity else None,
+                "linked_identity_verified": bool(identity.verified) if identity else False,
+            }
+
         return {
             "summary": {
                 "assets_count": len(assets),
@@ -494,6 +527,9 @@ class RegistrySnapshotService:
                 "sessions_active": sum(1 for row in account_sessions if row.get("verification_status") == "verified" and not row.get("revoked_at")),
                 "sessions_other_account": sum(1 for row in account_sessions if row.get("account_mode") == "verified_other_account" and row.get("verification_status") == "verified" and not row.get("revoked_at")),
                 "other_account_requests": sum(1 for row in account_login_requests if row.get("status") == "pending_verification"),
+                "ui_users": len(ui_users),
+                "ui_users_linked": sum(1 for user in ui_users if ui_login_identity_by_normalized.get(normalize_identifier("ui_login", user.user_login))),
+                "ui_users_unlinked": sum(1 for user in ui_users if not ui_login_identity_by_normalized.get(normalize_identifier("ui_login", user.user_login))),
                 "claims_pending": sum(1 for claim in claims if claim.status in {"self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review"}),
                 "claims_conflict": sum(1 for claim in claims if claim.status == "conflict"),
                 "quality_issues": len(data_quality),
@@ -717,6 +753,7 @@ class RegistrySnapshotService:
             "bindings": [binding_payload(binding) for binding in bindings],
             "account_sessions": account_sessions,
             "account_login_requests": account_login_requests,
+            "ui_users": [ui_user_payload(user) for user in ui_users],
             "data_quality": data_quality,
             "suggestions": suggestions,
         }

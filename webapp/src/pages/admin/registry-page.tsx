@@ -27,6 +27,7 @@ import {
   createAdminRegistryPersonIdentity,
   fetchAdminAccountLoginRequests,
   fetchAdminRegistry,
+  linkAdminRegistryUiUserPerson,
   mergeAdminRegistryDepartments,
   mergeAdminRegistryLocations,
   mergeAdminRegistryPeople,
@@ -329,6 +330,20 @@ export function AdminRegistryPage() {
     setBindDialog({ deviceId: deviceId.trim(), mode: "primary_user", title: `Привязать ${person.display_name} к устройству`, replaceExisting: false });
   };
 
+  const linkUiUserToPerson = (person: AdminRegistryPayload["people"][number]) => {
+    const linkedLogins = new Set((registry?.ui_users ?? []).filter((user) => user.linked_person_id).map((user) => user.user_login));
+    const suggested = (registry?.ui_users ?? []).find((user) => !linkedLogins.has(user.user_login))?.user_login ?? "";
+    const userLogin = window.prompt("UI login", suggested) ?? "";
+    if (!userLogin.trim()) {
+      return;
+    }
+    const reason = window.prompt("Reason", "Link UI login to registry person") ?? "";
+    if (!reason.trim()) {
+      return;
+    }
+    mutation.mutate(() => linkAdminRegistryUiUserPerson(userLogin.trim(), { person_id: person.person_id, reason: reason.trim() }));
+  };
+
   const exportType =
     tab === "people" ? "people" :
     tab === "bindings" ? "bindings" :
@@ -436,11 +451,13 @@ export function AdminRegistryPage() {
               onAddIdentity={(person) => setIdentityDialog({ personId: person.person_id, personName: person.display_name })}
               onBindToDevice={bindPersonToKnownDevice}
               onEdit={(person) => setPersonDialog({ person })}
+              onLinkUiUser={linkUiUserToPerson}
               onMerge={(person) => setMergePersonId(person.person_id)}
               onSelect={setSelection}
               onToggleSelection={(personId) => toggleSelected(personId, setSelectedPersonIds)}
               onToggleVisibleSelection={(personIds) => toggleVisibleSelected(personIds, setSelectedPersonIds)}
               selectedIds={selectedPersonIds}
+              uiUsers={visibleRegistry.ui_users ?? []}
             />
           ) : null}
           {visibleRegistry && tab === "bindings" ? (

@@ -68,6 +68,7 @@ export function filterRegistryPayload(value: AdminRegistryPayload, query: string
     ),
     people: value.people.filter((person) =>
       includes(person.display_name, person.full_name, person.login, person.phone, person.email, person.department_name, person.location_name, person.person_id)
+      || (value.ui_users ?? []).some((user) => user.linked_person_id === person.person_id && includes(user.user_login, user.actor_role))
     ),
     registration_claims: value.registration_claims.filter((claim) =>
       includes(claim.claim_id, claim.device_id, claim.person_name, claim.person_id, claim.status, claim.relationship_type, claim.conflict_reason)
@@ -83,6 +84,9 @@ export function filterRegistryPayload(value: AdminRegistryPayload, query: string
     ),
     account_login_requests: (value.account_login_requests ?? []).filter((request) =>
       includes(request.request_id, request.device_id, request.matched_person_id, request.base_binding_id, request.status, String(request.requested_account?.login ?? ""))
+    ),
+    ui_users: (value.ui_users ?? []).filter((user) =>
+      includes(user.user_login, user.actor_role, user.linked_person_id, user.linked_person_name)
     ),
     locations: value.locations.filter((location) => includes(location.display_name, location.building, location.floor, location.room)),
     departments: value.departments.filter((department) => includes(department.name, department.code)),
