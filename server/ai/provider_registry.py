@@ -40,6 +40,15 @@ def _redact_error(message: str | None) -> str | None:
     return re.sub(r"sk-[A-Za-z0-9_-]+", "<redacted>", text_value) or None
 
 
+def _audit_payload(row: Any) -> dict[str, Any]:
+    data = _serialize_row(row)
+    error_message = _redact_error(data.get("error_message_redacted"))
+    data["error_message_redacted"] = "<redacted>" if error_message and "<redacted>" in error_message else error_message
+    data["prompt_redacted"] = "<redacted>" if data.get("prompt_redacted") else None
+    data["output_redacted"] = "<redacted>" if data.get("output_redacted") else None
+    return data
+
+
 def _serialize_value(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
@@ -278,6 +287,85 @@ class AIProviderRegistry:
         ).all()
         return [_serialize_row(row) for row in rows]
 
+    async def get_model_profile(self, profile_id: str) -> dict[str, Any]:
+        row = (
+            await self.db.execute(
+                text("SELECT * FROM ai_model_profiles WHERE profile_id = :profile_id"),
+                {"profile_id": profile_id},
+            )
+        ).first()
+        if row is None:
+            raise ValueError("model profile not found")
+        return _serialize_row(row)
+
+    async def update_model_profile(
+        self,
+        profile_id: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+    ) -> dict[str, Any]:
+        existing = await self.get_model_profile(profile_id)
+        now = _now()
+        values = {
+            "profile_id": profile_id,
+            "provider_id": payload.get("provider_id", existing["provider_id"]),
+            "code": str(payload.get("code", existing["code"])).strip(),
+            "title": str(payload.get("title", existing["title"])).strip(),
+            "task_type": str(payload.get("task_type", existing["task_type"])).strip(),
+            "model_name": str(payload.get("model_name", existing["model_name"])).strip(),
+            "context_window": payload.get("context_window", existing.get("context_window")),
+            "embedding_dimensions": payload.get("embedding_dimensions", existing.get("embedding_dimensions")),
+            "timeout_ms": int(payload.get("timeout_ms", existing.get("timeout_ms") or 30_000)),
+            "max_retries": int(payload.get("max_retries", existing.get("max_retries") or 0)),
+            "temperature": payload.get("temperature", existing.get("temperature")),
+            "top_p": payload.get("top_p", existing.get("top_p")),
+            "structured_output_supported": bool(
+                payload.get("structured_output_supported", existing.get("structured_output_supported", False))
+            ),
+            "streaming_supported": bool(payload.get("streaming_supported", existing.get("streaming_supported", False))),
+            "enabled": bool(payload.get("enabled", existing.get("enabled", True))),
+            "is_default": bool(payload.get("is_default", existing.get("is_default", False))),
+            "fallback_profile_id": payload.get("fallback_profile_id", existing.get("fallback_profile_id")),
+            "metadata_json": _jsonb(payload.get("metadata_json", existing.get("metadata_json") or {})),
+            "updated_at": now,
+            "updated_by": actor_id,
+        }
+        row = (
+            await self.db.execute(
+                text(
+                    """
+                    UPDATE ai_model_profiles SET
+                        provider_id = :provider_id,
+                        code = :code,
+                        title = :title,
+                        task_type = :task_type,
+                        model_name = :model_name,
+                        context_window = :context_window,
+                        embedding_dimensions = :embedding_dimensions,
+                        timeout_ms = :timeout_ms,
+                        max_retries = :max_retries,
+                        temperature = :temperature,
+                        top_p = :top_p,
+                        structured_output_supported = :structured_output_supported,
+                        streaming_supported = :streaming_supported,
+                        enabled = :enabled,
+                        is_default = :is_default,
+                        fallback_profile_id = :fallback_profile_id,
+                        metadata_json = :metadata_json,
+                        updated_at = :updated_at,
+                        updated_by = :updated_by
+                    WHERE profile_id = :profile_id
+                    RETURNING *
+                    """
+                ),
+                values,
+            )
+        ).first()
+        if row is None:
+            raise ValueError("model profile not found")
+        return _serialize_row(row)
+
     async def upsert_policy(self, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
         policy_id = str(payload.get("policy_id") or _new_id())
         now = _now()
@@ -405,3 +493,20 @@ class AIProviderRegistry:
             )
         ).first()
         return _serialize_row(row)
+
+    async def list_audit(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        bounded_limit = max(1, min(int(limit or 50), 200))
+        rows = (
+            await self.db.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM ai_request_audit
+                    ORDER BY created_at DESC, audit_id DESC
+                    LIMIT :limit
+                    """
+                ),
+                {"limit": bounded_limit},
+            )
+        ).all()
+        return [_audit_payload(row) for row in rows]

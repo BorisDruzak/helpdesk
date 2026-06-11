@@ -2,11 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyKnowledgeContentPack,
+  checkKnowledgeAiProviderHealth,
   fetchKnowledgeGaps,
+  fetchKnowledgeAiAudit,
+  fetchKnowledgeAiModelProfiles,
+  fetchKnowledgeAiPolicies,
+  fetchKnowledgeAiProviders,
   fetchKnowledgeQuality,
   fetchKnowledgeReviewQueue,
   fetchKnowledgeRolloutPolicies,
   fetchKnowledgeTemplates,
+  saveKnowledgeAiModelProfile,
+  saveKnowledgeAiPolicy,
+  saveKnowledgeAiProvider,
   saveKnowledgeRolloutPolicy,
   submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
@@ -91,5 +99,64 @@ describe("knowledge operations api", () => {
       "/api/web/knowledge/rollout-policies",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
+  });
+});
+
+describe("knowledge AI settings api", () => {
+  it("loads providers, profiles, policies and redacted audit from Phase 1 endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", providers: [{ provider_id: "p1", title: "OpenRouter", api_key_secret_ref_masked: "env:OPEN...KEY" }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", model_profiles: [{ profile_id: "mp1", code: "answer-default", task_type: "answer" }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", policies: [{ policy_id: "pol1", scope_type: "global", ai_allowed: false }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Журнал AI загружен", audit: [{ audit_id: "audit1", status: "failed", error_message_redacted: "<redacted>" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeAiProviders()).resolves.toHaveLength(1);
+    await expect(fetchKnowledgeAiModelProfiles()).resolves.toHaveLength(1);
+    await expect(fetchKnowledgeAiPolicies()).resolves.toHaveLength(1);
+    await expect(fetchKnowledgeAiAudit()).resolves.toHaveLength(1);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/ai/providers", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/ai/model-profiles", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/web/knowledge/ai/policies", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/web/knowledge/ai/audit", { credentials: "same-origin" });
+  });
+
+  it("saves AI settings through provider/profile/policy and health-check endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Провайдер AI сохранён", provider: { provider_id: "p1", title: "OpenRouter" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Профиль модели сохранён", model_profile: { profile_id: "mp1", enabled: false } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Политика AI сохранена", policy: { policy_id: "pol1", ai_allowed: true } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Проверка OpenRouter выполнена успешно", health: { provider_id: "p1", status: "ok" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await saveKnowledgeAiProvider({ code: "openrouter", title: "OpenRouter", api_key_secret_ref: "env:OPENROUTER_API_KEY" });
+    await saveKnowledgeAiModelProfile({ profile_id: "mp1", enabled: false });
+    await saveKnowledgeAiPolicy({ policy_id: "pol1", scope_type: "global", ai_allowed: true });
+    await checkKnowledgeAiProviderHealth("p1", { model_name: "openai/gpt-4o-mini" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/web/knowledge/ai/providers",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/ai/model-profiles/mp1",
+      expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/web/knowledge/ai/policies",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/web/knowledge/ai/providers/p1/health-check",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ api_key_secret_ref: "env:OPENROUTER_API_KEY" });
   });
 });

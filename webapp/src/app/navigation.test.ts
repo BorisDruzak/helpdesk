@@ -89,6 +89,17 @@ describe("navigation helpers", () => {
     expect(activeItem?.label).toBe("MCP сервер");
   });
 
+  it("exposes Knowledge AI settings inside the Knowledge domain", () => {
+    const knowledgeDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
+      (domain) => domain.id === "knowledge",
+    );
+    const activeItem = getActiveNavItem("/app/admin/knowledge/ai", fullAdminPermissions);
+
+    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/ai");
+    expect(activeItem?.to).toBe("/app/admin/knowledge/ai");
+    expect(activeItem?.label).toBe("AI настройки");
+  });
+
   it("recognizes workspace-owned paths without including public requester routes", () => {
     expect(SUPPORT_HOME_PATH).toBe("/app/support");
     expect(ADMIN_HOME_PATH).toBe("/app/admin");

@@ -121,6 +121,17 @@ async def test_knowledge_ai_model_profile_and_policy_api_are_admin_only_and_loca
     assert profiles_list["model_profiles"][0]["code"] == "answer-default"
     assert policies_list["policies"][0]["policy_id"] == "global-answer-policy"
 
+    patch_response = await test_client.patch(
+        f"/api/web/knowledge/ai/model-profiles/{profile_payload['model_profile']['profile_id']}",
+        headers=_auth(),
+        json={"enabled": False, "title": "Ответы OpenRouter отключены"},
+    )
+    assert patch_response.status == 200
+    patched_profile = await patch_response.json()
+    assert patched_profile["display_message"] == "Профиль модели сохранён"
+    assert patched_profile["model_profile"]["enabled"] is False
+    assert patched_profile["model_profile"]["title"] == "Ответы OpenRouter отключены"
+
 
 @pytest.mark.asyncio
 async def test_knowledge_ai_health_check_uses_masked_secret_and_records_observer_audit(
@@ -219,3 +230,48 @@ async def test_knowledge_ai_health_check_missing_secret_is_safe_russian_failure(
     assert payload["display_message"] == "Ключ OpenRouter не настроен"
     assert "OPENROUTER_API_KEY" not in str(payload)
     assert "sk-" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_knowledge_ai_audit_api_lists_redacted_recent_requests(test_client, test_engine) -> None:
+    provider_response = await test_client.post(
+        "/api/web/knowledge/ai/providers",
+        headers=_auth(),
+        json={
+            "code": "openrouter-main",
+            "title": "OpenRouter",
+            "provider_type": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_key_secret_ref": "env:OPENROUTER_API_KEY",
+        },
+    )
+    provider = (await provider_response.json())["provider"]
+
+    async with test_engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO ai_request_audit (
+                    audit_id, provider_id, task_type, status, error_code,
+                    error_message_redacted, prompt_redacted, output_redacted,
+                    metadata_json, created_at
+                )
+                VALUES (
+                    'audit-safe-1', :provider_id, 'answer', 'failed', 'PROVIDER_UNAVAILABLE',
+                    'sk-secret-raw should be redacted', '<redacted>', '<redacted>',
+                    '{"provider_code": "openrouter-main"}'::jsonb, NOW()
+                )
+                """
+            ),
+            {"provider_id": provider["provider_id"]},
+        )
+
+    audit_response = await test_client.get("/api/web/knowledge/ai/audit", headers=_auth())
+    assert audit_response.status == 200
+    payload = await audit_response.json()
+    assert payload["status"] == "ok"
+    assert payload["display_message"] == "Журнал AI загружен"
+    assert payload["audit"][0]["audit_id"] == "audit-safe-1"
+    assert payload["audit"][0]["error_message_redacted"] == "<redacted>"
+    assert "sk-secret-raw" not in str(payload)
+    assert "OPENROUTER_API_KEY" not in str(payload)

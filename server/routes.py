@@ -492,6 +492,8 @@ from web_api.knowledge_handlers import (
     handle_web_knowledge_templates,
 )
 from web_api.knowledge_ai_handlers import (
+    handle_web_knowledge_ai_audit,
+    handle_web_knowledge_ai_model_profile_detail,
     handle_web_knowledge_ai_model_profiles,
     handle_web_knowledge_ai_policies,
     handle_web_knowledge_ai_provider_detail,
@@ -1127,8 +1129,10 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/knowledge/ai/providers/{provider_id}/health-check', handle_web_knowledge_ai_provider_health_check),
         web.get('/api/web/knowledge/ai/model-profiles', handle_web_knowledge_ai_model_profiles),
         web.post('/api/web/knowledge/ai/model-profiles', handle_web_knowledge_ai_model_profiles),
+        web.patch('/api/web/knowledge/ai/model-profiles/{profile_id}', handle_web_knowledge_ai_model_profile_detail),
         web.get('/api/web/knowledge/ai/policies', handle_web_knowledge_ai_policies),
         web.post('/api/web/knowledge/ai/policies', handle_web_knowledge_ai_policies),
+        web.get('/api/web/knowledge/ai/audit', handle_web_knowledge_ai_audit),
         web.get('/api/web/knowledge/spaces', handle_web_knowledge_spaces),
         web.post('/api/web/knowledge/spaces', handle_web_knowledge_spaces),
         web.get('/api/web/knowledge/items', handle_web_knowledge_items),

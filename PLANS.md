@@ -462,9 +462,11 @@ Phase 1 current state, 2026-06-11:
 * `server/ai/provider_registry.py` persists providers, model profiles, policy rows and redacted audit data without returning raw secret references.
 * `server/ai/openrouter_client.py` supports mocked OpenRouter-compatible chat completion, embedding and rerank requests.
 * Current backend user-visible `display_message` text is Russian; route paths, field names, enum values and task codes remain English technical contracts.
-* Runtime API handlers are implemented for provider list/create/patch, model profile list/create, policy list/upsert and provider health-check under `/api/web/knowledge/ai/*`.
+* Runtime API handlers are implemented for provider list/create/patch, model profile list/create/patch, policy list/upsert, provider health-check and AI audit list under `/api/web/knowledge/ai/*`.
 * Provider health-check uses mocked transport in tests, never returns raw keys, records redacted `ai_request_audit` rows and emits Observer-visible runtime audit events `knowledge.ai.provider_health_ok` / `knowledge.ai.provider_health_failed`.
-* React `/app/admin/knowledge/ai`, model-profile PATCH and AI audit list UI/API are still pending for the next Phase 1 slice.
+* React `/app/admin/knowledge/ai` is registered in the admin Knowledge domain and renders Russian-first provider/model/policy/audit controls with masked secret state and health-check action.
+* Focused frontend tests cover typed AI settings API, navigation, Russian visible labels and mojibake/secret-leak checks.
+* Next Phase 1 follow-up is live browser validation against the deployed admin shell when the server/webapp bundle is released and an operator supplies the OpenRouter key through the approved secret/config path.
 
 ---
 

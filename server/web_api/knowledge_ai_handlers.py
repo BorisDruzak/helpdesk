@@ -165,6 +165,39 @@ async def handle_web_knowledge_ai_model_profiles(request: web.Request) -> web.Re
 
 
 @require_auth()
+async def handle_web_knowledge_ai_model_profile_detail(request: web.Request) -> web.Response:
+    if error := _require_admin(request):
+        return error
+    actor_id, _role = _actor(request)
+    profile_id = str(request.match_info.get("profile_id") or "")
+    try:
+        async with get_session() as session:
+            model_profile = await AIProviderRegistry(session).update_model_profile(
+                profile_id,
+                await _json_payload(request),
+                actor_id=actor_id,
+            )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "model_profile": model_profile,
+                "display_message": "Профиль модели сохранён",
+            }
+        )
+    except ValueError:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "not_found",
+                "error_code": "NOT_FOUND",
+                "display_message": "Профиль модели не найден",
+            },
+            status=404,
+        )
+
+
+@require_auth()
 async def handle_web_knowledge_ai_policies(request: web.Request) -> web.Response:
     if error := _require_admin(request):
         return error
@@ -194,6 +227,25 @@ async def handle_web_knowledge_ai_policies(request: web.Request) -> web.Response
             },
             status=400,
         )
+
+
+@require_auth()
+async def handle_web_knowledge_ai_audit(request: web.Request) -> web.Response:
+    if error := _require_admin(request):
+        return error
+    try:
+        limit = int(request.query.get("limit") or "50")
+    except ValueError:
+        limit = 50
+    async with get_session() as session:
+        audit_rows = await AIProviderRegistry(session).list_audit(limit=limit)
+    return web.json_response(
+        {
+            "status": "ok",
+            "audit": audit_rows,
+            "display_message": "Журнал AI загружен",
+        }
+    )
 
 
 @require_auth()

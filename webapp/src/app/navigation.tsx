@@ -379,6 +379,17 @@ export const appNavigation: AppNavItem[] = [
     order: 10,
   },
   {
+    label: "AI настройки",
+    description: "Провайдеры, профили моделей, политики и журнал AI",
+    icon: Bot,
+    section: "admin",
+    workspace: "admin",
+    domainId: "knowledge",
+    to: "/app/admin/knowledge/ai",
+    permission: "admin.forms.view",
+    order: 20,
+  },
+  {
     label: "Модули",
     description: "ZIP/SDK-модули агента",
     icon: Layers3,

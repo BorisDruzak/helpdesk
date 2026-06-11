@@ -204,6 +204,70 @@ export type KnowledgeRolloutPolicy = {
   updated_by?: string | null;
 };
 
+export type KnowledgeAiProvider = {
+  provider_id: string;
+  code: string;
+  title: string;
+  provider_type: string;
+  base_url?: string | null;
+  auth_type?: string | null;
+  data_policy?: string | null;
+  enabled: boolean;
+  health_status?: string | null;
+  last_health_check_at?: string | null;
+  last_error_redacted?: string | null;
+  api_key_configured?: boolean;
+  api_key_secret_ref_masked?: string | null;
+  api_key_secret_ref?: string | null;
+};
+
+export type KnowledgeAiModelProfile = {
+  profile_id: string;
+  provider_id?: string | null;
+  code?: string | null;
+  title: string;
+  task_type: string;
+  model_name: string;
+  timeout_ms?: number | null;
+  max_retries?: number | null;
+  temperature?: number | null;
+  enabled: boolean;
+  is_default?: boolean;
+};
+
+export type KnowledgeAiPolicy = {
+  policy_id: string;
+  scope_type: string;
+  task_type?: string | null;
+  enabled: boolean;
+  ai_allowed: boolean;
+  embedding_allowed?: boolean;
+  rerank_allowed?: boolean;
+  answer_allowed?: boolean;
+  rewrite_allowed?: boolean;
+  auto_markup_allowed?: boolean;
+  redact_before_send?: boolean;
+  allow_cloud_for_requester_safe?: boolean;
+  require_local_for_security_restricted?: boolean;
+};
+
+export type KnowledgeAiAuditRow = {
+  audit_id: string;
+  provider_id?: string | null;
+  model_profile_id?: string | null;
+  task_type?: string | null;
+  status?: string | null;
+  error_code?: string | null;
+  error_message_redacted?: string | null;
+  created_at?: string | null;
+};
+
+export type KnowledgeAiHealthResult = {
+  provider_id: string;
+  status: string;
+  error_code?: string | null;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -430,4 +494,76 @@ export async function saveKnowledgeRolloutPolicy(payload: Partial<KnowledgeRollo
     body: JSON.stringify(payload),
   });
   return readJson<{ policy: KnowledgeRolloutPolicy }>(response, "Не удалось сохранить rollout policy");
+}
+
+export async function fetchKnowledgeAiProviders(): Promise<KnowledgeAiProvider[]> {
+  const response = await fetch("/api/web/knowledge/ai/providers", { credentials: "same-origin" });
+  const payload = await readJson<{ providers: KnowledgeAiProvider[] }>(response, "Не удалось загрузить провайдеры AI");
+  return payload.providers ?? [];
+}
+
+export async function saveKnowledgeAiProvider(payload: Partial<KnowledgeAiProvider> & { provider_id?: string }) {
+  const providerId = payload.provider_id;
+  const response = await fetch(
+    providerId ? `/api/web/knowledge/ai/providers/${encodeURIComponent(providerId)}` : "/api/web/knowledge/ai/providers",
+    {
+      method: providerId ? "PATCH" : "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return readJson<{ provider: KnowledgeAiProvider; display_message?: string }>(response, "Не удалось сохранить провайдера AI");
+}
+
+export async function fetchKnowledgeAiModelProfiles(): Promise<KnowledgeAiModelProfile[]> {
+  const response = await fetch("/api/web/knowledge/ai/model-profiles", { credentials: "same-origin" });
+  const payload = await readJson<{ model_profiles: KnowledgeAiModelProfile[] }>(response, "Не удалось загрузить профили моделей");
+  return payload.model_profiles ?? [];
+}
+
+export async function saveKnowledgeAiModelProfile(payload: Partial<KnowledgeAiModelProfile> & { profile_id?: string }) {
+  const profileId = payload.profile_id;
+  const response = await fetch(
+    profileId ? `/api/web/knowledge/ai/model-profiles/${encodeURIComponent(profileId)}` : "/api/web/knowledge/ai/model-profiles",
+    {
+      method: profileId ? "PATCH" : "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return readJson<{ model_profile: KnowledgeAiModelProfile; display_message?: string }>(response, "Не удалось сохранить профиль модели");
+}
+
+export async function fetchKnowledgeAiPolicies(): Promise<KnowledgeAiPolicy[]> {
+  const response = await fetch("/api/web/knowledge/ai/policies", { credentials: "same-origin" });
+  const payload = await readJson<{ policies: KnowledgeAiPolicy[] }>(response, "Не удалось загрузить политики AI");
+  return payload.policies ?? [];
+}
+
+export async function saveKnowledgeAiPolicy(payload: Partial<KnowledgeAiPolicy>) {
+  const response = await fetch("/api/web/knowledge/ai/policies", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ policy: KnowledgeAiPolicy; display_message?: string }>(response, "Не удалось сохранить политику AI");
+}
+
+export async function fetchKnowledgeAiAudit(): Promise<KnowledgeAiAuditRow[]> {
+  const response = await fetch("/api/web/knowledge/ai/audit", { credentials: "same-origin" });
+  const payload = await readJson<{ audit: KnowledgeAiAuditRow[]; display_message?: string }>(response, "Не удалось загрузить журнал AI");
+  return payload.audit ?? [];
+}
+
+export async function checkKnowledgeAiProviderHealth(providerId: string, payload: { model_name?: string }) {
+  const response = await fetch(`/api/web/knowledge/ai/providers/${encodeURIComponent(providerId)}/health-check`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ health: KnowledgeAiHealthResult; display_message?: string }>(response, "Не удалось проверить провайдера AI");
 }

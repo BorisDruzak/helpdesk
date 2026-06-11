@@ -40,7 +40,7 @@ Retrieval и RAG работают по принципу ACL-first. Систем�
 
 OpenRouter — первый external provider. API keys должны храниться только через approved secret/config path, не должны попадать в git, logs, API payloads или screenshots и должны отображаться только в masked state.
 
-Initial Phase 1 foundation lives in `server/ai/` and `server/web_api/knowledge_ai_handlers.py`: provider registry rows store only secret references, model profiles are task-scoped, policy rows keep AI opt-in gates disabled by default, and `ai_request_audit` is redacted by default. The OpenRouter client is transport-injectable for mocked tests and must not log raw keys, prompts or restricted content. Admin API routes under `/api/web/knowledge/ai/*` expose provider/profile/policy setup and provider health checks; health checks write redacted request audit rows and Observer-visible runtime audit events.
+Initial Phase 1 foundation lives in `server/ai/`, `server/web_api/knowledge_ai_handlers.py` and `webapp/src/features/knowledge/ai-settings-page.tsx`: provider registry rows store only secret references, model profiles are task-scoped, policy rows keep AI opt-in gates disabled by default, and `ai_request_audit` is redacted by default. The OpenRouter client is transport-injectable for mocked tests and must not log raw keys, prompts or restricted content. Admin API routes under `/api/web/knowledge/ai/*` expose provider/profile/policy setup, model profile updates, provider health checks and redacted audit listing; health checks write redacted request audit rows and Observer-visible runtime audit events. React `/app/admin/knowledge/ai` shows Russian provider/model/policy/audit controls and masked secret state only.
 
 ## Русская Локализация
 

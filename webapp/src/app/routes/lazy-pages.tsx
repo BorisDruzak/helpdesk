@@ -124,6 +124,10 @@ export const AdminKnowledgePage = lazy(() =>
   import("../../pages/admin/knowledge-page").then((module) => ({ default: module.AdminKnowledgePage })),
 );
 
+export const AdminKnowledgeAiPage = lazy(() =>
+  import("../../pages/admin/knowledge-ai-page").then((module) => ({ default: module.AdminKnowledgeAiPage })),
+);
+
 export const AdminQualityPage = lazy(() =>
   import("../../pages/admin/quality-page").then((module) => ({ default: module.AdminQualityPage })),
 );
