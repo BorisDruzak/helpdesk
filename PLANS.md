@@ -542,7 +542,8 @@ Phase 2 current state, 2026-06-12:
 * Search still runs without AI providers or embeddings; unknown analytics `surface` values are normalized to `search` to avoid CHECK-constraint 500s.
 * React `/app/admin/knowledge/search-settings` is registered in the admin Knowledge domain and renders Russian-first controls for search mode, keyword/full-text/vector/rerank/rewrite/RAG toggles, weights, `max_results`, `snippet_length` and a search preview panel backed by `POST /api/web/knowledge/search`.
 * Focused frontend tests cover typed search-settings/search-preview API, navigation, Russian visible labels, AI-off state, preview result rendering and mojibake checks.
-* Next Phase 2 follow-up is browser/live validation of the deployed admin shell search settings and preview panel.
+* Live browser validation on deployed commit `d27a6bb1` confirmed `/app/admin/knowledge/search-settings` loads in the admin shell, shows AI-off `keyword_only`, runs preview query `VPN`, returns results without AI, and has no browser console warnings/errors. Evidence screenshot: `artifacts/browser_live_validation/knowledge-search-preview-d27a6bb1.png`.
+* Next implementation step is Phase 3 article segmentation and markup: backend schema/service slice first, with manual/auto segmentation working without AI before AI-assisted proposals.
 
 Backend service changes:
 
