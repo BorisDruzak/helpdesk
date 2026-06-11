@@ -5,7 +5,7 @@ Status:
 - Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
 - Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
 - Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy is implemented and live-verified; admin UI user to RegistryPerson linking is implemented.
-- Stage 3: unified browser/agent requester consent layer is implemented and previously live-verified for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent account-session decision boundary, operation side effects and Remote Assist deny integration. The 2026-06-10 audit found additional hardening gaps; do not mark the whole plan finally complete until the renewed full live evidence set is captured.
+- Stage 3: unified browser/agent requester consent layer is implemented and renewed-live-verified for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent account-session decision boundary, operation side effects and Remote Assist browser approve/deny plus agent technical start after approval. Viewer-side WebRTC offer/answer is outside this identity/consent-model scope.
 - Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
 
 Audit update, 2026-06-10:
@@ -26,18 +26,19 @@ Audit update, 2026-06-11:
 - Local GUI live re-run with source agent `codex-ra-gui-0611` verified the full browser approve -> agent technical start path: support request 200, requester cookie approve 200, canonical consent count 1, no requester/browser secret exposure, outbox delivered, operation succeeded, `/api/remote-assist/{session_id}/approve` authenticated as agent, `agent_token_hash_present=true`, and session reached `starting`. Evidence: `artifacts/requester-agent-consent-audit-20260611-002201/api/live-remote-assist-local-gui-after-replay-fix-3.json`, `artifacts/requester-agent-consent-audit-20260611-002201/db/remote-assist-local-gui-final-db-check.json`, `artifacts/requester-agent-consent-audit-20260611-002201/tests/local_agent_logs_after_ra_start.txt`, `artifacts/requester-agent-consent-audit-20260611-002201/tests/remote_server_logs_after_local_gui_ra_start.txt`, `artifacts/requester-agent-consent-audit-20260611-002201/browser/local-agent-uia-remote-assist-window.png`.
 - The stale pre-hardening under-scoped pending Remote Assist consent was expired via an audited live cleanup; renewed DB integrity now shows `waiting_tool_consent_orphans=0`, `duplicate_pending_subjects=0`, `pending_missing_requester_person=0`, `pairing_missing_hashes=0`, and `claim_events_with_access_code=0`.
 - 2026-06-11 final hardening local pass: consent-required operation retry ticket events now redact replay params with the same helper used for `UserConsentRequest.requested_action_payload_redacted`; `UserConsentService.create_request()` is race-safe around the partial unique pending-subject index; public ticket claim now requires a resolved `RegistryPerson` and returns `REQUESTER_IDENTITY_REQUIRED` for unlinked web users; requester-facing Remote Assist consent list/detail/approve responses have regression coverage proving they do not expose ICE/SDP/signaling/agent/viewer/session secrets. Local evidence is captured in `artifacts/requester-agent-consent-final-audit-20260611-140237/tests/test-summary.txt`.
+- 2026-06-11 final renewed full live audit after hardening is complete on `https://192.168.100.17:9443` with evidence in `artifacts/requester-agent-consent-full-live-audit-20260611-183743/`: requester lifecycle/message/close/feedback/reopen, shared-device privacy, public claim strict person policy, browser same-origin CSRF rejection, direct pairing inactive states, operation consent approve/deny/idempotent repeat, Remote Assist browser approve -> agent technical approve -> ended, Remote Assist browser deny, requester Remote Assist secret non-exposure, browser screenshots, console/network, API evidence and DB integrity all passed. Final DB checks show `orphan_waiting_consent=0`, `duplicate_pending_consent=0`, `pending_missing_requester_person=0`, `pairing_missing_hashes=0`, `public_claim_access_code_leak=0`, and `consent_event_sensitive_param_hits=0`.
 
 Current audit coverage matrix:
 
 | Flow | Backend endpoint | Frontend route | Agent path | Tests | Live evidence | Status | Gaps |
 |---|---|---|---|---|---|---|---|
-| Direct pairing GET inactive states | `GET /api/web/registry/browser-pairings/{pairing_id}` | `/app/device/register`, `/app/device/login` | pairing pickup polling | `test_web_user_direct_pairing_get_rejects_inactive_pairings_without_device_facts` | pending renewed run | hardened | Re-run expired/consumed/superseded live screenshots/API evidence. |
-| Browser cookie-auth state changes | auth middleware for `/api/web/*`, upload/artifact bridge paths | requester/admin/support webapp | none | `test_web_session_cookie_auth_unsafe_requests_require_same_origin`, `test_web_session_cookie_auth_accepts_forwarded_public_origin`, bearer bypass test | `live-remote-assist-http-after-csrf-fix.json` | live-verified for requester consent approve | Add browser screenshot/network evidence for broader requester POSTs. |
-| Support operation consent | `POST /api/web/support/tickets/{ticket_id}/tools/run` | `/app/tickets` | none until approve | `test_web_support_tool_action_keeps_consent_required_tool_waiting` | previous Stage 3 evidence; pending renewed run | hardened | Re-run DB orphan check. |
-| Legacy operation consent | `POST /api/tools/run` | legacy/API clients | none until approve | `test_legacy_tools_run_creates_user_consent_for_waiting_operation` | pending renewed run | hardened | Re-run DB orphan check. |
-| Retry operation consent | `POST /api/operations/{operation_id}/retry` | `/app/tickets` operation retry | none until approve | `test_retry_consent_required_operation_creates_waiting_consent_without_dispatch` | pending renewed run | hardened | Re-run approve path DB/outbox evidence. |
-| Remote Assist approve path | `POST /api/web/support/tickets/{ticket_id}/remote-assist/request`, `POST /api/web/requester/consents/{consent_id}/approve` | `/app/tickets`, requester consent center | `remote_assist.request` delivered to online agent, GUI calls technical approve | `test_remote_assist_rejects_ticket_without_requester_scope`, remote assist service tests, UI bridge replay tests | `live-remote-assist-http-after-csrf-fix.json`, `remote-assist-outbox-after-wait.json`, `live-remote-assist-local-gui-after-replay-fix-3.json`, `remote-assist-local-gui-final-db-check.json` | live-verified for browser approve and local GUI technical start | Re-run deny path and full viewer-side WebRTC offer/answer when support viewer gate is in scope. |
-| Remote Assist under-scoped ticket | remote assist service boundary | `/app/tickets`, consent center | start command only after approve | `test_remote_assist_rejects_ticket_without_requester_scope` | service tests; renewed request path evidence | hardened | Add renewed live negative request evidence. |
+| Direct pairing GET inactive states | `GET /api/web/registry/browser-pairings/{pairing_id}` | `/app/device/register`, `/app/device/login` | pairing pickup polling | `test_web_user_direct_pairing_get_rejects_inactive_pairings_without_device_facts` | `artifacts/requester-agent-consent-full-live-audit-20260611-183743/api/api-results-final.json` | complete | Valid lookup succeeded; expired/consumed/superseded/unknown returned safe 404/no device facts. |
+| Browser cookie-auth state changes | auth middleware for `/api/web/*`, upload/artifact bridge paths | requester/admin/support webapp | none | `test_web_session_cookie_auth_unsafe_requests_require_same_origin`, `test_web_session_cookie_auth_accepts_forwarded_public_origin`, bearer bypass test | `api/api-results-final.json`, `browser/network-shared-requester.json`, screenshots | complete | Requester message and public claim without Origin returned 403 `CSRF_ORIGIN_REQUIRED`; correct-origin state changes succeeded. |
+| Support/legacy operation consent invariant | support/legacy/retry waiting-consent operation paths | `/app/tickets`, legacy/API clients | none until approve | `test_web_support_tool_action_keeps_consent_required_tool_waiting`, `test_legacy_tools_run_creates_user_consent_for_waiting_operation`, `test_retry_consent_required_operation_creates_waiting_consent_without_dispatch` | `db/db-results-final.json` | complete | Global DB orphan/duplicate checks are zero after renewed live run. |
+| Retry operation consent | `POST /api/operations/{operation_id}/retry` | `/app/tickets` operation retry | none until approve | `test_retry_consent_required_operation_creates_waiting_consent_without_dispatch` | `api/api-results-final.json`, `db/db-results-final.json` | complete | Browser approve queued/accepted exactly one operation; deny left operation denied and no outbox. |
+| Remote Assist approve path | `POST /api/web/support/tickets/{ticket_id}/remote-assist/request`, `POST /api/web/requester/consents/{consent_id}/approve` | `/app/tickets`, requester consent center | `remote_assist.request` delivered to online agent; technical approve creates agent token hash | `test_remote_assist_rejects_ticket_without_requester_scope`, remote assist service tests, UI bridge replay tests | `api/api-results-final.json`, `db/db-results-final.json` | complete | Browser approve exposed no requester-side ICE/SDP/signaling/agent/viewer secrets; agent technical approve succeeded; session ended cleanly. |
+| Remote Assist deny path | same request endpoint plus requester consent deny | requester consent center | no technical start after deny | remote assist service tests | `api/api-results-final.json`, `db/db-results-final.json` | complete | Browser deny set session/consent to denied; agent technical approve after deny returned 409 `INVALID_SESSION_STATUS`; `agent_token_hash_present=false`. |
+| Viewer-side WebRTC offer/answer | viewer/signaling endpoints | support viewer | WebRTC media/signaling | remote assist no-db/service tests | not collected in this identity-model audit | non-goal | Outside Browser / Requester / Agent identity and consent-model signoff; keep for a viewer/media gate. |
 
 Latest live verification, 2026-06-08/09:
 
@@ -77,7 +78,7 @@ Stage 3:
 - [x] agent GUI consent prompts;
 - [x] Remote Assist canonical browser consent creation/approve dispatch integration.
 - [x] Remote Assist technical agent start after browser approval: local GUI live run reached `/api/remote-assist/{session_id}/approve`, `agent_token_hash_present=true`, outbox delivered and WebRTC signaling started as agent.
-- [ ] Renewed full live audit evidence after 2026-06-11 hardening: browser screenshots, console/network, API and DB checks for pairing, requester lifecycle/privacy, operation consent and Remote Assist approve/deny.
+- [x] Renewed full live audit evidence after 2026-06-11 hardening: browser screenshots, console/network, API and DB checks for pairing, requester lifecycle/privacy, operation consent and Remote Assist approve/deny.
 - [x] Clean up or explicitly classify the stale pre-hardening pending Remote Assist consent without `requester_person_id` before final global DB integrity signoff.
 
 ## Goal
@@ -799,7 +800,7 @@ Common checks:
 
 ## Handoff
 
-Stage 3 live verification is complete. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
+Stage 3 live verification is complete for the Browser / Requester / Agent identity and consent model. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
 
 Done in this slice:
 
@@ -826,11 +827,11 @@ Done in this slice:
 Deferred / next:
 
 - Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
-- Stage 3 follow-up: approve-path Remote Assist command dispatch still depends on a real online agent; this slice live-verified the canonical Remote Assist consent creation/deny path and DB/timeline state, while local tests cover the approve dispatch integration.
+- Stage 3 follow-up: none for the identity/consent-model scope. Viewer-side WebRTC offer/answer remains a separate media/viewer gate, not a blocker for requester/agent identity signoff.
 
 Immediate next work:
 
-1. Move to the next planned slice after Stage 3; keep a future live smoke for Remote Assist approve with a real online agent when the stand has an interactive agent available.
+1. Move to the next planned slice after Stage 3; run viewer-side WebRTC offer/answer only when the support viewer/media gate is explicitly in scope.
 
 Before code changes, read the nested instructions for the target area:
 
