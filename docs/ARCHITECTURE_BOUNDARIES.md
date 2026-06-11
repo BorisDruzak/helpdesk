@@ -134,6 +134,35 @@ Treat these as shared contracts. A change here is not local even if only one fil
 | Agent update contract | `server/docs/AGENT_UPDATES_API.md`, `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, `pc_agent/docs/SELF_UPDATE.md`, `server/agents/*`, `pc_agent/launcher/*` | Rollout UI, server recommendation, launcher, GUI | Update all update docs, run update contract tests, verify artifact/launcher path |
 | Release/control contract | `docs/LOCAL_WORKFLOW.md`, `scripts/manage_remote_stack.py`, `scripts/release_server_to_remote.py`, `server/control_plane.py`, `server/runtime_control.py` | Deploy, smoke, browser verification, rollback | Keep lifecycle through scripts only; update workflow docs and control-plane tests |
 
+## Knowledge VNext Target Boundaries
+
+Knowledge vNext is a staged expansion of the existing Knowledge Platform contract, not a rewrite. Phase 0 documents target route boundaries without forcing unfinished runtime routes into `server/routes.py` or the React router.
+
+Target product routes:
+
+- `/app/kb`
+- `/app/kb/search`
+- `/app/kb/ask`
+- `/app/kb/articles/:slug`
+- `/app/knowledge`
+- `/app/knowledge/articles/:id`
+- `/app/admin/knowledge`
+- `/app/admin/knowledge/studio`
+- `/app/admin/knowledge/graph`
+- `/app/admin/knowledge/ai`
+- `/app/admin/knowledge/search-settings`
+- `/app/admin/knowledge/indexing`
+- `/app/admin/knowledge/import`
+- `/app/admin/knowledge/review`
+
+Boundary rules:
+
+- `Knowledge Core` must not depend on ticket-specific code; helpdesk uses Knowledge through adapter services.
+- AI/RAG is optional and must never become a hard dependency for baseline article viewing, authoring, search, graph editing or helpdesk linking.
+- Retrieval/RAG must filter ACL before vectorization, rerank or answer generation.
+- Russian-first applies to visible Knowledge vNext product text, safe errors, empty states, toasts and live-check notes.
+- Routes, API field names, enum values, observer event codes, metric names and task codes remain English stable contracts.
+
 ## Change Classification
 
 ### Local change

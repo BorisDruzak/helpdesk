@@ -161,6 +161,27 @@ Ticket compatibility:
 
 Knowledge vNext product UI является Russian-first. Новые portal, support, admin, authoring, graph, AI/search/indexing/import/review surfaces должны использовать русские пользовательские labels, validation messages, empty states, toasts и safe error text. Route paths, API fields, enum values, observer event codes и metric names остаются стабильными английскими техническими контрактами. Tests для новых UI pages должны проверять репрезентативный русский copy и ловить mojibake в visible text.
 
+## Knowledge vNext Target Routes
+
+Phase 0 фиксирует целевые границы, но не регистрирует недоделанные runtime routes. Реализация должна вводить эти поверхности по фазам:
+
+| Route | Назначение | Фаза |
+|---|---|---|
+| `/app/kb` | Портал знаний организации для requester-safe чтения | Portal |
+| `/app/kb/search` | Самостоятельный поиск по базе знаний | Search |
+| `/app/kb/ask` | Optional RAG Ask с citations и AI-off fallback | RAG |
+| `/app/kb/articles/:slug` | Requester-safe article reader | Portal |
+| `/app/knowledge` | Рабочая база знаний поддержки | Support workspace |
+| `/app/knowledge/articles/:id` | Support article/runbook/known-error view | Support workspace |
+| `/app/admin/knowledge` | Knowledge Ops dashboard | Ops |
+| `/app/admin/knowledge/studio` | Authoring Studio для статей и версий | Authoring |
+| `/app/admin/knowledge/graph` | Visual Graph Studio | Graph |
+| `/app/admin/knowledge/ai` | AI providers, model profiles, policies, health | AI settings |
+| `/app/admin/knowledge/search-settings` | Настройки search/retrieval и preview | Search settings |
+| `/app/admin/knowledge/indexing` | Indexing jobs, embeddings, stale state | Indexing |
+| `/app/admin/knowledge/import` | Import/Ingestion wizard | Import |
+| `/app/admin/knowledge/review` | Review and curation queue | Review |
+
 ## Metrics
 
 `KnowledgeMetricsService` exposes canonical nested metrics:

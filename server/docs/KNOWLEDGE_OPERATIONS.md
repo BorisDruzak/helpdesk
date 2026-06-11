@@ -217,6 +217,19 @@ Safety invariants:
 
 `/app/knowledge` remains support-facing and must not show admin-only content pack controls in support mode.
 
+## Knowledge vNext Operations
+
+Knowledge vNext добавляет продуктовые поверхности постепенно. До реализации конкретной фазы целевые маршруты из `KNOWLEDGE_PLATFORM.md` остаются задокументированными границами, а не обязательством runtime route registration.
+
+Операционные правила для всех фаз:
+
+- пользовательские тексты, safe display errors, empty states, toasts, health-check results и инструкции live-проверок пишутся на русском;
+- route paths, API field names, enum values, observer event codes, metric names и task codes остаются английскими техническими контрактами;
+- OpenRouter key вводится только через утверждённый secret/config path и в UI показывается только masked state;
+- browser/live evidence не должен содержать raw API keys, tokens, cookies, prompts с restricted content или внутренние ACL-only article bodies;
+- каждая UI-фаза должна иметь browser evidence с проверкой русских labels и отсутствия mojibake;
+- AI-off mode является обязательной операционной проверкой для search, portal, authoring, graph и helpdesk linking.
+
 ## Rollback
 
 - Disable requester/agent deflection with rollout policy.

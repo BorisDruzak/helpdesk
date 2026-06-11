@@ -179,6 +179,14 @@ Exit criteria:
 * Ожидания русской локализации явно зафиксированы для каждой последующей UI/API-message phase.
 * No runtime behavior changed.
 
+Phase 0 current state, 2026-06-11:
+
+* Active plan and Russian-first localization policy are recorded.
+* `server/docs/KNOWLEDGE_VNEXT_ARCHITECTURE.md` exists and defines Knowledge vNext boundaries, AI/search safety, target product routes, localization and Observer v2 expectations.
+* `server/docs/KNOWLEDGE_PLATFORM.md`, `server/docs/KNOWLEDGE_OPERATIONS.md`, `server/docs/CODEMAP.md`, `docs/ARCHITECTURE_BOUNDARIES.md` and `docs/QUICK_LOOKUP.md` include Knowledge vNext target-route and Russian-first scaffolding.
+* Runtime route registration, DB migrations, API handlers and webapp pages are intentionally not changed in Phase 0.
+* Next implementation step is Phase 1 backend-first AI provider settings with OpenRouter mocked tests and Russian UI/API display-message requirements.
+
 ---
 
 ## Phase 1 — AI provider settings, model profiles and safe OpenRouter integration
