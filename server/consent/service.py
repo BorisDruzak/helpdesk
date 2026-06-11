@@ -16,6 +16,7 @@ from app.services.operation_service import OperationService
 
 FINAL_STATUSES = {"approved", "denied", "expired", "superseded", "canceled"}
 OPERATION_SUBJECT_TYPES = {"operation", "tool_run", "diagnostic"}
+PENDING_SUBJECT_UNIQUE_INDEX = "ux_user_consent_requests_pending_subject"
 
 
 class ConsentAccessError(Exception):
@@ -42,6 +43,28 @@ def _iso(value: Any) -> str | None:
 def _clean(value: Any, *, max_length: int = 1000) -> str | None:
     text = str(value or "").strip()
     return text[:max_length] if text else None
+
+
+def _integrity_error_matches_constraint(exc: IntegrityError, constraint_name: str) -> bool:
+    candidates: list[Any] = [exc, getattr(exc, "orig", None)]
+    orig = getattr(exc, "orig", None)
+    candidates.append(getattr(orig, "__cause__", None))
+    for candidate in list(candidates):
+        if candidate is None:
+            continue
+        candidates.append(getattr(candidate, "diag", None))
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if getattr(candidate, "constraint_name", None) == constraint_name:
+            return True
+        if getattr(candidate, "constraint", None) == constraint_name:
+            return True
+        text = str(candidate)
+        if constraint_name in text:
+            return True
+    return False
 
 
 def serialize_user_consent(row: UserConsentRequest) -> dict[str, Any]:
@@ -135,7 +158,9 @@ class UserConsentService:
                     metadata_json=metadata or {},
                     status="pending",
                 )
-        except IntegrityError:
+        except IntegrityError as exc:
+            if not _integrity_error_matches_constraint(exc, PENDING_SUBJECT_UNIQUE_INDEX):
+                raise
             pending = await self.repo.get_pending_by_subject(subject_type, subject_id)
             if pending is not None:
                 return pending

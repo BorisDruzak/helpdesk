@@ -254,6 +254,67 @@ async def test_create_request_handles_pending_subject_integrity_race(test_engine
 
 
 @pytest.mark.asyncio
+async def test_create_request_reraises_unrelated_integrity_error(test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    subject_id = "race-subject-other-constraint"
+    async with session_maker() as session:
+        session.add(
+            RegistryPerson(
+                person_id="race-person-other-constraint",
+                display_name="Race Consent Other Constraint",
+                full_name="Race Consent Other Constraint",
+                email="race-consent-other@example.test",
+                source="test",
+                status="active",
+            )
+        )
+        await session.flush()
+        await UserConsentRepo(session).create(
+            consent_id=str(uuid.uuid4()),
+            subject_type="operation",
+            subject_id=subject_id,
+            requester_person_id="race-person-other-constraint",
+            requested_by_actor_id="support-test",
+            requested_by_role="support",
+            risk_level="safe_read",
+            title="Existing raced consent",
+            status="pending",
+        )
+        await session.commit()
+
+    real_get_pending = UserConsentRepo.get_pending_by_subject
+    calls = {"get": 0}
+
+    async def racing_get_pending(self, subject_type, subject_id_arg):
+        calls["get"] += 1
+        if calls["get"] == 1:
+            return None
+        return await real_get_pending(self, subject_type, subject_id_arg)
+
+    async def raise_other_unique_violation(self, **_kwargs):
+        raise IntegrityError(
+            "insert into user_consent_requests",
+            {},
+            Exception("duplicate key value violates unique constraint some_other_constraint"),
+        )
+
+    monkeypatch.setattr(UserConsentRepo, "get_pending_by_subject", racing_get_pending)
+    monkeypatch.setattr(UserConsentRepo, "create", raise_other_unique_violation)
+
+    async with session_maker() as session:
+        with pytest.raises(IntegrityError, match="some_other_constraint"):
+            await UserConsentService(session).create_request(
+                subject_type="operation",
+                subject_id=subject_id,
+                requester_person_id="race-person-other-constraint",
+                requested_by_actor_id="support-test",
+                requested_by_role="support",
+                risk_level="safe_read",
+                title="Raced consent",
+            )
+
+
+@pytest.mark.asyncio
 async def test_pending_subject_partial_unique_index_is_present(test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
