@@ -40,6 +40,8 @@ Retrieval и RAG работают по принципу ACL-first. Систем�
 
 OpenRouter — первый external provider. API keys должны храниться только через approved secret/config path, не должны попадать в git, logs, API payloads или screenshots и должны отображаться только в masked state.
 
+Initial Phase 1 foundation lives in `server/ai/`: provider registry rows store only secret references, model profiles are task-scoped, policy rows keep AI opt-in gates disabled by default, and `ai_request_audit` is redacted by default. The OpenRouter client is transport-injectable for mocked tests and must not log raw keys, prompts or restricted content.
+
 ## Русская Локализация
 
 Knowledge vNext является Russian-first для видимого продуктового поведения. Portal, support, admin, authoring, graph, AI settings, search/indexing/import/review pages, dialogs, empty states, validation messages, toasts и live-check notes должны использовать русский пользовательский текст.

@@ -455,6 +455,15 @@ Exit criteria:
 * No AI feature is required for baseline KB operation.
 * Observer v2 records AI health/failure/policy-block events.
 
+Phase 1 current state, 2026-06-11:
+
+* Backend foundation is implemented for the first safe AI settings slice.
+* Migration `110` adds `ai_providers`, `ai_model_profiles`, `ai_policy_profiles` and `ai_request_audit`.
+* `server/ai/provider_registry.py` persists providers, model profiles, policy rows and redacted audit data without returning raw secret references.
+* `server/ai/openrouter_client.py` supports mocked OpenRouter-compatible chat completion, embedding and rerank requests.
+* Current backend user-visible `display_message` text is Russian; route paths, field names, enum values and task codes remain English technical contracts.
+* Runtime API handlers, Observer events, health-check execution and React `/app/admin/knowledge/ai` UI are still pending for the next Phase 1 slice.
+
 ---
 
 ## Phase 2 — Search settings and AI-off baseline search

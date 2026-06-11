@@ -6311,3 +6311,147 @@ class PlaybookStepRun(Base):
     output_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     error_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
+
+class AIProvider(Base):
+    """Configurable AI provider. Secret refs are stored as references, not raw keys."""
+
+    __tablename__ = "ai_providers"
+
+    provider_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    base_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    auth_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="api_key")
+    api_key_secret_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    default_headers_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    data_policy: Mapped[str] = mapped_column(String(40), nullable=False, server_default="no_sensitive")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    health_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    last_health_check_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    last_error_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "provider_type IN ('openrouter', 'openai_compatible', 'ollama', 'local_custom')",
+            name="ck_ai_providers_provider_type",
+        ),
+        sa.CheckConstraint(
+            "auth_type IN ('api_key', 'bearer', 'none', 'custom_header')",
+            name="ck_ai_providers_auth_type",
+        ),
+        sa.CheckConstraint(
+            "data_policy IN ('local_only', 'cloud_allowed', 'no_sensitive', 'allow_public')",
+            name="ck_ai_providers_data_policy",
+        ),
+        Index("ix_ai_providers_type_enabled", "provider_type", "enabled"),
+        Index("ix_ai_providers_health", "health_status"),
+    )
+
+
+class AIModelProfile(Base):
+    """Model profile for a specific AI task."""
+
+    __tablename__ = "ai_model_profiles"
+
+    profile_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("ai_providers.provider_id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    task_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    model_name: Mapped[str] = mapped_column(Text, nullable=False)
+    context_window: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    embedding_dimensions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    timeout_ms: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30000")
+    max_retries: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    temperature: Mapped[Optional[float]] = mapped_column(sa.Float, nullable=True)
+    top_p: Mapped[Optional[float]] = mapped_column(sa.Float, nullable=True)
+    structured_output_supported: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    streaming_supported: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    fallback_profile_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "task_type IN ('chat', 'embedding', 'rerank', 'rewrite', 'summarize', 'classify', 'extract', 'answer', 'markup', 'moderation')",
+            name="ck_ai_model_profiles_task_type",
+        ),
+        Index("ix_ai_model_profiles_provider_task", "provider_id", "task_type"),
+        Index("ix_ai_model_profiles_task_default", "task_type", "is_default"),
+    )
+
+
+class AIPolicyProfile(Base):
+    """Policy profile controlling optional AI task usage."""
+
+    __tablename__ = "ai_policy_profiles"
+
+    policy_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    space_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    visibility: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    task_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    ai_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    embedding_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    rerank_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    answer_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    rewrite_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    auto_markup_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    require_local_for_security_restricted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    allow_cloud_for_requester_safe: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    redact_before_send: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    store_prompts: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    store_outputs: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    max_tokens_per_request: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_requests_per_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_cost_per_day: Mapped[Optional[float]] = mapped_column(Numeric(12, 4), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "scope_type IN ('global', 'space', 'visibility', 'task_type')",
+            name="ck_ai_policy_profiles_scope_type",
+        ),
+        Index("ix_ai_policy_profiles_scope_task", "scope_type", "task_type"),
+        Index("ix_ai_policy_profiles_visibility", "visibility"),
+    )
+
+
+class AIRequestAudit(Base):
+    """Redacted audit row for AI requests."""
+
+    __tablename__ = "ai_request_audit"
+
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    provider_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ai_providers.provider_id", ondelete="SET NULL"), nullable=True)
+    model_profile_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ai_model_profiles.profile_id", ondelete="SET NULL"), nullable=True)
+    task_type: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    error_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    error_message_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    prompt_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    output_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_ai_request_audit_provider_created", "provider_id", "created_at"),
+        Index("ix_ai_request_audit_task_status", "task_type", "status"),
+    )
