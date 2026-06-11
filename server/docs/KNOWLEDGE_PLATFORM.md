@@ -159,6 +159,8 @@ Ticket compatibility:
 - `/app/help`: service/offering suggestions, deflection feedback and failed-article attempts before ticket submit.
 - `/app/tickets/:ticketId`: existing Knowledge tab receives platform-backed support suggestions and passport-to-draft results.
 
+Knowledge vNext product UI является Russian-first. Новые portal, support, admin, authoring, graph, AI/search/indexing/import/review surfaces должны использовать русские пользовательские labels, validation messages, empty states, toasts и safe error text. Route paths, API fields, enum values, observer event codes и metric names остаются стабильными английскими техническими контрактами. Tests для новых UI pages должны проверять репрезентативный русский copy и ловить mojibake в visible text.
+
 ## Metrics
 
 `KnowledgeMetricsService` exposes canonical nested metrics:

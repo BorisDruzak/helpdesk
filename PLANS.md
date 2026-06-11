@@ -1,842 +1,2253 @@
-# Browser / Requester / Agent Identity Model
+## Active Work: Knowledge Platform vNext — Product KB, RAG, AI Settings, Manual Markup, Graph Studio and Observer v2
 
-Status:
+Status: accepted / implementation plan.
 
-- Stage 1: complete for browser-link flow and manual `/app/device/pair` pairing-code entry.
-- Stage 2A: requester workspace MVP complete and live-verified for owned-device listing and owned-device ticket creation.
-- Stage 2B: requester ticket detail/message plus close/reopen/feedback lifecycle are implemented and live-verified; authenticated requester catalog/form create with safe preview is implemented and live-verified; requester knowledge suggestions reuse is implemented and live-verified; requester attachment upload/message/download is implemented and live-verified; public ticket claim-to-account is implemented and live-verified; requester no-device creation is implemented and live-verified; requester device detail is implemented and live-verified; requester profile workflow is implemented and live-verified; shared-device privacy is implemented and live-verified; admin UI user to RegistryPerson linking is implemented.
-- Stage 3: unified browser/agent requester consent layer is implemented and renewed-live-verified for `UserConsentRequest`, requester/agent APIs, requester browser prompts, agent account-session decision boundary, operation side effects and Remote Assist browser approve/deny plus agent technical start after approval. Viewer-side WebRTC offer/answer is outside this identity/consent-model scope.
-- Support/admin Approval/Consent Center exists as read-only orchestration and does not replace Stage 3.
+Branch target:
 
-Audit update, 2026-06-10:
+* Work on a new branch, for example `codex/knowledge-platform-vnext-rag`.
+* Keep all changes incremental, tested, documented and backward-compatible with the existing helpdesk Knowledge Platform contracts.
 
-- Browser cookie-auth unsafe requests are same-origin protected in auth middleware for web-session bridge paths. Missing `Origin`/`Referer` returns 403; mismatched origin returns 403; bearer/agent token paths remain outside this cookie-auth guard.
-- Direct browser pairing GET now uses pairing service visibility rules, expires stale rows before response, returns no device facts for expired/consumed/superseded/unknown pairings, and is rate-limited.
-- Consent-required support tool runs, legacy `/api/tools/run` and operation retries create canonical `UserConsentRequest` rows in the same transaction as `Operation(status='waiting_consent')`; missing requester scope rolls back instead of creating an orphan waiting operation.
-- Remote Assist request creation rejects tickets without requester scope before creating a pending remote session or user consent.
-- DB uniqueness for one active pending consent per subject is present in migration `20260610_109_user_consent_requests.py` through partial unique index `ux_user_consent_requests_pending_subject`.
+Goal:
 
-Audit update, 2026-06-11:
+* Turn the current Knowledge Platform from a helpdesk-adjacent admin module into a product-grade organization knowledge base.
+* Preserve and extend the existing foundation: `knowledge_spaces`, `knowledge_items`, versions, chunks, bindings, graph, feedback, metrics, gap findings, review tasks and deflection.
+* Add a standalone Knowledge Portal, a proper article editor, visual graph editor, AI/RAG settings, OpenRouter integration, manual/auto/AI article segmentation, hybrid search, AI-off fallback mode and Observer v2 integration.
+* Ensure the system works without AI enabled. AI must be optional, configurable, observable and safe.
 
-- Live Remote Assist approve-path on `https://192.168.100.17:9443` found and fixed a proxy-origin CSRF mismatch: browser cookie-auth approve with public origin `https://192.168.100.17:9443` was rejected before `server/auth/middleware.py` trusted reverse-proxy `Forwarded` / `X-Forwarded-Proto` + `X-Forwarded-Host` origins. Regression coverage: `test_web_session_cookie_auth_accepts_forwarded_public_origin`.
-- Renewed live Remote Assist browser approval now succeeds through cookie auth: support request creates one canonical `UserConsentRequest`, browser approve returns 200 without agent/session/signaling secrets, consent becomes `approved`, and `remote_assist.request` is delivered to the real online agent `7a3429ec-1c0b-5495-9aad-b284f08ae965`. Evidence: `artifacts/requester-agent-consent-audit-20260611-002201/api/live-remote-assist-http-after-csrf-fix.json` and `artifacts/requester-agent-consent-audit-20260611-002201/api/remote-assist-outbox-after-wait.json`.
-- The same live run exposed a remaining runtime gap: the real agent acknowledged and completed the delivered `remote_assist.request`, but the agent GUI/runtime did not call the technical `/api/remote-assist/{session_id}/approve`; `remote_access_sessions.status` stayed `waiting_consent` with `consent_status=approved` and no `agent_token_hash`. Do not mark Remote Assist approve-path fully complete until the agent starts/accepts the technical session.
-- DB integrity checks on the stand show no waiting tool consent orphans, no duplicate pending consent subjects, no missing pairing hashes, and no public-claim access-code event leak. One pre-hardening pending Remote Assist consent without `requester_person_id` remains from an older live run (`subject_id=cd96935c-1b37-4b59-a391-855757302565`) and must be expired/cleaned or explained before using global `pending_missing_requester_person=0` as a final gate.
-- Follow-up fix: `pc_agent/ui_bridge/event_bus.py` now replays unexpired `remote_assist_request` events by `session_id` for late GUI/SSE subscribers, so an approved Remote Assist command is not lost if it arrives while the GUI reconnects. Regression coverage: `test_event_bus_replays_remote_assist_request_for_late_subscriber` and `test_event_bus_does_not_replay_expired_remote_assist_request`.
-- Local GUI live re-run with source agent `codex-ra-gui-0611` verified the full browser approve -> agent technical start path: support request 200, requester cookie approve 200, canonical consent count 1, no requester/browser secret exposure, outbox delivered, operation succeeded, `/api/remote-assist/{session_id}/approve` authenticated as agent, `agent_token_hash_present=true`, and session reached `starting`. Evidence: `artifacts/requester-agent-consent-audit-20260611-002201/api/live-remote-assist-local-gui-after-replay-fix-3.json`, `artifacts/requester-agent-consent-audit-20260611-002201/db/remote-assist-local-gui-final-db-check.json`, `artifacts/requester-agent-consent-audit-20260611-002201/tests/local_agent_logs_after_ra_start.txt`, `artifacts/requester-agent-consent-audit-20260611-002201/tests/remote_server_logs_after_local_gui_ra_start.txt`, `artifacts/requester-agent-consent-audit-20260611-002201/browser/local-agent-uia-remote-assist-window.png`.
-- The stale pre-hardening under-scoped pending Remote Assist consent was expired via an audited live cleanup; renewed DB integrity now shows `waiting_tool_consent_orphans=0`, `duplicate_pending_subjects=0`, `pending_missing_requester_person=0`, `pairing_missing_hashes=0`, and `claim_events_with_access_code=0`.
-- 2026-06-11 final hardening local pass: consent-required operation retry ticket events now redact replay params with the same helper used for `UserConsentRequest.requested_action_payload_redacted`; `UserConsentService.create_request()` is race-safe around the partial unique pending-subject index; public ticket claim now requires a resolved `RegistryPerson` and returns `REQUESTER_IDENTITY_REQUIRED` for unlinked web users; requester-facing Remote Assist consent list/detail/approve responses have regression coverage proving they do not expose ICE/SDP/signaling/agent/viewer/session secrets. Local evidence is captured in `artifacts/requester-agent-consent-final-audit-20260611-140237/tests/test-summary.txt`.
-- 2026-06-11 final renewed full live audit after hardening is complete on `https://192.168.100.17:9443` with evidence in `artifacts/requester-agent-consent-full-live-audit-20260611-183743/`: requester lifecycle/message/close/feedback/reopen, shared-device privacy, public claim strict person policy, browser same-origin CSRF rejection, direct pairing inactive states, operation consent approve/deny/idempotent repeat, Remote Assist browser approve -> agent technical approve -> ended, Remote Assist browser deny, requester Remote Assist secret non-exposure, browser screenshots, console/network, API evidence and DB integrity all passed. Final DB checks show `orphan_waiting_consent=0`, `duplicate_pending_consent=0`, `pending_missing_requester_person=0`, `pairing_missing_hashes=0`, `public_claim_access_code_leak=0`, and `consent_event_sensitive_param_hits=0`.
+Non-negotiable principles:
 
-Current audit coverage matrix:
+* Do not replace the existing Knowledge Platform. Extend it.
+* AI must never be required for baseline search, article viewing, manual article editing, manual markup, graph editing or helpdesk linking.
+* AI-generated content must never be auto-published. It must create proposals, drafts, segments or review tasks.
+* Retrieval and RAG must be ACL-first. Filter by actor role, visibility, space policy and item/version status before vector search, rerank or answer generation.
+* No API keys in git, docs examples, tests, screenshots or browser logs.
+* OpenRouter API testing is allowed only when the user provides a key through the intended secret/config location.
+* The user must be able to disable embeddings, rerank, answer generation, rewrite, auto-markup and all AI features independently.
+* Every new product path must have tests, docs and live/browser verification evidence when the UI becomes testable.
+* Integrate with Observer v2 from the start: health, jobs, audit, degradations, policy blocks, indexing failures, search failures, AI provider failures and RAG answer quality signals must be visible as observer events/metrics.
 
-| Flow | Backend endpoint | Frontend route | Agent path | Tests | Live evidence | Status | Gaps |
-|---|---|---|---|---|---|---|---|
-| Direct pairing GET inactive states | `GET /api/web/registry/browser-pairings/{pairing_id}` | `/app/device/register`, `/app/device/login` | pairing pickup polling | `test_web_user_direct_pairing_get_rejects_inactive_pairings_without_device_facts` | `artifacts/requester-agent-consent-full-live-audit-20260611-183743/api/api-results-final.json` | complete | Valid lookup succeeded; expired/consumed/superseded/unknown returned safe 404/no device facts. |
-| Browser cookie-auth state changes | auth middleware for `/api/web/*`, upload/artifact bridge paths | requester/admin/support webapp | none | `test_web_session_cookie_auth_unsafe_requests_require_same_origin`, `test_web_session_cookie_auth_accepts_forwarded_public_origin`, bearer bypass test | `api/api-results-final.json`, `browser/network-shared-requester.json`, screenshots | complete | Requester message and public claim without Origin returned 403 `CSRF_ORIGIN_REQUIRED`; correct-origin state changes succeeded. |
-| Support/legacy operation consent invariant | support/legacy/retry waiting-consent operation paths | `/app/tickets`, legacy/API clients | none until approve | `test_web_support_tool_action_keeps_consent_required_tool_waiting`, `test_legacy_tools_run_creates_user_consent_for_waiting_operation`, `test_retry_consent_required_operation_creates_waiting_consent_without_dispatch` | `db/db-results-final.json` | complete | Global DB orphan/duplicate checks are zero after renewed live run. |
-| Retry operation consent | `POST /api/operations/{operation_id}/retry` | `/app/tickets` operation retry | none until approve | `test_retry_consent_required_operation_creates_waiting_consent_without_dispatch` | `api/api-results-final.json`, `db/db-results-final.json` | complete | Browser approve queued/accepted exactly one operation; deny left operation denied and no outbox. |
-| Remote Assist approve path | `POST /api/web/support/tickets/{ticket_id}/remote-assist/request`, `POST /api/web/requester/consents/{consent_id}/approve` | `/app/tickets`, requester consent center | `remote_assist.request` delivered to online agent; technical approve creates agent token hash | `test_remote_assist_rejects_ticket_without_requester_scope`, remote assist service tests, UI bridge replay tests | `api/api-results-final.json`, `db/db-results-final.json` | complete | Browser approve exposed no requester-side ICE/SDP/signaling/agent/viewer secrets; agent technical approve succeeded; session ended cleanly. |
-| Remote Assist deny path | same request endpoint plus requester consent deny | requester consent center | no technical start after deny | remote assist service tests | `api/api-results-final.json`, `db/db-results-final.json` | complete | Browser deny set session/consent to denied; agent technical approve after deny returned 409 `INVALID_SESSION_STATUS`; `agent_token_hash_present=false`. |
-| Viewer-side WebRTC offer/answer | viewer/signaling endpoints | support viewer | WebRTC media/signaling | remote assist no-db/service tests | not collected in this identity-model audit | non-goal | Outside Browser / Requester / Agent identity and consent-model signoff; keep for a viewer/media gate. |
+Локализация и языковая политика:
 
-Latest live verification, 2026-06-08/09:
+* Knowledge vNext должен быть Russian-first для всех пользовательских поверхностей: портал, support workspace, админский Knowledge Ops, authoring, graph, AI settings, search/indexing/import/review pages, диалоги, empty states, validation messages, toasts и browser/live evidence notes.
+* Стабильные технические контракты остаются на английском: route paths, API field names, enum values, migration identifiers, observer event codes, metric names, model/profile task codes и log categories.
+* Backend errors должны сохранять machine-readable codes и возвращать безопасные русские пользовательские сообщения для web/GUI consumers.
+* Docs и handoff notes для операторов должны быть на русском, когда описывают продуктовое поведение или ручные live checks. Низкоуровневые code comments могут оставаться на английском, если объясняют implementation details.
+* Тесты для UI-фаз должны проверять репрезентативные русские labels и отсутствие mojibake в rendered visible text.
+* Тексты настройки OpenRouter/AI должны быть на русском и явно объяснять, куда оператор вводит ключ, но никогда не показывать raw key.
 
-- Empty local agent `codex-live-requester-0608` registered through `/app/device/register`, agent pickup consumed the registration pairing, admin approval created active binding `e3cacd33-ba5e-436d-8930-520d0e66307a`.
-- Agent GUI account gate refreshed to `confirmed_binding`; GUI automation created ticket `T-000646`.
-- `/app/requester` for `requester-user-20260608-093700` showed one owned device and both live tickets; browser requester creation created ticket `T-000647`.
-- Login pairing `/app/device/login` was rechecked after the redirect/pairing UI fixes: `next` returned to the pairing page and device facts stayed visible after confirmation.
-- DB verification confirmed registration pairing consumed, login pairing consumed, claim approved, binding active, account sessions verified, and both tickets linked to the same requester person/binding.
-- Authenticated requester lifecycle check used isolated requester `requester-lifecycle-20260608-144009@example.test` and ticket `T-000649`: Browser MCP verified owned ticket detail controls, close changed the UI status to `Закрыта`, negative CSAT saved feedback, reopen changed the UI status to `Заявка в работе`, console errors were 0, and DB verification showed status transitions `queued -> closed -> in_progress`, one latest requester feedback row rating 2, one reopen event linked to that feedback, and requester person/binding set. The temporary live user was deactivated after verification.
+Current baseline context:
 
-- Authenticated requester catalog/form create check used isolated requester `requester-catalog-20260608113032@example.test`, owned device `catalog-live-113032` and ticket `e9741d40-73da-4176-8466-3fa3e00325c8`: Browser MCP verified `/app/requester` service catalog selection, dynamic required form fields, safe preview summary, unlocked create button, accepted ticket in the requester list, and 0 console errors. Remote DB verification confirmed the ticket is linked to the expected device/person/binding, has `service_code=workplace`, `offering_code=workplace.laptop_broken`, `request_form_key=breakage`, form data keys persisted, catalog ids present, requester status `accepted`, and 6 ticket events. The temporary live user was deactivated and its binding revoked after verification.
-- Authenticated requester preview wrapper check used isolated requester `requester-preview-20260608130244@example.test`, owned device `preview-live-130244` and ticket `0d266a8e-9a9d-40f7-ac3b-4775c8ce998f`: Browser MCP verified `/app/requester` dynamic form fill, authenticated safe preview summary, unlocked create button, accepted ticket in the requester list, and 0 fresh console errors. Remote DB verification confirmed preview did not create an extra ticket (`ticket_count_for_live_person=1` after preview+create), the created ticket is linked to the expected device/person/binding, has `service_code=workplace`, `offering_code=workplace.laptop_broken`, `request_form_key=breakage`, form data persisted, catalog ids present, requester status `accepted`, and 6 ticket events. The temporary live user was deactivated and its binding revoked after verification.
-- Authenticated requester knowledge suggestions reuse check used isolated requester `codex_stage2b_knowledge_20260608_2107@example.test`, owned device `codex-stage2b-kb-live` and ticket `80885bf6-38ab-42fa-8cc7-f0d9175216dd`: Browser MCP verified login to `/app/requester`, one owned registered device, requester-safe suggestions, opening the live article snippet, marking it not helpful, safe preview, and accepted ticket creation. Remote DB verification confirmed the ticket is linked to the expected device/person/binding, `knowledge_attempts` contains `viewed` and `not_helpful` attempts for the live knowledge item with `surface=requester_portal`, `/api/knowledge/feedback` stored `viewed`/`not_helpful` feedback rows, and the ticket has `ticket_created_after_view` feedback metadata with both attempts.
-- Authenticated requester attachment check used isolated requester `codex_stage2b_attach_20260609083214@example.test`, owned device `stage2b-attach-20260609083214` and ticket `T-000653`: Browser MCP verified `/app/requester` login, exactly one owned device, owned ticket detail, file selection through the requester composer, immediate `/api/upload` result shown as a pending attachment, attachment-only send through `/api/web/requester/tickets/{ticket_id}/message`, rendered download link, browser-authenticated download 200 with matching file contents, and 0 console errors. Remote DB verification confirmed the artifact is bound to the expected ticket/device, the `chat_message` payload stores empty `text`, matching `attachment_refs`, normalized `attachments[0].name/url`, and the ticket requester/person/binding match the live requester. The temporary live user was deactivated and its binding revoked after verification.
-- Authenticated requester public-claim check used isolated requester `codex_stage2b_claim-20260609-152039@example.test` and public ticket `T-000654`: Browser MCP verified `/app/requester` login, empty requester list before claim, visible `Привязать обращение` controls, successful claim with the existing public access code, immediate requester list refresh, opened ticket detail, fresh reload persistence and 0 console errors. Remote DB verification confirmed the ticket `requester_id` and `requester_person_id` match the live requester/person, `custom_fields.public_access.unbound=false`, one `requester_ticket_claimed` audit event exists and the event payload does not store the access code. The temporary live user was deactivated after verification.
-- Authenticated requester no-device creation check used isolated requester `codex_stage2b_nodev_20260609153139@example.test` with no active bindings/devices and created ticket `T-000655`: Browser MCP/Playwright verified `/app/requester` login, no-device notice, required form completion, preview/submit, created-ticket notice, fresh reload persistence, and 0 console errors. Remote DB verification confirmed `requester_id`/`requester_person_id` match the live requester/person, `requester_binding_id IS NULL`, `requester_registration_status=no_device`, `requester_account_mode=browser_no_device`, `custom_fields.request_context=no_device`, `requester_account_context.account_mode=browser_no_device`, no `devices` row exists for the placeholder device id, and active binding count for the requester person is 0. Temporary no-device live users were deactivated after verification.
-- Authenticated requester device detail check used isolated requester `codex_stage2b_device_20260609182934@example.test`, owned device `stage2b-device-detail-20260609182934` and ticket `T-000656`: Browser MCP/Playwright verified `/app/requester` login, owned device list, opening device detail, safe hostname/asset facts, recent requester-owned ticket, 0 console errors, and screenshot `artifacts/requester-stage2b-device-detail/requester-device-detail-live.png`. Direct browser-authenticated API verified `GET /api/web/requester/devices/{device_id}` returns 200 with the expected device id, `open_ticket_count=1`, recent ticket id `84b3404c-7730-4579-9445-6ca11e0b5eaa`, no raw discovery marker leak, and unknown device returns 404. Remote DB verification confirmed user/person/device/asset/binding/ticket links, ticket `requester_account_mode=confirmed_binding`, the raw discovery marker exists only in `registry_assets.discovery_payload`, and cleanup deactivated the temporary UI user plus revoked the live binding.
-- Authenticated requester profile check used isolated requester `codex_stage2b_profile_20260609201103@example.test`, owned device `stage2b-profile-20260609201103`, active binding `89061f1c-ad5f-43cd-864e-8ee52b2f2c20` and pending claim `ee3eeb27-b133-49ca-a08e-a514e930c84b`: MCP/Playwright verified `/app/requester` login, opening profile detail, safe full name/phone/identity/device rendering, 0 console errors, and screenshot `artifacts/requester-stage2b-profile/requester-profile-live.png`. Browser-authenticated API verified `GET /api/web/requester/profile` returns 200, expected person id, identity providers `employee_id`/`ui_login`, one owned device, one active binding, one pending claim, `profile_policy.editable=false`, no raw `metadata_json`/`normalized_identifier`/marker leak, and `GET /api/web/requester/devices` count 1. Remote DB verification confirmed the UI user/person/device/binding/claim/identity links and raw marker exists only in `registry_person_identities.metadata_json`; cleanup deactivated the temporary UI user, revoked the binding, expired the pending claim and revoked active UI tokens.
-- Authenticated requester shared-device privacy check used isolated requesters `codex_stage2b_shared_fixed_20260610140948_primary@example.test` and `codex_stage2b_shared_fixed_20260610140948_shared@example.test`, one shared device `d687a3bb-1726-4efe-8740-3b8d0e47fa48`, active primary binding `8ea63735-1f3d-49c1-bfc5-e8c089a5d183` and active shared-user binding `2f6a8b00-30c1-4a82-98f8-42feb1249c88`. Browser-authenticated requester API created tickets `T-000659` and `T-000660` through `/api/web/requester/tickets`; MCP/Playwright verified `/app/requester` shows only the current requester's own ticket, `GET /api/web/requester/tickets` returns only the own ticket, `GET /api/web/requester/devices/{device_id}` returns `open_ticket_count=1` and only own recent ticket, and direct foreign `GET /api/web/requester/tickets/{ticket_id}` returns 404. The only console errors were the intentional negative 404 fetches. Screenshot saved as `requester-stage2b-shared-privacy-live.png`. Remote DB verification confirmed both tickets share the device but have distinct `requester_person_id`/`requester_binding_id`, `requester_account_mode=confirmed_binding`, binding relationships `primary_user`/`shared_user`; cleanup deactivated four temporary UI users from the fixed run and pre-fix setup run, revoked live bindings and active UI tokens. Pre-fix setup contamination tickets `T-000657`/`T-000658` remain as live-test artifacts tied to deactivated users.
-- Admin UI user/person linking adds `ui_users` to the admin registry snapshot and `POST /api/web/admin/registry/ui-users/{user_login}/link-person`, which creates a verified `RegistryPersonIdentity(provider='ui_login')`, refuses collisions with 409 and writes a registry admin event. `/app/admin/registry` People shows linked UI accounts and exposes a `UI login` action for explicit linking.
-- Admin UI user/person linking live check used isolated run `codex_ui_link_20260610144922`: remote API created a temporary UI user/person link through `POST /api/web/admin/registry/ui-users/{user_login}/link-person`, `GET /api/web/admin/registry` returned the linked `ui_users` row, DB verification confirmed the verified `ui_login` identity, requester resolver matched the person, registry admin event stored the link audit, collision against another person returned 409 `IDENTITY_COLLISION`, and cleanup removed temporary UI users/people/identities/events plus revoked the temporary admin token. MCP browser verified `/app/admin/registry` People renders the `UI account` column and `UI login` action; screenshot saved as `admin-registry-ui-user-link-live.png`.
+* The repo already contains a Knowledge Platform with spaces, items, immutable versions, chunks, bindings, graph nodes/edges/entity mentions, feedback events, ingestion jobs, ticket knowledge links, review tasks, quality snapshots, gap findings and search events.
+* Current search is PostgreSQL-compatible keyword matching over title/summary/slug/chunk text with basic scoring. It is not yet product-grade hybrid search or RAG.
+* Current `/app/admin/knowledge` is an operations/admin panel. Current `/app/knowledge` reuses the same panel in support mode. This must be split into separate product surfaces.
+* Current ingestion is closer to text/markdown draft ingestion. PDF/DOCX/HTML/Git/API ingestion contracts exist conceptually but need real product implementation.
+* Current graph foundation exists on the backend, but the UI does not expose a real visual graph editor.
 
-## Remaining Work
+Target product surfaces:
 
-Stage 2B follow-up:
+* `/app/kb`
 
-- No open Stage 2B admin-linking follow-up.
+  * Organization Knowledge Portal for end users.
+* `/app/kb/search`
 
-Stage 3:
+  * Standalone search experience.
+* `/app/kb/ask`
 
-- [x] `UserConsentRequest`;
-- [x] requester consent APIs;
-- [x] agent consent APIs;
-- [x] operation consent integration;
-- [x] atomic/idempotent consent decisions;
-- [x] requester browser consent prompts;
-- [x] agent GUI consent prompts;
-- [x] Remote Assist canonical browser consent creation/approve dispatch integration.
-- [x] Remote Assist technical agent start after browser approval: local GUI live run reached `/api/remote-assist/{session_id}/approve`, `agent_token_hash_present=true`, outbox delivered and WebRTC signaling started as agent.
-- [x] Renewed full live audit evidence after 2026-06-11 hardening: browser screenshots, console/network, API and DB checks for pairing, requester lifecycle/privacy, operation consent and Remote Assist approve/deny.
-- [x] Clean up or explicitly classify the stale pre-hardening pending Remote Assist consent without `requester_person_id` before final global DB integrity signoff.
+  * AI answer with citations, only when enabled.
+* `/app/kb/articles/:slug`
 
-## Goal
+  * Requester-safe article reader.
+* `/app/knowledge`
 
-Move helpdesk requester identity to a clear model:
+  * Support Knowledge Workspace.
+* `/app/knowledge/articles/:id`
 
-- Browser is the primary identity and requester surface.
-- Agent is the local device endpoint for diagnostics, Remote Assist, inventory and command execution.
-- Server is the only source of truth for identity, binding, session, ticket access and user consent.
+  * Support article/runbook/known-error view.
+* `/app/admin/knowledge`
 
-The work should reuse existing registration, account-state, public requester, ticket creation and consent foundations instead of rewriting them from scratch.
+  * Knowledge Ops dashboard.
+* `/app/admin/knowledge/studio`
 
-## Current State
+  * Product article editor / authoring studio.
+* `/app/admin/knowledge/graph`
 
-The project already has the core identity layers needed for this work:
+  * Visual graph editor.
+* `/app/admin/knowledge/ai`
 
-- Agent / device identity: agent registers as a device and has `device_id`, machine token and websocket/HTTP access.
-- Registry person / device binding: `RegistryPerson` is linked to a device through `DeviceUserBinding`.
-- Requester account session: the agent has account-session states such as `confirmed_binding`, `registration_pending` and `verified_other_account`.
+  * AI providers, model profiles, policies and health.
+* `/app/admin/knowledge/search-settings`
 
-Existing implementation capabilities to preserve and extend:
+  * Search/retrieval settings.
+* `/app/admin/knowledge/indexing`
 
-- Agent account state already includes active bindings, pending registration, server sessions, confirmed binding accounts, verified-other-account sessions and the flags `can_register`, `can_login_confirmed_binding`, `can_login_other_account`.
-- Agent profile registration already creates or finds a person, identities and registration claim, then moves the claim into `pending_user_confirmation`, `pending_admin_review` or `conflict`.
-- User claim confirmation already checks web user identity against claim/person identities.
-- Web login already exists through `/api/web/session/login`, creates a UI token and stores it in an HttpOnly cookie.
-- Role `user` has requester workspace permissions and implemented requester workspace flows; remaining gaps are tracked explicitly in this plan.
-- Public requester flow already partially exists through `/app/help`, `/app/ticket/:ticketId` and public ticket token/code.
+  * Chunk/embedding/indexing jobs.
+* `/app/admin/knowledge/import`
 
-Completed Stage 1 backend foundation:
+  * Document ingestion wizard.
+* `/app/admin/knowledge/review`
 
-- Migration `108_device_browser_pairings` adds persisted `device_browser_pairings`.
-- `BrowserPairingService` creates short-lived login/registration pairings with hashed pairing token/code storage.
-- New pending pairing for the same `device_id + purpose` supersedes older pending rows.
-- Agent endpoints exist:
-  - `POST /api/registry/agent/browser-pairings`
-  - `GET /api/registry/agent/browser-pairings/{pairing_id}`
-- Web-authenticated manual-code lookup exists:
-  - `POST /api/web/registry/browser-pairings/lookup`
-  - returns only `pairing_id`, `purpose`, `expires_at` and `next_url`; it does not return `device_id`, device facts, pairing token or raw pairing code.
-- Login pairing pickup creates a `confirmed_binding` account session and returns the plaintext `session_token` to the agent exactly once.
-- Existing coverage includes pairing secret hashing, supersede, expiry lookup, one-time pickup and wrong-device API rejection.
+  * Review and curation queue.
 
-## Scope
+Architecture boundaries:
 
-Implement in three stages:
+* `Knowledge Core`
 
-1. Browser-mediated registration/login for the agent.
-2. Authenticated requester workspace in the browser.
-3. Unified browser/agent consent layer.
+  * spaces, items, versions, chunks, segment markup, ACL, tags, taxonomy, bindings, graph.
+* `Knowledge Search`
 
-Expected ownership zones:
+  * keyword/full-text search, vector search, hybrid retrieval, rerank, explainable score.
+* `Knowledge AI`
 
-- Auth, sessions and device identity.
-- Registry / inventory / CMDB.
-- Typed web boundary.
-- React webapp UI.
-- Agent runtime / GUI.
-- Ticket service-desk contract.
-- Tool execution and operations.
-- Docs / navigation.
+  * providers, model profiles, policies, rewrite, summarize, classify, markup, embeddings, rerank, answer.
+* `Knowledge Portal`
 
-Classification: cross-cutting. The implementation will likely add routes, DTOs, DB models/migrations, web UI, agent GUI behavior and security checks.
+  * end-user reading, search, ask, feedback.
+* `Knowledge Authoring`
 
-## Non-Goals
+  * article editor, manual markup, templates, version diff, comments, review.
+* `Knowledge Graph`
 
-- Do not change Protocol V3 unless a later implementation step proves it is strictly required.
-- Do not let browser routes accept arbitrary `device_id` for pairing, login or requester ticket creation.
-- Do not store agent account session tokens in browser localStorage/sessionStorage.
-- Do not return agent session tokens to the browser.
-- Do not make local agent forms the authoritative source for user registration.
-- Do not merge public requester access and authenticated requester access into one implicit security model.
-- Do not allow support/admin to approve user consent on the user's behalf except through an explicit audited override policy.
+  * graph nodes/edges, visual graph editor, AI-suggested links.
+* `Knowledge Ops`
 
-## Constraints
+  * quality, gaps, review, rollout, indexing, provider health, Observer v2.
+* `Helpdesk Adapter`
 
-- Preserve existing agent technical registration and machine-token authorization.
-- Pairing tokens and codes must be short-lived, one-time and auditable.
-- Browser state-changing requester actions need CSRF protection because web auth uses HttpOnly cookies.
-- Requester ticket/device/consent access must be checked through resolved ownership, not by trusting client-provided ids.
-- Shared devices must not leak another user's tickets.
-- `verified_other_account` must remain strict: it can see only the exact approved/session-owned scope where applicable.
-- Sensitive tokens, auth headers, cookies, raw machine tokens and consent tokens must never be logged.
-- Agent machine token is transport/device identity only and must not be treated as requester identity.
-- Agent-side user consent decisions require a valid requester account session or an explicitly audited local-user confirmation mechanism.
-- Pairing secrets must be one-time, short-lived, stored hashed/protected and never logged.
-- Browser-visible changes require screenshots or browser-run evidence from the relevant canonical route: `/app/requester`, `/app/device/pair`, `/app/device/register`, `/app/device/login`, or the changed admin/support route.
+  * ticket suggestions, deflection, ticket links, passport-to-draft, known errors, support runbooks.
 
-## Architecture Decisions
+Do not let `Knowledge Core` depend on ticket-specific code. Ticket/helpdesk code may depend on Knowledge through adapter services.
 
-- Browser pairing links must use `pairing_id` or an opaque `pairing_token`, not `device_id`.
-- Server maps pairing to `device_id`; browser never chooses the device directly.
-- Browser confirms user identity and user decisions.
-- Agent polls server for pairing/session/consent results and receives agent-only session tokens.
-- Server owns all transitions, ownership checks, audit records and ticket timeline events.
-- Authenticated requester endpoints should live under `/api/web/requester/*`.
-- Generic `/api/tickets/*` must not be used directly for authenticated requester actions without an explicit requester ownership wrapper.
-- Public `/app/help` and `/app/ticket/:ticketId` remain guest/public flows and should be reused carefully, not collapsed into authenticated requester semantics.
+---
 
-## Stage 1: Browser-Mediated Agent Registration/Login
+## Phase 0 — Discovery, constraints and plan scaffolding
 
-Goal: device registration to a user and agent user login happen through the browser, with the agent participating only as the device endpoint.
+Goal:
 
-### Main Entity
+* Prepare the codebase for a large but controlled Knowledge Platform vNext implementation.
 
-Introduce server entity `DeviceBrowserPairing`.
+Scope:
 
-Recommended fields:
+* Review current knowledge files, routes, tests and migrations.
+* Map current backend and frontend ownership.
+* Confirm current Alembic head and migration naming.
+* Add this plan to `PLANS.md` as the active work section.
+* Add/update docs placeholders for the new architecture.
 
-- `pairing_id`
-- `device_id`
-- `purpose`: `registration | login`
-- `status`: `pending | confirmed | consumed | expired | canceled | failed`
-- `pairing_code`
-- `created_at`
-- `expires_at`
-- `confirmed_at`
-- `consumed_at`
-- `canceled_at`
-- `confirmed_by_actor_id`
-- `confirmed_person_id`
-- `resulting_claim_id`
-- `resulting_account_session_id`
-- `failed_reason`
-- `last_polled_at`
-- `poll_attempt_count`
-- `created_by_agent_version`
-- `created_from_ip`
-- `created_from_user_agent`
-- `metadata_json`
+Expected files to inspect:
 
-Pairing token/code storage rules:
+* `server/docs/KNOWLEDGE_PLATFORM.md`
+* `server/docs/KNOWLEDGE_OPERATIONS.md`
+* `server/app/db/migrations/versions/*knowledge*.py`
+* `server/app/repos/knowledge_repo.py`
+* `server/knowledge/*.py`
+* `server/web_api/knowledge_handlers.py`
+* `webapp/src/features/knowledge/*`
+* `webapp/src/pages/admin/knowledge-page.tsx`
+* `webapp/src/pages/knowledge/index.tsx`
+* `webapp/src/app/navigation.tsx`
+* `PLANS.md`
+* `docs/ARCHITECTURE_BOUNDARIES.md`
+* `docs/QUICK_LOOKUP.md`
+* `server/docs/CODEMAP.md`
+* `webapp/src/app/router.tsx`
 
-- raw pairing token/code may be shown only once to the agent/user;
-- raw pairing token/code must never be logged;
-- pairing token/code must be stored hashed or otherwise protected;
-- plaintext agent account `session_token` must not be stored in pairing state.
+Implementation tasks:
 
-Creating a new pending pairing for the same `device_id` and `purpose` should cancel or supersede older pending pairings. This prevents multiple open browser tabs from racing stale pairing requests.
+* Document current baseline in `PLANS.md`.
+* Add a short `server/docs/KNOWLEDGE_VNEXT_ARCHITECTURE.md`.
+* Add a `docs/QUICK_LOOKUP.md` entry for Knowledge vNext.
+* Зафиксировать Russian-first UI/docs localization как cross-phase acceptance invariant.
+* Add no runtime behavior changes in this phase.
 
-### Registration Flow
+Tests:
 
-Agent action: "Зарегистрировать через браузер".
+* No new product tests required yet.
+* Run existing focused knowledge tests if practical.
+
+Verification:
+
+* `git diff --check`
+* `git diff --cached --check`
+* `python -m compileall -q server shared scripts`
+* Проверить docs/UI plan text на mojibake и случайные англоязычные пользовательские тексты на новых Knowledge vNext surfaces.
+* Existing focused knowledge tests if available.
+
+Exit criteria:
+
+* Plan is recorded.
+* Architecture docs identify boundaries and future routes.
+* Ожидания русской локализации явно зафиксированы для каждой последующей UI/API-message phase.
+* No runtime behavior changed.
+
+---
+
+## Phase 1 — AI provider settings, model profiles and safe OpenRouter integration
+
+Goal:
+
+* Add configurable AI provider infrastructure.
+* Support OpenRouter first.
+* Leave room for local/Ollama/OpenAI-compatible providers later.
+* Ensure all AI features can be disabled.
+
+Important user action:
+
+* For live OpenRouter testing, the user must provide an API key through the approved local secret/config location.
+* Do not commit the key.
+* Do not print the key.
+* Do not include the key in screenshots.
+* Recommended initial location for local testing:
+
+  * `.env.local` or server environment variable: `OPENROUTER_API_KEY`
+  * Admin UI secret input: `/app/admin/knowledge/ai`
+* Codex must implement the UI/config path and then ask the operator to enter the key there. Codex must not invent or hardcode a key.
+
+Backend schema:
+
+Add migrations for:
+
+* `ai_providers`
+
+  * `provider_id`
+  * `code`
+  * `title`
+  * `provider_type`: `openrouter`, `openai_compatible`, `ollama`, `local_custom`
+  * `base_url`
+  * `auth_type`: `api_key`, `bearer`, `none`, `custom_header`
+  * `api_key_secret_ref`
+  * `default_headers_json`
+  * `data_policy`: `local_only`, `cloud_allowed`, `no_sensitive`, `allow_public`
+  * `enabled`
+  * `health_status`
+  * `last_health_check_at`
+  * `last_error_redacted`
+  * `metadata_json`
+  * `created_at`, `updated_at`, `created_by`, `updated_by`
+
+* `ai_model_profiles`
+
+  * `profile_id`
+  * `provider_id`
+  * `code`
+  * `title`
+  * `task_type`: `chat`, `embedding`, `rerank`, `rewrite`, `summarize`, `classify`, `extract`, `answer`, `markup`, `moderation`
+  * `model_name`
+  * `context_window`
+  * `embedding_dimensions`
+  * `timeout_ms`
+  * `max_retries`
+  * `temperature`
+  * `top_p`
+  * `structured_output_supported`
+  * `streaming_supported`
+  * `enabled`
+  * `is_default`
+  * `fallback_profile_id`
+  * `metadata_json`
+  * timestamps/audit fields
+
+* `ai_policy_profiles`
+
+  * `policy_id`
+  * `scope_type`: `global`, `space`, `visibility`, `task_type`
+  * `space_id`
+  * `visibility`
+  * `task_type`
+  * `enabled`
+  * `ai_allowed`
+  * `embedding_allowed`
+  * `rerank_allowed`
+  * `answer_allowed`
+  * `rewrite_allowed`
+  * `auto_markup_allowed`
+  * `require_local_for_security_restricted`
+  * `allow_cloud_for_requester_safe`
+  * `redact_before_send`
+  * `store_prompts`
+  * `store_outputs`
+  * `max_tokens_per_request`
+  * `max_requests_per_day`
+  * `max_cost_per_day`
+  * `metadata_json`
+
+* `ai_request_audit`
+
+  * `request_id`
+  * `provider_id`
+  * `model_profile_id`
+  * `task_type`
+  * `actor_id`
+  * `actor_role`
+  * `source_surface`
+  * `status`
+  * `latency_ms`
+  * `token_input`
+  * `token_output`
+  * `cost_estimate`
+  * `prompt_hash`
+  * `output_hash`
+  * `error_redacted`
+  * `created_at`
+  * `metadata_json`
+
+Secret handling:
+
+* Implement a minimal safe secret abstraction.
+* For v1, support env-backed secret refs:
+
+  * `env:OPENROUTER_API_KEY`
+* Optional encrypted DB secret storage may be added only if the project already has a safe pattern.
+* Never return raw secrets from API.
+* UI must show masked secret state only.
+
+Backend services:
+
+Add:
+
+* `server/ai/contracts.py`
+* `server/ai/provider_registry.py`
+* `server/ai/openrouter_client.py`
+* `server/ai/openai_compatible_client.py`
+* `server/ai/policies.py`
+* `server/ai/audit.py`
+* `server/ai/health.py`
+* `server/ai/tasks.py`
+
+Required task methods:
+
+* `chat_completion`
+* `generate_embedding`
+* `rerank`
+* `rewrite_text`
+* `summarize_text`
+* `classify_text`
+* `extract_json`
+* `markup_article_segments`
+
+OpenRouter endpoints to support:
+
+```text
+POST /api/v1/chat/completions
+POST /api/v1/embeddings
+POST /api/v1/rerank
+```
+
+Do not make network calls in normal unit tests. Use fake HTTP transport/mocks.
+
+Admin APIs:
+
+* `GET /api/web/knowledge/ai/providers`
+* `POST /api/web/knowledge/ai/providers`
+* `PATCH /api/web/knowledge/ai/providers/{provider_id}`
+* `POST /api/web/knowledge/ai/providers/{provider_id}/health-check`
+* `GET /api/web/knowledge/ai/model-profiles`
+* `POST /api/web/knowledge/ai/model-profiles`
+* `PATCH /api/web/knowledge/ai/model-profiles/{profile_id}`
+* `GET /api/web/knowledge/ai/policies`
+* `POST /api/web/knowledge/ai/policies`
+* `GET /api/web/knowledge/ai/audit`
+
+UI:
+
+* Add `/app/admin/knowledge/ai`.
+* Sections:
+
+  * Providers.
+  * Model profiles.
+  * Task defaults.
+  * AI policies.
+  * OpenRouter key status.
+  * Health check.
+  * Recent audit/errors.
+* Add toggles:
+
+  * Global AI enabled.
+  * Embeddings enabled.
+  * Rerank enabled.
+  * Ask/answer enabled.
+  * Rewrite enabled.
+  * AI markup enabled.
+  * Cloud providers allowed.
+* Add clear warning:
+
+  * `security_restricted` content must not be sent to cloud providers unless an explicit admin policy allows it.
+  * Все видимые тексты AI settings, disabled/fallback states, health-check results и safe secret-entry instructions должны быть на русском.
+
+Observer v2:
+
+* Emit observer events:
+
+  * `knowledge.ai.provider_health_failed`
+  * `knowledge.ai.provider_health_ok`
+  * `knowledge.ai.policy_blocked`
+  * `knowledge.ai.request_failed`
+  * `knowledge.ai.secret_missing`
+* Add observer metrics:
+
+  * AI request count by task.
+  * AI failure count by provider.
+  * AI latency p95 if existing observer aggregation supports it.
+* Add admin tech/observer visibility where current observer UI allows.
+
+TDD checkpoints:
+
+* RED tests for AI provider CRUD.
+* RED tests for env secret masking and no raw key in responses.
+* RED tests for OpenRouter client request construction using mocked HTTP.
+* RED tests for health check success/failure.
+* RED tests for policy blocking cloud use for `security_restricted`.
+* RED tests for audit record creation.
+* RED webapp tests for provider settings UI, toggles, masked secret state and health result.
+* RED webapp tests для репрезентативных русских labels и mojibake-free visible AI settings text.
+* RED observer tests for provider failure event emission if existing observer test patterns exist.
+
+Verification:
+
+* Focused pytest:
+
+  * `server/tests/test_ai_provider_settings.py`
+  * `server/tests/test_ai_openrouter_client.py`
+  * `server/tests/test_ai_policy_profiles.py`
+  * `server/tests/test_ai_observer_events.py`
+* Focused Vitest:
+
+  * `webapp/src/features/knowledge/ai-settings-page.test.tsx`
+* Compile/build:
+
+  * `python -m compileall -q server shared scripts`
+  * `pnpm --dir webapp test -- src/features/knowledge/ai-settings-page.test.tsx`
+  * `pnpm --dir webapp build`
+  * `git diff --check`
+
+Live checks:
+
+* Start server and webapp.
+* Open `/app/admin/knowledge/ai`.
+* Add OpenRouter provider.
+* User enters API key in the intended secret/config location.
+* Run health check.
+* Confirm:
+
+  * success state if key is valid;
+  * failure state if key is invalid/missing;
+  * key is masked;
+  * browser console has no secret leakage;
+  * observer event is created for success/failure.
+* Capture browser evidence/screenshots for:
+
+  * provider configured;
+  * masked key;
+  * health check result;
+  * observer/tech event.
+
+Exit criteria:
+
+* OpenRouter can be configured safely.
+* All AI functionality is disabled by default unless explicitly enabled.
+* No AI feature is required for baseline KB operation.
+* Observer v2 records AI health/failure/policy-block events.
+
+---
+
+## Phase 2 — Search settings and AI-off baseline search
+
+Goal:
+
+* Build a strong non-AI search foundation before embeddings/RAG.
+* Ensure the KB is useful with AI disabled.
 
 Backend:
 
-- `POST /api/registry/agent/browser-pairings`
-- body includes `purpose=registration`
-- authenticated by agent machine token.
+Add `knowledge_search_settings` table:
 
-Server returns:
+* `settings_id`
+* `scope_type`: `global`, `space`, `surface`, `actor_role`
+* `space_id`
+* `surface`
+* `actor_role`
+* `keyword_enabled`
+* `full_text_enabled`
+* `vector_enabled`
+* `rerank_enabled`
+* `ai_query_rewrite_enabled`
+* `graph_boost_enabled`
+* `binding_boost_enabled`
+* `manual_segment_boost_enabled`
+* `quality_boost_enabled`
+* `freshness_boost_enabled`
+* `feedback_boost_enabled`
+* `title_weight`
+* `summary_weight`
+* `body_weight`
+* `chunk_weight`
+* `manual_segment_weight`
+* `binding_weight`
+* `graph_weight`
+* `quality_weight`
+* `freshness_weight`
+* `helpfulness_weight`
+* `max_results`
+* `snippet_length`
+* `highlight_enabled`
+* `zero_result_logging_enabled`
+* `metadata_json`
+* timestamps/audit fields
 
-- `pairing_id`
-- `pairing_code`
-- `expires_at`
-- `browser_url`
-- `poll_url`
+Search modes:
 
-Browser opens `/app/device/register?pairing_id=...`.
+* `keyword_only`
+* `full_text`
+* `hybrid_no_ai`
+* `hybrid_vector`
+* `hybrid_vector_rerank`
+* `rag_answer`
 
-Fallback: if the agent cannot open the system browser automatically, the user can open `/app/device/pair`, sign in, enter the displayed `pairing_code`, and be redirected to `/app/device/login?pairing_id=...` or `/app/device/register?pairing_id=...`. The lookup resolves only pending pairings after web login, expiry checks and rate-limit checks.
+Important:
 
-If the web user is not logged in, redirect to `/app/login?next=...`.
+* `keyword_only`, `full_text` and `hybrid_no_ai` must work without any AI provider, embedding or vector index.
+* If AI is disabled or provider unavailable, search must gracefully fall back to non-AI search.
 
-Browser confirmation page should show safe device facts such as hostname, OS, agent version and safe location/organization details when available.
+Backend service changes:
 
-Server confirmation must:
+* Replace or wrap current `KnowledgeSearchService` with:
 
-- validate pairing status and expiry;
-- validate web session;
-- resolve `RegistryPerson` for the web user;
-- create or update `DeviceRegistrationClaim`;
-- apply registration policy;
-- return user-facing status: `approved`, `pending_admin_review`, `pending_user_confirmation`, `conflict`, `rejected` or `failed`.
+  * `KnowledgeSearchSettingsService`
+  * `KnowledgeKeywordSearchService`
+  * `KnowledgeFullTextSearchService`
+  * `KnowledgeHybridSearchService`
+  * `KnowledgeSearchAnalyticsService` compatibility.
+* Keep old `/api/knowledge/search` shape backward-compatible.
 
-### Login Flow
+APIs:
 
-Agent action: "Войти через браузер".
+* `GET /api/web/knowledge/search-settings`
+* `POST /api/web/knowledge/search-settings`
+* `POST /api/knowledge/search`
+* `POST /api/web/knowledge/search`
+
+UI:
+
+* Add `/app/admin/knowledge/search-settings`.
+* Controls:
+
+  * search mode;
+  * enable/disable keyword;
+  * enable/disable full-text;
+  * enable/disable vector;
+  * enable/disable rerank;
+  * enable/disable query rewrite;
+  * scoring weights;
+  * max results;
+  * snippet length;
+  * boost manual segments;
+  * boost bindings;
+  * boost graph;
+  * boost quality/freshness/helpfulness.
+* Add preview panel:
+
+  * query input;
+  * selected actor role;
+  * selected surface;
+  * explain score;
+  * show fallback mode when vector/AI disabled.
+
+Observer v2:
+
+* Emit:
+
+  * `knowledge.search.executed`
+  * `knowledge.search.zero_results`
+  * `knowledge.search.fallback_used`
+  * `knowledge.search.failed`
+* Include safe metadata only:
+
+  * query hash;
+  * redacted query;
+  * result count;
+  * mode;
+  * actor role;
+  * surface;
+  * no requester/device raw identifiers.
+
+TDD checkpoints:
+
+* RED tests for default search settings.
+* RED tests for disabling AI/vector and still returning keyword results.
+* RED tests for scoring weights.
+* RED tests for fallback mode.
+* RED tests for ACL-first filtering.
+* RED webapp tests for settings UI and search preview.
+
+Verification:
+
+* `python -m pytest server/tests/test_knowledge_search_settings.py server/tests/test_knowledge_search_fallback.py -v --tb=short`
+* Existing knowledge search tests.
+* `pnpm --dir webapp test -- src/features/knowledge/search-settings-page.test.tsx`
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `git diff --check`
+
+Live checks:
+
+* Disable AI globally.
+* Create/publish requester-safe article.
+* Search by title.
+* Search by body text.
+* Search by service/offering binding.
+* Confirm results work without embeddings.
+* Confirm observer shows search events and zero-result events.
+* Capture screenshots:
+
+  * search settings with AI disabled;
+  * search preview returning results;
+  * observer event.
+
+Exit criteria:
+
+* KB search is useful without AI.
+* Search behavior is configurable from UI.
+* AI/vector failure does not break search.
+
+---
+
+## Phase 3 — Article segmentation and markup: manual, auto and AI-assisted
+
+Goal:
+
+* Add product-grade article segmentation for search and embeddings.
+* Let editors control retrieval quality by marking semantic segments manually.
+* Support three segmentation modes:
+
+  * manual markup;
+  * automatic structural/paragraph/length segmentation;
+  * AI-assisted semantic markup.
+* Do not require AI for segmentation.
+
+Terminology:
+
+* Use “segments” or “retrieval segments” in the product UI.
+* Existing `knowledge_chunks` may remain as the low-level retrieval unit.
+* Manual article markup should create explicit segment records that generate chunks and/or override chunk metadata.
+
+Backend schema:
+
+Add:
+
+* `knowledge_article_segments`
+
+  * `segment_id`
+  * `item_id`
+  * `version_id`
+  * `segment_index`
+  * `segment_type`: `manual`, `auto`, `ai_proposed`, `ai_approved`
+  * `title`
+  * `summary`
+  * `text`
+  * `start_offset`
+  * `end_offset`
+  * `heading_path_json`
+  * `keywords_json`
+  * `boost`
+  * `visibility`
+  * `embedding_enabled`
+  * `full_text_enabled`
+  * `status`: `draft`, `active`, `stale`, `archived`, `rejected`
+  * `source`: `editor_selection`, `paragraph_split`, `length_split`, `heading_split`, `ai_markup`
+  * `content_hash`
+  * `created_by`
+  * `updated_by`
+  * timestamps
+  * `metadata_json`
+
+* `knowledge_segmentation_profiles`
+
+  * `profile_id`
+  * `code`
+  * `title`
+  * `mode`: `auto`, `manual_default`, `ai`
+  * `split_by_headings`
+  * `split_by_paragraphs`
+  * `target_tokens`
+  * `max_tokens`
+  * `min_tokens`
+  * `overlap_tokens`
+  * `preserve_tables`
+  * `preserve_code_blocks`
+  * `default_segment_boost`
+  * `ai_profile_id`
+  * `enabled`
+  * `metadata_json`
+
+* `knowledge_segmentation_jobs`
+
+  * `job_id`
+  * `item_id`
+  * `version_id`
+  * `profile_id`
+  * `mode`
+  * `status`
+  * `created_by`
+  * `started_at`
+  * `completed_at`
+  * `stats_json`
+  * `error_redacted`
+
+Manual markup behavior:
+
+* Editor selects text in the article editor.
+* Editor creates a segment:
+
+  * title;
+  * optional summary;
+  * keywords;
+  * boost;
+  * visibility;
+  * embedding enabled yes/no;
+  * full-text enabled yes/no.
+* Segment text must remain tied to version content using offsets and content hash.
+* If the version body changes, affected segments become `stale` and require review or remapping.
+* Manual segments should boost retrieval and create clearer citations.
+
+Auto segmentation behavior:
+
+* Split by headings first.
+* Then paragraphs.
+* Then length/token target.
+* Keep code blocks/tables together where possible.
+* Generate segment title from heading path or first sentence.
+* No AI required.
+
+AI segmentation behavior:
+
+* Send version text to AI only when:
+
+  * global AI enabled;
+  * AI markup enabled;
+  * policy allows this visibility/content;
+  * selected provider/profile exists;
+  * user explicitly starts the job.
+* AI returns proposed segments as JSON.
+* Proposed segments must be reviewed and approved.
+* AI proposals must not overwrite manual segments automatically.
+* AI segmentation must support no-cloud policy for restricted content.
+
+Backend services:
+
+* `KnowledgeSegmentationService`
+* `KnowledgeManualSegmentService`
+* `KnowledgeAutoSegmentationService`
+* `KnowledgeAiSegmentationService`
+* Segment-to-chunk sync service.
+* Stale segment detection service.
+
+APIs:
+
+* `GET /api/web/knowledge/items/{item_id}/segments`
+* `POST /api/web/knowledge/items/{item_id}/segments`
+* `PATCH /api/web/knowledge/segments/{segment_id}`
+* `DELETE /api/web/knowledge/segments/{segment_id}`
+* `POST /api/web/knowledge/items/{item_id}/segments/auto`
+* `POST /api/web/knowledge/items/{item_id}/segments/ai-propose`
+* `POST /api/web/knowledge/segments/{segment_id}/approve`
+* `POST /api/web/knowledge/segments/{segment_id}/reject`
+* `GET /api/web/knowledge/segmentation-profiles`
+* `POST /api/web/knowledge/segmentation-profiles`
+
+UI:
+
+* Add segmentation panel to `/app/admin/knowledge/studio`.
+* Editor must support text selection and “Create segment from selection”.
+* Segment panel:
+
+  * list of segments;
+  * source: manual/auto/AI;
+  * status;
+  * title;
+  * keywords;
+  * boost;
+  * embedding enabled;
+  * stale warning;
+  * preview exact text.
+* Actions:
+
+  * create manual segment;
+  * run auto segmentation;
+  * run AI segmentation proposal;
+  * approve/reject AI segments;
+  * reindex selected segment;
+  * compare segments with current article text.
+
+Search integration:
+
+* Search must prefer manual active segments when `manual_segment_boost_enabled=true`.
+* Manual segment title and keywords must contribute to keyword/full-text score.
+* Segment title/summary/keywords must be included in the embedding input text when embeddings are enabled.
+* Use a clear embedding text format:
+
+```text
+Title: <segment title>
+Keywords: <keywords>
+Article: <article title>
+Section: <heading path>
+Text:
+<segment text>
+```
+
+This should improve retrieval quality without polluting the article body.
+
+Observer v2:
+
+* Emit:
+
+  * `knowledge.segmentation.auto_completed`
+  * `knowledge.segmentation.ai_proposed`
+  * `knowledge.segmentation.ai_blocked`
+  * `knowledge.segmentation.failed`
+  * `knowledge.segment.stale_detected`
+  * `knowledge.segment.approved`
+* Include safe counts, no raw article body.
+
+TDD checkpoints:
+
+* RED tests for manual segment CRUD.
+* RED tests for offset/content hash/stale detection.
+* RED tests for auto segmentation by headings/paragraphs/length.
+* RED tests for AI segmentation policy disabled.
+* RED tests for AI segmentation mocked JSON response.
+* RED tests that AI proposals are not active until approved.
+* RED tests that manual segment title/keywords affect search score in AI-off mode.
+* RED tests that requester cannot create/admin segments.
+* RED webapp tests for selection-to-segment UI, auto segmentation, AI proposal disabled state and stale warnings.
+
+Verification:
+
+* `python -m pytest server/tests/test_knowledge_segments.py server/tests/test_knowledge_segmentation_auto.py server/tests/test_knowledge_segmentation_ai.py server/tests/test_knowledge_search_segments.py -v --tb=short`
+* `pnpm --dir webapp test -- src/features/knowledge/article-segmentation-panel.test.tsx src/features/knowledge/knowledge-studio-page.test.tsx`
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `git diff --check`
+
+Live checks:
+
+* Create article draft.
+* Create version with several sections.
+* Manually select text and create segment with title/keywords.
+* Run search with AI disabled.
+* Confirm segment title/keywords improve result visibility.
+* Run auto segmentation.
+* Enable AI markup only after OpenRouter key is configured.
+* Run AI segmentation proposal on requester-safe test article.
+* Approve one AI segment and reject another.
+* Confirm observer events.
+* Capture screenshots:
+
+  * manual text selection;
+  * segment list;
+  * search result showing segment snippet;
+  * auto segmentation result;
+  * AI proposal result;
+  * observer event.
+
+Exit criteria:
+
+* Manual segmentation is usable and improves non-AI retrieval.
+* Auto segmentation works without AI.
+* AI segmentation is optional, policy-gated and review-only.
+
+---
+
+## Phase 4 — Embeddings and vector indexing with AI-off controls
+
+Goal:
+
+* Add embeddings as an optional retrieval enhancement.
+* Keep baseline search working without embeddings.
+* Support OpenRouter embeddings first.
+* Prepare for local embedding providers later.
+
+Backend schema:
+
+Add:
+
+* `knowledge_chunk_embeddings`
+
+  * `embedding_id`
+  * `chunk_id`
+  * `segment_id`
+  * `item_id`
+  * `version_id`
+  * `model_profile_id`
+  * `embedding_model`
+  * `embedding_dimensions`
+  * `embedding_vector`
+  * `content_hash`
+  * `embedding_input_hash`
+  * `visibility`
+  * `status`: `pending`, `indexed`, `failed`, `stale`, `disabled`
+  * `indexed_at`
+  * `error_redacted`
+  * `metadata_json`
+
+* `knowledge_index_jobs`
+
+  * `job_id`
+  * `scope_type`: `item`, `version`, `space`, `all`, `segment`
+  * `scope_ref`
+  * `model_profile_id`
+  * `status`: `queued`, `running`, `completed`, `failed`, `canceled`
+  * `requested_by`
+  * `started_at`
+  * `completed_at`
+  * `stats_json`
+  * `error_redacted`
+  * `metadata_json`
+
+Storage:
+
+* Prefer PostgreSQL pgvector if available.
+* If pgvector is not available on the local dev/test DB, tests must support a deterministic fake vector store or skip vector index DDL behind capability detection.
+* Do not break local test runs due to missing pgvector.
+
+Feature flags/settings:
+
+* Global embeddings enabled/disabled.
+* Per-space embeddings enabled/disabled.
+* Per-visibility embeddings enabled/disabled.
+* Per-segment embedding enabled/disabled.
+* Per-provider/model enabled/disabled.
+* Indexing worker enabled/disabled.
+* Reindex on publish enabled/disabled.
+* Use vector search enabled/disabled.
+
+Backend services:
+
+* `KnowledgeEmbeddingService`
+* `KnowledgeIndexJobService`
+* `KnowledgeVectorStore`
+* `KnowledgeVectorSearchService`
+* `KnowledgeEmbeddingInputBuilder`
+* `KnowledgeEmbeddingPolicyService`
+
+Embedding input priority:
+
+1. Active manual/approved segments.
+2. Auto segments.
+3. Existing chunks.
+4. Fallback body chunks.
+
+Embedding input must include safe metadata useful for retrieval:
+
+* article title;
+* segment title;
+* segment summary;
+* keywords;
+* heading path;
+* body text.
+
+Do not include:
+
+* raw requester ids;
+* device ids;
+* queue ids;
+* trace ids;
+* operation ids;
+* internal evidence in requester-safe embeddings;
+* any restricted content sent to cloud when policy blocks it.
+
+APIs:
+
+* `POST /api/web/knowledge/indexing/jobs`
+* `GET /api/web/knowledge/indexing/jobs`
+* `POST /api/web/knowledge/indexing/reindex-item`
+* `POST /api/web/knowledge/indexing/reindex-space`
+* `POST /api/web/knowledge/indexing/reindex-all`
+* `POST /api/web/knowledge/indexing/reindex-segment`
+* `GET /api/web/knowledge/indexing/status`
+
+UI:
+
+* Add `/app/admin/knowledge/indexing`.
+* Show:
+
+  * indexed chunks/segments;
+  * stale embeddings;
+  * failed embeddings;
+  * disabled embeddings;
+  * current embedding model;
+  * queue state;
+  * last errors;
+  * reindex buttons;
+  * AI disabled/vector disabled warnings.
+* Add “Embedding preview”:
+
+  * show embedding input text without raw vector;
+  * show model;
+  * show content hash;
+  * show status.
+
+Observer v2:
+
+* Emit:
+
+  * `knowledge.embedding.index_started`
+  * `knowledge.embedding.index_completed`
+  * `knowledge.embedding.index_failed`
+  * `knowledge.embedding.policy_blocked`
+  * `knowledge.embedding.stale_detected`
+  * `knowledge.embedding.provider_unavailable`
+* Metrics:
+
+  * pending jobs;
+  * failed jobs;
+  * stale embeddings;
+  * provider latency;
+  * indexed segment count.
+
+TDD checkpoints:
+
+* RED tests for embedding input builder.
+* RED tests for embeddings disabled.
+* RED tests for provider missing/key missing.
+* RED tests for policy blocked restricted content.
+* RED tests for stale detection.
+* RED tests for indexing job lifecycle.
+* RED tests for vector search fallback.
+* RED tests for no raw vector returned to requester.
+* RED webapp tests for indexing dashboard and disabled states.
+
+Verification:
+
+* `python -m pytest server/tests/test_knowledge_embeddings.py server/tests/test_knowledge_index_jobs.py server/tests/test_knowledge_vector_search.py -v --tb=short`
+* `pnpm --dir webapp test -- src/features/knowledge/indexing-page.test.tsx`
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `git diff --check`
+
+Live checks:
+
+* With AI disabled:
+
+  * publish article;
+  * confirm no embedding job runs;
+  * search still works.
+* With OpenRouter configured and embeddings enabled:
+
+  * publish requester-safe test article;
+  * run reindex item;
+  * confirm indexed status;
+  * run vector search preview;
+  * confirm observer events.
+* With invalid/missing key:
+
+  * job fails safely;
+  * error redacted;
+  * search falls back to non-vector.
+* Capture screenshots:
+
+  * AI disabled indexing page;
+  * reindex job queued/running/completed;
+  * failed provider event;
+  * vector search preview.
+
+Exit criteria:
+
+* Embeddings are optional.
+* Indexing is observable.
+* Search falls back safely.
+* OpenRouter embeddings can be tested when user provides API key.
+
+---
+
+## Phase 5 — Hybrid retrieval, rerank and configurable search explainability
+
+Goal:
+
+* Build product-grade retrieval that can combine keyword/full-text, vector, bindings, manual segments, graph and optional rerank.
+* Make ranking explainable and configurable.
 
 Backend:
 
-- `POST /api/registry/agent/browser-pairings`
-- body includes `purpose=login`.
+Implement `KnowledgeRetrievalService`:
+
+Pipeline:
+
+1. Normalize query.
+2. Apply actor role and ACL.
+3. Apply search settings.
+4. Run keyword/full-text retrieval if enabled.
+5. Run vector retrieval if enabled and available.
+6. Apply binding/service/offering boosts.
+7. Apply manual segment boosts.
+8. Apply graph boosts if enabled.
+9. Apply quality/freshness/helpfulness boosts.
+10. Merge candidates.
+11. Optional AI query rewrite.
+12. Optional OpenRouter rerank.
+13. Return explainable score parts.
+14. Record search event and observer event.
+
+Rerank:
+
+* Use OpenRouter rerank only when:
+
+  * AI enabled;
+  * rerank enabled;
+  * provider/model configured;
+  * policy allows;
+  * candidate count > threshold.
+* If rerank fails, return pre-rerank hybrid results and emit fallback observer event.
+
+APIs:
+
+* `POST /api/knowledge/search`
+* `POST /api/web/knowledge/search`
+* `POST /api/web/knowledge/search/preview`
+* `POST /api/web/knowledge/retrieve`
+
+Response must include:
+
+* item;
+* version;
+* chunk/segment;
+* snippet;
+* score;
+* score_parts;
+* source mode;
+* fallback mode;
+* citations;
+* safe debug/explain for admin/support only.
+
+UI:
+
+* Update `/app/kb/search`.
+* Add admin search preview in `/app/admin/knowledge/search-settings`.
+* Show:
+
+  * result title;
+  * snippet;
+  * segment title;
+  * badges;
+  * why matched;
+  * score breakdown for admin/support;
+  * fallback indicator.
+
+Observer v2:
+
+* Emit:
+
+  * `knowledge.retrieval.executed`
+  * `knowledge.retrieval.rerank_used`
+  * `knowledge.retrieval.rerank_failed_fallback`
+  * `knowledge.retrieval.vector_failed_fallback`
+  * `knowledge.retrieval.zero_results`
+* Include safe metadata only.
+
+TDD checkpoints:
 
-Browser opens `/app/device/login?pairing_id=...`.
+* RED tests for hybrid merge.
+* RED tests for manual segment boost.
+* RED tests for binding boost.
+* RED tests for vector disabled fallback.
+* RED tests for rerank disabled.
+* RED tests for rerank mocked success.
+* RED tests for rerank failure fallback.
+* RED tests for ACL-first retrieval.
+* RED tests for score explanation.
+
+Verification:
 
-If the user is already logged in, the page should still require explicit confirmation:
+* `python -m pytest server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_rerank.py server/tests/test_knowledge_search_acl.py -v --tb=short`
+* `pnpm --dir webapp test -- src/pages/kb/search-page.test.tsx src/features/knowledge/search-preview.test.tsx`
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `git diff --check`
+
+Live checks:
+
+* Search in modes:
+
+  * keyword only;
+  * hybrid no AI;
+  * vector enabled;
+  * rerank enabled;
+  * rerank provider failure fallback.
+* Confirm:
 
-- show current user;
-- show target device;
-- ask whether to connect the agent on that device.
+  * same article can be found without AI;
+  * manual segment title boosts results;
+  * vector mode improves semantic query;
+  * rerank changes ordering only when enabled;
+  * observer records each mode.
+* Capture screenshots:
 
-Server confirmation must:
+  * each search mode;
+  * score breakdown;
+  * fallback banner;
+  * observer events.
 
-- resolve `RegistryPerson` for the web user;
-- check active binding between the person and device;
-- create `DeviceAccountSession(account_mode=confirmed_binding)` only when an active binding exists;
-- offer registration or policy-driven alternative login when binding is absent or belongs to another user;
-- refuse session creation on conflict.
+Exit criteria:
 
-Agent polling endpoint:
+* Search is product-grade and configurable.
+* AI improves search but is not required.
+* Ranking is explainable.
 
-- `GET /api/registry/agent/browser-pairings/{pairing_id}`
-- returns `session` and `session_token` to the agent exactly once after browser confirmation;
-- marks pairing `consumed`;
-- rejects repeated token retrieval.
+---
 
-Browser pairing result delivery must not rely on process-local memory in production. The confirmation/result state must be backed by DB state and one-time pickup semantics.
+## Phase 6 — RAG Ask with citations and AI-off fallback
 
-Recommended token issuance model:
+Goal:
 
-- browser confirms login;
-- server marks pairing `confirmed`;
-- agent polls with machine-token authentication;
-- server creates or loads the account session at pickup time;
-- server returns the plaintext `session_token` to the agent exactly once;
-- only `session_token_hash` is stored.
+* Add AI answer generation with citations.
+* Keep Ask disabled unless explicitly enabled.
+* Provide useful fallback when AI is disabled.
 
-### Agent Fallback
+Backend:
 
-Keep "Войти в агенте" only as a fallback:
+Add `KnowledgeAskService`:
 
-- confirmed binding can select an already confirmed user;
-- different user creates a `verified_other_account` request;
-- unregistered device prompts browser registration;
-- local form must not become authoritative registration.
+Pipeline:
 
-### Stage 1 Acceptance Criteria
+1. Validate AI Ask enabled.
+2. Validate actor role and surface.
+3. Retrieve candidates using `KnowledgeRetrievalService`.
+4. If no sufficient evidence:
 
-- [x] New device creates browser registration pairing, browser confirms, claim appears, agent consumes the registration pairing, admin approves the claim, and the agent sees a `confirmed_binding` account/session candidate. Covered by `test_registration_pairing_approval_surfaces_confirmed_binding_to_agent` and live MCP/API/DB registration-flow smoke.
-- [x] Registered device creates browser login pairing, browser confirms under the same user and agent receives a `confirmed_binding` session.
-- [x] Already logged-in browser user confirms login without re-entering password.
-- [x] Expired pairing is rejected at service lookup/pickup boundaries.
-- [x] Consumed pairing cannot be reused for token pickup.
-- [x] Browser cannot substitute a foreign `device_id` through the agent pairing create endpoint.
-- [x] Browser confirmation cannot create a confirmed-binding session for a different user or an unbound device.
-- [x] Device registered to another user does not receive a confirmed-binding session through browser login.
-- [x] Logout or revoked binding invalidates the agent session and returns the agent to account gate. Covered by `test_main_window_refresh_clears_revoked_session_and_returns_to_account_gate`.
+   * return no-answer response.
+5. Build grounded prompt with citations.
+6. Call configured answer model.
+7. Validate answer:
 
-## Stage 2: Authenticated Requester Workspace
+   * cites only provided sources;
+   * no restricted content;
+   * no raw internal metadata;
+   * no uncited critical claims.
+8. Return answer, citations, confidence and suggested actions.
+9. Record feedback/audit/observer events.
 
-Goal: create `/app/requester` as the authenticated browser workspace for end users.
+AI-off fallback:
 
-### Permissions And Routes
+* If Ask disabled:
 
-Add requester workspace permission:
+  * `/app/kb/ask` should show “AI answers disabled” and route user to search results.
+* If provider unavailable:
 
-- `workspace.requester.view`
+  * return top search results with a clear fallback message.
+* If search has no evidence:
 
-Add requester permissions:
+  * say no answer available from KB, suggest creating ticket or gap finding.
 
-- `requester.ticket.view`
-- `requester.ticket.create`
-- `requester.ticket.comment`
-- `requester.ticket.close`
-- `requester.ticket.reopen`
-- `requester.ticket.feedback`
-- `requester.ticket.attachment.upload`
-- `requester.ticket.attachment.download`
-- `requester.device.view`
-- `requester.profile.view`
-- `requester.consent.decide`
+APIs:
 
-Protected routes:
+* `POST /api/knowledge/ask`
+* `POST /api/web/knowledge/ask`
+* `POST /api/web/knowledge/ask/preview`
 
-- `/app/requester`
-- `/app/requester/tickets`
-- `/app/requester/tickets/:ticketId`
-- `/app/requester/new`
-- `/app/requester/devices`
-- `/app/requester/profile`
-- `/app/requester/consents`
+Response:
 
-Public routes `/app/help` and `/app/ticket/:ticketId` remain unchanged.
+* `answer`
+* `answer_status`: `answered`, `not_enough_evidence`, `ai_disabled`, `provider_unavailable`, `policy_blocked`
+* `citations`
+* `retrieval_results`
+* `confidence`
+* `suggested_actions`
+* `observer_event_id`
+* `audit_id`
 
-### RequesterIdentityResolver
+UI:
 
-Add backend service `RequesterIdentityResolver`.
+* `/app/kb/ask`
 
-Behavior-level functions:
+  * question box;
+  * answer panel;
+  * citations panel;
+  * fallback search results;
+  * helpful/not helpful;
+  * create ticket;
+  * suggest correction.
+* Admin/support debug view:
 
-- `resolve_person_for_web_user(actor_id)`
-- `list_allowed_devices(person_id)`
-- `list_active_bindings(person_id)`
-- `can_view_ticket(actor_id, ticket)`
-- `can_create_ticket_for_device(actor_id, device_id)`
-- `can_decide_consent(actor_id, consent)`
+  * retrieval mode;
+  * chunks used;
+  * score breakdown;
+  * policy decisions.
 
-Resolve person through identities such as:
+Observer v2:
 
-- `ui_login`
-- `email`
-- `windows_login`
-- `ad`
+* Emit:
 
-Do not build requester ownership only on `requester_id == user_login`. Ticket visibility must account for:
+  * `knowledge.rag.answer_generated`
+  * `knowledge.rag.not_enough_evidence`
+  * `knowledge.rag.ai_disabled`
+  * `knowledge.rag.provider_unavailable`
+  * `knowledge.rag.policy_blocked`
+  * `knowledge.rag.citation_validation_failed`
+* Metrics:
+
+  * answer count;
+  * no-answer count;
+  * fallback count;
+  * latency;
+  * failed provider count.
+
+TDD checkpoints:
 
-- `requester_id`
-- `requester_person_id`
-- `requester_binding_id`
-- `requester_account_session_id`
+* RED tests for AI disabled response.
+* RED tests for provider unavailable fallback.
+* RED tests for grounded answer with mocked model.
+* RED tests for citations only from retrieved chunks.
+* RED tests for no-answer when retrieval evidence insufficient.
+* RED tests for requester ACL.
+* RED tests for support/internal visibility.
+* RED webapp tests for Ask UI disabled/enabled/fallback states.
 
-Requester-owned account sessions are sessions where:
+Verification:
 
-- `session.person_id == resolved_person_id`;
-- or `session.binding_id IN active/requester bindings`;
-- or `verified_other_account` is matched to the resolved person and allowed by strict session scope.
+* `python -m pytest server/tests/test_knowledge_ask_service.py server/tests/test_knowledge_rag_acl.py server/tests/test_knowledge_rag_citations.py -v --tb=short`
+* `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx`
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `git diff --check`
 
-For `verified_other_account`, visibility remains limited to tickets created by the exact approved session unless policy explicitly allows a broader authenticated requester view.
+Live checks:
 
-### Requester Bootstrap
+* AI disabled:
 
-Add:
+  * Ask page shows disabled state and search fallback.
+* AI enabled with OpenRouter key:
 
-- `GET /api/web/requester/bootstrap`
+  * Ask question about seeded requester-safe article.
+  * Answer includes citations.
+  * Open citation article.
+  * Mark helpful.
+* Restricted leakage test:
 
-Return:
+  * requester asks about support_internal runbook.
+  * requester does not receive restricted content.
+  * support user can retrieve support content if permitted.
+* Provider failure:
 
-- profile/person summary;
-- devices;
-- active bindings;
-- pending registration claims;
-- open ticket count;
-- tickets requiring user action count;
-- pending consent count;
-- feature flags and policies.
+  * disable/invalid key;
+  * Ask returns fallback search results.
+* Capture screenshots:
+
+  * AI disabled fallback;
+  * answer with citations;
+  * citation opened;
+  * requester restricted content blocked;
+  * observer events.
+
+Exit criteria:
+
+* Ask works with citations when enabled.
+* Ask degrades to search when disabled/unavailable.
+* No ACL leakage.
 
-Behavior:
+---
 
-- if no person is found, open the workspace with onboarding and limited actions;
-- if person exists but has no devices, allow general request creation when service policy allows it;
-- if devices exist, show devices and quick actions.
+## Phase 7 — Knowledge Portal product UI
 
-### Requester Tickets
+Goal:
 
-Add:
+* Build a standalone organization knowledge base portal for employees, independent of ticket creation.
 
-- `GET /api/web/requester/tickets`
-- `GET /api/web/requester/tickets/{ticket_id}`
-- `POST /api/web/requester/tickets/{ticket_id}/message`
-- `POST /api/web/requester/tickets/{ticket_id}/close`
-- `POST /api/web/requester/tickets/{ticket_id}/feedback`
-- `POST /api/web/requester/tickets/{ticket_id}/reopen`
-- `POST /api/web/requester/tickets/claim-public`
+Routes:
 
-Ticket list scope:
+* `/app/kb`
+* `/app/kb/search`
+* `/app/kb/ask`
+* `/app/kb/articles/:slug`
+* `/app/kb/spaces/:spaceCode`
+* `/app/kb/tags/:tag`
 
-- `requester_id == actor_id`
-- or `requester_person_id == resolved_person_id`
-- or `requester_binding_id IN active_binding_ids`
-- or `requester_account_session_id IN requester-owned account sessions`.
+Features:
 
-Authenticated requester ticket detail should reuse requester-safe serialization and timeline, but should not require public access code for owned tickets.
+* Global search.
+* AI Ask if enabled.
+* Spaces/categories.
+* Popular articles.
+* Recently updated.
+* Recommended for selected service/department if context exists.
+* Article reader:
 
-Public ticket claim flow:
+  * title;
+  * summary;
+  * body;
+  * table of contents;
+  * segment/citation anchors;
+  * related articles;
+  * graph neighborhood summary;
+  * tags;
+  * owner/review freshness;
+  * helpful/not helpful;
+  * suggest correction;
+  * create ticket from article.
+* Zero-result actions:
 
-- user enters `ticket_id` and public access code/token;
-- server verifies the code/token through existing public-ticket access rules;
-- server resolves requester person from web session;
-- server attaches requester identity metadata such as `requester_person_id`, `requester_id` or a dedicated link record;
-- ticket becomes visible in the authenticated requester cabinet.
+  * create ticket;
+  * request article;
+  * report missing knowledge.
+
+Backend:
+
+Add optional tables:
+
+* `knowledge_article_views`
+* `knowledge_user_bookmarks`
+* `knowledge_correction_requests`
+* `knowledge_article_subscriptions`
+
+APIs:
+
+* `GET /api/knowledge/portal/home`
+* `GET /api/knowledge/articles/{slug}`
+* `POST /api/knowledge/articles/{slug}/feedback`
+* `POST /api/knowledge/articles/{slug}/correction-request`
+* `POST /api/knowledge/articles/{slug}/bookmark`
+* `DELETE /api/knowledge/articles/{slug}/bookmark`
+
+TDD checkpoints:
+
+* RED API tests for article reader ACL.
+* RED tests for portal home.
+* RED tests for feedback/correction requests.
+* RED webapp tests for portal, search, article reader and AI disabled state.
+
+Verification:
+
+* Focused server tests.
+* Focused webapp tests.
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `git diff --check`
+
+Live checks:
+
+* Open `/app/kb`.
+* Search and open article.
+* Use feedback.
+* Use correction request.
+* Use create ticket from article.
+* Confirm observer/search/feedback events.
+* Capture screenshots:
+
+  * portal home;
+  * search results;
+  * article page;
+  * correction request;
+  * ticket CTA.
+
+Exit criteria:
+
+* KB is useful as a standalone product.
+* User does not need to start with a ticket.
+
+---
+
+## Phase 8 — Authoring Studio: product article editor
+
+Goal:
+
+* Replace textarea-centric editing with a product authoring experience.
+
+Route:
+
+* `/app/admin/knowledge/studio`
+
+Features:
+
+* Spaces/collections/draft browser.
+* Article metadata panel:
+
+  * space;
+  * type;
+  * visibility;
+  * owner;
+  * reviewer;
+  * tags;
+  * service/offering bindings;
+  * graph links;
+  * review due.
+* Editor:
 
-### Request Creation
+  * markdown editing;
+  * preview;
+  * template insertion;
+  * structured sections;
+  * callouts;
+  * tables;
+  * code blocks;
+  * checklists;
+  * attachment placeholders if attachment support is implemented.
+* Version tools:
 
-Add:
+  * create version;
+  * compare draft vs published;
+  * diff;
+  * publish checklist;
+  * rollback/archive/supersede flow.
+* Review:
 
-- `POST /api/web/requester/tickets/preview`
-- `POST /api/web/requester/tickets`
+  * submit for review;
+  * approve;
+  * request changes;
+  * comments;
+  * complete review task.
+* Segment markup:
+
+  * manual selection;
+  * auto segmentation;
+  * AI proposal;
+  * segment status/stale warnings.
+* AI tools:
+
+  * rewrite;
+  * summarize;
+  * create requester-safe version;
+  * generate FAQ;
+  * generate tags;
+  * generate graph proposals.
+* AI tools must be hidden/disabled when AI disabled.
 
-Reuse `create_ticket_with_side_effects()` so routing, SLA, OLA, auto-assign, playbooks, initial message and request-template behavior stay consistent.
-
-Frontend should reuse the existing requester form flow from `/app/help`:
-
-- service catalog;
-- offering;
-- dynamic form;
-- safe preview;
-- knowledge suggestions;
-- urgency/importance.
-
-Authenticated mode adds context selection:
-
-- request linked to one of my devices;
-- general service request when allowed.
-
-Server must verify that selected device belongs to requester identity scope.
-
-No-device request strategy:
-
-- Stage 2 may keep a server-owned virtual/placeholder device strategy for compatibility with current ticket assumptions.
-- Requester frontend must not invent `device_id`.
-- Ticket custom fields must explicitly mark `request_context = "no_device"` or equivalent.
-- Later migration may make `device_id` nullable if the ticket/device boundary is refactored.
-
-### Requester Devices And Profile
-
-Add:
-
-- `GET /api/web/requester/devices`
-- `GET /api/web/requester/devices/{device_id}`
-- `GET /api/web/requester/profile`
-
-Show safe device facts:
-
-- hostname;
-- OS;
-- agent version;
-- online/offline;
-- relationship type;
-- binding status;
-- last seen;
-- open ticket count;
-- available actions.
-
-Add `/app/requester/profile`:
-
-- show read-only requester profile facts in `/app/requester`;
-- show verified identity aliases without raw `metadata_json` or `normalized_identifier`;
-- show owned devices, active bindings and pending registration claims;
-- expose an explicit read-only profile policy until profile edits have a governed change workflow.
-
-- display name;
-- full name;
-- email;
-- phone;
-- department;
-- location;
-- identities;
-- devices.
-
-Profile edits must be policy-controlled. Authoritative registry fields should be read-only or changed through verification/request workflows.
-
-### Admin User/Person Workflow
-
-Unify admin user and registry person management:
-
-- UI login account: `user_login`, role, active/inactive, password reset, lock state.
-- Registry person: display/full name, email, phone, department, location, identities, devices, active bindings, tickets.
-- Explicit link: `ui_users.user_login` ↔ `RegistryPersonIdentity(provider='ui_login', identifier=user_login, verified=true)` ↔ `RegistryPerson`.
-
-### Stage 2 Acceptance Criteria
-
-- User logs into `/app/requester` through web session.
-- If person is found, user sees owned devices.
-- If person is not found, requester workspace opens with onboarding and limited actions.
-- Tickets created through the agent appear in the user's cabinet through person/binding/session matching.
-- Tickets for another user on a shared device are hidden.
-- User can create a request without a device when the selected service allows it.
-- User can create a request for an owned device.
-- User cannot create a request for a foreign `device_id`.
-- Public ticket can still be opened by old access code.
-- Authenticated cabinet does not require access code for owned tickets.
-- User has clear profile and devices pages.
-
-## Stage 3: Unified Browser/Agent Consent Layer
-
-Goal: one consent mechanism works in both requester browser workspace and agent GUI.
-
-Consent prompts should appear:
-
-- in requester cabinet;
-- in agent GUI when the agent is online;
-- in ticket timeline when applicable.
-
-First decision wins. Other surfaces show the already decided result.
-
-### Main Entity
-
-Introduce `UserConsentRequest`.
-
-Recommended fields:
-
-- `consent_id`
-- `subject_type`: `operation | remote_assist | diagnostic | tool_run | file_transfer | clipboard | elevated`
-- `subject_id`
-- `ticket_id`
-- `device_id`
-- `requester_person_id`
-- `requester_binding_id`
-- `requester_account_session_id`
-- `requested_by_actor_id`
-- `requested_by_role`
-- `risk_level`
-- `policy_snapshot`
-- `risk_explanation`
-- `requested_action_payload_redacted`
-- `title`
-- `description`
-- `reason`
-- `status`: `pending | approved | denied | expired | superseded | canceled`
-- `expires_at`
-- `decided_by_actor_id`
-- `decided_by_role`
-- `decided_from_surface`: `browser | agent_gui | api`
-- `decided_at`
-- `metadata_json`
-
-### APIs
-
-Requester browser:
-
-- `GET /api/web/requester/consents`
-- `GET /api/web/requester/consents/{consent_id}`
-- `POST /api/web/requester/consents/{consent_id}/approve`
-- `POST /api/web/requester/consents/{consent_id}/deny`
-
-Agent GUI:
-
-- `GET /api/registry/agent/consents`
-- `POST /api/registry/agent/consents/{consent_id}/approve`
-- `POST /api/registry/agent/consents/{consent_id}/deny`
-
-Agent GUI consent decisions that count as user consent must carry a valid requester account session. Agent machine-token authentication can deliver the transport, but cannot be the identity that approves user consent.
-
-### Idempotency And Uniqueness
-
-There must be at most one active pending consent per `subject_type + subject_id` unless policy explicitly allows multiple consent rounds.
-
-Decision transitions must use an atomic compare-and-set from `pending` to `approved` or `denied`:
-
-- first decision wins;
-- second decision returns the current final state;
-- repeated approve/deny must not queue a second operation or start a second Remote Assist session.
-
-### Diagnostics And Tool Operations
-
-Flow:
-
-- support starts a diagnostic/tool operation;
-- policy requires user consent;
-- server creates operation with `status=waiting_consent`;
-- server creates `UserConsentRequest(status=pending)`;
-- browser requester workspace shows pending consent;
-- agent GUI shows prompt if online;
-- user approves or denies on any surface;
-- server atomically transitions consent;
-- approved consent queues the operation;
-- denied consent cancels/denies the operation;
-- ticket timeline receives an event.
-
-Approve/deny endpoints must check requester ownership:
-
-- web user;
-- resolved person;
-- bindings;
-- consent ticket/device scope.
-
-Knowing only `consent_id` is not sufficient.
-
-### Remote Assist
-
-Split Remote Assist into two steps:
-
-1. User consent approved.
-2. Agent technically starts or accepts the session.
-
-Browser approval must not receive agent signaling token, ICE, SDP or other technical session secrets. Browser only approves consent. After approval, server sends the agent a command to start approved Remote Assist.
-
-Agent GUI approval remains possible through the same `consent_id`.
-
-### UI Behavior
-
-Requester cabinet should show a block such as "Ожидают вашего подтверждения":
-
-- diagnostic: what will run, why, risk and requester;
-- Remote Assist: mode, access, duration and operator;
-- file transfer / clipboard / elevated action: clear warning;
-- actions: approve, deny, details.
-
-Agent GUI should show a local prompt with the same `consent_id`.
-
-If the user already decided in one surface, the other surface updates to the final result.
-
-Polling is acceptable for the first version, but the UI should be ready for websocket/event stream updates.
-
-### Stage 3 Acceptance Criteria
-
-- Diagnostic requiring consent appears in browser cabinet and agent GUI.
-- Browser approval queues the operation.
-- Agent GUI approval updates browser cabinet.
-- Repeated approve/deny after decision is idempotent and does not create a second run.
-- Foreign user cannot approve consent for another user's ticket/device.
-- Remote Assist can be approved in browser and then agent receives a start command.
-- Remote Assist can be approved in agent and browser sees approved status.
-- Expired consent does not start an operation.
-- All decisions are written to audit and ticket timeline.
-- Revoked binding/session blocks pending consent decisions.
-
-## API Response Guidance
-
-Endpoints should consistently return:
-
-- `status`
-- `data`
-- `error_code` on failure
-- user-facing `message`
-- safe technical details only when appropriate
-- `next_action`
-
-Pairing `next_action` examples:
-
-- `open_browser`
-- `login_required`
-- `confirm_registration`
-- `wait_admin_review`
-- `conflict_contact_support`
-- `agent_poll`
-- `complete`
-
-## Documentation Plan
-
-Add or update:
-
-- `server/docs/BROWSER_AGENT_PAIRING.md`
-- `server/docs/REQUESTER_WORKSPACE.md`
-- `server/docs/REQUESTER_IDENTITY_RESOLVER.md`
-- `server/docs/USER_CONSENT_MODEL.md`
-- `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`
-- `server/docs/SECURITY_AND_AUTH.md`
-- `server/docs/TICKET_SYSTEM.md`
-- `server/docs/CODEMAP.md`
-- `pc_agent/docs/CODEMAP.md`
-- `pc_agent/docs/AUTHENTICATION.md` if agent auth/session behavior changes.
-- `docs/QUICK_LOOKUP.md`
-- `docs/ARCHITECTURE_BOUNDARIES.md` if ownership/contract map changes.
-
-Each new model doc should cover:
-
-- identity layers;
-- lifecycle;
-- security boundaries;
-- known non-goals;
-- smoke checklist;
-- migration notes.
-
-## Verification Plan
-
-Each implementation stage needs targeted tests before browser/live checks.
-
-Stage 1:
-
-- [x] browser pairing registration smoke;
-- [x] browser pairing login smoke;
-- [x] pairing expiry/reuse tests;
-- [x] wrong-device substitution tests;
-- [x] pairing secret hashing/protected-storage tests;
-- [x] active pairing supersede/cancel tests;
-- [x] manual pairing-code entry smoke;
-- [x] account-state confirmed-binding transition and session tests.
-
-Stage 2:
-
-- requester identity resolver tests;
-- requester ticket visibility tests;
-- shared-device privacy tests;
-- no-device request compatibility tests;
-- public ticket claim-to-account tests;
-- requester attachment upload/download permission tests;
-- requester ticket create preview/create tests;
-- public ticket compatibility tests;
-- webapp route and build tests.
-
-Stage 3:
-
-- consent browser approve smoke;
-- consent agent approve smoke;
-- agent consent decision with requester account session tests;
-- one-active-pending-consent tests;
-- idempotent approve/deny tests;
-- foreign-user denial tests;
-- expired consent tests;
-- Remote Assist browser consent smoke.
-
-Common checks:
-
-- `python scripts/verify_workspace.py`
-- focused server pytest for changed domains;
-- focused `pc_agent` tests for GUI/session behavior;
-- `pnpm --dir webapp run test` for requester/web changes;
-- `pnpm --dir webapp run build`;
-- browser evidence for visible flows;
-- quick deploy/smoke through project scripts when validating on Linux stand;
-- stop remote services after checks unless explicitly asked to leave them running.
-
-## Execution Checkpoints
-
-- [x] Stage 3 requester prompts: add `/app/requester` pending consent panel, approve/deny actions and frontend tests.
-- [x] Stage 3 agent prompts: add canonical `consent_id` API calls and GUI prompt polling for active account sessions.
-- [x] Stage 3 Remote Assist integration: create `UserConsentRequest` for Remote Assist, start agent technical session only after canonical approval, preserve deny/expiry semantics.
-
-- [x] Stage 1 design: confirm DB model, routes, DTOs, agent GUI states and security boundaries.
-- [x] Stage 1 tests: RED coverage covers backend lifecycle, expiry, reuse, wrong-device behavior, web-user login confirmation, web-user registration confirmation, approval-to-confirmed-binding account-state transition, web route behavior, webapp confirm pages, manual pairing-code lookup/rate-limit/inactive rejection and agent polling. Linux stand smoke covered live API/DB behavior.
-- [x] Stage 1 backend: `DeviceBrowserPairing`, migration, repo/service, agent create/pickup routes, web-authenticated manual code lookup/confirmation routes, web-user ownership checks and registration pairing confirmation are implemented.
-- [x] Stage 1 frontend/agent: `/app/device/pair`, `/app/device/login`, `/app/device/register`, protected routes, account-gate browser actions, agent API client create/poll, main-window polling/session save and invalid-session return-to-gate behavior are implemented.
-- [x] Stage 1 verification and docs: docs/CODEMAP/navigation updated; local targeted tests, `verify_workspace.py`, web build, deploy, live MCP route check, registration approval-to-confirmed-binding smoke, invalid-session GUI regression and Linux DB/API invariants passed. Remote server was stopped after checks.
-- [x] Stage 2 design: requester resolver, requester permission catalog, `/api/web/requester/*` boundary and authenticated/public separation are confirmed for the first workspace slice.
-- [x] Stage 2 tests: resolver-owned visibility and owned/foreign device create coverage are added for the authenticated workspace slice. Shared-device privacy, attachment/comment/close/reopen/feedback and consent tests remain follow-up coverage.
-- [x] Stage 2 backend: implemented `/api/web/requester/bootstrap`, `/devices`, `/tickets`, `/tickets/{ticket_id}` and owned-device `POST /tickets`; server resolves person/bindings/sessions and does not trust arbitrary browser `device_id`.
-- [x] Stage 2 frontend: implemented `/app/requester` route, workspace navigation/access wiring and first authenticated requester page for profile summary, owned devices, recent tickets and owned-device ticket creation.
-- [x] Stage 2A verification and docs: local tests, browser, agent GUI, MCP and DB live checks passed for owned-device listing and owned-device ticket creation.
-- [x] Stage 2B lifecycle slice 1: authenticated requester ticket detail and message/chat are implemented through `/api/web/requester/tickets/{ticket_id}` and `/message`, with requester-safe messages/events and owned-ticket checks.
-- [x] Stage 2B lifecycle slice 2: authenticated requester close/reopen/feedback are implemented through `/api/web/requester/tickets/{ticket_id}/close|feedback|reopen`, with owned-ticket checks before workflow/quality services and requester workspace controls.
-- [x] Stage 2B create slice 3: authenticated requester owned-device create now reuses published Service Catalog selection, `request_forms` dynamic form validation, authenticated safe `POST /api/web/requester/tickets/preview`, request-template custom fields, priority-policy computation and explicit ticket catalog/reporting fields before `create_ticket_with_side_effects()`.
-- [x] Stage 2B preview wrapper: authenticated `POST /api/web/requester/tickets/preview` now verifies requester ownership of browser-supplied `device_id`, delegates to the safe Service Catalog runtime without creating tickets/events, and feeds `/app/requester` preview before submit.
-- [x] Stage 2B knowledge suggestions reuse: `/app/requester` now calls requester-safe `POST /api/knowledge/suggest`, displays safe suggestions in the authenticated create form, records viewed/helpful/not-helpful/deflected feedback, sends `knowledge_attempts` with ticket creation, and `/api/web/requester/tickets` stores sanitized attempts plus `ticket_created_after_view` knowledge feedback metrics behind the requester ownership boundary.
-- [x] Stage 2B create verification: local backend/frontend tests, web build, deploy smoke, Browser MCP `/app/requester` create flow, console check and remote DB verification passed for requester catalog/form create, preview wrapper and requester knowledge suggestions reuse.
-- [x] Stage 2B requester attachments: `/app/requester` uploads files through `/api/upload`, sends `attachment_refs` through owned-ticket `POST /api/web/requester/tickets/{ticket_id}/message`, permits attachment-only requester messages, renders returned attachment links, and keeps artifact resolution behind requester ownership/device-ticket checks.
-- [x] Stage 2B public ticket claim: authenticated `POST /api/web/requester/tickets/claim-public` verifies an existing public access code, attaches the ticket to the logged-in requester/person, clears the public unbound marker, writes a `requester_ticket_claimed` audit event without storing the code, and `/app/requester` exposes the claim form before opening the claimed ticket.
-- [x] Stage 2B no-device creation: authenticated requester create/preview now allows users with a resolved registry person and no registered devices to create a general request without browser-supplied `device_id`; the server assigns a placeholder `device_id`, stores `requester_account_mode=browser_no_device`, `request_context=no_device`, no binding id, and keeps requester visibility through `requester_person_id`; `/app/requester` enables the create form when no devices exist and omits `device_id` from the payload.
-- [x] Stage 2B requester device detail: authenticated `GET /api/web/requester/devices/{device_id}` returns owned-only safe device facts, open ticket count, available actions and recent requester-owned tickets; `/app/requester` opens the detail panel from the owned devices list; live browser/API/DB verification passed.
-- [x] Stage 2B requester profile: authenticated `GET /api/web/requester/profile` returns read-only safe requester profile detail, identity aliases, owned devices, active bindings, pending claims and profile edit policy; `/app/requester` opens the profile detail panel; live browser/API/DB verification passed.
-- [x] Stage 2B shared-device privacy: authenticated requester bootstrap/ticket list/device detail/direct ticket access now has explicit regression coverage for two active users on one device, proving tickets stay scoped by requester person/binding instead of leaking by shared `device_id`; browser requester create now persists non-primary shared-user confirmed bindings only after the requester wrapper validates ownership. Live browser/API/DB verification passed.
-- [x] Stage 2B admin: connected UI users to registry persons through explicit admin workflow and live-verified the admin Registry People UI/API/DB path.
-- [x] Stage 3 design: confirmed canonical `UserConsentRequest`, requester/agent API ownership model, operation transition side effect boundary and deferred Remote Assist boundary.
-- [x] Stage 3 tests: added consent ownership, idempotency, expiry and browser/agent decision coverage in `server/tests/test_user_consent_api.py`; local DB pytest execution currently times out in the existing harness even for older requester tests, while collection passes.
-- [x] Stage 3 backend: implemented `UserConsentRequest`, migration `109`, requester/agent consent APIs, active binding/session checks, one pending consent per subject, atomic first-decision-wins transitions and operation approve/deny side effects.
-- [x] Stage 3 frontend/agent: implemented requester consent center, agent prompt polling/dialogs and shared API client methods.
-- [x] Stage 3 verification and docs: local tests/docs passed; remote Linux stand was deployed at `fec5b78d`; live API/DB checks passed for requester browser consent approve, agent consent approve with requester account-session headers, missing account-session denial, one pending requester UI consent, operation queue/outbox side effects, ticket timeline events and Remote Assist canonical deny. Browser MCP verified `/app/requester` shows the pending consent, approves it through the real UI, removes the panel and displays "Согласие подтверждено".
-
-## Handoff
-
-Stage 3 live verification is complete for the Browser / Requester / Agent identity and consent model. Stage 1, Stage 2A and Stage 2B live verification are complete enough for handoff; do not repeat them as the next item unless a regression needs to be checked.
-
-Done in this slice:
-
-- web-authenticated pairing lookup/confirmation endpoints;
-- confirmed-binding login requires active binding for the logged-in web user;
-- registration pairing creates/updates a registration claim for the pairing device;
-- `/app/device/login` and `/app/device/register` pages;
-- `/app/device/pair` manual pairing-code page with safe web-authenticated lookup and redirect to confirmation;
-- agent account-gate browser-first actions and polling;
-- agent account-state refresh clears revoked/invalid local account sessions and returns to account gate;
-- one-time account-session token remains agent-only.
-- authenticated requester workspace route `/app/requester`;
-- requester permission catalog and `user` default workspace access;
-- requester identity resolver over web login, person identities, active bindings and server account sessions;
-- requester-safe bootstrap/devices/tickets APIs under `/api/web/requester/*`;
-- requester ticket creation for server-verified owned devices;
-- requester ticket detail/message and close/reopen/feedback lifecycle for owned tickets;
-- requester owned-device catalog/form create with authenticated safe preview;
-- requester knowledge suggestions reuse in authenticated create flow with sanitized attempts and deflection metrics;
-- requester attachment upload/message/download through owned-ticket browser workspace controls;
-- public ticket claim-to-account through `/api/web/requester/tickets/claim-public` and `/app/requester`;
-- local backend/frontend coverage for owned visibility, shared-device privacy, foreign-device denial and foreign-ticket lifecycle denial.
-
-Deferred / next:
-
-- Stage 2B admin follow-up: explicit admin UI workflow for linking existing UI users to registry persons. Current resolver uses existing person identities.
-- Stage 3 follow-up: none for the identity/consent-model scope. Viewer-side WebRTC offer/answer remains a separate media/viewer gate, not a blocker for requester/agent identity signoff.
-
-Immediate next work:
-
-1. Move to the next planned slice after Stage 3; run viewer-side WebRTC offer/answer only when the support viewer/media gate is explicitly in scope.
-
-Before code changes, read the nested instructions for the target area:
-
-- `server/AGENTS.md` for backend/auth/registry/ticket work.
-- `pc_agent/AGENTS.md` for agent GUI/runtime work.
-- `webapp/AGENTS.md` for requester browser UI work.
-
-Do not stage unrelated existing dirty files or generated artifacts. Current known unrelated dirty surfaces include `.codex/config.toml`, `pc_agent/ui_gui/tickets_list_model.py`, `scripts/live_agent_uia_state_probe.py` and untracked files under `artifacts/` / `audit_artifacts/`.
+Backend additions:
+
+* `knowledge_review_comments` already exists; extend if needed.
+* Add:
+
+  * `knowledge_article_editor_events`
+  * optional `knowledge_article_attachments`
+  * optional `knowledge_version_diff_cache`
+
+TDD checkpoints:
+
+* RED tests for article editor load/save.
+* RED tests for version diff.
+* RED tests for publish checklist blockers.
+* RED tests for AI disabled UI.
+* RED tests for requester-safe preview.
+* RED tests for segment panel integration.
+* RED webapp tests for editing workflow.
+
+Verification:
+
+* Focused backend tests.
+* Focused webapp tests.
+* Full relevant knowledge tests.
+* Build/compile/diff checks.
+
+Live checks:
+
+* Create draft.
+* Insert template.
+* Create manual segment.
+* Create version.
+* Preview as requester/support.
+* Submit review.
+* Publish.
+* Open article in `/app/kb`.
+* Capture screenshots for each step.
+
+Exit criteria:
+
+* Articles can be authored and governed without raw admin-table workflow.
+* Editor supports segmentation and AI tools safely.
+
+---
+
+## Phase 9 — Visual Knowledge Graph Studio
+
+Goal:
+
+* Add a visual graph editor for knowledge nodes/edges and article relationships.
+
+Route:
+
+* `/app/admin/knowledge/graph`
+
+Frontend:
+
+* Use a dedicated graph canvas component.
+* A library such as React Flow is acceptable if already compatible with the project stack.
+* If adding a new dependency, document why and keep it isolated.
+
+Graph UI:
+
+* Left panel:
+
+  * node search;
+  * filters;
+  * palette;
+  * saved views.
+* Canvas:
+
+  * nodes;
+  * edges;
+  * drag/drop;
+  * connect handles;
+  * zoom/pan;
+  * layout actions.
+* Right panel:
+
+  * selected node/edge properties;
+  * relation type;
+  * visibility;
+  * linked item;
+  * confidence;
+  * status;
+  * source;
+  * AI suggested links.
+* Bottom/side panel:
+
+  * warnings;
+  * orphan nodes;
+  * contradictions;
+  * duplicate/superseded chains.
+
+Backend schema additions:
+
+* `knowledge_graph_layouts`
+
+  * `layout_id`
+  * `scope_type`
+  * `scope_ref`
+  * `layout_json`
+  * `created_by`
+  * `updated_by`
+  * timestamps
+
+* `knowledge_graph_proposals`
+
+  * `proposal_id`
+  * `proposal_type`: `node`, `edge`, `merge`, `contradiction`, `duplicate`, `supersede`
+  * `source_kind`: `manual`, `ai`, `import`, `article_extraction`
+  * `status`: `proposed`, `approved`, `rejected`
+  * `payload_json`
+  * `reason`
+  * `created_by`
+  * timestamps
+
+APIs:
+
+* `GET /api/web/knowledge/graph/search`
+* `GET /api/web/knowledge/graph/nodes`
+* `POST /api/web/knowledge/graph/nodes`
+* `PATCH /api/web/knowledge/graph/nodes/{node_id}`
+* `DELETE /api/web/knowledge/graph/nodes/{node_id}`
+* `GET /api/web/knowledge/graph/edges`
+* `POST /api/web/knowledge/graph/edges`
+* `PATCH /api/web/knowledge/graph/edges/{edge_id}`
+* `DELETE /api/web/knowledge/graph/edges/{edge_id}`
+* `GET /api/web/knowledge/graph/neighborhood`
+* `GET /api/web/knowledge/graph/layouts/{scope}`
+* `POST /api/web/knowledge/graph/layouts/{scope}`
+* `POST /api/web/knowledge/graph/ai/suggest-links`
+* `POST /api/web/knowledge/graph/proposals/{proposal_id}/approve`
+* `POST /api/web/knowledge/graph/proposals/{proposal_id}/reject`
+
+AI graph suggestions:
+
+* Disabled unless AI enabled.
+* Suggest:
+
+  * related articles;
+  * glossary terms;
+  * service/offering links;
+  * known error/workaround links;
+  * duplicate articles;
+  * contradictions.
+* Must create proposals only.
+* Admin/support must approve before graph mutation.
+
+Observer v2:
+
+* Emit:
+
+  * `knowledge.graph.node_created`
+  * `knowledge.graph.edge_created`
+  * `knowledge.graph.proposal_created`
+  * `knowledge.graph.proposal_approved`
+  * `knowledge.graph.proposal_rejected`
+  * `knowledge.graph.ai_suggest_failed`
+* Include counts and ids, no raw sensitive body.
+
+TDD checkpoints:
+
+* RED tests for node/edge CRUD.
+* RED tests for graph layout save/load.
+* RED tests for ACL-filtered graph search.
+* RED tests for AI proposal disabled/policy blocked.
+* RED webapp tests for graph canvas, create node, create edge, edit properties, save layout.
+* RED browser-oriented test if existing browser harness supports it.
+
+Verification:
+
+* `python -m pytest server/tests/test_knowledge_graph_editor.py server/tests/test_knowledge_graph_layouts.py server/tests/test_knowledge_graph_proposals.py -v --tb=short`
+* `pnpm --dir webapp test -- src/features/knowledge/graph-studio.test.tsx`
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `git diff --check`
+
+Live checks:
+
+* Open graph studio.
+* Create concept node.
+* Link it to article node.
+* Create relation edge.
+* Save layout.
+* Reload page and confirm layout persists.
+* Run AI link suggestion with OpenRouter if enabled.
+* Approve one proposal.
+* Confirm observer events.
+* Capture screenshots:
+
+  * graph canvas;
+  * node editor;
+  * edge editor;
+  * saved layout;
+  * AI proposal panel;
+  * observer event.
+
+Exit criteria:
+
+* Knowledge graph is visually editable.
+* Graph changes are governed and observable.
+* AI proposals are optional and review-only.
+
+---
+
+## Phase 10 — Import/Ingestion wizard with AI-off and AI-assisted enrichment
+
+Goal:
+
+* Implement product-grade document import, not just text ingestion.
+
+Route:
+
+* `/app/admin/knowledge/import`
+
+Supported sources for this phase:
+
+* text;
+* markdown;
+* HTML if feasible;
+* DOCX if project dependencies allow;
+* PDF if project dependencies allow;
+* external URL only if safe and explicitly enabled;
+* Git repo docs only as later subphase if needed.
+
+Wizard steps:
+
+1. Source selection.
+2. Parse preview.
+3. Structure detection.
+4. Space/type/visibility selection.
+5. Segmentation profile selection.
+6. Optional AI enrichment:
+
+   * summary;
+   * tags;
+   * glossary terms;
+   * graph proposals;
+   * duplicate detection.
+7. Create drafts.
+8. Queue indexing if enabled.
+
+Backend:
+
+* Extend `KnowledgeIngestionService`.
+* Add parser abstraction:
+
+  * `TextParser`
+  * `MarkdownParser`
+  * `HtmlParser`
+  * `DocxParser`
+  * `PdfParser`
+* Add import preview endpoint.
+* Add safe error redaction.
+* Add ingestion observer events.
+
+APIs:
+
+* `POST /api/web/knowledge/import/preview`
+* `POST /api/web/knowledge/import/create-drafts`
+* `GET /api/web/knowledge/import/jobs`
+* `GET /api/web/knowledge/import/jobs/{job_id}`
+
+Observer v2:
+
+* Emit:
+
+  * `knowledge.import.preview_created`
+  * `knowledge.import.drafts_created`
+  * `knowledge.import.failed`
+  * `knowledge.import.ai_enrichment_blocked`
+  * `knowledge.import.ai_enrichment_failed`
+
+TDD checkpoints:
+
+* RED tests for text/markdown import preview.
+* RED tests for draft creation.
+* RED tests for parser error redaction.
+* RED tests for AI enrichment disabled.
+* RED tests for AI enrichment mocked proposals.
+* RED webapp tests for import wizard.
+
+Verification:
+
+* Focused import tests.
+* Webapp import wizard tests.
+* Build/compile/diff checks.
+
+Live checks:
+
+* Import markdown text without AI.
+* Create draft.
+* Open in studio.
+* Segment automatically.
+* Publish after review.
+* With OpenRouter enabled, run AI enrichment on safe test text.
+* Confirm proposals require review.
+* Capture screenshots:
+
+  * import source;
+  * preview;
+  * draft created;
+  * AI enrichment proposal;
+  * observer event.
+
+Exit criteria:
+
+* KB can be populated from documents.
+* Import works without AI.
+* AI enrichment is optional and governed.
+
+---
+
+## Phase 11 — Support Knowledge Workspace and deeper helpdesk integration
+
+Goal:
+
+* Make `/app/knowledge` a support workspace, not a clone of admin panel.
+
+Route:
+
+* `/app/knowledge`
+* `/app/knowledge/articles/:id`
+
+Features:
+
+* Fast support search.
+* Filters:
+
+  * requester-safe;
+  * support internal;
+  * known errors;
+  * workarounds;
+  * runbooks;
+  * service/offering;
+  * article status/freshness.
+* Open article/runbook.
+* Link article to ticket.
+* Copy requester-safe answer.
+* Generate requester-safe reply if AI enabled.
+* Create KB draft from ticket resolution/passport.
+* See requester knowledge attempts.
+* Mark support_used.
+* Report weak article.
+* Create known error/workaround draft.
+
+Ticket integration:
+
+* Improve ticket Knowledge tab:
+
+  * requester attempts;
+  * suggested requester-safe articles;
+  * support runbooks;
+  * known errors;
+  * workarounds;
+  * linked articles;
+  * draft from resolution;
+  * AI safe reply if enabled.
+* Preserve existing ticket KB endpoints.
+
+Observer v2:
+
+* Emit:
+
+  * `knowledge.support.article_used`
+  * `knowledge.support.ticket_linked`
+  * `knowledge.support.reply_draft_created`
+  * `knowledge.support.passport_draft_created`
+  * `knowledge.support.weak_article_reported`
+
+TDD checkpoints:
+
+* RED tests for support search visibility.
+* RED tests for ticket link/unlink compatibility.
+* RED tests for requester attempts display.
+* RED tests for support_used feedback.
+* RED webapp tests for support workspace and ticket knowledge tab.
+
+Verification:
+
+* Focused server tests.
+* Focused webapp tests.
+* Existing ticket/knowledge tests.
+* Build/compile/diff checks.
+
+Live checks:
+
+* Create ticket.
+* View knowledge suggestions.
+* Link article.
+* Mark support_used.
+* Create draft from resolution.
+* Open draft in studio.
+* Capture screenshots:
+
+  * support search;
+  * ticket knowledge tab;
+  * linked article;
+  * draft from resolution;
+  * observer event.
+
+Exit criteria:
+
+* Helpdesk integration remains strong.
+* Standalone KB and support KB serve different workflows.
+
+---
+
+## Phase 12 — Knowledge Ops dashboard with Observer v2
+
+Goal:
+
+* Turn `/app/admin/knowledge` into a Knowledge Operations Center.
+
+Dashboard sections:
+
+* Coverage:
+
+  * spaces;
+  * published articles;
+  * requester-safe coverage;
+  * support runbook coverage;
+  * services/offerings without KB.
+* Quality:
+
+  * average score;
+  * low-quality count;
+  * stale review count;
+  * missing owner/reviewer;
+  * unsafe requester-safe blockers.
+* Search:
+
+  * zero-result searches;
+  * top queries;
+  * fallback count;
+  * AI disabled count;
+  * vector/rerank usage.
+* RAG:
+
+  * answer count;
+  * no-answer count;
+  * provider failures;
+  * citation validation failures.
+* Indexing:
+
+  * queued;
+  * failed;
+  * stale embeddings;
+  * disabled.
+* AI:
+
+  * provider health;
+  * model profile status;
+  * policy blocks;
+  * cost/usage if available.
+* Graph:
+
+  * orphan nodes;
+  * pending proposals;
+  * contradiction/duplicate findings.
+* Review:
+
+  * assigned/open/overdue tasks.
+
+Observer v2 integration:
+
+* Add knowledge observer category or source.
+* All critical operations emit observer events.
+* Admin dashboard surfaces observer-backed degradation states:
+
+  * AI provider down;
+  * indexing failing;
+  * high zero-result searches;
+  * stale embeddings;
+  * RAG citation failures;
+  * policy blocks;
+  * ingestion failures.
+
+TDD checkpoints:
+
+* RED tests for ops summary aggregation.
+* RED tests for observer event mapping.
+* RED tests for dashboard API.
+* RED webapp tests for dashboard cards and degraded state.
+
+Verification:
+
+* Focused server tests.
+* Focused webapp tests.
+* Browser smoke.
+
+Live checks:
+
+* Trigger:
+
+  * search zero-result;
+  * failed AI health;
+  * failed indexing job;
+  * successful segmentation;
+  * successful ask.
+* Confirm dashboard and observer show states.
+* Capture screenshots.
+
+Exit criteria:
+
+* Knowledge health is observable.
+* Observer v2 is a first-class integration, not an afterthought.
+
+---
+
+## Phase 13 — RAG/search evaluation and safety regression suite
+
+Goal:
+
+* Add automated evidence that search/RAG is useful and safe.
+
+Backend test fixtures:
+
+Create a controlled knowledge dataset:
+
+* requester-safe article;
+* support_internal runbook;
+* admin_internal article;
+* security_restricted article;
+* known error;
+* workaround;
+* manual segments;
+* auto segments;
+* AI-approved segment;
+* graph links;
+* service/offering bindings.
+
+Evaluation tests:
+
+* Keyword search finds requester article.
+* Manual segment title/keywords improve search.
+* Full-text search finds body-only content.
+* Vector search finds semantic query when enabled.
+* Vector disabled fallback still finds keyword result.
+* Rerank changes ordering only when enabled.
+* Ask returns citations only from allowed chunks.
+* Ask returns no-answer when evidence insufficient.
+* Requester cannot retrieve support/admin/security chunks.
+* Support cannot retrieve admin/security chunks.
+* Stale embeddings are not preferred.
+* Archived items are not returned.
+* Old versions are not used unless explicitly requested.
+
+Metrics to record:
+
+* `top_k_recall`
+* `citation_precision`
+* `no_answer_correctness`
+* `acl_leakage_count`
+* `fallback_count`
+* `latency_ms`
+* `provider_failure_count`
+
+TDD checkpoints:
+
+* RED eval harness tests.
+* RED ACL leakage tests.
+* RED no-answer tests.
+* RED stale embedding tests.
+* RED observer event tests.
+
+Verification:
+
+* `python -m pytest server/tests/test_knowledge_rag_eval.py server/tests/test_knowledge_rag_acl.py server/tests/test_knowledge_search_eval.py -v --tb=short`
+* `pnpm --dir webapp test`
+* `pnpm --dir webapp build`
+* `python -m compileall -q server shared scripts`
+* `python scripts/docs_inventory.py --check-links`
+* `python scripts/verify_workspace.py`
+* `git diff --check`
+* `git diff --cached --check`
+
+Live acceptance checks:
+
+* End-to-end article lifecycle:
+
+  * create article;
+  * manually segment;
+  * search without AI;
+  * enable OpenRouter;
+  * index embeddings;
+  * search semantic query;
+  * ask with citations;
+  * feedback;
+  * observer events.
+
+* End-to-end graph:
+
+  * create node;
+  * create edge;
+  * open related article;
+  * save layout;
+  * observer events.
+
+* End-to-end helpdesk:
+
+  * requester starts ticket;
+  * suggestions shown;
+  * user views article;
+  * ticket creation carries knowledge attempt;
+  * support sees attempts;
+  * support links runbook;
+  * create draft from resolution.
+
+* Failure mode:
+
+  * disable AI;
+  * search still works;
+  * Ask shows fallback;
+  * indexing disabled state visible.
+
+* Provider failure:
+
+  * invalid OpenRouter key or provider disabled;
+  * health check fails;
+  * observer event emitted;
+  * search falls back safely;
+  * no key leaked.
+
+Required browser evidence:
+
+* `/app/admin/knowledge/ai` provider setup and masked key state.
+* `/app/admin/knowledge/search-settings` AI disabled search preview.
+* `/app/admin/knowledge/studio` manual segment creation.
+* `/app/admin/knowledge/indexing` reindex job.
+* `/app/kb/search` keyword and hybrid results.
+* `/app/kb/ask` answer with citations or disabled fallback.
+* `/app/admin/knowledge/graph` visual graph editing.
+* `/app/admin/knowledge` ops/observer-backed dashboard.
+* Ticket Knowledge tab integration.
+
+Exit criteria:
+
+* Product KB works without AI.
+* AI adds embeddings/rerank/ask/rewrite/markup when enabled.
+* OpenRouter integration is testable with user-supplied key.
+* Search/RAG is ACL-safe.
+* Observer v2 captures health, failures and key workflow events.
+* Browser evidence proves the main workflows.
+
+---
+
+## Documentation updates required across phases
+
+Update:
+
+* `server/docs/KNOWLEDGE_PLATFORM.md`
+* `server/docs/KNOWLEDGE_OPERATIONS.md`
+* `server/docs/KNOWLEDGE_VNEXT_ARCHITECTURE.md`
+* `server/docs/DATABASE.md`
+* `server/docs/CODEMAP.md`
+* `docs/ARCHITECTURE_BOUNDARIES.md`
+* `docs/QUICK_LOOKUP.md`
+* `docs/TESTING_RULES.md` if needed.
+* `webapp` route/navigation docs if present.
+* Any observer documentation that lists event types/sources.
+
+Docs must cover:
+
+* AI provider setup.
+* Where the user enters OpenRouter API key.
+* AI disabled mode.
+* Search settings.
+* Manual/auto/AI segmentation.
+* Embedding/indexing lifecycle.
+* RAG Ask with citations.
+* Graph editor.
+* Observer v2 events.
+* Safety/ACL rules.
+* Live testing procedure.
+
+---
+
+## Final verification target before merge
+
+Run as many as practical locally, and document any environment limitation explicitly:
+
+* Focused backend tests for:
+
+  * AI settings;
+  * OpenRouter mocked client;
+  * search settings;
+  * segmentation;
+  * embeddings/indexing;
+  * hybrid retrieval;
+  * RAG Ask;
+  * graph editor;
+  * import;
+  * support integration;
+  * observer events.
+
+* Focused webapp tests for:
+
+  * AI settings page;
+  * search settings page;
+  * Knowledge Portal;
+  * article reader;
+  * Ask page;
+  * Authoring Studio;
+  * segmentation panel;
+  * indexing dashboard;
+  * Graph Studio;
+  * Support Knowledge Workspace;
+  * Ops dashboard.
+
+* General:
+
+  * `python -m compileall -q server shared pc_agent scripts`
+  * `pnpm --dir webapp test`
+  * `pnpm --dir webapp build`
+  * `python scripts/docs_inventory.py --check-links`
+  * `python scripts/verify_workspace.py`
+  * `git diff --check`
+  * `git diff --cached --check`
+
+* DB:
+
+  * Apply Alembic migration on the real PostgreSQL stand.
+  * Confirm `/api/health` after migration.
+  * Confirm migration rollback plan is documented if rollback is supported by project convention.
+
+* Browser/live:
+
+  * Real server/webapp smoke.
+  * Screenshots for all required UI workflows.
+  * Browser console check: no warnings/errors relevant to new features.
+  * No secret leakage in logs, screenshots, network response bodies or console.
+
+Known risks:
+
+* pgvector may not be available in all local test environments. Add capability detection and fallback tests.
+* OpenRouter key is external and user-supplied; tests must mock network by default.
+* AI outputs are nondeterministic; product tests must validate contract shape and safety, not exact prose.
+* Manual segment offsets can become stale after edits; implement content hash and stale detection.
+* Graph UI dependency can increase bundle size; isolate it and justify dependency.
+* Observer v2 integration must not create noisy events for every normal keystroke; emit workflow-level events only.
+* ACL leakage is the highest-risk area. Add regression tests before enabling RAG answers.
