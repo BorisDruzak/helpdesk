@@ -125,9 +125,13 @@ Admin/support management:
 - `GET|POST /api/web/knowledge/items`
 - `GET|POST /api/web/knowledge/segmentation-profiles`
 - `PATCH|DELETE /api/web/knowledge/segments/{segment_id}`
+- `POST /api/web/knowledge/segments/{segment_id}/approve`
+- `POST /api/web/knowledge/segments/{segment_id}/reject`
 - `GET /api/web/knowledge/items/{item_id_or_slug}`
 - `GET|POST /api/web/knowledge/items/{item_id_or_slug}/segments`
 - `POST /api/web/knowledge/items/{item_id_or_slug}/segments/auto`
+- `POST /api/web/knowledge/items/{item_id_or_slug}/segments/revalidate`
+- `POST /api/web/knowledge/items/{item_id_or_slug}/segments/ai-proposals`
 - `GET|POST /api/web/knowledge/items/{item_id_or_slug}/versions`
 - `POST /api/web/knowledge/items/{item_id_or_slug}/publish`
 - `GET|POST /api/web/knowledge/graph/nodes`

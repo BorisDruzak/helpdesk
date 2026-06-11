@@ -333,6 +333,7 @@ export type KnowledgeSegment = {
   status: string;
   source?: string | null;
   content_hash?: string | null;
+  metadata_json?: Record<string, unknown>;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -747,6 +748,61 @@ export async function autoSegmentKnowledgeItem(itemIdOrSlug: string, payload: { 
   return readJson<{ job: Record<string, unknown>; segments: KnowledgeSegment[]; display_message?: string }>(
     response,
     "Не удалось выполнить авторазметку статьи",
+  );
+}
+
+export async function revalidateKnowledgeSegments(
+  itemIdOrSlug: string,
+  payload: { source_version_id: string; target_version_id: string },
+) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/segments/revalidate`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ job: Record<string, unknown>; segments: KnowledgeSegment[]; stats: Record<string, number>; display_message?: string }>(
+    response,
+    "РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµРїСЂРѕРІРµСЂРёС‚СЊ СЃРµРіРјРµРЅС‚С‹ СЃС‚Р°С‚СЊРё",
+  );
+}
+
+export async function proposeKnowledgeAiSegments(itemIdOrSlug: string, payload: { version_id?: string; profile_code?: string }) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/segments/ai-proposals`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ job: Record<string, unknown>; segments: KnowledgeSegment[]; stats: Record<string, unknown>; display_message?: string }>(
+    response,
+    "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ AI-РїСЂРµРґР»РѕР¶РµРЅРёСЏ СЃРµРіРјРµРЅС‚РѕРІ",
+  );
+}
+
+export async function approveKnowledgeAiSegment(segmentId: string) {
+  const response = await fetch(`/api/web/knowledge/segments/${encodeURIComponent(segmentId)}/approve`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  return readJson<{ segment: KnowledgeSegment; display_message?: string }>(
+    response,
+    "РќРµ СѓРґР°Р»РѕСЃСЊ РѕРґРѕР±СЂРёС‚СЊ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
+  );
+}
+
+export async function rejectKnowledgeAiSegment(segmentId: string, payload?: { reason?: string | null }) {
+  const response = await fetch(`/api/web/knowledge/segments/${encodeURIComponent(segmentId)}/reject`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
+  return readJson<{ segment: KnowledgeSegment; display_message?: string }>(
+    response,
+    "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєР»РѕРЅРёС‚СЊ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
   );
 }
 

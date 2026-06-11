@@ -23,7 +23,7 @@ from knowledge.gap_service import KnowledgeGapService, serialize_gap_finding
 from knowledge.review_task_service import KnowledgeReviewTaskService, serialize_review_task
 from knowledge.search_service import KnowledgeSearchService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
-from knowledge.segmentation_service import KnowledgeSegmentationService
+from knowledge.segmentation_service import KnowledgeSegmentationPolicyBlockedError, KnowledgeSegmentationService
 from knowledge.suggestion_service import KnowledgeSuggestionService
 
 
@@ -349,6 +349,99 @@ async def handle_web_knowledge_item_segments_auto(request: web.Request) -> web.R
         return web.json_response({"status": "error", "error": "internal_error"}, status=500)
 
 
+@require_auth("admin", "support", "auditor", "user")
+async def handle_web_knowledge_item_segments_revalidate(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        async with get_session() as session:
+            result = await KnowledgeSegmentationService(session).revalidate_segments(
+                item_id,
+                await _json_payload(request),
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                **result,
+                "display_message": "РЎРµРіРјРµРЅС‚С‹ РїРµСЂРµРїСЂРѕРІРµСЂРµРЅС‹",
+            }
+        )
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ РїР°СЂР°РјРµС‚СЂС‹ РїРµСЂРµРїСЂРѕРІРµСЂРєРё",
+                "details": str(exc),
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception("[knowledge] segment revalidation failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support", "auditor", "user")
+async def handle_web_knowledge_item_segments_ai_proposals(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        async with get_session() as session:
+            try:
+                result = await KnowledgeSegmentationService(session).propose_ai_segments(
+                    item_id,
+                    await _json_payload(request),
+                    actor_id=actor_id,
+                    actor_role=role,
+                )
+            except KnowledgeSegmentationPolicyBlockedError as exc:
+                await session.commit()
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "policy_blocked",
+                        "error_code": exc.error_code,
+                        "display_message": "РџРѕР»РёС‚РёРєР° AI РЅРµ СЂР°Р·СЂРµС€Р°РµС‚ Р°РІС‚РѕСЂР°Р·РјРµС‚РєСѓ",
+                        "details": str(exc),
+                    },
+                    status=409,
+                )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                **result,
+                "display_message": "AI-РїСЂРµРґР»РѕР¶РµРЅРёСЏ СЃРµРіРјРµРЅС‚РѕРІ СЃРѕР·РґР°РЅС‹",
+            }
+        )
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ РїР°СЂР°РјРµС‚СЂС‹ AI-РїСЂРµРґР»РѕР¶РµРЅРёР№",
+                "details": str(exc),
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception("[knowledge] AI segment proposals failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_segment_detail(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
@@ -398,6 +491,79 @@ async def handle_web_knowledge_segment_detail(request: web.Request) -> web.Respo
     except Exception:
         logger.exception("[knowledge] segment detail failed")
         return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_segment_approve(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    segment_id = str(request.match_info.get("segment_id") or "")
+    try:
+        async with get_session() as session:
+            segment = await KnowledgeSegmentationService(session).approve_ai_segment(
+                segment_id,
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "segment": segment,
+                "display_message": "AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р° РѕРґРѕР±СЂРµРЅРѕ",
+            }
+        )
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
+                "details": str(exc),
+            },
+            status=400,
+        )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_segment_reject(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    segment_id = str(request.match_info.get("segment_id") or "")
+    try:
+        async with get_session() as session:
+            segment = await KnowledgeSegmentationService(session).reject_ai_segment(
+                segment_id,
+                await _json_payload(request),
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                "segment": segment,
+                "display_message": "AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р° РѕС‚РєР»РѕРЅРµРЅРѕ",
+            }
+        )
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
+                "details": str(exc),
+            },
+            status=400,
+        )
 
 
 @require_auth("admin", "support", "auditor")

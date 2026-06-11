@@ -677,12 +677,18 @@ Status 2026-06-12:
   * auto segmentation can be started from available segmentation profiles without requiring AI;
   * typed webapp API helpers cover segment list/create/update/archive, auto segmentation and profile list/create endpoints;
   * tests: `webapp/src/features/knowledge/article-segmentation-panel.test.tsx` and the segmentation block in `webapp/src/features/knowledge/api.test.ts`.
+* Phase 3C/3D/3E backend/API slice is implemented:
+
+  * `POST /api/web/knowledge/items/{item_id_or_slug}/segments/revalidate` copies active/draft/stale segments from one immutable version to another, exact-remaps offsets when text still exists, and creates stale target-version copies when text no longer matches;
+  * `KnowledgeSegmentationService` writes Observer-visible `agent_runtime_audit` rows for manual create/update/archive, auto segmentation, remap/revalidation, AI policy blocks and AI proposal approve/reject decisions;
+  * `POST /api/web/knowledge/items/{item_id_or_slug}/segments/ai-proposals` is gated by enabled `ai_policy_profiles` with `ai_allowed=true` and `auto_markup_allowed=true` for `task_type=markup`;
+  * AI proposals are created as `segment_type=ai_proposed`, `status=draft`, `source=ai_markup` and do not affect active search until an admin/support operator approves them;
+  * `POST /api/web/knowledge/segments/{segment_id}/approve` promotes draft AI proposals to `ai_approved` + `active`, while `POST /api/web/knowledge/segments/{segment_id}/reject` marks them `rejected` with redacted metadata;
+  * typed webapp API helpers cover segment revalidation, AI proposals and approve/reject actions;
+  * tests: `server/tests/test_knowledge_segments.py` covers remap, stale copy, AI policy block audit, proposal approve and proposal reject flows.
 * Remaining Phase 3 work:
 
   * dedicated `/app/admin/knowledge/studio` authoring route that can host the current segmentation panel as part of a full article studio;
-  * stale segment remap/revalidation after version body changes;
-  * AI proposal/approve/reject flow and policy gates;
-  * Observer v2 segmentation events;
   * embedding/index sync for segment text.
 
 Terminology:
