@@ -13,7 +13,7 @@ import {
 } from "./api";
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
-const numberFieldClass = "mt-1 w-28 rounded-md border border-slate-200 px-3 py-2 text-sm";
+const numberFieldClass = "mt-1 block w-full max-w-36 rounded-md border border-slate-200 px-3 py-2 text-sm";
 
 type SearchSettingsDraft = {
   search_mode: string;
