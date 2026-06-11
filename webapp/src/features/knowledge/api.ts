@@ -313,6 +313,64 @@ export type KnowledgeSearchPreviewResult = {
   }>;
 };
 
+export type KnowledgeSegment = {
+  segment_id: string;
+  item_id: string;
+  version_id: string;
+  segment_index?: number;
+  segment_type: string;
+  title: string;
+  summary?: string | null;
+  text: string;
+  start_offset?: number | null;
+  end_offset?: number | null;
+  heading_path?: string[];
+  keywords?: string[];
+  boost?: number | null;
+  visibility: string;
+  embedding_enabled?: boolean;
+  full_text_enabled?: boolean;
+  status: string;
+  source?: string | null;
+  content_hash?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type KnowledgeSegmentationProfile = {
+  profile_id: string;
+  code: string;
+  title: string;
+  mode: string;
+  split_by_headings?: boolean;
+  split_by_paragraphs?: boolean;
+  target_tokens?: number;
+  max_tokens?: number;
+  min_tokens?: number;
+  overlap_tokens?: number;
+  preserve_tables?: boolean;
+  preserve_code_blocks?: boolean;
+  default_segment_boost?: number | null;
+  enabled?: boolean;
+};
+
+export type KnowledgeSegmentPayload = {
+  version_id?: string;
+  segment_type?: string;
+  title?: string;
+  summary?: string | null;
+  text?: string;
+  start_offset?: number | null;
+  end_offset?: number | null;
+  heading_path?: string[];
+  keywords?: string[];
+  boost?: number;
+  visibility?: string;
+  embedding_enabled?: boolean;
+  full_text_enabled?: boolean;
+  status?: string;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -643,4 +701,67 @@ export async function previewKnowledgeSearch(payload: KnowledgeSearchPreviewRequ
     body: JSON.stringify(payload),
   });
   return readJson<KnowledgeSearchPreviewResult>(response, "Не удалось выполнить проверочный поиск");
+}
+
+export async function fetchKnowledgeSegments(itemIdOrSlug: string): Promise<KnowledgeSegment[]> {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/segments`, { credentials: "same-origin" });
+  const payload = await readJson<{ segments: KnowledgeSegment[] }>(response, "Не удалось загрузить сегменты статьи");
+  return payload.segments ?? [];
+}
+
+export async function createKnowledgeSegment(itemIdOrSlug: string, payload: KnowledgeSegmentPayload) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/segments`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ segment: KnowledgeSegment; display_message?: string }>(response, "Не удалось создать сегмент статьи");
+}
+
+export async function updateKnowledgeSegment(segmentId: string, payload: KnowledgeSegmentPayload) {
+  const response = await fetch(`/api/web/knowledge/segments/${encodeURIComponent(segmentId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ segment: KnowledgeSegment; display_message?: string }>(response, "Не удалось обновить сегмент статьи");
+}
+
+export async function archiveKnowledgeSegment(segmentId: string) {
+  const response = await fetch(`/api/web/knowledge/segments/${encodeURIComponent(segmentId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  return readJson<{ segment: KnowledgeSegment; display_message?: string }>(response, "Не удалось архивировать сегмент статьи");
+}
+
+export async function autoSegmentKnowledgeItem(itemIdOrSlug: string, payload: { version_id?: string; profile_code?: string }) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/segments/auto`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ job: Record<string, unknown>; segments: KnowledgeSegment[]; display_message?: string }>(
+    response,
+    "Не удалось выполнить авторазметку статьи",
+  );
+}
+
+export async function fetchKnowledgeSegmentationProfiles(): Promise<KnowledgeSegmentationProfile[]> {
+  const response = await fetch("/api/web/knowledge/segmentation-profiles", { credentials: "same-origin" });
+  const payload = await readJson<{ profiles: KnowledgeSegmentationProfile[] }>(response, "Не удалось загрузить профили разметки");
+  return payload.profiles ?? [];
+}
+
+export async function saveKnowledgeSegmentationProfile(payload: Partial<KnowledgeSegmentationProfile> & { code: string; title: string }) {
+  const response = await fetch("/api/web/knowledge/segmentation-profiles", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ profile: KnowledgeSegmentationProfile; display_message?: string }>(response, "Не удалось сохранить профиль разметки");
 }

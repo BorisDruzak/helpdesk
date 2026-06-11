@@ -670,9 +670,16 @@ Status 2026-06-12:
   * routes are live for `GET|POST /api/web/knowledge/items/{item_id_or_slug}/segments`, `POST /api/web/knowledge/items/{item_id_or_slug}/segments/auto`, `PATCH|DELETE /api/web/knowledge/segments/{segment_id}` and `GET|POST /api/web/knowledge/segmentation-profiles`;
   * active segment title/text/keywords contribute to AI-off Knowledge search snippets/scoring;
   * tests: `server/tests/test_knowledge_segments.py` and `server/tests/test_knowledge_search_segments.py`.
+* Phase 3B frontend slice is implemented on the current `/app/admin/knowledge` editor route:
+
+  * `ArticleSegmentationPanel` lets an editor select text from the chosen immutable version body and create manual retrieval segments with title, keywords, visibility, boost and full-text/embedding flags;
+  * the panel lists active segments for the selected version and supports archive actions;
+  * auto segmentation can be started from available segmentation profiles without requiring AI;
+  * typed webapp API helpers cover segment list/create/update/archive, auto segmentation and profile list/create endpoints;
+  * tests: `webapp/src/features/knowledge/article-segmentation-panel.test.tsx` and the segmentation block in `webapp/src/features/knowledge/api.test.ts`.
 * Remaining Phase 3 work:
 
-  * article segmentation UI in `/app/admin/knowledge/studio`;
+  * dedicated `/app/admin/knowledge/studio` authoring route that can host the current segmentation panel as part of a full article studio;
   * stale segment remap/revalidation after version body changes;
   * AI proposal/approve/reject flow and policy gates;
   * Observer v2 segmentation events;

@@ -18,6 +18,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
+import { ArticleSegmentationPanel } from "./article-segmentation-panel";
 import {
   createKnowledgeItem,
   createKnowledgeVersion,
@@ -546,6 +547,8 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
               </div>
             </CardContent>
           </Card>
+
+          <ArticleSegmentationPanel item={selectedItem} version={selectedVersion ?? null} canManage={canManage} />
 
           <Card>
             <CardHeader>

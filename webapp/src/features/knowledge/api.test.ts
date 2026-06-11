@@ -9,19 +9,26 @@ import {
   fetchKnowledgeAiPolicies,
   fetchKnowledgeAiProviders,
   fetchKnowledgeSearchSettings,
+  fetchKnowledgeSegments,
+  fetchKnowledgeSegmentationProfiles,
   fetchKnowledgeQuality,
   fetchKnowledgeReviewQueue,
   fetchKnowledgeRolloutPolicies,
   previewKnowledgeSearch,
+  archiveKnowledgeSegment,
+  autoSegmentKnowledgeItem,
+  createKnowledgeSegment,
   fetchKnowledgeTemplates,
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
   saveKnowledgeAiProvider,
   saveKnowledgeSearchSettings,
+  saveKnowledgeSegmentationProfile,
   saveKnowledgeRolloutPolicy,
   submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
   submitKnowledgeReviewTaskAction,
+  updateKnowledgeSegment,
 } from "./api";
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -213,6 +220,106 @@ describe("knowledge search settings api", () => {
       actor_role: "support",
       surface: "admin_knowledge_search",
     });
+  });
+});
+
+describe("knowledge article segmentation api", () => {
+  it("loads segments and profiles through Phase 3 endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          segments: [
+            {
+              segment_id: "seg-1",
+              item_id: "ki-1",
+              version_id: "ver-1",
+              segment_index: 1,
+              segment_type: "manual",
+              title: "VPN checks",
+              text: "Check adapter",
+              keywords: ["vpn", "adapter"],
+              boost: 2,
+              visibility: "requester",
+              status: "active",
+              source: "editor_selection",
+              embedding_enabled: true,
+              full_text_enabled: true,
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          profiles: [{ profile_id: "default-auto", code: "default-auto", title: "Авторазметка по заголовкам", mode: "auto", enabled: true }],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeSegments("ki-1")).resolves.toMatchObject([{ title: "VPN checks", keywords: ["vpn", "adapter"] }]);
+    await expect(fetchKnowledgeSegmentationProfiles()).resolves.toMatchObject([{ code: "default-auto", mode: "auto" }]);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/items/ki-1/segments", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/segmentation-profiles", { credentials: "same-origin" });
+  });
+
+  it("creates, updates, archives, auto-segments and saves profiles", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Сегмент знаний сохранён", segment: { segment_id: "seg-1" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Сегмент знаний обновлён", segment: { segment_id: "seg-1", title: "Updated" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Сегмент знаний архивирован", segment: { segment_id: "seg-1", status: "archived" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Авторазметка выполнена без AI", job: { job_id: "job-1" }, segments: [{ segment_id: "seg-auto" }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Профиль разметки сохранён", profile: { profile_id: "p1", code: "paragraph-auto" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createKnowledgeSegment("ki-1", {
+      version_id: "ver-1",
+      title: "VPN",
+      text: "Check adapter",
+      keywords: ["vpn"],
+      start_offset: 3,
+      end_offset: 16,
+    });
+    await updateKnowledgeSegment("seg-1", { title: "Updated", keywords: ["vpn", "dns"] });
+    await archiveKnowledgeSegment("seg-1");
+    await autoSegmentKnowledgeItem("ki-1", { version_id: "ver-1", profile_code: "default-auto" });
+    await saveKnowledgeSegmentationProfile({ code: "paragraph-auto", title: "Paragraph auto", mode: "auto" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/web/knowledge/items/ki-1/segments",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      version_id: "ver-1",
+      title: "VPN",
+      keywords: ["vpn"],
+      start_offset: 3,
+      end_offset: 16,
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/segments/seg-1",
+      expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/web/knowledge/segments/seg-1",
+      expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/web/knowledge/items/ki-1/segments/auto",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/web/knowledge/segmentation-profiles",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
   });
 });
 
