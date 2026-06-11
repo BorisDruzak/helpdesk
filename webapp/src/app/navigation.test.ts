@@ -89,15 +89,19 @@ describe("navigation helpers", () => {
     expect(activeItem?.label).toBe("MCP сервер");
   });
 
-  it("exposes Knowledge AI and search settings inside the Knowledge domain", () => {
+  it("exposes Knowledge studio, AI and search settings inside the Knowledge domain", () => {
     const knowledgeDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
       (domain) => domain.id === "knowledge",
     );
+    const studioItem = getActiveNavItem("/app/admin/knowledge/studio", fullAdminPermissions);
     const aiItem = getActiveNavItem("/app/admin/knowledge/ai", fullAdminPermissions);
     const searchItem = getActiveNavItem("/app/admin/knowledge/search-settings", fullAdminPermissions);
 
+    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/studio");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/ai");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/search-settings");
+    expect(studioItem?.to).toBe("/app/admin/knowledge/studio");
+    expect(studioItem?.label).toBe("Студия знаний");
     expect(aiItem?.to).toBe("/app/admin/knowledge/ai");
     expect(aiItem?.label).toBe("AI настройки");
     expect(searchItem?.to).toBe("/app/admin/knowledge/search-settings");

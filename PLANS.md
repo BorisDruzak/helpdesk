@@ -686,10 +686,14 @@ Status 2026-06-12:
   * `POST /api/web/knowledge/segments/{segment_id}/approve` promotes draft AI proposals to `ai_approved` + `active`, while `POST /api/web/knowledge/segments/{segment_id}/reject` marks them `rejected` with redacted metadata;
   * typed webapp API helpers cover segment revalidation, AI proposals and approve/reject actions;
   * tests: `server/tests/test_knowledge_segments.py` covers remap, stale copy, AI policy block audit, proposal approve and proposal reject flows.
-* Remaining Phase 3 work:
+* Phase 3F/3G route and index-sync slice is implemented:
 
-  * dedicated `/app/admin/knowledge/studio` authoring route that can host the current segmentation panel as part of a full article studio;
-  * embedding/index sync for segment text.
+  * dedicated React route `/app/admin/knowledge/studio` is registered in the Knowledge admin domain and reuses the current article editor/segmentation surface as the initial Authoring Studio;
+  * `POST /api/web/knowledge/items/{item_id_or_slug}/segments/index-sync` rewrites version-scoped `knowledge_chunks` rows from active `full_text_enabled` retrieval segments with `metadata_json.source=article_segment`;
+  * synced chunks preserve segment visibility/text/content hash, record `segment_id` metadata and mark embedding work as `embedding_status=pending` when the source segment has embeddings enabled;
+  * index sync creates a completed `knowledge_segmentation_jobs` row and emits Observer-visible `knowledge.segmentation.index_synced` audit evidence;
+  * typed webapp API helpers and focused tests cover the route, navigation, chunk write and audit contract.
+* Phase 3 is complete enough for Phase 4 handoff. The next implementation step is Phase 4 embeddings/vector indexing: generate provider-backed or safely stubbed embedding refs for pending segment chunks without making AI mandatory.
 
 Terminology:
 

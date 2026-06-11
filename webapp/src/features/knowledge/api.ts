@@ -763,7 +763,7 @@ export async function revalidateKnowledgeSegments(
   });
   return readJson<{ job: Record<string, unknown>; segments: KnowledgeSegment[]; stats: Record<string, number>; display_message?: string }>(
     response,
-    "РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµРїСЂРѕРІРµСЂРёС‚СЊ СЃРµРіРјРµРЅС‚С‹ СЃС‚Р°С‚СЊРё",
+    "Не удалось перепроверить сегменты статьи",
   );
 }
 
@@ -776,7 +776,20 @@ export async function proposeKnowledgeAiSegments(itemIdOrSlug: string, payload: 
   });
   return readJson<{ job: Record<string, unknown>; segments: KnowledgeSegment[]; stats: Record<string, unknown>; display_message?: string }>(
     response,
-    "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ AI-РїСЂРµРґР»РѕР¶РµРЅРёСЏ СЃРµРіРјРµРЅС‚РѕРІ",
+    "Не удалось создать AI-предложения сегментов",
+  );
+}
+
+export async function syncKnowledgeSegmentIndex(itemIdOrSlug: string, payload: { version_id?: string }) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/segments/index-sync`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ job: Record<string, unknown>; chunks: Array<Record<string, unknown>>; stats: Record<string, number>; display_message?: string }>(
+    response,
+    "Не удалось синхронизировать индекс сегментов",
   );
 }
 
@@ -789,7 +802,7 @@ export async function approveKnowledgeAiSegment(segmentId: string) {
   });
   return readJson<{ segment: KnowledgeSegment; display_message?: string }>(
     response,
-    "РќРµ СѓРґР°Р»РѕСЃСЊ РѕРґРѕР±СЂРёС‚СЊ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
+    "Не удалось одобрить AI-предложение сегмента",
   );
 }
 
@@ -802,7 +815,7 @@ export async function rejectKnowledgeAiSegment(segmentId: string, payload?: { re
   });
   return readJson<{ segment: KnowledgeSegment; display_message?: string }>(
     response,
-    "РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєР»РѕРЅРёС‚СЊ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
+    "Не удалось отклонить AI-предложение сегмента",
   );
 }
 

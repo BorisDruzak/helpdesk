@@ -368,7 +368,7 @@ async def handle_web_knowledge_item_segments_revalidate(request: web.Request) ->
             {
                 "status": "ok",
                 **result,
-                "display_message": "РЎРµРіРјРµРЅС‚С‹ РїРµСЂРµРїСЂРѕРІРµСЂРµРЅС‹",
+                "display_message": "Сегменты перепроверены",
             }
         )
     except PermissionError:
@@ -379,7 +379,7 @@ async def handle_web_knowledge_item_segments_revalidate(request: web.Request) ->
                 "status": "error",
                 "error": "validation_error",
                 "error_code": "VALIDATION_ERROR",
-                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ РїР°СЂР°РјРµС‚СЂС‹ РїРµСЂРµРїСЂРѕРІРµСЂРєРё",
+                "display_message": "Проверьте параметры перепроверки",
                 "details": str(exc),
             },
             status=400,
@@ -411,7 +411,7 @@ async def handle_web_knowledge_item_segments_ai_proposals(request: web.Request) 
                         "status": "error",
                         "error": "policy_blocked",
                         "error_code": exc.error_code,
-                        "display_message": "РџРѕР»РёС‚РёРєР° AI РЅРµ СЂР°Р·СЂРµС€Р°РµС‚ Р°РІС‚РѕСЂР°Р·РјРµС‚РєСѓ",
+                        "display_message": "Политика AI не разрешает авторазметку",
                         "details": str(exc),
                     },
                     status=409,
@@ -421,7 +421,7 @@ async def handle_web_knowledge_item_segments_ai_proposals(request: web.Request) 
             {
                 "status": "ok",
                 **result,
-                "display_message": "AI-РїСЂРµРґР»РѕР¶РµРЅРёСЏ СЃРµРіРјРµРЅС‚РѕРІ СЃРѕР·РґР°РЅС‹",
+                "display_message": "AI-предложения сегментов созданы",
             }
         )
     except PermissionError:
@@ -432,13 +432,53 @@ async def handle_web_knowledge_item_segments_ai_proposals(request: web.Request) 
                 "status": "error",
                 "error": "validation_error",
                 "error_code": "VALIDATION_ERROR",
-                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ РїР°СЂР°РјРµС‚СЂС‹ AI-РїСЂРµРґР»РѕР¶РµРЅРёР№",
+                "display_message": "Проверьте параметры AI-предложений",
                 "details": str(exc),
             },
             status=400,
         )
     except Exception:
         logger.exception("[knowledge] AI segment proposals failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support", "auditor", "user")
+async def handle_web_knowledge_item_segments_index_sync(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        async with get_session() as session:
+            result = await KnowledgeSegmentationService(session).sync_segment_index(
+                item_id,
+                await _json_payload(request),
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                **result,
+                "display_message": "Индекс сегментов синхронизирован",
+            }
+        )
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры синхронизации",
+                "details": str(exc),
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception("[knowledge] segment index sync failed")
         return web.json_response({"status": "error", "error": "internal_error"}, status=500)
 
 
@@ -511,7 +551,7 @@ async def handle_web_knowledge_segment_approve(request: web.Request) -> web.Resp
             {
                 "status": "ok",
                 "segment": segment,
-                "display_message": "AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р° РѕРґРѕР±СЂРµРЅРѕ",
+                "display_message": "AI-предложение сегмента одобрено",
             }
         )
     except PermissionError:
@@ -522,7 +562,7 @@ async def handle_web_knowledge_segment_approve(request: web.Request) -> web.Resp
                 "status": "error",
                 "error": "validation_error",
                 "error_code": "VALIDATION_ERROR",
-                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
+                "display_message": "Проверьте AI-предложение сегмента",
                 "details": str(exc),
             },
             status=400,
@@ -548,7 +588,7 @@ async def handle_web_knowledge_segment_reject(request: web.Request) -> web.Respo
             {
                 "status": "ok",
                 "segment": segment,
-                "display_message": "AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р° РѕС‚РєР»РѕРЅРµРЅРѕ",
+                "display_message": "AI-предложение сегмента отклонено",
             }
         )
     except PermissionError:
@@ -559,7 +599,7 @@ async def handle_web_knowledge_segment_reject(request: web.Request) -> web.Respo
                 "status": "error",
                 "error": "validation_error",
                 "error_code": "VALIDATION_ERROR",
-                "display_message": "РџСЂРѕРІРµСЂСЊС‚Рµ AI-РїСЂРµРґР»РѕР¶РµРЅРёРµ СЃРµРіРјРµРЅС‚Р°",
+                "display_message": "Проверьте AI-предложение сегмента",
                 "details": str(exc),
             },
             status=400,

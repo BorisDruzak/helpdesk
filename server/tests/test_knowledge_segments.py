@@ -368,3 +368,60 @@ async def test_ai_segment_proposal_approve_and_reject_flow(test_client) -> None:
     assert rejected["segment"]["segment_type"] == "ai_proposed"
     assert rejected["segment"]["status"] == "rejected"
     assert rejected["segment"]["metadata_json"]["reject_reason"] == "duplicate"
+
+
+@pytest.mark.asyncio
+async def test_segment_index_sync_writes_active_segments_to_chunks(test_client, test_engine) -> None:
+    item, version = await _create_article(test_client, slug="segment-index-sync")
+    create_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/segments",
+        headers=ADMIN_HEADERS,
+        json={
+            "version_id": version["version_id"],
+            "title": "Indexable segment",
+            "text": "Segment text that should become a retrieval chunk.",
+            "visibility": "requester",
+            "embedding_enabled": True,
+            "full_text_enabled": True,
+        },
+    )
+    assert create_resp.status == 200
+    segment = (await create_resp.json())["segment"]
+
+    sync_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/segments/index-sync",
+        headers=ADMIN_HEADERS,
+        json={"version_id": version["version_id"]},
+    )
+    assert sync_resp.status == 200
+    payload = await sync_resp.json()
+    assert payload["status"] == "ok"
+    assert payload["stats"]["chunks_synced"] == 1
+    assert payload["stats"]["embedding_pending"] == 1
+
+    async with test_engine.connect() as conn:
+        chunk_rows = (
+            await conn.execute(
+                text(
+                    "SELECT text, content_hash, embedding_ref, metadata_json FROM knowledge_chunks "
+                    "WHERE version_id = :version_id AND metadata_json->>'source' = 'article_segment'"
+                ),
+                {"version_id": version["version_id"]},
+            )
+        ).mappings().all()
+        audit_rows = (
+            await conn.execute(
+                text(
+                    "SELECT severity, details_json FROM agent_runtime_audit "
+                    "WHERE event_type = 'knowledge.segmentation.index_synced'"
+                )
+            )
+        ).mappings().all()
+
+    assert chunk_rows[0]["text"] == "Segment text that should become a retrieval chunk."
+    assert chunk_rows[0]["content_hash"] == segment["content_hash"]
+    assert chunk_rows[0]["embedding_ref"] is None
+    assert chunk_rows[0]["metadata_json"]["segment_id"] == segment["segment_id"]
+    assert chunk_rows[0]["metadata_json"]["embedding_status"] == "pending"
+    assert audit_rows[0]["severity"] == "info"
+    assert audit_rows[0]["details_json"]["chunks_synced"] == 1

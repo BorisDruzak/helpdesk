@@ -16,9 +16,12 @@ import {
   fetchKnowledgeRolloutPolicies,
   previewKnowledgeSearch,
   archiveKnowledgeSegment,
+  approveKnowledgeAiSegment,
   autoSegmentKnowledgeItem,
   createKnowledgeSegment,
   fetchKnowledgeTemplates,
+  proposeKnowledgeAiSegments,
+  revalidateKnowledgeSegments,
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
   saveKnowledgeAiProvider,
@@ -28,6 +31,8 @@ import {
   submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
   submitKnowledgeReviewTaskAction,
+  syncKnowledgeSegmentIndex,
+  rejectKnowledgeAiSegment,
   updateKnowledgeSegment,
 } from "./api";
 
@@ -320,6 +325,51 @@ describe("knowledge article segmentation api", () => {
       "/api/web/knowledge/segmentation-profiles",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
+  });
+
+  it("calls revalidation, AI proposal review and index sync endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Сегменты перепроверены", job: { job_id: "job-rev" }, segments: [] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "AI-предложения сегментов созданы", job: { job_id: "job-ai" }, segments: [{ segment_id: "seg-ai" }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "Индекс сегментов синхронизирован", job: { job_id: "job-sync" }, chunks: [{ chunk_id: "chunk-1" }], stats: { chunks_synced: 1 } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "AI-предложение сегмента одобрено", segment: { segment_id: "seg-ai", status: "active" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", display_message: "AI-предложение сегмента отклонено", segment: { segment_id: "seg-ai-2", status: "rejected" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await revalidateKnowledgeSegments("ki-1", { source_version_id: "ver-1", target_version_id: "ver-2" });
+    await proposeKnowledgeAiSegments("ki-1", { version_id: "ver-2", profile_code: "markup-safe" });
+    await syncKnowledgeSegmentIndex("ki-1", { version_id: "ver-2" });
+    await approveKnowledgeAiSegment("seg-ai");
+    await rejectKnowledgeAiSegment("seg-ai-2", { reason: "Дубль существующего сегмента" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/web/knowledge/items/ki-1/segments/revalidate",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ source_version_id: "ver-1", target_version_id: "ver-2" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/items/ki-1/segments/ai-proposals",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/web/knowledge/items/ki-1/segments/index-sync",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/web/knowledge/segments/seg-ai/approve",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/web/knowledge/segments/seg-ai-2/reject",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toMatchObject({ reason: "Дубль существующего сегмента" });
   });
 });
 

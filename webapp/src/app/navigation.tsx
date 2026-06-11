@@ -380,6 +380,17 @@ export const appNavigation: AppNavItem[] = [
     order: 10,
   },
   {
+    label: "Студия знаний",
+    description: "Авторинг статей, версии и retrieval-разметка",
+    icon: ClipboardCheck,
+    section: "admin",
+    workspace: "admin",
+    domainId: "knowledge",
+    to: "/app/admin/knowledge/studio",
+    permission: "admin.forms.view",
+    order: 15,
+  },
+  {
     label: "Настройки поиска",
     description: "Режимы retrieval, AI-off baseline, веса и лимиты",
     icon: SlidersHorizontal,

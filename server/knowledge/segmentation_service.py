@@ -840,6 +840,150 @@ class KnowledgeSegmentationService:
         )
         return rejected
 
+    async def sync_segment_index(
+        self,
+        item_id_or_slug: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str,
+    ) -> dict[str, Any]:
+        if actor_role not in {"admin", "support"}:
+            raise PermissionError("segment mutation requires admin or support")
+        item, version = await self._get_item_version(item_id_or_slug, payload.get("version_id"))
+        segment_rows = (
+            await self.db.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM knowledge_article_segments
+                    WHERE item_id = :item_id
+                      AND version_id = :version_id
+                      AND status = 'active'
+                      AND full_text_enabled = true
+                    ORDER BY segment_index, created_at, segment_id
+                    """
+                ),
+                {"item_id": item["item_id"], "version_id": version["version_id"]},
+            )
+        ).all()
+        segments = [_serialize_row(row) for row in segment_rows]
+
+        await self.db.execute(
+            text(
+                """
+                DELETE FROM knowledge_chunks
+                WHERE item_id = :item_id
+                  AND version_id = :version_id
+                  AND metadata_json->>'source' = 'article_segment'
+                """
+            ),
+            {"item_id": item["item_id"], "version_id": version["version_id"]},
+        )
+        next_index = (
+            await self.db.execute(
+                text("SELECT COALESCE(MAX(chunk_index), 0) + 1 FROM knowledge_chunks WHERE version_id = :version_id"),
+                {"version_id": version["version_id"]},
+            )
+        ).scalar()
+        chunk_index = int(next_index or 1)
+        now = _now()
+        chunks: list[dict[str, Any]] = []
+        embedding_pending = 0
+        for segment in segments:
+            segment_text = str(segment.get("text") or "").strip()
+            if not segment_text:
+                continue
+            embedding_enabled = bool(segment.get("embedding_enabled", True))
+            if embedding_enabled:
+                embedding_pending += 1
+            row = (
+                await self.db.execute(
+                    text(
+                        """
+                        INSERT INTO knowledge_chunks (
+                            chunk_id, item_id, version_id, chunk_index, heading, text,
+                            token_count, content_hash, embedding_ref, embedding_model,
+                            visibility, metadata_json, created_at
+                        )
+                        VALUES (
+                            :chunk_id, :item_id, :version_id, :chunk_index, :heading, :text,
+                            :token_count, :content_hash, NULL, NULL, :visibility,
+                            CAST(:metadata_json AS jsonb), :created_at
+                        )
+                        RETURNING *
+                        """
+                    ),
+                    {
+                        "chunk_id": str(uuid.uuid4()),
+                        "item_id": item["item_id"],
+                        "version_id": version["version_id"],
+                        "chunk_index": chunk_index,
+                        "heading": segment.get("title"),
+                        "text": segment_text,
+                        "token_count": len(segment_text.split()),
+                        "content_hash": segment.get("content_hash") or _content_hash(segment_text),
+                        "visibility": segment.get("visibility") or item["visibility"],
+                        "metadata_json": _json(
+                            {
+                                "source": "article_segment",
+                                "segment_id": segment.get("segment_id"),
+                                "segment_type": segment.get("segment_type"),
+                                "embedding_status": "pending" if embedding_enabled else "disabled",
+                            },
+                            default={},
+                        ),
+                        "created_at": now,
+                    },
+                )
+            ).first()
+            chunks.append(_serialize_row(row))
+            chunk_index += 1
+
+        job_id = str(uuid.uuid4())
+        stats = {
+            "segments_seen": len(segments),
+            "chunks_synced": len(chunks),
+            "embedding_pending": embedding_pending,
+        }
+        job_row = (
+            await self.db.execute(
+                text(
+                    """
+                    INSERT INTO knowledge_segmentation_jobs (
+                        job_id, item_id, version_id, profile_id, mode, status, created_by,
+                        started_at, completed_at, stats_json
+                    )
+                    VALUES (
+                        :job_id, :item_id, :version_id, NULL, 'manual', 'completed',
+                        :actor_id, :now, :now, CAST(:stats_json AS jsonb)
+                    )
+                    RETURNING *
+                    """
+                ),
+                {
+                    "job_id": job_id,
+                    "item_id": item["item_id"],
+                    "version_id": version["version_id"],
+                    "actor_id": actor_id,
+                    "now": now,
+                    "stats_json": _json(stats, default={}),
+                },
+            )
+        ).first()
+        await self._record_audit(
+            "knowledge.segmentation.index_synced",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            details={
+                "item_id": item["item_id"],
+                "version_id": version["version_id"],
+                "job_id": job_id,
+                **stats,
+            },
+        )
+        return {"job": _serialize_row(job_row), "chunks": chunks, "stats": stats}
+
     async def _get_item(self, item_id_or_slug: str) -> dict[str, Any]:
         row = (
             await self.db.execute(
