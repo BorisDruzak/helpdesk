@@ -538,7 +538,7 @@ async def test_web_session_me_exposes_admin_default_workspace():
     assert data["actor_role"] == "admin"
     assert data["auth_type"] == "ui_token"
     assert data["default_workspace"] == "admin"
-    assert data["available_workspaces"] == ["admin", "support"]
+    assert data["available_workspaces"] == ["admin", "support", "requester"]
     assert data["permissions_version"] == CATALOG_VERSION
     assert "admin.access.view" in data["permissions"]
     assert "workspace.admin.view" in data["permissions"]

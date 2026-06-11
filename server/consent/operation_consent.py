@@ -19,7 +19,7 @@ SENSITIVE_KEY_PARTS = (
 )
 
 
-def _redact_value(value: Any, *, depth: int = 0) -> Any:
+def redact_operation_params(value: Any, *, depth: int = 0) -> Any:
     if depth > 4:
         return "<redacted-depth>"
     if isinstance(value, dict):
@@ -29,10 +29,10 @@ def _redact_value(value: Any, *, depth: int = 0) -> Any:
             if any(part in key_text.lower() for part in SENSITIVE_KEY_PARTS):
                 redacted[key_text] = "<redacted>"
             else:
-                redacted[key_text] = _redact_value(item, depth=depth + 1)
+                redacted[key_text] = redact_operation_params(item, depth=depth + 1)
         return redacted
     if isinstance(value, list):
-        return [_redact_value(item, depth=depth + 1) for item in value[:50]]
+        return [redact_operation_params(item, depth=depth + 1) for item in value[:50]]
     if isinstance(value, str):
         return value[:500]
     return value
@@ -90,7 +90,7 @@ async def create_operation_user_consent(
         risk_explanation=str(getattr(policy_decision, "reason", "") or "") or None,
         requested_action_payload_redacted={
             "tool_name": tool_name,
-            "params": _redact_value(params or {}),
+            "params": redact_operation_params(params or {}),
         },
         title=f"Approve operation: {tool_name or operation.kind}",
         description="A support operation is waiting for requester consent.",

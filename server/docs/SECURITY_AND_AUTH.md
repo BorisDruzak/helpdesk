@@ -23,6 +23,12 @@ Security update 2026-06-10:
 - The guard is controlled by `WEB_CSRF_SAME_ORIGIN_ENABLED=true` by default. `WEB_CSRF_TRUSTED_ORIGINS` is a comma-separated override for explicit public browser origins. Bearer UI tokens, agent tokens and public ticket token paths are not treated as cookie-auth browser requests by this guard.
 - Direct browser pairing lookup by `pairing_id` is safe-projected: expired, consumed, superseded, failed, canceled and unknown pairings do not return device facts or raw pairing secrets. The endpoint also rate-limits direct pairing-id probes.
 
+Security update 2026-06-11:
+- Public ticket claim from `/api/web/requester/tickets/claim-public` requires the web user to resolve to a `RegistryPerson`; unlinked web logins receive `REQUESTER_IDENTITY_REQUIRED` and do not create web-login-only ownership.
+- User consent creation is race-safe around the partial unique pending-subject index. Duplicate concurrent creation returns the existing pending `UserConsentRequest` instead of leaking a duplicate-key 500.
+- Consent-required operation retry ticket events use the same sensitive-key redaction helper as `UserConsentRequest.requested_action_payload_redacted`; raw `authorization`, `cookie`, `password`, `secret`, `session_token` and token-like params must not be written into `ticket_events`.
+- Requester-facing Remote Assist consent list/detail/decision responses are consent-only payloads and must not include ICE servers, SDP offers/answers/candidates, signaling tokens, agent/viewer tokens, session tokens, cookies or authorization material.
+
 ---
 
 ## Обзор

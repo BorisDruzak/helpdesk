@@ -320,6 +320,60 @@ describe("RequesterWorkspacePage", () => {
     await screen.findByText("Created from public portal");
   });
 
+  it("shows identity guidance when public claim requires a linked requester profile", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: null, display_name: "Requester One" },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/requester/tickets/claim-public") {
+        return jsonResponse(
+          {
+            status: "error",
+            message: "requester identity is required to claim a public ticket",
+            error_code: "REQUESTER_IDENTITY_REQUIRED",
+          },
+          403,
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("Привязать обращение");
+    fireEvent.change(screen.getByLabelText("Public ticket id to claim"), { target: { value: "T-91" } });
+    fireEvent.change(screen.getByLabelText("Public ticket access code to claim"), { target: { value: "ABCD12" } });
+    fireEvent.click(screen.getByLabelText("Claim public requester ticket"));
+
+    await screen.findByText(
+      "Для привязки обращения нужен связанный профиль пользователя. Обратитесь к администратору для привязки учетной записи.",
+    );
+  });
+
   it("opens owned ticket detail and sends an authenticated requester message", async () => {
     let detailReloadedAfterMessage = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

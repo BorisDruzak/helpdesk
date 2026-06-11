@@ -201,6 +201,7 @@ async def test_requester_shared_device_tickets_stay_scoped_to_person_and_binding
         session.add(_device(device_id, "shared-privacy-device"))
         primary = await _approved_binding(session, device_id=device_id, login=primary_login)
         shared_person = await _person_for_login(session, login=shared_login)
+        await session.flush()
         shared_binding = DeviceUserBinding(
             binding_id=str(uuid.uuid4()),
             device_id=device_id,
@@ -918,6 +919,51 @@ async def test_requester_can_claim_public_ticket_with_access_code(test_client, t
     assert events
     assert events[0].payload["actor_id"] == login
     assert "code" not in events[0].payload
+
+
+@pytest.mark.asyncio
+async def test_requester_claim_public_ticket_requires_registry_person(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    public_device_id = str(uuid.uuid4())
+    login = "requester-public-claim-unlinked@example.test"
+    async with session_maker() as session:
+        session.add(_device(public_device_id, "claim-unlinked-public-device"))
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=public_device_id,
+            requester_id="public:claim-unlinked",
+            title="Public ticket unlinked claim",
+            description="Unlinked requester must not claim",
+            user_display_name="Public Claim Unlinked",
+            requester_profile={"full_name": "Public Claim Unlinked"},
+            normalized_priority=build_default_priority_payload({}),
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        public_access_code = created["public_access_code"]
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/requester/tickets/claim-public",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={"ticket_id": ticket_id, "code": public_access_code},
+    )
+    payload = await response.json()
+    assert response.status == 403, payload
+    assert payload["error_code"] == "REQUESTER_IDENTITY_REQUIRED"
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        claimed_events = await session.scalar(
+            select(func.count())
+            .select_from(TicketEvent)
+            .where(TicketEvent.ticket_id == ticket_id)
+            .where(TicketEvent.event_type == "requester_ticket_claimed")
+        )
+    assert ticket is not None
+    assert ticket.requester_id == "public:claim-unlinked"
+    assert ticket.requester_person_id is None
+    assert claimed_events == 0
 
 
 @pytest.mark.asyncio

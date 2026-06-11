@@ -211,7 +211,12 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         device_id=device_id,
         ticket_id=ticket_id,
         tool_name="observer_canary.consent_probe",
-        params={"label": "retry-consent"},
+        params={
+            "label": "retry-consent",
+            "api_token": "raw-api-token",
+            "password": "raw-password",
+            "nested": {"secret": "raw-nested-secret", "normal_param": "safe-normal"},
+        },
     )
 
     class ConsentRetryToolService:
@@ -276,6 +281,11 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         assert consent.ticket_id == ticket_id
         assert consent.device_id == device_id
         assert consent.requester_person_id is not None
+        assert consent.requested_action_payload_redacted["params"]["label"] == "retry-consent"
+        assert consent.requested_action_payload_redacted["params"]["api_token"] == "<redacted>"
+        assert consent.requested_action_payload_redacted["params"]["password"] == "<redacted>"
+        assert consent.requested_action_payload_redacted["params"]["nested"]["secret"] == "<redacted>"
+        assert consent.requested_action_payload_redacted["params"]["nested"]["normal_param"] == "safe-normal"
 
         outbox_count = (
             await session.execute(
@@ -296,6 +306,13 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         assert consent_event is not None
         assert consent_event.payload["retry_of_operation_id"] == original_operation_id
         assert consent_event.payload["params"]["label"] == "retry-consent"
+        assert consent_event.payload["params"]["api_token"] == "<redacted>"
+        assert consent_event.payload["params"]["password"] == "<redacted>"
+        assert consent_event.payload["params"]["nested"]["secret"] == "<redacted>"
+        assert consent_event.payload["params"]["nested"]["normal_param"] == "safe-normal"
+        assert "raw-api-token" not in str(consent_event.payload)
+        assert "raw-password" not in str(consent_event.payload)
+        assert "raw-nested-secret" not in str(consent_event.payload)
 
         started_event = (
             await session.execute(
@@ -308,6 +325,10 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         ).scalar_one_or_none()
         assert started_event is not None
         assert started_event.payload["params"]["label"] == "retry-consent"
+        assert started_event.payload["params"]["api_token"] == "<redacted>"
+        assert started_event.payload["params"]["password"] == "<redacted>"
+        assert started_event.payload["params"]["nested"]["secret"] == "<redacted>"
+        assert "raw-api-token" not in str(started_event.payload)
 
     approve_response = await test_client.post(
         f"/api/operations/{retry_operation_id}/approve",

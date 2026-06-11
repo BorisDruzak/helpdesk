@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 import uuid
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeviceAccountSession, DeviceUserBinding, UserConsentRequest
@@ -110,28 +111,35 @@ class UserConsentService:
             if pending is not None:
                 return pending
 
-        row = await self.repo.create(
-            consent_id=str(uuid.uuid4()),
-            subject_type=str(subject_type),
-            subject_id=str(subject_id),
-            ticket_id=ticket_id,
-            device_id=device_id,
-            requester_person_id=requester_person_id,
-            requester_binding_id=requester_binding_id,
-            requester_account_session_id=requester_account_session_id,
-            requested_by_actor_id=requested_by_actor_id,
-            requested_by_role=requested_by_role,
-            risk_level=risk_level,
-            policy_snapshot=policy_snapshot or {},
-            risk_explanation=risk_explanation,
-            requested_action_payload_redacted=requested_action_payload_redacted or {},
-            title=_clean(title, max_length=500) or "Consent required",
-            description=_clean(description, max_length=4000),
-            reason=_clean(reason, max_length=1000),
-            expires_at=expires_at,
-            metadata_json=metadata or {},
-            status="pending",
-        )
+        try:
+            async with self.session.begin_nested():
+                row = await self.repo.create(
+                    consent_id=str(uuid.uuid4()),
+                    subject_type=str(subject_type),
+                    subject_id=str(subject_id),
+                    ticket_id=ticket_id,
+                    device_id=device_id,
+                    requester_person_id=requester_person_id,
+                    requester_binding_id=requester_binding_id,
+                    requester_account_session_id=requester_account_session_id,
+                    requested_by_actor_id=requested_by_actor_id,
+                    requested_by_role=requested_by_role,
+                    risk_level=risk_level,
+                    policy_snapshot=policy_snapshot or {},
+                    risk_explanation=risk_explanation,
+                    requested_action_payload_redacted=requested_action_payload_redacted or {},
+                    title=_clean(title, max_length=500) or "Consent required",
+                    description=_clean(description, max_length=4000),
+                    reason=_clean(reason, max_length=1000),
+                    expires_at=expires_at,
+                    metadata_json=metadata or {},
+                    status="pending",
+                )
+        except IntegrityError:
+            pending = await self.repo.get_pending_by_subject(subject_type, subject_id)
+            if pending is not None:
+                return pending
+            raise
         await self._append_ticket_event(row, "user_consent_requested", actor_id=requested_by_actor_id, actor_role=requested_by_role)
         return row
 

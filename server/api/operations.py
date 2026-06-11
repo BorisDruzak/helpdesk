@@ -18,7 +18,7 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from app.services.operation_service import OperationService
 from auth.context import AuthContext
 from auth.middleware import require_auth
-from consent.operation_consent import create_operation_user_consent
+from consent.operation_consent import create_operation_user_consent, redact_operation_params
 from consent.service import ConsentAccessError
 from core.policy_engine import PolicyEngine
 from core.tool_metadata import ToolMetadata
@@ -586,7 +586,7 @@ async def handle_retry_operation(request: web.Request) -> web.Response:
                     await session.rollback()
                     return _json_error(str(exc), status=exc.status, error_code=exc.error_code)
                 event_trace_id = str(getattr(retry_operation, "trace_id", None) or retry_trace_id)
-                event_params = dict(replay_params)
+                event_params = redact_operation_params(replay_params)
                 event_payload = {
                     "event": "operation_retry_consent_requested",
                     "operation_id": operation_id,

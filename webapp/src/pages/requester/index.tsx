@@ -700,7 +700,11 @@ export function RequesterWorkspacePage() {
       setTickets(await fetchRequesterTickets());
       await openTicket(result.ticket_id);
     } catch (exc) {
-      setError(exc instanceof RequesterApiError ? exc.message : "Не удалось привязать обращение");
+      if (exc instanceof RequesterApiError && exc.details === "REQUESTER_IDENTITY_REQUIRED") {
+        setError("Для привязки обращения нужен связанный профиль пользователя. Обратитесь к администратору для привязки учетной записи.");
+      } else {
+        setError(exc instanceof RequesterApiError ? exc.message : "Не удалось привязать обращение");
+      }
     } finally {
       setClaimSubmitting(false);
     }

@@ -4,20 +4,51 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import ConsentDecision, Device, DeviceOutbox, Operation, RegistryPerson, RegistryPersonIdentity, TicketEvent
+from app.db.models import ConsentDecision, Device, DeviceOutbox, Operation, RegistryPerson, RegistryPersonIdentity, Ticket, TicketEvent, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
+from app.repos.user_consent_repo import UserConsentRepo
 from consent.service import UserConsentService
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
+from remote_assist.service import RemoteAssistService
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 
 
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+REMOTE_ASSIST_REQUESTER_FORBIDDEN_KEYS = {
+    "ice_servers",
+    "urls",
+    "username",
+    "credential",
+    "agent_token",
+    "viewer_token",
+    "signaling_token",
+    "sdp",
+    "offer",
+    "answer",
+    "candidate",
+    "session_token",
+    "authorization",
+    "cookie",
+}
+
+
+def _assert_no_forbidden_remote_assist_keys(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            assert str(key).lower() not in REMOTE_ASSIST_REQUESTER_FORBIDDEN_KEYS
+            _assert_no_forbidden_remote_assist_keys(item)
+    elif isinstance(value, list):
+        for item in value:
+            _assert_no_forbidden_remote_assist_keys(item)
 
 
 def _device(device_id: str) -> Device:
@@ -108,6 +139,194 @@ async def _seed_operation_consent(session, *, login: str, expires_delta: timedel
         "operation_id": operation_id,
         "consent_id": consent.consent_id,
     }
+
+
+@pytest.mark.asyncio
+async def test_create_request_returns_existing_pending(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            RegistryPerson(
+                person_id="person-duplicate",
+                display_name="Duplicate Consent Person",
+                full_name="Duplicate Consent Person",
+                email="duplicate-consent@example.test",
+                source="test",
+                status="active",
+            )
+        )
+        await session.flush()
+        service = UserConsentService(session)
+        first = await service.create_request(
+            subject_type="operation",
+            subject_id="duplicate-subject",
+            requester_person_id="person-duplicate",
+            requested_by_actor_id="support-test",
+            requested_by_role="support",
+            risk_level="safe_read",
+            title="First consent",
+        )
+        second = await service.create_request(
+            subject_type="operation",
+            subject_id="duplicate-subject",
+            requester_person_id="person-duplicate",
+            requested_by_actor_id="support-test",
+            requested_by_role="support",
+            risk_level="safe_read",
+            title="Second consent",
+        )
+        await session.commit()
+
+    assert second.consent_id == first.consent_id
+
+    async with session_maker() as session:
+        count = await session.scalar(
+            select(func.count())
+            .select_from(UserConsentRequest)
+            .where(UserConsentRequest.subject_type == "operation")
+            .where(UserConsentRequest.subject_id == "duplicate-subject")
+            .where(UserConsentRequest.status == "pending")
+        )
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_request_handles_pending_subject_integrity_race(test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    subject_id = "race-subject"
+    async with session_maker() as session:
+        session.add(
+            RegistryPerson(
+                person_id="race-person",
+                display_name="Race Consent Person",
+                full_name="Race Consent Person",
+                email="race-consent@example.test",
+                source="test",
+                status="active",
+            )
+        )
+        await session.flush()
+        existing = await UserConsentRepo(session).create(
+            consent_id=str(uuid.uuid4()),
+            subject_type="operation",
+            subject_id=subject_id,
+            requester_person_id="race-person",
+            requested_by_actor_id="support-test",
+            requested_by_role="support",
+            risk_level="safe_read",
+            title="Existing raced consent",
+            status="pending",
+        )
+        await session.commit()
+        existing_id = existing.consent_id
+
+    real_get_pending = UserConsentRepo.get_pending_by_subject
+    calls = {"get": 0}
+
+    async def racing_get_pending(self, subject_type, subject_id_arg):
+        calls["get"] += 1
+        if calls["get"] == 1:
+            return None
+        return await real_get_pending(self, subject_type, subject_id_arg)
+
+    async def raise_unique_violation(self, **_kwargs):
+        raise IntegrityError(
+            "insert into user_consent_requests",
+            {},
+            Exception("duplicate key value violates unique constraint ux_user_consent_requests_pending_subject"),
+        )
+
+    monkeypatch.setattr(UserConsentRepo, "get_pending_by_subject", racing_get_pending)
+    monkeypatch.setattr(UserConsentRepo, "create", raise_unique_violation)
+
+    async with session_maker() as session:
+        consent = await UserConsentService(session).create_request(
+            subject_type="operation",
+            subject_id=subject_id,
+            requester_person_id="race-person",
+            requested_by_actor_id="support-test",
+            requested_by_role="support",
+            risk_level="safe_read",
+            title="Raced consent",
+        )
+
+    assert consent.consent_id == existing_id
+
+
+@pytest.mark.asyncio
+async def test_pending_subject_partial_unique_index_is_present(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        rows = (
+            await session.execute(
+                text(
+                    """
+                    select indexname, indexdef
+                    from pg_indexes
+                    where tablename = 'user_consent_requests'
+                      and indexname = 'ux_user_consent_requests_pending_subject'
+                    """
+                )
+            )
+        ).mappings().all()
+
+    assert rows
+    assert "WHERE ((status)::text = 'pending'::text)" in rows[0]["indexdef"]
+
+
+@pytest.mark.asyncio
+async def test_requester_remote_assist_consent_payloads_hide_technical_secrets(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "remote-assist-secret-owner@example.test"
+    async with session_maker() as session:
+        seeded = await _seed_operation_consent(session, login=login)
+        ticket = await session.get(Ticket, seeded["ticket_id"])
+        ticket.requester_id = login
+        ticket.requester_person_id = seeded["person_id"]
+        ticket.requester_binding_id = seeded["binding_id"]
+        ticket.requester_account_session_id = seeded["session_id"]
+        await session.flush()
+        state = type("RemoteAssistTestState", (), {"is_agent_online": lambda self, _device_id: True})()
+        remote_session = await RemoteAssistService(session).request_session(
+            state=state,
+            ticket_id=seeded["ticket_id"],
+            device_id=seeded["device_id"],
+            operator_id="support-test",
+            requester_id=login,
+            mode="view_only",
+            reason="Requester-safe Remote Assist consent",
+            duration_minutes=5,
+        )
+        await session.commit()
+        remote_session_id = remote_session.id
+
+    test_client.app["state"].connected_agents[seeded["device_id"]] = {"ws": None, "metadata": {}}
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+    listing = await test_client.get("/api/web/requester/consents", headers=headers)
+    listing_payload = await listing.json()
+    assert listing.status == 200, listing_payload
+    remote_items = [
+        item for item in listing_payload["data"]["consents"]
+        if item["subject_type"] == "remote_assist" and item["subject_id"] == remote_session_id
+    ]
+    assert len(remote_items) == 1
+    _assert_no_forbidden_remote_assist_keys(remote_items[0])
+    assert remote_items[0]["requested_action_payload_redacted"]["mode"] == "view_only"
+    assert remote_items[0]["requested_action_payload_redacted"]["duration_minutes"] == 5
+
+    detail = await test_client.get(f"/api/web/requester/consents/{remote_items[0]['consent_id']}", headers=headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    _assert_no_forbidden_remote_assist_keys(detail_payload)
+
+    approved = await test_client.post(
+        f"/api/web/requester/consents/{remote_items[0]['consent_id']}/approve",
+        headers=headers,
+        json={"reason": "ok"},
+    )
+    approved_payload = await approved.json()
+    assert approved.status == 200, approved_payload
+    _assert_no_forbidden_remote_assist_keys(approved_payload)
 
 
 @pytest.mark.asyncio

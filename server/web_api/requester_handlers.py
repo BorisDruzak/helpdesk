@@ -259,8 +259,14 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
             return _error("invalid public access code", status=403, error_code="INVALID_PUBLIC_ACCESS_CODE")
 
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        if person is None:
+            return _error(
+                "requester identity is required to claim a public ticket",
+                status=403,
+                error_code="REQUESTER_IDENTITY_REQUIRED",
+            )
         existing_person_id = getattr(ticket, "requester_person_id", None)
-        if existing_person_id and (person is None or existing_person_id != person.person_id):
+        if existing_person_id and existing_person_id != person.person_id:
             return _error("ticket is already claimed", status=409, error_code="PUBLIC_TICKET_ALREADY_CLAIMED")
 
         previous_requester_id = getattr(ticket, "requester_id", None)
@@ -280,7 +286,7 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
         await repo.update_ticket(
             ticket.ticket_id,
             requester_id=auth_context.actor_id,
-            requester_person_id=person.person_id if person else None,
+            requester_person_id=person.person_id,
             custom_fields=custom_fields,
         )
         await repo.add_event(
@@ -291,7 +297,7 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
             payload={
                 "actor_id": auth_context.actor_id,
                 "actor_role": "requester",
-                "requester_person_id": person.person_id if person else None,
+                "requester_person_id": person.person_id,
                 "previous_requester_id": previous_requester_id,
                 "source": "requester_workspace",
             },
