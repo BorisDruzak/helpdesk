@@ -291,6 +291,28 @@ export type KnowledgeSearchSettings = {
   updated_by?: string | null;
 };
 
+export type KnowledgeSearchPreviewRequest = {
+  query: string;
+  actor_role?: string;
+  surface?: string;
+};
+
+export type KnowledgeSearchPreviewResult = {
+  status: string;
+  display_message?: string;
+  search_mode?: string;
+  effective_mode?: string;
+  ai_used?: boolean;
+  results: Array<{
+    item_id?: string;
+    slug?: string;
+    title: string;
+    summary?: string | null;
+    visibility?: string | null;
+    score?: number | null;
+  }>;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -611,4 +633,14 @@ export async function saveKnowledgeSearchSettings(payload: Partial<KnowledgeSear
     response,
     "Не удалось сохранить настройки поиска",
   );
+}
+
+export async function previewKnowledgeSearch(payload: KnowledgeSearchPreviewRequest): Promise<KnowledgeSearchPreviewResult> {
+  const response = await fetch("/api/web/knowledge/search", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgeSearchPreviewResult>(response, "Не удалось выполнить проверочный поиск");
 }

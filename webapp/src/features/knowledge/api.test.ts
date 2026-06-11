@@ -12,6 +12,7 @@ import {
   fetchKnowledgeQuality,
   fetchKnowledgeReviewQueue,
   fetchKnowledgeRolloutPolicies,
+  previewKnowledgeSearch,
   fetchKnowledgeTemplates,
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
@@ -173,6 +174,44 @@ describe("knowledge search settings api", () => {
       search_mode: "hybrid_no_ai",
       vector_enabled: false,
       max_results: 8,
+    });
+  });
+
+  it("runs search preview through the admin web search endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        status: "ok",
+        display_message: "Поиск выполнен без AI",
+        search_mode: "keyword_only",
+        effective_mode: "keyword_only",
+        ai_used: false,
+        results: [{ item_id: "ki-1", slug: "vpn", title: "VPN", summary: "Baseline", visibility: "requester" }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      previewKnowledgeSearch({
+        query: "VPN",
+        actor_role: "support",
+        surface: "admin_knowledge_search",
+      }),
+    ).resolves.toMatchObject({
+      display_message: "Поиск выполнен без AI",
+      effective_mode: "keyword_only",
+      ai_used: false,
+      results: [{ title: "VPN" }],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/web/knowledge/search",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      query: "VPN",
+      actor_role: "support",
+      surface: "admin_knowledge_search",
     });
   });
 });

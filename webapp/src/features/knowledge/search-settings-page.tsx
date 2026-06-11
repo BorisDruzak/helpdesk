@@ -8,8 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { PageHeading } from "../../components/ui/page-heading";
 import {
   fetchKnowledgeSearchSettings,
+  previewKnowledgeSearch,
   saveKnowledgeSearchSettings,
   type KnowledgeSearchSettings,
+  type KnowledgeSearchPreviewResult,
 } from "./api";
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
@@ -91,6 +93,10 @@ export function KnowledgeSearchSettingsPage() {
   const [draft, setDraft] = useState<SearchSettingsDraft>(defaultDraft);
   const [draftInitialized, setDraftInitialized] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [previewQuery, setPreviewQuery] = useState("");
+  const [previewActorRole, setPreviewActorRole] = useState("support");
+  const [previewSurface, setPreviewSurface] = useState("admin_knowledge_search");
+  const [previewResult, setPreviewResult] = useState<KnowledgeSearchPreviewResult | null>(null);
 
   useEffect(() => {
     if (settingsQuery.data && !draftInitialized) {
@@ -120,6 +126,18 @@ export function KnowledgeSearchSettingsPage() {
       setDraft(draftFromSettings(result.settings));
       setDraftInitialized(true);
       queryClient.invalidateQueries({ queryKey: ["knowledge-search-settings"] });
+    },
+  });
+
+  const previewMutation = useMutation({
+    mutationFn: () =>
+      previewKnowledgeSearch({
+        query: previewQuery.trim(),
+        actor_role: previewActorRole,
+        surface: previewSurface,
+      }),
+    onSuccess: (result) => {
+      setPreviewResult(result);
     },
   });
 
@@ -294,6 +312,89 @@ export function KnowledgeSearchSettingsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Проверка поиска</CardTitle>
+          <CardDescription>Проверяет фактический backend fallback и выдачу без embeddings или AI-провайдера.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px_260px_auto] lg:items-end">
+            <label className="block text-sm font-medium">
+              Проверочный запрос
+              <input
+                aria-label="Проверочный запрос"
+                className={fieldClass}
+                placeholder="Например: VPN"
+                value={previewQuery}
+                onChange={(event) => setPreviewQuery(event.target.value)}
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Роль
+              <select className={fieldClass} value={previewActorRole} onChange={(event) => setPreviewActorRole(event.target.value)}>
+                <option value="support">support</option>
+                <option value="admin">admin</option>
+                <option value="auditor">auditor</option>
+              </select>
+            </label>
+            <label className="block text-sm font-medium">
+              Поверхность
+              <select className={fieldClass} value={previewSurface} onChange={(event) => setPreviewSurface(event.target.value)}>
+                <option value="admin_knowledge_search">admin_knowledge_search</option>
+                <option value="support_workspace">support_workspace</option>
+                <option value="requester_portal">requester_portal</option>
+              </select>
+            </label>
+            <Button
+              leadingIcon={<Search className="h-4 w-4" />}
+              onClick={() => previewMutation.mutate()}
+              disabled={!previewQuery.trim() || previewMutation.isPending}
+            >
+              Проверить поиск
+            </Button>
+          </div>
+
+          {previewMutation.isError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              Не удалось выполнить проверочный поиск.
+            </div>
+          ) : null}
+
+          {previewResult ? (
+            <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                {previewResult.display_message ? <span className="font-medium text-slate-900">{previewResult.display_message}</span> : null}
+                <Badge tone={previewResult.ai_used ? "warning" : "success"}>
+                  {previewResult.ai_used ? "AI использовался" : "AI не использовался"}
+                </Badge>
+                <Badge>{previewResult.effective_mode ?? previewResult.search_mode ?? "режим не задан"}</Badge>
+              </div>
+              {previewResult.results.length ? (
+                <div className="space-y-2">
+                  {previewResult.results.map((result, index) => (
+                    <div key={result.item_id ?? result.slug ?? `${result.title}-${index}`} className="rounded-md border border-slate-200 bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium text-slate-950">{result.title}</p>
+                        {result.visibility ? <Badge>{result.visibility}</Badge> : null}
+                      </div>
+                      {result.summary ? <p className="mt-1 text-sm text-slate-600">{result.summary}</p> : null}
+                      <p className="mt-2 text-xs text-slate-500">
+                        {result.slug ? `slug: ${result.slug}` : "slug не задан"}
+                        {typeof result.score === "number" ? ` · score: ${result.score}` : ""}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  По запросу ничего не найдено. Zero-result должен попасть в observer/search analytics.
+                </div>
+              )}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {settingsQuery.isError ? (
         <Card>

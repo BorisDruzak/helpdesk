@@ -82,6 +82,25 @@ describe("KnowledgeSearchSettingsPage", () => {
           },
         });
       }
+      if (url === "/api/web/knowledge/search" && init?.method === "POST") {
+        return jsonResponse({
+          status: "ok",
+          display_message: "Поиск выполнен без AI",
+          search_mode: "keyword_only",
+          effective_mode: "keyword_only",
+          ai_used: false,
+          results: [
+            {
+              item_id: "ki-1",
+              slug: "vpn-keyword-baseline",
+              title: "VPN keyword baseline",
+              summary: "Keyword search result without AI",
+              visibility: "requester",
+              score: 1,
+            },
+          ],
+        });
+      }
       throw new Error(`Unexpected fetch ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock as typeof fetch);
@@ -115,6 +134,22 @@ describe("KnowledgeSearchSettingsPage", () => {
       vector_enabled: false,
       max_results: 8,
       snippet_length: 220,
+    });
+
+    fireEvent.change(screen.getByLabelText("Проверочный запрос"), { target: { value: "VPN" } });
+    fireEvent.click(screen.getByRole("button", { name: "Проверить поиск" }));
+
+    await waitFor(() => expect(screen.getByText("VPN keyword baseline")).toBeInTheDocument());
+    expect(screen.getByText("Поиск выполнен без AI")).toBeInTheDocument();
+    expect(screen.getByText("AI не использовался")).toBeInTheDocument();
+    expect(screen.getAllByText("keyword_only").length).toBeGreaterThanOrEqual(1);
+    const previewCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/search" && call[1]?.method === "POST");
+    expect(previewCall).toBeDefined();
+    expect(previewCall?.[1]).toEqual(expect.objectContaining({ method: "POST", credentials: "same-origin" }));
+    expect(JSON.parse(previewCall?.[1]?.body as string)).toMatchObject({
+      query: "VPN",
+      actor_role: "support",
+      surface: "admin_knowledge_search",
     });
 
     const visibleText = document.body.textContent ?? "";
