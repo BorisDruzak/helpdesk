@@ -7,35 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Operation, Ticket
 from consent.service import ConsentAccessError, UserConsentService
-
-
-SENSITIVE_KEY_PARTS = (
-    "authorization",
-    "cookie",
-    "password",
-    "secret",
-    "session_token",
-    "token",
-)
+from utils.sensitive_redaction import redact_sensitive_mapping_values
 
 
 def redact_operation_params(value: Any, *, depth: int = 0) -> Any:
-    if depth > 4:
-        return "<redacted-depth>"
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, item in value.items():
-            key_text = str(key)
-            if any(part in key_text.lower() for part in SENSITIVE_KEY_PARTS):
-                redacted[key_text] = "<redacted>"
-            else:
-                redacted[key_text] = redact_operation_params(item, depth=depth + 1)
-        return redacted
-    if isinstance(value, list):
-        return [redact_operation_params(item, depth=depth + 1) for item in value[:50]]
-    if isinstance(value, str):
-        return value[:500]
-    return value
+    return redact_sensitive_mapping_values(value, depth=depth, drop_sensitive_keys=False)
+
+
+def redact_operation_event_params(value: Any, *, depth: int = 0) -> Any:
+    return redact_sensitive_mapping_values(value, depth=depth, drop_sensitive_keys=True)
 
 
 def _policy_snapshot(policy_decision: Any) -> dict[str, Any]:

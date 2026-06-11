@@ -306,9 +306,9 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         assert consent_event is not None
         assert consent_event.payload["retry_of_operation_id"] == original_operation_id
         assert consent_event.payload["params"]["label"] == "retry-consent"
-        assert consent_event.payload["params"]["api_token"] == "<redacted>"
-        assert consent_event.payload["params"]["password"] == "<redacted>"
-        assert consent_event.payload["params"]["nested"]["secret"] == "<redacted>"
+        assert "api_token" not in consent_event.payload["params"]
+        assert "password" not in consent_event.payload["params"]
+        assert "secret" not in consent_event.payload["params"]["nested"]
         assert consent_event.payload["params"]["nested"]["normal_param"] == "safe-normal"
         assert "raw-api-token" not in str(consent_event.payload)
         assert "raw-password" not in str(consent_event.payload)
@@ -325,9 +325,9 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         ).scalar_one_or_none()
         assert started_event is not None
         assert started_event.payload["params"]["label"] == "retry-consent"
-        assert started_event.payload["params"]["api_token"] == "<redacted>"
-        assert started_event.payload["params"]["password"] == "<redacted>"
-        assert started_event.payload["params"]["nested"]["secret"] == "<redacted>"
+        assert "api_token" not in started_event.payload["params"]
+        assert "password" not in started_event.payload["params"]
+        assert "secret" not in started_event.payload["params"]["nested"]
         assert "raw-api-token" not in str(started_event.payload)
 
     approve_response = await test_client.post(

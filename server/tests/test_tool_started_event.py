@@ -32,7 +32,11 @@ async def test_tool_call_started_created_before_command(test_client, test_agent,
     # Запускаем tool (async mode, не ждём ответа от агента)
     tool_resp = await test_client.post("/api/tools/run", json={
         "tool_name": TEST_ECHO_TOOL,
-        "params": {"message": "test"},
+        "params": {
+            "message": "test",
+            "api_token": "raw-api-token",
+            "nested": {"password": "raw-password", "normal_param": "safe-normal"},
+        },
         "device_id": device_id,
         "ticket_id": ticket_id
     })
@@ -79,6 +83,11 @@ async def test_tool_call_started_created_before_command(test_client, test_agent,
         assert payload.get("event") == "tool_call_started"
         assert payload.get("tool_name") == TEST_ECHO_TOOL
         assert payload.get("params", {}).get("message") == "test"
+        assert "api_token" not in payload.get("params", {})
+        assert "password" not in payload.get("params", {}).get("nested", {})
+        assert payload.get("params", {}).get("nested", {}).get("normal_param") == "safe-normal"
+        assert "raw-api-token" not in str(payload)
+        assert "raw-password" not in str(payload)
         assert payload.get("actor_role") == "support"
         
         # Проверяем что operation существует

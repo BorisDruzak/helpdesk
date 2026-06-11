@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 from loguru import logger
 from .cache import ToolsCache
 from utils.module_manifest import get_module_manifest
+from utils.sensitive_redaction import redact_sensitive_mapping_values
 from utils.versioning import compare_versions, version_key
 from config import (
     TOOL_EXECUTION_TIMEOUT,
@@ -750,10 +751,13 @@ class ToolService:
                         ticket_events_repo = TicketEventsRepo(session)
                         
                         # Санитизация params для payload (убираем внутренние поля)
-                        sanitized_params = {
-                            k: v for k, v in params.items() 
-                            if not k.startswith("_")  # Убираем внутренние поля типа _operation_id
-                        }
+                        sanitized_params = redact_sensitive_mapping_values(
+                            {
+                                k: v for k, v in params.items()
+                                if not k.startswith("_")  # Internal transport fields are not ticket timeline data.
+                            },
+                            drop_sensitive_keys=True,
+                        )
 
                         # Создаём событие tool_call_started с operation_id сразу
                         result = await ticket_events_repo.add_event(
