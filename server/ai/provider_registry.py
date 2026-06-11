@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 import json
 import re
@@ -39,8 +40,25 @@ def _redact_error(message: str | None) -> str | None:
     return re.sub(r"sk-[A-Za-z0-9_-]+", "<redacted>", text_value) or None
 
 
-def _provider_payload(row: Any) -> dict[str, Any]:
+def _serialize_value(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {str(key): _serialize_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_serialize_value(item) for item in value]
+    return value
+
+
+def _serialize_row(row: Any) -> dict[str, Any]:
     data = dict(row._mapping if hasattr(row, "_mapping") else row)
+    return {key: _serialize_value(value) for key, value in data.items()}
+
+
+def _provider_payload(row: Any) -> dict[str, Any]:
+    data = _serialize_row(row)
     secret_ref = data.pop("api_key_secret_ref", None)
     data["api_key_configured"] = bool(secret_ref)
     data["api_key_secret_ref_masked"] = _mask_secret_ref(secret_ref)
@@ -101,6 +119,104 @@ class AIProviderRegistry:
         ).all()
         return [_provider_payload(row) for row in rows]
 
+    async def get_provider(self, provider_id: str) -> dict[str, Any]:
+        row = (
+            await self.db.execute(
+                text("SELECT * FROM ai_providers WHERE provider_id = :provider_id"),
+                {"provider_id": provider_id},
+            )
+        ).first()
+        if row is None:
+            raise ValueError("provider not found")
+        return _provider_payload(row)
+
+    async def get_provider_internal(self, provider_id: str) -> dict[str, Any]:
+        row = (
+            await self.db.execute(
+                text("SELECT * FROM ai_providers WHERE provider_id = :provider_id"),
+                {"provider_id": provider_id},
+            )
+        ).first()
+        if row is None:
+            raise ValueError("provider not found")
+        return _serialize_row(row)
+
+    async def update_provider(self, provider_id: str, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
+        existing = await self.get_provider_internal(provider_id)
+        now = _now()
+        values = {
+            "provider_id": provider_id,
+            "code": str(payload.get("code", existing["code"])).strip(),
+            "title": str(payload.get("title", existing["title"])).strip(),
+            "provider_type": str(payload.get("provider_type", existing["provider_type"])).strip(),
+            "base_url": str(payload.get("base_url", existing.get("base_url") or "")).rstrip("/") or None,
+            "auth_type": str(payload.get("auth_type", existing["auth_type"])).strip(),
+            "api_key_secret_ref": payload.get("api_key_secret_ref", existing.get("api_key_secret_ref")),
+            "default_headers_json": _jsonb(payload.get("default_headers_json", existing.get("default_headers_json") or {})),
+            "data_policy": str(payload.get("data_policy", existing["data_policy"])).strip(),
+            "enabled": bool(payload.get("enabled", existing["enabled"])),
+            "metadata_json": _jsonb(payload.get("metadata_json", existing.get("metadata_json") or {})),
+            "updated_at": now,
+            "updated_by": actor_id,
+        }
+        row = (
+            await self.db.execute(
+                text(
+                    """
+                    UPDATE ai_providers SET
+                        code = :code,
+                        title = :title,
+                        provider_type = :provider_type,
+                        base_url = :base_url,
+                        auth_type = :auth_type,
+                        api_key_secret_ref = :api_key_secret_ref,
+                        default_headers_json = :default_headers_json,
+                        data_policy = :data_policy,
+                        enabled = :enabled,
+                        metadata_json = :metadata_json,
+                        updated_at = :updated_at,
+                        updated_by = :updated_by
+                    WHERE provider_id = :provider_id
+                    RETURNING *
+                    """
+                ),
+                values,
+            )
+        ).first()
+        return _provider_payload(row)
+
+    async def update_provider_health(
+        self,
+        provider_id: str,
+        *,
+        status: str,
+        error_message_redacted: str | None = None,
+    ) -> dict[str, Any]:
+        row = (
+            await self.db.execute(
+                text(
+                    """
+                    UPDATE ai_providers SET
+                        health_status = :status,
+                        last_health_check_at = :checked_at,
+                        last_error_redacted = :error_message_redacted,
+                        updated_at = :checked_at
+                    WHERE provider_id = :provider_id
+                    RETURNING *
+                    """
+                ),
+                {
+                    "provider_id": provider_id,
+                    "status": status,
+                    "checked_at": _now(),
+                    "error_message_redacted": _redact_error(error_message_redacted),
+                },
+            )
+        ).first()
+        if row is None:
+            raise ValueError("provider not found")
+        return _provider_payload(row)
+
     async def create_model_profile(self, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
         profile_id = str(payload.get("profile_id") or _new_id())
         now = _now()
@@ -152,7 +268,15 @@ class AIProviderRegistry:
                 values,
             )
         ).first()
-        return dict(row._mapping)
+        return _serialize_row(row)
+
+    async def list_model_profiles(self) -> list[dict[str, Any]]:
+        rows = (
+            await self.db.execute(
+                text("SELECT * FROM ai_model_profiles ORDER BY created_at DESC, profile_id DESC")
+            )
+        ).all()
+        return [_serialize_row(row) for row in rows]
 
     async def upsert_policy(self, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
         policy_id = str(payload.get("policy_id") or _new_id())
@@ -233,9 +357,17 @@ class AIProviderRegistry:
                 values,
             )
         ).first()
-        data = dict(row._mapping)
+        data = _serialize_row(row)
         data["display_message"] = "Политика AI сохранена"
         return data
+
+    async def list_policies(self) -> list[dict[str, Any]]:
+        rows = (
+            await self.db.execute(
+                text("SELECT * FROM ai_policy_profiles ORDER BY created_at DESC, policy_id DESC")
+            )
+        ).all()
+        return [_serialize_row(row) for row in rows]
 
     async def record_audit(self, payload: dict[str, Any]) -> dict[str, Any]:
         audit_id = str(payload.get("audit_id") or _new_id())
@@ -272,4 +404,4 @@ class AIProviderRegistry:
                 values,
             )
         ).first()
-        return dict(row._mapping)
+        return _serialize_row(row)

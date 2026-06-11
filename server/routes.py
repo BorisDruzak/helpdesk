@@ -491,6 +491,13 @@ from web_api.knowledge_handlers import (
     handle_web_knowledge_spaces,
     handle_web_knowledge_templates,
 )
+from web_api.knowledge_ai_handlers import (
+    handle_web_knowledge_ai_model_profiles,
+    handle_web_knowledge_ai_policies,
+    handle_web_knowledge_ai_provider_detail,
+    handle_web_knowledge_ai_provider_health_check,
+    handle_web_knowledge_ai_providers,
+)
 from web_api.registry_handlers import (
     handle_registry_agent_claim_confirm,
     handle_registry_agent_consent_approve,
@@ -1114,6 +1121,14 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/knowledge/search', handle_knowledge_search),
         web.post('/api/knowledge/suggest', handle_knowledge_suggest),
         web.post('/api/knowledge/feedback', handle_knowledge_feedback),
+        web.get('/api/web/knowledge/ai/providers', handle_web_knowledge_ai_providers),
+        web.post('/api/web/knowledge/ai/providers', handle_web_knowledge_ai_providers),
+        web.patch('/api/web/knowledge/ai/providers/{provider_id}', handle_web_knowledge_ai_provider_detail),
+        web.post('/api/web/knowledge/ai/providers/{provider_id}/health-check', handle_web_knowledge_ai_provider_health_check),
+        web.get('/api/web/knowledge/ai/model-profiles', handle_web_knowledge_ai_model_profiles),
+        web.post('/api/web/knowledge/ai/model-profiles', handle_web_knowledge_ai_model_profiles),
+        web.get('/api/web/knowledge/ai/policies', handle_web_knowledge_ai_policies),
+        web.post('/api/web/knowledge/ai/policies', handle_web_knowledge_ai_policies),
         web.get('/api/web/knowledge/spaces', handle_web_knowledge_spaces),
         web.post('/api/web/knowledge/spaces', handle_web_knowledge_spaces),
         web.get('/api/web/knowledge/items', handle_web_knowledge_items),
