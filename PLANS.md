@@ -661,6 +661,23 @@ Goal:
   * AI-assisted semantic markup.
 * Do not require AI for segmentation.
 
+Status 2026-06-12:
+
+* Phase 3A backend slice is implemented without AI:
+
+  * migration `112` adds `knowledge_article_segments`, `knowledge_segmentation_profiles` and `knowledge_segmentation_jobs`;
+  * `KnowledgeSegmentationService` supports manual segment create/list/update/archive, segmentation profile create/list and heading/paragraph auto segmentation jobs;
+  * routes are live for `GET|POST /api/web/knowledge/items/{item_id_or_slug}/segments`, `POST /api/web/knowledge/items/{item_id_or_slug}/segments/auto`, `PATCH|DELETE /api/web/knowledge/segments/{segment_id}` and `GET|POST /api/web/knowledge/segmentation-profiles`;
+  * active segment title/text/keywords contribute to AI-off Knowledge search snippets/scoring;
+  * tests: `server/tests/test_knowledge_segments.py` and `server/tests/test_knowledge_search_segments.py`.
+* Remaining Phase 3 work:
+
+  * article segmentation UI in `/app/admin/knowledge/studio`;
+  * stale segment remap/revalidation after version body changes;
+  * AI proposal/approve/reject flow and policy gates;
+  * Observer v2 segmentation events;
+  * embedding/index sync for segment text.
+
 Terminology:
 
 * Use “segments” or “retrieval segments” in the product UI.

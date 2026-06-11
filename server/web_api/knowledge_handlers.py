@@ -23,6 +23,7 @@ from knowledge.gap_service import KnowledgeGapService, serialize_gap_finding
 from knowledge.review_task_service import KnowledgeReviewTaskService, serialize_review_task
 from knowledge.search_service import KnowledgeSearchService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
+from knowledge.segmentation_service import KnowledgeSegmentationService
 from knowledge.suggestion_service import KnowledgeSuggestionService
 
 
@@ -210,6 +211,18 @@ def _search_settings_forbidden() -> web.Response:
     )
 
 
+def _segmentation_forbidden() -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": "forbidden",
+            "error_code": "FORBIDDEN",
+            "display_message": "Недостаточно прав для разметки знаний",
+        },
+        status=403,
+    )
+
+
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_search_settings(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
@@ -247,6 +260,180 @@ async def handle_web_knowledge_search_settings(request: web.Request) -> web.Resp
             },
             status=400,
         )
+    except Exception:
+        logger.exception("[knowledge] search settings failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support", "auditor", "user")
+async def handle_web_knowledge_item_segments(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    if request.method == "POST" and role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    try:
+        async with get_session() as session:
+            service = KnowledgeSegmentationService(session)
+            if request.method == "POST":
+                segment = await service.create_segment(
+                    item_id,
+                    await _json_payload(request),
+                    actor_id=actor_id,
+                    actor_role=role,
+                )
+                await session.commit()
+                return web.json_response(
+                    {
+                        "status": "ok",
+                        "segment": segment,
+                        "display_message": "Сегмент знаний сохранён",
+                    }
+                )
+            segments = await service.list_segments(item_id, actor_role=role)
+            return web.json_response({"status": "ok", "segments": segments})
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры сегмента",
+                "details": str(exc),
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception("[knowledge] segment handler failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support", "auditor", "user")
+async def handle_web_knowledge_item_segments_auto(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        async with get_session() as session:
+            result = await KnowledgeSegmentationService(session).auto_segment(
+                item_id,
+                await _json_payload(request),
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+        return web.json_response(
+            {
+                "status": "ok",
+                **result,
+                "display_message": "Авторазметка выполнена без AI",
+            }
+        )
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры авторазметки",
+                "details": str(exc),
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception("[knowledge] auto segmentation failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_segment_detail(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _segmentation_forbidden()
+    segment_id = str(request.match_info.get("segment_id") or "")
+    try:
+        async with get_session() as session:
+            service = KnowledgeSegmentationService(session)
+            if request.method == "DELETE":
+                segment = await service.archive_segment(segment_id, actor_id=actor_id, actor_role=role)
+                await session.commit()
+                return web.json_response(
+                    {
+                        "status": "ok",
+                        "segment": segment,
+                        "display_message": "Сегмент знаний архивирован",
+                    }
+                )
+            segment = await service.update_segment(
+                segment_id,
+                await _json_payload(request),
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+            return web.json_response(
+                {
+                    "status": "ok",
+                    "segment": segment,
+                    "display_message": "Сегмент знаний обновлён",
+                }
+            )
+    except PermissionError:
+        return _segmentation_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры сегмента",
+                "details": str(exc),
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception("[knowledge] segment detail failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_segmentation_profiles(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if request.method == "POST" and role != "admin":
+        return _segmentation_forbidden()
+    try:
+        async with get_session() as session:
+            service = KnowledgeSegmentationService(session)
+            if request.method == "POST":
+                profile = await service.upsert_profile(await _json_payload(request), actor_id=actor_id)
+                await session.commit()
+                return web.json_response(
+                    {
+                        "status": "ok",
+                        "profile": profile,
+                        "display_message": "Профиль разметки сохранён",
+                    }
+                )
+            profiles = await service.list_profiles()
+        return web.json_response({"status": "ok", "profiles": profiles})
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры профиля разметки",
+                "details": str(exc),
+            },
+            status=400,
+        )
+    except Exception:
+        logger.exception("[knowledge] segmentation profiles failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
 
 
 async def handle_knowledge_feedback(request: web.Request) -> web.Response:

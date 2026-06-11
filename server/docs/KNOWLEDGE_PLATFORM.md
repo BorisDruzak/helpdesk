@@ -22,6 +22,7 @@ P2 adds a universal company knowledge layer and uses it for helpdesk self-servic
 - `knowledge_quality_snapshots`: optional persisted explainable quality score snapshots for reporting and low-quality queues.
 - `knowledge_gap_findings`: persisted Service Catalog, ticket-volume and feedback-driven knowledge gap findings with accept/dismiss/create-draft workflow.
 - `knowledge_search_events`: privacy-preserving search analytics with query hash and redacted query text for zero-result and ticket-after-search analysis.
+- `knowledge_segmentation_profiles` / `knowledge_article_segments` / `knowledge_segmentation_jobs`: Knowledge vNext article markup foundation. Manual and auto segments are tied to an immutable item version by offsets plus content hash, carry title/summary/keywords/boost/visibility flags, and can be used by AI-off search before vector/RAG features are enabled.
 - `ticket_knowledge_links`: normalized future link table. Existing `ticket_kb_links` and `/api/tickets/{id}/kb_links` remain compatible.
 
 ## Item Types
@@ -50,7 +51,7 @@ Requester/agent projections must not expose internal body for restricted items, 
 
 ## Search And Suggestions
 
-`KnowledgeSearchService` uses PostgreSQL-compatible filtering and text matching over items, versions, chunks and bindings. Ranking prefers exact title/slug matches, service/offering/request-template bindings, text matches, helpfulness and freshness.
+`KnowledgeSearchService` uses PostgreSQL-compatible filtering and text matching over items, versions, chunks, bindings and active article segments. Ranking prefers exact title/slug matches, service/offering/request-template bindings, segment title/keyword matches, text matches, helpfulness and freshness. Segment matches return the owning article with a segment-derived snippet while preserving the same item ACL projection.
 
 `KnowledgeSuggestionService` accepts helpdesk context:
 
@@ -122,7 +123,11 @@ Admin/support management:
 - `POST /api/web/knowledge/search`
 - `GET|POST /api/web/knowledge/spaces`
 - `GET|POST /api/web/knowledge/items`
+- `GET|POST /api/web/knowledge/segmentation-profiles`
+- `PATCH|DELETE /api/web/knowledge/segments/{segment_id}`
 - `GET /api/web/knowledge/items/{item_id_or_slug}`
+- `GET|POST /api/web/knowledge/items/{item_id_or_slug}/segments`
+- `POST /api/web/knowledge/items/{item_id_or_slug}/segments/auto`
 - `GET|POST /api/web/knowledge/items/{item_id_or_slug}/versions`
 - `POST /api/web/knowledge/items/{item_id_or_slug}/publish`
 - `GET|POST /api/web/knowledge/graph/nodes`

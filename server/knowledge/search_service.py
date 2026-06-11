@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import KnowledgeBinding, KnowledgeChunk, KnowledgeItem, KnowledgeItemVersion
@@ -108,6 +108,35 @@ class KnowledgeSearchService:
             current = scored.get(item.item_id)
             if current is None or score > current[0]:
                 scored[item.item_id] = (score, payload)
+        if q:
+            segment_rows = await self._search_segment_rows(q, allowed)
+            for row in segment_rows:
+                item = await self.session.get(KnowledgeItem, row["item_id"])
+                version = await self.session.get(KnowledgeItemVersion, row["version_id"])
+                if item is None or version is None:
+                    continue
+                lower_q = q.lower()
+                score = 15
+                if lower_q in str(row.get("segment_title") or "").lower():
+                    score += 60
+                if lower_q in str(row.get("keywords_json") or "").lower():
+                    score += 55
+                if lower_q in str(row.get("segment_text") or "").lower():
+                    score += 20
+                try:
+                    score += int(float(row.get("boost") or 1) * 10)
+                except (TypeError, ValueError):
+                    score += 10
+                payload = serialize_item(item, current_version=version)
+                payload["version_id"] = version.version_id
+                payload["snippet"] = _snippet(row.get("segment_text") or version.body, q, max_length=snippet_length)
+                payload["quality_label"] = _quality_label(item.confidence_score)
+                payload["freshness_label"] = _freshness_label(item.review_due_at)
+                if actor_role in {"requester", "agent", "public"}:
+                    payload = sanitize_requester_knowledge_projection(payload)
+                current = scored.get(item.item_id)
+                if current is None or score > current[0]:
+                    scored[item.item_id] = (score, payload)
         ordered = sorted(scored.values(), key=lambda item: (-item[0], str(item[1].get("title") or "")))
         results = [payload for _score, payload in ordered[: max(1, min(limit, 50))]]
         await KnowledgeSearchAnalyticsService(self.session).record_search_event(
@@ -120,3 +149,45 @@ class KnowledgeSearchService:
             result_count=len(results),
         )
         return results
+
+    async def _search_segment_rows(self, query: str, allowed: tuple[str, ...]) -> list[dict[str, Any]]:
+        item_visibility_params = {f"item_visibility_{index}": value for index, value in enumerate(allowed)}
+        segment_visibility_params = {f"segment_visibility_{index}": value for index, value in enumerate(allowed)}
+        item_visibility_sql = ", ".join(f":{key}" for key in item_visibility_params)
+        segment_visibility_sql = ", ".join(f":{key}" for key in segment_visibility_params)
+        rows = (
+            await self.session.execute(
+                text(
+                    f"""
+                    SELECT
+                        s.item_id,
+                        s.version_id,
+                        s.title AS segment_title,
+                        s.summary AS segment_summary,
+                        s.text AS segment_text,
+                        s.keywords_json,
+                        s.boost
+                    FROM knowledge_article_segments s
+                    JOIN knowledge_items i ON i.item_id = s.item_id
+                    WHERE i.status = 'published'
+                      AND i.current_version_id = s.version_id
+                      AND i.visibility IN ({item_visibility_sql})
+                      AND s.visibility IN ({segment_visibility_sql})
+                      AND s.status = 'active'
+                      AND s.full_text_enabled = true
+                      AND (
+                        lower(COALESCE(s.title, '')) LIKE :like
+                        OR lower(COALESCE(s.summary, '')) LIKE :like
+                        OR lower(COALESCE(s.text, '')) LIKE :like
+                        OR lower(COALESCE(s.keywords_json::text, '')) LIKE :like
+                      )
+                    """
+                ),
+                {
+                    **item_visibility_params,
+                    **segment_visibility_params,
+                    "like": f"%{query.lower()}%",
+                },
+            )
+        ).all()
+        return [dict(row._mapping) for row in rows]
