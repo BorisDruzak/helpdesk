@@ -7,6 +7,7 @@ EventBus для публикации и подписки на UI-события.
 
 import asyncio
 import copy
+from datetime import datetime, timezone
 from typing import Dict, Any, Set, List
 from loguru import logger
 
@@ -70,6 +71,12 @@ class EventBus:
         event_type = str(event.get("event_type") or "").strip().lower()
         if event_type == "connection_state":
             self._sticky_events[event_type] = copy.deepcopy(event)
+            return
+        if event_type == "remote_assist_request":
+            data = event.get("data") if isinstance(event.get("data"), dict) else {}
+            session_id = str(data.get("session_id") or "").strip()
+            if session_id:
+                self._sticky_events[f"{event_type}:{session_id}"] = copy.deepcopy(event)
 
     def subscribe(self) -> asyncio.Queue[Dict[str, Any]]:
         """
@@ -96,10 +103,36 @@ class EventBus:
         Сейчас sticky-реплей нужен прежде всего для connection_state, чтобы GUI,
         подписавшийся уже после handshake_ack, сразу увидел актуальный статус.
         """
+        replay: List[Dict[str, Any]] = []
         snapshot = self._sticky_events.get("connection_state")
-        if not snapshot:
-            return []
-        return [copy.deepcopy(snapshot)]
+        if snapshot:
+            replay.append(copy.deepcopy(snapshot))
+
+        expired_keys: list[str] = []
+        for key, event in self._sticky_events.items():
+            if not key.startswith("remote_assist_request:"):
+                continue
+            if self._is_remote_assist_event_expired(event):
+                expired_keys.append(key)
+                continue
+            replay.append(copy.deepcopy(event))
+        for key in expired_keys:
+            self._sticky_events.pop(key, None)
+        return replay
+
+    @staticmethod
+    def _is_remote_assist_event_expired(event: Dict[str, Any]) -> bool:
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        expires_at = str(data.get("expires_at") or "").strip()
+        if not expires_at:
+            return False
+        try:
+            parsed = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed <= datetime.now(timezone.utc)
     
     async def unsubscribe(self, queue: asyncio.Queue) -> None:
         """

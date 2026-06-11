@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiohttp
@@ -29,6 +30,50 @@ async def test_event_bus_replays_latest_connection_state_for_late_subscriber():
     assert len(replay) == 1
     assert replay[0]["event_type"] == "connection_state"
     assert replay[0]["data"]["state"] == "connected"
+
+
+@pytest.mark.asyncio
+async def test_event_bus_replays_remote_assist_request_for_late_subscriber():
+    bus = EventBus()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+
+    await bus.publish(
+        {
+            "event_type": "remote_assist_request",
+            "data": {
+                "session_id": "remote-session-1",
+                "consent_status": "approved",
+                "expires_at": expires_at,
+            },
+            "timestamp": "2026-06-11T10:00:00Z",
+        }
+    )
+
+    replay = bus.get_replay_events()
+    assert len(replay) == 1
+    assert replay[0]["event_type"] == "remote_assist_request"
+    assert replay[0]["data"]["session_id"] == "remote-session-1"
+    assert replay[0]["data"]["consent_status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_event_bus_does_not_replay_expired_remote_assist_request():
+    bus = EventBus()
+    expires_at = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+
+    await bus.publish(
+        {
+            "event_type": "remote_assist_request",
+            "data": {
+                "session_id": "remote-session-expired",
+                "consent_status": "approved",
+                "expires_at": expires_at,
+            },
+            "timestamp": "2026-06-11T10:00:00Z",
+        }
+    )
+
+    assert bus.get_replay_events() == []
 
 
 @pytest.mark.asyncio
