@@ -488,6 +488,8 @@ from web_api.knowledge_handlers import (
     handle_web_knowledge_review_tasks,
     handle_web_knowledge_rollout_policies,
     handle_web_knowledge_rollout_effective_preview,
+    handle_web_knowledge_search,
+    handle_web_knowledge_search_settings,
     handle_web_knowledge_spaces,
     handle_web_knowledge_templates,
 )
@@ -1123,6 +1125,9 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/knowledge/search', handle_knowledge_search),
         web.post('/api/knowledge/suggest', handle_knowledge_suggest),
         web.post('/api/knowledge/feedback', handle_knowledge_feedback),
+        web.post('/api/web/knowledge/search', handle_web_knowledge_search),
+        web.get('/api/web/knowledge/search-settings', handle_web_knowledge_search_settings),
+        web.post('/api/web/knowledge/search-settings', handle_web_knowledge_search_settings),
         web.get('/api/web/knowledge/ai/providers', handle_web_knowledge_ai_providers),
         web.post('/api/web/knowledge/ai/providers', handle_web_knowledge_ai_providers),
         web.patch('/api/web/knowledge/ai/providers/{provider_id}', handle_web_knowledge_ai_provider_detail),

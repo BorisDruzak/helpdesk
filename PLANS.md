@@ -528,6 +528,20 @@ Important:
 * `keyword_only`, `full_text` and `hybrid_no_ai` must work without any AI provider, embedding or vector index.
 * If AI is disabled or provider unavailable, search must gracefully fall back to non-AI search.
 
+Phase 2 current state, 2026-06-12:
+
+* Backend foundation is implemented for the first AI-off search settings slice.
+* Migration `111` adds the global `knowledge_search_settings` table with mode flags, AI/vector/rerank/rewrite/RAG switches disabled by default, result/snippet limits, weights, metadata and audit fields.
+* `server/knowledge/search_settings_service.py` returns Russian-safe API defaults without requiring a stored row and computes `effective_mode`/`ai_enabled` deterministically from settings.
+* Admin-only web API routes are available:
+
+  * `GET /api/web/knowledge/search-settings`
+  * `POST /api/web/knowledge/search-settings`
+* `POST /api/web/knowledge/search` is available for authenticated admin/support/auditor web consumers and reuses the existing ACL-filtered keyword search path.
+* Existing `POST /api/knowledge/search` remains backward-compatible and now also returns `search_mode`, `effective_mode`, `ai_used` and a Russian `display_message`.
+* Search still runs without AI providers or embeddings; unknown analytics `surface` values are normalized to `search` to avoid CHECK-constraint 500s.
+* Next Phase 2 follow-up is the React `/app/admin/knowledge/search-settings` page with Russian controls and browser evidence.
+
 Backend service changes:
 
 * Replace or wrap current `KnowledgeSearchService` with:

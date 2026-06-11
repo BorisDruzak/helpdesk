@@ -6455,3 +6455,48 @@ class AIRequestAudit(Base):
         Index("ix_ai_request_audit_provider_created", "provider_id", "created_at"),
         Index("ix_ai_request_audit_task_status", "task_type", "status"),
     )
+
+
+class KnowledgeSearchSettings(Base):
+    """Global Knowledge search controls. AI/vector switches default to off."""
+
+    __tablename__ = "knowledge_search_settings"
+
+    settings_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="global")
+    space_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    visibility: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    search_mode: Mapped[str] = mapped_column(String(40), nullable=False, server_default="keyword_only")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    keyword_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("true"))
+    full_text_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    vector_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    rerank_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    ai_query_rewrite_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    rag_answer_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    keyword_weight: Mapped[float] = mapped_column(Numeric(8, 4), nullable=False, server_default="1.0")
+    full_text_weight: Mapped[float] = mapped_column(Numeric(8, 4), nullable=False, server_default="1.0")
+    vector_weight: Mapped[float] = mapped_column(Numeric(8, 4), nullable=False, server_default="1.0")
+    max_results: Mapped[int] = mapped_column(Integer, nullable=False, server_default="10")
+    snippet_length: Mapped[int] = mapped_column(Integer, nullable=False, server_default="180")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint("scope_type IN ('global', 'space', 'visibility')", name="ck_knowledge_search_settings_scope_type"),
+        sa.CheckConstraint(
+            "search_mode IN ('keyword_only', 'full_text', 'hybrid_no_ai', 'hybrid_vector', 'hybrid_vector_rerank', 'rag_answer')",
+            name="ck_knowledge_search_settings_search_mode",
+        ),
+        sa.CheckConstraint("max_results BETWEEN 1 AND 50", name="ck_knowledge_search_settings_max_results"),
+        sa.CheckConstraint("snippet_length BETWEEN 80 AND 1000", name="ck_knowledge_search_settings_snippet_length"),
+        Index("ix_knowledge_search_settings_scope", "scope_type", "space_id", "visibility"),
+    )

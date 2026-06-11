@@ -712,6 +712,7 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
                 ai_policy_profiles,
                 ai_model_profiles,
                 ai_providers,
+                knowledge_search_settings,
                 knowledge_search_events,
                 knowledge_gap_findings,
                 knowledge_quality_snapshots,

@@ -44,6 +44,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 **Knowledge AI provider settings (migration 110):** `ai_providers`, `ai_model_profiles`, `ai_policy_profiles`, and `ai_request_audit`. These tables store configurable AI provider metadata, per-task model profiles, opt-in policy gates and redacted request audit rows for Knowledge vNext. Secret values are not stored directly: providers keep only secret references such as `env:OPENROUTER_API_KEY`, API responses expose masked secret state, and audit rows redact prompts/outputs unless a later policy explicitly allows storage. The first client implementation targets OpenRouter-compatible chat, embeddings and rerank calls while keeping all AI features disabled unless policy/profile configuration enables them.
 
+**Knowledge search settings (migration 111):** `knowledge_search_settings` stores the global Knowledge search mode, keyword/full-text/vector/rerank/rewrite/RAG toggles, scoring weights, result/snippet limits, metadata and audit fields. The default runtime state is AI-off: keyword search works without provider rows, embeddings or vector indexes, while API responses expose `effective_mode` and `ai_enabled` so UI and operators can see fallback state explicitly.
+
 **Quality Loop (migrations 088-089):** `ticket_feedback`, `ticket_reopen_events`, `ticket_quality_reviews`, `ticket_quality_review_comments`, `continuous_improvement_actions`, `service_quality_snapshots`, and `quality_policies`. These tables implement structured CSAT, mandatory reopen reason taxonomy, internal QA review queues, continuous improvement actions and aggregate service/offering quality analytics. Migration `089` adds the partial unique index `uq_ticket_feedback_latest_per_ticket` so only one `is_latest=true` feedback row can exist per ticket. Analytics snapshots intentionally avoid requester PII and are recomputed by the quality snapshot scheduler plus the manual recompute API. See [QUALITY_LOOP.md](QUALITY_LOOP.md).
 
 **Problem Management (migrations 090-091):** `problems`, `problem_ticket_links`, `problem_rca_records`, `problem_known_error_links`, `problem_affected_objects`, `problem_detection_rules`, `problem_candidates`, `problem_activity_events`, `problem_scanner_runs`, and `problem_slo_policies`. Migration `090` implements P4 candidates, problem lifecycle, many-to-many ticket links, versioned RCA, affected service/offering/registry object links, known-error/workaround Knowledge links and append-only activity audit. Migration `091` adds scheduled scanner observability, candidate fingerprint/dedup/cooldown/merge metadata, failed-QA/knowledge-gap thresholds, and problem SLO due milestones. Migration `090` also adds nullable `problem_id` and `problem_candidate_id` to `continuous_improvement_actions` and extends action/source enums for RCA, permanent-fix, workaround validation and known-error update actions. Problem analytics are aggregate-only and avoid requester PII. See [PROBLEM_MANAGEMENT.md](PROBLEM_MANAGEMENT.md).
@@ -215,6 +217,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 | `knowledge.quality_service` | knowledge_quality_snapshots |
 | `knowledge.gap_service` | knowledge_gap_findings |
 | `knowledge.search_analytics_service` | knowledge_search_events |
+| `knowledge.search_settings_service` | knowledge_search_settings |
 | `knowledge.operations_service` | knowledge_rollout_policies |
 
 Тикеты создаются/читаются через `TicketEventsRepo` (модель `Ticket` в том же модуле).
@@ -266,6 +269,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 - `085_knowledge_operations.py` — P2.2 knowledge operations: idempotent content pack audit tables and self-service deflection rollout policies.
 - `086_knowledge_ops_models.py` — knowledge review tasks, quality snapshots, persisted gap findings and privacy-preserving search analytics.
 - `087_knowledge_rollout_policy_hardening.py` — rollout policy scope, suggestion gating, known-error hiding, safe labels, bypass and API-unavailable behavior.
+- `111_knowledge_search_settings.py` — Knowledge vNext search settings table for AI-off keyword/full-text/hybrid mode controls.
 - `088_quality_loop.py` — structured ticket feedback, reopen events, QA reviews, improvement actions, service quality snapshots and quality policies.
 - `089_quality_loop_production_hardening.py` — latest feedback partial unique index and quality snapshot scheduler metadata.
 - `090_problem_management_rca.py` — problem candidates, problem records, ticket links, versioned RCA, known-error/workaround links, affected objects, detection rules and problem activity events.

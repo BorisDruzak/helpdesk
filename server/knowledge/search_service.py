@@ -12,15 +12,16 @@ from knowledge.contracts import actor_visible_visibilities, sanitize_requester_k
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
 
 
-def _snippet(text: str, query: str) -> str:
+def _snippet(text: str, query: str, *, max_length: int = 180) -> str:
     text = str(text or "").strip()
     if not text:
         return ""
+    bounded_length = max(80, min(int(max_length or 180), 1000))
     q = str(query or "").strip().lower()
     if q and q in text.lower():
         index = max(0, text.lower().find(q) - 40)
-        return text[index : index + 180]
-    return text[:180]
+        return text[index : index + bounded_length]
+    return text[:bounded_length]
 
 
 def _quality_label(confidence_score: Any) -> str | None:
@@ -63,6 +64,7 @@ class KnowledgeSearchService:
         surface: str = "search",
         session_id: str | None = None,
         limit: int = 10,
+        snippet_length: int = 180,
     ) -> list[dict[str, Any]]:
         allowed = actor_visible_visibilities(actor_role)
         q = str(query or "").strip()
@@ -98,7 +100,7 @@ class KnowledgeSearchService:
                 score += 10
             payload = serialize_item(item, current_version=version)
             payload["version_id"] = version.version_id
-            payload["snippet"] = _snippet(chunk.text if chunk is not None else version.body, q)
+            payload["snippet"] = _snippet(chunk.text if chunk is not None else version.body, q, max_length=snippet_length)
             payload["quality_label"] = _quality_label(item.confidence_score)
             payload["freshness_label"] = _freshness_label(item.review_due_at)
             if actor_role in {"requester", "agent", "public"}:

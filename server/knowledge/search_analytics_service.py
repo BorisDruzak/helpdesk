@@ -17,6 +17,7 @@ def _new_id() -> str:
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 MARKER_RE = re.compile(r"\b(?:device_id|requester_id|queue_id|trace_id|operation_id)\s*=\s*[\w.-]+", re.IGNORECASE)
+ALLOWED_SURFACES = {"requester_portal", "agent_gui", "support_workspace", "admin", "api", "search"}
 
 
 def redact_search_query(query_text: str | None) -> str | None:
@@ -51,11 +52,12 @@ class KnowledgeSearchAnalyticsService:
         created_ticket_after_search: bool = False,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        normalized_surface = surface if surface in ALLOWED_SURFACES else "search"
         row = KnowledgeSearchEvent(
             event_id=_new_id(),
             actor_role=actor_role,
             session_id=session_id,
-            surface=surface or "search",
+            surface=normalized_surface,
             query_text_hash=hash_search_query(query_text),
             query_text_redacted=redact_search_query(query_text),
             service_code=service_code,

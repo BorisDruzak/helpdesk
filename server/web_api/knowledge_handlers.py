@@ -22,6 +22,7 @@ from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsS
 from knowledge.gap_service import KnowledgeGapService, serialize_gap_finding
 from knowledge.review_task_service import KnowledgeReviewTaskService, serialize_review_task
 from knowledge.search_service import KnowledgeSearchService
+from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from knowledge.suggestion_service import KnowledgeSuggestionService
 
 
@@ -153,10 +154,18 @@ async def handle_knowledge_suggest(request: web.Request) -> web.Response:
 
 
 async def handle_knowledge_search(request: web.Request) -> web.Response:
+    return await _handle_knowledge_search_response(request)
+
+
+async def _handle_knowledge_search_response(request: web.Request) -> web.Response:
     try:
         _actor_id, actor_role = _actor(request)
         payload = await _json_payload(request)
         async with get_session() as session:
+            settings = await KnowledgeSearchSettingsService(session).get_settings()
+            configured_limit = int(settings.get("max_results") or 10)
+            snippet_length = int(settings.get("snippet_length") or 180)
+            requested_limit = int(payload.get("limit") or configured_limit)
             results = await KnowledgeSearchService(session).search(
                 query=payload.get("query"),
                 actor_role=actor_role,
@@ -165,12 +174,79 @@ async def handle_knowledge_search(request: web.Request) -> web.Response:
                 request_template_key=payload.get("request_template_key"),
                 surface=str(payload.get("surface") or payload.get("source_surface") or "search"),
                 session_id=payload.get("session_id"),
-                limit=int(payload.get("limit") or 10),
+                limit=min(requested_limit, configured_limit),
+                snippet_length=snippet_length,
             )
             await session.commit()
-        return web.json_response({"status": "ok", "results": results})
+        ai_used = bool(settings.get("ai_enabled"))
+        return web.json_response(
+            {
+                "status": "ok",
+                "results": results,
+                "search_mode": settings.get("search_mode"),
+                "effective_mode": settings.get("effective_mode"),
+                "ai_used": ai_used,
+                "display_message": "Поиск выполнен" if ai_used else "Поиск выполнен без AI",
+            }
+        )
     except ValueError as exc:
         return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_search(request: web.Request) -> web.Response:
+    return await _handle_knowledge_search_response(request)
+
+
+def _search_settings_forbidden() -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": "forbidden",
+            "error_code": "FORBIDDEN",
+            "display_message": "Недостаточно прав для настройки поиска",
+        },
+        status=403,
+    )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_search_settings(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if request.method == "POST" and role != "admin":
+        return _search_settings_forbidden()
+    try:
+        async with get_session() as session:
+            service = KnowledgeSearchSettingsService(session)
+            if request.method == "POST":
+                settings = await service.upsert_settings(await _json_payload(request), actor_id=actor_id)
+                await session.commit()
+                return web.json_response(
+                    {
+                        "status": "ok",
+                        "settings": settings,
+                        "display_message": "Настройки поиска сохранены",
+                    }
+                )
+            settings = await service.get_settings()
+            return web.json_response(
+                {
+                    "status": "ok",
+                    "settings": settings,
+                    "display_message": "Настройки поиска загружены",
+                }
+            )
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры поиска",
+                "details": str(exc),
+            },
+            status=400,
+        )
 
 
 async def handle_knowledge_feedback(request: web.Request) -> web.Response:

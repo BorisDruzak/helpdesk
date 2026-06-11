@@ -114,8 +114,12 @@ Requester/agent safe:
 - `POST /api/knowledge/suggest`
 - `POST /api/knowledge/feedback`
 
+`POST /api/knowledge/search` remains backward-compatible for requester/agent/public consumers and now also returns `search_mode`, `effective_mode`, `ai_used` and a Russian `display_message`. The default mode is AI-off keyword search and does not require configured providers, embeddings or vector indexes.
+
 Admin/support management:
 
+- `GET|POST /api/web/knowledge/search-settings`
+- `POST /api/web/knowledge/search`
 - `GET|POST /api/web/knowledge/spaces`
 - `GET|POST /api/web/knowledge/items`
 - `GET /api/web/knowledge/items/{item_id_or_slug}`
