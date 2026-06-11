@@ -128,6 +128,12 @@ export const AdminKnowledgeAiPage = lazy(() =>
   import("../../pages/admin/knowledge-ai-page").then((module) => ({ default: module.AdminKnowledgeAiPage })),
 );
 
+export const AdminKnowledgeSearchSettingsPage = lazy(() =>
+  import("../../pages/admin/knowledge-search-settings-page").then((module) => ({
+    default: module.AdminKnowledgeSearchSettingsPage,
+  })),
+);
+
 export const AdminQualityPage = lazy(() =>
   import("../../pages/admin/quality-page").then((module) => ({ default: module.AdminQualityPage })),
 );

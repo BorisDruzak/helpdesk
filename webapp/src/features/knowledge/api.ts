@@ -268,6 +268,29 @@ export type KnowledgeAiHealthResult = {
   error_code?: string | null;
 };
 
+export type KnowledgeSearchSettings = {
+  settings_id: string;
+  search_mode: string;
+  effective_mode: string;
+  fallback_mode?: string | null;
+  ai_enabled: boolean;
+  enabled?: boolean;
+  keyword_enabled: boolean;
+  full_text_enabled: boolean;
+  vector_enabled: boolean;
+  rerank_enabled: boolean;
+  ai_query_rewrite_enabled: boolean;
+  rag_answer_enabled: boolean;
+  keyword_weight?: number | null;
+  full_text_weight?: number | null;
+  vector_weight?: number | null;
+  max_results: number;
+  snippet_length: number;
+  metadata_json?: Record<string, unknown>;
+  updated_at?: string | null;
+  updated_by?: string | null;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -566,4 +589,26 @@ export async function checkKnowledgeAiProviderHealth(providerId: string, payload
     body: JSON.stringify(payload),
   });
   return readJson<{ health: KnowledgeAiHealthResult; display_message?: string }>(response, "Не удалось проверить провайдера AI");
+}
+
+export async function fetchKnowledgeSearchSettings(): Promise<KnowledgeSearchSettings> {
+  const response = await fetch("/api/web/knowledge/search-settings", { credentials: "same-origin" });
+  const payload = await readJson<{ settings: KnowledgeSearchSettings; display_message?: string }>(
+    response,
+    "Не удалось загрузить настройки поиска",
+  );
+  return payload.settings;
+}
+
+export async function saveKnowledgeSearchSettings(payload: Partial<KnowledgeSearchSettings>) {
+  const response = await fetch("/api/web/knowledge/search-settings", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ settings: KnowledgeSearchSettings; display_message?: string }>(
+    response,
+    "Не удалось сохранить настройки поиска",
+  );
 }

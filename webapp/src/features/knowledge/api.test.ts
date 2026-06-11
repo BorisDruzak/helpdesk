@@ -8,6 +8,7 @@ import {
   fetchKnowledgeAiModelProfiles,
   fetchKnowledgeAiPolicies,
   fetchKnowledgeAiProviders,
+  fetchKnowledgeSearchSettings,
   fetchKnowledgeQuality,
   fetchKnowledgeReviewQueue,
   fetchKnowledgeRolloutPolicies,
@@ -15,6 +16,7 @@ import {
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
   saveKnowledgeAiProvider,
+  saveKnowledgeSearchSettings,
   saveKnowledgeRolloutPolicy,
   submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
@@ -99,6 +101,79 @@ describe("knowledge operations api", () => {
       "/api/web/knowledge/rollout-policies",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
+  });
+});
+
+describe("knowledge search settings api", () => {
+  it("loads and saves AI-off search settings through Phase 2 endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          display_message: "Настройки поиска загружены",
+          settings: {
+            settings_id: "global",
+            search_mode: "keyword_only",
+            effective_mode: "keyword_only",
+            ai_enabled: false,
+            keyword_enabled: true,
+            full_text_enabled: false,
+            vector_enabled: false,
+            rerank_enabled: false,
+            ai_query_rewrite_enabled: false,
+            rag_answer_enabled: false,
+            max_results: 10,
+            snippet_length: 180,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          display_message: "Настройки поиска сохранены",
+          settings: {
+            settings_id: "global",
+            search_mode: "hybrid_no_ai",
+            effective_mode: "hybrid_no_ai",
+            ai_enabled: false,
+            keyword_enabled: true,
+            full_text_enabled: true,
+            vector_enabled: false,
+            max_results: 8,
+            snippet_length: 220,
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeSearchSettings()).resolves.toMatchObject({
+      settings_id: "global",
+      search_mode: "keyword_only",
+      ai_enabled: false,
+    });
+    await expect(
+      saveKnowledgeSearchSettings({
+        search_mode: "hybrid_no_ai",
+        keyword_enabled: true,
+        full_text_enabled: true,
+        vector_enabled: false,
+        max_results: 8,
+        snippet_length: 220,
+      }),
+    ).resolves.toMatchObject({ display_message: "Настройки поиска сохранены" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/search-settings", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/search-settings",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+      search_mode: "hybrid_no_ai",
+      vector_enabled: false,
+      max_results: 8,
+    });
   });
 });
 

@@ -540,7 +540,9 @@ Phase 2 current state, 2026-06-12:
 * `POST /api/web/knowledge/search` is available for authenticated admin/support/auditor web consumers and reuses the existing ACL-filtered keyword search path.
 * Existing `POST /api/knowledge/search` remains backward-compatible and now also returns `search_mode`, `effective_mode`, `ai_used` and a Russian `display_message`.
 * Search still runs without AI providers or embeddings; unknown analytics `surface` values are normalized to `search` to avoid CHECK-constraint 500s.
-* Next Phase 2 follow-up is the React `/app/admin/knowledge/search-settings` page with Russian controls and browser evidence.
+* React `/app/admin/knowledge/search-settings` is registered in the admin Knowledge domain and renders Russian-first controls for search mode, keyword/full-text/vector/rerank/rewrite/RAG toggles, weights, `max_results` and `snippet_length`.
+* Focused frontend tests cover typed search-settings API, navigation, Russian visible labels, AI-off state and mojibake checks.
+* Next Phase 2 follow-up is browser/live validation against the deployed admin shell and then the search preview panel.
 
 Backend service changes:
 
