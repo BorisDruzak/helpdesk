@@ -2718,6 +2718,14 @@ Phase 11 support ticket actions slice, 2026-06-12:
   * RED backend tests failed before implementation because ticket link/support feedback did not emit Observer rows.
   * GREEN backend tests: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ticket_knowledge_links_compat.py server/tests/test_knowledge_feedback.py -q --tb=short` passed with 6 tests.
   * GREEN frontend tests: `pnpm --dir webapp test -- src/features/knowledge/support-workspace-page.test.tsx src/features/knowledge/api.test.ts` passed with 2 files / 24 tests.
+* Remote/live validation, 2026-06-12:
+
+  * First deployed commit `9a49a849` with quick release flow; smoke `/api/health` returned 200, and browser validation caught a real cookie-auth mismatch: direct browser `POST /api/tickets/{ticket_id}/kb_links` returned 401.
+  * Follow-up commit `8f81c251` added web-session alias `POST /api/web/support/tickets/{ticket_id}/kb_links`; quick release flow deployed it and smoke `/api/health` returned 200 on attempt 2.
+  * Browser route validated: `https://192.168.100.17:9443/app/knowledge/articles/a3c566b0-7d36-4879-831d-a38a5e9e86bf?ticket_id=9ec63696-5109-409f-9452-5dd403970100`.
+  * Same-origin browser POSTs returned 200 for link-to-ticket, `support_used` and `weak_article_reported`.
+  * Live audit confirmed events `knowledge.support.ticket_linked`, `knowledge.support.article_used` and `knowledge.support.weak_article_reported` with source `knowledge_support`; unsafe probe strings `secret-token` and `password=hidden` were absent from audit output.
+  * Evidence screenshot: `knowledge-support-ticket-actions-8f81c251.png`.
 
 Exit criteria:
 
