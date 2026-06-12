@@ -93,6 +93,76 @@ export type KnowledgeMetricsSummary = {
   deflection_rate?: number;
 };
 
+export type KnowledgeOpsMetric = {
+  total: number;
+  [key: string]: unknown;
+};
+
+export type KnowledgeOpsSummary = {
+  status: "ok" | "degraded" | string;
+  generated_at: string;
+  coverage: {
+    spaces: KnowledgeOpsMetric;
+    published_articles: KnowledgeOpsMetric;
+    requester_safe: KnowledgeOpsMetric;
+    support_runbooks: KnowledgeOpsMetric;
+    services_without_kb: KnowledgeOpsMetric;
+  };
+  quality: {
+    average_score: number;
+    low_quality_count: KnowledgeOpsMetric;
+    stale_review_count: KnowledgeOpsMetric;
+    missing_owner_reviewer_count: KnowledgeOpsMetric;
+    unsafe_requester_safe_blockers: KnowledgeOpsMetric;
+  };
+  search: {
+    zero_result_searches: KnowledgeOpsMetric;
+    top_queries: Array<{ query: string; count: number }>;
+    fallback_count: KnowledgeOpsMetric;
+    ai_disabled_count: KnowledgeOpsMetric;
+    vector_usage_count: KnowledgeOpsMetric;
+    rerank_usage_count: KnowledgeOpsMetric;
+  };
+  rag: {
+    answer_count: KnowledgeOpsMetric;
+    no_answer_count: KnowledgeOpsMetric;
+    provider_failures: KnowledgeOpsMetric;
+    citation_validation_failures: KnowledgeOpsMetric;
+  };
+  indexing: {
+    queued: KnowledgeOpsMetric;
+    failed: KnowledgeOpsMetric;
+    stale_embeddings: KnowledgeOpsMetric;
+    disabled: KnowledgeOpsMetric;
+    vector_enabled?: boolean;
+    embedding_model?: string | null;
+  };
+  ai: {
+    provider_health: { status: string; failed_count?: number; ok_count?: number };
+    model_profile_status: { active_count: number; disabled_count: number };
+    policy_blocks: KnowledgeOpsMetric;
+  };
+  graph: {
+    orphan_nodes: KnowledgeOpsMetric;
+    pending_proposals: KnowledgeOpsMetric;
+    contradiction_duplicate_findings: KnowledgeOpsMetric;
+  };
+  review: {
+    assigned_open: KnowledgeOpsMetric;
+    overdue: KnowledgeOpsMetric;
+  };
+  observer: {
+    degradations: Array<{
+      code: string;
+      severity: string;
+      source: string;
+      count: number;
+      status: string;
+      message: string;
+    }>;
+  };
+};
+
 export type KnowledgeContentPack = {
   pack_id: string;
   code: string;
@@ -700,6 +770,12 @@ export async function publishKnowledgeItem(
 export async function fetchKnowledgeMetricsSummary(): Promise<KnowledgeMetricsSummary> {
   const response = await fetch("/api/web/knowledge/metrics/summary", { credentials: "same-origin" });
   const payload = await readJson<{ summary: KnowledgeMetricsSummary }>(response, "Не удалось загрузить метрики знаний");
+  return payload.summary;
+}
+
+export async function fetchKnowledgeOpsSummary(): Promise<KnowledgeOpsSummary> {
+  const response = await fetch("/api/web/knowledge/ops/summary", { credentials: "same-origin" });
+  const payload = await readJson<{ summary: KnowledgeOpsSummary }>(response, "Не удалось загрузить Knowledge Ops summary");
   return payload.summary;
 }
 

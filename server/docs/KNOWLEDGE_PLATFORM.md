@@ -98,6 +98,7 @@ P2.2 makes the platform operable day-to-day without replacing the P2/P2.1 contra
 - Gap detection is persisted through `GET /api/web/knowledge/gap-findings`, `POST /api/web/knowledge/gaps/recompute` and accept/dismiss/create-draft actions. It scans published public Service Catalog offerings, ticket counts and knowledge feedback, then reports missing requester articles, missing support runbooks, high-volume no-KB and high-not-helpful gaps.
 - Rollout policy management is exposed by `GET|POST /api/web/knowledge/rollout-policies`, plus aliases `GET /api/web/knowledge/rollout`, `POST /api/web/knowledge/rollout/save` and `POST /api/web/knowledge/rollout/effective-preview`. Requester/agent suggestion calls honor the effective policy before search; support/admin/auditor and `support_workspace` remain visible so operations can continue during requester rollout pauses.
 - Search analytics are recorded by `KnowledgeSearchAnalyticsService` during knowledge search with hashed/redacted query text; raw requester identifiers, device identifiers and raw custom fields are not stored.
+- Phase 12 adds `KnowledgeOpsSummaryService` and `GET /api/web/knowledge/ops/summary` as the first Knowledge Operations Center snapshot. It aggregates existing coverage, quality, search/RAG, indexing, AI, graph, review and Observer v2 degradation signals without adding new tables. The endpoint is the dashboard contract for `/app/admin/knowledge`; deeper event emission and richer Observer mappings remain later Phase 12 slices.
 
 Operational detail and rollback notes live in [KNOWLEDGE_OPERATIONS.md](KNOWLEDGE_OPERATIONS.md).
 
@@ -151,6 +152,7 @@ Admin/support management:
 - `POST /api/web/knowledge/import/preview`
 - `POST /api/web/knowledge/import/create-drafts`
 - `GET|POST /api/web/knowledge/ingestion/jobs`
+- `GET /api/web/knowledge/ops/summary`
 - `GET /api/web/knowledge/metrics/summary`
 - `GET /api/web/knowledge/content-packs`
 - `POST /api/web/knowledge/content-packs/apply`
@@ -180,7 +182,7 @@ Ticket compatibility:
 
 ## UI
 
-- `/app/admin/knowledge`: governance/editor route with spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup for the selected immutable version, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview context.
+- `/app/admin/knowledge`: Knowledge Operations Center plus governance/editor route. The top dashboard reads `GET /api/web/knowledge/ops/summary` for coverage, quality, search/RAG, indexing, AI, graph, review and Observer-backed degradation cards; existing spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview controls remain below it.
 - `/app/admin/knowledge/studio`: dedicated Knowledge Authoring Studio route with draft/article browser, new draft creation, metadata editor, Markdown editor, template insertion, requester-safe preview, selected-version comparison, rollback by publishing an older immutable version, publish checklist, review lifecycle actions, AI-disabled state and embedded retrieval segment markup panel.
 - `/app/admin/knowledge/graph`: dedicated Visual Graph Studio route with Russian-first node search, SVG neighborhood canvas, node inspector, manual node creation and edge creation over existing graph node/edge APIs. Persisted layouts and AI proposal review remain a later Phase 9 backend slice.
 - `/app/admin/knowledge/import`: dedicated Import/Ingestion wizard for text, markdown and HTML preview plus AI-off review draft creation through the import preview/create-drafts APIs. Rich document parsers, indexing queueing and AI enrichment proposal review remain later Phase 10 slices.

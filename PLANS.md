@@ -2408,6 +2408,33 @@ Live checks:
 * Confirm dashboard and observer show states.
 * Capture screenshots.
 
+Phase 12 first slice, 2026-06-12:
+
+* Added `KnowledgeOpsSummaryService` as the first backend aggregation point for `/app/admin/knowledge` Operations Center.
+* Added authenticated `GET /api/web/knowledge/ops/summary` for admin/support/auditor roles.
+* First summary payload covers:
+
+  * coverage: spaces, published articles, requester-safe items, support runbooks, Service Catalog offerings without requester-safe KB;
+  * quality: average score, low-quality count, stale review, missing owner/reviewer, unsafe requester-safe blockers;
+  * search/RAG: zero-result searches, top redacted queries, fallback count, AI disabled count, vector/rerank usage, answer/no-answer/provider/citation failure counters;
+  * indexing: queued/failed jobs, stale/disabled embeddings and vector/model status;
+  * AI, graph, review and Observer-backed active knowledge degradations.
+
+* Added `KnowledgeOpsDashboardPanel` above the existing `/app/admin/knowledge` governance controls.
+* TDD status:
+
+  * RED `server/tests/test_knowledge_ops_summary.py` failed on missing `knowledge.ops_summary_service`.
+  * RED `webapp/src/features/knowledge/ops-dashboard-panel.test.tsx` failed on missing `./ops-dashboard-panel`.
+  * GREEN focused tests now cover backend aggregation/API and frontend dashboard/degraded state rendering.
+
+* Local verification:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ops_summary.py -q --tb=short` passed, 2 tests.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ops_summary.py server/tests/test_knowledge_api.py::test_knowledge_api_admin_crud_and_requester_safe_suggest -q --tb=short` passed, 3 tests.
+  * `pnpm --dir webapp test -- src/features/knowledge/ops-dashboard-panel.test.tsx` passed, 1 test.
+  * `pnpm --dir webapp test -- src/features/knowledge/ops-dashboard-panel.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` passed, 28 tests.
+  * `pnpm --dir webapp build` passed.
+
 Exit criteria:
 
 * Knowledge health is observable.

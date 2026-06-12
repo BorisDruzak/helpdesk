@@ -19,6 +19,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
 import { ArticleSegmentationPanel } from "./article-segmentation-panel";
+import { KnowledgeOpsDashboardPanel } from "./ops-dashboard-panel";
 import {
   createKnowledgeItem,
   createKnowledgeVersion,
@@ -366,6 +367,8 @@ export function KnowledgeAdminPanel({ mode = "admin" }: KnowledgeAdminPanelProps
         title="Платформа знаний"
         description="Пространства, универсальные knowledge items, версии, ACL, публикация и deflection-метрики."
       />
+
+      {canManage ? <KnowledgeOpsDashboardPanel /> : null}
 
       <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <Card>

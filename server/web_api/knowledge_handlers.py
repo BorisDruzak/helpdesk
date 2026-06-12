@@ -24,6 +24,7 @@ from knowledge.feedback_service import KnowledgeFeedbackService
 from knowledge.graph_service import KnowledgeGraphService
 from knowledge.ingestion_service import KnowledgeIngestionService
 from knowledge.metrics_service import KnowledgeMetricsService
+from knowledge.ops_summary_service import KnowledgeOpsSummaryService
 from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsService
 from knowledge.portal_service import KnowledgePortalService
 from knowledge.retrieval_service import KnowledgeRetrievalService
@@ -1098,6 +1099,14 @@ async def handle_web_knowledge_metrics_summary(request: web.Request) -> web.Resp
     _actor_id, role = _actor(request)
     async with get_session() as session:
         summary = await KnowledgeMetricsService(session).summary(actor_role=role)
+    return web.json_response({"status": "ok", "summary": summary})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_ops_summary(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    async with get_session() as session:
+        summary = await KnowledgeOpsSummaryService(session).summary(actor_role=role)
     return web.json_response({"status": "ok", "summary": summary})
 
 
