@@ -2148,6 +2148,25 @@ Phase 10 first slice, 2026-06-12:
   * `pnpm --dir webapp test -- src/features/knowledge/import-wizard.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` -> 3 files, 28 tests passed.
   * `pnpm --dir webapp build` -> passed.
 
+Phase 10 live validation, 2026-06-12:
+
+* Commit `e5303524` was deployed to `https://192.168.100.17:9443` with quick release gate, remote migrations and webapp bundle upload.
+* Remote smoke passed: `GET /api/health` -> 200.
+* Browser route validated: `https://192.168.100.17:9443/app/admin/knowledge/import`.
+* Live flow completed:
+
+  * web session login -> 200;
+  * import preview `POST /api/web/knowledge/import/preview` -> 200;
+  * create draft `POST /api/web/knowledge/import/create-drafts` -> 200;
+  * created live draft item `7041042b-3a27-45ee-b142-006c7b17a7ea`, slug `codex-import-1781238442868`;
+  * AI enrichment status was `disabled`;
+  * browser console warnings/errors, failed requests and HTTP errors were empty.
+
+* Evidence:
+
+  * report: `artifacts/browser_live_validation/knowledge-import-e5303524-1781238442868/report.json`;
+  * screenshot: `artifacts/browser_live_validation/knowledge-import-e5303524-1781238442868/knowledge-import-live.png`.
+
 Phase 10 remaining work:
 
 * Add PDF/DOCX/URL/Git parsers and safe fetch/upload policy.
