@@ -2702,7 +2702,7 @@ Phase 11 support ticket actions slice, 2026-06-12:
 * `/app/knowledge` and `/app/knowledge/articles/:itemId` now preserve optional `ticket_id` query context and show a ticket context banner when present.
 * The selected support article card now enables:
 
-  * `Link to ticket` through existing compatibility endpoint `POST /api/tickets/{ticket_id}/kb_links` with `source=knowledge_support_workspace`;
+  * `Link to ticket` through web-session alias `POST /api/web/support/tickets/{ticket_id}/kb_links`, backed by the existing compatibility KB link handler, with `source=knowledge_support_workspace`;
   * `Mark support used` through existing `POST /api/knowledge/feedback` with `event_type=support_used` and `surface=support_workspace`;
   * `Report weak article` through existing `POST /api/knowledge/feedback` with `event_type=not_helpful`, `result=weak_article_reported` and `surface=support_workspace`.
 

@@ -215,7 +215,7 @@ describe("KnowledgeSupportWorkspacePage", () => {
           }),
         );
       }
-      if (url === "/api/tickets/ticket-1/kb_links" && init?.method === "POST") {
+      if (url === "/api/web/support/tickets/ticket-1/kb_links" && init?.method === "POST") {
         return Promise.resolve(jsonResponse({ status: "ok", kb_link: { id: 42, article_ref: "item-requester" } }));
       }
       if (url === "/api/knowledge/feedback" && init?.method === "POST") {
@@ -233,7 +233,7 @@ describe("KnowledgeSupportWorkspacePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Связать с тикетом" }));
     await waitFor(() => expect(screen.getByText("Статья связана с тикетом.")).toBeInTheDocument());
-    expect(JSON.parse(fetchMock.mock.calls.find((call) => String(call[0]) === "/api/tickets/ticket-1/kb_links")?.[1]?.body as string)).toMatchObject({
+    expect(JSON.parse(fetchMock.mock.calls.find((call) => String(call[0]) === "/api/web/support/tickets/ticket-1/kb_links")?.[1]?.body as string)).toMatchObject({
       article_ref: "item-requester",
       title: "VPN requester guide",
       source: "knowledge_support_workspace",

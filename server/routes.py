@@ -845,6 +845,7 @@ def setup_routes(app: web.Application) -> None:
         web.delete('/api/web/support/queue/saved-views/{view_id}', handle_web_support_queue_saved_view_delete),
         web.get('/api/web/support/tickets/{ticket_id}/workspace', handle_web_support_ticket_workspace),
         web.get('/api/web/support/tickets/{ticket_id}/knowledge-suggestions', handle_web_support_ticket_knowledge_suggestions),
+        web.post('/api/web/support/tickets/{ticket_id}/kb_links', handle_ticket_kb_links_post),
         web.get('/api/web/support/tickets/{ticket_id}/timeline', handle_web_support_ticket_timeline),
         web.get('/api/web/support/tickets/{ticket_id}', handle_web_support_ticket_detail),
         web.get('/api/web/support/tickets/{ticket_id}/passport', handle_web_support_ticket_passport),

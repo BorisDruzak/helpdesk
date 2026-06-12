@@ -64,7 +64,7 @@ async def test_support_workspace_ticket_link_emits_observer_event(test_client, t
         await session.commit()
 
     post_resp = await test_client.post(
-        "/api/tickets/ticket-kb-support-observer/kb_links",
+        "/api/web/support/tickets/ticket-kb-support-observer/kb_links",
         headers=_support_headers(),
         json={
             "article_ref": "knowledge-item-1",

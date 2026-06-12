@@ -78,7 +78,7 @@ P2.2.1 rollout decisions are returned with suggestion responses and control whet
 
 ## Support Workspace
 
-The support workspace knowledge panel keeps the existing `/api/web/support/tickets/{ticket_id}/knowledge-suggestions` shape while merging P2 platform suggestions. Existing `ticket_kb_links` endpoints and `kb_linked` / `kb_unlinked` ticket events remain compatible. The dedicated `/app/knowledge` workspace can also accept `ticket_id` query context and use the compatibility `POST /api/tickets/{ticket_id}/kb_links` route with `source=knowledge_support_workspace` to emit the redacted Observer event `knowledge.support.ticket_linked`.
+The support workspace knowledge panel keeps the existing `/api/web/support/tickets/{ticket_id}/knowledge-suggestions` shape while merging P2 platform suggestions. Existing `ticket_kb_links` endpoints and `kb_linked` / `kb_unlinked` ticket events remain compatible. The dedicated `/app/knowledge` workspace can also accept `ticket_id` query context and use web-session alias `POST /api/web/support/tickets/{ticket_id}/kb_links`, backed by the existing compatibility KB link handler, with `source=knowledge_support_workspace` to emit the redacted Observer event `knowledge.support.ticket_linked`.
 
 Support feedback from `/app/knowledge` reuses `POST /api/knowledge/feedback`: `event_type=support_used` and `surface=support_workspace` emits `knowledge.support.article_used`, while `event_type=not_helpful` plus `result=weak_article_reported` emits `knowledge.support.weak_article_reported`. Runtime audit details carry only safe item/version/ticket/link ids and action metadata, not article bodies or user-entered secret-bearing metadata.
 
@@ -187,6 +187,7 @@ Admin/support management:
 Ticket compatibility:
 
 - `GET|POST|DELETE /api/tickets/{ticket_id}/kb_links`
+- `POST /api/web/support/tickets/{ticket_id}/kb_links`
 - `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`
 - `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft`
 

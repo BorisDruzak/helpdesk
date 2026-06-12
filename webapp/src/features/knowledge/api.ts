@@ -839,7 +839,7 @@ export async function linkKnowledgeArticleToTicket(
   ticketId: string,
   payload: { article_ref: string; title?: string; source?: string },
 ): Promise<{ kb_link: Record<string, unknown> }> {
-  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/kb_links`, {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/kb_links`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
