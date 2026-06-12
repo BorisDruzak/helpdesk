@@ -1305,6 +1305,61 @@ class KnowledgeArticleSubscription(Base):
     )
 
 
+class KnowledgeArticleEditorEvent(Base):
+    """Audit-grade workflow event emitted by the authoring studio."""
+
+    __tablename__ = "knowledge_article_editor_events"
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="SET NULL"), nullable=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_surface: Mapped[str] = mapped_column(String(40), nullable=False, server_default="authoring_studio")
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "actor_role IS NULL OR actor_role IN ('public', 'requester', 'user', 'agent', 'support', 'admin', 'auditor', 'security')",
+            name="ck_knowledge_editor_events_actor_role",
+        ),
+        sa.CheckConstraint(
+            "event_type IN ('draft_created', 'version_created', 'published', 'rollback_published', 'review_submitted', "
+            "'changes_requested', 'approved', 'commented', 'archived', 'retired', 'metadata_changed', 'review_action')",
+            name="ck_knowledge_editor_events_type",
+        ),
+        Index("ix_knowledge_editor_events_item_created", "item_id", "created_at"),
+        Index("ix_knowledge_editor_events_version", "version_id", "created_at"),
+    )
+
+
+class KnowledgeVersionDiffCache(Base):
+    """Cached line-level diff summary for immutable knowledge versions."""
+
+    __tablename__ = "knowledge_version_diff_cache"
+
+    diff_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    from_version_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="SET NULL"), nullable=True)
+    to_version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="CASCADE"), nullable=False)
+    added_lines: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    removed_lines: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    changed_lines: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    summary_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("to_version_id", name="uq_knowledge_version_diff_cache_to_version"),
+        Index("ix_knowledge_version_diff_cache_item_created", "item_id", "created_at"),
+        Index("ix_knowledge_version_diff_cache_to_version", "to_version_id"),
+    )
+
+
 class KnowledgeIngestionJob(Base):
     """Document/source ingestion job. P2 creates drafts and never auto-publishes."""
 

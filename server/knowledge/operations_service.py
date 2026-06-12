@@ -124,6 +124,8 @@ class KnowledgeOperationsService:
             item.status = "in_review"
         elif action == "approve":
             metadata["review_required"] = False
+        elif action == "comment":
+            pass
         elif action == "request_changes":
             item.status = "draft"
             metadata["review_required"] = True

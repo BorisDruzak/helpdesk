@@ -1877,6 +1877,51 @@ Phase 8 hardened live/browser result, deployed commit `5b8930e4`, 2026-06-12:
 * Verified rollback control visibility on the deployed route; no production rollback was executed against an existing published article during this cleanup-safe browser run.
 * Browser console messages: none. Failed browser requests during the Studio run: none. All observed Knowledge API calls returned `200`.
 
+Phase 8 editor-history hardening slice, 2026-06-12:
+
+* Added migration `115` for persisted Authoring Studio audit history:
+
+  * `knowledge_article_editor_events` records draft creation, version creation, publish/rollback and review lifecycle actions.
+  * `knowledge_version_diff_cache` stores safe immutable-version diff summaries with added/removed/changed line counts, content hash and change summary.
+
+* Added `KnowledgeEditorHistoryService` and authenticated `GET /api/web/knowledge/items/{item_id_or_slug}/editor-history` for admin/support/auditor roles.
+* Existing Studio-backed flows now write editor history:
+
+  * `POST /api/web/knowledge/items` writes `draft_created`;
+  * `POST /api/web/knowledge/items/{item_id_or_slug}/versions` writes `version_created` and diff cache;
+  * `POST /api/web/knowledge/items/{item_id_or_slug}/publish` writes `published` or `rollback_published`;
+  * `POST /api/web/knowledge/items/{item_id_or_slug}/review-action` writes `review_submitted`, `changes_requested`, `archived`, `retired` or review fallback events.
+
+* `/app/admin/knowledge/studio` now loads and renders `История редактора` with latest workflow events and `Diff cache: +N / -N`; the history query is invalidated after draft/version/publish/review actions.
+* Safety contract: editor-history responses expose event metadata and diff counts only, not article body, raw metadata, source refs, ticket/device fields or secret material.
+* TDD status:
+
+  * RED backend `server/tests/test_knowledge_api.py::test_knowledge_authoring_studio_records_editor_history` failed on missing `/editor-history` route before implementation.
+  * RED frontend expectation was added to `webapp/src/pages/admin/knowledge-studio-page.test.tsx` for `История редактора`, `version_created`, `Publish from Studio` and `Diff cache: +2 / -1`.
+  * GREEN focused backend now passes, 1 test.
+  * GREEN focused Studio test now passes, 3 tests.
+
+* Phase 8 product hardening status after this slice:
+
+  * Review approve/comment workflow is implemented through `approve` and `comment` review-action buttons plus persisted `approved` / `commented` editor history events.
+  * Richer structured block editing is implemented as Markdown block insertion controls for callout, table, code block and checklist.
+  * Optional attachment tables/UI remain deferred until an attachment-backed authoring requirement is selected; this is no longer a blocker for Phase 8 because the plan marked attachments as optional.
+
+Phase 8 completion result, 2026-06-12:
+
+* Phase 8 is now complete for the planned non-optional Authoring Studio scope.
+* Additional TDD status:
+
+  * RED backend for review comment failed with `400 unsupported review action`; GREEN after `KnowledgeOperationsService.review_action()` accepted `comment` without status mutation.
+  * RED frontend for `Добавить комментарий` and `Одобрить` failed on missing buttons; GREEN after Studio added both actions.
+  * RED frontend for structured blocks failed on missing `Вставить callout`; GREEN after Studio added callout/table/code/checklist insertion controls.
+
+* Additional focused verification:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_api.py::test_knowledge_authoring_studio_records_editor_history -q --tb=short` -> passed, 1 test.
+  * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx -t "runs review comment"` -> passed, 1 selected test.
+  * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx -t "structured markdown"` -> passed, 1 selected test.
+
 ---
 
 ## Phase 9 — Visual Knowledge Graph Studio

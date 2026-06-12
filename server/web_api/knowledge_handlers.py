@@ -19,6 +19,7 @@ from knowledge.contracts import (
 )
 from knowledge.ask_service import KnowledgeAskService
 from knowledge.content_pack_service import KnowledgeContentPackService
+from knowledge.editor_history_service import KnowledgeEditorHistoryService
 from knowledge.embedding_service import KnowledgeEmbeddingService
 from knowledge.feedback_service import KnowledgeFeedbackService
 from knowledge.graph_service import KnowledgeGraphService
@@ -106,6 +107,7 @@ async def handle_web_knowledge_items(request: web.Request) -> web.Response:
                 for binding in payload.get("bindings") or []:
                     if isinstance(binding, dict):
                         bindings.append(await repo.add_binding(item["item_id"], binding, actor_id=actor_id, actor_role=role))
+                await KnowledgeEditorHistoryService(session).record_draft_created(item, actor_id=actor_id, actor_role=role)
                 await session.commit()
             return web.json_response({"status": "ok", "item": item, "bindings": bindings})
         except ValueError as exc:
@@ -142,7 +144,17 @@ async def handle_web_knowledge_item_versions(request: web.Request) -> web.Respon
             if role not in {"admin", "support"}:
                 return web.json_response({"status": "error", "error": "forbidden"}, status=403)
             payload = await _json_payload(request)
+            before_versions = await repo.list_versions(item_id, actor_role=role)
+            base_version = before_versions[0] if before_versions else None
             version = await repo.create_version(item_id, payload, actor_id=actor_id, actor_role=role)
+            await KnowledgeEditorHistoryService(session).record_version_created(
+                item_id=version["item_id"],
+                version=version,
+                base_version=base_version,
+                actor_id=actor_id,
+                actor_role=role,
+                change_summary=payload.get("change_summary"),
+            )
             await session.commit()
             return web.json_response({"status": "ok", "version": version})
     except ValueError as exc:
@@ -156,12 +168,23 @@ async def handle_web_knowledge_item_publish(request: web.Request) -> web.Respons
     payload = await _json_payload(request)
     try:
         async with get_session() as session:
-            item = await KnowledgeRepo(session).publish_item(
+            repo = KnowledgeRepo(session)
+            before_item = await repo.get_item(item_id, actor_role=role)
+            previous_version_id = before_item.get("current_version_id")
+            item = await repo.publish_item(
                 item_id,
                 payload.get("version_id"),
                 actor_id=actor_id,
                 actor_role=role,
                 acknowledge_stale_passport=bool(payload.get("acknowledge_stale_passport")),
+                review_note=payload.get("review_note"),
+            )
+            await KnowledgeEditorHistoryService(session).record_publish(
+                item_id=item["item_id"],
+                version_id=payload.get("version_id"),
+                previous_version_id=previous_version_id,
+                actor_id=actor_id,
+                actor_role=role,
                 review_note=payload.get("review_note"),
             )
             await session.commit()
@@ -170,6 +193,22 @@ async def handle_web_knowledge_item_publish(request: web.Request) -> web.Respons
         return web.json_response({"status": "error", "error": "publish_blocked", "blockers": exc.blockers}, status=400)
     except ValueError as exc:
         return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_editor_history(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        limit = int(request.query.get("limit") or "20")
+    except ValueError:
+        limit = 20
+    try:
+        async with get_session() as session:
+            history = await KnowledgeEditorHistoryService(session).history(item_id, actor_role=role, limit=limit)
+        return web.json_response({"status": "ok", **history})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
 
 
 async def handle_knowledge_suggest(request: web.Request) -> web.Response:
@@ -1264,15 +1303,23 @@ async def handle_web_knowledge_review_task_detail(request: web.Request) -> web.R
 
 @require_auth("admin", "support")
 async def handle_web_knowledge_review_action(request: web.Request) -> web.Response:
-    actor_id, _role = _actor(request)
+    actor_id, role = _actor(request)
     item_id = str(request.match_info.get("item_id_or_slug") or "")
     payload = await _json_payload(request)
     try:
         async with get_session() as session:
+            action = str(payload.get("action") or "")
             result = await KnowledgeOperationsService(session).review_action(
                 item_id,
-                action=str(payload.get("action") or ""),
+                action=action,
                 actor_id=actor_id,
+                note=payload.get("note"),
+            )
+            await KnowledgeEditorHistoryService(session).record_review_action(
+                item_id=result["item"]["item_id"],
+                action=action,
+                actor_id=actor_id,
+                actor_role=role,
                 note=payload.get("note"),
             )
             await session.commit()

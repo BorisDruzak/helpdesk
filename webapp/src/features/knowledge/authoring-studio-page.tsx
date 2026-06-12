@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, BookOpenCheck, FileText, GitCompare, PlusCircle, RotateCcw, Send, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
+import { Archive, BookOpenCheck, CheckCircle2, FileText, GitCompare, MessageSquare, PlusCircle, RotateCcw, Send, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -10,6 +10,7 @@ import { ArticleSegmentationPanel } from "./article-segmentation-panel";
 import {
   createKnowledgeItem,
   createKnowledgeVersion,
+  fetchKnowledgeEditorHistory,
   fetchKnowledgeItemVersions,
   fetchKnowledgeItems,
   fetchKnowledgeSpaces,
@@ -185,6 +186,13 @@ export function KnowledgeAuthoringStudioPage() {
   const versions = versionsQuery.data ?? [];
   const latestVersion = versions[0] ?? null;
   const selectedVersion = versions.find((version) => version.version_id === selectedVersionId) ?? latestVersion;
+  const editorHistoryQuery = useQuery({
+    queryKey: ["knowledge-editor-history", selectedItem?.item_id],
+    queryFn: () => fetchKnowledgeEditorHistory(selectedItem?.item_id ?? ""),
+    enabled: Boolean(selectedItem?.item_id),
+  });
+  const editorHistory = editorHistoryQuery.data;
+  const latestDiffCache = editorHistory?.diff_cache?.[0] ?? null;
 
   useEffect(() => {
     if (!selectedItem?.item_id) {
@@ -222,6 +230,7 @@ export function KnowledgeAuthoringStudioPage() {
       setSelectedItemId(result.item.item_id);
       setNewDraft((current) => ({ ...current, slug: "", summary: "", tags: "", title: "" }));
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", result.item.item_id] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
     },
   });
@@ -239,6 +248,7 @@ export function KnowledgeAuthoringStudioPage() {
       setSelectedVersionId(result.version.version_id);
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-item-versions", selectedItem?.item_id] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", selectedItem?.item_id] });
     },
   });
 
@@ -250,6 +260,7 @@ export function KnowledgeAuthoringStudioPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-item-versions", selectedItem?.item_id] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", selectedItem?.item_id] });
     },
   });
 
@@ -264,6 +275,7 @@ export function KnowledgeAuthoringStudioPage() {
         setSelectedItemId("");
       }
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", selectedItem?.item_id] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });
     },
@@ -278,6 +290,10 @@ export function KnowledgeAuthoringStudioPage() {
 
   function insertTemplate(sections: string[]) {
     const block = sections.map((section) => `## ${section}\n\n`).join("\n");
+    setDraft((current) => ({ ...current, body: `${current.body.trim()}\n\n${block}`.trim() }));
+  }
+
+  function insertMarkdownBlock(block: string) {
     setDraft((current) => ({ ...current, body: `${current.body.trim()}\n\n${block}`.trim() }));
   }
 
@@ -542,6 +558,14 @@ export function KnowledgeAuthoringStudioPage() {
                   <Send className="h-4 w-4" />
                   Отправить на ревью
                 </Button>
+                <Button disabled={!selectedItem || reviewActionMutation.isPending} onClick={() => reviewActionMutation.mutate("comment")} variant="outline">
+                  <MessageSquare className="h-4 w-4" />
+                  Добавить комментарий
+                </Button>
+                <Button disabled={!selectedItem || reviewActionMutation.isPending} onClick={() => reviewActionMutation.mutate("approve")} variant="outline">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Одобрить
+                </Button>
                 <Button disabled={!selectedItem || reviewActionMutation.isPending} onClick={() => reviewActionMutation.mutate("request_changes")} variant="outline">
                   <Undo2 className="h-4 w-4" />
                   Запросить правки
@@ -570,6 +594,22 @@ export function KnowledgeAuthoringStudioPage() {
                       Вставить шаблон: {template.title}
                     </Button>
                   ))}
+                  <Button variant="outline" onClick={() => insertMarkdownBlock("> [!NOTE]\n> Важное уточнение для читателя.")}>
+                    <PlusCircle className="h-4 w-4" />
+                    Вставить callout
+                  </Button>
+                  <Button variant="outline" onClick={() => insertMarkdownBlock("| Шаг | Действие |\n| --- | --- |\n| 1 | Описать проверку |")}>
+                    <PlusCircle className="h-4 w-4" />
+                    Вставить таблицу
+                  </Button>
+                  <Button variant="outline" onClick={() => insertMarkdownBlock("```text\nКоманда или лог\n```")}>
+                    <PlusCircle className="h-4 w-4" />
+                    Вставить код
+                  </Button>
+                  <Button variant="outline" onClick={() => insertMarkdownBlock("- [ ] Проверить результат\n- [ ] Обновить статью после проверки")}>
+                    <PlusCircle className="h-4 w-4" />
+                    Вставить checklist
+                  </Button>
                 </div>
                 <label className="text-sm font-medium">
                   Markdown
@@ -610,6 +650,35 @@ export function KnowledgeAuthoringStudioPage() {
                 <CardContent className="space-y-3 text-sm">
                   <p className="font-medium text-emerald-700">Добавлено: {currentDiff.added.length}</p>
                   <p className="font-medium text-red-700">Удалено: {currentDiff.removed.length}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>История редактора</CardTitle>
+                  <CardDescription>События Studio и сохраненный diff cache для выбранной статьи.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {latestDiffCache ? (
+                    <p className="font-medium text-slate-700">
+                      Diff cache: +{latestDiffCache.added_lines} / -{latestDiffCache.removed_lines}
+                    </p>
+                  ) : (
+                    <p className="text-slate-500">Diff cache еще не создан.</p>
+                  )}
+                  <div className="space-y-2">
+                    {(editorHistory?.events ?? []).slice(0, 6).map((event) => (
+                      <div key={event.event_id} className="rounded-md border border-slate-200 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge>{event.event_type}</Badge>
+                          {event.actor_id ? <span className="text-xs text-slate-500">{event.actor_id}</span> : null}
+                        </div>
+                        {event.summary ? <p className="mt-1 text-slate-700">{event.summary}</p> : null}
+                      </div>
+                    ))}
+                    {!editorHistoryQuery.isLoading && !(editorHistory?.events ?? []).length ? (
+                      <p className="text-slate-500">История появится после создания версии, review или публикации.</p>
+                    ) : null}
+                  </div>
                 </CardContent>
               </Card>
               <Card>

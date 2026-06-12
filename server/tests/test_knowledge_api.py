@@ -139,6 +139,90 @@ async def test_knowledge_api_admin_crud_and_requester_safe_suggest(test_client) 
 
 
 @pytest.mark.asyncio
+async def test_knowledge_authoring_studio_records_editor_history(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "studio-history", "title": "Studio History", "visibility": "requester", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+
+    item_resp = await test_client.post(
+        "/api/web/knowledge/items",
+        headers=_admin_headers(),
+        json={
+            "space_code": "studio-history",
+            "slug": "studio-history-vpn",
+            "item_type": "article",
+            "title": "Studio history VPN",
+            "summary": "History-enabled draft",
+            "visibility": "requester",
+            "owner_actor_id": "owner",
+            "reviewer_actor_id": "reviewer",
+        },
+    )
+    assert item_resp.status == 200
+    item = (await item_resp.json())["item"]
+
+    version_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/versions",
+        headers=_admin_headers(),
+        json={
+            "title": "Studio history VPN",
+            "summary": "History-enabled version",
+            "body_format": "markdown",
+            "body": "# VPN\n\nReconnect VPN safely.",
+            "change_summary": "Initial authoring version",
+        },
+    )
+    assert version_resp.status == 200
+    version = (await version_resp.json())["version"]
+
+    publish_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/publish",
+        headers=_admin_headers(),
+        json={"version_id": version["version_id"], "review_note": "Publish from Studio"},
+    )
+    assert publish_resp.status == 200
+
+    review_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/review-action",
+        headers=_admin_headers(),
+        json={"action": "submit_review", "note": "Ready for review"},
+    )
+    assert review_resp.status == 200
+
+    comment_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/review-action",
+        headers=_admin_headers(),
+        json={"action": "comment", "note": "Reviewer comment only"},
+    )
+    assert comment_resp.status == 200
+
+    approve_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/review-action",
+        headers=_admin_headers(),
+        json={"action": "approve", "note": "Approved by reviewer"},
+    )
+    assert approve_resp.status == 200
+
+    history_resp = await test_client.get(
+        f"/api/web/knowledge/items/{item['item_id']}/editor-history",
+        headers=_admin_headers(),
+    )
+    assert history_resp.status == 200
+    history = await history_resp.json()
+    assert history["status"] == "ok"
+    event_types = [event["event_type"] for event in history["events"]]
+    assert event_types[:6] == ["approved", "commented", "review_submitted", "published", "version_created", "draft_created"]
+    assert history["events"][3]["summary"] == "Publish from Studio"
+    assert history["diff_cache"][0]["to_version_id"] == version["version_id"]
+    assert history["diff_cache"][0]["added_lines"] >= 1
+    assert history["diff_cache"][0]["summary"]["change_summary"] == "Initial authoring version"
+    assert _forbidden_paths(history) == []
+
+
+@pytest.mark.asyncio
 async def test_knowledge_api_denies_requester_mutation(test_client) -> None:
     resp = await test_client.post(
         "/api/web/knowledge/items",

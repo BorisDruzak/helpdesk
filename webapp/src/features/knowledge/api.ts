@@ -212,6 +212,39 @@ export type KnowledgeReviewQueue = {
   >;
 };
 
+export type KnowledgeEditorEvent = {
+  event_id: string;
+  item_id?: string;
+  version_id?: string | null;
+  event_type: string;
+  source_surface?: string;
+  summary?: string | null;
+  actor_id?: string | null;
+  actor_role?: string | null;
+  payload?: Record<string, unknown>;
+  created_at?: string | null;
+};
+
+export type KnowledgeVersionDiffCacheEntry = {
+  diff_id: string;
+  item_id?: string;
+  from_version_id?: string | null;
+  to_version_id: string;
+  added_lines: number;
+  removed_lines: number;
+  changed_lines?: number;
+  summary?: Record<string, unknown>;
+  content_hash?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type KnowledgeEditorHistory = {
+  status?: string;
+  events: KnowledgeEditorEvent[];
+  diff_cache: KnowledgeVersionDiffCacheEntry[];
+};
+
 export type KnowledgeQualitySummary = {
   average_quality_score: number;
   items: Array<
@@ -751,6 +784,18 @@ export async function fetchKnowledgeItemVersions(itemIdOrSlug: string): Promise<
   });
   const payload = await readJson<{ versions: KnowledgeItemVersion[] }>(response, "Не удалось загрузить версии знания");
   return payload.versions ?? [];
+}
+
+export async function fetchKnowledgeEditorHistory(itemIdOrSlug: string): Promise<KnowledgeEditorHistory> {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/editor-history`, {
+    credentials: "same-origin",
+  });
+  const payload = await readJson<KnowledgeEditorHistory>(response, "Не удалось загрузить историю редактора");
+  return {
+    status: payload.status,
+    events: payload.events ?? [],
+    diff_cache: payload.diff_cache ?? [],
+  };
 }
 
 export async function publishKnowledgeItem(

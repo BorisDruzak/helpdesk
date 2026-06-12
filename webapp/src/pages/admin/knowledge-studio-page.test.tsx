@@ -133,6 +133,37 @@ function setupFetch() {
     if (url === "/api/web/knowledge/items/item-1/versions" && !init?.method) {
       return jsonResponse(versionsPayload);
     }
+    if (url === "/api/web/knowledge/items/item-1/editor-history" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        events: [
+          {
+            event_id: "event-1",
+            event_type: "version_created",
+            summary: "Initial authoring version",
+            actor_id: "admin-test",
+            created_at: "2026-06-12T09:00:00Z",
+          },
+          {
+            event_id: "event-2",
+            event_type: "published",
+            summary: "Publish from Studio",
+            actor_id: "admin-test",
+            created_at: "2026-06-12T09:05:00Z",
+          },
+        ],
+        diff_cache: [
+          {
+            diff_id: "diff-1",
+            from_version_id: "ver-old",
+            to_version_id: "ver-1",
+            added_lines: 2,
+            removed_lines: 1,
+            summary: { change_summary: "Initial authoring version" },
+          },
+        ],
+      });
+    }
     if (url === "/api/web/knowledge/items/item-1/versions" && init?.method === "POST") {
       return jsonResponse({
         status: "ok",
@@ -213,6 +244,11 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByRole("heading", { name: "VPN access" })).toBeInTheDocument();
     expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
     expect(screen.getByText("AI-инструменты отключены")).toBeInTheDocument();
+
+    expect(await screen.findByText("История редактора")).toBeInTheDocument();
+    expect(screen.getByText("version_created")).toBeInTheDocument();
+    expect(screen.getByText("Publish from Studio")).toBeInTheDocument();
+    expect(screen.getByText("Diff cache: +2 / -1")).toBeInTheDocument();
 
     const visibleText = document.body.textContent ?? "";
     expect(visibleText).not.toContain(String.fromCharCode(0x0420, 0x045f));
@@ -346,5 +382,56 @@ describe("AdminKnowledgeStudioPage", () => {
       );
       expect(archiveCall).toBeDefined();
     });
+  });
+
+  it("runs review comment and approve actions", async () => {
+    const fetchMock = setupFetch();
+    renderStudio();
+
+    await screen.findByRole("heading", { name: "Студия статей" });
+    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+
+    fireEvent.change(screen.getByLabelText("Комментарий review"), {
+      target: { value: "Reviewer comment" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить комментарий" }));
+    await waitFor(() => {
+      const commentCall = fetchMock.mock.calls.find(
+        (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "comment",
+      );
+      expect(commentCall).toBeDefined();
+      expect(JSON.parse(String(commentCall?.[1]?.body))).toMatchObject({ action: "comment", note: "Reviewer comment" });
+    });
+
+    fireEvent.change(screen.getByLabelText("Комментарий review"), {
+      target: { value: "Approved by reviewer" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Одобрить" }));
+    await waitFor(() => {
+      const approveCall = fetchMock.mock.calls.find(
+        (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "approve",
+      );
+      expect(approveCall).toBeDefined();
+      expect(JSON.parse(String(approveCall?.[1]?.body))).toMatchObject({ action: "approve", note: "Approved by reviewer" });
+    });
+  });
+
+  it("inserts structured markdown blocks", async () => {
+    setupFetch();
+    renderStudio();
+
+    await screen.findByRole("heading", { name: "Студия статей" });
+    const markdown = screen.getByLabelText("Markdown") as HTMLTextAreaElement;
+    await waitFor(() => expect(markdown.value).toContain("Check the tunnel adapter."));
+
+    fireEvent.click(screen.getByRole("button", { name: "Вставить callout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Вставить таблицу" }));
+    fireEvent.click(screen.getByRole("button", { name: "Вставить код" }));
+    fireEvent.click(screen.getByRole("button", { name: "Вставить checklist" }));
+
+    expect(markdown.value).toContain("> [!NOTE]");
+    expect(markdown.value).toContain("| Шаг | Действие |");
+    expect(markdown.value).toContain("```text");
+    expect(markdown.value).toContain("- [ ] Проверить результат");
   });
 });
