@@ -2510,10 +2510,17 @@ Phase 10 import wizard UI controls slice, 2026-06-12:
   * `python scripts/docs_inventory.py --check-links` -> passed.
   * `python scripts/verify_workspace.py` -> passed.
 
+* Remote/live validation:
+
+  * Commit `2c2b651b` was pushed to `origin/codex/helpdesk-process-model` and deployed with `scripts/release_server_to_remote.py --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+  * Remote smoke verified `https://192.168.100.17:9443/api/health -> 200`.
+  * Browser route loaded: `https://192.168.100.17:9443/app/admin/knowledge/import`.
+  * Live form evidence verified the `docx upload`, `pdf upload`, `external URL` and `Git repository` source modes, the visible URL source field, the fail-closed remote import policy message, the auto-segmentation checkbox and the active segmentation profile selector.
+  * Browser screenshot captured as `knowledge-import-ui-controls-2c2b651b.png`.
+
 Phase 10 remaining work:
 
 * Add import job detail APIs and Observer v2 events listed above.
-* Capture live browser evidence for `/app/admin/knowledge/import`.
 
 Exit criteria:
 
