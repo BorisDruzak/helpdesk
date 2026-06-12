@@ -80,6 +80,41 @@ export function KnowledgePortalAskPage() {
   const retrievalResults = result?.retrieval_results ?? [];
   const citations = result?.citations ?? [];
   const feedbackSlug = retrievalResults.find((entry) => entry.item?.slug)?.item?.slug;
+  const answerActions = result ? (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="outline"
+          leadingIcon={<ThumbsUp className="h-4 w-4" />}
+          disabled={!feedbackSlug || answerActionMutation.isPending}
+          onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "helpful", slug: feedbackSlug })}
+        >
+          Ответ полезен
+        </Button>
+        <Button
+          variant="outline"
+          leadingIcon={<ThumbsDown className="h-4 w-4" />}
+          disabled={!feedbackSlug || answerActionMutation.isPending}
+          onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "not_helpful", slug: feedbackSlug })}
+        >
+          Ответ не помог
+        </Button>
+        <Button
+          variant="outline"
+          leadingIcon={<MessageSquarePlus className="h-4 w-4" />}
+          disabled={!feedbackSlug || answerActionMutation.isPending}
+          onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "correction", slug: feedbackSlug })}
+        >
+          Предложить исправление
+        </Button>
+        <a className="inline-flex h-11 items-center justify-center gap-2 rounded-pill bg-surface-subtle px-4 text-sm font-semibold text-slate-900 shadow-soft hover:bg-brand-50 hover:text-brand-800" href="/app/requester/new">
+          <MessageSquarePlus className="h-4 w-4" />
+          Создать обращение
+        </a>
+      </div>
+      {actionMessage ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{actionMessage}</p> : null}
+    </div>
+  ) : null;
 
   return (
     <section className="space-y-6">
@@ -139,39 +174,15 @@ export function KnowledgePortalAskPage() {
               <CardContent>
                 <div className="space-y-4">
                   <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{result.answer}</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      leadingIcon={<ThumbsUp className="h-4 w-4" />}
-                      disabled={!feedbackSlug || answerActionMutation.isPending}
-                      onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "helpful", slug: feedbackSlug })}
-                    >
-                      Ответ полезен
-                    </Button>
-                    <Button
-                      variant="outline"
-                      leadingIcon={<ThumbsDown className="h-4 w-4" />}
-                      disabled={!feedbackSlug || answerActionMutation.isPending}
-                      onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "not_helpful", slug: feedbackSlug })}
-                    >
-                      Ответ не помог
-                    </Button>
-                    <Button
-                      variant="outline"
-                      leadingIcon={<MessageSquarePlus className="h-4 w-4" />}
-                      disabled={!feedbackSlug || answerActionMutation.isPending}
-                      onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "correction", slug: feedbackSlug })}
-                    >
-                      Предложить исправление
-                    </Button>
-                    <a className="inline-flex h-11 items-center justify-center gap-2 rounded-pill bg-surface-subtle px-4 text-sm font-semibold text-slate-900 shadow-soft hover:bg-brand-50 hover:text-brand-800" href="/app/requester/new">
-                      <MessageSquarePlus className="h-4 w-4" />
-                      Создать обращение
-                    </a>
-                  </div>
-                  {actionMessage ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{actionMessage}</p> : null}
+                  {answerActions}
                 </div>
               </CardContent>
+            </Card>
+          ) : null}
+
+          {!result.answer ? (
+            <Card>
+              <CardContent className="p-4">{answerActions}</CardContent>
             </Card>
           ) : null}
 

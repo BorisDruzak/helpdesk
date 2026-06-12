@@ -1367,10 +1367,10 @@ Status 2026-06-12:
 
   * `/app/kb/ask` now exposes requester answer actions after a grounded/fallback answer: `Ответ полезен`, `Ответ не помог`, `Предложить исправление` and `Создать обращение`.
   * Feedback and correction reuse existing requester-safe article contracts `POST /api/knowledge/articles/{slug}/feedback` and `POST /api/knowledge/articles/{slug}/correction-request`; no new backend endpoint, table or API contract was added.
-  * Actions target the first requester-safe retrieval result with a slug, and the create-ticket CTA links to `/app/requester/new` even when a direct feedback target is unavailable.
+  * Actions target the first requester-safe retrieval result with a slug for both answered and AI-off fallback results, and the create-ticket CTA links to `/app/requester/new` even when a direct feedback target is unavailable.
   * RED test: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx` failed as expected before implementation because the `Создать обращение` link was absent.
   * GREEN test: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx` passed with 1 file / 2 tests after implementation.
-  * Targeted regression: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts src/features/knowledge/api.test.ts` passed with 4 files / 30 tests.
+  * Targeted regression: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts src/features/knowledge/api.test.ts` passed with 4 files / 30 tests before and after the AI-off fallback action-row correction.
   * Build/docs sanity: `pnpm --dir webapp build`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check -- PLANS.md docs/QUICK_LOOKUP.md server/docs/KNOWLEDGE_PLATFORM.md server/docs/CODEMAP.md webapp/src/pages/kb/ask-page.tsx webapp/src/pages/kb/ask-page.test.tsx` passed; diff check reported CRLF conversion warnings only.
 * Remaining Phase 6 work:
 

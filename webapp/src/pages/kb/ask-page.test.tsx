@@ -75,6 +75,9 @@ describe("KnowledgePortalAskPage", () => {
     expect(screen.getByText("AI не использовался")).toBeInTheDocument();
     expect(screen.getByText("Доступ к VPN")).toBeInTheDocument();
     expect(screen.getByText("Как восстановить подключение к VPN")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ответ полезен" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Предложить исправление" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Создать обращение" })).toHaveAttribute("href", "/app/requester/new");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/knowledge/ask",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
