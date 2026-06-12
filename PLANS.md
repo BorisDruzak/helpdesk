@@ -2450,6 +2450,16 @@ Phase 10 governed AI enrichment proposal slice, 2026-06-12:
   * GREEN focused test passed after implementation.
   * Sequential `server/tests/test_knowledge_import_api.py` plus `server/tests/test_knowledge_api.py::test_knowledge_ai_proposals_graph_review_lifecycle_and_observer_audit` passed with 8 tests.
 
+* Remote/live validation:
+
+  * Commit `85ee0934` was pushed to `origin/codex/helpdesk-process-model` and deployed with `scripts/release_server_to_remote.py --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+  * Remote smoke verified `https://192.168.100.17:9443/api/health -> 200`.
+  * Browser same-origin API check on `/app/admin/knowledge/import` created draft `ai-proposals-import-live-1781270022361` with `ai_enrichment_enabled=true`.
+  * `POST /api/web/knowledge/import/create-drafts -> 200` returned `ai_enrichment.status=review_required`, five pending proposals, and proposal types `duplicate`, `glossary_term`, `graph_node`, `summary`, `tags`.
+  * Safe response scan confirmed no `secret-token` source-name leak and no raw body phrase leak.
+  * Approving the created graph proposal through `POST /api/web/knowledge/ai/proposals/0980d5a5-0d54-4414-b6c0-c9758a61ea8c/review -> 200` returned `status=approved` and one applied graph node.
+  * Follow-up `GET /api/web/knowledge/ai/proposals?status=pending&target_kind=item -> 200` found the created item proposal review rows.
+
 Phase 10 remaining work:
 
 * Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
