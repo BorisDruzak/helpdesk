@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Bot, BookOpen, Search } from "lucide-react";
+import { Bot, BookOpen, MessageSquarePlus, Search, ThumbsDown, ThumbsUp } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
-import { askKnowledgePortal, type KnowledgeAskResult } from "../../features/knowledge/api";
+import {
+  askKnowledgePortal,
+  sendKnowledgeArticleCorrectionRequest,
+  sendKnowledgeArticleFeedback,
+  type KnowledgeAskResult,
+} from "../../features/knowledge/api";
 
 const fieldClass = "w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
 
@@ -34,6 +39,7 @@ function statusLabel(status: string) {
 export function KnowledgePortalAskPage() {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<KnowledgeAskResult | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const askMutation = useMutation({
     mutationFn: () =>
@@ -41,11 +47,39 @@ export function KnowledgePortalAskPage() {
         query: query.trim(),
         surface: "requester_portal",
       }),
-    onSuccess: setResult,
+    onSuccess: (data) => {
+      setResult(data);
+      setActionMessage(null);
+    },
+  });
+
+  const answerActionMutation = useMutation({
+    mutationFn: async (payload: { action: "helpful" | "not_helpful" | "correction"; slug: string }) => {
+      if (payload.action === "correction") {
+        return sendKnowledgeArticleCorrectionRequest(payload.slug, {
+          comment: "Requester suggested correction from Knowledge Ask",
+        });
+      }
+      return sendKnowledgeArticleFeedback(payload.slug, {
+        helpful: payload.action === "helpful",
+        metadata: {
+          source: "knowledge_ask",
+          answer_status: result?.answer_status,
+          query,
+        },
+      });
+    },
+    onSuccess: (_data, variables) => {
+      setActionMessage(variables.action === "correction" ? "Запрос на исправление отправлен." : "Спасибо за оценку ответа.");
+    },
+    onError: (_error, variables) => {
+      setActionMessage(variables.action === "correction" ? "Не удалось отправить запрос на исправление." : "Не удалось отправить оценку ответа.");
+    },
   });
 
   const retrievalResults = result?.retrieval_results ?? [];
   const citations = result?.citations ?? [];
+  const feedbackSlug = retrievalResults.find((entry) => entry.item?.slug)?.item?.slug;
 
   return (
     <section className="space-y-6">
@@ -103,7 +137,40 @@ export function KnowledgePortalAskPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{result.answer}</p>
+                <div className="space-y-4">
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{result.answer}</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      leadingIcon={<ThumbsUp className="h-4 w-4" />}
+                      disabled={!feedbackSlug || answerActionMutation.isPending}
+                      onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "helpful", slug: feedbackSlug })}
+                    >
+                      Ответ полезен
+                    </Button>
+                    <Button
+                      variant="outline"
+                      leadingIcon={<ThumbsDown className="h-4 w-4" />}
+                      disabled={!feedbackSlug || answerActionMutation.isPending}
+                      onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "not_helpful", slug: feedbackSlug })}
+                    >
+                      Ответ не помог
+                    </Button>
+                    <Button
+                      variant="outline"
+                      leadingIcon={<MessageSquarePlus className="h-4 w-4" />}
+                      disabled={!feedbackSlug || answerActionMutation.isPending}
+                      onClick={() => feedbackSlug && answerActionMutation.mutate({ action: "correction", slug: feedbackSlug })}
+                    >
+                      Предложить исправление
+                    </Button>
+                    <a className="inline-flex h-11 items-center justify-center gap-2 rounded-pill bg-surface-subtle px-4 text-sm font-semibold text-slate-900 shadow-soft hover:bg-brand-50 hover:text-brand-800" href="/app/requester/new">
+                      <MessageSquarePlus className="h-4 w-4" />
+                      Создать обращение
+                    </a>
+                  </div>
+                  {actionMessage ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{actionMessage}</p> : null}
+                </div>
               </CardContent>
             </Card>
           ) : null}

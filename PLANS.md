@@ -1363,10 +1363,19 @@ Status 2026-06-12:
 
   * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py -q --tb=short` passed with 4 tests.
   * `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts src/features/knowledge/api.test.ts` passed with 4 files / 25 tests.
+* Phase 6B Ask requester action hardening, 2026-06-12:
+
+  * `/app/kb/ask` now exposes requester answer actions after a grounded/fallback answer: `Ответ полезен`, `Ответ не помог`, `Предложить исправление` and `Создать обращение`.
+  * Feedback and correction reuse existing requester-safe article contracts `POST /api/knowledge/articles/{slug}/feedback` and `POST /api/knowledge/articles/{slug}/correction-request`; no new backend endpoint, table or API contract was added.
+  * Actions target the first requester-safe retrieval result with a slug, and the create-ticket CTA links to `/app/requester/new` even when a direct feedback target is unavailable.
+  * RED test: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx` failed as expected before implementation because the `Создать обращение` link was absent.
+  * GREEN test: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx` passed with 1 file / 2 tests after implementation.
+  * Targeted regression: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts src/features/knowledge/api.test.ts` passed with 4 files / 30 tests.
+  * Build/docs sanity: `pnpm --dir webapp build`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check -- PLANS.md docs/QUICK_LOOKUP.md server/docs/KNOWLEDGE_PLATFORM.md server/docs/CODEMAP.md webapp/src/pages/kb/ask-page.tsx webapp/src/pages/kb/ask-page.test.tsx` passed; diff check reported CRLF conversion warnings only.
 * Remaining Phase 6 work:
 
   * stricter citation validation for uncited critical claims;
-  * helpful/not helpful feedback, create-ticket CTA and correction request from Ask;
+  * deeper Ask feedback analytics and optional ticket prefill from the Ask context;
   * admin/support Ask debug view with chunk/score/policy details;
   * browser/live evidence after deploy and optional OpenRouter key setup.
 

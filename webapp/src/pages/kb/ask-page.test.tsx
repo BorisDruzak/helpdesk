@@ -87,4 +87,67 @@ describe("KnowledgePortalAskPage", () => {
     const visibleText = document.body.textContent ?? "";
     expect(visibleText).not.toContain("Рџ");
   });
+
+  it("lets requester rate an Ask answer, request correction, and create a ticket", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/knowledge/ask" && init?.method === "POST") {
+        return jsonResponse({
+          status: "ok",
+          answer: "Проверьте подключение VPN по инструкции.",
+          answer_status: "answered",
+          display_message: "Ответ подготовлен по материалам базы знаний.",
+          ai_used: true,
+          effective_mode: "rag_answer",
+          citations: [{ ref_id: "c1", title: "Доступ к VPN", snippet: "Инструкция по VPN" }],
+          retrieval_results: [
+            {
+              item: {
+                item_id: "ki-1",
+                space_id: "ks-1",
+                slug: "vpn-access",
+                item_type: "article",
+                type: "article",
+                title: "Доступ к VPN",
+                summary: "Как восстановить подключение к VPN",
+                status: "published",
+                visibility: "requester",
+              },
+              snippet: "Инструкция по VPN",
+              citations: [],
+            },
+          ],
+        });
+      }
+      if (url === "/api/knowledge/articles/vpn-access/feedback" && init?.method === "POST") {
+        return jsonResponse({ status: "ok", event: { event_type: "helpful" } });
+      }
+      if (url === "/api/knowledge/articles/vpn-access/correction-request" && init?.method === "POST") {
+        return jsonResponse({ status: "ok", event: { event_type: "not_helpful", result: "correction_requested" } });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderPage();
+
+    fireEvent.change(screen.getByLabelText("Вопрос"), { target: { value: "Как подключить VPN?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Спросить" }));
+
+    await waitFor(() => expect(screen.getByText("Ответ подготовлен")).toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "Создать обращение" })).toHaveAttribute("href", "/app/requester/new");
+
+    fireEvent.click(screen.getByRole("button", { name: "Ответ полезен" }));
+    await waitFor(() => expect(screen.getByText("Спасибо за оценку ответа.")).toBeInTheDocument());
+    expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toMatchObject({
+      helpful: true,
+      metadata: { source: "knowledge_ask", answer_status: "answered", query: "Как подключить VPN?" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Предложить исправление" }));
+    await waitFor(() => expect(screen.getByText("Запрос на исправление отправлен.")).toBeInTheDocument());
+    expect(JSON.parse(fetchMock.mock.calls[2][1]?.body as string)).toMatchObject({
+      comment: "Requester suggested correction from Knowledge Ask",
+    });
+  });
 });
