@@ -93,6 +93,39 @@ async def test_knowledge_portal_home_lists_only_requester_safe_published_article
 
 
 @pytest.mark.asyncio
+async def test_knowledge_portal_home_ranks_popular_articles_from_persisted_portal_signals(test_client) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    low_signal = await _published_item(
+        test_client,
+        space_code=f"popular-low-{suffix}",
+        slug=f"popular-low-{suffix}",
+        title="Low signal VPN",
+        body="Low signal body.",
+        visibility="requester",
+    )
+    high_signal = await _published_item(
+        test_client,
+        space_code=f"popular-high-{suffix}",
+        slug=f"popular-high-{suffix}",
+        title="High signal VPN",
+        body="High signal body.",
+        visibility="requester",
+    )
+
+    await test_client.get(f"/api/knowledge/articles/{low_signal['slug']}")
+    await test_client.get(f"/api/knowledge/articles/{high_signal['slug']}")
+    await test_client.post(f"/api/knowledge/articles/{high_signal['slug']}/bookmark", json={"session_id": "rank-session"})
+    await test_client.post(f"/api/knowledge/articles/{high_signal['slug']}/feedback", json={"helpful": True})
+
+    resp = await test_client.get("/api/knowledge/portal/home")
+    assert resp.status == 200
+    payload = await resp.json()
+    popular_slugs = [article["slug"] for article in payload["popular_articles"]]
+
+    assert popular_slugs.index(high_signal["slug"]) < popular_slugs.index(low_signal["slug"])
+
+
+@pytest.mark.asyncio
 async def test_knowledge_article_detail_returns_body_for_requester_safe_slug(test_client) -> None:
     suffix = uuid.uuid4().hex[:8]
     item = await _published_item(
@@ -237,6 +270,70 @@ async def test_knowledge_article_feedback_and_correction_write_safe_events(test_
             )
         ).scalar_one()
     assert count >= 2
+
+
+@pytest.mark.asyncio
+async def test_knowledge_article_portal_actions_write_dedicated_tables(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    item = await _published_item(
+        test_client,
+        space_code=f"portal-actions-{suffix}",
+        slug=f"portal-actions-vpn-{suffix}",
+        title="Portal actions VPN",
+        body="Portal actions body.",
+        visibility="requester",
+    )
+
+    detail_resp = await test_client.get(f"/api/knowledge/articles/{item['slug']}")
+    assert detail_resp.status == 200
+    correction_resp = await test_client.post(
+        f"/api/knowledge/articles/{item['slug']}/correction-request",
+        json={"comment": "Add split tunnel note", "session_id": "safe-session"},
+    )
+    assert correction_resp.status == 200
+    bookmark_resp = await test_client.post(
+        f"/api/knowledge/articles/{item['slug']}/bookmark",
+        json={"session_id": "safe-session"},
+    )
+    assert bookmark_resp.status == 200
+
+    async with test_engine.connect() as conn:
+        view_count = (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM knowledge_article_views WHERE item_id = :item_id"),
+                {"item_id": item["item_id"]},
+            )
+        ).scalar_one()
+        correction_count = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM knowledge_correction_requests
+                    WHERE item_id = :item_id
+                      AND comment = 'Add split tunnel note'
+                      AND status = 'open'
+                    """
+                ),
+                {"item_id": item["item_id"]},
+            )
+        ).scalar_one()
+        bookmark_count = (
+            await conn.execute(
+                text(
+                    """
+                    SELECT COUNT(*)
+                    FROM knowledge_user_bookmarks
+                    WHERE item_id = :item_id
+                      AND bookmark_state = 'active'
+                    """
+                ),
+                {"item_id": item["item_id"]},
+            )
+        ).scalar_one()
+    assert view_count >= 1
+    assert correction_count == 1
+    assert bookmark_count == 1
 
 
 @pytest.mark.asyncio

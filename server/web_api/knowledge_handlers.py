@@ -970,9 +970,19 @@ async def handle_knowledge_portal_home(request: web.Request) -> web.Response:
 
 async def handle_knowledge_article_detail(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
+    actor_id, _actor_role = _actor(request)
     try:
         async with get_session() as session:
-            payload = await KnowledgePortalService(session).article_detail(slug, actor_role="requester")
+            service = KnowledgePortalService(session)
+            payload = await service.article_detail(slug, actor_role="requester")
+            await service.record_article_view(
+                payload["article"],
+                payload["version"],
+                actor_id=actor_id,
+                actor_role="requester",
+                session_id=request.query.get("session_id"),
+            )
+            await session.commit()
         return web.json_response({"status": "ok", **payload})
     except ValueError as exc:
         return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
@@ -988,6 +998,7 @@ async def _portal_article_event_context(session, slug: str) -> tuple[dict, dict]
 
 async def handle_knowledge_article_feedback(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
+    actor_id, _actor_role = _actor(request)
     try:
         payload = await _json_payload(request)
         async with get_session() as session:
@@ -1003,7 +1014,7 @@ async def handle_knowledge_article_feedback(request: web.Request) -> web.Respons
                     "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
                 },
                 actor_role="requester",
-                actor_id=None,
+                actor_id=actor_id,
             )
             await session.commit()
         return web.json_response({"status": "ok", "event": event})
@@ -1013,6 +1024,7 @@ async def handle_knowledge_article_feedback(request: web.Request) -> web.Respons
 
 async def handle_knowledge_article_correction_request(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
+    actor_id, _actor_role = _actor(request)
     try:
         payload = await _json_payload(request)
         comment = str(payload.get("comment") or "").strip()[:2000]
@@ -1032,7 +1044,16 @@ async def handle_knowledge_article_correction_request(request: web.Request) -> w
                     },
                 },
                 actor_role="requester",
-                actor_id=None,
+                actor_id=actor_id,
+            )
+            await KnowledgePortalService(session).record_correction_request(
+                article,
+                version,
+                comment=comment,
+                feedback_event_id=event.get("event_id"),
+                actor_id=actor_id,
+                actor_role="requester",
+                session_id=payload.get("session_id"),
             )
             await session.commit()
         return web.json_response({"status": "ok", "event": event})
@@ -1042,6 +1063,7 @@ async def handle_knowledge_article_correction_request(request: web.Request) -> w
 
 async def handle_knowledge_article_bookmark(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
+    actor_id, _actor_role = _actor(request)
     try:
         payload = await _json_payload(request) if request.method != "DELETE" else {}
         bookmarked = request.method != "DELETE"
@@ -1058,7 +1080,15 @@ async def handle_knowledge_article_bookmark(request: web.Request) -> web.Respons
                     "metadata": {"source": "article_bookmark"},
                 },
                 actor_role="requester",
-                actor_id=None,
+                actor_id=actor_id,
+            )
+            await KnowledgePortalService(session).set_bookmark(
+                article,
+                version,
+                bookmarked=bookmarked,
+                actor_id=actor_id,
+                actor_role="requester",
+                session_id=payload.get("session_id"),
             )
             await session.commit()
         return web.json_response({"status": "ok", "bookmark": {"slug": slug, "bookmarked": bookmarked}, "event": event})

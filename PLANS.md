@@ -1402,7 +1402,8 @@ Status 2026-06-12:
   * Browser validation: Playwright/browser opened `https://192.168.100.17:9443/app/kb/ask`, submitted `VPN`, saw AI-off fallback actions, clicked `Создать обращение`, and confirmed `/app/requester/new` was prefilled with `Knowledge Ask: VPN` plus Ask status/effective mode/top article context in the description. Live submit was not attempted because the current admin-backed requester session showed `Insufficient permissions` and a disabled create button for that account/device state.
 * Remaining Phase 6 work:
 
-  * browser/live evidence after deploy and optional OpenRouter key setup.
+  * browser/live evidence after deploy is complete for the AI-off/fallback requester and support debug flows.
+  * Optional live OpenRouter answer signoff remains pending until an operator provides a key through the approved secret/config path.
 
 Backend:
 
@@ -1631,7 +1632,7 @@ Implemented in this iteration:
   * `/app/kb/tags/:tag` tag collection.
 
 * Portal home links to search, Ask, article reader, spaces and tags. Article reader shows title, summary, body, TOC from markdown headings, active segments, tags, owner/review freshness, helpful/not helpful, correction, bookmark and create-ticket CTA.
-* No new optional tables were introduced in this slice. Feedback uses `knowledge_feedback_events` `helpful|not_helpful`; correction uses `not_helpful` with `result=correction_requested`; bookmark add/remove uses `viewed` with `result=bookmarked|bookmark_removed`.
+* Phase 7 hardening adds migration `114` with dedicated `knowledge_article_views`, `knowledge_user_bookmarks`, `knowledge_correction_requests` and `knowledge_article_subscriptions` tables. Feedback still writes `knowledge_feedback_events`; article views, bookmark state and correction requests now also have persisted portal-specific rows.
 * Tests added:
 
   * `server/tests/test_knowledge_portal.py`;
@@ -1643,9 +1644,7 @@ Implemented in this iteration:
 
 Remaining Phase 7 product hardening:
 
-* Dedicated persisted tables for views/bookmarks/correction/subscriptions if per-user bookmark state must survive beyond event history.
-* Real popular/recommended ranking instead of recent-article fallback.
-* Full correction form with user-entered comment in the reader UI.
+* Completed in the 2026-06-12 hardening slice: dedicated portal tables, signal-ranked popular/recommended articles, and a full article correction comment form.
 
 Phase 7 live/browser result, deployed commit `7bb4ff91`, 2026-06-12:
 
@@ -1658,9 +1657,18 @@ Phase 7 live/browser result, deployed commit `7bb4ff91`, 2026-06-12:
 
 Remaining Phase 7 product hardening after live check:
 
-* Dedicated persisted tables for views/bookmarks/correction/subscriptions if per-user bookmark state must survive beyond event history.
-* Real popular/recommended ranking instead of recent-article fallback.
-* Full correction form with user-entered comment in the reader UI.
+* Completed locally in the 2026-06-12 hardening slice. Remote/browser validation is required after commit/deploy because the article reader and portal home UI changed.
+* Subscription APIs/UI are not exposed yet; only the persisted table exists for the planned article update notification flow.
+
+Phase 7 hardening local result, 2026-06-12:
+
+* Added migration `114` and SQLAlchemy models for persisted portal article views, user bookmarks, correction requests and future article subscriptions.
+* `GET /api/knowledge/articles/{slug}` records requester-safe article views after ACL-filtered lookup; correction/bookmark writes still reuse `knowledge_feedback_events` and now also persist dedicated portal rows.
+* `GET /api/knowledge/portal/home` ranks `popular_articles` and `featured_articles` from persisted view, active bookmark, helpful feedback and open correction signals, falling back to recent articles only when no signals exist.
+* `/app/kb/articles/:slug` now shows a correction comment textarea and sends the requester-entered comment to `/api/knowledge/articles/{slug}/correction-request`; `/app/kb` renders a `Популярные` section from `popular_articles`.
+* RED checks failed before implementation as expected: focused backend dedicated-table test failed on missing `knowledge_article_views`; focused article-page test failed because the correction comment field was absent.
+* GREEN checks: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_portal.py -q --tb=short` passed with 9 tests; `pnpm --dir webapp test -- src/pages/kb/home-page.test.tsx src/pages/kb/article-page.test.tsx src/pages/kb/collection-page.test.tsx src/features/knowledge/api.test.ts` passed with 4 files / 20 tests.
+* Sanity checks passed: `pnpm --dir webapp build`, `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py`, and focused `git diff --check`.
 
 TDD checkpoints:
 

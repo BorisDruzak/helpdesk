@@ -33,6 +33,7 @@ function ArticleContent({ data }: { data: KnowledgePortalArticle }) {
   const toc = extractToc(version.body);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [correctionComment, setCorrectionComment] = useState("");
 
   async function runArticleAction(action: () => Promise<unknown>, successMessage: string, errorMessage: string) {
     setActionPending(true);
@@ -132,6 +133,16 @@ function ArticleContent({ data }: { data: KnowledgePortalArticle }) {
                   Не помогло
                 </Button>
               </div>
+              <label className="block space-y-2 text-sm font-semibold text-slate-800">
+                <span>Комментарий к исправлению</span>
+                <textarea
+                  className="min-h-24 w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-normal leading-6 text-slate-900 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                  maxLength={2000}
+                  value={correctionComment}
+                  onChange={(event) => setCorrectionComment(event.target.value)}
+                  placeholder="Опишите, что нужно уточнить или обновить"
+                />
+              </label>
               <Button
                 className="w-full"
                 variant="outline"
@@ -139,7 +150,7 @@ function ArticleContent({ data }: { data: KnowledgePortalArticle }) {
                 disabled={actionPending}
                 onClick={() =>
                   void runArticleAction(
-                    () => sendKnowledgeArticleCorrectionRequest(article.slug, { comment: "Requester suggested article correction from portal" }),
+                    () => sendKnowledgeArticleCorrectionRequest(article.slug, { comment: correctionComment.trim() }),
                     "Запрос на исправление отправлен.",
                     "Не удалось отправить запрос на исправление.",
                   )

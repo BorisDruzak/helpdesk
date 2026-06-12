@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Bot, Clock, FolderOpen, Search } from "lucide-react";
+import { BookOpen, Bot, Clock, FolderOpen, Search, Star } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 
@@ -118,6 +118,12 @@ function PortalContent({ data }: { data: KnowledgePortalHome }) {
         emptyText="Рекомендованные статьи пока не опубликованы."
         icon={<BookOpen className="h-4 w-4" />}
         title="Рекомендуемые статьи"
+      />
+      <ArticlesSection
+        articles={data.popular_articles}
+        emptyText="Популярные статьи пока не накопили сигналы."
+        icon={<Star className="h-4 w-4" />}
+        title="Популярные"
       />
       <ArticlesSection
         articles={data.recent_articles}

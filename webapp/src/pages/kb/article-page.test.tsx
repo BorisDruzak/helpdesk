@@ -90,10 +90,14 @@ describe("KnowledgePortalArticlePage", () => {
     expect(screen.getByRole("button", { name: "Полезно" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "В закладки" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Создать обращение" })).toHaveAttribute("href", "/app/requester/new");
+    expect(screen.getByLabelText("Комментарий к исправлению")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Полезно" }));
     await waitFor(() => expect(screen.getByText("Спасибо за оценку.")).toBeInTheDocument());
 
+    fireEvent.change(screen.getByLabelText("Комментарий к исправлению"), {
+      target: { value: "В шаге 2 нужно указать split tunnel." },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Предложить исправление" }));
     await waitFor(() => expect(screen.getByText("Запрос на исправление отправлен.")).toBeInTheDocument());
 
@@ -110,12 +114,16 @@ describe("KnowledgePortalArticlePage", () => {
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/knowledge/articles/vpn-access/correction-request",
-      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "same-origin",
+        body: JSON.stringify({ comment: "В шаге 2 нужно указать split tunnel." }),
+      }),
     );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/knowledge/articles/vpn-access/bookmark",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
-    expect(document.body.textContent ?? "").not.toContain("Рџ");
+    expect(document.body.textContent ?? "").not.toContain("Р Сџ");
   });
 });

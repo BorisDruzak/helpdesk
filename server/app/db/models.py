@@ -1194,6 +1194,117 @@ class KnowledgeFeedbackEvent(Base):
     )
 
 
+class KnowledgeArticleView(Base):
+    """Persisted requester portal article view."""
+
+    __tablename__ = "knowledge_article_views"
+
+    view_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="CASCADE"), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    session_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_surface: Mapped[str] = mapped_column(String(40), nullable=False, server_default="requester_portal")
+    viewed_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "actor_role IS NULL OR actor_role IN ('public', 'requester', 'user', 'agent', 'support', 'admin', 'auditor', 'security')",
+            name="ck_knowledge_article_views_actor_role",
+        ),
+        Index("ix_knowledge_article_views_item_viewed", "item_id", "viewed_at"),
+        Index("ix_knowledge_article_views_actor", "actor_id", "session_id", "viewed_at"),
+    )
+
+
+class KnowledgeUserBookmark(Base):
+    """Per-actor/session requester portal bookmark state."""
+
+    __tablename__ = "knowledge_user_bookmarks"
+
+    bookmark_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    bookmark_key: Mapped[str] = mapped_column(Text, nullable=False)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="CASCADE"), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    session_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    bookmark_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
+    source_surface: Mapped[str] = mapped_column(String(40), nullable=False, server_default="requester_portal")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("bookmark_state IN ('active', 'removed')", name="ck_knowledge_user_bookmarks_state"),
+        sa.CheckConstraint(
+            "actor_role IS NULL OR actor_role IN ('public', 'requester', 'user', 'agent', 'support', 'admin', 'auditor', 'security')",
+            name="ck_knowledge_user_bookmarks_actor_role",
+        ),
+        sa.UniqueConstraint("bookmark_key", "item_id", name="uq_knowledge_user_bookmarks_key_item"),
+        Index("ix_knowledge_user_bookmarks_item_state", "item_id", "bookmark_state", "updated_at"),
+    )
+
+
+class KnowledgeCorrectionRequest(Base):
+    """Requester correction request tied to an article version."""
+
+    __tablename__ = "knowledge_correction_requests"
+
+    correction_request_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="CASCADE"), nullable=False)
+    feedback_event_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_feedback_events.event_id", ondelete="SET NULL"), nullable=True)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    session_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    comment: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="open")
+    source_surface: Mapped[str] = mapped_column(String(40), nullable=False, server_default="requester_portal")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("status IN ('open', 'triaged', 'accepted', 'rejected', 'closed')", name="ck_knowledge_correction_requests_status"),
+        sa.CheckConstraint("length(trim(comment)) > 0", name="ck_knowledge_correction_requests_comment"),
+        sa.CheckConstraint(
+            "actor_role IS NULL OR actor_role IN ('public', 'requester', 'user', 'agent', 'support', 'admin', 'auditor', 'security')",
+            name="ck_knowledge_correction_requests_actor_role",
+        ),
+        Index("ix_knowledge_correction_requests_item_status", "item_id", "status", "created_at"),
+    )
+
+
+class KnowledgeArticleSubscription(Base):
+    """Future portal subscription state for article update notifications."""
+
+    __tablename__ = "knowledge_article_subscriptions"
+
+    subscription_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    subscription_key: Mapped[str] = mapped_column(Text, nullable=False)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    actor_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    actor_role: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    session_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    subscription_state: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("subscription_state IN ('active', 'paused', 'removed')", name="ck_knowledge_article_subscriptions_state"),
+        sa.CheckConstraint(
+            "actor_role IS NULL OR actor_role IN ('public', 'requester', 'user', 'agent', 'support', 'admin', 'auditor', 'security')",
+            name="ck_knowledge_article_subscriptions_actor_role",
+        ),
+        sa.UniqueConstraint("subscription_key", "item_id", name="uq_knowledge_article_subscriptions_key_item"),
+        Index("ix_knowledge_article_subscriptions_item_state", "item_id", "subscription_state", "updated_at"),
+    )
+
+
 class KnowledgeIngestionJob(Base):
     """Document/source ingestion job. P2 creates drafts and never auto-publishes."""
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from sqlalchemy import bindparam, text
@@ -21,6 +22,25 @@ def _portal_role(actor_role: str | None) -> str:
 
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _text_value(value: Any) -> str | None:
+    text_value = str(value or "").strip()
+    return text_value or None
+
+
+def _new_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _bookmark_key(*, actor_id: str | None, session_id: str | None) -> str:
+    actor = _text_value(actor_id)
+    session = _text_value(session_id)
+    if actor:
+        return f"actor:{actor}"
+    if session:
+        return f"session:{session}"
+    return "public:anonymous"
 
 
 def _safe_space(space: dict[str, Any]) -> dict[str, Any]:
@@ -104,8 +124,15 @@ class KnowledgePortalService:
         ]
         article_summaries = [_safe_article_summary(item) for item in items if item.get("status") == "published"]
         recent = article_summaries[: max(1, min(int(limit or 12), 50))]
-        featured = recent[:6]
-        popular = recent[:6]
+        signal_scores = await self._portal_signal_scores([str(article.get("item_id") or "") for article in article_summaries])
+        popular = sorted(
+            article_summaries,
+            key=lambda article: (signal_scores.get(str(article.get("item_id") or ""), 0.0), article.get("updated_at") or ""),
+            reverse=True,
+        )[:6]
+        if not any(signal_scores.values()):
+            popular = recent[:6]
+        featured = popular[:6]
         return {
             "display_message": "Портал базы знаний загружен",
             "spaces": spaces,
@@ -132,6 +159,132 @@ class KnowledgePortalService:
             ),
             "related_articles": [],
         }
+
+    async def record_article_view(
+        self,
+        article: dict[str, Any],
+        version: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str = "requester",
+        session_id: str | None = None,
+    ) -> None:
+        item_id = _text_value(article.get("item_id"))
+        version_id = _text_value(version.get("version_id"))
+        if not item_id or not version_id:
+            return
+        await self.session.execute(
+            text(
+                """
+                INSERT INTO knowledge_article_views (
+                    view_id, item_id, version_id, actor_id, actor_role, session_id,
+                    source_surface, metadata_json
+                )
+                VALUES (
+                    :view_id, :item_id, :version_id, :actor_id, :actor_role, :session_id,
+                    'requester_portal', '{}'::jsonb
+                )
+                """
+            ),
+            {
+                "view_id": _new_id(),
+                "item_id": item_id,
+                "version_id": version_id,
+                "actor_id": _text_value(actor_id),
+                "actor_role": _text_value(actor_role),
+                "session_id": _text_value(session_id),
+            },
+        )
+
+    async def record_correction_request(
+        self,
+        article: dict[str, Any],
+        version: dict[str, Any],
+        *,
+        comment: str,
+        feedback_event_id: str | None,
+        actor_id: str | None,
+        actor_role: str = "requester",
+        session_id: str | None = None,
+    ) -> None:
+        item_id = _text_value(article.get("item_id"))
+        version_id = _text_value(version.get("version_id"))
+        safe_comment = _text_value(comment) or "Requester requested article correction."
+        if not item_id or not version_id:
+            return
+        await self.session.execute(
+            text(
+                """
+                INSERT INTO knowledge_correction_requests (
+                    correction_request_id, item_id, version_id, feedback_event_id,
+                    actor_id, actor_role, session_id, comment, status, source_surface,
+                    metadata_json
+                )
+                VALUES (
+                    :request_id, :item_id, :version_id, :feedback_event_id,
+                    :actor_id, :actor_role, :session_id, :comment, 'open',
+                    'requester_portal', '{}'::jsonb
+                )
+                """
+            ),
+            {
+                "request_id": _new_id(),
+                "item_id": item_id,
+                "version_id": version_id,
+                "feedback_event_id": _text_value(feedback_event_id),
+                "actor_id": _text_value(actor_id),
+                "actor_role": _text_value(actor_role),
+                "session_id": _text_value(session_id),
+                "comment": safe_comment[:2000],
+            },
+        )
+
+    async def set_bookmark(
+        self,
+        article: dict[str, Any],
+        version: dict[str, Any],
+        *,
+        bookmarked: bool,
+        actor_id: str | None,
+        actor_role: str = "requester",
+        session_id: str | None = None,
+    ) -> None:
+        item_id = _text_value(article.get("item_id"))
+        version_id = _text_value(version.get("version_id"))
+        if not item_id or not version_id:
+            return
+        await self.session.execute(
+            text(
+                """
+                INSERT INTO knowledge_user_bookmarks (
+                    bookmark_id, bookmark_key, item_id, version_id, actor_id, actor_role,
+                    session_id, bookmark_state, source_surface, metadata_json
+                )
+                VALUES (
+                    :bookmark_id, :bookmark_key, :item_id, :version_id, :actor_id, :actor_role,
+                    :session_id, :bookmark_state, 'requester_portal', '{}'::jsonb
+                )
+                ON CONFLICT (bookmark_key, item_id)
+                DO UPDATE SET
+                    version_id = EXCLUDED.version_id,
+                    actor_id = EXCLUDED.actor_id,
+                    actor_role = EXCLUDED.actor_role,
+                    session_id = EXCLUDED.session_id,
+                    bookmark_state = EXCLUDED.bookmark_state,
+                    updated_at = now()
+                """
+            ),
+            {
+                "bookmark_id": _new_id(),
+                "bookmark_key": _bookmark_key(actor_id=actor_id, session_id=session_id),
+                "item_id": item_id,
+                "version_id": version_id,
+                "actor_id": _text_value(actor_id),
+                "actor_role": _text_value(actor_role),
+                "session_id": _text_value(session_id),
+                "bookmark_state": "active" if bookmarked else "removed",
+            },
+        )
 
     async def collection(self, *, collection_type: str, code: str, actor_role: str = "requester") -> dict[str, Any]:
         role = _portal_role(actor_role)
@@ -203,3 +356,59 @@ class KnowledgePortalService:
             )
         ).all()
         return [_serialize_segment(row) for row in rows]
+
+    async def _portal_signal_scores(self, item_ids: list[str]) -> dict[str, float]:
+        ids = [item_id for item_id in item_ids if item_id]
+        if not ids:
+            return {}
+        scores = {item_id: 0.0 for item_id in ids}
+        queries = [
+            (
+                """
+                SELECT item_id, COUNT(*) AS count
+                FROM knowledge_article_views
+                WHERE item_id IN :item_ids
+                GROUP BY item_id
+                """,
+                1.0,
+            ),
+            (
+                """
+                SELECT item_id, COUNT(*) AS count
+                FROM knowledge_user_bookmarks
+                WHERE item_id IN :item_ids
+                  AND bookmark_state = 'active'
+                GROUP BY item_id
+                """,
+                4.0,
+            ),
+            (
+                """
+                SELECT item_id, COUNT(*) AS count
+                FROM knowledge_feedback_events
+                WHERE item_id IN :item_ids
+                  AND event_type = 'helpful'
+                  AND source_surface = 'requester_portal'
+                GROUP BY item_id
+                """,
+                3.0,
+            ),
+            (
+                """
+                SELECT item_id, COUNT(*) AS count
+                FROM knowledge_correction_requests
+                WHERE item_id IN :item_ids
+                  AND status = 'open'
+                GROUP BY item_id
+                """,
+                1.0,
+            ),
+        ]
+        for sql, weight in queries:
+            stmt = text(sql).bindparams(bindparam("item_ids", expanding=True))
+            rows = (await self.session.execute(stmt, {"item_ids": ids})).all()
+            for row in rows:
+                data = row._mapping if hasattr(row, "_mapping") else row
+                item_id = str(data["item_id"])
+                scores[item_id] = scores.get(item_id, 0.0) + float(data["count"] or 0) * weight
+        return scores
