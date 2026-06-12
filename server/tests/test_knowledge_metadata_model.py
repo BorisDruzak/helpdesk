@@ -294,6 +294,132 @@ async def test_admin_can_create_admin_internal_taxonomy_in_support_visible_space
 
 
 @pytest.mark.asyncio
+async def test_item_metadata_filters_taxonomy_terms_by_actor_visibility(test_client) -> None:
+    code = _unique_code("acl-item")
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": code, "title": "ACL Item", "visibility": "requester", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+    space = (await space_resp.json())["space"]
+
+    item_resp = await test_client.post(
+        "/api/web/knowledge/items",
+        headers=_admin_headers(),
+        json={
+            "space_code": code,
+            "slug": _unique_code("acl-item-article"),
+            "item_type": "article",
+            "title": "Requester visible article",
+            "summary": "Requester visible item with restricted metadata",
+            "visibility": "requester",
+        },
+    )
+    assert item_resp.status == 200
+    item = (await item_resp.json())["item"]
+
+    term_code = _unique_code("admin-term")
+    term_resp = await test_client.post(
+        "/api/web/knowledge/taxonomy",
+        headers=_admin_headers(),
+        json={
+            "space_id": space["space_id"],
+            "term_type": "tag",
+            "code": term_code,
+            "title": "Admin-only assigned term",
+            "visibility": "admin_internal",
+            "status": "active",
+        },
+    )
+    assert term_resp.status == 200
+    term = (await term_resp.json())["term"]
+
+    admin_update_resp = await test_client.put(
+        f"/api/web/knowledge/items/{item['item_id']}/metadata",
+        headers=_admin_headers(),
+        json={"taxonomy_term_ids": [term["term_id"]]},
+    )
+    assert admin_update_resp.status == 200
+    admin_metadata = (await admin_update_resp.json())["item_metadata"]
+    assert [row["code"] for row in admin_metadata["taxonomy_terms"]] == [term_code]
+
+    support_resp = await test_client.get(
+        f"/api/web/knowledge/items/{item['item_id']}/metadata",
+        headers=_support_headers(),
+    )
+    assert support_resp.status == 200
+    support_metadata = (await support_resp.json())["item_metadata"]
+    assert all(row["code"] != term_code for row in support_metadata["taxonomy_terms"])
+
+    auditor_resp = await test_client.get(
+        f"/api/web/knowledge/items/{item['item_id']}/metadata",
+        headers=_auditor_headers(),
+    )
+    assert auditor_resp.status == 200
+    auditor_metadata = (await auditor_resp.json())["item_metadata"]
+    assert all(row["code"] != term_code for row in auditor_metadata["taxonomy_terms"])
+
+
+@pytest.mark.asyncio
+async def test_support_cannot_assign_hidden_taxonomy_term_to_item_metadata(test_client) -> None:
+    code = _unique_code("acl-assign")
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": code, "title": "ACL Assign", "visibility": "requester", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+    space = (await space_resp.json())["space"]
+
+    item_resp = await test_client.post(
+        "/api/web/knowledge/items",
+        headers=_admin_headers(),
+        json={
+            "space_code": code,
+            "slug": _unique_code("acl-assign-article"),
+            "item_type": "article",
+            "title": "Requester visible assign article",
+            "summary": "Requester visible item for assignment ACL",
+            "visibility": "requester",
+        },
+    )
+    assert item_resp.status == 200
+    item = (await item_resp.json())["item"]
+
+    term_resp = await test_client.post(
+        "/api/web/knowledge/taxonomy",
+        headers=_admin_headers(),
+        json={
+            "space_id": space["space_id"],
+            "term_type": "tag",
+            "code": _unique_code("admin-assign-term"),
+            "title": "Admin-only assign term",
+            "visibility": "admin_internal",
+            "status": "active",
+        },
+    )
+    assert term_resp.status == 200
+    term = (await term_resp.json())["term"]
+
+    support_update_resp = await test_client.put(
+        f"/api/web/knowledge/items/{item['item_id']}/metadata",
+        headers=_support_headers(),
+        json={"taxonomy_term_ids": [term["term_id"]]},
+    )
+    assert support_update_resp.status in {400, 403}
+
+    admin_update_resp = await test_client.put(
+        f"/api/web/knowledge/items/{item['item_id']}/metadata",
+        headers=_admin_headers(),
+        json={"taxonomy_term_ids": [term["term_id"]]},
+    )
+    assert admin_update_resp.status == 200
+    admin_metadata = (await admin_update_resp.json())["item_metadata"]
+    assert [row["term_id"] for row in admin_metadata["taxonomy_terms"]] == [term["term_id"]]
+
+
+@pytest.mark.asyncio
 async def test_metadata_bundle_summary_counts_only_active_taxonomy_and_properties(test_client) -> None:
     code = _unique_code("counts-space")
     space_resp = await test_client.post(

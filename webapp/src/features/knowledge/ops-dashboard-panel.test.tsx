@@ -144,13 +144,16 @@ describe("KnowledgeOpsDashboardPanel", () => {
 
     const { container } = renderPanel();
 
-    expect(await screen.findByText("Degraded")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Knowledge Operations Center" })).toBeInTheDocument();
-    expect(screen.getByText("Requester-safe coverage")).toBeInTheDocument();
-    expect(screen.getByText("Zero-result searches")).toBeInTheDocument();
-    expect(screen.getByText("RAG no-answer")).toBeInTheDocument();
-    expect(screen.getByText("Failed indexing jobs")).toBeInTheDocument();
-    expect(screen.getByText("Observer-backed degradation")).toBeInTheDocument();
+    expect(await screen.findByText("Деградация")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Центр операций базы знаний" })).toBeInTheDocument();
+    expect(screen.getByText("Безопасное покрытие")).toBeInTheDocument();
+    expect(screen.getByText("Поиски без результатов")).toBeInTheDocument();
+    expect(screen.getByText("RAG без ответа")).toBeInTheDocument();
+    expect(screen.getByText("Ошибки индексации")).toBeInTheDocument();
+    expect(screen.getByText("Поиск и RAG")).toBeInTheDocument();
+    expect(screen.getByText("Покрытие и проверка")).toBeInTheDocument();
+    expect(screen.getByText("AI, индексация и граф")).toBeInTheDocument();
+    expect(screen.getByText("Деградации из Observer")).toBeInTheDocument();
     expect(screen.getByText("knowledge.indexing.failed")).toBeInTheDocument();
     expect(screen.getByText("Embedding provider unavailable")).toBeInTheDocument();
     const metadataHeading = await screen.findByRole("heading", { name: "Модель метаданных знаний" });
@@ -166,8 +169,8 @@ describe("KnowledgeOpsDashboardPanel", () => {
     expect(screen.getByText("metadata-required")).toBeInTheDocument();
     expect(screen.getByText("properties: 12")).toBeInTheDocument();
     expect(metadataCard.textContent ?? "").not.toMatch(/Knowledge metadata model|Taxonomy terms|Properties|Applicability rules|Item metadata|Active quality model/);
-    expect(metadataCard.textContent ?? "").not.toMatch(/�|Р[°µґ»]|С[ЊЃ]/);
-    expect(container.textContent ?? "").not.toMatch(/Модель метаданных зна�/);
+    expect(container.textContent ?? "").not.toMatch(/Knowledge Operations Center|Search and RAG|Coverage and Review|AI, Indexing and Graph|Observer-backed degradation/);
+    expect(container.textContent ?? "").not.toMatch(/\uFFFD|\u0420\u045A|\u0420\u045E|\u0420\u040F|\u0421\u045A|\u0421\u201A|\u0421\u2039|\u0421\u0453|\u0421\u2020|\u0421\u2021|\u0421\u02DC/);
     expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/ops/summary", { credentials: "same-origin" });
     expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/metadata", { credentials: "same-origin" });
   });

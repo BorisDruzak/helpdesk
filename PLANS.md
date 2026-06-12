@@ -3295,9 +3295,38 @@ Phase 14 follow-up remote/live verification, 2026-06-13:
 * Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/browser_live_validation/phase14-hardening-1214efcf-20260612201341/report.json`, `admin-knowledge-loaded-snapshot.md`, `admin-knowledge-loaded.png`, `kb-search-loaded-snapshot.md` and `kb-search-loaded.png`.
 * Evidence text scan found no `password`, `secret`, `cookie`, `Authorization`, `sk-`, `BEGIN PRIVATE KEY` or `pc_client_web_session` markers.
 
+Phase 14 follow-up hardening addendum, 2026-06-13:
+
+Status: active. Review found one remaining security boundary issue and one remaining Russian-first UI gap before treating the Phase 14 metadata model as product-complete.
+
+Required fixes:
+
+* Item metadata taxonomy ACL: `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata` must treat assigned taxonomy term visibility as part of the metadata contract. Read responses must hide assigned terms the actor cannot read, and metadata updates must reject terms whose visibility the actor cannot mutate even when the item and parent space are otherwise visible.
+* Knowledge Ops Russian-first text: `/app/admin/knowledge` must replace remaining visible English Ops dashboard labels such as `Knowledge Operations Center`, `Search and RAG`, `Coverage and Review`, `AI, Indexing and Graph` and `Observer-backed degradation` with Russian-first labels, with regression tests for representative English-label absence and mojibake-free rendering.
+* Verification must include backend regression tests for admin-assigned `admin_internal` taxonomy on requester/support-visible items, support/auditor read filtering, support assignment denial, admin assignment/read success, frontend label tests, local checks, deploy and live browser/API evidence.
+
+Phase 14 follow-up addendum implementation results, 2026-06-13:
+
+* Added item metadata ACL filtering in `KnowledgeMetadataService.item_metadata()`: assigned taxonomy terms are returned only when the actor can read the term visibility.
+* Added item metadata assignment ACL in `KnowledgeMetadataService.update_item_metadata()`: support can no longer attach `admin_internal` or otherwise hidden taxonomy terms to a visible item by id, while admin/security can.
+* Added backend regressions for admin-assigned `admin_internal` taxonomy on a requester-visible item, support/auditor read filtering, support assignment denial and admin assignment/read success.
+* Replaced remaining visible English labels in `KnowledgeOpsDashboardPanel` with Russian-first dashboard text, including the dashboard heading, status badge, summary cards, section headings and Observer degradation card.
+* Added webapp regression expectations for Russian Ops labels, old English label absence and mojibake-free rendered panel text.
+* Updated Knowledge Platform docs, CODEMAP, quick lookup, architecture boundaries and navigation aliases for item metadata term-visibility ACL.
+
+Phase 14 follow-up addendum local verification, 2026-06-13:
+
+* RED: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py -q --tb=short` failed before implementation on taxonomy term leakage to support item metadata and support assignment of an `admin_internal` term.
+* RED: `pnpm --dir webapp test -- src/features/knowledge/ops-dashboard-panel.test.tsx` failed before implementation because `/app/admin/knowledge` still rendered `Knowledge Operations Center` / `Degraded` and old English Ops labels.
+* GREEN: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py -q --tb=short` passed with 11 tests.
+* GREEN: `pnpm --dir webapp test -- src/features/knowledge/ops-dashboard-panel.test.tsx` passed with 1 test.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py server/tests/test_knowledge_api.py::test_knowledge_api_admin_crud_and_requester_safe_suggest server/tests/test_knowledge_acl_hardening.py::test_web_acl_denies_support_restricted_mutation_and_auditor_publish server/tests/test_knowledge_rag_eval.py -q --tb=short` passed with 15 tests.
+* `pnpm --dir webapp test -- src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts` passed with 4 files / 36 tests.
+* `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `pnpm --dir webapp build`, `python scripts/verify_workspace.py`, targeted `git diff --check` and UTF-8 replacement-character scan over changed files passed.
+
 Remaining Phase 14 work:
 
-* None for the Phase 14 follow-up hardening slice. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
+* Deploy the addendum commit, collect live mutation/projection evidence again and update this section. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
 

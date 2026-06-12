@@ -136,7 +136,7 @@ Phase 14 adds governed metadata operations without changing requester/public pro
 
 - `knowledge_taxonomy_terms`: space-scoped category/product/audience/topic/tag terms.
 - `knowledge_property_definitions`: typed property definitions with value type, allowed values, required flag, item-type applicability and optional quality weight.
-- `knowledge_item_properties` and `knowledge_item_taxonomy_terms`: validated item metadata assignments.
+- `knowledge_item_properties` and `knowledge_item_taxonomy_terms`: validated item metadata assignments. Assigned taxonomy terms keep their own visibility boundary; item metadata reads filter term rows by actor-visible visibility and metadata updates reject taxonomy terms whose visibility the actor cannot mutate.
 - `knowledge_applicability_rules`: explicit include/exclude item applicability by service, offering, request template, role, device OS/family, audience, taxonomy term or custom scope.
 - `knowledge_quality_models`: active/default scoring models.
 - `GET /api/web/knowledge/metadata` returns all visible management rows plus `summary` total/active counts. Dashboard coverage must use active counts so draft/archived taxonomy terms and property definitions do not count as active model coverage.
@@ -146,7 +146,7 @@ APIs:
 - `GET /api/web/knowledge/metadata`: admin/support/auditor read bundle.
 - `POST /api/web/knowledge/taxonomy`: admin/support upsert taxonomy term; mutation checks the requested term `visibility` as well as the parent space, so support cannot create or escalate terms to `admin_internal` or `security_restricted`.
 - `POST /api/web/knowledge/properties`: admin/support upsert property definition.
-- `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`: read/update item property values and taxonomy terms.
+- `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`: read/update item property values and taxonomy terms. Read responses hide assigned taxonomy terms the actor cannot read, even when the item itself is visible; updates reject hidden/admin-only taxonomy term assignment for support.
 - `GET|POST /api/web/knowledge/items/{item_id_or_slug}/applicability`: read/replace applicability rules.
 - `POST /api/web/knowledge/quality-models`: admin/support upsert quality model.
 

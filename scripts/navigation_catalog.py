@@ -1329,6 +1329,8 @@ TOPICS: tuple[Topic, ...] = (
             "KnowledgeOpsDashboardPanel",
             "KnowledgeMetadataService",
             "knowledge metadata model",
+            "item metadata visibility acl",
+            "taxonomy term assignment acl",
             "knowledge_taxonomy_terms",
             "knowledge_property_definitions",
             "knowledge_item_properties",

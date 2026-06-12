@@ -358,6 +358,9 @@ class KnowledgeMetadataService:
             missing = [term_id for term_id in term_ids if term_id not in found]
             if missing:
                 raise KnowledgeValidationError("unknown taxonomy term for item space")
+            hidden = [row.term_id for row in rows if not can_mutate_knowledge_visibility(actor_role, row.visibility)]
+            if hidden:
+                raise KnowledgeValidationError("actor cannot assign taxonomy term visibility")
         await self.session.execute(delete(KnowledgeItemTaxonomyTerm).where(KnowledgeItemTaxonomyTerm.item_id == item.item_id))
         for term_id in term_ids:
             self.session.add(
@@ -502,6 +505,7 @@ class KnowledgeMetadataService:
 
     async def item_metadata(self, item_ref: str, *, actor_role: str) -> dict[str, Any]:
         item = await self._item(item_ref, actor_role=actor_role)
+        allowed = set(actor_visible_visibilities(actor_role))
         property_rows = (
             await self.session.execute(
                 select(KnowledgeItemPropertyValue, KnowledgePropertyDefinition)
@@ -514,7 +518,10 @@ class KnowledgeMetadataService:
             await self.session.execute(
                 select(KnowledgeTaxonomyTerm)
                 .join(KnowledgeItemTaxonomyTerm, KnowledgeItemTaxonomyTerm.term_id == KnowledgeTaxonomyTerm.term_id)
-                .where(KnowledgeItemTaxonomyTerm.item_id == item.item_id)
+                .where(
+                    KnowledgeItemTaxonomyTerm.item_id == item.item_id,
+                    KnowledgeTaxonomyTerm.visibility.in_(allowed),
+                )
                 .order_by(KnowledgeTaxonomyTerm.term_type.asc(), KnowledgeTaxonomyTerm.code.asc())
             )
         ).scalars().all()

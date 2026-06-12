@@ -36,14 +36,14 @@ function OpsCard({
 function SummaryGrid({ summary }: { summary: KnowledgeOpsSummary }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      <OpsCard description="Published requester/public/agent-safe items" title="Requester-safe coverage" value={metricValue(summary.coverage.requester_safe)} />
-      <OpsCard description="Searches that returned no usable article" title="Zero-result searches" value={metricValue(summary.search.zero_result_searches)} />
-      <OpsCard description="Ask/RAG attempts without enough evidence" title="RAG no-answer" value={metricValue(summary.rag.no_answer_count)} />
-      <OpsCard description="Index jobs requiring attention" title="Failed indexing jobs" value={metricValue(summary.indexing.failed)} />
-      <OpsCard description="Average explainable content score" title="Average quality" value={summary.quality.average_score.toFixed(1)} />
-      <OpsCard description="Open tasks assigned to curators" title="Assigned review tasks" value={metricValue(summary.review.assigned_open)} />
-      <OpsCard description="Graph nodes without linked article context" title="Graph orphan nodes" value={metricValue(summary.graph.orphan_nodes)} />
-      <OpsCard description="Search/RAG/indexing policy blocks" title="AI policy blocks" value={metricValue(summary.ai.policy_blocks)} />
+      <OpsCard description="Опубликованные requester/public/agent-safe статьи" title="Безопасное покрытие" value={metricValue(summary.coverage.requester_safe)} />
+      <OpsCard description="Поиски без подходящей статьи" title="Поиски без результатов" value={metricValue(summary.search.zero_result_searches)} />
+      <OpsCard description="Попытки Ask/RAG без достаточных оснований" title="RAG без ответа" value={metricValue(summary.rag.no_answer_count)} />
+      <OpsCard description="Задачи индексации, требующие внимания" title="Ошибки индексации" value={metricValue(summary.indexing.failed)} />
+      <OpsCard description="Средняя объяснимая оценка контента" title="Среднее качество" value={summary.quality.average_score.toFixed(1)} />
+      <OpsCard description="Открытые задачи кураторов" title="Назначенные проверки" value={metricValue(summary.review.assigned_open)} />
+      <OpsCard description="Узлы графа без связанной статьи" title="Узлы графа без связей" value={metricValue(summary.graph.orphan_nodes)} />
+      <OpsCard description="Блокировки политик поиска/RAG/индексации" title="Блокировки AI-политик" value={metricValue(summary.ai.policy_blocks)} />
     </div>
   );
 }
@@ -117,8 +117,8 @@ export function KnowledgeOpsDashboardPanel() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Knowledge Operations Center</CardTitle>
-          <CardDescription>Загрузка operational snapshot...</CardDescription>
+          <CardTitle>Центр операций базы знаний</CardTitle>
+          <CardDescription>Загрузка операционного снимка...</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -128,8 +128,8 @@ export function KnowledgeOpsDashboardPanel() {
     return (
       <Card className="border-red-200 bg-red-50">
         <CardHeader>
-          <CardTitle>Knowledge Operations Center</CardTitle>
-          <CardDescription>Не удалось загрузить Knowledge Ops summary.</CardDescription>
+          <CardTitle>Центр операций базы знаний</CardTitle>
+          <CardDescription>Не удалось загрузить сводку операций базы знаний.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -144,12 +144,12 @@ export function KnowledgeOpsDashboardPanel() {
         <div>
           <div className="flex items-center gap-2">
             <Gauge className="h-5 w-5 text-brand-600" />
-            <h2 className="text-xl font-semibold text-slate-950">Knowledge Operations Center</h2>
-            <Badge tone={statusTone(summary.status)}>{summary.status === "degraded" ? "Degraded" : "OK"}</Badge>
+            <h2 className="text-xl font-semibold text-slate-950">Центр операций базы знаний</h2>
+            <Badge tone={statusTone(summary.status)}>{summary.status === "degraded" ? "Деградация" : "OK"}</Badge>
           </div>
-          <p className="mt-1 text-sm text-slate-600">Coverage, quality, search, RAG, indexing and Observer v2 health snapshot.</p>
+          <p className="mt-1 text-sm text-slate-600">Снимок покрытия, качества, поиска, RAG, индексации и состояния Observer v2.</p>
         </div>
-        <p className="text-sm text-slate-500">Updated {new Date(summary.generated_at).toLocaleString("ru-RU")}</p>
+        <p className="text-sm text-slate-500">Обновлено {new Date(summary.generated_at).toLocaleString("ru-RU")}</p>
       </div>
 
       <SummaryGrid summary={summary} />
@@ -161,15 +161,15 @@ export function KnowledgeOpsDashboardPanel() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Search className="h-4 w-4" />
-              Search and RAG
+              Поиск и RAG
             </CardTitle>
-            <CardDescription>Fallbacks, vector usage and query demand.</CardDescription>
+            <CardDescription>Fallback, векторное использование и спрос по запросам.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-slate-700">
-            <p>Fallback count: {metricValue(summary.search.fallback_count)}</p>
-            <p>AI disabled count: {metricValue(summary.search.ai_disabled_count)}</p>
-            <p>Vector/rerank usage: {metricValue(summary.search.vector_usage_count)} / {metricValue(summary.search.rerank_usage_count)}</p>
-            <p>Top query: {topQuery ? `${topQuery.query} (${topQuery.count})` : "нет данных"}</p>
+            <p>Fallback: {metricValue(summary.search.fallback_count)}</p>
+            <p>AI отключён: {metricValue(summary.search.ai_disabled_count)}</p>
+            <p>Вектор/rerank: {metricValue(summary.search.vector_usage_count)} / {metricValue(summary.search.rerank_usage_count)}</p>
+            <p>Главный запрос: {topQuery ? `${topQuery.query} (${topQuery.count})` : "нет данных"}</p>
           </CardContent>
         </Card>
 
@@ -177,15 +177,15 @@ export function KnowledgeOpsDashboardPanel() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Layers className="h-4 w-4" />
-              Coverage and Review
+              Покрытие и проверка
             </CardTitle>
-            <CardDescription>Knowledge gaps and review workload.</CardDescription>
+            <CardDescription>Пробелы базы знаний и нагрузка на проверки.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-slate-700">
-            <p>Spaces: {metricValue(summary.coverage.spaces)}</p>
-            <p>Published articles: {metricValue(summary.coverage.published_articles)}</p>
-            <p>Services without KB: {metricValue(summary.coverage.services_without_kb)}</p>
-            <p>Overdue reviews: {metricValue(summary.review.overdue)}</p>
+            <p>Пространства: {metricValue(summary.coverage.spaces)}</p>
+            <p>Опубликованные статьи: {metricValue(summary.coverage.published_articles)}</p>
+            <p>Сервисы без KB: {metricValue(summary.coverage.services_without_kb)}</p>
+            <p>Просроченные проверки: {metricValue(summary.review.overdue)}</p>
           </CardContent>
         </Card>
 
@@ -193,15 +193,15 @@ export function KnowledgeOpsDashboardPanel() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <Bot className="h-4 w-4" />
-              AI, Indexing and Graph
+              AI, индексация и граф
             </CardTitle>
-            <CardDescription>Provider, embedding and graph signal.</CardDescription>
+            <CardDescription>Сигналы провайдера, embedding и графа.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-slate-700">
-            <p>Provider health: {summary.ai.provider_health.status}</p>
-            <p>Queued indexing jobs: {metricValue(summary.indexing.queued)}</p>
-            <p>Stale/disabled embeddings: {metricValue(summary.indexing.stale_embeddings)} / {metricValue(summary.indexing.disabled)}</p>
-            <p>Graph proposals: {metricValue(summary.graph.pending_proposals)}</p>
+            <p>Состояние провайдера: {summary.ai.provider_health.status}</p>
+            <p>Очередь индексации: {metricValue(summary.indexing.queued)}</p>
+            <p>Устаревшие/отключённые embeddings: {metricValue(summary.indexing.stale_embeddings)} / {metricValue(summary.indexing.disabled)}</p>
+            <p>Предложения графа: {metricValue(summary.graph.pending_proposals)}</p>
           </CardContent>
         </Card>
       </div>
@@ -210,9 +210,9 @@ export function KnowledgeOpsDashboardPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             {degradations.length ? <ShieldAlert className="h-4 w-4 text-red-700" /> : <FileSearch className="h-4 w-4 text-emerald-700" />}
-            Observer-backed degradation
+            Деградации из Observer
           </CardTitle>
-          <CardDescription>Active Observer v2 signals with knowledge source or event type.</CardDescription>
+          <CardDescription>Активные сигналы Observer v2 с источником знаний или типом события.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {degradations.length ? (
@@ -231,7 +231,7 @@ export function KnowledgeOpsDashboardPanel() {
               </div>
             ))
           ) : (
-            <p className="text-sm text-emerald-800">Active knowledge degradations are not present.</p>
+            <p className="text-sm text-emerald-800">Активных деградаций базы знаний нет.</p>
           )}
         </CardContent>
       </Card>
@@ -240,9 +240,9 @@ export function KnowledgeOpsDashboardPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <GitBranch className="h-4 w-4" />
-            Phase 12 integration scope
+            Контур интеграции Phase 12
           </CardTitle>
-          <CardDescription>First slice keeps authoring controls below and adds an operations snapshot above them.</CardDescription>
+          <CardDescription>Первый срез сохраняет элементы управления автора ниже и добавляет операционный снимок выше.</CardDescription>
         </CardHeader>
       </Card>
     </section>
