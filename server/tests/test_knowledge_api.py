@@ -13,6 +13,10 @@ def _requester_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-user:requester-knowledge"}
 
 
+def _auditor_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer test-ui-auditor-token"}
+
+
 FORBIDDEN_SAFE_KEYS = {
     "source_ticket_id",
     "source_passport_id",
@@ -274,6 +278,53 @@ async def test_knowledge_graph_edges_reject_unknown_relation_type(test_client) -
     assert valid_resp.status == 200
     valid_payload = await valid_resp.json()
     assert valid_payload["edge"]["relation_type"] == "mentions"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_graph_layouts_save_and_load(test_client) -> None:
+    before_resp = await test_client.get(
+        "/api/web/knowledge/graph/layouts/default",
+        headers=_admin_headers(),
+    )
+    assert before_resp.status == 200
+    before_payload = await before_resp.json()
+    assert before_payload["status"] == "ok"
+    assert before_payload["layout"]["scope_ref"] == "default"
+
+    layout_json = {
+        "nodes": {
+            "concept:vpn": {"x": 120, "y": 240},
+            "knowledge_item:vpn-access": {"x": 520, "y": 260},
+        },
+        "viewport": {"zoom": 1, "pan_x": 0, "pan_y": 0},
+    }
+    save_resp = await test_client.post(
+        "/api/web/knowledge/graph/layouts/default",
+        headers=_admin_headers(),
+        json={"layout_json": layout_json},
+    )
+    assert save_resp.status == 200
+    saved_payload = await save_resp.json()
+    assert saved_payload["status"] == "ok"
+    assert saved_payload["layout"]["layout_json"] == layout_json
+    assert saved_payload["layout"]["scope_type"] == "graph"
+    assert saved_payload["layout"]["scope_ref"] == "default"
+    assert _forbidden_paths(saved_payload) == []
+
+    load_resp = await test_client.get(
+        "/api/web/knowledge/graph/layouts/default",
+        headers=_admin_headers(),
+    )
+    assert load_resp.status == 200
+    loaded_payload = await load_resp.json()
+    assert loaded_payload["layout"]["layout_json"] == layout_json
+
+    auditor_save_resp = await test_client.post(
+        "/api/web/knowledge/graph/layouts/default",
+        headers=_auditor_headers(),
+        json={"layout_json": {"nodes": {}}},
+    )
+    assert auditor_save_resp.status == 403
 
 
 @pytest.mark.asyncio

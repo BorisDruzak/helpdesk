@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from collections import deque
+import math
 from typing import Any
 import uuid
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import KnowledgeEdge, KnowledgeItem, KnowledgeNode
+from app.db.models import KnowledgeEdge, KnowledgeGraphLayout, KnowledgeItem, KnowledgeNode
 from knowledge.contracts import actor_visible_visibilities
 
 
@@ -38,6 +39,64 @@ def _serialize_edge(row: KnowledgeEdge) -> dict[str, Any]:
         "visibility": row.visibility,
         "status": row.status,
     }
+
+
+def _serialize_layout(row: KnowledgeGraphLayout | None, *, scope_type: str, scope_ref: str) -> dict[str, Any]:
+    if row is None:
+        return {
+            "layout_id": None,
+            "scope_type": scope_type,
+            "scope_ref": scope_ref,
+            "layout_json": {},
+            "created_at": None,
+            "updated_at": None,
+        }
+    return {
+        "layout_id": row.layout_id,
+        "scope_type": row.scope_type,
+        "scope_ref": row.scope_ref,
+        "layout_json": row.layout_json or {},
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _safe_number(value: Any) -> float | int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not math.isfinite(float(value)):
+        return None
+    rounded = round(float(value), 3)
+    if rounded.is_integer():
+        return int(rounded)
+    return rounded
+
+
+def _sanitize_layout_json(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    sanitized: dict[str, Any] = {}
+    raw_nodes = value.get("nodes")
+    if isinstance(raw_nodes, dict):
+        nodes: dict[str, dict[str, float | int]] = {}
+        for stable_key, position in list(raw_nodes.items())[:500]:
+            if not isinstance(stable_key, str) or len(stable_key) > 240 or not isinstance(position, dict):
+                continue
+            x = _safe_number(position.get("x"))
+            y = _safe_number(position.get("y"))
+            if x is None or y is None:
+                continue
+            nodes[stable_key] = {"x": x, "y": y}
+        sanitized["nodes"] = nodes
+    raw_viewport = value.get("viewport")
+    if isinstance(raw_viewport, dict):
+        viewport: dict[str, float | int] = {}
+        for key in ("zoom", "pan_x", "pan_y"):
+            number = _safe_number(raw_viewport.get(key))
+            if number is not None:
+                viewport[key] = number
+        sanitized["viewport"] = viewport
+    return sanitized
 
 
 class KnowledgeGraphService:
@@ -112,6 +171,50 @@ class KnowledgeGraphService:
         self.session.add(row)
         await self.session.flush()
         return row
+
+    async def get_layout(self, *, scope_ref: str, scope_type: str = "graph") -> dict[str, Any]:
+        row = (
+            await self.session.execute(
+                select(KnowledgeGraphLayout).where(
+                    KnowledgeGraphLayout.scope_type == scope_type,
+                    KnowledgeGraphLayout.scope_ref == scope_ref,
+                )
+            )
+        ).scalar_one_or_none()
+        return _serialize_layout(row, scope_type=scope_type, scope_ref=scope_ref)
+
+    async def save_layout(
+        self,
+        *,
+        scope_ref: str,
+        layout_json: Any,
+        scope_type: str = "graph",
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        safe_layout = _sanitize_layout_json(layout_json)
+        row = (
+            await self.session.execute(
+                select(KnowledgeGraphLayout).where(
+                    KnowledgeGraphLayout.scope_type == scope_type,
+                    KnowledgeGraphLayout.scope_ref == scope_ref,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = KnowledgeGraphLayout(
+                layout_id=_new_id(),
+                scope_type=scope_type,
+                scope_ref=scope_ref,
+                layout_json=safe_layout,
+                created_by=actor_id,
+                updated_by=actor_id,
+            )
+            self.session.add(row)
+        else:
+            row.layout_json = safe_layout
+            row.updated_by = actor_id
+        await self.session.flush()
+        return _serialize_layout(row, scope_type=scope_type, scope_ref=scope_ref)
 
     async def ensure_item_binding_edges(
         self,

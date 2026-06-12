@@ -70,6 +70,23 @@ function setupFetch() {
         ],
       });
     }
+    if (url === "/api/web/knowledge/graph/layouts/default" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        layout: {
+          layout_id: "layout-1",
+          scope_type: "graph",
+          scope_ref: "default",
+          layout_json: {
+            nodes: {
+              "concept:vpn": { x: 450, y: 90 },
+              "knowledge_item:vpn-access": { x: 450, y: 470 },
+            },
+            viewport: { zoom: 1 },
+          },
+        },
+      });
+    }
     if (url === "/api/web/knowledge/graph/nodes" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       return jsonResponse({
@@ -89,6 +106,17 @@ function setupFetch() {
         edge: {
           edge_id: "edge-2",
           relation_type: JSON.parse(String(init.body)).relation_type,
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/graph/layouts/default" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        layout: {
+          layout_id: "layout-1",
+          scope_type: "graph",
+          scope_ref: "default",
+          layout_json: JSON.parse(String(init.body)).layout_json,
         },
       });
     }
@@ -125,6 +153,7 @@ describe("KnowledgeGraphStudioPage", () => {
     expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
     expect((await screen.findAllByRole("button", { name: /VPN concept/ }))[0]).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Карта графа знаний" })).toBeInTheDocument();
+    expect(await screen.findByText("Layout сохранен для scope default")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /VPN concept/ })[0]);
     expect((await screen.findAllByText("mentions")).length).toBeGreaterThan(0);
@@ -168,6 +197,22 @@ describe("KnowledgeGraphStudioPage", () => {
       target_stable_key: "concept:vpn",
       relation_type: "mentions",
       visibility: "support_internal",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить layout" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/layouts/default",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const saveLayoutCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/layouts/default" && call[1]?.method === "POST");
+    expect(JSON.parse(String(saveLayoutCall?.[1]?.body))).toMatchObject({
+      layout_json: {
+        nodes: {
+          "concept:vpn": expect.objectContaining({ x: expect.any(Number), y: expect.any(Number) }),
+        },
+      },
     });
   });
 });

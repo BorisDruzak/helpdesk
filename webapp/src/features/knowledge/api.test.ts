@@ -13,6 +13,7 @@ import {
   fetchKnowledgeAiProviders,
   fetchKnowledgeGraphNeighborhood,
   fetchKnowledgeGraphNodes,
+  fetchKnowledgeGraphLayout,
   fetchKnowledgeSearchSettings,
   fetchKnowledgeSegments,
   fetchKnowledgeSegmentationProfiles,
@@ -44,6 +45,7 @@ import {
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
   saveKnowledgeAiProvider,
+  saveKnowledgeGraphLayout,
   saveKnowledgeSearchSettings,
   saveKnowledgeSegmentationProfile,
   saveKnowledgeRolloutPolicy,
@@ -173,6 +175,36 @@ describe("knowledge graph api", () => {
       target_stable_key: "concept:vpn",
       relation_type: "mentions",
     });
+  });
+
+  it("loads and saves persisted graph layouts", async () => {
+    const layout = {
+      layout_id: "layout-1",
+      scope_type: "graph",
+      scope_ref: "default",
+      layout_json: {
+        nodes: {
+          "concept:vpn": { x: 120, y: 240 },
+        },
+        viewport: { zoom: 1 },
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", layout }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", layout }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeGraphLayout("default")).resolves.toMatchObject({ scope_ref: "default" });
+    await saveKnowledgeGraphLayout("default", layout.layout_json);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/graph/layouts/default", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/graph/layouts/default",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ layout_json: layout.layout_json });
   });
 });
 

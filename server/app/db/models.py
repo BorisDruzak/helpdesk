@@ -1132,6 +1132,27 @@ class KnowledgeEdge(Base):
     )
 
 
+class KnowledgeGraphLayout(Base):
+    """Persisted canvas layout for a knowledge graph scope."""
+
+    __tablename__ = "knowledge_graph_layouts"
+
+    layout_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False, server_default="graph")
+    scope_ref: Mapped[str] = mapped_column(String(240), nullable=False)
+    layout_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint("scope_type IN ('graph', 'space', 'item')", name="ck_knowledge_graph_layouts_scope_type"),
+        UniqueConstraint("scope_type", "scope_ref", name="uq_knowledge_graph_layouts_scope"),
+        Index("ix_knowledge_graph_layouts_scope", "scope_type", "scope_ref"),
+    )
+
+
 class KnowledgeEntityMention(Base):
     """Entity mention inside a knowledge version/chunk."""
 

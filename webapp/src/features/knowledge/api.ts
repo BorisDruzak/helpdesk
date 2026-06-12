@@ -69,6 +69,15 @@ export type KnowledgeGraphNeighborhood = {
   edges: KnowledgeGraphEdge[];
 };
 
+export type KnowledgeGraphLayout = {
+  layout_id?: string | null;
+  scope_type: string;
+  scope_ref: string;
+  layout_json: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type KnowledgeMetricsSummary = {
   deflection?: {
     deflected_count?: number;
@@ -746,6 +755,22 @@ export async function fetchKnowledgeGraphNeighborhood(nodeIdOrStableKey: string,
     { credentials: "same-origin" },
   );
   return readJson<KnowledgeGraphNeighborhood>(response, "Не удалось загрузить связи графа знаний");
+}
+
+export async function fetchKnowledgeGraphLayout(scope = "default"): Promise<KnowledgeGraphLayout> {
+  const response = await fetch(`/api/web/knowledge/graph/layouts/${encodeURIComponent(scope)}`, { credentials: "same-origin" });
+  const payload = await readJson<{ layout: KnowledgeGraphLayout }>(response, "Не удалось загрузить layout графа знаний");
+  return payload.layout;
+}
+
+export async function saveKnowledgeGraphLayout(scope: string, layoutJson: Record<string, unknown>, scopeType = "graph") {
+  const response = await fetch(`/api/web/knowledge/graph/layouts/${encodeURIComponent(scope)}`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ layout_json: layoutJson, scope_type: scopeType }),
+  });
+  return readJson<{ layout: KnowledgeGraphLayout }>(response, "Не удалось сохранить layout графа знаний");
 }
 
 export async function createKnowledgeGraphNode(payload: Record<string, unknown>) {

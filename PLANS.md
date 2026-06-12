@@ -2132,9 +2132,26 @@ Phase 9 first slice, 2026-06-12:
   * `webapp/src/app/navigation.test.ts` covers Knowledge domain route exposure.
   * `server/tests/test_knowledge_api.py::test_knowledge_graph_edges_reject_unknown_relation_type` covers invalid relation type 400 and valid `mentions` edge creation.
 
+Phase 9 persisted layout slice, 2026-06-12:
+
+* Added migration `116` with `knowledge_graph_layouts` keyed by `(scope_type, scope_ref)` and storing sanitized `layout_json` for graph canvas coordinates.
+* Added `KnowledgeGraphService.get_layout()` / `save_layout()` and authenticated `GET/POST /api/web/knowledge/graph/layouts/{scope}`:
+
+  * admin/support/auditor can load layouts;
+  * admin/support can save layouts;
+  * auditor write attempts return `403`;
+  * layout JSON is narrowed to node stable-key coordinates plus viewport values before persistence/response.
+
+* `/app/admin/knowledge/graph` now loads `default` persisted layout, applies saved node positions to the SVG canvas and exposes `Сохранить layout`.
+* TDD status:
+
+  * RED backend `server/tests/test_knowledge_api.py::test_knowledge_graph_layouts_save_and_load` failed with `404` before route implementation.
+  * RED frontend API test failed because `fetchKnowledgeGraphLayout` was missing.
+  * RED Graph Studio test failed because the layout status/control was not rendered.
+  * GREEN targeted backend/API/Graph Studio tests now pass.
+
 Phase 9 remaining work:
 
-* Backend schema/API for `knowledge_graph_layouts` and persisted canvas layout save/load.
 * Full graph CRUD beyond existing upsert/create: PATCH/DELETE nodes, GET/PATCH/DELETE edges and search endpoint.
 * AI proposal tables/API/review UI and observer events for proposal lifecycle.
 * Cleanup/delete workflow for support_internal live/test graph nodes and edges once graph DELETE endpoints exist.

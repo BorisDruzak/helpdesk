@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw } from "lucide-react";
+import { GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw, Save } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -9,9 +9,12 @@ import { PageHeading } from "../../components/ui/page-heading";
 import {
   createKnowledgeGraphEdge,
   createKnowledgeGraphNode,
+  fetchKnowledgeGraphLayout,
   fetchKnowledgeGraphNeighborhood,
   fetchKnowledgeGraphNodes,
+  saveKnowledgeGraphLayout,
   type KnowledgeGraphEdge,
+  type KnowledgeGraphLayout,
   type KnowledgeGraphNode,
 } from "./api";
 
@@ -39,20 +42,46 @@ type PositionedNode = KnowledgeGraphNode & {
   y: number;
 };
 
+type LayoutPosition = {
+  x: number;
+  y: number;
+};
+
 function emptyToNull(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
 }
 
-function layoutNodes(nodes: KnowledgeGraphNode[]): PositionedNode[] {
+function savedPosition(layout: KnowledgeGraphLayout | undefined, stableKey: string): LayoutPosition | null {
+  const nodes = layout?.layout_json?.nodes;
+  if (!nodes || typeof nodes !== "object") {
+    return null;
+  }
+  const position = (nodes as Record<string, unknown>)[stableKey];
+  if (!position || typeof position !== "object") {
+    return null;
+  }
+  const candidate = position as Record<string, unknown>;
+  if (typeof candidate.x !== "number" || typeof candidate.y !== "number") {
+    return null;
+  }
+  return { x: candidate.x, y: candidate.y };
+}
+
+function layoutNodes(nodes: KnowledgeGraphNode[], layout?: KnowledgeGraphLayout): PositionedNode[] {
   const centerX = 450;
   const centerY = 280;
   const radiusX = 310;
   const radiusY = 190;
   if (nodes.length === 1) {
-    return [{ ...nodes[0], x: centerX, y: centerY }];
+    const saved = savedPosition(layout, nodes[0].stable_key);
+    return [{ ...nodes[0], x: saved?.x ?? centerX, y: saved?.y ?? centerY }];
   }
   return nodes.map((node, index) => {
+    const saved = savedPosition(layout, node.stable_key);
+    if (saved) {
+      return { ...node, x: saved.x, y: saved.y };
+    }
     const angle = (Math.PI * 2 * index) / Math.max(nodes.length, 1) - Math.PI / 2;
     return {
       ...node,
@@ -118,7 +147,8 @@ export function KnowledgeGraphStudioPage() {
   });
   const graphNodes = neighborhoodQuery.data?.nodes.length ? neighborhoodQuery.data.nodes : filteredNodes.slice(0, 12);
   const graphEdges = neighborhoodQuery.data?.edges ?? [];
-  const positionedNodes = useMemo(() => layoutNodes(graphNodes), [graphNodes]);
+  const layoutQuery = useQuery({ queryKey: ["knowledge-graph-layout", "default"], queryFn: () => fetchKnowledgeGraphLayout("default") });
+  const positionedNodes = useMemo(() => layoutNodes(graphNodes, layoutQuery.data), [graphNodes, layoutQuery.data]);
   const positionedById = useMemo(() => new Map(positionedNodes.map((node) => [node.node_id, node])), [positionedNodes]);
   const graphNodesById = useMemo(() => new Map(graphNodes.map((node) => [node.node_id, node])), [graphNodes]);
 
@@ -157,6 +187,17 @@ export function KnowledgeGraphStudioPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
+    },
+  });
+
+  const saveLayoutMutation = useMutation({
+    mutationFn: () =>
+      saveKnowledgeGraphLayout("default", {
+        nodes: Object.fromEntries(positionedNodes.map((node) => [node.stable_key, { x: node.x, y: node.y }])),
+        viewport: { zoom: 1, pan_x: 0, pan_y: 0 },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-layout", "default"] });
     },
   });
 
@@ -326,9 +367,9 @@ export function KnowledgeGraphStudioPage() {
                 <RefreshCw className="h-5 w-5" />
                 Warnings и coverage
               </CardTitle>
-              <CardDescription>Первый Phase 9 slice покрывает ручные nodes/edges; persisted layout и AI proposals идут отдельным backend slice.</CardDescription>
+              <CardDescription>Ручные nodes/edges и persisted layout; AI proposals идут отдельным backend slice.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3 text-sm text-slate-600 md:grid-cols-3">
+            <CardContent className="grid gap-3 text-sm text-slate-600 md:grid-cols-4">
               <div className="rounded-md bg-slate-50 p-3">
                 <p className="font-semibold text-slate-900">Узлы</p>
                 <p>{graphNodes.length} в текущем neighborhood</p>
@@ -340,6 +381,20 @@ export function KnowledgeGraphStudioPage() {
               <div className="rounded-md bg-amber-50 p-3 text-amber-800">
                 <p className="font-semibold">AI suggestions</p>
                 <p>Отключены до policy-gated proposals API.</p>
+              </div>
+              <div className="rounded-md bg-emerald-50 p-3 text-emerald-900">
+                <p className="font-semibold">Layout</p>
+                <p>{layoutQuery.data?.layout_id ? "Layout сохранен для scope default" : "Layout еще не сохранен"}</p>
+                <Button
+                  className="mt-3"
+                  disabled={!positionedNodes.length || saveLayoutMutation.isPending}
+                  onClick={() => saveLayoutMutation.mutate()}
+                  size="sm"
+                  variant="secondary"
+                >
+                  <Save className="h-4 w-4" />
+                  Сохранить layout
+                </Button>
               </div>
             </CardContent>
           </Card>

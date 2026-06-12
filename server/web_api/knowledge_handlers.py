@@ -1474,6 +1474,33 @@ async def handle_web_knowledge_graph_neighborhood(request: web.Request) -> web.R
     return web.json_response({"status": "ok", **graph})
 
 
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_graph_layouts(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    scope_ref = str(request.match_info.get("scope") or "default").strip() or "default"
+    if len(scope_ref) > 240:
+        return web.json_response({"status": "error", "error": "validation_error", "details": "scope is too long"}, status=400)
+    async with get_session() as session:
+        graph = KnowledgeGraphService(session)
+        if request.method == "POST":
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            payload = await _json_payload(request)
+            scope_type = str(payload.get("scope_type") or "graph")
+            if scope_type not in {"graph", "space", "item"}:
+                return web.json_response({"status": "error", "error": "validation_error", "details": "unsupported scope_type"}, status=400)
+            layout = await graph.save_layout(
+                scope_ref=scope_ref,
+                scope_type=scope_type,
+                layout_json=payload.get("layout_json") or {},
+                actor_id=actor_id,
+            )
+            await session.commit()
+            return web.json_response({"status": "ok", "layout": layout})
+        layout = await graph.get_layout(scope_ref=scope_ref)
+    return web.json_response({"status": "ok", "layout": layout})
+
+
 @require_auth("admin", "support")
 async def handle_web_knowledge_graph_edges(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
