@@ -7,7 +7,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 import config
 from auth.context import AuthContext, AuthType
-from auth.middleware import auth_middleware
+from auth.middleware import WEB_SESSION_COOKIE_NAME, auth_middleware, extract_token_from_web_cookie
 import auth.middleware as auth_middleware_module
 import auth.handlers as auth_handlers
 import app.db as app_db_module
@@ -198,6 +198,16 @@ def test_rate_limit_client_ip_uses_x_forwarded_for_only_for_trusted_proxy(monkey
 
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.no_db
+def test_web_session_cookie_is_accepted_for_knowledge_api_prefix():
+    request = SimpleNamespace(
+        path="/api/knowledge/portal/home",
+        cookies={WEB_SESSION_COOKIE_NAME: " requester-session-token "},
+    )
+
+    assert extract_token_from_web_cookie(request) == "requester-session-token"
 
 
 class _FakeSessionContext:

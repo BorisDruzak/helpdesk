@@ -23,6 +23,7 @@ WEB_AUTH_AUDIT_WINDOW_SEC = 60
 _WEB_AUTH_AUDIT_LAST_SEEN: dict[tuple[str, str, str, str], datetime] = {}
 WEB_SESSION_AUTH_PATH_PREFIXES = (
     "/api/web/",
+    "/api/knowledge/",
     "/api/upload",
     "/api/artifacts/",
     "/api/modules/",
