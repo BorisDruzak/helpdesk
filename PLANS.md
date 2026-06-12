@@ -2000,18 +2000,30 @@ Phase 9 first slice, 2026-06-12:
   * `POST /api/web/knowledge/graph/edges`
 
 * Navigation now exposes `Граф знаний` inside the admin Knowledge domain.
+* Live validation after deploy:
+
+  * Commits: `73130642` added the Visual Graph Studio first slice; `c7449acd` aligned relation type defaults with the existing DB constraint and added backend validation for unsupported relation types.
+  * Artifact: `artifacts/browser_live_validation/knowledge-graph-c7449acd-1781236903632/report.json`
+  * Screenshot: `artifacts/browser_live_validation/knowledge-graph-c7449acd-1781236903632/knowledge-graph-live.png`
+  * Remote URL: `https://192.168.100.17:9443/app/admin/knowledge/graph`
+  * Result: login 200, graph nodes GET 200, required UI text present, manual node create POST 200, manual edge create POST 200, neighborhood GET 200.
+  * Created live test node: `concept:codex-live-graph-1781236903632`
+  * Created live test edge: `9498e50e-80a3-48e0-84d4-0ab69fb3d75e`, relation type `mentions`.
+  * Console messages: none. Failed requests: none. HTTP errors: none.
+  * Live finding fixed during this phase: the first UI default used `related_to`, which violated `ck_knowledge_edges_relation_type` and produced a server 500. The studio now defaults to valid relation types and the backend returns 400 for unsupported relation types before DB flush.
 * Focused coverage:
 
   * `webapp/src/features/knowledge/graph-studio.test.tsx` covers graph canvas load, neighborhood display, node creation payload and edge creation payload.
   * `webapp/src/features/knowledge/api.test.ts` covers graph helper endpoint/payload contracts.
   * `webapp/src/app/navigation.test.ts` covers Knowledge domain route exposure.
+  * `server/tests/test_knowledge_api.py::test_knowledge_graph_edges_reject_unknown_relation_type` covers invalid relation type 400 and valid `mentions` edge creation.
 
 Phase 9 remaining work:
 
 * Backend schema/API for `knowledge_graph_layouts` and persisted canvas layout save/load.
 * Full graph CRUD beyond existing upsert/create: PATCH/DELETE nodes, GET/PATCH/DELETE edges and search endpoint.
 * AI proposal tables/API/review UI and observer events for proposal lifecycle.
-* Browser/live evidence after deploy for open graph studio, create concept node, link to article node and create relation edge.
+* Cleanup/delete workflow for support_internal live/test graph nodes and edges once graph DELETE endpoints exist.
 
 ---
 
