@@ -1205,6 +1205,16 @@ class SupportKnowledgeArticle(BaseModel):
     url: str | None = None
 
 
+class SupportKnowledgeRequesterAttempt(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: str
+    version_id: str | None = None
+    result: str
+    surface: str
+    occurred_at: str
+
+
 class SupportKnowledgeAiSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1236,6 +1246,7 @@ class SupportTicketKnowledgeSuggestionsPayload(BaseModel):
     ticket_id: str
     similar_tickets: list[SupportKnowledgeSimilarTicket] = Field(default_factory=list)
     articles: list[SupportKnowledgeArticle] = Field(default_factory=list)
+    requester_attempts: list[SupportKnowledgeRequesterAttempt] = Field(default_factory=list)
     ai_summary: SupportKnowledgeAiSummary = Field(default_factory=SupportKnowledgeAiSummary)
     diagnostics: SupportKnowledgeDiagnostics = Field(default_factory=SupportKnowledgeDiagnostics)
 

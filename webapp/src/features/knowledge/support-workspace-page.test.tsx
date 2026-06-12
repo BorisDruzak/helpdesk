@@ -218,6 +218,59 @@ describe("KnowledgeSupportWorkspacePage", () => {
       if (url === "/api/web/support/tickets/ticket-1/kb_links" && init?.method === "POST") {
         return Promise.resolve(jsonResponse({ status: "ok", kb_link: { id: 42, article_ref: "item-requester" } }));
       }
+      if (url === "/api/web/support/tickets/ticket-1/knowledge-suggestions") {
+        return Promise.resolve(
+          jsonResponse({
+            status: "success",
+            data: {
+              ticket_id: "ticket-1",
+              requester_attempts: [
+                {
+                  item_id: "item-requester",
+                  version_id: "version-requester",
+                  result: "viewed",
+                  surface: "requester_portal",
+                  occurred_at: "2026-06-12T08:15:00+05:00",
+                },
+              ],
+              articles: [{ id: "item-requester", title: "VPN requester guide", url: "/app/knowledge/articles/item-requester" }],
+              similar_tickets: [],
+              ai_summary: { text: null, sources: [], confidence: "none", source_count: 0 },
+              diagnostics: {
+                provider: "support_knowledge_provider",
+                provider_version: "local-v1",
+                provider_status: "ok",
+                external_provider_status: "not_configured",
+                source_counts: {},
+                query_signals: [],
+                article_matches: {},
+                similar_ticket_matches: {},
+              },
+            },
+          }),
+        );
+      }
+      if (url === "/api/web/support/tickets/ticket-1/passport/knowledge-draft" && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            status: "success",
+            data: {
+              title: "Решение по VPN",
+              problem: "VPN не подключается",
+              resolution: "Перезапуск клиента",
+              repeat_guidance: "Проверить профиль VPN",
+              source_passport_id: 7,
+              item_id: "draft-1",
+              version_id: "draft-version-1",
+              status: "draft",
+              item_type: "article",
+              edit_url: "/app/admin/knowledge?item=draft-1",
+              warnings: [],
+              bindings: [],
+            },
+          }),
+        );
+      }
       if (url === "/api/knowledge/feedback" && init?.method === "POST") {
         return Promise.resolve(jsonResponse({ status: "ok", event: { event_id: "event-1" } }));
       }
@@ -229,6 +282,9 @@ describe("KnowledgeSupportWorkspacePage", () => {
 
     expect(await screen.findByText("Ticket context")).toBeInTheDocument();
     expect(screen.getByText("ticket-1")).toBeInTheDocument();
+    expect(await screen.findByText("Self-service попытки")).toBeInTheDocument();
+    expect(screen.getAllByText("item-requester").length).toBeGreaterThan(0);
+    expect(screen.getByText("Просмотрена")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "VPN requester guide" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Связать с тикетом" }));
@@ -244,6 +300,13 @@ describe("KnowledgeSupportWorkspacePage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Сообщить о слабой статье" }));
     await waitFor(() => expect(screen.getByText("Слабая статья отмечена для улучшения.")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Создать черновик из паспорта" }));
+    await waitFor(() => expect(screen.getByText("Черновик знания подготовлен: Решение по VPN")).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/support/tickets/ticket-1/passport/knowledge-draft", {
+      method: "POST",
+      credentials: "same-origin",
+    });
 
     const feedbackBodies = fetchMock.mock.calls
       .filter((call) => String(call[0]) === "/api/knowledge/feedback")

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { BookOpen, Bot, ClipboardCheck, FileText, Link2, Search, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { BookOpen, Bot, ClipboardCheck, FilePlus2, FileText, Link2, ListChecks, Search, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
@@ -10,6 +10,8 @@ import { PageHeading } from "../../components/ui/page-heading";
 import {
   fetchKnowledgeItems,
   fetchKnowledgeItemVersions,
+  fetchSupportTicketKnowledgeSuggestions,
+  createSupportTicketKnowledgeDraft,
   linkKnowledgeArticleToTicket,
   previewKnowledgeAsk,
   recordKnowledgeSupportFeedback,
@@ -64,8 +66,40 @@ function citationValue(value: unknown) {
   return value == null || value === "" ? "нет" : String(value);
 }
 
+const attemptResultLabels: Record<string, string> = {
+  suggested: "Предложена",
+  viewed: "Просмотрена",
+  helpful: "Помогла",
+  not_helpful: "Не помогла",
+  deflected: "Решила без тикета",
+  skipped: "Пропущена",
+  ticket_created_after_view: "Создан тикет после просмотра",
+};
+
+function attemptResultLabel(result: string) {
+  return attemptResultLabels[result] ?? result;
+}
+
+function shortDateTimeLabel(value?: string | null) {
+  if (!value) {
+    return "время не указано";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 export function KnowledgeSupportWorkspacePage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("query") ?? "");
@@ -78,6 +112,11 @@ export function KnowledgeSupportWorkspacePage() {
   const ticketQuerySuffix = ticketId ? `?ticket_id=${encodeURIComponent(ticketId)}` : "";
 
   const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
+  const ticketKnowledgeQuery = useQuery({
+    queryKey: ["support-ticket-knowledge", ticketId],
+    queryFn: () => fetchSupportTicketKnowledgeSuggestions(ticketId),
+    enabled: Boolean(ticketId),
+  });
   const items = useMemo(() => (itemsQuery.data ?? []).filter((item) => supportVisibilities.has(item.visibility)), [itemsQuery.data]);
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -115,6 +154,8 @@ export function KnowledgeSupportWorkspacePage() {
   const supportInternalCount = items.filter((item) => item.visibility === "support_internal").length;
   const runbookCount = items.filter((item) => item.item_type === "runbook").length;
   const knownErrorCount = items.filter((item) => item.item_type === "known_error").length;
+  const requesterAttempts = ticketKnowledgeQuery.data?.requester_attempts ?? [];
+  const ticketArticles = ticketKnowledgeQuery.data?.articles ?? [];
   const askDebugMutation = useMutation<KnowledgeAskResult>({
     mutationFn: () =>
       previewKnowledgeAsk({
@@ -172,6 +213,19 @@ export function KnowledgeSupportWorkspacePage() {
     onSuccess: () => setActionMessage("Слабая статья отмечена для улучшения."),
     onError: () => setActionMessage("Не удалось отметить слабую статью."),
   });
+  const passportDraftMutation = useMutation({
+    mutationFn: () => {
+      if (!ticketId) {
+        throw new Error("ticket context is required");
+      }
+      return createSupportTicketKnowledgeDraft(ticketId);
+    },
+    onSuccess: async (draft) => {
+      setActionMessage(`Черновик знания подготовлен: ${draft.title}`);
+      await queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+    },
+    onError: () => setActionMessage("Не удалось подготовить черновик знания из паспорта."),
+  });
 
   async function copySafeAnswer() {
     if (!selectedItem || !requesterSafeVisibilities.has(selectedItem.visibility)) {
@@ -186,6 +240,10 @@ export function KnowledgeSupportWorkspacePage() {
     setCopyMessage("");
     setActionMessage("");
     navigate(`/app/knowledge/articles/${encodeURIComponent(item.item_id)}${ticketQuerySuffix}`);
+  }
+
+  function ticketArticleHref(articleId: string) {
+    return `/app/knowledge/articles/${encodeURIComponent(articleId)}${ticketQuerySuffix}`;
   }
 
   return (
@@ -449,9 +507,73 @@ export function KnowledgeSupportWorkspacePage() {
                 Ticket integration
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm text-slate-600">
-              <p>Ticket context подключается через параметр ticket_id, чтобы связать статью с тикетом, записать support_used и отметить слабую статью.</p>
-              <p>Requester attempts и draft from passport остаются следующим slice.</p>
+            <CardContent className="space-y-4 text-sm text-slate-600">
+              {ticketId ? (
+                <>
+                  <p>Ticket context подключается через параметр ticket_id, чтобы связать статью с тикетом, записать support_used и собрать черновик знания из паспорта решения.</p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button disabled={passportDraftMutation.isPending} onClick={() => passportDraftMutation.mutate()} size="sm" variant="outline">
+                      <FilePlus2 className="mr-2 h-4 w-4" />
+                      Создать черновик из паспорта
+                    </Button>
+                    {passportDraftMutation.data?.edit_url ? (
+                      <Link className="inline-flex items-center text-sm font-medium text-brand-700 hover:underline" to={passportDraftMutation.data.edit_url}>
+                        Открыть черновик
+                      </Link>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-md border border-slate-200 p-3">
+                    <div className="flex items-center gap-2">
+                      <ListChecks className="h-4 w-4 text-slate-500" />
+                      <p className="font-semibold text-slate-900">Self-service попытки</p>
+                    </div>
+                    {ticketKnowledgeQuery.isLoading ? (
+                      <p className="mt-2 text-slate-500">Загружаем попытки requester...</p>
+                    ) : requesterAttempts.length ? (
+                      <div className="mt-3 space-y-2">
+                        {requesterAttempts.slice(0, 5).map((attempt) => (
+                          <div className="rounded-md bg-slate-50 px-3 py-2" key={`${attempt.item_id}-${attempt.occurred_at}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="font-medium text-slate-800">{attempt.item_id}</p>
+                              <Badge tone={attempt.result === "not_helpful" ? "warning" : "info"}>{attemptResultLabel(attempt.result)}</Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {shortDateTimeLabel(attempt.occurred_at)}
+                              {attempt.version_id ? ` · ${attempt.version_id}` : ""}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-slate-500">Requester ещё не оставлял self-service попыток для этого тикета.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded-md border border-slate-200 p-3">
+                    <p className="font-semibold text-slate-900">Подсказки по тикету</p>
+                    {ticketArticles.length ? (
+                      <div className="mt-3 space-y-2">
+                        {ticketArticles.slice(0, 5).map((article) => (
+                          <Link className="block rounded-md bg-slate-50 px-3 py-2 text-slate-700 hover:bg-brand-50" key={article.id} to={ticketArticleHref(article.id)}>
+                            <span className="block font-medium">{article.title}</span>
+                            <span className="mt-1 block text-xs text-slate-500">{article.id}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-slate-500">Подсказки для тикета пока не найдены.</p>
+                    )}
+                  </div>
+
+                  {ticketKnowledgeQuery.isError ? <p className="text-sm text-rose-700">Не удалось загрузить знания по тикету.</p> : null}
+                </>
+              ) : (
+                <>
+                  <p>Добавьте ticket_id в URL, чтобы связать статью с тикетом, увидеть requester attempts и создать черновик из паспорта решения.</p>
+                  <p>Пример: /app/knowledge?ticket_id=TICKET_ID</p>
+                </>
+              )}
             </CardContent>
           </Card>
 

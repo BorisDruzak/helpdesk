@@ -8,6 +8,7 @@ import {
   fetchKnowledgeGaps,
   createKnowledgeGraphEdge,
   createKnowledgeGraphNode,
+  createSupportTicketKnowledgeDraft,
   deleteKnowledgeGraphEdge,
   deleteKnowledgeGraphNode,
   fetchKnowledgeGraphEdge,
@@ -33,6 +34,7 @@ import {
   fetchKnowledgePortalArticle,
   fetchKnowledgePortalCollection,
   fetchKnowledgePortalHome,
+  fetchSupportTicketKnowledgeSuggestions,
   removeKnowledgePortalBookmark,
   previewKnowledgeSearch,
   previewKnowledgeRetrieval,
@@ -84,6 +86,71 @@ afterEach(() => {
 });
 
 describe("knowledge operations api", () => {
+  it("loads support ticket knowledge attempts and creates passport draft through web-session endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "ticket-1",
+            requester_attempts: [
+              {
+                item_id: "item-1",
+                result: "viewed",
+                surface: "requester_portal",
+                occurred_at: "2026-06-12T08:15:00+00:00",
+              },
+            ],
+            articles: [],
+            similar_tickets: [],
+            ai_summary: { text: null, sources: [], confidence: "none", source_count: 0 },
+            diagnostics: {
+              provider: "support_knowledge_provider",
+              provider_version: "local-v1",
+              source_counts: {},
+              query_signals: [],
+              article_matches: {},
+              similar_ticket_matches: {},
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "success",
+          data: {
+            title: "Решение по тикету ticket-1",
+            problem: "Проблема",
+            resolution: "Решение",
+            repeat_guidance: "Повтор",
+            source_passport_id: 5,
+            item_id: "draft-1",
+            version_id: "version-1",
+            edit_url: "/app/admin/knowledge?item=draft-1",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSupportTicketKnowledgeSuggestions("ticket-1")).resolves.toMatchObject({
+      ticket_id: "ticket-1",
+      requester_attempts: [{ item_id: "item-1", result: "viewed" }],
+    });
+    await expect(createSupportTicketKnowledgeDraft("ticket-1")).resolves.toMatchObject({
+      item_id: "draft-1",
+      edit_url: "/app/admin/knowledge?item=draft-1",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/support/tickets/ticket-1/knowledge-suggestions", {
+      credentials: "same-origin",
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/support/tickets/ticket-1/passport/knowledge-draft", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+  });
+
   it("loads P2.2 operations summaries from real endpoints", async () => {
     const fetchMock = vi
       .fn()

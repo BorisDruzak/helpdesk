@@ -2727,6 +2727,42 @@ Phase 11 support ticket actions slice, 2026-06-12:
   * Live audit confirmed events `knowledge.support.ticket_linked`, `knowledge.support.article_used` and `knowledge.support.weak_article_reported` with source `knowledge_support`; unsafe probe strings `secret-token` and `password=hidden` were absent from audit output.
   * Evidence screenshot: `knowledge-support-ticket-actions-8f81c251.png`.
 
+Phase 11 requester attempts / passport draft slice, 2026-06-12:
+
+* `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions` now includes safe `requester_attempts` from ticket `knowledge_attempts` where `surface=requester_portal`.
+* Safety contract: requester attempts expose only `item_id`, `version_id`, `result`, `surface` and `occurred_at`; arbitrary attempt metadata is not serialized into the support payload.
+* `/app/knowledge` with `ticket_id` now loads the support ticket knowledge payload and shows:
+
+  * requester self-service attempts;
+  * ticket-scoped suggested articles;
+  * `Создать черновик из паспорта` action through existing `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft`;
+  * link to the created draft when the backend returns `edit_url`.
+
+* `/app/tickets` Knowledge tab now renders the same requester attempts from the shared support workspace mapper.
+* No database migration or new table was added; the slice reuses existing sanitized `knowledge_attempts`, support knowledge suggestions and passport-to-draft service contracts.
+* TDD status:
+
+  * RED backend test failed with `KeyError: 'requester_attempts'` before DTO/serializer changes.
+  * RED frontend tests failed on missing `fetchSupportTicketKnowledgeSuggestions()` helper, missing `/app/knowledge` requester-attempts UI and missing queue mapper field.
+  * GREEN after implementation.
+
+* Local verification:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload -q --tb=short` passed, 1 test.
+  * `pnpm --dir webapp test -- src/features/knowledge/support-workspace-page.test.tsx src/features/knowledge/api.test.ts src/features/queues/support-workspace-mappers.test.ts` passed, 44 tests.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_uses_catalog_search_without_manual_links server/tests/test_ticket_knowledge_links_compat.py server/tests/test_knowledge_feedback.py server/tests/test_knowledge_passport_draft.py -q --tb=short` passed, 9 tests.
+  * `pnpm --dir webapp test -- src/features/knowledge/support-workspace-page.test.tsx src/features/knowledge/api.test.ts src/features/queues/api.test.ts src/features/queues/support-workspace-mappers.test.ts src/pages/tickets/list-page.test.tsx` passed, 88 tests.
+  * `python -m compileall -q server shared scripts` passed.
+  * `pnpm --dir webapp build` passed.
+  * `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py -q` passed, 21 tests.
+  * `python scripts/docs_inventory.py --check-links` passed.
+  * `python scripts/verify_workspace.py` passed after updating `scripts/navigation_catalog.py`.
+  * `git diff --check` passed with CRLF warnings only on existing dirty/generated files.
+
+* Remote/live validation:
+
+  * Pending after local commit/deploy. Required checks: open `/app/knowledge` with `ticket_id`, confirm requester attempts and ticket suggestions render, create passport draft through the browser session, open `/app/tickets` Knowledge tab for the same ticket, verify no console/network errors, and stop remote services after validation.
+
 Exit criteria:
 
 * Helpdesk integration remains strong.

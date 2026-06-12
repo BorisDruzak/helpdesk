@@ -2101,7 +2101,25 @@ async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_work
             queue_id=queue.id,
             assignee_id="support-test",
             priority="P1",
-            custom_fields={"similar_tickets": [similar_ticket.ticket_id]},
+            custom_fields={
+                "similar_tickets": [similar_ticket.ticket_id],
+                "knowledge_attempts": [
+                    {
+                        "item_id": "KB-502",
+                        "version_id": "version-502",
+                        "result": "viewed",
+                        "surface": "requester_portal",
+                        "occurred_at": "2026-06-12T08:15:00+00:00",
+                        "metadata": {"debug": "secret-token"},
+                    },
+                    {
+                        "item_id": "AGENT-KB",
+                        "result": "viewed",
+                        "surface": "agent_gui",
+                        "occurred_at": "2026-06-12T08:16:00+00:00",
+                    },
+                ],
+            },
         )
         session.add(ticket)
         await session.flush()
@@ -2124,6 +2142,16 @@ async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_work
     payload = await response.json()
     data = payload["data"]
     assert data["ticket_id"] == ticket_id
+    assert data["requester_attempts"] == [
+        {
+            "item_id": "KB-502",
+            "version_id": "version-502",
+            "result": "viewed",
+            "surface": "requester_portal",
+            "occurred_at": "2026-06-12T08:15:00+00:00",
+        }
+    ]
+    assert "secret-token" not in repr(data["requester_attempts"])
     assert data["articles"] == [
         {
             "id": "KB-502",

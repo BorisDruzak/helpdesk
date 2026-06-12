@@ -933,6 +933,13 @@ export type SupportTicketKnowledgeDraftPayload = {
 
 export type SupportTicketKnowledgeSuggestionsPayload = {
   ticket_id: string;
+  requester_attempts?: Array<{
+    item_id: string;
+    version_id?: string | null;
+    result: string;
+    surface: string;
+    occurred_at: string;
+  }>;
   similar_tickets: Array<{
     id: string;
     number: string | null;

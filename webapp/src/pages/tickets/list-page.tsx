@@ -4410,6 +4410,31 @@ export function TicketListPage() {
                   </section>
                 ) : null}
 
+                {viewModel.right.knowledge.requesterAttempts.length ? (
+                  <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
+                    <div className="flex items-center gap-2">
+                      <ClipboardList className="h-4 w-4 text-emerald-300" />
+                      <p className="font-semibold text-white">Self-service попытки</p>
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      {viewModel.right.knowledge.requesterAttempts.slice(0, 5).map((attempt) => (
+                        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200" key={`${attempt.itemId}-${attempt.occurredAt}`}>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">{attempt.itemId}</span>
+                            <span className="rounded-full border border-emerald-300/20 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-100">
+                              {attempt.resultLabel}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {attempt.occurredAtLabel}
+                            {attempt.versionId ? ` · ${attempt.versionId}` : ""}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
                 {(viewModel.right.knowledge.articles.length || viewModel.right.knowledge.similarTickets.length) ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div className="flex items-center gap-2">

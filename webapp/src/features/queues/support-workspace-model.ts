@@ -301,6 +301,15 @@ export type SupportWorkspaceObserverDiagnostic = {
 export type SupportWorkspaceKnowledge = {
   similarTickets: Array<{ id: string; code: string; subject: string; summary: string }>;
   articles: Array<{ id: string; title: string; url: string }>;
+  requesterAttempts: Array<{
+    itemId: string;
+    versionId: string | null;
+    result: string;
+    resultLabel: string;
+    surface: string;
+    occurredAt: string;
+    occurredAtLabel: string;
+  }>;
   aiSummary: {
     text: string;
     sources: string[];

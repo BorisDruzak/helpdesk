@@ -331,6 +331,15 @@ function knowledgePayload(): SupportTicketKnowledgeSuggestionsPayload {
       },
     ],
     articles: [{ id: "KB-502", title: "РћС€РёР±РєР° 502 Bad Gateway", url: "/app/knowledge/KB-502" }],
+    requester_attempts: [
+      {
+        item_id: "KB-502",
+        version_id: "version-502",
+        result: "viewed",
+        surface: "requester_portal",
+        occurred_at: "2026-06-12T08:15:00+05:00",
+      },
+    ],
     ai_summary: {
       text: "AI-рекомендация / Бета: проверьте источники перед применением.",
       sources: ["KB-502", "T-001011"],
@@ -1084,6 +1093,17 @@ describe("support workspace mappers", () => {
 
     expect(viewModel.right.knowledge.articles).toEqual([
       { id: "KB-502", title: "РћС€РёР±РєР° 502 Bad Gateway", url: "/app/knowledge/KB-502" },
+    ]);
+    expect(viewModel.right.knowledge.requesterAttempts).toEqual([
+      {
+        itemId: "KB-502",
+        versionId: "version-502",
+        result: "viewed",
+        resultLabel: "Просмотрена",
+        surface: "requester_portal",
+        occurredAt: "2026-06-12T08:15:00+05:00",
+        occurredAtLabel: "12.06.2026, 08:15",
+      },
     ]);
     expect(viewModel.right.knowledge.similarTickets[0]).toEqual({
       id: "ticket-1011",

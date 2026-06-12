@@ -762,6 +762,52 @@ export type KnowledgeImportJob = {
   completed_at?: string | null;
 };
 
+export type SupportTicketKnowledgeRequesterAttempt = {
+  item_id: string;
+  version_id?: string | null;
+  result: string;
+  surface: string;
+  occurred_at: string;
+};
+
+export type SupportTicketKnowledgeSuggestions = {
+  ticket_id: string;
+  requester_attempts: SupportTicketKnowledgeRequesterAttempt[];
+  similar_tickets: Array<{
+    id: string;
+    number: string | null;
+    subject: string;
+    resolution_summary: string | null;
+  }>;
+  articles: Array<{
+    id: string;
+    title: string;
+    url: string | null;
+  }>;
+  ai_summary: {
+    text: string | null;
+    sources: string[];
+    confidence?: string;
+    source_count?: number;
+  };
+  diagnostics?: Record<string, unknown>;
+};
+
+export type SupportTicketKnowledgeDraft = {
+  title: string;
+  problem: string;
+  resolution: string;
+  repeat_guidance: string;
+  source_passport_id: number;
+  item_id?: string | null;
+  version_id?: string | null;
+  status?: string | null;
+  item_type?: string | null;
+  edit_url?: string | null;
+  warnings?: string[];
+  bindings?: Array<Record<string, unknown>>;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -856,6 +902,23 @@ export async function recordKnowledgeSupportFeedback(payload: Record<string, unk
     body: JSON.stringify(payload),
   });
   return readJson<{ event: Record<string, unknown> }>(response, "Не удалось записать использование знания");
+}
+
+export async function fetchSupportTicketKnowledgeSuggestions(ticketId: string): Promise<SupportTicketKnowledgeSuggestions> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/knowledge-suggestions`, {
+    credentials: "same-origin",
+  });
+  const payload = await readJson<{ status: string; data: SupportTicketKnowledgeSuggestions }>(response, "Не удалось загрузить знания по тикету");
+  return payload.data;
+}
+
+export async function createSupportTicketKnowledgeDraft(ticketId: string): Promise<SupportTicketKnowledgeDraft> {
+  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport/knowledge-draft`, {
+    method: "POST",
+    credentials: "same-origin",
+  });
+  const payload = await readJson<{ status: string; data: SupportTicketKnowledgeDraft }>(response, "Не удалось подготовить черновик знания");
+  return payload.data;
 }
 
 export async function fetchKnowledgeGraphNodes(): Promise<KnowledgeGraphNode[]> {

@@ -65,6 +65,14 @@ const DATE_TIME_WITH_YEAR_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
   minute: "2-digit",
 });
 
+const KNOWLEDGE_ATTEMPT_DATE_FORMATTER = new Intl.DateTimeFormat("ru-RU", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 const WORK_SLICE_ORDER = ["my_action", "sla_risk", "unassigned", "requester_reply"];
 
 const WORK_SLICE_FALLBACK_LABELS: Record<string, string> = {
@@ -72,6 +80,16 @@ const WORK_SLICE_FALLBACK_LABELS: Record<string, string> = {
   sla_risk: "SLA риск",
   unassigned: "Без исполнителя",
   requester_reply: "Ответил пользователь",
+};
+
+const KNOWLEDGE_ATTEMPT_RESULT_LABELS: Record<string, string> = {
+  suggested: "Предложена",
+  viewed: "Просмотрена",
+  helpful: "Помогла",
+  not_helpful: "Не помогла",
+  deflected: "Решила без тикета",
+  skipped: "Пропущена",
+  ticket_created_after_view: "Создан тикет после просмотра",
 };
 
 const QUEUE_ICON_HINTS: Array<[RegExp, SupportWorkspaceQueue["icon"]]> = [
@@ -91,6 +109,17 @@ function formatDateTime(value: string | null | undefined, withYear = false): str
     return value;
   }
   return (withYear ? DATE_TIME_WITH_YEAR_FORMATTER : DATE_TIME_FORMATTER).format(date);
+}
+
+function formatKnowledgeAttemptDate(value: string | null | undefined): string {
+  if (!value) {
+    return "Нет данных";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return KNOWLEDGE_ATTEMPT_DATE_FORMATTER.format(date);
 }
 
 function formatDurationMs(value: number | null | undefined): string | null {
@@ -983,6 +1012,15 @@ export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestio
       id: article.id,
       title: article.title,
       url: article.url ?? "#",
+    })),
+    requesterAttempts: (knowledge?.requester_attempts ?? []).map((attempt) => ({
+      itemId: attempt.item_id,
+      versionId: attempt.version_id ?? null,
+      result: attempt.result,
+      resultLabel: KNOWLEDGE_ATTEMPT_RESULT_LABELS[attempt.result] ?? attempt.result,
+      surface: attempt.surface,
+      occurredAt: attempt.occurred_at,
+      occurredAtLabel: formatKnowledgeAttemptDate(attempt.occurred_at),
     })),
     aiSummary: knowledge?.ai_summary.text
       ? {

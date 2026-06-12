@@ -91,6 +91,7 @@ from tickets.evidence_service import TicketEvidenceService
 from tickets.knowledge_provider import build_knowledge_suggestions
 from knowledge.suggestion_service import KnowledgeSuggestionService
 from knowledge.passport_draft_service import KnowledgePassportDraftService
+from knowledge.attempts import sanitize_knowledge_attempts
 from inventory.service import DeviceInventoryService, binding_to_dict
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
@@ -143,6 +144,7 @@ from web_api.dto.support import (
     SupportKnowledgeAiSummary,
     SupportKnowledgeArticle,
     SupportKnowledgeDiagnostics,
+    SupportKnowledgeRequesterAttempt,
     SupportKnowledgeSimilarTicket,
     SupportTicketMessage,
     SupportTicketMutationActionResult,
@@ -3349,6 +3351,17 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
     kb_links = await TicketEventsRepo(session).list_kb_links(ticket_id)
     suggestions = await build_knowledge_suggestions(session, ticket, kb_links)
     custom_fields = getattr(ticket, "custom_fields", None) if isinstance(getattr(ticket, "custom_fields", None), dict) else {}
+    requester_attempts = [
+        SupportKnowledgeRequesterAttempt(
+            item_id=str(attempt.get("item_id") or ""),
+            version_id=str(attempt.get("version_id") or "").strip() or None,
+            result=str(attempt.get("result") or "viewed"),
+            surface=str(attempt.get("surface") or "requester_portal"),
+            occurred_at=str(attempt.get("occurred_at") or ""),
+        )
+        for attempt in sanitize_knowledge_attempts(custom_fields.get("knowledge_attempts"), surface="requester_portal")
+        if attempt.get("surface") == "requester_portal"
+    ]
     request_template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}
     p2_suggestions = await KnowledgeSuggestionService(session).suggest(
         {
@@ -3385,6 +3398,7 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
             SupportKnowledgeArticle(id=item.id, title=item.title, url=item.url)
             for item in suggestions.articles
         ] + p2_articles,
+        requester_attempts=requester_attempts,
         ai_summary=SupportKnowledgeAiSummary(
             text=suggestions.ai_summary.text,
             sources=suggestions.ai_summary.sources,
