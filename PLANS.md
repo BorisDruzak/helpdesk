@@ -118,7 +118,29 @@ Architecture boundaries:
 Do not let `Knowledge Core` depend on ticket-specific code. Ticket/helpdesk code may depend on Knowledge through adapter services.
 
 ---
+## Preserved Browser / Requester / Agent signoff
 
+Status 2026-06-12: preserved and moved out of the rolling plan.
+
+The completed Browser / Requester / Agent identity and consent model is now documented in `docs/completed/BROWSER_REQUESTER_AGENT_IDENTITY_MODEL.md`. That document records Stage 1, Stage 2A, Stage 2B and Stage 3 status, live evidence paths, regression commands, privacy boundaries and non-goals.
+
+Knowledge vNext must continue treating these flows as non-regression boundaries:
+
+* `/app/requester` and `/api/web/requester/*`;
+* requester ticket create, preview, detail, message, attachment, close, feedback and reopen;
+* requester no-device ticket creation;
+* public ticket claim-to-account;
+* requester knowledge suggestions, `knowledge_attempts`, `surface=requester_portal` and `ticket_created_after_view`;
+* public `/app/help` and `/app/ticket/:ticketId` access-code flows;
+* canonical `UserConsentRequest`;
+* requester/agent consent APIs;
+* Remote Assist browser consent and agent account-session consent boundary;
+* cookie-auth same-origin protection for unsafe web-session requests;
+* shared-device privacy.
+
+Fresh regression run for the final Knowledge vNext signoff is tracked in the final verification section below.
+
+---
 ## Phase 0 — Discovery, constraints and plan scaffolding
 
 Goal:
@@ -3239,6 +3261,32 @@ Run as many as practical locally, and document any environment limitation explic
   * Screenshots for all required UI workflows.
   * Browser console check: no warnings/errors relevant to new features.
   * No secret leakage in logs, screenshots, network response bodies or console.
+
+Final verification run, 2026-06-12:
+
+* Local backend and contract checks:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_requester_timeline_projection.py server/tests/test_user_consent_api.py server/tests/test_operation_retry.py server/tests/test_web_session_api.py server/tests/test_registration_api.py server/tests/test_tools_async_response_contract.py -q --tb=short` passed, 99 tests with existing aiohttp app-key warnings.
+  * `python scripts/run_ci_suite.py --layer server_pytest_db_knowledge` passed, 158 tests, 9 deselected, 2 existing aiohttp warnings. Evidence log: `artifacts/ci/d88ab2500e26b7c49a08d5d8f91fb16e0b16bdf9/logs/server_pytest_db_knowledge.log`.
+  * `python -m pytest server/tests/test_ai_openrouter_client.py -q --tb=short` passed, 3 tests.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ai_provider_settings.py server/tests/test_ai_integration_api.py -q --tb=short` passed, 5 tests.
+  * `python -m pytest server/tests/test_ticket_knowledge_links_compat.py -q --tb=short` passed, 2 tests.
+  * A noncanonical broad manual shared-DB pytest run was rejected as evidence because it attempted `127.0.0.1:5432` where no local PostgreSQL is running; the canonical `run_ci_suite.py --layer server_pytest_db_knowledge` run above supersedes it.
+
+* Local frontend and general checks:
+
+  * `pnpm --dir webapp test -- src/features/forms-builder/forms-builder-panel.test.tsx -t "не отправляет route preview"` passed, 1 test.
+  * `pnpm --dir webapp test -- src/features/forms-builder/forms-builder-panel.test.tsx` passed, 30 tests.
+  * `pnpm --dir webapp run test` passed, 89 test files and 419 tests; jsdom printed the existing informational `Not implemented: navigation to another Document` message.
+  * `pnpm --dir webapp run build` passed.
+  * `python -m compileall -q server shared pc_agent scripts` passed.
+  * `python scripts/docs_inventory.py --check-links` passed.
+  * `python scripts/verify_workspace.py` passed.
+  * `git diff --check`, `git diff --check -- PLANS.md docs/completed/BROWSER_REQUESTER_AGENT_IDENTITY_MODEL.md webapp/src/features/forms-builder/forms-builder-panel.tsx` and `git diff --cached --check` passed; Git reported CRLF normalization warnings only.
+
+* Live/browser validation:
+
+  * Pending after commit and deploy of this final verification slice.
 
 Known risks:
 

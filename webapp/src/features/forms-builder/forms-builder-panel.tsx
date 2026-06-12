@@ -4638,6 +4638,32 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
     }));
   };
 
+  const validatePreviewBeforeRequest = () => {
+    if (!selectedForm) {
+      return false;
+    }
+    const issues = validatePreviewValues(selectedForm, previewValues);
+    setPreviewValidationIssues(issues);
+    if (issues.length) {
+      previewMutation.reset();
+      processPreviewMutation.reset();
+      return false;
+    }
+    return true;
+  };
+
+  const startRoutePreview = () => {
+    if (validatePreviewBeforeRequest()) {
+      previewMutation.mutate();
+    }
+  };
+
+  const startProcessPreview = () => {
+    if (validatePreviewBeforeRequest()) {
+      processPreviewMutation.mutate();
+    }
+  };
+
   const updateSelectedForm = (updater: (form: DraftForm) => DraftForm) => {
     if (!selectedForm) {
       return;
@@ -6338,14 +6364,14 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                 <div className="flex flex-wrap gap-2">
                   <Button
                     disabled={!selectedForm || processPreviewMutation.isPending}
-                    onClick={() => processPreviewMutation.mutate()}
+                    onClick={startProcessPreview}
                     size="sm"
                   >
                     {processPreviewMutation.isPending ? "Проверяем..." : "Проверить процесс"}
                   </Button>
                   <Button
                     disabled={!selectedForm || previewMutation.isPending}
-                    onClick={() => previewMutation.mutate()}
+                    onClick={startRoutePreview}
                     size="sm"
                     variant="outline"
                   >
@@ -6419,14 +6445,17 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
               )}
 
               {previewValidationIssues.length ? (
-                <ul className="mt-4 space-y-2 rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-                  {previewValidationIssues.map((issue) => (
-                    <li key={issue.key}>{issue.message}</li>
-                  ))}
-                </ul>
+                <div className="mt-4 rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                  <p className="font-semibold">Заполните обязательные поля preview.</p>
+                  <ul className="mt-2 space-y-2">
+                    {previewValidationIssues.map((issue) => (
+                      <li key={issue.key}>{issue.message}</li>
+                    ))}
+                  </ul>
+                </div>
               ) : null}
 
-              {previewMutation.isError ? (
+              {previewMutation.isError && !previewValidationIssues.length ? (
                 <div className="mt-4 rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
                   {previewMutation.error instanceof Error
                     ? previewMutation.error.message
@@ -6434,7 +6463,7 @@ export function FormsBuilderPanel({ permissions }: { permissions?: string[] } = 
                 </div>
               ) : null}
 
-              {processPreviewMutation.isError ? (
+              {processPreviewMutation.isError && !previewValidationIssues.length ? (
                 <div className="mt-4 rounded-[1rem] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
                   {processPreviewMutation.error instanceof Error
                     ? processPreviewMutation.error.message
