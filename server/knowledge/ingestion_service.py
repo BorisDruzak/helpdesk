@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import KnowledgeIngestionJob
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.contracts import KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
+from knowledge.segmentation_service import KnowledgeSegmentationService
 
 MAX_IMPORT_UPLOAD_BYTES = 5 * 1024 * 1024
 REMOTE_IMPORT_SOURCE_KINDS = {"url", "git"}
@@ -188,7 +189,28 @@ class KnowledgeIngestionService:
             actor_id=actor_id,
             actor_role=actor_role,
         )
-        return {"preview": preview, "ai_enrichment": preview["ai_enrichment"], **result}
+        segmentation: dict[str, Any] = {
+            "enabled": False,
+            "status": "disabled",
+            "profile_code": str(payload.get("segmentation_profile_code") or "default-auto"),
+        }
+        if bool(payload.get("auto_segment_after_import")):
+            segment_result = await KnowledgeSegmentationService(self.session).auto_segment(
+                result["item"]["item_id"],
+                {
+                    "version_id": result["version"]["version_id"],
+                    "profile_code": segmentation["profile_code"],
+                },
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+            segmentation = {
+                "enabled": True,
+                "status": "completed",
+                "profile_code": segmentation["profile_code"],
+                **segment_result,
+            }
+        return {"preview": preview, "ai_enrichment": preview["ai_enrichment"], "segmentation": segmentation, **result}
 
     async def ingest_text(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
         repo = KnowledgeRepo(self.session)

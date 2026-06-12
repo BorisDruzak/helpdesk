@@ -707,6 +707,13 @@ export type KnowledgeImportPreview = {
 export type KnowledgeImportDraftResult = {
   preview: KnowledgeImportPreview;
   ai_enrichment: KnowledgeImportPreview["ai_enrichment"];
+  segmentation?: {
+    enabled: boolean;
+    status: string;
+    profile_code?: string;
+    job?: Record<string, unknown>;
+    segments?: Array<Record<string, unknown>>;
+  };
   job: { job_id: string; status: string };
   item: KnowledgeItem;
   version: KnowledgeItemVersion;

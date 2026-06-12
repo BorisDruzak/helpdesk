@@ -72,6 +72,42 @@ async def test_knowledge_import_create_drafts_uses_preview_payload_without_ai(te
     assert payload["preview"]["detected_title"] == "VPN Import API"
 
 
+@pytest.mark.asyncio
+async def test_knowledge_import_create_drafts_can_run_auto_segmentation_profile(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "import-segments", "title": "Import Segments", "visibility": "support_internal", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-segments",
+            "source_kind": "markdown",
+            "source_name": "segmented-import.md",
+            "slug": "segmented-import-api",
+            "item_type": "article",
+            "title": "Segmented Import API",
+            "visibility": "support_internal",
+            "body": "# Segmented Import API\n\n## Symptoms\nCan not connect.\n\n## Fix\nRestart VPN.",
+            "ai_enrichment_enabled": False,
+            "auto_segment_after_import": True,
+            "segmentation_profile_code": "default-auto",
+        },
+    )
+
+    assert resp.status == 200
+    payload = await resp.json()
+    assert payload["segmentation"]["enabled"] is True
+    assert payload["segmentation"]["status"] == "completed"
+    assert payload["segmentation"]["profile_code"] == "default-auto"
+    assert payload["segmentation"]["job"]["mode"] == "auto"
+    assert [segment["title"] for segment in payload["segmentation"]["segments"]] == ["Symptoms", "Fix"]
+
+
 def _docx_base64(text: str) -> str:
     buffer = io.BytesIO()
     document_xml = (

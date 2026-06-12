@@ -2391,10 +2391,24 @@ Phase 10 parser/upload policy slice, 2026-06-12:
   * Same-origin live API checks verified DOCX preview -> `200` with detected title `Live DOCX Import`, PDF preview -> `200` with detected title `Live PDF Import Reconnect client`, URL preview -> `400 remote_import_blocked`, and Git preview -> `400 remote_import_blocked`.
   * Safe response scan for URL/Git policy blocks found no leaked `secret-token`, `password=hidden` or remote private URL fragments. Browser console recorded expected failed-resource entries for the deliberate `400` policy-block responses.
 
+Phase 10 import auto-segmentation contract slice, 2026-06-12:
+
+* Extended `POST /api/web/knowledge/import/create-drafts` with explicit backend auto-segmentation controls:
+
+  * `auto_segment_after_import=true` runs the existing non-AI `KnowledgeSegmentationService.auto_segment()` after draft/version creation;
+  * `segmentation_profile_code` selects the profile, defaulting to `default-auto`;
+  * the response includes `segmentation.enabled`, `segmentation.status`, `segmentation.profile_code`, `segmentation.job` and `segmentation.segments`;
+  * frontend API typing now exposes the optional `segmentation` result for the import wizard follow-up UI.
+
+* TDD status:
+
+  * RED `server/tests/test_knowledge_import_api.py::test_knowledge_import_create_drafts_can_run_auto_segmentation_profile` failed because the create-drafts response had no `segmentation` field.
+  * GREEN `server/tests/test_knowledge_import_api.py` now passes with 5 tests.
+
 Phase 10 remaining work:
 
 * Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
-* Add explicit segmentation profile selection and optional auto-segmentation after import.
+* Add import wizard UI controls for file upload, remote-source policy messages and segmentation profile selection.
 * Queue indexing after draft creation when indexing is enabled.
 * Implement governed AI enrichment proposals for summary/tags/glossary/graph/duplicates with review actions.
 * Add import job detail APIs and Observer v2 events listed above.
