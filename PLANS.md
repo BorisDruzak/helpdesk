@@ -3379,9 +3379,67 @@ Remote/live verification:
 * Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/browser_live_validation/phase14b-studio-cf2f6af0-20260613-033529/api-live-report.json`, `created-item.safe.json`, `studio-1366-checks.json`, `studio-1366-snapshot.md`, `studio-1366.png`, `studio-1920-checks.json`, `studio-1920-snapshot.md`, `studio-1920.png`, `studio-console-warn-error.json`, `kb-search-1366-checks.json`, `kb-search-1366-snapshot.md`, `kb-search-1366.png` and `kb-search-console-warn-error.json`.
 * Evidence text scan found no `password`, `secret`, `cookie`, `Authorization`, `pc_client_web_session`, `sk-` or `BEGIN PRIVATE KEY` markers.
 
+Phase 14C - Knowledge metadata management editor, 2026-06-13:
+
+Status: implemented locally; deploy/live mutation evidence pending. Required follow-up after Phase 14 backend metadata foundation and Phase 14B Authoring Studio regression.
+
+Scope:
+
+* Add `/app/admin/knowledge/metadata` as a first-class admin/support metadata workbench for governed taxonomy terms, property definitions, applicability rules and quality models.
+* Keep organization categories/properties as editable governed data. Frontend code must not hardcode business categories; default business taxonomy may exist only as optional seed content.
+* Extend `/app/admin/knowledge/studio` with item-level metadata tabs: `Таксономия`, `Свойства`, `Применимость`, `Качество`.
+* Add optional safe default metadata seed pack/script with Russian-first output, dry-run/apply modes and idempotent behavior without overriding admin changes unless `--force`.
+* Preserve requester/public projection safety: requester KB, public-compatible search/Ask/article routes and requester navigation must not expose metadata management, admin/internal taxonomy, quality weights, applicability internals or support/security-only property values.
+
+Implementation checkpoints:
+
+* RED backend tests for editor API coverage, metadata ACL/read-only behavior, item metadata assignment, hidden taxonomy filtering, applicability replacement, quality model constraints and seed dry-run/apply idempotency.
+* RED frontend tests for `/app/admin/knowledge/metadata`, item metadata tabs in Studio, Russian-first/mojibake-free labels and requester navigation hiding the admin metadata editor.
+* Implement reusable frontend API helpers for item metadata reads plus the metadata editor workbench and Studio metadata panel over existing protected APIs.
+* Add seed pack/script without making seeded categories immutable or hardcoded into UI.
+* Update route/navigation docs, Knowledge docs, CODEMAP/quick lookup and this plan with local/live evidence.
+
+Local implementation state:
+
+* Added `/app/admin/knowledge/metadata` with Russian-first tabs for taxonomy, properties, applicability and quality models.
+* Added Studio item metadata tabs for taxonomy assignment, property values, applicability rules and quality preview.
+* Added `content_packs/knowledge/default_metadata.json` and `scripts/seed_knowledge_metadata.py`; seed defaults are editable governed data and remain idempotent unless `--force` is explicit.
+* Added backend validation for required active property definitions during item metadata updates and reused Phase 14 ACL filtering for hidden taxonomy reads/assignments.
+* Updated Knowledge docs, CODEMAP, quick lookup, architecture boundaries and navigation catalog for the new route and seed command.
+
+Local verification:
+
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py server/tests/test_knowledge_metadata_editor_api.py server/tests/test_knowledge_metadata_seed.py -q --tb=short` -> 17 passed.
+* `pnpm --dir webapp test -- src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx src/features/knowledge/metadata-page.test.tsx src/features/knowledge/article-metadata-panel.test.tsx src/pages/admin/knowledge-studio-page.test.tsx src/app/navigation.test.ts` -> 42 passed.
+* `pnpm --dir webapp build` -> passed.
+* `python -m compileall -q server shared scripts` -> passed.
+* `python scripts/verify_workspace.py` -> passed.
+* `python scripts/docs_inventory.py --check-links` -> passed.
+* `python scripts/check_webapp_cutover.py --json` -> bundle ready, full switch ready.
+* `git diff --check -- . ':(exclude)artifacts/**'` -> passed.
+* `python scripts/seed_knowledge_metadata.py --help` -> Russian-first CLI help renders correctly. Direct local `--dry-run` needs a reachable database; DB-backed dry-run/apply remains part of deploy/live evidence.
+
+Exit criteria:
+
+* Admin/support can create/edit/archive taxonomy terms and property definitions, replace item applicability rules and create/update quality models without direct API calls.
+* Support cannot create, assign or escalate `admin_internal`/`security_restricted` taxonomy terms; auditor can read the visible bundle but cannot mutate.
+* Item metadata assignment validates required properties, allowed values and item type applicability, and filters hidden taxonomy terms in reads.
+* Knowledge Ops active counts update after metadata mutations and still count only active taxonomy/property/model rows.
+* `/app/admin/knowledge/metadata` and Studio metadata tabs are Russian-first, mojibake-free and browser-validated at 1366x768 and 1920x1080.
+* Requester/public projections remain safe and backward-compatible after deploy.
+
+Live/deploy evidence still required:
+
+* Deploy committed Phase 14C state to `192.168.100.17`.
+* Create or update taxonomy/property/applicability/quality model rows through protected admin UI/API and verify `/app/admin/knowledge` active metadata counts update.
+* Browser-validate `/app/admin/knowledge/metadata` and Studio metadata tabs at 1366x768 and 1920x1080 with console/network checks.
+* Verify requester `/app/kb/search`, public-compatible `/api/knowledge/search` and support `/app/knowledge` keep safe projections without admin metadata diagnostics.
+* Preserve evidence under `artifacts/knowledge-metadata-editor-live-YYYYMMDD-HHMMSS/`; evidence artifacts are local/untracked and must be preserved outside git if needed for audit.
+
 Remaining Phase 14 work:
 
 * Phase 14 metadata-model hardening is complete. Phase 14B editor regression and live validation are complete.
+* Phase 14C metadata management editor is locally implemented; deploy/live mutation evidence remains pending in this iteration.
 * Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---

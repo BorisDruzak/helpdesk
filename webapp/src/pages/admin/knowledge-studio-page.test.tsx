@@ -198,6 +198,60 @@ function setupFetch() {
     if (url === "/api/web/knowledge/segmentation-profiles") {
       return jsonResponse({ status: "ok", profiles: [] });
     }
+    if (url === "/api/web/knowledge/metadata" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        metadata: {
+          spaces: [{ space_id: "space-1", code: "it-self-service", title: "IT Self-Service", visibility: "requester", lifecycle_status: "active" }],
+          taxonomy_terms: [{ term_id: "term-vpn", space_id: "space-1", term_type: "product", code: "vpn", title: "VPN", visibility: "requester", status: "active" }],
+          property_definitions: [
+            {
+              property_id: "prop-audience",
+              space_id: "space-1",
+              code: "audience",
+              title: "Аудитория",
+              value_type: "select",
+              required: true,
+              allowed_values: ["requester", "support"],
+              applies_to_item_types: ["article"],
+              quality_weight: 12,
+              status: "active",
+            },
+          ],
+          applicability_rules: [],
+          quality_models: [{ model_id: "model-1", space_id: "space-1", code: "metadata-required", title: "Метаданные", weights: { properties: 12 }, thresholds: {}, status: "active", is_default: true }],
+          item_metadata: [],
+          summary: {
+            taxonomy_terms_total: 1,
+            taxonomy_terms_active: 1,
+            property_definitions_total: 1,
+            property_definitions_active: 1,
+            applicability_rules_total: 0,
+            applicability_rules_active: 0,
+            quality_models_total: 1,
+            quality_models_active: 1,
+            item_metadata_total: 0,
+          },
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1/metadata" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        item_metadata: {
+          item_id: "item-1",
+          space_id: "space-1",
+          slug: "vpn-access",
+          title: "VPN access",
+          properties: {},
+          taxonomy_terms: [],
+          applicability_rules: [],
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1/applicability" && !init?.method) {
+      return jsonResponse({ status: "ok", rules: [] });
+    }
     throw new Error(`Unexpected fetch ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock as typeof fetch);
@@ -243,6 +297,11 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByText("Предпросмотр")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "VPN access" })).toBeInTheDocument();
     expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Метаданные статьи" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Таксономия" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Свойства" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применимость" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Качество" })).toBeInTheDocument();
     expect(screen.getByText("AI-инструменты отключены")).toBeInTheDocument();
 
     expect(await screen.findByText("История редактора")).toBeInTheDocument();

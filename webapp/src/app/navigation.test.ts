@@ -96,10 +96,11 @@ describe("navigation helpers", () => {
     expect(activeItem?.label).toBe("MCP сервер");
   });
 
-  it("exposes Knowledge studio, indexing, AI and search settings inside the Knowledge domain", () => {
+  it("exposes Knowledge metadata editor, studio, indexing, AI and search settings inside the Knowledge domain", () => {
     const knowledgeDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
       (domain) => domain.id === "knowledge",
     );
+    const metadataItem = getActiveNavItem("/app/admin/knowledge/metadata", fullAdminPermissions);
     const studioItem = getActiveNavItem("/app/admin/knowledge/studio", fullAdminPermissions);
     const graphItem = getActiveNavItem("/app/admin/knowledge/graph", fullAdminPermissions);
     const importItem = getActiveNavItem("/app/admin/knowledge/import", fullAdminPermissions);
@@ -107,12 +108,15 @@ describe("navigation helpers", () => {
     const aiItem = getActiveNavItem("/app/admin/knowledge/ai", fullAdminPermissions);
     const searchItem = getActiveNavItem("/app/admin/knowledge/search-settings", fullAdminPermissions);
 
+    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/metadata");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/studio");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/graph");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/import");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/indexing");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/ai");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/search-settings");
+    expect(metadataItem?.to).toBe("/app/admin/knowledge/metadata");
+    expect(metadataItem?.label).toBe("Метаданные знаний");
     expect(studioItem?.to).toBe("/app/admin/knowledge/studio");
     expect(studioItem?.label).toBe("Студия знаний");
     expect(graphItem?.to).toBe("/app/admin/knowledge/graph");
@@ -125,6 +129,11 @@ describe("navigation helpers", () => {
     expect(aiItem?.label).toBe("AI настройки");
     expect(searchItem?.to).toBe("/app/admin/knowledge/search-settings");
     expect(searchItem?.label).toBe("Настройки поиска");
+
+    const requesterDomains = getVisibleNavigationDomains("requester", ["workspace.requester.view"]);
+    expect(requesterDomains.flatMap((domain) => domain.items).map((item) => item.to)).not.toContain(
+      "/app/admin/knowledge/metadata",
+    );
   });
 
   it("recognizes workspace-owned paths without including public requester routes", () => {

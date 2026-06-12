@@ -150,6 +150,13 @@ APIs:
 - `GET|POST /api/web/knowledge/items/{item_id_or_slug}/applicability`: read/replace applicability rules.
 - `POST /api/web/knowledge/quality-models`: admin/support upsert quality model.
 
+Phase 14C adds the first-class management editor:
+
+- `/app/admin/knowledge/metadata` is the admin/support workbench for taxonomy terms, property definitions, applicability rules and quality models. It uses structured fields, typed selectors where available and Russian-first labels instead of raw JSON as the normal workflow.
+- `/app/admin/knowledge/studio` includes item-level metadata tabs: `Таксономия`, `Свойства`, `Применимость` and `Качество`. The tabs call the same protected item metadata/applicability APIs and validate required properties, allowed values, item-type applicability and term visibility.
+- Business taxonomy and property definitions are governed data, not frontend code constants. The optional default seed is `content_packs/knowledge/default_metadata.json`; apply it with `python scripts/seed_knowledge_metadata.py --dry-run` or `python scripts/seed_knowledge_metadata.py --apply`. The seed is idempotent, keeps existing admin edits unless `--force` is explicit and rejects requester-visible internal/security-classified defaults.
+- Live validation evidence for this editor should create/update taxonomy, property, applicability and quality-model rows, then verify `/app/admin/knowledge`, requester `/app/kb/search`, public-compatible `/api/knowledge/search` and support `/app/knowledge` projections.
+
 Requester/public endpoints (`/api/knowledge/search`, `/api/knowledge/suggest`, `/api/knowledge/ask`, portal article APIs and `/app/help`) must not include this admin metadata bundle, raw property diagnostics, applicability internals or quality model weights.
 
 ## Gap Detection

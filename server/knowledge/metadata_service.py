@@ -74,6 +74,21 @@ def _json_value(row: KnowledgeItemPropertyValue) -> Any:
     return deepcopy(value.get("value"))
 
 
+def _property_applies_to_item(definition: KnowledgePropertyDefinition, item: KnowledgeItem) -> bool:
+    item_types = _list(definition.applies_to_item_types_json)
+    return not item_types or item.item_type in {str(entry) for entry in item_types}
+
+
+def _is_missing_required_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, set, dict)):
+        return not value
+    return False
+
+
 def serialize_taxonomy_term(row: KnowledgeTaxonomyTerm) -> dict[str, Any]:
     return {
         "term_id": row.term_id,
@@ -323,14 +338,18 @@ class KnowledgeMetadataService:
         ).scalars().all()
         by_code = {row.code: row for row in definitions}
         values = _dict(payload.get("properties"))
+        for definition in definitions:
+            if definition.status != "active" or not definition.required or not _property_applies_to_item(definition, item):
+                continue
+            if definition.code not in values or _is_missing_required_value(values.get(definition.code)):
+                raise KnowledgeValidationError(f"required property is missing: {definition.code}")
         now = datetime.now(timezone.utc)
         await self.session.execute(delete(KnowledgeItemPropertyValue).where(KnowledgeItemPropertyValue.item_id == item.item_id))
         for code, raw_value in values.items():
             definition = by_code.get(str(code))
             if definition is None:
                 raise KnowledgeValidationError(f"unknown property: {code}")
-            item_types = _list(definition.applies_to_item_types_json)
-            if item_types and item.item_type not in {str(entry) for entry in item_types}:
+            if not _property_applies_to_item(definition, item):
                 raise KnowledgeValidationError(f"property does not apply to item type: {code}")
             self.session.add(
                 KnowledgeItemPropertyValue(

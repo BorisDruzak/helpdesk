@@ -6,6 +6,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
+import { ArticleMetadataPanel } from "./article-metadata-panel";
 import { ArticleSegmentationPanel } from "./article-segmentation-panel";
 import {
   createKnowledgeItem,
@@ -461,7 +462,7 @@ export function KnowledgeAuthoringStudioPage() {
           <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <Card>
               <CardHeader>
-                <CardTitle>Метаданные статьи</CardTitle>
+                <CardTitle>Основные поля статьи</CardTitle>
                 <CardDescription>Студия использует существующие API статей и версий без новых таблиц.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-2">
@@ -575,6 +576,8 @@ export function KnowledgeAuthoringStudioPage() {
               </CardContent>
             </Card>
           </div>
+
+          <ArticleMetadataPanel item={selectedItem} canManage={Boolean(selectedItem)} />
 
           <Card>
             <CardHeader>

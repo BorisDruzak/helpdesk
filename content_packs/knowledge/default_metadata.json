@@ -1,0 +1,74 @@
+{
+  "code": "default-knowledge-metadata",
+  "version": "1.0.0",
+  "title": "Базовые метаданные знаний",
+  "description": "Редактируемый стартовый набор таксономии, свойств и модели качества для базы знаний.",
+  "spaces": [
+    {
+      "code": "it-self-service",
+      "title": "IT Self-Service",
+      "description": "Базовое пространство знаний для ИТ-самообслуживания.",
+      "visibility": "requester",
+      "lifecycle_status": "active"
+    }
+  ],
+  "taxonomy_terms": [
+    { "space_code": "it-self-service", "term_type": "category", "code": "access", "title": "Доступы", "visibility": "requester", "status": "active", "sort_order": 10 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "vpn", "title": "VPN", "parent_code": "access", "visibility": "requester", "status": "active", "sort_order": 11 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "mfa", "title": "MFA", "parent_code": "access", "visibility": "requester", "status": "active", "sort_order": 12 },
+    { "space_code": "it-self-service", "term_type": "topic", "code": "account", "title": "Учётная запись", "parent_code": "access", "visibility": "requester", "status": "active", "sort_order": 13 },
+    { "space_code": "it-self-service", "term_type": "category", "code": "workplace", "title": "Рабочее место", "visibility": "requester", "status": "active", "sort_order": 20 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "laptop", "title": "Ноутбук", "parent_code": "workplace", "visibility": "requester", "status": "active", "sort_order": 21 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "monitor", "title": "Монитор", "parent_code": "workplace", "visibility": "requester", "status": "active", "sort_order": 22 },
+    { "space_code": "it-self-service", "term_type": "topic", "code": "peripherals", "title": "Периферия", "parent_code": "workplace", "visibility": "requester", "status": "active", "sort_order": 23 },
+    { "space_code": "it-self-service", "term_type": "category", "code": "printing", "title": "Печать", "visibility": "requester", "status": "active", "sort_order": 30 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "printers", "title": "Принтеры", "parent_code": "printing", "visibility": "requester", "status": "active", "sort_order": 31 },
+    { "space_code": "it-self-service", "term_type": "topic", "code": "print-queues", "title": "Очереди печати", "parent_code": "printing", "visibility": "requester", "status": "active", "sort_order": 32 },
+    { "space_code": "it-self-service", "term_type": "topic", "code": "print-drivers", "title": "Драйверы", "parent_code": "printing", "visibility": "requester", "status": "active", "sort_order": 33 },
+    { "space_code": "it-self-service", "term_type": "category", "code": "business-apps", "title": "Бизнес-приложения", "visibility": "requester", "status": "active", "sort_order": 40 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "1c", "title": "1С", "parent_code": "business-apps", "visibility": "requester", "status": "active", "sort_order": 41 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "mail", "title": "Почта", "parent_code": "business-apps", "visibility": "requester", "status": "active", "sort_order": 42 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "crm", "title": "CRM", "parent_code": "business-apps", "visibility": "requester", "status": "active", "sort_order": 43 },
+    { "space_code": "it-self-service", "term_type": "category", "code": "network", "title": "Сеть", "visibility": "requester", "status": "active", "sort_order": 50 },
+    { "space_code": "it-self-service", "term_type": "product", "code": "wi-fi", "title": "Wi-Fi", "parent_code": "network", "visibility": "requester", "status": "active", "sort_order": 51 },
+    { "space_code": "it-self-service", "term_type": "topic", "code": "dns", "title": "DNS", "parent_code": "network", "visibility": "requester", "status": "active", "sort_order": 52 },
+    { "space_code": "it-self-service", "term_type": "topic", "code": "proxy", "title": "Прокси", "parent_code": "network", "visibility": "requester", "status": "active", "sort_order": 53 }
+  ],
+  "property_definitions": [
+    {
+      "space_code": "it-self-service",
+      "code": "audience",
+      "title": "Аудитория",
+      "description": "Для какой аудитории предназначен материал.",
+      "value_type": "select",
+      "required": true,
+      "allowed_values": ["requester", "support"],
+      "applies_to_item_types": ["article", "faq", "runbook", "known_error", "workaround"],
+      "quality_weight": 12,
+      "status": "active"
+    },
+    {
+      "space_code": "it-self-service",
+      "code": "owner-team",
+      "title": "Команда-владелец",
+      "description": "Команда, отвечающая за актуальность материала.",
+      "value_type": "text",
+      "required": false,
+      "allowed_values": [],
+      "applies_to_item_types": ["article", "faq", "runbook"],
+      "quality_weight": 4,
+      "status": "active"
+    }
+  ],
+  "quality_models": [
+    {
+      "space_code": "it-self-service",
+      "code": "metadata-required",
+      "title": "Обязательные метаданные",
+      "is_default": true,
+      "status": "active",
+      "weights": { "properties": 12, "taxonomy": 8, "applicability": 5 },
+      "thresholds": { "excellent": 90, "good": 80, "review": 60 }
+    }
+  ]
+}

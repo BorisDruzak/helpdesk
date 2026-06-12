@@ -1034,7 +1034,7 @@ export async function fetchKnowledgeGraphNeighborhood(nodeIdOrStableKey: string,
 
 export async function fetchKnowledgeGraphLayout(scope = "default"): Promise<KnowledgeGraphLayout> {
   const response = await fetch(`/api/web/knowledge/graph/layouts/${encodeURIComponent(scope)}`, { credentials: "same-origin" });
-  const payload = await readJson<{ layout: KnowledgeGraphLayout }>(response, "Не удалось загрузить layout графа знаний");
+  const payload = await readJson<{ layout: KnowledgeGraphLayout }>(response, "Не удалось загрузить схему размещения графа знаний");
   return payload.layout;
 }
 
@@ -1045,7 +1045,7 @@ export async function saveKnowledgeGraphLayout(scope: string, layoutJson: Record
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ layout_json: layoutJson, scope_type: scopeType }),
   });
-  return readJson<{ layout: KnowledgeGraphLayout }>(response, "Не удалось сохранить layout графа знаний");
+  return readJson<{ layout: KnowledgeGraphLayout }>(response, "Не удалось сохранить схему размещения графа знаний");
 }
 
 export async function createKnowledgeGraphNode(payload: Record<string, unknown>) {
@@ -1171,6 +1171,12 @@ export async function fetchKnowledgeMetadata(): Promise<KnowledgeMetadataBundle>
   return payload.metadata;
 }
 
+export async function fetchKnowledgeItemMetadata(itemIdOrSlug: string): Promise<KnowledgeItemMetadata> {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/metadata`, { credentials: "same-origin" });
+  const payload = await readJson<{ item_metadata: KnowledgeItemMetadata }>(response, "Не удалось загрузить метаданные статьи");
+  return payload.item_metadata;
+}
+
 export async function saveKnowledgeTaxonomyTerm(payload: Partial<KnowledgeTaxonomyTerm> & { space_id: string; term_type: string; code: string; title: string }) {
   const response = await fetch("/api/web/knowledge/taxonomy", {
     method: "POST",
@@ -1213,6 +1219,12 @@ export async function saveKnowledgeApplicabilityRules(itemIdOrSlug: string, rule
   return readJson<{ rules: KnowledgeApplicabilityRule[] }>(response, "Не удалось сохранить правила применимости");
 }
 
+export async function fetchKnowledgeApplicabilityRules(itemIdOrSlug: string): Promise<KnowledgeApplicabilityRule[]> {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/applicability`, { credentials: "same-origin" });
+  const payload = await readJson<{ rules: KnowledgeApplicabilityRule[] }>(response, "Не удалось загрузить правила применимости");
+  return payload.rules ?? [];
+}
+
 export async function saveKnowledgeQualityModel(payload: Partial<KnowledgeQualityModel> & { code: string; title: string }) {
   const response = await fetch("/api/web/knowledge/quality-models", {
     method: "POST",
@@ -1225,7 +1237,7 @@ export async function saveKnowledgeQualityModel(payload: Partial<KnowledgeQualit
 
 export async function fetchKnowledgeContentPacks(): Promise<KnowledgeContentPack[]> {
   const response = await fetch("/api/web/knowledge/content-packs", { credentials: "same-origin" });
-  const payload = await readJson<{ packs: KnowledgeContentPack[] }>(response, "Не удалось загрузить content packs");
+  const payload = await readJson<{ packs: KnowledgeContentPack[] }>(response, "Не удалось загрузить пакеты контента знаний");
   return payload.packs ?? [];
 }
 
@@ -1236,7 +1248,7 @@ export async function applyKnowledgeContentPack(payload: { pack: Record<string, 
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ result: KnowledgeContentPackApplyResult }>(response, "Не удалось применить content pack");
+  return readJson<{ result: KnowledgeContentPackApplyResult }>(response, "Не удалось применить пакет контента знаний");
 }
 
 export async function retireKnowledgeContentPack(packCode: string) {
@@ -1244,7 +1256,7 @@ export async function retireKnowledgeContentPack(packCode: string) {
     method: "POST",
     credentials: "same-origin",
   });
-  return readJson<{ result: Record<string, unknown> }>(response, "Не удалось retire content pack");
+  return readJson<{ result: Record<string, unknown> }>(response, "Не удалось вывести пакет контента знаний из использования");
 }
 
 export async function fetchKnowledgeTemplates(): Promise<KnowledgeTemplate[]> {
@@ -1255,7 +1267,7 @@ export async function fetchKnowledgeTemplates(): Promise<KnowledgeTemplate[]> {
 
 export async function fetchKnowledgeReviewQueue(): Promise<KnowledgeReviewQueue> {
   const response = await fetch("/api/web/knowledge/review/tasks", { credentials: "same-origin" });
-  const payload = await readJson<{ review_queue: KnowledgeReviewQueue }>(response, "Не удалось загрузить review queue");
+  const payload = await readJson<{ review_queue: KnowledgeReviewQueue }>(response, "Не удалось загрузить очередь проверки знаний");
   if (payload.review_queue) {
     return payload.review_queue;
   }
@@ -1303,18 +1315,18 @@ export async function submitKnowledgeReviewTaskAction(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ task: KnowledgeReviewTask }>(response, "Failed to update knowledge review task");
+  return readJson<{ task: KnowledgeReviewTask }>(response, "Не удалось обновить задачу проверки знания");
 }
 
 export async function fetchKnowledgeQuality(): Promise<KnowledgeQualitySummary> {
   const response = await fetch("/api/web/knowledge/quality", { credentials: "same-origin" });
-  const payload = await readJson<{ quality: KnowledgeQualitySummary }>(response, "Не удалось загрузить quality score");
+  const payload = await readJson<{ quality: KnowledgeQualitySummary }>(response, "Не удалось загрузить оценку качества знаний");
   return payload.quality;
 }
 
 export async function fetchKnowledgeGaps(): Promise<KnowledgeGapSummary> {
   const response = await fetch("/api/web/knowledge/gap-findings", { credentials: "same-origin" });
-  const payload = await readJson<{ gaps: KnowledgeGapSummary }>(response, "Не удалось загрузить knowledge gaps");
+  const payload = await readJson<{ gaps: KnowledgeGapSummary }>(response, "Не удалось загрузить пробелы базы знаний");
   if (payload.gaps) {
     return payload.gaps;
   }
@@ -1344,7 +1356,7 @@ export async function recomputeKnowledgeGaps() {
     method: "POST",
     credentials: "same-origin",
   });
-  return readJson<{ findings: KnowledgeGapFinding[]; count: number }>(response, "Failed to recompute knowledge gaps");
+  return readJson<{ findings: KnowledgeGapFinding[]; count: number }>(response, "Не удалось пересчитать пробелы базы знаний");
 }
 
 export async function submitKnowledgeGapAction(findingId: string, action: "accept" | "dismiss" | "create-draft", payload?: Record<string, unknown>) {
@@ -1354,12 +1366,12 @@ export async function submitKnowledgeGapAction(findingId: string, action: "accep
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload ?? {}),
   });
-  return readJson<Record<string, unknown>>(response, "Failed to update knowledge gap");
+  return readJson<Record<string, unknown>>(response, "Не удалось обновить пробел базы знаний");
 }
 
 export async function fetchKnowledgeRolloutPolicies(): Promise<KnowledgeRolloutPolicy[]> {
   const response = await fetch("/api/web/knowledge/rollout-policies", { credentials: "same-origin" });
-  const payload = await readJson<{ policies: KnowledgeRolloutPolicy[] }>(response, "Не удалось загрузить rollout policies");
+  const payload = await readJson<{ policies: KnowledgeRolloutPolicy[] }>(response, "Не удалось загрузить политики показа знаний");
   return payload.policies ?? [];
 }
 
@@ -1370,7 +1382,7 @@ export async function saveKnowledgeRolloutPolicy(payload: Partial<KnowledgeRollo
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ policy: KnowledgeRolloutPolicy }>(response, "Не удалось сохранить rollout policy");
+  return readJson<{ policy: KnowledgeRolloutPolicy }>(response, "Не удалось сохранить политику показа знаний");
 }
 
 export async function fetchKnowledgeAiProviders(): Promise<KnowledgeAiProvider[]> {
@@ -1607,7 +1619,7 @@ export async function previewKnowledgeAsk(payload: KnowledgeSearchPreviewRequest
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<KnowledgeAskResult>(response, "Не удалось выполнить preview AI-вопроса");
+  return readJson<KnowledgeAskResult>(response, "Не удалось выполнить предпросмотр AI-вопроса");
 }
 
 export async function retrieveKnowledge(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeRetrievalResult> {
@@ -1617,7 +1629,7 @@ export async function retrieveKnowledge(payload: KnowledgeSearchPreviewRequest &
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<KnowledgeRetrievalResult>(response, "Не удалось выполнить retrieval знаний");
+  return readJson<KnowledgeRetrievalResult>(response, "Не удалось выполнить подбор знаний");
 }
 
 export async function previewKnowledgeRetrieval(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeRetrievalResult> {
@@ -1627,7 +1639,7 @@ export async function previewKnowledgeRetrieval(payload: KnowledgeSearchPreviewR
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<KnowledgeRetrievalResult>(response, "Не удалось выполнить preview retrieval");
+  return readJson<KnowledgeRetrievalResult>(response, "Не удалось выполнить предпросмотр подбора знаний");
 }
 
 export async function fetchKnowledgeSegments(itemIdOrSlug: string): Promise<KnowledgeSegment[]> {

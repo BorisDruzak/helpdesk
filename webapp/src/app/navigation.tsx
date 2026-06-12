@@ -407,6 +407,17 @@ export const appNavigation: AppNavItem[] = [
     order: 10,
   },
   {
+    label: "Метаданные знаний",
+    description: "Таксономия, свойства, применимость и качество",
+    icon: Layers3,
+    section: "admin",
+    workspace: "admin",
+    domainId: "knowledge",
+    to: "/app/admin/knowledge/metadata",
+    permission: "admin.forms.view",
+    order: 12,
+  },
+  {
     label: "Студия знаний",
     description: "Авторинг статей, версии и retrieval-разметка",
     icon: ClipboardCheck,
