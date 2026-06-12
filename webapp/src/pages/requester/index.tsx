@@ -43,6 +43,34 @@ import type {
 } from "../../features/requester/types";
 
 type FieldValues = Record<string, string | boolean>;
+const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
+
+type AskTicketContext = {
+  source?: string;
+  query?: string | null;
+  answer_status?: string | null;
+  effective_mode?: string | null;
+  ai_used?: boolean | null;
+  audit_id?: string | null;
+  primary_item?: {
+    item_id?: string | null;
+    version_id?: string | null;
+    slug?: string | null;
+    title?: string | null;
+    chunk_id?: string | null;
+    segment_id?: string | null;
+    score?: number | null;
+  } | null;
+  retrieval_results?: Array<{
+    item_id?: string | null;
+    version_id?: string | null;
+    slug?: string | null;
+    title?: string | null;
+    chunk_id?: string | null;
+    segment_id?: string | null;
+    score?: number | null;
+  }>;
+};
 
 type PendingAttachment = {
   artifact_id: string;
@@ -51,6 +79,64 @@ type PendingAttachment = {
   mime_type?: string | null;
   kind?: string | null;
 };
+
+function compactText(value: unknown, maxLength = 160): string {
+  return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, maxLength);
+}
+
+function readAskTicketContext(): AskTicketContext | null {
+  if (typeof window === "undefined" || !window.location.pathname.endsWith("/requester/new")) {
+    return null;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(ASK_TICKET_CONTEXT_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as AskTicketContext;
+    return parsed?.source === "knowledge_ask" && compactText(parsed.query) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function askContextTitle(context: AskTicketContext): string {
+  return `Knowledge Ask: ${compactText(context.query, 80) || "request"}`;
+}
+
+function askContextDescription(context: AskTicketContext): string {
+  const lines = [
+    `Knowledge Ask query: ${compactText(context.query, 500)}`,
+    context.answer_status ? `Answer status: ${context.answer_status}` : null,
+    context.effective_mode ? `Effective mode: ${context.effective_mode}` : null,
+    context.audit_id ? `Ask audit id: ${context.audit_id}` : null,
+    context.primary_item?.title ? `Top article: ${compactText(context.primary_item.title, 240)}` : null,
+    context.primary_item?.slug ? `Article slug: ${context.primary_item.slug}` : null,
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+function askContextAttempts(context: AskTicketContext): KnowledgeAttempt[] {
+  const now = new Date().toISOString();
+  const sourceItems = context.primary_item?.item_id ? [context.primary_item, ...(context.retrieval_results ?? [])] : context.retrieval_results ?? [];
+  const seen = new Set<string>();
+  return sourceItems
+    .map((item) => ({
+      item_id: compactText(item?.item_id, 120),
+      version_id: compactText(item?.version_id, 120) || null,
+      result: "ticket_created_after_view" as const,
+      surface: "requester_portal" as const,
+      timestamp: now,
+    }))
+    .filter((attempt) => {
+      if (!attempt.item_id || seen.has(attempt.item_id)) {
+        return false;
+      }
+      seen.add(attempt.item_id);
+      return true;
+    })
+    .slice(0, 5);
+}
 
 function deviceLabel(device: RequesterDevice): string {
   return device.hostname || device.asset_name || device.device_id;
@@ -293,6 +379,25 @@ export function RequesterWorkspacePage() {
   const [reopenComment, setReopenComment] = useState("");
   const [reopenAvailable, setReopenAvailable] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const askPrefillAppliedRef = useRef(false);
+
+  useEffect(() => {
+    if (askPrefillAppliedRef.current) {
+      return;
+    }
+    const context = readAskTicketContext();
+    if (!context) {
+      return;
+    }
+    askPrefillAppliedRef.current = true;
+    setTitle((current) => (!current || current === "Проверка рабочего места" ? askContextTitle(context) : current));
+    setDescription((current) => current || askContextDescription(context));
+    setKnowledgeAttempts((current) => {
+      const next = askContextAttempts(context);
+      return next.length ? [...current, ...next] : current;
+    });
+    setCatalogNotice("Knowledge Ask context was added to the ticket draft.");
+  }, []);
 
   const devices = bootstrap?.devices ?? [];
   const visibleTickets = tickets.length ? tickets : bootstrap?.recent_tickets ?? [];

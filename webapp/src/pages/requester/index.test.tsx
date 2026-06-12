@@ -13,10 +13,102 @@ function jsonResponse(payload: unknown, status = 200) {
 }
 
 afterEach(() => {
+  window.sessionStorage.clear();
+  window.history.pushState({}, "", "/");
   vi.unstubAllGlobals();
 });
 
 describe("RequesterWorkspacePage", () => {
+  it("prefills requester ticket draft from Knowledge Ask context and submits knowledge attempts", async () => {
+    window.history.pushState({}, "", "/app/requester/new");
+    window.sessionStorage.setItem(
+      "pc_client.knowledge_ask.ticket_context",
+      JSON.stringify({
+        source: "knowledge_ask",
+        query: "VPN access error",
+        answer_status: "ai_disabled",
+        effective_mode: "keyword_only",
+        ai_used: false,
+        audit_id: "ask-audit-prefill",
+        primary_item: {
+          item_id: "ki-ask-prefill",
+          version_id: "kv-ask-prefill",
+          slug: "vpn-access",
+          title: "VPN access article",
+          chunk_id: "chunk-ask-prefill",
+        },
+        retrieval_results: [
+          {
+            item_id: "ki-ask-prefill",
+            version_id: "kv-ask-prefill",
+            slug: "vpn-access",
+            title: "VPN access article",
+            chunk_id: "chunk-ask-prefill",
+            score: 110,
+          },
+        ],
+      }),
+    );
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-1", display_name: "Requester One" },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: true },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method === "POST") {
+        return jsonResponse({ status: "success", data: { ticket_id: "T-ASK", ticket: { ticket_id: "T-ASK", title: "Knowledge Ask: VPN access error" } } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    expect(await screen.findByDisplayValue("Knowledge Ask: VPN access error")).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Knowledge Ask query: VPN access error/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Create requester ticket"));
+
+    await waitFor(() => expect(fetchMock.mock.calls.some((call) => String(call[0]) === "/api/web/requester/tickets" && call[1]?.method === "POST")).toBe(true));
+    const createCall = fetchMock.mock.calls.find((call) => String(call[0]) === "/api/web/requester/tickets" && call[1]?.method === "POST");
+    expect(JSON.parse(createCall?.[1]?.body as string)).toMatchObject({
+      title: "Knowledge Ask: VPN access error",
+      knowledge_attempts: [
+        {
+          item_id: "ki-ask-prefill",
+          version_id: "kv-ask-prefill",
+          result: "ticket_created_after_view",
+          surface: "requester_portal",
+        },
+      ],
+    });
+  });
+
   it("shows pending requester consent and approves it", async () => {
     let approved = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

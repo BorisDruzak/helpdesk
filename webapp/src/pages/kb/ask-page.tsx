@@ -14,6 +14,100 @@ import {
 } from "../../features/knowledge/api";
 
 const fieldClass = "w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
+const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
+
+function textValue(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function firstCitationValue(result: KnowledgeAskResult, key: "item_id" | "version_id" | "chunk_id" | "segment_id") {
+  return textValue(result.citations?.find((citation) => textValue(citation[key]))?.[key]);
+}
+
+function primaryRetrievalResult(result: KnowledgeAskResult) {
+  return result.retrieval_results?.find((entry) => entry.item?.item_id || entry.item?.slug) ?? null;
+}
+
+function primaryVersionId(result: KnowledgeAskResult, primary: ReturnType<typeof primaryRetrievalResult>) {
+  return textValue(primary?.version?.version_id) ?? textValue(primary?.item?.current_version_id) ?? firstCitationValue(result, "version_id");
+}
+
+function askAnalyticsMetadata(result: KnowledgeAskResult | null, query: string) {
+  const primary = result ? primaryRetrievalResult(result) : null;
+  const primaryCitation = primary?.citations?.[0] ?? {};
+  return {
+    source: "knowledge_ask",
+    answer_status: result?.answer_status,
+    audit_id: result?.audit_id ?? null,
+    ai_used: Boolean(result?.ai_used),
+    effective_mode: result?.effective_mode ?? null,
+    fallback_mode: result?.fallback_mode ?? null,
+    query,
+    primary_item_id: textValue(primary?.item?.item_id) ?? firstCitationValue(result ?? { status: "ok", answer_status: "" }, "item_id"),
+    primary_version_id: result ? primaryVersionId(result, primary) : null,
+    primary_chunk_id: textValue(primary?.chunk_id) ?? textValue(primaryCitation.chunk_id) ?? firstCitationValue(result ?? { status: "ok", answer_status: "" }, "chunk_id"),
+    primary_segment_id: textValue(primary?.segment_id) ?? textValue(primaryCitation.segment_id) ?? firstCitationValue(result ?? { status: "ok", answer_status: "" }, "segment_id"),
+    primary_score: typeof primary?.score === "number" ? primary.score : null,
+    citation_count: result?.citations?.length ?? 0,
+  };
+}
+
+function buildAskTicketContext(result: KnowledgeAskResult | null, query: string) {
+  const primary = result ? primaryRetrievalResult(result) : null;
+  const metadata = askAnalyticsMetadata(result, query);
+  return {
+    source: "knowledge_ask",
+    query,
+    answer_status: result?.answer_status ?? null,
+    effective_mode: result?.effective_mode ?? null,
+    ai_used: Boolean(result?.ai_used),
+    audit_id: result?.audit_id ?? null,
+    created_at: new Date().toISOString(),
+    primary_item: primary
+      ? {
+          item_id: textValue(primary.item?.item_id),
+          version_id: metadata.primary_version_id,
+          slug: textValue(primary.item?.slug),
+          title: textValue(primary.item?.title),
+          visibility: textValue(primary.item?.visibility),
+          chunk_id: metadata.primary_chunk_id,
+          segment_id: metadata.primary_segment_id,
+          score: metadata.primary_score,
+        }
+      : null,
+    retrieval_results: (result?.retrieval_results ?? []).slice(0, 5).map((entry) => ({
+      item_id: textValue(entry.item?.item_id),
+      version_id: textValue(entry.version?.version_id) ?? textValue(entry.item?.current_version_id),
+      slug: textValue(entry.item?.slug),
+      title: textValue(entry.item?.title),
+      visibility: textValue(entry.item?.visibility),
+      chunk_id: textValue(entry.chunk_id),
+      segment_id: textValue(entry.segment_id),
+      score: typeof entry.score === "number" ? entry.score : null,
+      source_mode: entry.source_mode ?? [],
+    })),
+    citations: (result?.citations ?? []).slice(0, 5).map((citation) => ({
+      ref_id: textValue(citation.ref_id),
+      item_id: textValue(citation.item_id),
+      version_id: textValue(citation.version_id),
+      chunk_id: textValue(citation.chunk_id),
+      segment_id: textValue(citation.segment_id),
+      title: textValue(citation.title),
+    })),
+  };
+}
+
+function persistAskTicketContext(result: KnowledgeAskResult | null, query: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(ASK_TICKET_CONTEXT_STORAGE_KEY, JSON.stringify(buildAskTicketContext(result, query)));
+  } catch {
+    // Storage can be unavailable in private or restricted browser contexts.
+  }
+}
 
 function statusTone(status: string) {
   if (status === "answered") {
@@ -62,11 +156,8 @@ export function KnowledgePortalAskPage() {
       }
       return sendKnowledgeArticleFeedback(payload.slug, {
         helpful: payload.action === "helpful",
-        metadata: {
-          source: "knowledge_ask",
-          answer_status: result?.answer_status,
-          query,
-        },
+        result: payload.action === "helpful" ? "ask_answer_helpful" : "ask_answer_not_helpful",
+        metadata: askAnalyticsMetadata(result, query),
       });
     },
     onSuccess: (_data, variables) => {
@@ -107,7 +198,11 @@ export function KnowledgePortalAskPage() {
         >
           Предложить исправление
         </Button>
-        <a className="inline-flex h-11 items-center justify-center gap-2 rounded-pill bg-surface-subtle px-4 text-sm font-semibold text-slate-900 shadow-soft hover:bg-brand-50 hover:text-brand-800" href="/app/requester/new">
+        <a
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-pill bg-surface-subtle px-4 text-sm font-semibold text-slate-900 shadow-soft hover:bg-brand-50 hover:text-brand-800"
+          href="/app/requester/new"
+          onClick={() => persistAskTicketContext(result, query)}
+        >
           <MessageSquarePlus className="h-4 w-4" />
           Создать обращение
         </a>

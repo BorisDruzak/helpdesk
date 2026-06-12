@@ -1391,9 +1391,15 @@ Status 2026-06-12:
   * GREEN test: the same focused test passed with 1 file / 2 tests after implementation.
   * Remote validation: `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `165c4747`; `/api/health` returned 200 on smoke attempt 2.
   * Browser validation: Playwright/browser opened `https://192.168.100.17:9443/app/knowledge`, confirmed the `Ask debug` panel, filled `VPN`, ran `Проверить Ask`, and saw `ai_disabled`, `keyword_only`, `AI fallback`, 5 citations plus per-result `score`, `source_mode`, `chunk_id`, `segment_id` and `keyword_*` score parts.
+* Phase 6E requester Ask feedback analytics and ticket prefill, 2026-06-12:
+
+  * `/app/kb/ask` now adds Ask-specific feedback metadata when requester marks an answer useful/not useful: `source=knowledge_ask`, `answer_status`, `audit_id`, `ai_used`, `effective_mode`, fallback mode, query, primary item/version/chunk/segment, primary score and citation count.
+  * The create-ticket CTA still routes to `/app/requester/new`, but now stores a safe `pc_client.knowledge_ask.ticket_context` session draft with query, Ask status, audit id, top retrieval result and citations.
+  * `/app/requester/new` reads that draft once, replaces the default title with `Knowledge Ask: <query>`, pre-fills the description with Ask status/audit/top article context, and submits existing `knowledge_attempts` with `result=ticket_created_after_view` so the current requester ticket create API records the downstream `ticket_created_after_view` analytics event.
+  * RED tests: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx` failed before implementation because Ask context was absent and requester ticket draft stayed empty/default.
+  * GREEN tests: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx` passed with 2 files / 13 tests; expanded `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx src/features/requester/api.test.ts src/features/knowledge/api.test.ts src/app/navigation.test.ts` passed with 5 files / 54 tests.
 * Remaining Phase 6 work:
 
-  * deeper Ask feedback analytics and optional ticket prefill from the Ask context;
   * browser/live evidence after deploy and optional OpenRouter key setup.
 
 Backend:

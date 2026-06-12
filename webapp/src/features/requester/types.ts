@@ -135,7 +135,7 @@ export type KnowledgeSuggestResult = {
 export type KnowledgeAttempt = {
   item_id: string;
   version_id?: string | null;
-  result: "viewed" | "helpful" | "not_helpful" | "deflected" | "skipped";
+  result: "viewed" | "helpful" | "not_helpful" | "deflected" | "skipped" | "ticket_created_after_view";
   surface: "requester_portal" | "agent_gui" | "support_workspace";
   timestamp: string;
 };
