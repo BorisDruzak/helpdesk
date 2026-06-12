@@ -1,0 +1,230 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { AdminKnowledgeStudioPage } from "./knowledge-studio-page";
+
+function jsonResponse(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+const spacesPayload = {
+  status: "ok",
+  spaces: [
+    {
+      space_id: "space-1",
+      code: "it-self-service",
+      title: "IT Self-Service",
+      visibility: "requester",
+      lifecycle_status: "active",
+      owner_actor_id: "owner",
+      default_reviewer_actor_id: "reviewer",
+    },
+  ],
+};
+
+const itemsPayload = {
+  status: "ok",
+  items: [
+    {
+      item_id: "item-1",
+      space_id: "space-1",
+      slug: "vpn-access",
+      item_type: "article",
+      type: "article",
+      title: "VPN access",
+      summary: "How to reconnect VPN safely",
+      status: "draft",
+      visibility: "requester",
+      owner_actor_id: "owner",
+      reviewer_actor_id: "reviewer",
+      tags: ["vpn", "remote"],
+      current_version_id: "ver-1",
+      updated_at: "2026-06-12T07:00:00Z",
+    },
+  ],
+};
+
+const versionsPayload = {
+  status: "ok",
+  versions: [
+    {
+      version_id: "ver-1",
+      item_id: "item-1",
+      version_number: 1,
+      title: "VPN access",
+      summary: "How to reconnect VPN safely",
+      body_format: "markdown",
+      body: "# VPN access\n\nCheck the tunnel adapter.\n\n## Escalation\nCreate a ticket if MFA fails.",
+      created_at: "2026-06-12T07:00:00Z",
+      published_at: null,
+    },
+  ],
+};
+
+const templatesPayload = {
+  status: "ok",
+  templates: [
+    {
+      type: "troubleshooting",
+      title: "Шаблон решения",
+      sections: ["Симптом", "Проверка", "Решение"],
+    },
+  ],
+};
+
+function setupFetch() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "/api/web/knowledge/spaces") {
+      return jsonResponse(spacesPayload);
+    }
+    if (url === "/api/web/knowledge/items" && !init?.method) {
+      return jsonResponse(itemsPayload);
+    }
+    if (url === "/api/web/knowledge/templates") {
+      return jsonResponse(templatesPayload);
+    }
+    if (url === "/api/web/knowledge/items/item-1/versions" && !init?.method) {
+      return jsonResponse(versionsPayload);
+    }
+    if (url === "/api/web/knowledge/items/item-1/versions" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        version: {
+          version_id: "ver-2",
+          item_id: "item-1",
+          version_number: 2,
+          title: "VPN access",
+          body_format: "markdown",
+          body: JSON.parse(String(init.body)).body,
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1/publish" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        item: { ...itemsPayload.items[0], status: "published", current_version_id: "ver-2" },
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1/segments") {
+      return jsonResponse({ status: "ok", segments: [] });
+    }
+    if (url === "/api/web/knowledge/segmentation-profiles") {
+      return jsonResponse({ status: "ok", profiles: [] });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock as typeof fetch);
+  return fetchMock;
+}
+
+function renderStudio() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <AdminKnowledgeStudioPage />
+    </QueryClientProvider>,
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("AdminKnowledgeStudioPage", () => {
+  it("loads a dedicated product authoring workspace with metadata, editor, preview and publish checklist", async () => {
+    setupFetch();
+    renderStudio();
+
+    expect(await screen.findByRole("heading", { name: "Студия статей" })).toBeInTheDocument();
+    expect(screen.getByText("Черновики и статьи")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /VPN access/ })).toBeInTheDocument();
+    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+    expect(screen.getByLabelText("Заголовок")).toHaveValue("VPN access");
+    expect(screen.getByLabelText("Slug")).toHaveValue("vpn-access");
+    expect(screen.getByLabelText("Пространство")).toHaveValue("it-self-service");
+    expect(screen.getAllByLabelText("Видимость")[0]).toHaveValue("requester");
+    expect(screen.getByLabelText("Owner")).toHaveValue("owner");
+    expect(screen.getByLabelText("Reviewer")).toHaveValue("reviewer");
+    expect(screen.getByLabelText("Теги")).toHaveValue("vpn, remote");
+    expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter.");
+    expect(screen.getByText("Предпросмотр")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "VPN access" })).toBeInTheDocument();
+    expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
+    expect(screen.getByText("AI-инструменты отключены")).toBeInTheDocument();
+
+    const visibleText = document.body.textContent ?? "";
+    expect(visibleText).not.toContain("Рџ");
+  });
+
+  it("inserts a template, creates a version and publishes with checklist payload", async () => {
+    const fetchMock = setupFetch();
+    renderStudio();
+
+    await screen.findByRole("heading", { name: "Студия статей" });
+    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+    fireEvent.click(await screen.findByRole("button", { name: "Вставить шаблон: Шаблон решения" }));
+    expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("## Симптом");
+    expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("## Решение");
+
+    fireEvent.change(screen.getByLabelText("Markdown"), {
+      target: {
+        value: "# VPN access\n\nUpdated requester-safe body.\n\n## Решение\nReconnect profile.",
+      },
+    });
+    fireEvent.change(screen.getByLabelText("Краткое описание версии"), {
+      target: { value: "Updated requester-safe body" },
+    });
+    fireEvent.change(screen.getByLabelText("Описание изменения"), {
+      target: { value: "Добавлен requester-safe раздел решения" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Создать версию" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/items/item-1/versions",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const createCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items/item-1/versions" && call[1]?.method === "POST");
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+      title: "VPN access",
+      summary: "Updated requester-safe body",
+      body_format: "markdown",
+      body: expect.stringContaining("Updated requester-safe body."),
+      change_summary: "Добавлен requester-safe раздел решения",
+    });
+
+    const checklist = screen.getByRole("group", { name: "Проверка публикации" });
+    fireEvent.click(within(checklist).getByLabelText("Markdown заполнен"));
+    fireEvent.click(within(checklist).getByLabelText("Есть краткое описание"));
+    fireEvent.click(within(checklist).getByLabelText("Выбрана requester-safe видимость"));
+    fireEvent.click(within(checklist).getByLabelText("Назначен reviewer"));
+    fireEvent.change(screen.getByLabelText("Комментарий к публикации"), {
+      target: { value: "Готово к порталу" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Опубликовать версию" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/items/item-1/publish",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const publishCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items/item-1/publish" && call[1]?.method === "POST");
+    expect(JSON.parse(String(publishCall?.[1]?.body))).toMatchObject({
+      version_id: "ver-2",
+      review_note: "Готово к порталу",
+    });
+  });
+});

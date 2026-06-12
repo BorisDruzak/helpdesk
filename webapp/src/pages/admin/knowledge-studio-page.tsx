@@ -1,5 +1,5 @@
-import { KnowledgeAdminPanel } from "../../features/knowledge/knowledge-admin-panel";
+import { KnowledgeAuthoringStudioPage } from "../../features/knowledge/authoring-studio-page";
 
 export function AdminKnowledgeStudioPage() {
-  return <KnowledgeAdminPanel mode="admin" />;
+  return <KnowledgeAuthoringStudioPage />;
 }

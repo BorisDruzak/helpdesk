@@ -1774,6 +1774,25 @@ Exit criteria:
 * Articles can be authored and governed without raw admin-table workflow.
 * Editor supports segmentation and AI tools safely.
 
+Phase 8 current state, 2026-06-12:
+
+* `/app/admin/knowledge/studio` now renders a dedicated Russian-first Knowledge Authoring Studio instead of reusing the admin operations panel.
+* Implemented first authoring slice in `webapp/src/features/knowledge/authoring-studio-page.tsx`: draft/article browser, metadata fields, Markdown editor, template insertion, requester-safe preview, lightweight diff counters, publish checklist, disabled AI tools panel and embedded `ArticleSegmentationPanel`.
+* The first slice deliberately reuses existing item/version/template/publish/segment APIs and adds no new DB tables yet.
+* RED/green webapp coverage lives in `webapp/src/pages/admin/knowledge-studio-page.test.tsx` and covers load/edit preview, template insertion, version creation, publish payload, Russian labels and mojibake guard.
+* Verified locally:
+
+  * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx` -> 2 passed.
+  * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/article-segmentation-panel.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` -> 29 passed.
+  * `pnpm --dir webapp build` -> passed.
+
+Remaining Phase 8 product hardening before declaring the full phase complete:
+
+* Persist `knowledge_article_editor_events` and optional attachment/diff cache tables if audit-grade editor history is required.
+* Add real review submit/approve/request-changes/comment workflow to the Studio surface.
+* Add create-new-draft flow, rollback/archive/supersede controls and richer structured block editing.
+* Add browser/live evidence for the deployed `/app/admin/knowledge/studio` route and manual segment flow.
+
 ---
 
 ## Phase 9 — Visual Knowledge Graph Studio
