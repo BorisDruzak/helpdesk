@@ -1372,6 +1372,8 @@ Status 2026-06-12:
   * GREEN test: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx` passed with 1 file / 2 tests after implementation.
   * Targeted regression: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts src/features/knowledge/api.test.ts` passed with 4 files / 30 tests before and after the AI-off fallback action-row correction.
   * Build/docs sanity: `pnpm --dir webapp build`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check -- PLANS.md docs/QUICK_LOOKUP.md server/docs/KNOWLEDGE_PLATFORM.md server/docs/CODEMAP.md webapp/src/pages/kb/ask-page.tsx webapp/src/pages/kb/ask-page.test.tsx` passed; diff check reported CRLF conversion warnings only.
+  * Remote validation: `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `db9d9ee0`; `/api/health` returned 200 on smoke attempt 2.
+  * Browser/live evidence: in-app browser opened `https://192.168.100.17:9443/app/kb/ask`, submitted `VPN`, received AI-off fallback/search results and confirmed visible actions `Ответ полезен`, `Ответ не помог`, `Предложить исправление` and `Создать обращение`.
 * Remaining Phase 6 work:
 
   * stricter citation validation for uncited critical claims;
