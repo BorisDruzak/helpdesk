@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import KnowledgeIngestionJob
 from app.repos.knowledge_repo import KnowledgeRepo
+from knowledge.ai_proposal_service import KnowledgeAiProposalService
 from knowledge.contracts import KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
 from knowledge.embedding_service import KnowledgeEmbeddingService, Transport
 from knowledge.segmentation_service import KnowledgeSegmentationService
@@ -129,6 +130,18 @@ def _text_sections(body: str) -> list[dict[str, Any]]:
     return [{"heading": f"Section {index + 1}", "preview": re.sub(r"\s+", " ", paragraph)[:240]} for index, paragraph in enumerate(paragraphs[:12])]
 
 
+def _safe_keywords(*values: str) -> list[str]:
+    words: list[str] = []
+    for value in values:
+        for match in re.finditer(r"[A-Za-zА-Яа-я0-9_-]{3,40}", value):
+            word = match.group(0).lower()
+            if word not in words:
+                words.append(word)
+            if len(words) >= 8:
+                return words
+    return words
+
+
 def _parse_import_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
     source_kind = str(payload.get("source_kind") or "text").lower()
     if source_kind in REMOTE_IMPORT_SOURCE_KINDS:
@@ -212,8 +225,125 @@ class KnowledgeIngestionService:
                 "profile_code": segmentation["profile_code"],
                 **segment_result,
             }
+        ai_enrichment = dict(preview["ai_enrichment"])
+        if ai_enrichment["enabled"]:
+            proposals = await self._create_ai_enrichment_proposals(preview, result, actor_id=actor_id, actor_role=actor_role)
+            ai_enrichment = {**ai_enrichment, "status": "review_required", "proposals": proposals}
         indexing = await self._index_after_import_if_enabled(result, actor_id=actor_id, actor_role=actor_role)
-        return {"preview": preview, "ai_enrichment": preview["ai_enrichment"], "segmentation": segmentation, "indexing": indexing, **result}
+        return {"preview": preview, "ai_enrichment": ai_enrichment, "segmentation": segmentation, "indexing": indexing, **result}
+
+    async def _create_ai_enrichment_proposals(
+        self,
+        preview: dict[str, Any],
+        result: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str,
+    ) -> list[dict[str, Any]]:
+        item = result["item"]
+        version = result["version"]
+        job = result["job"]
+        title = str(item.get("title") or preview.get("detected_title") or item.get("slug") or "Imported knowledge")
+        sections = preview.get("sections") if isinstance(preview.get("sections"), list) else []
+        section_headings = [str(section.get("heading") or "") for section in sections if isinstance(section, dict)]
+        keywords = _safe_keywords(title, " ".join(section_headings))
+        source_ref = str(job.get("job_id") or item["item_id"])
+        graph_key = f"concept:import-{_slug_from_title(str(item.get('slug') or title))}"
+        service = KnowledgeAiProposalService(self.session)
+        proposal_payloads = [
+            {
+                "proposal_type": "summary",
+                "target_kind": "item",
+                "target_ref": item["item_id"],
+                "title": f"Summary proposal for {title}",
+                "rationale": "Imported draft can be enriched with a reviewed summary before publication.",
+                "proposed_payload": {
+                    "summary": f"Imported draft for {title}",
+                    "version_id": version["version_id"],
+                    "source": "import_enrichment_seed",
+                },
+                "confidence_score": 0.45,
+            },
+            {
+                "proposal_type": "tags",
+                "target_kind": "item",
+                "target_ref": item["item_id"],
+                "title": f"Tag proposal for {title}",
+                "rationale": "Imported headings suggest candidate tags for reviewer approval.",
+                "proposed_payload": {"tags": keywords, "version_id": version["version_id"], "source": "import_enrichment_seed"},
+                "confidence_score": 0.4,
+            },
+            {
+                "proposal_type": "glossary_term",
+                "target_kind": "item",
+                "target_ref": item["item_id"],
+                "title": f"Glossary proposal for {title}",
+                "rationale": "The imported title can seed a glossary term for governed review.",
+                "proposed_payload": {
+                    "term": title,
+                    "definition": f"Review glossary definition for {title}",
+                    "version_id": version["version_id"],
+                    "source": "import_enrichment_seed",
+                },
+                "confidence_score": 0.35,
+            },
+            {
+                "proposal_type": "graph_node",
+                "target_kind": "graph",
+                "target_ref": item["item_id"],
+                "title": f"Graph node proposal for {title}",
+                "rationale": "Imported draft can be linked into the knowledge graph after review.",
+                "proposed_payload": {
+                    "graph": {
+                        "nodes": [
+                            {
+                                "stable_key": graph_key,
+                                "node_type": "concept",
+                                "label": title,
+                                "linked_item_id": item["item_id"],
+                                "visibility": item.get("visibility") or "support_internal",
+                            }
+                        ],
+                        "edges": [],
+                    },
+                    "version_id": version["version_id"],
+                    "source": "import_enrichment_seed",
+                },
+                "confidence_score": 0.5,
+            },
+            {
+                "proposal_type": "duplicate",
+                "target_kind": "item",
+                "target_ref": item["item_id"],
+                "title": f"Duplicate review proposal for {title}",
+                "rationale": "Imported draft should be checked for duplicate knowledge before publication.",
+                "proposed_payload": {
+                    "duplicate_review": {
+                        "item_id": item["item_id"],
+                        "candidate_count": 0,
+                        "signals": ["title_similarity_review_required"],
+                    },
+                    "version_id": version["version_id"],
+                    "source": "import_enrichment_seed",
+                },
+                "confidence_score": 0.3,
+            },
+        ]
+        proposals: list[dict[str, Any]] = []
+        for proposal_payload in proposal_payloads:
+            proposals.append(
+                await service.create(
+                    {
+                        **proposal_payload,
+                        "visibility": item.get("visibility") or "support_internal",
+                        "source_kind": "knowledge_import",
+                        "source_ref": source_ref,
+                    },
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                )
+            )
+        return proposals
 
     async def _index_after_import_if_enabled(self, result: dict[str, Any], *, actor_id: str | None, actor_role: str) -> dict[str, Any]:
         service = KnowledgeEmbeddingService(self.session, transport=self.embedding_transport)

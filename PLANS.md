@@ -2435,11 +2435,25 @@ Phase 10 import indexing queue slice, 2026-06-12:
   * Browser same-origin API check on `/app/admin/knowledge/import` temporarily enabled `vector_enabled=true`, created draft `indexed-import-live-1781269338959`, and verified `indexing.enabled=true`, `indexing.status=completed`, `job.scope_type=item`, `job.metadata_json.version_id=<created version_id>`, `stats.chunks_seen=1`, `stats.disabled_embeddings=1`.
   * Follow-up `GET /api/web/knowledge/indexing/jobs -> 200` found the created indexing job, response scan confirmed no raw `embedding_vector`, and the previous search setting `vector_enabled=false` was restored.
 
+Phase 10 governed AI enrichment proposal slice, 2026-06-12:
+
+* Extended `POST /api/web/knowledge/import/create-drafts` so `ai_enrichment_enabled=true` creates governed pending proposals through the existing `KnowledgeAiProposalService`:
+
+  * proposal types: `summary`, `tags`, `glossary_term`, `graph_node`, `duplicate`;
+  * proposals target the created item/version or graph review path and reuse the existing `POST /api/web/knowledge/ai/proposals/{proposal_id}/review` approve/reject/comment lifecycle;
+  * generated proposal payloads are structural review seeds, not raw LLM output, and do not echo import body text, uploaded file names or remote/source secrets;
+  * graph node proposals can be approved through the existing graph apply path and return `applied_refs.node_ids`.
+
+* TDD status:
+
+  * RED `server/tests/test_knowledge_import_api.py::test_knowledge_import_create_drafts_creates_governed_ai_enrichment_proposals` failed because import responses still returned `blocked_pending_policy`.
+  * GREEN focused test passed after implementation.
+  * Sequential `server/tests/test_knowledge_import_api.py` plus `server/tests/test_knowledge_api.py::test_knowledge_ai_proposals_graph_review_lifecycle_and_observer_audit` passed with 8 tests.
+
 Phase 10 remaining work:
 
 * Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
 * Add import wizard UI controls for file upload, remote-source policy messages and segmentation profile selection.
-* Implement governed AI enrichment proposals for summary/tags/glossary/graph/duplicates with review actions.
 * Add import job detail APIs and Observer v2 events listed above.
 * Capture live browser evidence for `/app/admin/knowledge/import`.
 

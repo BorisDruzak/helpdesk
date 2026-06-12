@@ -161,6 +161,59 @@ async def test_knowledge_import_create_drafts_queues_indexing_when_enabled(test_
     assert "embedding_vector" not in str(payload["indexing"])
 
 
+@pytest.mark.asyncio
+async def test_knowledge_import_create_drafts_creates_governed_ai_enrichment_proposals(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={
+            "code": "import-ai-proposals",
+            "title": "Import AI Proposals",
+            "visibility": "support_internal",
+            "lifecycle_status": "active",
+        },
+    )
+    assert space_resp.status == 200
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-ai-proposals",
+            "source_kind": "markdown",
+            "source_name": "vpn-secret-token.md",
+            "slug": "import-ai-proposals-api",
+            "item_type": "article",
+            "title": "Import AI Proposals API",
+            "visibility": "support_internal",
+            "body": "# Import AI Proposals API\n\n## Symptoms\nVPN disconnects for remote users.\n\n## Fix\nReconnect VPN and refresh DNS.",
+            "ai_enrichment_enabled": True,
+        },
+    )
+
+    assert resp.status == 200
+    payload = await resp.json()
+    proposals = payload["ai_enrichment"]["proposals"]
+    proposal_types = {proposal["proposal_type"] for proposal in proposals}
+    assert payload["ai_enrichment"]["status"] == "review_required"
+    assert {"summary", "tags", "glossary_term", "graph_node", "duplicate"} <= proposal_types
+    assert all(proposal["status"] == "pending" for proposal in proposals)
+    assert all(proposal["target_ref"] for proposal in proposals)
+    assert "secret-token" not in str(proposals)
+    assert "VPN disconnects for remote users" not in str(proposals)
+
+    graph_proposal = next(proposal for proposal in proposals if proposal["proposal_type"] == "graph_node")
+    review_resp = await test_client.post(
+        f"/api/web/knowledge/ai/proposals/{graph_proposal['proposal_id']}/review",
+        headers=_admin_headers(),
+        json={"action": "approve", "note": "apply graph proposal"},
+    )
+    assert review_resp.status == 200
+    reviewed = await review_resp.json()
+    assert reviewed["proposal"]["status"] == "approved"
+    assert reviewed["proposal"]["applied_refs"]["node_ids"]
+
+
 def _docx_base64(text: str) -> str:
     buffer = io.BytesIO()
     document_xml = (
