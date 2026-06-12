@@ -24,7 +24,7 @@ from knowledge.editor_history_service import KnowledgeEditorHistoryService
 from knowledge.embedding_service import KnowledgeEmbeddingService
 from knowledge.feedback_service import KnowledgeFeedbackService
 from knowledge.graph_service import KnowledgeGraphService
-from knowledge.ingestion_service import KnowledgeIngestionService
+from knowledge.ingestion_service import KnowledgeIngestionService, KnowledgeRemoteImportBlockedError
 from knowledge.metrics_service import KnowledgeMetricsService
 from knowledge.ops_summary_service import KnowledgeOpsSummaryService
 from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsService
@@ -1685,6 +1685,15 @@ async def handle_web_knowledge_import_preview(request: web.Request) -> web.Respo
     async with get_session() as session:
         try:
             preview = KnowledgeIngestionService(session).preview_import(payload)
+        except KnowledgeRemoteImportBlockedError:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "remote_import_blocked",
+                    "display_message": "Импорт из внешнего источника заблокирован политикой безопасной загрузки",
+                },
+                status=400,
+            )
         except KnowledgeValidationError as exc:
             return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
     return web.json_response({"status": "ok", "preview": preview})
@@ -1697,6 +1706,15 @@ async def handle_web_knowledge_import_create_drafts(request: web.Request) -> web
     async with get_session() as session:
         try:
             result = await KnowledgeIngestionService(session).create_drafts_from_import(payload, actor_id=actor_id, actor_role=role)
+        except KnowledgeRemoteImportBlockedError:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "remote_import_blocked",
+                    "display_message": "Импорт из внешнего источника заблокирован политикой безопасной загрузки",
+                },
+                status=400,
+            )
         except KnowledgeValidationError as exc:
             return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
         await session.commit()

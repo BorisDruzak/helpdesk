@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import html
+import base64
+import binascii
+import io
 import re
 from typing import Any
 import uuid
+import zipfile
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import KnowledgeIngestionJob
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.contracts import KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
+
+MAX_IMPORT_UPLOAD_BYTES = 5 * 1024 * 1024
+REMOTE_IMPORT_SOURCE_KINDS = {"url", "git"}
+LOCAL_IMPORT_SOURCE_KINDS = {"text", "markdown", "html", "docx", "pdf"}
 
 
 def _new_id() -> str:
@@ -27,12 +35,71 @@ def _redact_error(error: BaseException) -> str:
     return text[:500]
 
 
+class KnowledgeRemoteImportBlockedError(KnowledgeValidationError):
+    """Raised when a remote import source is blocked by the safe fetch policy."""
+
+    def __init__(self) -> None:
+        super().__init__("remote import fetch is disabled by safe import policy")
+
+
 def _strip_html(value: str) -> str:
     text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", value)
     text = re.sub(r"(?i)<br\s*/?>", "\n", text)
     text = re.sub(r"(?i)</(p|div|li|h[1-6])>", "\n", text)
     text = re.sub(r"<[^>]+>", " ", text)
     return html.unescape(re.sub(r"[ \t]+", " ", text)).strip()
+
+
+def _uploaded_bytes(payload: dict[str, Any], *, source_kind: str) -> bytes:
+    encoded = payload.get("file_content_base64")
+    if not isinstance(encoded, str) or not encoded.strip():
+        raise KnowledgeValidationError(f"{source_kind} import requires file_content_base64 upload")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise KnowledgeValidationError(f"invalid {source_kind} upload encoding") from exc
+    if not raw:
+        raise KnowledgeValidationError(f"{source_kind} upload is empty")
+    if len(raw) > MAX_IMPORT_UPLOAD_BYTES:
+        raise KnowledgeValidationError(f"{source_kind} upload exceeds safe size limit")
+    return raw
+
+
+def _parse_docx_upload(payload: dict[str, Any]) -> str:
+    raw = _uploaded_bytes(payload, source_kind="docx")
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8", errors="replace")
+    except (KeyError, zipfile.BadZipFile, OSError, UnicodeDecodeError) as exc:
+        raise KnowledgeValidationError("unable to parse uploaded DOCX") from exc
+    text_runs = re.findall(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", document_xml, flags=re.DOTALL)
+    text = "\n".join(html.unescape(re.sub(r"\s+", " ", run)).strip() for run in text_runs if run.strip())
+    if not text.strip():
+        raise KnowledgeValidationError("uploaded DOCX contains no extractable text")
+    return text.strip()
+
+
+def _unescape_pdf_literal(value: str) -> str:
+    return (
+        value.replace(r"\(", "(")
+        .replace(r"\)", ")")
+        .replace(r"\\", "\\")
+        .replace(r"\n", "\n")
+        .replace(r"\r", "\r")
+        .replace(r"\t", "\t")
+    )
+
+
+def _parse_pdf_upload(payload: dict[str, Any]) -> str:
+    raw = _uploaded_bytes(payload, source_kind="pdf")
+    if not raw.lstrip().startswith(b"%PDF"):
+        raise KnowledgeValidationError("uploaded PDF has invalid header")
+    decoded = raw.decode("latin-1", errors="ignore")
+    literals = [_unescape_pdf_literal(match) for match in re.findall(r"\(((?:\\.|[^\\)])*)\)", decoded)]
+    text = " ".join(re.sub(r"\s+", " ", literal).strip() for literal in literals if literal.strip())
+    if not text.strip():
+        raise KnowledgeValidationError("uploaded PDF contains no extractable text")
+    return text.strip()
 
 
 def _first_non_empty_line(body: str) -> str:
@@ -60,47 +127,63 @@ def _text_sections(body: str) -> list[dict[str, Any]]:
     return [{"heading": f"Section {index + 1}", "preview": re.sub(r"\s+", " ", paragraph)[:240]} for index, paragraph in enumerate(paragraphs[:12])]
 
 
+def _parse_import_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    source_kind = str(payload.get("source_kind") or "text").lower()
+    if source_kind in REMOTE_IMPORT_SOURCE_KINDS:
+        raise KnowledgeRemoteImportBlockedError()
+    if source_kind not in LOCAL_IMPORT_SOURCE_KINDS:
+        raise KnowledgeValidationError(f"unsupported import source_kind: {source_kind}")
+    source_name = str(payload.get("source_name") or payload.get("title") or "manual text")
+    raw_body = str(payload.get("body") or "")
+    if source_kind == "html":
+        parsed_body = _strip_html(raw_body)
+    elif source_kind == "docx":
+        parsed_body = _parse_docx_upload(payload)
+    elif source_kind == "pdf":
+        parsed_body = _parse_pdf_upload(payload)
+    else:
+        parsed_body = raw_body.strip()
+    if not parsed_body:
+        raise KnowledgeValidationError("import body is required")
+    body_format = "markdown" if source_kind == "markdown" else ("html" if source_kind == "html" else "plain_text")
+    title_match = re.search(r"(?m)^#\s+(.+?)\s*$", parsed_body) if source_kind == "markdown" else None
+    detected_title = str(payload.get("title") or (title_match.group(1).strip() if title_match else "") or _first_non_empty_line(parsed_body))
+    sections = _markdown_sections(parsed_body) if source_kind == "markdown" else _text_sections(parsed_body)
+    ai_requested = bool(payload.get("ai_enrichment_enabled"))
+    preview = {
+        "source_kind": source_kind,
+        "source_name": source_name,
+        "body_format": body_format,
+        "detected_title": detected_title,
+        "word_count": len(re.findall(r"\S+", parsed_body)),
+        "section_count": len(sections),
+        "sections": sections,
+        "ai_enrichment": {
+            "enabled": ai_requested,
+            "status": "blocked_pending_policy" if ai_requested else "disabled",
+            "proposals": [],
+        },
+    }
+    return preview, parsed_body
+
+
 class KnowledgeIngestionService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
     def preview_import(self, payload: dict[str, Any]) -> dict[str, Any]:
-        source_kind = str(payload.get("source_kind") or "text").lower()
-        if source_kind not in {"text", "markdown", "html"}:
-            raise KnowledgeValidationError(f"unsupported import source_kind: {source_kind}")
-        source_name = str(payload.get("source_name") or payload.get("title") or "manual text")
-        raw_body = str(payload.get("body") or "")
-        parsed_body = _strip_html(raw_body) if source_kind == "html" else raw_body.strip()
-        if not parsed_body:
-            raise KnowledgeValidationError("import body is required")
-        body_format = "markdown" if source_kind == "markdown" else ("html" if source_kind == "html" else "plain_text")
-        title_match = re.search(r"(?m)^#\s+(.+?)\s*$", parsed_body) if source_kind == "markdown" else None
-        detected_title = str(payload.get("title") or (title_match.group(1).strip() if title_match else "") or _first_non_empty_line(parsed_body))
-        sections = _markdown_sections(parsed_body) if source_kind == "markdown" else _text_sections(parsed_body)
-        ai_requested = bool(payload.get("ai_enrichment_enabled"))
-        return {
-            "source_kind": source_kind,
-            "source_name": source_name,
-            "body_format": body_format,
-            "detected_title": detected_title,
-            "word_count": len(re.findall(r"\S+", parsed_body)),
-            "section_count": len(sections),
-            "sections": sections,
-            "ai_enrichment": {
-                "enabled": ai_requested,
-                "status": "blocked_pending_policy" if ai_requested else "disabled",
-                "proposals": [],
-            },
-        }
+        preview, _parsed_body = _parse_import_payload(payload)
+        return preview
 
     async def create_drafts_from_import(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
-        preview = self.preview_import(payload)
+        preview, parsed_body = _parse_import_payload(payload)
         result = await self.ingest_text(
             {
                 **payload,
                 "source_kind": preview["source_kind"],
                 "source_name": preview["source_name"],
                 "title": payload.get("title") or preview["detected_title"],
+                "body": parsed_body,
             },
             actor_id=actor_id,
             actor_role=actor_role,

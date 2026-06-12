@@ -2371,9 +2371,23 @@ Phase 10 live validation, 2026-06-12:
   * report: `artifacts/browser_live_validation/knowledge-import-e5303524-1781238442868/report.json`;
   * screenshot: `artifacts/browser_live_validation/knowledge-import-e5303524-1781238442868/knowledge-import-live.png`.
 
+Phase 10 parser/upload policy slice, 2026-06-12:
+
+* Extended `KnowledgeIngestionService.preview_import()` beyond the first text/markdown/html slice:
+
+  * DOCX previews now accept `file_content_base64`, enforce a 5 MiB safe upload limit, parse `word/document.xml` with stdlib zip/XML text extraction and return plain-text title/sections/counts;
+  * PDF previews now accept `file_content_base64`, enforce the same safe upload limit, require a `%PDF` header and extract simple text literals without adding a new dependency;
+  * URL and Git source kinds are recognized but blocked by the safe import policy until an explicit allowlist/fetch/clone policy is implemented;
+  * blocked remote imports return `error=remote_import_blocked` with a safe Russian display message and do not echo raw URLs, tokens or passwords.
+
+* TDD status:
+
+  * RED `server/tests/test_knowledge_import_api.py` failed because DOCX/PDF preview returned `400` and URL/Git returned generic `validation_error`.
+  * GREEN focused import API tests now pass with 4 tests.
+
 Phase 10 remaining work:
 
-* Add PDF/DOCX/URL/Git parsers and safe fetch/upload policy.
+* Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
 * Add explicit segmentation profile selection and optional auto-segmentation after import.
 * Queue indexing after draft creation when indexing is enabled.
 * Implement governed AI enrichment proposals for summary/tags/glossary/graph/duplicates with review actions.
