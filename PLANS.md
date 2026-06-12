@@ -1612,7 +1612,21 @@ Remaining Phase 7 product hardening:
 * Dedicated persisted tables for views/bookmarks/correction/subscriptions if per-user bookmark state must survive beyond event history.
 * Real popular/recommended ranking instead of recent-article fallback.
 * Full correction form with user-entered comment in the reader UI.
-* Browser/live evidence on deployed `/app/kb`, `/app/kb/search`, `/app/kb/ask`, article, space and tag routes.
+
+Phase 7 live/browser result, deployed commit `7bb4ff91`, 2026-06-12:
+
+* Deployed `codex/helpdesk-process-model` to `192.168.100.17` with quick release gate and remote smoke `GET /api/health -> 200`.
+* Browser evidence captured under `artifacts/browser_live_validation/knowledge-portal-7bb4ff91/`.
+* Verified requester web session (`actor_role=user`, workspace `requester`) can load `/api/knowledge/portal/home` through web-session cookie auth.
+* Verified `/app/kb`, `/app/kb/search?q=VPN` and `/app/kb/ask` render Russian requester portal surfaces without console/page/network errors.
+* Verified article reader `/app/kb/articles/codex-stage2b-requester-kb-20260608-2107`, helpful feedback, correction request, bookmark action, `/app/kb/spaces/glossary` and `/app/kb/tags/live` without console/page/network errors.
+* Temporary live-check requester users were created for the browser run and deactivated after verification.
+
+Remaining Phase 7 product hardening after live check:
+
+* Dedicated persisted tables for views/bookmarks/correction/subscriptions if per-user bookmark state must survive beyond event history.
+* Real popular/recommended ranking instead of recent-article fallback.
+* Full correction form with user-entered comment in the reader UI.
 
 TDD checkpoints:
 
