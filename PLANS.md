@@ -2549,6 +2549,20 @@ Phase 10 import job detail and Observer events slice, 2026-06-12:
   * `python scripts/docs_inventory.py --check-links` -> passed.
   * `python scripts/verify_workspace.py` -> passed.
 
+* Remote/live validation:
+
+  * Commit `21fc7d9d` was pushed to `origin/codex/helpdesk-process-model` and deployed with `scripts/release_server_to_remote.py --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+  * Remote smoke verified `https://192.168.100.17:9443/api/health -> 200`.
+  * Browser same-origin API checks against deployed server verified:
+
+    * `POST /api/web/knowledge/import/preview` -> `200`, AI preview status `blocked_pending_policy`;
+    * `POST /api/web/knowledge/import/create-drafts` -> `200`, job `171fdb01-8037-4394-995d-06388dd75c6f`;
+    * `GET /api/web/knowledge/import/jobs/{job_id}` -> `200`, status `review_required`, space `it-support`, response did not include import body text;
+    * `GET /api/web/knowledge/import/jobs` -> `200` and included the created job;
+    * blocked URL preview -> `400 remote_import_blocked` without leaking `secret-token`, `password=hidden` or `outside.example.test`.
+
+  * Browser same-origin audit checks via `/api/web/admin/tech/agents/audit?event_type=...` verified deployed `knowledge_import` rows for `knowledge.import.preview_created`, `knowledge.import.ai_enrichment_blocked`, `knowledge.import.drafts_created` and `knowledge.import.failed`; audit details did not leak import body text or secret-bearing URL fragments.
+
 Phase 10 remaining work:
 
 * None for the import job detail / Observer events scope. Continue with Phase 11.
