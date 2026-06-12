@@ -6,6 +6,8 @@ import zipfile
 
 import pytest
 
+from knowledge import ingestion_service as ingestion_module
+
 
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
@@ -284,3 +286,129 @@ async def test_knowledge_import_preview_blocks_url_and_git_without_fetch_policy_
         assert payload["error"] == "remote_import_blocked"
         assert "secret-token" not in str(payload)
         assert "password=hidden" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_knowledge_import_preview_blocks_remote_host_outside_allowlist(test_client, monkeypatch) -> None:
+    monkeypatch.setattr(ingestion_module.config, "KNOWLEDGE_REMOTE_IMPORT_ENABLED", True, raising=False)
+    monkeypatch.setattr(ingestion_module.config, "KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS", ("docs.example.test",), raising=False)
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/preview",
+        headers=_admin_headers(),
+        json={
+            "source_kind": "url",
+            "source_name": "outside-secret-token",
+            "url": "https://outside.example.test/safe/runbook.md?token=secret-token&password=hidden",
+        },
+    )
+
+    assert resp.status == 400
+    payload = await resp.json()
+    assert payload["error"] == "remote_import_blocked"
+    assert "outside.example.test" not in str(payload)
+    assert "secret-token" not in str(payload)
+    assert "password=hidden" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_knowledge_import_preview_allows_url_through_explicit_allowlist(test_client, monkeypatch) -> None:
+    monkeypatch.setattr(ingestion_module.config, "KNOWLEDGE_REMOTE_IMPORT_ENABLED", True, raising=False)
+    monkeypatch.setattr(ingestion_module.config, "KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS", ("docs.example.test",), raising=False)
+
+    def fake_fetch(self, payload):  # noqa: ANN001
+        return ingestion_module.RemoteImportContent(
+            source_kind="url",
+            source_name="docs.example.test",
+            body="# Remote URL Import\n\n## Fix\nReconnect VPN.",
+            body_format="markdown",
+            remote_source={"source_kind": "url", "host": "docs.example.test", "path": "/safe/runbook.md", "bytes": 43},
+        )
+
+    monkeypatch.setattr(ingestion_module.KnowledgeRemoteImportFetcher, "fetch", fake_fetch)
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/preview",
+        headers=_admin_headers(),
+        json={
+            "source_kind": "url",
+            "source_name": "url-secret-token",
+            "url": "https://docs.example.test/safe/runbook.md?token=secret-token&password=hidden",
+        },
+    )
+
+    assert resp.status == 200
+    payload = await resp.json()
+    preview = payload["preview"]
+    assert preview["source_kind"] == "url"
+    assert preview["source_name"] == "docs.example.test"
+    assert preview["detected_title"] == "Remote URL Import"
+    assert preview["remote_source"] == {
+        "source_kind": "url",
+        "host": "docs.example.test",
+        "path": "/safe/runbook.md",
+        "bytes": 43,
+    }
+    assert "secret-token" not in str(payload)
+    assert "password=hidden" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_knowledge_import_create_drafts_allows_git_through_explicit_allowlist(test_client, monkeypatch) -> None:
+    monkeypatch.setattr(ingestion_module.config, "KNOWLEDGE_REMOTE_IMPORT_ENABLED", True, raising=False)
+    monkeypatch.setattr(ingestion_module.config, "KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS", ("git.example.test",), raising=False)
+
+    def fake_fetch(self, payload):  # noqa: ANN001
+        return ingestion_module.RemoteImportContent(
+            source_kind="git",
+            source_name="git.example.test/team/runbooks",
+            body="# Remote Git Import\n\n## Fix\nReconnect VPN.",
+            body_format="markdown",
+            remote_source={
+                "source_kind": "git",
+                "host": "git.example.test",
+                "repo": "git.example.test/team/runbooks",
+                "ref": "main",
+                "file_count": 1,
+                "bytes": 42,
+            },
+        )
+
+    monkeypatch.setattr(ingestion_module.KnowledgeRemoteImportFetcher, "fetch", fake_fetch)
+
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={
+            "code": "import-remote-git",
+            "title": "Import Remote Git",
+            "visibility": "support_internal",
+            "lifecycle_status": "active",
+        },
+    )
+    assert space_resp.status == 200
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-remote-git",
+            "source_kind": "git",
+            "repo_url": "https://git.example.test/team/runbooks.git?token=secret-token",
+            "ref": "main",
+            "slug": "remote-git-import-api",
+            "item_type": "article",
+            "title": "Remote Git Import API",
+            "visibility": "support_internal",
+            "ai_enrichment_enabled": False,
+        },
+    )
+
+    assert resp.status == 200
+    payload = await resp.json()
+    assert payload["preview"]["source_kind"] == "git"
+    assert payload["preview"]["remote_source"]["host"] == "git.example.test"
+    assert payload["item"]["source_kind"] == "imported_document"
+    assert payload["version"]["body_format"] == "markdown"
+    assert payload["job"]["status"] == "review_required"
+    assert "secret-token" not in str(payload)

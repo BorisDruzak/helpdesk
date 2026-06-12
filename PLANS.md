@@ -2460,9 +2460,29 @@ Phase 10 governed AI enrichment proposal slice, 2026-06-12:
   * Approving the created graph proposal through `POST /api/web/knowledge/ai/proposals/0980d5a5-0d54-4414-b6c0-c9758a61ea8c/review -> 200` returned `status=approved` and one applied graph node.
   * Follow-up `GET /api/web/knowledge/ai/proposals?status=pending&target_kind=item -> 200` found the created item proposal review rows.
 
+Phase 10 allowlisted remote import policy slice, 2026-06-12:
+
+* Added explicit fail-closed URL/Git remote import support:
+
+  * default behavior stays `remote_import_blocked` for `url` and `git`;
+  * `KNOWLEDGE_REMOTE_IMPORT_ENABLED=true` plus exact/wildcard `KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS` is required before remote fetch/clone can run;
+  * URL import requires HTTPS, blocks URL credentials and redirects, enforces configured byte/time limits and returns only safe `remote_source` metadata;
+  * Git import requires an allowlisted HTTPS repo, clones into a temp directory with depth/no-tags limits, reads only markdown/text/html files within configured file/byte limits, maps draft ingestion to `git_repo`, and returns no raw query strings or secret-bearing source URLs;
+  * typed webapp API now exposes optional safe `remote_source` metadata for future import wizard controls.
+
+* TDD and verification:
+
+  * RED focused URL/Git allowlist tests first failed because `KnowledgeRemoteImportFetcher` and config policy did not exist.
+  * GREEN focused URL/Git allowlist tests passed after implementation.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_import_api.py -q --tb=short` -> 10 passed.
+  * `python -m compileall -q server/config.py server/knowledge/ingestion_service.py server/tests/test_knowledge_import_api.py scripts/navigation_catalog.py` -> passed.
+  * `pnpm --dir webapp test -- src/features/knowledge/api.test.ts` -> 20 passed.
+  * `pnpm --dir webapp build` -> passed.
+  * `python scripts/docs_inventory.py --check-links` -> passed.
+  * `python scripts/verify_workspace.py` -> passed.
+
 Phase 10 remaining work:
 
-* Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
 * Add import wizard UI controls for file upload, remote-source policy messages and segmentation profile selection.
 * Add import job detail APIs and Observer v2 events listed above.
 * Capture live browser evidence for `/app/admin/knowledge/import`.

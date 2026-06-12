@@ -701,6 +701,15 @@ export type KnowledgeImportPreview = {
   word_count?: number;
   section_count: number;
   sections: Array<{ heading: string; preview?: string }>;
+  remote_source?: {
+    source_kind?: string;
+    host?: string | null;
+    path?: string;
+    repo?: string;
+    ref?: string;
+    file_count?: number;
+    bytes?: number;
+  };
   ai_enrichment: { enabled: boolean; status: string; proposals?: Array<Record<string, unknown>> };
 };
 

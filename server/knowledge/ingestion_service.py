@@ -3,24 +3,34 @@ from __future__ import annotations
 import html
 import base64
 import binascii
+from dataclasses import dataclass
 import io
+import ipaddress
+from pathlib import Path
 import re
+import subprocess
+import tempfile
 from typing import Any
+from urllib import error as url_error
+from urllib import request as url_request
+from urllib.parse import urlsplit
 import uuid
 import zipfile
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import config
 from app.db.models import KnowledgeIngestionJob
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.ai_proposal_service import KnowledgeAiProposalService
-from knowledge.contracts import KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
+from knowledge.contracts import KNOWLEDGE_BODY_FORMATS, KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
 from knowledge.embedding_service import KnowledgeEmbeddingService, Transport
 from knowledge.segmentation_service import KnowledgeSegmentationService
 
 MAX_IMPORT_UPLOAD_BYTES = 5 * 1024 * 1024
 REMOTE_IMPORT_SOURCE_KINDS = {"url", "git"}
 LOCAL_IMPORT_SOURCE_KINDS = {"text", "markdown", "html", "docx", "pdf"}
+REMOTE_IMPORT_TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".html", ".htm"}
 
 
 def _new_id() -> str:
@@ -41,8 +51,175 @@ def _redact_error(error: BaseException) -> str:
 class KnowledgeRemoteImportBlockedError(KnowledgeValidationError):
     """Raised when a remote import source is blocked by the safe fetch policy."""
 
-    def __init__(self) -> None:
-        super().__init__("remote import fetch is disabled by safe import policy")
+    def __init__(self, reason: str = "remote import fetch is disabled by safe import policy") -> None:
+        super().__init__(reason)
+
+
+@dataclass(frozen=True)
+class RemoteImportContent:
+    source_kind: str
+    source_name: str
+    body: str
+    body_format: str
+    remote_source: dict[str, Any]
+
+
+class _NoRedirectHandler(url_request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise KnowledgeRemoteImportBlockedError("remote import redirects are blocked by safe import policy")
+
+
+def _configured_allowed_hosts() -> tuple[str, ...]:
+    raw = getattr(config, "KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS", ())
+    if isinstance(raw, str):
+        return tuple(host.strip().lower() for host in raw.split(",") if host.strip())
+    return tuple(str(host).strip().lower() for host in raw if str(host).strip())
+
+
+def _host_matches_allowlist(host: str, allowed_hosts: tuple[str, ...]) -> bool:
+    normalized = host.lower().strip(".")
+    for allowed in allowed_hosts:
+        allowed = allowed.lower().strip(".")
+        if not allowed:
+            continue
+        if allowed == normalized:
+            return True
+        if allowed.startswith("*.") and normalized.endswith(allowed[1:]) and normalized != allowed[2:]:
+            return True
+    return False
+
+
+def _is_blocked_ip_literal(host: str) -> bool:
+    try:
+        address = ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return any(
+        (
+            address.is_private,
+            address.is_loopback,
+            address.is_link_local,
+            address.is_multicast,
+            address.is_reserved,
+            address.is_unspecified,
+        )
+    )
+
+
+def _safe_remote_url(payload: dict[str, Any], *, field_name: str) -> tuple[str, Any]:
+    raw_url = str(payload.get(field_name) or "").strip()
+    if not raw_url:
+        raise KnowledgeValidationError(f"{field_name} is required for remote import")
+    parsed = urlsplit(raw_url)
+    if parsed.scheme.lower() != "https":
+        raise KnowledgeRemoteImportBlockedError("remote import requires https URL")
+    if parsed.username or parsed.password:
+        raise KnowledgeRemoteImportBlockedError("remote import URL credentials are blocked")
+    if not parsed.hostname or _is_blocked_ip_literal(parsed.hostname):
+        raise KnowledgeRemoteImportBlockedError("remote import host is blocked")
+    if not _host_matches_allowlist(parsed.hostname, _configured_allowed_hosts()):
+        raise KnowledgeRemoteImportBlockedError("remote import host is not allowlisted")
+    return raw_url, parsed
+
+
+def _remote_body_format(source_kind: str, source_path: str, content_type: str = "") -> str:
+    content_type = content_type.lower()
+    suffix = Path(source_path).suffix.lower()
+    if "markdown" in content_type or suffix in {".md", ".markdown"}:
+        return "markdown"
+    if "html" in content_type or suffix in {".html", ".htm"}:
+        return "html"
+    return "plain_text"
+
+
+class KnowledgeRemoteImportFetcher:
+    def fetch(self, payload: dict[str, Any]) -> RemoteImportContent:
+        if not bool(getattr(config, "KNOWLEDGE_REMOTE_IMPORT_ENABLED", False)):
+            raise KnowledgeRemoteImportBlockedError()
+        source_kind = str(payload.get("source_kind") or "").lower()
+        if source_kind == "url":
+            return self._fetch_url(payload)
+        if source_kind == "git":
+            return self._fetch_git(payload)
+        raise KnowledgeValidationError(f"unsupported remote import source_kind: {source_kind}")
+
+    def _fetch_url(self, payload: dict[str, Any]) -> RemoteImportContent:
+        raw_url, parsed = _safe_remote_url(payload, field_name="url")
+        max_bytes = max(1, int(getattr(config, "KNOWLEDGE_REMOTE_IMPORT_MAX_BYTES", 1024 * 1024)))
+        timeout = max(1, int(getattr(config, "KNOWLEDGE_REMOTE_IMPORT_TIMEOUT_SECONDS", 10)))
+        opener = url_request.build_opener(_NoRedirectHandler())
+        request = url_request.Request(raw_url, headers={"User-Agent": "pc-client-knowledge-import/1.0"})
+        try:
+            with opener.open(request, timeout=timeout) as response:
+                content_type = str(response.headers.get("content-type") or "")
+                raw = response.read(max_bytes + 1)
+        except (OSError, url_error.URLError) as exc:
+            raise KnowledgeValidationError("unable to fetch allowlisted remote URL") from exc
+        if len(raw) > max_bytes:
+            raise KnowledgeValidationError("remote URL import exceeds safe size limit")
+        body = raw.decode("utf-8", errors="replace").strip()
+        if not body:
+            raise KnowledgeValidationError("remote URL import returned empty content")
+        body_format = _remote_body_format("url", parsed.path, content_type)
+        path = parsed.path or "/"
+        return RemoteImportContent(
+            source_kind="url",
+            source_name=parsed.hostname or "remote-url",
+            body=body,
+            body_format=body_format,
+            remote_source={"source_kind": "url", "host": parsed.hostname, "path": path[:240], "bytes": len(raw)},
+        )
+
+    def _fetch_git(self, payload: dict[str, Any]) -> RemoteImportContent:
+        repo_url, parsed = _safe_remote_url(payload, field_name="repo_url")
+        ref = str(payload.get("ref") or "").strip()
+        if ref and not re.fullmatch(r"[A-Za-z0-9._/-]{1,128}", ref):
+            raise KnowledgeRemoteImportBlockedError("remote git ref is blocked")
+        max_bytes = max(1, int(getattr(config, "KNOWLEDGE_REMOTE_IMPORT_MAX_BYTES", 1024 * 1024)))
+        timeout = max(1, int(getattr(config, "KNOWLEDGE_REMOTE_IMPORT_TIMEOUT_SECONDS", 10)))
+        max_files = max(1, int(getattr(config, "KNOWLEDGE_REMOTE_IMPORT_MAX_GIT_FILES", 50)))
+        with tempfile.TemporaryDirectory(prefix="knowledge-import-git-") as tmp_dir:
+            repo_dir = Path(tmp_dir) / "repo"
+            command = ["git", "clone", "--depth", "1", "--filter=blob:none", "--no-tags"]
+            if ref:
+                command.extend(["--branch", ref])
+            command.extend([repo_url, str(repo_dir)])
+            try:
+                subprocess.run(command, check=True, capture_output=True, text=True, timeout=timeout)
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise KnowledgeValidationError("unable to fetch allowlisted git repository") from exc
+            parts: list[str] = []
+            total_bytes = 0
+            file_count = 0
+            for path in sorted(repo_dir.rglob("*")):
+                if file_count >= max_files:
+                    break
+                if not path.is_file() or ".git" in path.parts or path.suffix.lower() not in REMOTE_IMPORT_TEXT_SUFFIXES:
+                    continue
+                raw = path.read_bytes()
+                total_bytes += len(raw)
+                if total_bytes > max_bytes:
+                    raise KnowledgeValidationError("remote git import exceeds safe size limit")
+                relative_path = path.relative_to(repo_dir).as_posix()
+                parts.append(f"# {relative_path}\n\n{raw.decode('utf-8', errors='replace').strip()}")
+                file_count += 1
+        if not parts:
+            raise KnowledgeValidationError("remote git import found no supported text files")
+        repo_name = f"{parsed.hostname}{parsed.path}".removesuffix(".git").strip("/")
+        return RemoteImportContent(
+            source_kind="git",
+            source_name=repo_name or (parsed.hostname or "remote-git"),
+            body="\n\n".join(parts),
+            body_format="markdown",
+            remote_source={
+                "source_kind": "git",
+                "host": parsed.hostname,
+                "repo": repo_name,
+                "ref": ref or "default",
+                "file_count": file_count,
+                "bytes": total_bytes,
+            },
+        )
 
 
 def _strip_html(value: str) -> str:
@@ -142,28 +319,41 @@ def _safe_keywords(*values: str) -> list[str]:
     return words
 
 
-def _parse_import_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
+def _parse_import_payload(payload: dict[str, Any], remote_fetcher: KnowledgeRemoteImportFetcher | None = None) -> tuple[dict[str, Any], str]:
     source_kind = str(payload.get("source_kind") or "text").lower()
+    remote_source: dict[str, Any] | None = None
+    remote_body_format: str | None = None
     if source_kind in REMOTE_IMPORT_SOURCE_KINDS:
-        raise KnowledgeRemoteImportBlockedError()
-    if source_kind not in LOCAL_IMPORT_SOURCE_KINDS:
+        content = (remote_fetcher or KnowledgeRemoteImportFetcher()).fetch(payload)
+        source_name = content.source_name
+        raw_body = content.body
+        remote_source = content.remote_source
+        remote_body_format = content.body_format
+    elif source_kind not in LOCAL_IMPORT_SOURCE_KINDS:
         raise KnowledgeValidationError(f"unsupported import source_kind: {source_kind}")
-    source_name = str(payload.get("source_name") or payload.get("title") or "manual text")
-    raw_body = str(payload.get("body") or "")
+    else:
+        source_name = str(payload.get("source_name") or payload.get("title") or "manual text")
+        raw_body = str(payload.get("body") or "")
     if source_kind == "html":
         parsed_body = _strip_html(raw_body)
     elif source_kind == "docx":
         parsed_body = _parse_docx_upload(payload)
     elif source_kind == "pdf":
         parsed_body = _parse_pdf_upload(payload)
+    elif remote_body_format == "html":
+        parsed_body = _strip_html(raw_body)
     else:
         parsed_body = raw_body.strip()
     if not parsed_body:
         raise KnowledgeValidationError("import body is required")
-    body_format = "markdown" if source_kind == "markdown" else ("html" if source_kind == "html" else "plain_text")
-    title_match = re.search(r"(?m)^#\s+(.+?)\s*$", parsed_body) if source_kind == "markdown" else None
+    body_format = (
+        remote_body_format
+        if remote_body_format in KNOWLEDGE_BODY_FORMATS
+        else ("markdown" if source_kind == "markdown" else ("html" if source_kind == "html" else "plain_text"))
+    )
+    title_match = re.search(r"(?m)^#\s+(.+?)\s*$", parsed_body) if body_format == "markdown" else None
     detected_title = str(payload.get("title") or (title_match.group(1).strip() if title_match else "") or _first_non_empty_line(parsed_body))
-    sections = _markdown_sections(parsed_body) if source_kind == "markdown" else _text_sections(parsed_body)
+    sections = _markdown_sections(parsed_body) if body_format == "markdown" else _text_sections(parsed_body)
     ai_requested = bool(payload.get("ai_enrichment_enabled"))
     preview = {
         "source_kind": source_kind,
@@ -179,26 +369,40 @@ def _parse_import_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str]
             "proposals": [],
         },
     }
+    if remote_source is not None:
+        preview["remote_source"] = remote_source
     return preview, parsed_body
 
 
 class KnowledgeIngestionService:
-    def __init__(self, session: AsyncSession, *, embedding_transport: Transport | None = None):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        embedding_transport: Transport | None = None,
+        remote_fetcher: KnowledgeRemoteImportFetcher | None = None,
+    ):
         self.session = session
         self.embedding_transport = embedding_transport
+        self.remote_fetcher = remote_fetcher
 
     def preview_import(self, payload: dict[str, Any]) -> dict[str, Any]:
-        preview, _parsed_body = _parse_import_payload(payload)
+        preview, _parsed_body = _parse_import_payload(payload, self.remote_fetcher)
         return preview
 
     async def create_drafts_from_import(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
-        preview, parsed_body = _parse_import_payload(payload)
+        preview, parsed_body = _parse_import_payload(payload, self.remote_fetcher)
+        ingestion_source_kind = {
+            "url": "external_url",
+            "git": "git_repo",
+        }.get(str(preview["source_kind"]), preview["source_kind"])
         result = await self.ingest_text(
             {
                 **payload,
-                "source_kind": preview["source_kind"],
+                "source_kind": ingestion_source_kind,
                 "source_name": preview["source_name"],
                 "title": payload.get("title") or preview["detected_title"],
+                "body_format": preview["body_format"],
                 "body": parsed_body,
             },
             actor_id=actor_id,
@@ -397,7 +601,7 @@ class KnowledgeIngestionService:
             {
                 "title": item["title"],
                 "summary": item.get("summary"),
-                "body_format": "markdown" if str(payload.get("source_kind") or "").lower() == "markdown" else "plain_text",
+                "body_format": str(payload.get("body_format") or ("markdown" if str(payload.get("source_kind") or "").lower() == "markdown" else "plain_text")),
                 "body": str(payload.get("body") or ""),
                 "change_summary": "Imported draft",
             },
