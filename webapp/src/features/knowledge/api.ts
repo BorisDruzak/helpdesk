@@ -864,6 +864,66 @@ export async function reindexKnowledgeItem(payload: { item_id: string; version_i
   }>(response, "Не удалось запустить индексацию статьи");
 }
 
+export async function reindexKnowledgeSegment(payload: { segment_id: string; version_id?: string }) {
+  const response = await fetch("/api/web/knowledge/indexing/reindex-segment", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{
+    job: KnowledgeIndexJob;
+    embeddings: KnowledgeEmbeddingRecord[];
+    stats: Record<string, number>;
+    display_message?: string;
+  }>(response, "Не удалось запустить индексацию сегмента");
+}
+
+export async function reindexKnowledgeSpace(payload: { space_id?: string; space_code?: string }) {
+  const response = await fetch("/api/web/knowledge/indexing/reindex-space", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{
+    job: KnowledgeIndexJob;
+    embeddings: KnowledgeEmbeddingRecord[];
+    stats: Record<string, number>;
+    display_message?: string;
+  }>(response, "Не удалось запустить индексацию пространства");
+}
+
+export async function reindexKnowledgeAll(payload: { limit?: number } = {}) {
+  const response = await fetch("/api/web/knowledge/indexing/reindex-all", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{
+    job: KnowledgeIndexJob;
+    embeddings: KnowledgeEmbeddingRecord[];
+    stats: Record<string, number>;
+    display_message?: string;
+  }>(response, "Не удалось запустить полную индексацию знаний");
+}
+
+export async function createKnowledgeIndexJob(payload: { scope_type: "item" | "segment" | "space" | "all"; scope_ref?: string; limit?: number }) {
+  const response = await fetch("/api/web/knowledge/indexing/jobs", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{
+    job: KnowledgeIndexJob;
+    embeddings: KnowledgeEmbeddingRecord[];
+    stats: Record<string, number>;
+    display_message?: string;
+  }>(response, "Не удалось создать задание индексации знаний");
+}
+
 export async function approveKnowledgeAiSegment(segmentId: string) {
   const response = await fetch(`/api/web/knowledge/segments/${encodeURIComponent(segmentId)}/approve`, {
     method: "POST",

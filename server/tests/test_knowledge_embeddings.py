@@ -175,6 +175,47 @@ async def test_reindex_item_with_missing_embedding_provider_fails_safely(test_cl
 
 
 @pytest.mark.asyncio
+async def test_reindex_scope_endpoints_create_observable_jobs(test_client) -> None:
+    item, version = await _create_article(test_client, slug="embedding-scope")
+    chunk = await _create_segment_chunk(test_client, item, version)
+    segment_id = chunk["metadata_json"]["segment_id"]
+
+    segment_resp = await test_client.post(
+        "/api/web/knowledge/indexing/reindex-segment",
+        headers=ADMIN_HEADERS,
+        json={"segment_id": segment_id},
+    )
+    assert segment_resp.status == 200
+    segment_payload = await segment_resp.json()
+    assert segment_payload["job"]["scope_type"] == "segment"
+    assert segment_payload["job"]["scope_ref"] == segment_id
+
+    space_resp = await test_client.post(
+        "/api/web/knowledge/indexing/reindex-space",
+        headers=ADMIN_HEADERS,
+        json={"space_id": item["space_id"]},
+    )
+    assert space_resp.status == 200
+    assert (await space_resp.json())["job"]["scope_type"] == "space"
+
+    all_resp = await test_client.post(
+        "/api/web/knowledge/indexing/reindex-all",
+        headers=ADMIN_HEADERS,
+        json={"limit": 25},
+    )
+    assert all_resp.status == 200
+    assert (await all_resp.json())["job"]["scope_type"] == "all"
+
+    generic_resp = await test_client.post(
+        "/api/web/knowledge/indexing/jobs",
+        headers=ADMIN_HEADERS,
+        json={"scope_type": "segment", "scope_ref": segment_id},
+    )
+    assert generic_resp.status == 200
+    assert (await generic_resp.json())["job"]["scope_type"] == "segment"
+
+
+@pytest.mark.asyncio
 async def test_reindex_item_indexes_embedding_with_safe_response(test_client, test_engine, monkeypatch) -> None:
     item, version = await _create_article(test_client, slug="embedding-success")
     chunk = await _create_segment_chunk(test_client, item, version)

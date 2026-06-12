@@ -124,6 +124,9 @@ Admin/support management:
 - `GET /api/web/knowledge/indexing/status`
 - `GET|POST /api/web/knowledge/indexing/jobs`
 - `POST /api/web/knowledge/indexing/reindex-item`
+- `POST /api/web/knowledge/indexing/reindex-segment`
+- `POST /api/web/knowledge/indexing/reindex-space`
+- `POST /api/web/knowledge/indexing/reindex-all`
 - `GET|POST /api/web/knowledge/spaces`
 - `GET|POST /api/web/knowledge/items`
 - `GET|POST /api/web/knowledge/segmentation-profiles`
@@ -182,7 +185,7 @@ Knowledge vNext product UI является Russian-first. Новые portal, su
 
 Segment index sync writes active `full_text_enabled` article segments into version-scoped `knowledge_chunks` rows with `metadata_json.source=article_segment`. Chunks with segment embeddings enabled are marked `embedding_status=pending`; actual provider-backed embedding generation belongs to the Phase 4 indexing worker and must keep keyword/full-text search usable when AI is disabled.
 
-Phase 4 indexing stores optional embeddings in `knowledge_chunk_embeddings` and observable jobs in `knowledge_index_jobs`. `KnowledgeEmbeddingService` builds provider input from article title, segment title/summary, keywords, heading path and chunk text; vector-disabled settings or AI policy blocks create `disabled` rows and audit evidence instead of breaking baseline search. Provider/key failures are redacted as safe job/embedding errors, while successful OpenRouter-compatible calls persist vectors only in DB and return no raw vector data through web APIs.
+Phase 4 indexing stores optional embeddings in `knowledge_chunk_embeddings` and observable jobs in `knowledge_index_jobs`. `KnowledgeEmbeddingService` builds provider input from article title, segment title/summary, keywords, heading path and chunk text; vector-disabled settings or AI policy blocks create `disabled` rows and audit evidence instead of breaking baseline search. Provider/key failures are redacted as safe job/embedding errors, while successful OpenRouter-compatible calls persist vectors only in DB and return no raw vector data through web APIs. Indexing can be scoped to one item, one segment, one space or a bounded full run through dedicated endpoints or `POST /api/web/knowledge/indexing/jobs` with `scope_type=item|segment|space|all`.
 
 ## Knowledge vNext Target Routes
 

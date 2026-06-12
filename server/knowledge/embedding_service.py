@@ -139,11 +139,95 @@ class KnowledgeEmbeddingService:
         version_id = str(payload.get("version_id") or "").strip() or None
         chunks = await self._load_chunks(item["item_id"], version_id, actor_role=actor_role)
         job = await self._create_job("item", item["item_id"], actor_id=actor_id, metadata={"version_id": version_id})
+        return await self._index_chunks(
+            job,
+            chunks,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            audit_details={"item_id": item["item_id"], "version_id": version_id},
+        )
+
+    async def reindex_segment(
+        self,
+        segment_id: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str,
+    ) -> dict[str, Any]:
+        if actor_role not in {"admin", "support"}:
+            raise PermissionError("knowledge indexing requires admin or support")
+        segment = await self._get_segment(segment_id)
+        chunks = await self._load_chunks(
+            segment["item_id"],
+            str(payload.get("version_id") or segment["version_id"]),
+            actor_role=actor_role,
+            segment_id=segment["segment_id"],
+        )
+        job = await self._create_job("segment", segment["segment_id"], actor_id=actor_id, metadata={"version_id": segment["version_id"]})
+        return await self._index_chunks(
+            job,
+            chunks,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            audit_details={"item_id": segment["item_id"], "version_id": segment["version_id"], "segment_id": segment["segment_id"]},
+        )
+
+    async def reindex_space(
+        self,
+        space_id_or_code: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str,
+    ) -> dict[str, Any]:
+        if actor_role not in {"admin", "support"}:
+            raise PermissionError("knowledge indexing requires admin or support")
+        space = await self._get_space(space_id_or_code)
+        chunks = await self._load_scope_chunks(actor_role=actor_role, space_id=space["space_id"])
+        job = await self._create_job("space", space["space_id"], actor_id=actor_id, metadata={"space_code": space.get("code")})
+        return await self._index_chunks(
+            job,
+            chunks,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            audit_details={"space_id": space["space_id"], "space_code": space.get("code")},
+        )
+
+    async def reindex_all(
+        self,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str,
+    ) -> dict[str, Any]:
+        if actor_role not in {"admin", "support"}:
+            raise PermissionError("knowledge indexing requires admin or support")
+        limit = int(payload.get("limit") or 500)
+        chunks = await self._load_scope_chunks(actor_role=actor_role, limit=max(1, min(limit, 2000)))
+        job = await self._create_job("all", "all", actor_id=actor_id, metadata={"limit": limit})
+        return await self._index_chunks(
+            job,
+            chunks,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            audit_details={"limit": limit},
+        )
+
+    async def _index_chunks(
+        self,
+        job: dict[str, Any],
+        chunks: list[dict[str, Any]],
+        *,
+        actor_id: str | None,
+        actor_role: str,
+        audit_details: dict[str, Any],
+    ) -> dict[str, Any]:
         await self._record_audit(
             "knowledge.embedding.index_started",
             actor_id=actor_id,
             actor_role=actor_role,
-            details={"job_id": job["job_id"], "item_id": item["item_id"], "version_id": version_id, "chunks_seen": len(chunks)},
+            details={"job_id": job["job_id"], "chunks_seen": len(chunks), **audit_details},
         )
 
         stats = {
@@ -310,7 +394,53 @@ class KnowledgeEmbeddingService:
             raise ValueError("knowledge item not found")
         return _serialize_row(row)
 
-    async def _load_chunks(self, item_id: str, version_id: str | None, *, actor_role: str) -> list[dict[str, Any]]:
+    async def _get_segment(self, segment_id: str) -> dict[str, Any]:
+        row = (
+            await self.db.execute(
+                text("SELECT * FROM knowledge_article_segments WHERE segment_id = :segment_id"),
+                {"segment_id": segment_id},
+            )
+        ).first()
+        if row is None:
+            raise ValueError("knowledge segment not found")
+        return _serialize_row(row)
+
+    async def _get_space(self, space_id_or_code: str) -> dict[str, Any]:
+        row = (
+            await self.db.execute(
+                text("SELECT * FROM knowledge_spaces WHERE space_id = :ref OR code = :ref"),
+                {"ref": space_id_or_code},
+            )
+        ).first()
+        if row is None:
+            raise ValueError("knowledge space not found")
+        return _serialize_row(row)
+
+    async def _load_chunks(
+        self,
+        item_id: str,
+        version_id: str | None,
+        *,
+        actor_role: str,
+        segment_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self._load_scope_chunks(
+            actor_role=actor_role,
+            item_id=item_id,
+            version_id=version_id,
+            segment_id=segment_id,
+        )
+
+    async def _load_scope_chunks(
+        self,
+        *,
+        actor_role: str,
+        item_id: str | None = None,
+        version_id: str | None = None,
+        segment_id: str | None = None,
+        space_id: str | None = None,
+        limit: int = 2000,
+    ) -> list[dict[str, Any]]:
         allowed = tuple(actor_visible_visibilities(actor_role))
         rows = (
             await self.db.execute(
@@ -330,15 +460,25 @@ class KnowledgeEmbeddingService:
                     JOIN knowledge_items i ON i.item_id = c.item_id
                     JOIN knowledge_item_versions v ON v.version_id = c.version_id
                     LEFT JOIN knowledge_article_segments s ON s.segment_id = c.metadata_json->>'segment_id'
-                    WHERE c.item_id = :item_id
+                    WHERE (CAST(:item_id AS text) IS NULL OR c.item_id = CAST(:item_id AS text))
                       AND (CAST(:version_id AS text) IS NULL OR c.version_id = CAST(:version_id AS text))
+                      AND (CAST(:segment_id AS text) IS NULL OR c.metadata_json->>'segment_id' = CAST(:segment_id AS text))
+                      AND (CAST(:space_id AS text) IS NULL OR i.space_id = CAST(:space_id AS text))
                       AND c.visibility = ANY(:allowed)
                     ORDER BY
                       CASE WHEN c.metadata_json->>'source' = 'article_segment' THEN 0 ELSE 1 END,
                       c.version_id, c.chunk_index, c.chunk_id
+                    LIMIT :limit
                     """
                 ),
-                {"item_id": item_id, "version_id": version_id, "allowed": list(allowed)},
+                {
+                    "item_id": item_id,
+                    "version_id": version_id,
+                    "segment_id": segment_id,
+                    "space_id": space_id,
+                    "allowed": list(allowed),
+                    "limit": max(1, min(int(limit), 5000)),
+                },
             )
         ).all()
         return [_serialize_row(row) for row in rows]

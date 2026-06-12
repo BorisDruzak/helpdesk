@@ -519,22 +519,39 @@ async def handle_web_knowledge_indexing_jobs(request: web.Request) -> web.Respon
         if request.method == "POST":
             payload = await _json_payload(request)
             scope_type = str(payload.get("scope_type") or "item")
-            if scope_type != "item":
+            if scope_type == "item":
+                result = await service.reindex_item(
+                    str(payload.get("scope_ref") or payload.get("item_id") or ""),
+                    payload,
+                    actor_id=actor_id,
+                    actor_role=role,
+                )
+            elif scope_type == "segment":
+                result = await service.reindex_segment(
+                    str(payload.get("scope_ref") or payload.get("segment_id") or ""),
+                    payload,
+                    actor_id=actor_id,
+                    actor_role=role,
+                )
+            elif scope_type == "space":
+                result = await service.reindex_space(
+                    str(payload.get("scope_ref") or payload.get("space_id") or payload.get("space_code") or ""),
+                    payload,
+                    actor_id=actor_id,
+                    actor_role=role,
+                )
+            elif scope_type == "all":
+                result = await service.reindex_all(payload, actor_id=actor_id, actor_role=role)
+            else:
                 return web.json_response(
                     {
                         "status": "error",
                         "error": "validation_error",
                         "error_code": "UNSUPPORTED_SCOPE",
-                        "display_message": "Пока поддерживается переиндексация статьи",
+                        "display_message": "Проверьте scope индексации",
                     },
                     status=400,
                 )
-            result = await service.reindex_item(
-                str(payload.get("scope_ref") or payload.get("item_id") or ""),
-                payload,
-                actor_id=actor_id,
-                actor_role=role,
-            )
             await session.commit()
             return web.json_response({"status": "ok", **result, "display_message": "Задание индексации выполнено"})
         jobs = await service.list_jobs()
@@ -575,6 +592,86 @@ async def handle_web_knowledge_indexing_reindex_item(request: web.Request) -> we
     except Exception:
         logger.exception("[knowledge] embedding reindex failed")
         return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+@require_auth("admin", "support")
+async def handle_web_knowledge_indexing_reindex_segment(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _indexing_forbidden()
+    payload = await _json_payload(request)
+    segment_id = str(payload.get("segment_id") or payload.get("scope_ref") or "")
+    try:
+        async with get_session() as session:
+            result = await KnowledgeEmbeddingService(session, transport=_get_embedding_transport(request)).reindex_segment(
+                segment_id,
+                payload,
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", **result, "display_message": "Индексация сегмента выполнена"})
+    except PermissionError:
+        return _indexing_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры индексации сегмента",
+                "details": str(exc),
+            },
+            status=400,
+        )
+
+
+@require_auth("admin", "support")
+async def handle_web_knowledge_indexing_reindex_space(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _indexing_forbidden()
+    payload = await _json_payload(request)
+    space_ref = str(payload.get("space_id") or payload.get("space_code") or payload.get("scope_ref") or "")
+    try:
+        async with get_session() as session:
+            result = await KnowledgeEmbeddingService(session, transport=_get_embedding_transport(request)).reindex_space(
+                space_ref,
+                payload,
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", **result, "display_message": "Индексация пространства выполнена"})
+    except PermissionError:
+        return _indexing_forbidden()
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры индексации пространства",
+                "details": str(exc),
+            },
+            status=400,
+        )
+
+
+@require_auth("admin", "support")
+async def handle_web_knowledge_indexing_reindex_all(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return _indexing_forbidden()
+    payload = await _json_payload(request)
+    async with get_session() as session:
+        result = await KnowledgeEmbeddingService(session, transport=_get_embedding_transport(request)).reindex_all(
+            payload,
+            actor_id=actor_id,
+            actor_role=role,
+        )
+        await session.commit()
+    return web.json_response({"status": "ok", **result, "display_message": "Полная индексация выполнена"})
 
 
 @require_auth("admin", "support", "auditor")

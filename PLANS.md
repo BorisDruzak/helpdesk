@@ -948,9 +948,14 @@ Status 2026-06-12:
   * missing provider/secret/transport fails jobs safely with redacted `embedding provider unavailable` state and `knowledge.embedding.provider_unavailable` audit evidence;
   * successful fake/OpenRouter-compatible embedding calls persist vectors only in DB, update chunk `embedding_ref`/`embedding_model`, return no raw vectors to web clients and emit `knowledge.embedding.index_completed`;
   * React route `/app/admin/knowledge/indexing` shows Russian-first indexing status, disabled warnings, jobs and item reindex controls.
+* Phase 4B scope orchestration is implemented:
+
+  * `POST /api/web/knowledge/indexing/reindex-segment`, `POST /api/web/knowledge/indexing/reindex-space` and `POST /api/web/knowledge/indexing/reindex-all` now execute observable index jobs for segment, space and bounded full-run scopes;
+  * generic `POST /api/web/knowledge/indexing/jobs` dispatches `scope_type=item|segment|space|all` instead of item-only execution;
+  * typed webapp API helpers cover item/segment/space/all reindex and generic job creation without exposing raw vectors;
+  * focused verification: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_embeddings.py -q --tb=short` passed with 5 tests and only existing aiohttp app-key warnings.
 * Remaining Phase 4 work:
 
-  * implement dedicated `reindex-space`, `reindex-all` and `reindex-segment` orchestration endpoints instead of item-only execution;
   * add vector similarity search service and retrieval integration; Phase 4A stores embeddings but Phase 5 still owns hybrid retrieval/rerank ranking;
   * add live OpenRouter signoff with a real operator-provided key and screenshots after deploy.
 
