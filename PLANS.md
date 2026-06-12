@@ -2184,9 +2184,28 @@ Phase 9 graph CRUD/search slice, 2026-06-12:
   * Temporary live node `concept:crud-live-1781262810209` was archived; post-delete search returned zero nodes for that stable key.
   * Safe response scan found no forbidden raw keys. Browser console warnings/errors: none. Evidence screenshot: `phase9-graph-crud-live.png`.
 
+Phase 9 AI proposal lifecycle slice, 2026-06-12:
+
+* Added governed AI proposal persistence/API/review workflow:
+
+  * migration `117` adds `knowledge_ai_proposals`;
+  * `GET|POST /api/web/knowledge/ai/proposals`;
+  * `POST /api/web/knowledge/ai/proposals/{proposal_id}/review`;
+  * proposal payloads are sanitized before storage/response;
+  * approve/reject/comment review is admin/support-only while auditor remains read-only;
+  * graph node/edge proposals can be applied to the governed graph APIs on approval;
+  * create/review writes Observer-visible `agent_runtime_audit` rows with source `knowledge_ai_proposals`.
+
+* Graph Studio now renders pending graph AI proposals and can approve/reject them from the graph route.
+* TDD status:
+
+  * RED backend `server/tests/test_knowledge_api.py::test_knowledge_ai_proposals_graph_review_lifecycle_and_observer_audit` failed with `404` on `/api/web/knowledge/ai/proposals`.
+  * RED frontend API test failed with `fetchKnowledgeAiProposals is not a function`.
+  * RED Graph Studio test failed because `AI proposals` was not rendered.
+  * GREEN targeted backend/API/Graph Studio tests now pass.
+
 Phase 9 remaining work:
 
-* AI proposal tables/API/review UI and observer events for proposal lifecycle.
 * Cleanup/delete workflow for support_internal live/test graph nodes and edges once graph DELETE endpoints exist.
 
 ---

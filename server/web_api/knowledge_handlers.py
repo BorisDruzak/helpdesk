@@ -18,6 +18,7 @@ from knowledge.contracts import (
     can_mutate_knowledge_visibility,
 )
 from knowledge.ask_service import KnowledgeAskService
+from knowledge.ai_proposal_service import KnowledgeAiProposalService
 from knowledge.content_pack_service import KnowledgeContentPackService
 from knowledge.editor_history_service import KnowledgeEditorHistoryService
 from knowledge.embedding_service import KnowledgeEmbeddingService
@@ -1169,6 +1170,50 @@ async def handle_web_knowledge_metrics_summary(request: web.Request) -> web.Resp
     async with get_session() as session:
         summary = await KnowledgeMetricsService(session).summary(actor_role=role)
     return web.json_response({"status": "ok", "summary": summary})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_ai_proposals(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    async with get_session() as session:
+        service = KnowledgeAiProposalService(session)
+        if request.method == "POST":
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            try:
+                proposal = await service.create(await _json_payload(request), actor_id=actor_id, actor_role=role)
+            except ValueError as exc:
+                return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+            await session.commit()
+            return web.json_response({"status": "ok", "proposal": proposal})
+        try:
+            proposals = await service.list(
+                actor_role=role,
+                status=request.query.get("status"),
+                target_kind=request.query.get("target_kind"),
+                limit=int(request.query.get("limit") or 100),
+            )
+        except ValueError as exc:
+            return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+    return web.json_response({"status": "ok", "proposals": proposals})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_ai_proposal_review(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+    proposal_id = str(request.match_info.get("proposal_id") or "")
+    async with get_session() as session:
+        service = KnowledgeAiProposalService(session)
+        try:
+            proposal = await service.review(proposal_id, await _json_payload(request), actor_id=actor_id, actor_role=role)
+        except ValueError as exc:
+            return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+        if proposal is None:
+            return web.json_response({"status": "error", "error": "not_found"}, status=404)
+        await session.commit()
+    return web.json_response({"status": "ok", "proposal": proposal})
 
 
 @require_auth("admin", "support", "auditor")

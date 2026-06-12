@@ -45,6 +45,112 @@ def _forbidden_paths(value: Any, path: str = "$") -> list[str]:
 
 
 @pytest.mark.asyncio
+async def test_knowledge_ai_proposals_graph_review_lifecycle_and_observer_audit(test_client, test_engine) -> None:
+    create_resp = await test_client.post(
+        "/api/web/knowledge/ai/proposals",
+        headers=_admin_headers(),
+        json={
+            "proposal_type": "graph_edge",
+            "target_kind": "graph",
+            "target_ref": "default",
+            "title": "Connect AI proposal source",
+            "rationale": "AI found related graph concepts.",
+            "confidence_score": 0.82,
+            "source_kind": "ai_enrichment",
+            "source_ref": "test-run",
+            "proposed_payload": {
+                "graph": {
+                    "nodes": [
+                        {
+                            "stable_key": "concept:ai-proposal-source",
+                            "node_type": "concept",
+                            "label": "AI proposal source",
+                            "visibility": "support_internal",
+                        },
+                        {
+                            "stable_key": "concept:ai-proposal-target",
+                            "node_type": "concept",
+                            "label": "AI proposal target",
+                            "visibility": "support_internal",
+                        },
+                    ],
+                    "edges": [
+                        {
+                            "source_stable_key": "concept:ai-proposal-source",
+                            "target_stable_key": "concept:ai-proposal-target",
+                            "relation_type": "similar_to",
+                            "visibility": "support_internal",
+                        }
+                    ],
+                },
+                "metadata": {"source_ticket_id": "T-secret-should-not-leak"},
+            },
+        },
+    )
+    assert create_resp.status == 200
+    created_payload = await create_resp.json()
+    assert _forbidden_paths(created_payload) == []
+    proposal = created_payload["proposal"]
+    assert proposal["status"] == "pending"
+    assert proposal["proposal_type"] == "graph_edge"
+
+    list_resp = await test_client.get(
+        "/api/web/knowledge/ai/proposals?target_kind=graph&status=pending",
+        headers=_admin_headers(),
+    )
+    assert list_resp.status == 200
+    list_payload = await list_resp.json()
+    assert any(row["proposal_id"] == proposal["proposal_id"] for row in list_payload["proposals"])
+    assert _forbidden_paths(list_payload) == []
+
+    auditor_review_resp = await test_client.post(
+        f"/api/web/knowledge/ai/proposals/{proposal['proposal_id']}/review",
+        headers=_auditor_headers(),
+        json={"action": "approve", "note": "auditor cannot approve"},
+    )
+    assert auditor_review_resp.status == 403
+
+    approve_resp = await test_client.post(
+        f"/api/web/knowledge/ai/proposals/{proposal['proposal_id']}/review",
+        headers=_admin_headers(),
+        json={"action": "approve", "note": "approved by test"},
+    )
+    assert approve_resp.status == 200
+    approved_payload = await approve_resp.json()
+    assert approved_payload["proposal"]["status"] == "approved"
+    assert approved_payload["proposal"]["review_note"] == "approved by test"
+    assert approved_payload["proposal"]["applied_refs"]["edge_ids"]
+    assert _forbidden_paths(approved_payload) == []
+
+    search_resp = await test_client.get(
+        "/api/web/knowledge/graph/search?q=ai-proposal-source",
+        headers=_admin_headers(),
+    )
+    assert search_resp.status == 200
+    graph_payload = await search_resp.json()
+    assert any(node["stable_key"] == "concept:ai-proposal-source" for node in graph_payload["nodes"])
+    assert any(edge["relation_type"] == "similar_to" for edge in graph_payload["edges"])
+
+    from sqlalchemy import select
+
+    from app.db import get_session
+    from app.db.models import AgentRuntimeAudit
+
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(AgentRuntimeAudit)
+                .where(AgentRuntimeAudit.source == "knowledge_ai_proposals")
+                .order_by(AgentRuntimeAudit.created_at.asc())
+            )
+        ).scalars().all()
+    event_types = [row.event_type for row in rows]
+    assert "knowledge.ai_proposal.created" in event_types
+    assert "knowledge.ai_proposal.approved" in event_types
+    assert all((row.details_json or {}).get("proposal_id") for row in rows)
+
+
+@pytest.mark.asyncio
 async def test_knowledge_api_admin_crud_and_requester_safe_suggest(test_client) -> None:
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",

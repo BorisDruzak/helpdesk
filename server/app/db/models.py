@@ -1153,6 +1153,44 @@ class KnowledgeGraphLayout(Base):
     )
 
 
+class KnowledgeAiProposal(Base):
+    """Governed AI proposal awaiting human review before applying changes."""
+
+    __tablename__ = "knowledge_ai_proposals"
+
+    proposal_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    proposal_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    proposed_payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="pending")
+    confidence_score: Mapped[Optional[float]] = mapped_column(sa.Numeric(5, 4), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(40), nullable=False, server_default="support_internal")
+    source_kind: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    source_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    applied_refs_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    review_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("proposal_type IN ('summary', 'tags', 'glossary_term', 'graph_node', 'graph_edge', 'duplicate')", name="ck_knowledge_ai_proposals_type"),
+        sa.CheckConstraint("target_kind IN ('item', 'version', 'graph', 'space', 'import_job')", name="ck_knowledge_ai_proposals_target_kind"),
+        sa.CheckConstraint("status IN ('pending', 'approved', 'rejected', 'archived')", name="ck_knowledge_ai_proposals_status"),
+        sa.CheckConstraint("visibility IN ('public', 'requester', 'agent_requester_safe', 'support_internal', 'admin_internal', 'security_restricted', 'auditor_read')", name="ck_knowledge_ai_proposals_visibility"),
+        sa.CheckConstraint("confidence_score IS NULL OR (confidence_score >= 0 AND confidence_score <= 1)", name="ck_knowledge_ai_proposals_confidence"),
+        Index("ix_knowledge_ai_proposals_status_target", "status", "target_kind"),
+        Index("ix_knowledge_ai_proposals_type_status", "proposal_type", "status"),
+        Index("ix_knowledge_ai_proposals_created", "created_at"),
+    )
+
+
 class KnowledgeEntityMention(Base):
     """Entity mention inside a knowledge version/chunk."""
 

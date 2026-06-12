@@ -409,6 +409,28 @@ export type KnowledgeAiAuditRow = {
   created_at?: string | null;
 };
 
+export type KnowledgeAiProposal = {
+  proposal_id: string;
+  proposal_type: string;
+  target_kind: string;
+  target_ref: string;
+  title: string;
+  rationale?: string | null;
+  proposed_payload?: Record<string, unknown>;
+  status: string;
+  confidence_score?: number | null;
+  visibility?: string | null;
+  source_kind?: string | null;
+  source_ref?: string | null;
+  applied_refs?: Record<string, unknown>;
+  review_note?: string | null;
+  created_by?: string | null;
+  reviewed_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  reviewed_at?: string | null;
+};
+
 export type KnowledgeAiHealthResult = {
   provider_id: string;
   status: string;
@@ -1058,6 +1080,43 @@ export async function fetchKnowledgeAiProviders(): Promise<KnowledgeAiProvider[]
   const response = await fetch("/api/web/knowledge/ai/providers", { credentials: "same-origin" });
   const payload = await readJson<{ providers: KnowledgeAiProvider[] }>(response, "Не удалось загрузить провайдеры AI");
   return payload.providers ?? [];
+}
+
+export async function fetchKnowledgeAiProposals(filters: { target_kind?: string; status?: string; limit?: number } = {}): Promise<KnowledgeAiProposal[]> {
+  const params = new URLSearchParams();
+  if (filters.target_kind) {
+    params.set("target_kind", filters.target_kind);
+  }
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  const response = await fetch(`/api/web/knowledge/ai/proposals${suffix}`, { credentials: "same-origin" });
+  const payload = await readJson<{ proposals: KnowledgeAiProposal[] }>(response, "Не удалось загрузить AI proposals");
+  return payload.proposals ?? [];
+}
+
+export async function createKnowledgeAiProposal(payload: Partial<KnowledgeAiProposal> & { proposal_type: string; target_kind: string; target_ref: string; title: string }) {
+  const response = await fetch("/api/web/knowledge/ai/proposals", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ proposal: KnowledgeAiProposal }>(response, "Не удалось создать AI proposal");
+}
+
+export async function reviewKnowledgeAiProposal(proposalId: string, payload: { action: "approve" | "reject" | "comment"; note?: string | null }) {
+  const response = await fetch(`/api/web/knowledge/ai/proposals/${encodeURIComponent(proposalId)}/review`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ proposal: KnowledgeAiProposal }>(response, "Не удалось выполнить review AI proposal");
 }
 
 export async function saveKnowledgeAiProvider(payload: Partial<KnowledgeAiProvider> & { provider_id?: string }) {

@@ -87,6 +87,40 @@ function setupFetch() {
         },
       });
     }
+    if (url === "/api/web/knowledge/ai/proposals?target_kind=graph&status=pending" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        proposals: [
+          {
+            proposal_id: "prop-graph-1",
+            proposal_type: "graph_edge",
+            target_kind: "graph",
+            target_ref: "default",
+            title: "Connect VPN concept to article",
+            status: "pending",
+            confidence_score: 0.82,
+            proposed_payload: {
+              graph: {
+                edges: [{ source_stable_key: "concept:vpn", target_stable_key: "knowledge_item:vpn-access", relation_type: "mentions" }],
+              },
+            },
+          },
+        ],
+      });
+    }
+    if (url === "/api/web/knowledge/ai/proposals/prop-graph-1/review" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        proposal: {
+          proposal_id: "prop-graph-1",
+          proposal_type: "graph_edge",
+          target_kind: "graph",
+          target_ref: "default",
+          title: "Connect VPN concept to article",
+          status: "approved",
+        },
+      });
+    }
     if (url === "/api/web/knowledge/graph/nodes" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       return jsonResponse({
@@ -281,5 +315,17 @@ describe("KnowledgeGraphStudioPage", () => {
         expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
       ),
     );
+
+    expect(await screen.findByText("AI proposals")).toBeInTheDocument();
+    expect(screen.getByText("Connect VPN concept to article")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Approve proposal prop-graph-1" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/ai/proposals/prop-graph-1/review",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const reviewCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/ai/proposals/prop-graph-1/review");
+    expect(JSON.parse(String(reviewCall?.[1]?.body))).toMatchObject({ action: "approve" });
   });
 });

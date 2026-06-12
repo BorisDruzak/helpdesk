@@ -14,6 +14,7 @@ P2 adds a universal company knowledge layer and uses it for helpdesk self-servic
 - `knowledge_chunks`: chunked text for search and future ACL-filtered retrieval/RAG. P2 does not add a mandatory external search or vector database.
 - `knowledge_bindings`: operational links to `service_code`, `offering_code`, `request_template_key`, ticket type, symptoms, error codes and device/OS context.
 - `knowledge_nodes` / `knowledge_edges` / `knowledge_entity_mentions`: PostgreSQL graph foundation for services, offerings, items, concepts, known errors, workarounds and ticket-derived relations.
+- `knowledge_ai_proposals`: governed AI-generated proposal review queue for summaries, tags, glossary, graph nodes/edges and duplicate candidates. Proposals stay pending until admin/support review; approval can apply graph node/edge payloads and writes Observer-visible audit rows.
 - `knowledge_feedback_events`: suggested/viewed/helpful/not_helpful/deflected/support-used/draft-created events for usage and deflection metrics.
 - `knowledge_ingestion_jobs`: manual text/markdown ingestion and document-source job tracking. Imported content creates drafts and never auto-publishes.
 - `knowledge_content_packs` / `knowledge_content_pack_items`: idempotent P2.2 install audit for versioned starter packs, dry-runs, unchanged skips, conflict detection, explicit force updates and retire/archive operations.
@@ -106,7 +107,7 @@ Requester-safe publication still runs lint checks before publishing. Public/requ
 
 ## Graph
 
-Bindings create service/offering graph edges. Knowledge attempts can create ticket-tried relations. Passport drafts create source relations. P2 exposes a practical neighborhood API with max depth 2 and visibility filtering. Phase 9 graph management adds ACL-filtered search and governed node/edge update/archive endpoints; graph deletes archive records (`status=archived`) instead of hard-deleting so audit/history and downstream references remain intact.
+Bindings create service/offering graph edges. Knowledge attempts can create ticket-tried relations. Passport drafts create source relations. P2 exposes a practical neighborhood API with max depth 2 and visibility filtering. Phase 9 graph management adds ACL-filtered search, governed node/edge update/archive endpoints and review-gated AI proposal application; graph deletes archive records (`status=archived`) instead of hard-deleting so audit/history and downstream references remain intact.
 
 Neighborhood responses are a fully visible subgraph. An edge is returned only when the edge visibility is allowed for the actor and both endpoint nodes are also visible and present in `nodes`; traversal never passes through hidden intermediate nodes, and orphan edges to missing or restricted endpoints are dropped before serialization.
 
@@ -152,6 +153,8 @@ Admin/support management:
 - `GET /api/web/knowledge/graph/nodes/{node_id}/neighborhood`
 - `GET|POST /api/web/knowledge/graph/edges`
 - `GET|PATCH|DELETE /api/web/knowledge/graph/edges/{edge_id}`
+- `GET|POST /api/web/knowledge/ai/proposals`
+- `POST /api/web/knowledge/ai/proposals/{proposal_id}/review`
 - `POST /api/web/knowledge/import/preview`
 - `POST /api/web/knowledge/import/create-drafts`
 - `GET|POST /api/web/knowledge/ingestion/jobs`
@@ -187,7 +190,7 @@ Ticket compatibility:
 
 - `/app/admin/knowledge`: Knowledge Operations Center plus governance/editor route. The top dashboard reads `GET /api/web/knowledge/ops/summary` for coverage, quality, search/RAG, indexing, AI, graph, review and Observer-backed degradation cards; existing spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview controls remain below it.
 - `/app/admin/knowledge/studio`: dedicated Knowledge Authoring Studio route with draft/article browser, new draft creation, metadata editor, Markdown editor, template insertion, structured Markdown block insertion, requester-safe preview, selected-version comparison, rollback by publishing an older immutable version, publish checklist, review lifecycle actions, persisted editor history/diff cache, AI-disabled state and embedded retrieval segment markup panel.
-- `/app/admin/knowledge/graph`: dedicated Visual Graph Studio route with Russian-first node search, SVG neighborhood canvas, node inspector, selected-node label edit, manual node creation, edge creation, edge/node archive controls and persisted canvas layout save/load over graph node/edge/layout APIs. AI proposal review remains a later Phase 9 backend slice.
+- `/app/admin/knowledge/graph`: dedicated Visual Graph Studio route with Russian-first node search, SVG neighborhood canvas, node inspector, selected-node label edit, manual node creation, edge creation, edge/node archive controls, pending graph AI proposal review and persisted canvas layout save/load over graph node/edge/layout/proposal APIs.
 - `/app/admin/knowledge/import`: dedicated Import/Ingestion wizard for text, markdown and HTML preview plus AI-off review draft creation through the import preview/create-drafts APIs. Rich document parsers, indexing queueing and AI enrichment proposal review remain later Phase 10 slices.
 - `/app/admin/knowledge/indexing`: Russian-first indexing dashboard for embedding status, disabled/failed/indexed counters, index jobs and item reindex controls. It shows model/status/error metadata but never raw vectors.
 - `/app/knowledge`: dedicated support Knowledge Workspace over existing item/version APIs. It provides fast search, requester-safe/support-internal/type filters, selected article/runbook detail, guarded requester-safe copy action and ticket-integration placeholders without admin publish/governance controls.

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw, Save, Trash2 } from "lucide-react";
+import { GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -14,8 +14,11 @@ import {
   fetchKnowledgeGraphLayout,
   fetchKnowledgeGraphNeighborhood,
   fetchKnowledgeGraphNodes,
+  fetchKnowledgeAiProposals,
+  reviewKnowledgeAiProposal,
   saveKnowledgeGraphLayout,
   updateKnowledgeGraphNode,
+  type KnowledgeAiProposal,
   type KnowledgeGraphEdge,
   type KnowledgeGraphLayout,
   type KnowledgeGraphNode,
@@ -152,6 +155,10 @@ export function KnowledgeGraphStudioPage() {
   const graphNodes = neighborhoodQuery.data?.nodes.length ? neighborhoodQuery.data.nodes : filteredNodes.slice(0, 12);
   const graphEdges = neighborhoodQuery.data?.edges ?? [];
   const layoutQuery = useQuery({ queryKey: ["knowledge-graph-layout", "default"], queryFn: () => fetchKnowledgeGraphLayout("default") });
+  const proposalsQuery = useQuery({
+    queryKey: ["knowledge-ai-proposals", "graph", "pending"],
+    queryFn: () => fetchKnowledgeAiProposals({ target_kind: "graph", status: "pending" }),
+  });
   const positionedNodes = useMemo(() => layoutNodes(graphNodes, layoutQuery.data), [graphNodes, layoutQuery.data]);
   const positionedById = useMemo(() => new Map(positionedNodes.map((node) => [node.node_id, node])), [positionedNodes]);
   const graphNodesById = useMemo(() => new Map(graphNodes.map((node) => [node.node_id, node])), [graphNodes]);
@@ -233,6 +240,16 @@ export function KnowledgeGraphStudioPage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-layout", "default"] });
+    },
+  });
+
+  const reviewProposalMutation = useMutation({
+    mutationFn: ({ proposalId, action }: { proposalId: string; action: "approve" | "reject" | "comment" }) =>
+      reviewKnowledgeAiProposal(proposalId, { action }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-ai-proposals", "graph", "pending"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
     },
   });
 
@@ -331,6 +348,52 @@ export function KnowledgeGraphStudioPage() {
               <Button disabled={!nodeDraft.stable_key.trim() || !nodeDraft.label.trim() || createNodeMutation.isPending} onClick={() => createNodeMutation.mutate()}>
                 Создать узел
               </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5" />
+                AI proposals
+              </CardTitle>
+              <CardDescription>Pending graph proposals stay review-gated before they touch nodes or edges.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {(proposalsQuery.data ?? []).map((proposal: KnowledgeAiProposal) => (
+                <div className="rounded-md border border-slate-200 bg-white p-3 text-sm" key={proposal.proposal_id}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-slate-950">{proposal.title}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {proposal.proposal_type} · {proposal.status}
+                      </p>
+                    </div>
+                    <Badge tone="warning">{proposal.confidence_score ?? "AI"}</Badge>
+                  </div>
+                  {proposal.rationale ? <p className="mt-2 text-xs text-slate-600">{proposal.rationale}</p> : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      aria-label={`Approve proposal ${proposal.proposal_id}`}
+                      disabled={reviewProposalMutation.isPending}
+                      onClick={() => reviewProposalMutation.mutate({ proposalId: proposal.proposal_id, action: "approve" })}
+                      size="sm"
+                    >
+                      Approve
+                    </Button>
+                    <Button
+                      aria-label={`Reject proposal ${proposal.proposal_id}`}
+                      disabled={reviewProposalMutation.isPending}
+                      onClick={() => reviewProposalMutation.mutate({ proposalId: proposal.proposal_id, action: "reject" })}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Reject
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {!proposalsQuery.isLoading && !(proposalsQuery.data ?? []).length ? <p className="text-sm text-slate-500">No pending graph AI proposals.</p> : null}
             </CardContent>
           </Card>
         </aside>

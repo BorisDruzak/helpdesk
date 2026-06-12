@@ -4,6 +4,7 @@ import {
   applyKnowledgeContentPack,
   askKnowledgePortal,
   checkKnowledgeAiProviderHealth,
+  createKnowledgeAiProposal,
   fetchKnowledgeGaps,
   createKnowledgeGraphEdge,
   createKnowledgeGraphNode,
@@ -17,6 +18,7 @@ import {
   fetchKnowledgeGraphNeighborhood,
   fetchKnowledgeGraphNodes,
   fetchKnowledgeGraphLayout,
+  fetchKnowledgeAiProposals,
   searchKnowledgeGraph,
   fetchKnowledgeSearchSettings,
   fetchKnowledgeSegments,
@@ -57,6 +59,7 @@ import {
   sendKnowledgeArticleCorrectionRequest,
   sendKnowledgeArticleFeedback,
   setKnowledgePortalBookmark,
+  reviewKnowledgeAiProposal,
   submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
   submitKnowledgeReviewTaskAction,
@@ -754,6 +757,47 @@ describe("knowledge article segmentation api", () => {
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
     expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toMatchObject({ reason: "Дубль существующего сегмента" });
+  });
+
+  it("lists, creates and reviews governed AI proposals", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", proposals: [{ proposal_id: "prop-1", proposal_type: "graph_edge", status: "pending" }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", proposal: { proposal_id: "prop-2", proposal_type: "summary", status: "pending" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", proposal: { proposal_id: "prop-1", proposal_type: "graph_edge", status: "approved" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchKnowledgeAiProposals({ target_kind: "graph", status: "pending" });
+    await createKnowledgeAiProposal({
+      proposal_type: "summary",
+      target_kind: "item",
+      target_ref: "ki-1",
+      title: "Short summary",
+      proposed_payload: { summary: "VPN reset steps" },
+    });
+    await reviewKnowledgeAiProposal("prop-1", { action: "approve", note: "Looks safe" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/web/knowledge/ai/proposals?target_kind=graph&status=pending",
+      { credentials: "same-origin" },
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/ai/proposals",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({
+      proposal_type: "summary",
+      target_kind: "item",
+      target_ref: "ki-1",
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/web/knowledge/ai/proposals/prop-1/review",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body))).toMatchObject({ action: "approve", note: "Looks safe" });
   });
 
   it("loads indexing status, jobs and runs scoped reindex without exposing raw vectors", async () => {
