@@ -2428,6 +2428,13 @@ Phase 10 import indexing queue slice, 2026-06-12:
   * Sequential `server/tests/test_knowledge_import_api.py` passed with 6 tests.
   * Sequential `server/tests/test_knowledge_embeddings.py` passed with 5 tests; the first parallel run of those two shared-DB files failed due `ConnectionDoesNotExistError` from shared test DB contention and was discarded.
 
+* Live validation:
+
+  * Commit `ea220d97` was pushed to `origin/codex/helpdesk-process-model` and deployed with `scripts/release_server_to_remote.py --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+  * Remote smoke verified `https://192.168.100.17:9443/api/health -> 200`.
+  * Browser same-origin API check on `/app/admin/knowledge/import` temporarily enabled `vector_enabled=true`, created draft `indexed-import-live-1781269338959`, and verified `indexing.enabled=true`, `indexing.status=completed`, `job.scope_type=item`, `job.metadata_json.version_id=<created version_id>`, `stats.chunks_seen=1`, `stats.disabled_embeddings=1`.
+  * Follow-up `GET /api/web/knowledge/indexing/jobs -> 200` found the created indexing job, response scan confirmed no raw `embedding_vector`, and the previous search setting `vector_enabled=false` was restored.
+
 Phase 10 remaining work:
 
 * Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
