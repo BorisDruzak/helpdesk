@@ -1791,7 +1791,6 @@ Remaining Phase 8 product hardening before declaring the full phase complete:
 * Persist `knowledge_article_editor_events` and optional attachment/diff cache tables if audit-grade editor history is required.
 * Add review approve/comment workflow beyond the existing submit/request-changes/archive actions.
 * Add richer structured block editing beyond Markdown plus template insertion.
-* Add browser/live evidence for the hardened `/app/admin/knowledge/studio` route, including new draft, review lifecycle, rollback and manual segment flow.
 
 Phase 8 hardening slice, 2026-06-12:
 
@@ -1799,12 +1798,15 @@ Phase 8 hardening slice, 2026-06-12:
 * Studio now exposes `Ревью и жизненный цикл` actions backed by existing `POST /api/web/knowledge/items/{item_id_or_slug}/review-action`: `submit_review`, `request_changes` and `archive` for archive/supersede governance.
 * Studio now exposes `Версия для сравнения` and `Откатить к выбранной версии`, reusing the selected-version publish API for rollback to an older immutable version.
 * The selected version no longer snaps back to the current version after the user selects an older version for comparison or rollback.
-* Focused coverage in `webapp/src/pages/admin/knowledge-studio-page.test.tsx` now covers new draft creation payloads, review action payloads, rollback publish payloads and archive/supersede action.
+* Studio default selection now prefers non-archived items with a current version, so archived live-check drafts without versions do not hide the manual segment controls on a fresh page load; archive/retire lifecycle actions also reset selection back to the preferred active item.
+* Focused coverage in `webapp/src/pages/admin/knowledge-studio-page.test.tsx` now covers new draft creation payloads, review action payloads, rollback publish payloads, archive/supersede action and archived-first API ordering.
 * Verified locally:
 
   * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx` -> 3 passed.
   * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/article-segmentation-panel.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` -> 30 passed.
   * `pnpm --dir webapp build` -> passed.
+  * `python scripts/verify_workspace.py` -> passed.
+  * `git diff --check` -> passed with only existing CRLF warnings.
 
 Phase 8 live/browser result, deployed commit `ae402548`, 2026-06-12:
 
@@ -1813,6 +1815,17 @@ Phase 8 live/browser result, deployed commit `ae402548`, 2026-06-12:
 * Verified admin web session can load `/app/admin/knowledge/studio` and `GET /api/web/knowledge/items` returns `200`.
 * Verified visible Russian Studio surfaces: `Студия статей`, `Черновики и статьи`, `Метаданные статьи`, `Редактор`, `Предпросмотр`, `Проверка публикации`, `AI-инструменты отключены` and `Разметка статьи`.
 * Verified no console/page/network errors and no visible mojibake markers during the live browser run.
+
+Phase 8 hardened live/browser result, deployed commit `5b8930e4`, 2026-06-12:
+
+* Deployed `codex/helpdesk-process-model` to `192.168.100.17` with quick release gate, migrations and remote smoke `GET /api/health -> 200`.
+* Browser evidence captured under `artifacts/browser_live_validation/knowledge-studio-hardening-5b8930e4-1781234318001/`.
+* Verified `/app/admin/knowledge/studio` with admin web session after archived no-version live draft existed first in `GET /api/web/knowledge/items` (`first_status=archived`); Studio still default-selected an active versioned item and showed `Разметка статьи` plus `Запустить авторазметку`.
+* Verified visible hardened controls: `Версия для сравнения`, `Откатить к выбранной версии`, `Отправить на ревью`, `Запросить правки`, `Архивировать / supersede` and manual segment fields/actions.
+* Verified manual segment lifecycle in browser: `POST /api/web/knowledge/items/{item_id}/segments -> 200`, created segment `3c66dabf-17ea-48a1-a81f-8ac4fc6f1007`, then `DELETE /api/web/knowledge/segments/{segment_id} -> 200`.
+* Verified new draft/review lifecycle in browser: `POST /api/web/knowledge/items -> 200`, created item `1af4d555-eb0b-4b89-8060-07fb36140b5c`, then `submit_review -> 200` and `archive -> 200`.
+* Verified rollback control visibility on the deployed route; no production rollback was executed against an existing published article during this cleanup-safe browser run.
+* Browser console messages: none. Failed browser requests during the Studio run: none. All observed Knowledge API calls returned `200`.
 
 ---
 
