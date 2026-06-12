@@ -42,6 +42,8 @@ Stage 3:
 
 ## Evidence
 
+Evidence artifacts under `artifacts/` are local/untracked operational artifacts and are not guaranteed to exist in a fresh GitHub checkout. Preserve them outside git for audits; if they are absent, rerun the listed regression commands and live audit before relying on this signoff.
+
 Primary full live audit:
 
 - `artifacts/requester-agent-consent-full-live-audit-20260611-183743/`
@@ -97,6 +99,22 @@ python scripts/verify_workspace.py
 ```
 
 If exact selectors change, use the closest focused requester, consent, browser-auth and requester-knowledge tests and record the actual commands in `PLANS.md`.
+
+Knowledge/requester regression add-on:
+
+```powershell
+PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_knowledge_feedback.py server/tests/test_knowledge_ask.py server/tests/test_ticket_knowledge_links_compat.py -q --tb=short
+pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx src/features/requester/api.test.ts src/features/knowledge/api.test.ts src/app/navigation.test.ts
+```
+
+Knowledge changes that touch search, Ask, requester ticket draft, feedback, deflection or portal routing also require a live/browser checklist:
+
+- requester knowledge suggestions render and remain requester-safe
+- Ask AI-off fallback -> `/app/requester/new` prefill works
+- requester ticket create is submitted with `knowledge_attempts`
+- `ticket_created_after_view` analytics are recorded after submit
+- public `/app/help` deflection remains backward-compatible
+- `/app/kb/*` redirects unauthenticated users to login and does not expose support/admin diagnostics to requesters
 
 ## Non-Regression Boundaries
 

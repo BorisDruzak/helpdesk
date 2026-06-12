@@ -44,10 +44,12 @@ import type {
 
 type FieldValues = Record<string, string | boolean>;
 const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
+const ASK_TICKET_CONTEXT_MAX_AGE_MS = 30 * 60 * 1000;
 
 type AskTicketContext = {
   source?: string;
   query?: string | null;
+  created_at?: string | null;
   answer_status?: string | null;
   effective_mode?: string | null;
   ai_used?: boolean | null;
@@ -93,9 +95,13 @@ function readAskTicketContext(): AskTicketContext | null {
     if (!raw) {
       return null;
     }
+    window.sessionStorage.removeItem(ASK_TICKET_CONTEXT_STORAGE_KEY);
     const parsed = JSON.parse(raw) as AskTicketContext;
-    return parsed?.source === "knowledge_ask" && compactText(parsed.query) ? parsed : null;
+    const createdAt = parsed?.created_at ? Date.parse(parsed.created_at) : Number.NaN;
+    const isFresh = Number.isNaN(createdAt) || Date.now() - createdAt <= ASK_TICKET_CONTEXT_MAX_AGE_MS;
+    return parsed?.source === "knowledge_ask" && compactText(parsed.query) && isFresh ? parsed : null;
   } catch {
+    window.sessionStorage.removeItem(ASK_TICKET_CONTEXT_STORAGE_KEY);
     return null;
   }
 }

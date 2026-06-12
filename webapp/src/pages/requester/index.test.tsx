@@ -26,6 +26,7 @@ describe("RequesterWorkspacePage", () => {
       JSON.stringify({
         source: "knowledge_ask",
         query: "VPN access error",
+        created_at: new Date().toISOString(),
         answer_status: "ai_disabled",
         effective_mode: "keyword_only",
         ai_used: false,
@@ -91,6 +92,7 @@ describe("RequesterWorkspacePage", () => {
 
     expect(await screen.findByDisplayValue("Knowledge Ask: VPN access error")).toBeInTheDocument();
     expect(screen.getByDisplayValue(/Knowledge Ask query: VPN access error/)).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("pc_client.knowledge_ask.ticket_context")).toBeNull();
 
     fireEvent.click(screen.getByLabelText("Create requester ticket"));
 
