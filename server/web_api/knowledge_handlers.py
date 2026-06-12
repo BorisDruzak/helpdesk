@@ -11,6 +11,7 @@ from app.db.models import KnowledgeContentPack, KnowledgeGapFinding, KnowledgeIn
 from app.repos.knowledge_repo import KnowledgeRepo
 from auth.middleware import require_auth
 from knowledge.contracts import (
+    KNOWLEDGE_RELATION_TYPES,
     KnowledgePublicationBlockedError,
     actor_visible_visibilities,
     can_mutate_knowledge_visibility,
@@ -1403,10 +1404,16 @@ async def handle_web_knowledge_graph_edges(request: web.Request) -> web.Response
         visibility = str(payload.get("visibility") or source.visibility)
         if not can_mutate_knowledge_visibility(role, visibility):
             return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+        relation_type = str(payload.get("relation_type") or "mentions")
+        if relation_type not in KNOWLEDGE_RELATION_TYPES:
+            return web.json_response(
+                {"status": "error", "error": "validation_error", "details": "unsupported relation_type"},
+                status=400,
+            )
         edge = await graph.create_edge(
             source,
             target,
-            relation_type=str(payload.get("relation_type") or "mentions"),
+            relation_type=relation_type,
             visibility=visibility,
             actor_id=actor_id,
         )

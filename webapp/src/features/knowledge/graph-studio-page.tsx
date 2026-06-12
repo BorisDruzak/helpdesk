@@ -92,7 +92,7 @@ export function KnowledgeGraphStudioPage() {
     visibility: "support_internal",
   });
   const [edgeDraft, setEdgeDraft] = useState<EdgeDraft>({
-    relation_type: "related_to",
+    relation_type: "mentions",
     source_stable_key: "",
     target_stable_key: "",
     visibility: "support_internal",
@@ -402,7 +402,6 @@ export function KnowledgeGraphStudioPage() {
                 <label className="text-sm font-medium">
                   Тип связи
                   <select className={fieldClass} value={edgeDraft.relation_type} onChange={(event) => setEdgeDraft({ ...edgeDraft, relation_type: event.target.value })}>
-                    <option value="related_to">related_to</option>
                     <option value="mentions">mentions</option>
                     <option value="belongs_to_service">belongs_to_service</option>
                     <option value="belongs_to_offering">belongs_to_offering</option>

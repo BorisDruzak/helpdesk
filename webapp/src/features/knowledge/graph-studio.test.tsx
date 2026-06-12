@@ -63,7 +63,7 @@ function setupFetch() {
             edge_id: "edge-1",
             source_node_id: "node-vpn",
             target_node_id: "node-article",
-            relation_type: "related_to",
+            relation_type: "mentions",
             visibility: "support_internal",
             status: "active",
           },
@@ -127,7 +127,7 @@ describe("KnowledgeGraphStudioPage", () => {
     expect(screen.getByRole("img", { name: "Карта графа знаний" })).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /VPN concept/ })[0]);
-    expect((await screen.findAllByText("related_to")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("mentions")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("VPN access article").length).toBeGreaterThan(0);
 
     fireEvent.change(screen.getByLabelText("Ключ узла"), { target: { value: "concept:mfa" } });
@@ -153,7 +153,7 @@ describe("KnowledgeGraphStudioPage", () => {
     const edgeForm = screen.getByRole("group", { name: "Новая связь" });
     fireEvent.change(within(edgeForm).getByLabelText("Источник edge"), { target: { value: "concept:mfa" } });
     fireEvent.change(within(edgeForm).getByLabelText("Цель edge"), { target: { value: "concept:vpn" } });
-    fireEvent.change(within(edgeForm).getByLabelText("Тип связи"), { target: { value: "related_to" } });
+    fireEvent.change(within(edgeForm).getByLabelText("Тип связи"), { target: { value: "mentions" } });
     fireEvent.click(within(edgeForm).getByRole("button", { name: "Создать связь" }));
 
     await waitFor(() =>
@@ -166,7 +166,7 @@ describe("KnowledgeGraphStudioPage", () => {
     expect(JSON.parse(String(createEdgeCall?.[1]?.body))).toMatchObject({
       source_stable_key: "concept:mfa",
       target_stable_key: "concept:vpn",
-      relation_type: "related_to",
+      relation_type: "mentions",
       visibility: "support_internal",
     });
   });

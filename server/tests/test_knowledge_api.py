@@ -149,6 +149,50 @@ async def test_knowledge_api_denies_requester_mutation(test_client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_knowledge_graph_edges_reject_unknown_relation_type(test_client) -> None:
+    source_resp = await test_client.post(
+        "/api/web/knowledge/graph/nodes",
+        headers=_admin_headers(),
+        json={"stable_key": "concept:source-api", "node_type": "concept", "label": "Source API", "visibility": "support_internal"},
+    )
+    assert source_resp.status == 200
+    target_resp = await test_client.post(
+        "/api/web/knowledge/graph/nodes",
+        headers=_admin_headers(),
+        json={"stable_key": "concept:target-api", "node_type": "concept", "label": "Target API", "visibility": "support_internal"},
+    )
+    assert target_resp.status == 200
+
+    invalid_resp = await test_client.post(
+        "/api/web/knowledge/graph/edges",
+        headers=_admin_headers(),
+        json={
+            "source_stable_key": "concept:source-api",
+            "target_stable_key": "concept:target-api",
+            "relation_type": "related_to",
+            "visibility": "support_internal",
+        },
+    )
+    assert invalid_resp.status == 400
+    invalid_payload = await invalid_resp.json()
+    assert invalid_payload["error"] == "validation_error"
+
+    valid_resp = await test_client.post(
+        "/api/web/knowledge/graph/edges",
+        headers=_admin_headers(),
+        json={
+            "source_stable_key": "concept:source-api",
+            "target_stable_key": "concept:target-api",
+            "relation_type": "mentions",
+            "visibility": "support_internal",
+        },
+    )
+    assert valid_resp.status == 200
+    valid_payload = await valid_resp.json()
+    assert valid_payload["edge"]["relation_type"] == "mentions"
+
+
+@pytest.mark.asyncio
 async def test_knowledge_operations_api_exposes_real_packs_quality_gaps_and_rollout(test_client) -> None:
     pack = {
         "code": "it-self-service-api",

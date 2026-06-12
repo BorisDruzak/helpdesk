@@ -147,13 +147,13 @@ describe("knowledge graph api", () => {
       .mockResolvedValueOnce(jsonResponse({ status: "ok", nodes: [{ node_id: "n1", stable_key: "concept:vpn", label: "VPN", node_type: "concept", visibility: "support_internal" }] }))
       .mockResolvedValueOnce(jsonResponse({ status: "ok", nodes: [{ node_id: "n1", stable_key: "concept:vpn", label: "VPN", node_type: "concept", visibility: "support_internal" }], edges: [] }))
       .mockResolvedValueOnce(jsonResponse({ status: "ok", node: { node_id: "n2", stable_key: "concept:mfa", label: "MFA", node_type: "concept", visibility: "support_internal" } }))
-      .mockResolvedValueOnce(jsonResponse({ status: "ok", edge: { edge_id: "e1", relation_type: "related_to" } }));
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", edge: { edge_id: "e1", relation_type: "mentions" } }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchKnowledgeGraphNodes()).resolves.toHaveLength(1);
     await expect(fetchKnowledgeGraphNeighborhood("concept:vpn", 2)).resolves.toMatchObject({ nodes: [{ stable_key: "concept:vpn" }], edges: [] });
     await createKnowledgeGraphNode({ stable_key: "concept:mfa", label: "MFA", node_type: "concept", visibility: "support_internal" });
-    await createKnowledgeGraphEdge({ source_stable_key: "concept:mfa", target_stable_key: "concept:vpn", relation_type: "related_to", visibility: "support_internal" });
+    await createKnowledgeGraphEdge({ source_stable_key: "concept:mfa", target_stable_key: "concept:vpn", relation_type: "mentions", visibility: "support_internal" });
 
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/graph/nodes", { credentials: "same-origin" });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/graph/nodes/concept%3Avpn/neighborhood?depth=2", { credentials: "same-origin" });
@@ -171,7 +171,7 @@ describe("knowledge graph api", () => {
     expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toMatchObject({
       source_stable_key: "concept:mfa",
       target_stable_key: "concept:vpn",
-      relation_type: "related_to",
+      relation_type: "mentions",
     });
   });
 });
