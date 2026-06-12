@@ -1705,7 +1705,11 @@ async def handle_web_knowledge_import_create_drafts(request: web.Request) -> web
     payload = await _json_payload(request)
     async with get_session() as session:
         try:
-            result = await KnowledgeIngestionService(session).create_drafts_from_import(payload, actor_id=actor_id, actor_role=role)
+            result = await KnowledgeIngestionService(session, embedding_transport=_get_embedding_transport(request)).create_drafts_from_import(
+                payload,
+                actor_id=actor_id,
+                actor_role=role,
+            )
         except KnowledgeRemoteImportBlockedError:
             return web.json_response(
                 {

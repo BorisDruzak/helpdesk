@@ -2412,11 +2412,26 @@ Phase 10 import auto-segmentation contract slice, 2026-06-12:
   * Browser same-origin API check on `/app/admin/knowledge/import` verified `POST /api/web/knowledge/import/create-drafts -> 200` with `auto_segment_after_import=true`, `segmentation.status=completed`, profile `default-auto`, and segment titles `Symptoms`, `Fix`.
   * Follow-up `GET /api/web/knowledge/items/<item_id>/segments -> 200` returned the same two live segments.
 
+Phase 10 import indexing queue slice, 2026-06-12:
+
+* Extended `POST /api/web/knowledge/import/create-drafts` with `indexing` response metadata:
+
+  * when global search settings have `vector_enabled=false`, the response returns `indexing.enabled=false`, `status=disabled`, `reason=vector_indexing_disabled`;
+  * when `vector_enabled=true`, import draft creation immediately runs the existing observable item indexing path for the created `item_id` and `version_id`;
+  * the returned `indexing.job`, `indexing.stats` and safe `indexing.embeddings` reuse `KnowledgeEmbeddingService.reindex_item()` and never expose raw `embedding_vector`;
+  * the web handler passes the configured embedding transport through to the ingestion service for provider-backed environments.
+
+* TDD status:
+
+  * RED `server/tests/test_knowledge_import_api.py::test_knowledge_import_create_drafts_queues_indexing_when_enabled` failed with `KeyError: 'indexing'`.
+  * GREEN focused test passed after implementation.
+  * Sequential `server/tests/test_knowledge_import_api.py` passed with 6 tests.
+  * Sequential `server/tests/test_knowledge_embeddings.py` passed with 5 tests; the first parallel run of those two shared-DB files failed due `ConnectionDoesNotExistError` from shared test DB contention and was discarded.
+
 Phase 10 remaining work:
 
 * Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
 * Add import wizard UI controls for file upload, remote-source policy messages and segmentation profile selection.
-* Queue indexing after draft creation when indexing is enabled.
 * Implement governed AI enrichment proposals for summary/tags/glossary/graph/duplicates with review actions.
 * Add import job detail APIs and Observer v2 events listed above.
 * Capture live browser evidence for `/app/admin/knowledge/import`.

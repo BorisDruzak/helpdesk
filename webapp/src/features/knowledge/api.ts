@@ -714,6 +714,14 @@ export type KnowledgeImportDraftResult = {
     job?: Record<string, unknown>;
     segments?: Array<Record<string, unknown>>;
   };
+  indexing?: {
+    enabled: boolean;
+    status: string;
+    reason?: string;
+    job?: Record<string, unknown>;
+    stats?: Record<string, number>;
+    embeddings?: Array<Record<string, unknown>>;
+  };
   job: { job_id: string; status: string };
   item: KnowledgeItem;
   version: KnowledgeItemVersion;

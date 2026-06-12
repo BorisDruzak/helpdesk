@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import KnowledgeIngestionJob
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.contracts import KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
+from knowledge.embedding_service import KnowledgeEmbeddingService, Transport
 from knowledge.segmentation_service import KnowledgeSegmentationService
 
 MAX_IMPORT_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -169,8 +170,9 @@ def _parse_import_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], str]
 
 
 class KnowledgeIngestionService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, *, embedding_transport: Transport | None = None):
         self.session = session
+        self.embedding_transport = embedding_transport
 
     def preview_import(self, payload: dict[str, Any]) -> dict[str, Any]:
         preview, _parsed_body = _parse_import_payload(payload)
@@ -210,7 +212,21 @@ class KnowledgeIngestionService:
                 "profile_code": segmentation["profile_code"],
                 **segment_result,
             }
-        return {"preview": preview, "ai_enrichment": preview["ai_enrichment"], "segmentation": segmentation, **result}
+        indexing = await self._index_after_import_if_enabled(result, actor_id=actor_id, actor_role=actor_role)
+        return {"preview": preview, "ai_enrichment": preview["ai_enrichment"], "segmentation": segmentation, "indexing": indexing, **result}
+
+    async def _index_after_import_if_enabled(self, result: dict[str, Any], *, actor_id: str | None, actor_role: str) -> dict[str, Any]:
+        service = KnowledgeEmbeddingService(self.session, transport=self.embedding_transport)
+        status = await service.status()
+        if not bool(status.get("vector_enabled")):
+            return {"enabled": False, "status": "disabled", "reason": "vector_indexing_disabled"}
+        index_result = await service.reindex_item(
+            str(result["item"]["item_id"]),
+            {"version_id": result["version"]["version_id"]},
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        return {"enabled": True, "status": index_result["job"]["status"], **index_result}
 
     async def ingest_text(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
         repo = KnowledgeRepo(self.session)

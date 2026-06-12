@@ -108,6 +108,59 @@ async def test_knowledge_import_create_drafts_can_run_auto_segmentation_profile(
     assert [segment["title"] for segment in payload["segmentation"]["segments"]] == ["Symptoms", "Fix"]
 
 
+@pytest.mark.asyncio
+async def test_knowledge_import_create_drafts_queues_indexing_when_enabled(test_client) -> None:
+    settings_resp = await test_client.post(
+        "/api/web/knowledge/search-settings",
+        headers=_admin_headers(),
+        json={
+            "search_mode": "hybrid_vector",
+            "keyword_enabled": True,
+            "full_text_enabled": True,
+            "vector_enabled": True,
+        },
+    )
+    assert settings_resp.status == 200
+
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={
+            "code": "import-indexing",
+            "title": "Import Indexing",
+            "visibility": "support_internal",
+            "lifecycle_status": "active",
+        },
+    )
+    assert space_resp.status == 200
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-indexing",
+            "source_kind": "markdown",
+            "source_name": "indexed-import.md",
+            "slug": "indexed-import-api",
+            "item_type": "article",
+            "title": "Indexed Import API",
+            "visibility": "support_internal",
+            "body": "# Indexed Import API\n\n## Steps\nReconnect VPN.",
+            "ai_enrichment_enabled": False,
+        },
+    )
+
+    assert resp.status == 200
+    payload = await resp.json()
+    assert payload["indexing"]["enabled"] is True
+    assert payload["indexing"]["status"] in {"completed", "failed"}
+    assert payload["indexing"]["job"]["scope_type"] == "item"
+    assert payload["indexing"]["job"]["scope_ref"] == payload["item"]["item_id"]
+    assert payload["indexing"]["job"]["metadata_json"]["version_id"] == payload["version"]["version_id"]
+    assert payload["indexing"]["stats"]["chunks_seen"] >= 1
+    assert "embedding_vector" not in str(payload["indexing"])
+
+
 def _docx_base64(text: str) -> str:
     buffer = io.BytesIO()
     document_xml = (
