@@ -766,6 +766,16 @@ export async function previewKnowledgeSearch(payload: KnowledgeSearchPreviewRequ
   return readJson<KnowledgeSearchPreviewResult>(response, "Не удалось выполнить проверочный поиск");
 }
 
+export async function searchKnowledgePortal(payload: KnowledgeSearchPreviewRequest): Promise<KnowledgeSearchPreviewResult> {
+  const response = await fetch("/api/knowledge/search", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgeSearchPreviewResult>(response, "Не удалось выполнить поиск по базе знаний");
+}
+
 export async function retrieveKnowledge(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeRetrievalResult> {
   const response = await fetch("/api/web/knowledge/retrieve", {
     method: "POST",

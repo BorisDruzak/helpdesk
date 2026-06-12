@@ -1185,6 +1185,12 @@ Status 2026-06-12:
   * `/app/admin/knowledge/search-settings` preview now calls `POST /api/web/knowledge/search/preview` instead of legacy item-only search;
   * preview results render nested item data, snippets, source modes, score, citations count and per-source `score_parts` for admin/support diagnostics;
   * visible text remains Russian-first and no raw vectors/secrets are displayed.
+* Phase 5D requester portal search UI is implemented:
+
+  * `/app/kb` redirects to protected requester route `/app/kb/search`;
+  * `/app/kb/search` renders a Russian-first standalone search experience over public-compatible `POST /api/knowledge/search`;
+  * the portal request uses `actor_role=requester` and `surface=requester_portal`, shows AI-used/effective-mode state, safe summaries and no admin score diagnostics;
+  * requester navigation now includes `База знаний`, and workspace detection treats `/app/kb/*` as requester-owned instead of support/admin.
 * Focused verification:
 
   * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_hybrid_retrieval.py -q --tb=short` passed with 3 tests;
@@ -1192,9 +1198,9 @@ Status 2026-06-12:
   * `pnpm --dir webapp test -- src/features/knowledge/api.test.ts` passed with 11 tests.
   * After Phase 5B, `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_hybrid_retrieval.py -q --tb=short` passed with 5 tests.
   * After Phase 5C, `pnpm --dir webapp test -- src/features/knowledge/search-settings-page.test.tsx` passed with 1 test.
+  * After Phase 5D, `pnpm --dir webapp test -- src/pages/kb/search-page.test.tsx src/app/navigation.test.ts src/features/knowledge/api.test.ts` passed with 3 files / 23 tests.
 * Remaining Phase 5 work:
 
-  * full `/app/kb/search` product UI;
   * browser/live evidence after deploy.
 
 Backend:

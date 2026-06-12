@@ -191,7 +191,7 @@ Phase 4 indexing stores optional embeddings in `knowledge_chunk_embeddings` and 
 
 `KnowledgeVectorSearchService` provides the Phase 4 JSONB-vector fallback for environments without pgvector. Web search merges vector hits only when `vector_enabled=true` and a safe numeric `query_vector` is supplied. ACL filters run before cosine scoring, requester-safe projection hides diagnostic vector fields, support/admin responses may include `retrieval_source=vector` and `vector_score`, and raw `embedding_vector` values remain DB-only.
 
-Phase 5 retrieval introduces `KnowledgeRetrievalService` for explainable hybrid retrieval previews. It merges keyword, manual segment, binding and optional JSONB-vector candidates after ACL filtering, returns score parts/source modes/citations for admin/support, records search analytics, and writes safe `knowledge.retrieval.executed` / `knowledge.retrieval.zero_results` audit events. Optional OpenRouter-compatible rerank runs only when settings, provider, model profile, policy, secret and injected transport are all available; failures keep the pre-rerank order and emit `knowledge.retrieval.rerank_failed_fallback`. Existing public `POST /api/knowledge/search` remains backward-compatible; `/api/web/knowledge/retrieve` and `/api/web/knowledge/search/preview` expose the richer admin/support contract, and `/app/admin/knowledge/search-settings` uses that preview to show source modes, citations and score breakdown.
+Phase 5 retrieval introduces `KnowledgeRetrievalService` for explainable hybrid retrieval previews. It merges keyword, manual segment, binding and optional JSONB-vector candidates after ACL filtering, returns score parts/source modes/citations for admin/support, records search analytics, and writes safe `knowledge.retrieval.executed` / `knowledge.retrieval.zero_results` audit events. Optional OpenRouter-compatible rerank runs only when settings, provider, model profile, policy, secret and injected transport are all available; failures keep the pre-rerank order and emit `knowledge.retrieval.rerank_failed_fallback`. Existing public `POST /api/knowledge/search` remains backward-compatible; `/api/web/knowledge/retrieve` and `/api/web/knowledge/search/preview` expose the richer admin/support contract, `/app/admin/knowledge/search-settings` uses that preview to show source modes, citations and score breakdown, and `/app/kb/search` gives requesters a protected standalone product search over the public-compatible search contract without admin diagnostics.
 
 ## Knowledge vNext Target Routes
 
@@ -199,8 +199,8 @@ Phase 0 фиксирует целевые границы, но не регист
 
 | Route | Назначение | Фаза |
 |---|---|---|
-| `/app/kb` | Портал знаний организации для requester-safe чтения | Portal |
-| `/app/kb/search` | Самостоятельный поиск по базе знаний | Search |
+| `/app/kb` | Редирект на requester-safe поиск по базе знаний | Search |
+| `/app/kb/search` | Реализованный самостоятельный поиск по базе знаний через `POST /api/knowledge/search` | Search |
 | `/app/kb/ask` | Optional RAG Ask с citations и AI-off fallback | RAG |
 | `/app/kb/articles/:slug` | Requester-safe article reader | Portal |
 | `/app/knowledge` | Рабочая база знаний поддержки | Support workspace |

@@ -37,6 +37,7 @@ import {
   saveKnowledgeSearchSettings,
   saveKnowledgeSegmentationProfile,
   saveKnowledgeRolloutPolicy,
+  searchKnowledgePortal,
   submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
   submitKnowledgeReviewTaskAction,
@@ -233,6 +234,43 @@ describe("knowledge search settings api", () => {
       query: "VPN",
       actor_role: "support",
       surface: "admin_knowledge_search",
+    });
+  });
+
+  it("runs requester portal search through the public-compatible endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        status: "ok",
+        display_message: "Поиск выполнен без AI",
+        search_mode: "keyword_only",
+        effective_mode: "keyword_only",
+        ai_used: false,
+        results: [{ item_id: "ki-1", slug: "vpn", title: "VPN", summary: "Baseline", visibility: "requester" }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      searchKnowledgePortal({
+        query: "VPN",
+        actor_role: "requester",
+        surface: "requester_portal",
+      }),
+    ).resolves.toMatchObject({
+      effective_mode: "keyword_only",
+      ai_used: false,
+      results: [{ title: "VPN" }],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/knowledge/search",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      query: "VPN",
+      actor_role: "requester",
+      surface: "requester_portal",
     });
   });
 

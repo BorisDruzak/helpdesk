@@ -28,6 +28,7 @@ import { hasPermission } from "../features/auth/permissions";
 export const SUPPORT_HOME_PATH = "/app/support";
 export const ADMIN_HOME_PATH = "/app/admin";
 export const REQUESTER_HOME_PATH = "/app/requester";
+export const REQUESTER_KB_SEARCH_PATH = "/app/kb/search";
 
 export type AppWorkspaceId = "support" | "admin" | "requester";
 export type AppDomainId =
@@ -159,6 +160,17 @@ export const appNavigation: AppNavItem[] = [
     order: 10,
     isPrimary: true,
     isWorkspaceHome: true,
+  },
+  {
+    label: "База знаний",
+    description: "Поиск инструкций и решений",
+    icon: BookOpen,
+    section: "requester",
+    workspace: "requester",
+    domainId: "requester-primary",
+    to: REQUESTER_KB_SEARCH_PATH,
+    permission: "workspace.requester.view",
+    order: 20,
   },
   {
     label: "Центр действий",
@@ -591,7 +603,12 @@ function pathMatchesPattern(pathname: string, pattern: string) {
 export function getActiveWorkspace(path: string): AppWorkspaceId | null {
   const pathname = normalizePath(path);
 
-  if (pathname === REQUESTER_HOME_PATH || pathname.startsWith("/app/requester/")) {
+  if (
+    pathname === REQUESTER_HOME_PATH ||
+    pathname.startsWith("/app/requester/") ||
+    pathname === "/app/kb" ||
+    pathname.startsWith("/app/kb/")
+  ) {
     return "requester";
   }
 
@@ -713,7 +730,14 @@ export function canAccessNavigationPath(path: string, permissions: string[] = []
 }
 
 export function getWorkspaceLabel(pathname: string) {
-  return isAdminRoute(pathname) ? "Администрирование" : "Поддержка";
+  const workspace = getActiveWorkspace(pathname);
+  if (workspace === "admin") {
+    return "Администрирование";
+  }
+  if (workspace === "requester") {
+    return "Кабинет заявителя";
+  }
+  return "Поддержка";
 }
 
 export function getSearchPlaceholder(pathname: string) {
@@ -733,6 +757,10 @@ export function getSearchPlaceholder(pathname: string) {
 
   if (isAdminRoute(pathname)) {
     return "Поиск по разделам администрирования";
+  }
+
+  if (getActiveWorkspace(pathname) === "requester") {
+    return "Поиск по обращениям и базе знаний";
   }
 
   return "Поиск по тикетам, клиентам и тегам";
