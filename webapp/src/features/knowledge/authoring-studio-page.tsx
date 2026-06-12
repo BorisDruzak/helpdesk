@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpenCheck, FileText, GitCompare, Sparkles } from "lucide-react";
+import { Archive, BookOpenCheck, FileText, GitCompare, PlusCircle, RotateCcw, Send, ShieldCheck, Sparkles, Undo2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -8,12 +8,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { PageHeading } from "../../components/ui/page-heading";
 import { ArticleSegmentationPanel } from "./article-segmentation-panel";
 import {
+  createKnowledgeItem,
   createKnowledgeVersion,
   fetchKnowledgeItemVersions,
   fetchKnowledgeItems,
   fetchKnowledgeSpaces,
   fetchKnowledgeTemplates,
   publishKnowledgeItem,
+  submitKnowledgeReviewAction,
   type KnowledgeItem,
   type KnowledgeItemVersion,
 } from "./api";
@@ -35,6 +37,23 @@ type EditorDraft = {
   title: string;
   visibility: string;
 };
+
+type NewItemDraft = {
+  item_type: string;
+  owner_actor_id: string;
+  reviewer_actor_id: string;
+  slug: string;
+  space_code: string;
+  summary: string;
+  tags: string;
+  title: string;
+  visibility: string;
+};
+
+function emptyToNull(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
 
 function spaceCodeFor(item: KnowledgeItem | null, spaces: Array<{ code: string; space_id: string }>) {
   if (!item) {
@@ -118,6 +137,17 @@ export function KnowledgeAuthoringStudioPage() {
   const [selectedItemId, setSelectedItemId] = useState("");
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [draft, setDraft] = useState<EditorDraft>(() => draftFrom(null, null, []));
+  const [newDraft, setNewDraft] = useState<NewItemDraft>({
+    item_type: "article",
+    owner_actor_id: "",
+    reviewer_actor_id: "",
+    slug: "",
+    space_code: "",
+    summary: "",
+    tags: "",
+    title: "",
+    visibility: "requester",
+  });
   const [checklist, setChecklist] = useState({
     body: false,
     reviewer: false,
@@ -125,6 +155,7 @@ export function KnowledgeAuthoringStudioPage() {
     visibility: false,
   });
   const [publishNote, setPublishNote] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
 
   const spacesQuery = useQuery({ queryKey: ["knowledge-spaces"], queryFn: fetchKnowledgeSpaces });
   const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
@@ -132,6 +163,7 @@ export function KnowledgeAuthoringStudioPage() {
 
   const spaces = spacesQuery.data ?? [];
   const items = itemsQuery.data ?? [];
+  const spacesKey = spaces.map((space) => `${space.space_id}:${space.code}`).join("|");
   const filteredItems = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) {
@@ -154,12 +186,41 @@ export function KnowledgeAuthoringStudioPage() {
     if (!selectedItem?.item_id) {
       return;
     }
+    const defaultVersion = versions.find((version) => version.version_id === selectedItem.current_version_id) ?? latestVersion;
     setSelectedItemId(selectedItem.item_id);
-    setSelectedVersionId(selectedItem.current_version_id ?? latestVersion?.version_id ?? "");
-    setDraft(draftFrom(selectedItem, selectedVersion ?? latestVersion, spaces));
+    setSelectedVersionId(defaultVersion?.version_id ?? "");
+    setDraft(draftFrom(selectedItem, defaultVersion, spaces));
     setChecklist({ body: false, reviewer: false, summary: false, visibility: false });
     setPublishNote("");
-  }, [latestVersion?.version_id, selectedItem?.current_version_id, selectedItem?.item_id, selectedVersion?.version_id, spaces]);
+    setReviewNote("");
+  }, [latestVersion?.version_id, selectedItem?.current_version_id, selectedItem?.item_id, spacesKey]);
+
+  useEffect(() => {
+    if (!newDraft.space_code && spaces[0]?.code) {
+      setNewDraft((current) => ({ ...current, space_code: spaces[0]?.code ?? "" }));
+    }
+  }, [newDraft.space_code, spacesKey]);
+
+  const createItemMutation = useMutation({
+    mutationFn: () =>
+      createKnowledgeItem({
+        item_type: newDraft.item_type,
+        owner_actor_id: emptyToNull(newDraft.owner_actor_id),
+        reviewer_actor_id: emptyToNull(newDraft.reviewer_actor_id),
+        slug: newDraft.slug.trim(),
+        space_code: newDraft.space_code || spaces[0]?.code || "",
+        summary: newDraft.summary.trim(),
+        tags: normalizeList(newDraft.tags),
+        title: newDraft.title.trim(),
+        visibility: newDraft.visibility,
+      }),
+    onSuccess: (result) => {
+      setSelectedItemId(result.item.item_id);
+      setNewDraft((current) => ({ ...current, slug: "", summary: "", tags: "", title: "" }));
+      queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
+    },
+  });
 
   const createVersionMutation = useMutation({
     mutationFn: () =>
@@ -188,6 +249,19 @@ export function KnowledgeAuthoringStudioPage() {
     },
   });
 
+  const reviewActionMutation = useMutation({
+    mutationFn: (action: string) =>
+      submitKnowledgeReviewAction(selectedItem?.item_id ?? "", {
+        action,
+        note: reviewNote.trim() || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });
+    },
+  });
+
   const checklistComplete = Object.values(checklist).every(Boolean);
   const currentDiff = diffSummary(selectedVersion?.body ?? "", draft.body);
 
@@ -198,6 +272,12 @@ export function KnowledgeAuthoringStudioPage() {
   function insertTemplate(sections: string[]) {
     const block = sections.map((section) => `## ${section}\n\n`).join("\n");
     setDraft((current) => ({ ...current, body: `${current.body.trim()}\n\n${block}`.trim() }));
+  }
+
+  function selectVersion(versionId: string) {
+    const nextVersion = versions.find((version) => version.version_id === versionId) ?? null;
+    setSelectedVersionId(versionId);
+    setDraft(draftFrom(selectedItem, nextVersion ?? latestVersion, spaces));
   }
 
   return (
@@ -243,6 +323,78 @@ export function KnowledgeAuthoringStudioPage() {
                 ))}
                 {!filteredItems.length ? <p className="text-sm text-slate-500">Нет статей для выбранного фильтра.</p> : null}
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PlusCircle className="h-5 w-5" />
+                Новый черновик
+              </CardTitle>
+              <CardDescription>Быстрое создание статьи без перехода в старую административную форму.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <label className="text-sm font-medium">
+                Новый заголовок
+                <input className={fieldClass} value={newDraft.title} onChange={(event) => setNewDraft({ ...newDraft, title: event.target.value })} />
+              </label>
+              <label className="text-sm font-medium">
+                Новый slug
+                <input className={fieldClass} value={newDraft.slug} onChange={(event) => setNewDraft({ ...newDraft, slug: event.target.value })} />
+              </label>
+              <label className="text-sm font-medium">
+                Краткое описание нового черновика
+                <textarea className={`${fieldClass} min-h-24`} value={newDraft.summary} onChange={(event) => setNewDraft({ ...newDraft, summary: event.target.value })} />
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Пространство нового черновика
+                  <select className={fieldClass} value={newDraft.space_code} onChange={(event) => setNewDraft({ ...newDraft, space_code: event.target.value })}>
+                    {spaces.map((space) => (
+                      <option key={space.space_id} value={space.code}>
+                        {space.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm font-medium">
+                  Тип нового черновика
+                  <select className={fieldClass} value={newDraft.item_type} onChange={(event) => setNewDraft({ ...newDraft, item_type: event.target.value })}>
+                    <option value="article">article</option>
+                    <option value="faq">faq</option>
+                    <option value="runbook">runbook</option>
+                    <option value="known_error">known_error</option>
+                    <option value="workaround">workaround</option>
+                  </select>
+                </label>
+              </div>
+              <label className="text-sm font-medium">
+                Видимость нового черновика
+                <select className={fieldClass} value={newDraft.visibility} onChange={(event) => setNewDraft({ ...newDraft, visibility: event.target.value })}>
+                  <option value="requester">requester</option>
+                  <option value="agent_requester_safe">agent_requester_safe</option>
+                  <option value="support_internal">support_internal</option>
+                  <option value="admin_internal">admin_internal</option>
+                </select>
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm font-medium">
+                  Owner нового черновика
+                  <input className={fieldClass} value={newDraft.owner_actor_id} onChange={(event) => setNewDraft({ ...newDraft, owner_actor_id: event.target.value })} />
+                </label>
+                <label className="text-sm font-medium">
+                  Reviewer нового черновика
+                  <input className={fieldClass} value={newDraft.reviewer_actor_id} onChange={(event) => setNewDraft({ ...newDraft, reviewer_actor_id: event.target.value })} />
+                </label>
+              </div>
+              <label className="text-sm font-medium">
+                Теги нового черновика
+                <input className={fieldClass} value={newDraft.tags} onChange={(event) => setNewDraft({ ...newDraft, tags: event.target.value })} />
+              </label>
+              <Button disabled={!newDraft.title.trim() || !newDraft.slug.trim() || createItemMutation.isPending} onClick={() => createItemMutation.mutate()}>
+                Создать новый черновик
+              </Button>
             </CardContent>
           </Card>
         </aside>
@@ -316,6 +468,16 @@ export function KnowledgeAuthoringStudioPage() {
                 <CardDescription>Локальный checklist перед вызовом существующего publish API.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
+                <label className="text-sm font-medium">
+                  Версия для сравнения
+                  <select className={fieldClass} value={selectedVersionId} onChange={(event) => selectVersion(event.target.value)}>
+                    {versions.map((version) => (
+                      <option key={version.version_id} value={version.version_id}>
+                        v{version.version_number}: {version.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <fieldset aria-label="Проверка публикации" className="grid gap-2">
                   {[
                     ["body", "Markdown заполнен"],
@@ -340,12 +502,53 @@ export function KnowledgeAuthoringStudioPage() {
                 <Button disabled={!selectedItem || !checklistComplete || publishMutation.isPending} onClick={() => publishMutation.mutate()}>
                   Опубликовать версию
                 </Button>
+                <Button
+                  disabled={!selectedItem || !selectedVersionId || publishMutation.isPending}
+                  onClick={() => publishMutation.mutate()}
+                  variant="outline"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Откатить к выбранной версии
+                </Button>
                 <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
                   Requester-safe теги: {normalizeList(draft.tags).slice(0, 5).join(", ") || "нет"}
                 </div>
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5" />
+                Ревью и жизненный цикл
+              </CardTitle>
+              <CardDescription>Governed status actions используют существующий review-action API и пишут событие в metadata article.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <label className="text-sm font-medium">
+                Комментарий review
+                <input className={fieldClass} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={!selectedItem || reviewActionMutation.isPending} onClick={() => reviewActionMutation.mutate("submit_review")} variant="outline">
+                  <Send className="h-4 w-4" />
+                  Отправить на ревью
+                </Button>
+                <Button disabled={!selectedItem || reviewActionMutation.isPending} onClick={() => reviewActionMutation.mutate("request_changes")} variant="outline">
+                  <Undo2 className="h-4 w-4" />
+                  Запросить правки
+                </Button>
+                <Button disabled={!selectedItem || reviewActionMutation.isPending} onClick={() => reviewActionMutation.mutate("archive")} variant="outline">
+                  <Archive className="h-4 w-4" />
+                  Архивировать / supersede
+                </Button>
+              </div>
+              <p className="text-xs leading-5 text-slate-500">
+                Supersede в первом hardening-срезе оформляется как архивирование старого item с review note и созданием нового черновика через Studio.
+              </p>
+            </CardContent>
+          </Card>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]">
             <Card>

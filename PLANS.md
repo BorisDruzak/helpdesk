@@ -1789,9 +1789,22 @@ Phase 8 current state, 2026-06-12:
 Remaining Phase 8 product hardening before declaring the full phase complete:
 
 * Persist `knowledge_article_editor_events` and optional attachment/diff cache tables if audit-grade editor history is required.
-* Add real review submit/approve/request-changes/comment workflow to the Studio surface.
-* Add create-new-draft flow, rollback/archive/supersede controls and richer structured block editing.
-* Add browser/live evidence for the deployed `/app/admin/knowledge/studio` route and manual segment flow.
+* Add review approve/comment workflow beyond the existing submit/request-changes/archive actions.
+* Add richer structured block editing beyond Markdown plus template insertion.
+* Add browser/live evidence for the hardened `/app/admin/knowledge/studio` route, including new draft, review lifecycle, rollback and manual segment flow.
+
+Phase 8 hardening slice, 2026-06-12:
+
+* Studio now includes a `Новый черновик` creation panel backed by existing `POST /api/web/knowledge/items`; the panel sends space, type, visibility, title, slug, summary, owner, reviewer and tags without leaving `/app/admin/knowledge/studio`.
+* Studio now exposes `Ревью и жизненный цикл` actions backed by existing `POST /api/web/knowledge/items/{item_id_or_slug}/review-action`: `submit_review`, `request_changes` and `archive` for archive/supersede governance.
+* Studio now exposes `Версия для сравнения` and `Откатить к выбранной версии`, reusing the selected-version publish API for rollback to an older immutable version.
+* The selected version no longer snaps back to the current version after the user selects an older version for comparison or rollback.
+* Focused coverage in `webapp/src/pages/admin/knowledge-studio-page.test.tsx` now covers new draft creation payloads, review action payloads, rollback publish payloads and archive/supersede action.
+* Verified locally:
+
+  * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx` -> 3 passed.
+  * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/article-segmentation-panel.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` -> 30 passed.
+  * `pnpm --dir webapp build` -> passed.
 
 Phase 8 live/browser result, deployed commit `ae402548`, 2026-06-12:
 

@@ -177,7 +177,7 @@ Ticket compatibility:
 ## UI
 
 - `/app/admin/knowledge`: governance/editor route with spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup for the selected immutable version, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview context.
-- `/app/admin/knowledge/studio`: dedicated Knowledge Authoring Studio route with draft/article browser, metadata editor, Markdown editor, template insertion, requester-safe preview, lightweight diff, publish checklist, AI-disabled state and embedded retrieval segment markup panel.
+- `/app/admin/knowledge/studio`: dedicated Knowledge Authoring Studio route with draft/article browser, new draft creation, metadata editor, Markdown editor, template insertion, requester-safe preview, selected-version comparison, rollback by publishing an older immutable version, publish checklist, review lifecycle actions, AI-disabled state and embedded retrieval segment markup panel.
 - `/app/admin/knowledge/indexing`: Russian-first indexing dashboard for embedding status, disabled/failed/indexed counters, index jobs and item reindex controls. It shows model/status/error metadata but never raw vectors.
 - `/app/knowledge`: support-facing knowledge entry using the same real backend data but without admin-first mutation controls. Support cannot create `admin_internal` / `security_restricted` content through this route.
 - `/app/help`: service/offering suggestions, deflection feedback and failed-article attempts before ticket submit.

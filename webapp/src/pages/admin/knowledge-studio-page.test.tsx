@@ -62,6 +62,17 @@ const versionsPayload = {
       created_at: "2026-06-12T07:00:00Z",
       published_at: null,
     },
+    {
+      version_id: "ver-old",
+      item_id: "item-1",
+      version_number: 0,
+      title: "VPN access old",
+      summary: "Previous stable VPN instruction",
+      body_format: "markdown",
+      body: "# VPN access\n\nUse the legacy VPN profile.",
+      created_at: "2026-06-11T07:00:00Z",
+      published_at: "2026-06-11T08:00:00Z",
+    },
   ],
 };
 
@@ -84,6 +95,21 @@ function setupFetch() {
     }
     if (url === "/api/web/knowledge/items" && !init?.method) {
       return jsonResponse(itemsPayload);
+    }
+    if (url === "/api/web/knowledge/items" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({
+        status: "ok",
+        item: {
+          ...itemsPayload.items[0],
+          item_id: "item-2",
+          title: body.title,
+          slug: body.slug,
+          summary: body.summary,
+          status: "draft",
+          current_version_id: null,
+        },
+      });
     }
     if (url === "/api/web/knowledge/templates") {
       return jsonResponse(templatesPayload);
@@ -108,6 +134,15 @@ function setupFetch() {
       return jsonResponse({
         status: "ok",
         item: { ...itemsPayload.items[0], status: "published", current_version_id: "ver-2" },
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1/review-action" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        result: {
+          item: { ...itemsPayload.items[0], status: JSON.parse(String(init.body)).action === "archive" ? "archived" : "in_review" },
+          event: { action: JSON.parse(String(init.body)).action },
+        },
       });
     }
     if (url === "/api/web/knowledge/items/item-1/segments") {
@@ -164,7 +199,7 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByText("AI-инструменты отключены")).toBeInTheDocument();
 
     const visibleText = document.body.textContent ?? "";
-    expect(visibleText).not.toContain("Рџ");
+    expect(visibleText).not.toContain(String.fromCharCode(0x0420, 0x045f));
   });
 
   it("inserts a template, creates a version and publishes with checklist payload", async () => {
@@ -225,6 +260,75 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(JSON.parse(String(publishCall?.[1]?.body))).toMatchObject({
       version_id: "ver-2",
       review_note: "Готово к порталу",
+    });
+  });
+
+  it("creates a new draft, runs review lifecycle actions and rolls back to a selected version", async () => {
+    const fetchMock = setupFetch();
+    renderStudio();
+
+    await screen.findByRole("heading", { name: "Студия статей" });
+    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+
+    fireEvent.change(screen.getByLabelText("Новый заголовок"), { target: { value: "Wi-Fi reconnect" } });
+    fireEvent.change(screen.getByLabelText("Новый slug"), { target: { value: "wifi-reconnect" } });
+    fireEvent.change(screen.getByLabelText("Краткое описание нового черновика"), { target: { value: "How to reconnect corporate Wi-Fi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать новый черновик" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/items",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const draftCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items" && call[1]?.method === "POST");
+    expect(JSON.parse(String(draftCall?.[1]?.body))).toMatchObject({
+      title: "Wi-Fi reconnect",
+      slug: "wifi-reconnect",
+      summary: "How to reconnect corporate Wi-Fi",
+      space_code: "it-self-service",
+      visibility: "requester",
+      item_type: "article",
+    });
+
+    fireEvent.change(screen.getByLabelText("Комментарий review"), {
+      target: { value: "Материал готов к проверке" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Отправить на ревью" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/items/item-1/review-action",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const submitReviewCall = fetchMock.mock.calls.find(
+      (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "submit_review",
+    );
+    expect(JSON.parse(String(submitReviewCall?.[1]?.body))).toMatchObject({
+      action: "submit_review",
+      note: "Материал готов к проверке",
+    });
+
+    fireEvent.change(screen.getByLabelText("Версия для сравнения"), { target: { value: "ver-old" } });
+    fireEvent.change(screen.getByLabelText("Комментарий к публикации"), {
+      target: { value: "Откат к стабильной версии" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Откатить к выбранной версии" }));
+
+    await waitFor(() => {
+      const rollbackCall = fetchMock.mock.calls.find(
+        (call) => call[0] === "/api/web/knowledge/items/item-1/publish" && JSON.parse(String(call[1]?.body)).version_id === "ver-old",
+      );
+      expect(rollbackCall).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Архивировать / supersede" }));
+    await waitFor(() => {
+      const archiveCall = fetchMock.mock.calls.find(
+        (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "archive",
+      );
+      expect(archiveCall).toBeDefined();
     });
   });
 });
