@@ -32,7 +32,10 @@ import {
   AdminTechPage,
   HelpPage,
   KnowledgeBasePage,
+  KnowledgePortalArticlePage,
   KnowledgePortalAskPage,
+  KnowledgePortalCollectionPage,
+  KnowledgePortalHomePage,
   KnowledgePortalSearchPage,
   ReportsPage,
   RequesterTicketPage,
@@ -274,7 +277,31 @@ export const appRoutes: RouteObject[] = [
             path: "kb",
             element: (
               <WorkspaceAccessGate workspace="requester">
-                <Navigate replace to="/app/kb/search" />
+                <KnowledgePortalHomePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "kb/articles/:slug",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <KnowledgePortalArticlePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "kb/spaces/:spaceCode",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <KnowledgePortalCollectionPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "kb/tags/:tag",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <KnowledgePortalCollectionPage />
               </WorkspaceAccessGate>
             )
           },

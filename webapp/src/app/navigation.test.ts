@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_HOME_PATH,
   REQUESTER_KB_ASK_PATH,
+  REQUESTER_KB_HOME_PATH,
   REQUESTER_KB_SEARCH_PATH,
   SUPPORT_HOME_PATH,
   findFirstVisibleDomainItem,
@@ -42,6 +43,7 @@ describe("navigation helpers", () => {
   it("detects workspace and active nav item for nested routes without query/hash noise", () => {
     expect(getActiveWorkspace("/app/tickets/T-1/passport/print?mode=full#top")).toBe("support");
     expect(getActiveWorkspace("/app/admin/inventory?panel=requests")).toBe("admin");
+    expect(getActiveWorkspace("/app/kb")).toBe("requester");
     expect(getActiveWorkspace("/app/kb/search?query=vpn")).toBe("requester");
     expect(getActiveWorkspace("/app/help")).toBeNull();
 
@@ -120,9 +122,14 @@ describe("navigation helpers", () => {
   it("recognizes workspace-owned paths without including public requester routes", () => {
     expect(SUPPORT_HOME_PATH).toBe("/app/support");
     expect(ADMIN_HOME_PATH).toBe("/app/admin");
+    expect(REQUESTER_KB_HOME_PATH).toBe("/app/kb");
     expect(REQUESTER_KB_SEARCH_PATH).toBe("/app/kb/search");
     expect(REQUESTER_KB_ASK_PATH).toBe("/app/kb/ask");
     expect(isWorkspacePath("/app/knowledge?query=printer", "support")).toBe(true);
+    expect(isWorkspacePath("/app/kb", "requester")).toBe(true);
+    expect(isWorkspacePath("/app/kb/articles/vpn", "requester")).toBe(true);
+    expect(isWorkspacePath("/app/kb/spaces/it", "requester")).toBe(true);
+    expect(isWorkspacePath("/app/kb/tags/vpn", "requester")).toBe(true);
     expect(isWorkspacePath("/app/kb/search?q=vpn", "requester")).toBe(true);
     expect(isWorkspacePath("/app/kb/ask", "requester")).toBe(true);
     expect(isWorkspacePath("/app/admin/forms#policy", "admin")).toBe(true);

@@ -195,16 +195,20 @@ Phase 5 retrieval introduces `KnowledgeRetrievalService` for explainable hybrid 
 
 Phase 6 Ask introduces `KnowledgeAskService` and the `/app/kb/ask` requester route. Ask is disabled unless search settings produce `effective_mode=rag_answer`; disabled/provider-unavailable/no-evidence states return Russian fallback messages plus requester-safe retrieval results. When enabled, Ask uses `KnowledgeRetrievalService` citations, an OpenRouter-compatible `answer` model profile, `ai_policy_profiles.answer_allowed`, env-backed secret refs and injected transport. Raw keys and raw vectors are never returned. AI calls write redacted `ai_request_audit` rows, and Observer-visible events use `knowledge.rag.ai_disabled`, `knowledge.rag.provider_unavailable`, `knowledge.rag.not_enough_evidence`, `knowledge.rag.policy_blocked` and `knowledge.rag.answer_generated`.
 
+Phase 7 portal adds `KnowledgePortalService` and turns `/app/kb` into a standalone requester Knowledge Portal home. Public-compatible portal APIs force requester ACL even when an authenticated support/admin context exists: `GET /api/knowledge/portal/home`, `GET /api/knowledge/portal/spaces/{space_code}`, `GET /api/knowledge/portal/tags/{tag}`, `GET /api/knowledge/articles/{slug}`, `POST /api/knowledge/articles/{slug}/feedback`, `POST /api/knowledge/articles/{slug}/correction-request` and `POST|DELETE /api/knowledge/articles/{slug}/bookmark`. Article detail returns requester-safe item metadata, selected published body, active requester-visible segments and empty related-article placeholders without `source_refs`, raw metadata or admin diagnostics. Feedback/correction/bookmark events currently reuse `knowledge_feedback_events`: `helpful|not_helpful`, `not_helpful/result=correction_requested`, and `viewed/result=bookmarked|bookmark_removed`. React routes now include `/app/kb`, `/app/kb/articles/:slug`, `/app/kb/spaces/:spaceCode` and `/app/kb/tags/:tag` alongside existing search and Ask.
+
 ## Knowledge vNext Target Routes
 
 Phase 0 фиксирует целевые границы, но не регистрирует недоделанные runtime routes. Реализация должна вводить эти поверхности по фазам:
 
 | Route | Назначение | Фаза |
 |---|---|---|
-| `/app/kb` | Редирект на requester-safe поиск по базе знаний | Search |
+| `/app/kb` | Standalone requester Knowledge Portal home over `GET /api/knowledge/portal/home` | Portal |
 | `/app/kb/search` | Реализованный самостоятельный поиск по базе знаний через `POST /api/knowledge/search` | Search |
 | `/app/kb/ask` | Реализованный AI Ask с citations, AI-off/provider fallback и requester-safe результатами | RAG |
 | `/app/kb/articles/:slug` | Requester-safe article reader | Portal |
+| `/app/kb/spaces/:spaceCode` | Requester-safe space collection page | Portal |
+| `/app/kb/tags/:tag` | Requester-safe tag collection page | Portal |
 | `/app/knowledge` | Рабочая база знаний поддержки | Support workspace |
 | `/app/knowledge/articles/:id` | Support article/runbook/known-error view | Support workspace |
 | `/app/admin/knowledge` | Knowledge Ops dashboard | Ops |

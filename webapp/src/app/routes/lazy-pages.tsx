@@ -36,6 +36,18 @@ export const KnowledgePortalSearchPage = lazy(() =>
   import("../../pages/kb/search-page").then((module) => ({ default: module.KnowledgePortalSearchPage })),
 );
 
+export const KnowledgePortalHomePage = lazy(() =>
+  import("../../pages/kb/home-page").then((module) => ({ default: module.KnowledgePortalHomePage })),
+);
+
+export const KnowledgePortalArticlePage = lazy(() =>
+  import("../../pages/kb/article-page").then((module) => ({ default: module.KnowledgePortalArticlePage })),
+);
+
+export const KnowledgePortalCollectionPage = lazy(() =>
+  import("../../pages/kb/collection-page").then((module) => ({ default: module.KnowledgePortalCollectionPage })),
+);
+
 export const KnowledgePortalAskPage = lazy(() =>
   import("../../pages/kb/ask-page").then((module) => ({ default: module.KnowledgePortalAskPage })),
 );

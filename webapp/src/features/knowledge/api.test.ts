@@ -17,6 +17,10 @@ import {
   fetchKnowledgeRolloutPolicies,
   fetchKnowledgeIndexingStatus,
   fetchKnowledgeIndexJobs,
+  fetchKnowledgePortalArticle,
+  fetchKnowledgePortalCollection,
+  fetchKnowledgePortalHome,
+  removeKnowledgePortalBookmark,
   previewKnowledgeSearch,
   previewKnowledgeRetrieval,
   archiveKnowledgeSegment,
@@ -40,6 +44,9 @@ import {
   saveKnowledgeSegmentationProfile,
   saveKnowledgeRolloutPolicy,
   searchKnowledgePortal,
+  sendKnowledgeArticleCorrectionRequest,
+  sendKnowledgeArticleFeedback,
+  setKnowledgePortalBookmark,
   submitKnowledgeGapAction,
   submitKnowledgeReviewAction,
   submitKnowledgeReviewTaskAction,
@@ -274,6 +281,123 @@ describe("knowledge search settings api", () => {
       actor_role: "requester",
       surface: "requester_portal",
     });
+  });
+
+  it("loads requester portal home and article reader through public-compatible endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          spaces: [{ space_id: "ks-1", code: "it", title: "IT", visibility: "requester", lifecycle_status: "active" }],
+          featured_articles: [{ item_id: "ki-1", slug: "vpn-access", title: "Доступ к VPN", visibility: "requester" }],
+          recent_articles: [],
+          popular_articles: [],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          article: { item_id: "ki-1", slug: "vpn-access", title: "Доступ к VPN", visibility: "requester" },
+          version: { version_id: "ver-1", item_id: "ki-1", version_number: 1, title: "Доступ к VPN", body_format: "markdown", body: "Body" },
+          segments: [],
+          related_articles: [],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgePortalHome()).resolves.toMatchObject({
+      spaces: [{ code: "it" }],
+      featured_articles: [{ slug: "vpn-access" }],
+    });
+    await expect(fetchKnowledgePortalArticle("vpn-access")).resolves.toMatchObject({
+      article: { slug: "vpn-access" },
+      version: { body: "Body" },
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/knowledge/portal/home", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/knowledge/articles/vpn-access", { credentials: "same-origin" });
+  });
+
+  it("loads requester portal space and tag collections", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          collection_type: "space",
+          collection_code: "it",
+          title: "IT",
+          articles: [{ item_id: "ki-1", slug: "vpn-access", title: "Доступ к VPN", visibility: "requester" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          collection_type: "tag",
+          collection_code: "vpn",
+          title: "vpn",
+          articles: [{ item_id: "ki-1", slug: "vpn-access", title: "Доступ к VPN", visibility: "requester" }],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgePortalCollection("space", "it")).resolves.toMatchObject({
+      collection_type: "space",
+      articles: [{ slug: "vpn-access" }],
+    });
+    await expect(fetchKnowledgePortalCollection("tag", "vpn")).resolves.toMatchObject({
+      collection_type: "tag",
+      articles: [{ slug: "vpn-access" }],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/knowledge/portal/spaces/it", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/knowledge/portal/tags/vpn", { credentials: "same-origin" });
+  });
+
+  it("sends article feedback, correction and bookmark requests", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", event: { event_type: "helpful" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", event: { event_type: "not_helpful", result: "correction_requested" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", bookmark: { bookmarked: true } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", bookmark: { bookmarked: false } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(sendKnowledgeArticleFeedback("vpn-access", { helpful: true, session_id: "safe-session" })).resolves.toMatchObject({
+      event: { event_type: "helpful" },
+    });
+    await expect(sendKnowledgeArticleCorrectionRequest("vpn-access", { comment: "Outdated" })).resolves.toMatchObject({
+      event: { result: "correction_requested" },
+    });
+    await expect(setKnowledgePortalBookmark("vpn-access", { session_id: "safe-session" })).resolves.toMatchObject({
+      bookmark: { bookmarked: true },
+    });
+    await expect(removeKnowledgePortalBookmark("vpn-access")).resolves.toMatchObject({
+      bookmark: { bookmarked: false },
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/knowledge/articles/vpn-access/feedback",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ helpful: true, session_id: "safe-session" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/knowledge/articles/vpn-access/correction-request",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/knowledge/articles/vpn-access/bookmark",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/knowledge/articles/vpn-access/bookmark",
+      expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+    );
   });
 
   it("runs explainable retrieval through Phase 5 endpoints", async () => {

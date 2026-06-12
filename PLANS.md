@@ -1568,11 +1568,51 @@ Add optional tables:
 APIs:
 
 * `GET /api/knowledge/portal/home`
+* `GET /api/knowledge/portal/spaces/{spaceCode}`
+* `GET /api/knowledge/portal/tags/{tag}`
 * `GET /api/knowledge/articles/{slug}`
 * `POST /api/knowledge/articles/{slug}/feedback`
 * `POST /api/knowledge/articles/{slug}/correction-request`
 * `POST /api/knowledge/articles/{slug}/bookmark`
 * `DELETE /api/knowledge/articles/{slug}/bookmark`
+
+Implemented in this iteration:
+
+* Added requester-safe `KnowledgePortalService` over existing spaces/items/versions/segments, with public-compatible API routes:
+
+  * `GET /api/knowledge/portal/home`;
+  * `GET /api/knowledge/portal/spaces/{space_code}`;
+  * `GET /api/knowledge/portal/tags/{tag}`;
+  * `GET /api/knowledge/articles/{slug}`;
+  * `POST /api/knowledge/articles/{slug}/feedback`;
+  * `POST /api/knowledge/articles/{slug}/correction-request`;
+  * `POST|DELETE /api/knowledge/articles/{slug}/bookmark`.
+
+* Public portal APIs force requester ACL before returning data, so authenticated support/admin test contexts cannot read `support_internal` content through `/api/knowledge/*`.
+* Added React routes:
+
+  * `/app/kb` portal home;
+  * `/app/kb/articles/:slug` article reader;
+  * `/app/kb/spaces/:spaceCode` space collection;
+  * `/app/kb/tags/:tag` tag collection.
+
+* Portal home links to search, Ask, article reader, spaces and tags. Article reader shows title, summary, body, TOC from markdown headings, active segments, tags, owner/review freshness, helpful/not helpful, correction, bookmark and create-ticket CTA.
+* No new optional tables were introduced in this slice. Feedback uses `knowledge_feedback_events` `helpful|not_helpful`; correction uses `not_helpful` with `result=correction_requested`; bookmark add/remove uses `viewed` with `result=bookmarked|bookmark_removed`.
+* Tests added:
+
+  * `server/tests/test_knowledge_portal.py`;
+  * `webapp/src/pages/kb/home-page.test.tsx`;
+  * `webapp/src/pages/kb/article-page.test.tsx`;
+  * `webapp/src/pages/kb/collection-page.test.tsx`;
+  * portal helper coverage in `webapp/src/features/knowledge/api.test.ts`;
+  * requester workspace route coverage in `webapp/src/app/navigation.test.ts`.
+
+Remaining Phase 7 product hardening:
+
+* Dedicated persisted tables for views/bookmarks/correction/subscriptions if per-user bookmark state must survive beyond event history.
+* Real popular/recommended ranking instead of recent-article fallback.
+* Full correction form with user-entered comment in the reader UI.
+* Browser/live evidence on deployed `/app/kb`, `/app/kb/search`, `/app/kb/ask`, article, space and tag routes.
 
 TDD checkpoints:
 

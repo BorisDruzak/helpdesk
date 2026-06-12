@@ -23,6 +23,7 @@ from knowledge.graph_service import KnowledgeGraphService
 from knowledge.ingestion_service import KnowledgeIngestionService
 from knowledge.metrics_service import KnowledgeMetricsService
 from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsService
+from knowledge.portal_service import KnowledgePortalService
 from knowledge.retrieval_service import KnowledgeRetrievalService
 from knowledge.gap_service import KnowledgeGapService, serialize_gap_finding
 from knowledge.review_task_service import KnowledgeReviewTaskService, serialize_review_task
@@ -952,6 +953,142 @@ async def handle_knowledge_feedback(request: web.Request) -> web.Response:
         event = await KnowledgeFeedbackService(session).record_event(payload, actor_role=actor_role, actor_id=actor_id)
         await session.commit()
     return web.json_response({"status": "ok", "event": event})
+
+
+async def handle_knowledge_portal_home(request: web.Request) -> web.Response:
+    try:
+        async with get_session() as session:
+            payload = await KnowledgePortalService(session).home(actor_role="requester")
+        return web.json_response({"status": "ok", **payload})
+    except Exception:
+        logger.exception("[knowledge] portal home failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+async def handle_knowledge_article_detail(request: web.Request) -> web.Response:
+    slug = str(request.match_info.get("slug") or "").strip()
+    try:
+        async with get_session() as session:
+            payload = await KnowledgePortalService(session).article_detail(slug, actor_role="requester")
+        return web.json_response({"status": "ok", **payload})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
+    except Exception:
+        logger.exception("[knowledge] article detail failed")
+        return web.json_response({"status": "error", "error": "internal_error"}, status=500)
+
+
+async def _portal_article_event_context(session, slug: str) -> tuple[dict, dict]:
+    payload = await KnowledgePortalService(session).article_detail(slug, actor_role="requester")
+    return payload["article"], payload["version"]
+
+
+async def handle_knowledge_article_feedback(request: web.Request) -> web.Response:
+    slug = str(request.match_info.get("slug") or "").strip()
+    try:
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            article, version = await _portal_article_event_context(session, slug)
+            event = await KnowledgeFeedbackService(session).record_event(
+                {
+                    "item_id": article.get("item_id"),
+                    "version_id": version.get("version_id"),
+                    "event_type": "helpful" if bool(payload.get("helpful")) else "not_helpful",
+                    "session_id": payload.get("session_id"),
+                    "surface": "requester_portal",
+                    "result": payload.get("result"),
+                    "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                },
+                actor_role="requester",
+                actor_id=None,
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", "event": event})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
+
+
+async def handle_knowledge_article_correction_request(request: web.Request) -> web.Response:
+    slug = str(request.match_info.get("slug") or "").strip()
+    try:
+        payload = await _json_payload(request)
+        comment = str(payload.get("comment") or "").strip()[:2000]
+        async with get_session() as session:
+            article, version = await _portal_article_event_context(session, slug)
+            event = await KnowledgeFeedbackService(session).record_event(
+                {
+                    "item_id": article.get("item_id"),
+                    "version_id": version.get("version_id"),
+                    "event_type": "not_helpful",
+                    "result": "correction_requested",
+                    "session_id": payload.get("session_id"),
+                    "surface": "requester_portal",
+                    "metadata": {
+                        "comment": comment,
+                        "source": "article_correction_request",
+                    },
+                },
+                actor_role="requester",
+                actor_id=None,
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", "event": event})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
+
+
+async def handle_knowledge_article_bookmark(request: web.Request) -> web.Response:
+    slug = str(request.match_info.get("slug") or "").strip()
+    try:
+        payload = await _json_payload(request) if request.method != "DELETE" else {}
+        bookmarked = request.method != "DELETE"
+        async with get_session() as session:
+            article, version = await _portal_article_event_context(session, slug)
+            event = await KnowledgeFeedbackService(session).record_event(
+                {
+                    "item_id": article.get("item_id"),
+                    "version_id": version.get("version_id"),
+                    "event_type": "viewed",
+                    "result": "bookmarked" if bookmarked else "bookmark_removed",
+                    "session_id": payload.get("session_id"),
+                    "surface": "requester_portal",
+                    "metadata": {"source": "article_bookmark"},
+                },
+                actor_role="requester",
+                actor_id=None,
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", "bookmark": {"slug": slug, "bookmarked": bookmarked}, "event": event})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
+
+
+async def handle_knowledge_portal_space(request: web.Request) -> web.Response:
+    code = str(request.match_info.get("space_code") or "").strip()
+    try:
+        async with get_session() as session:
+            payload = await KnowledgePortalService(session).collection(
+                collection_type="space",
+                code=code,
+                actor_role="requester",
+            )
+        return web.json_response({"status": "ok", **payload})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
+
+
+async def handle_knowledge_portal_tag(request: web.Request) -> web.Response:
+    tag = str(request.match_info.get("tag") or "").strip()
+    try:
+        async with get_session() as session:
+            payload = await KnowledgePortalService(session).collection(
+                collection_type="tag",
+                code=tag,
+                actor_role="requester",
+            )
+        return web.json_response({"status": "ok", **payload})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
 
 
 @require_auth("admin", "support", "auditor")

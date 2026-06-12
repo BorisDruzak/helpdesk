@@ -28,6 +28,7 @@ import { hasPermission } from "../features/auth/permissions";
 export const SUPPORT_HOME_PATH = "/app/support";
 export const ADMIN_HOME_PATH = "/app/admin";
 export const REQUESTER_HOME_PATH = "/app/requester";
+export const REQUESTER_KB_HOME_PATH = "/app/kb";
 export const REQUESTER_KB_SEARCH_PATH = "/app/kb/search";
 export const REQUESTER_KB_ASK_PATH = "/app/kb/ask";
 
@@ -169,7 +170,8 @@ export const appNavigation: AppNavItem[] = [
     section: "requester",
     workspace: "requester",
     domainId: "requester-primary",
-    to: REQUESTER_KB_SEARCH_PATH,
+    to: REQUESTER_KB_HOME_PATH,
+    activePatterns: ["/app/kb/*"],
     permission: "workspace.requester.view",
     order: 20,
   },

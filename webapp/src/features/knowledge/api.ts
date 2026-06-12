@@ -360,6 +360,71 @@ export type KnowledgeAskResult = {
   display_message?: string;
 };
 
+export type KnowledgePortalHome = {
+  status?: string;
+  display_message?: string;
+  spaces: KnowledgeSpace[];
+  featured_articles: KnowledgeItem[];
+  recent_articles: KnowledgeItem[];
+  popular_articles: KnowledgeItem[];
+};
+
+export type KnowledgePortalArticle = {
+  status?: string;
+  article: KnowledgeItem & {
+    owner_actor_id?: string | null;
+    review_due_at?: string | null;
+    published_at?: string | null;
+  };
+  version: KnowledgeItemVersion;
+  segments: Array<{
+    segment_id: string;
+    item_id?: string;
+    version_id?: string;
+    segment_index?: number;
+    segment_type?: string;
+    title: string;
+    summary?: string | null;
+    text?: string | null;
+    heading_path?: string[];
+    keywords?: string[];
+    visibility?: string;
+    status?: string;
+  }>;
+  related_articles: KnowledgeItem[];
+};
+
+export type KnowledgePortalEventResponse = {
+  status: string;
+  event: {
+    event_id?: string;
+    item_id?: string | null;
+    version_id?: string | null;
+    event_type: string;
+    result?: string | null;
+    metadata?: Record<string, unknown>;
+  };
+};
+
+export type KnowledgePortalBookmarkResponse = {
+  status: string;
+  bookmark: {
+    slug: string;
+    bookmarked: boolean;
+  };
+  event?: KnowledgePortalEventResponse["event"];
+};
+
+export type KnowledgePortalCollection = {
+  status?: string;
+  collection_type: "space" | "tag" | string;
+  collection_code: string;
+  title: string;
+  description?: string | null;
+  space?: KnowledgeSpace;
+  articles: KnowledgeItem[];
+};
+
 export type KnowledgeSegment = {
   segment_id: string;
   item_id: string;
@@ -799,6 +864,72 @@ export async function searchKnowledgePortal(payload: KnowledgeSearchPreviewReque
     body: JSON.stringify(payload),
   });
   return readJson<KnowledgeSearchPreviewResult>(response, "Не удалось выполнить поиск по базе знаний");
+}
+
+export async function fetchKnowledgePortalHome(): Promise<KnowledgePortalHome> {
+  const response = await fetch("/api/knowledge/portal/home", { credentials: "same-origin" });
+  return readJson<KnowledgePortalHome>(response, "Не удалось загрузить портал базы знаний");
+}
+
+export async function fetchKnowledgePortalArticle(slug: string): Promise<KnowledgePortalArticle> {
+  const response = await fetch(`/api/knowledge/articles/${encodeURIComponent(slug)}`, { credentials: "same-origin" });
+  return readJson<KnowledgePortalArticle>(response, "Не удалось загрузить статью базы знаний");
+}
+
+export async function fetchKnowledgePortalCollection(
+  collectionType: "space" | "tag",
+  code: string,
+): Promise<KnowledgePortalCollection> {
+  const path = collectionType === "space" ? "spaces" : "tags";
+  const response = await fetch(`/api/knowledge/portal/${path}/${encodeURIComponent(code)}`, { credentials: "same-origin" });
+  return readJson<KnowledgePortalCollection>(response, "Не удалось загрузить раздел базы знаний");
+}
+
+export async function sendKnowledgeArticleFeedback(
+  slug: string,
+  payload: { helpful: boolean; session_id?: string; result?: string; metadata?: Record<string, unknown> },
+): Promise<KnowledgePortalEventResponse> {
+  const response = await fetch(`/api/knowledge/articles/${encodeURIComponent(slug)}/feedback`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgePortalEventResponse>(response, "Не удалось отправить оценку статьи");
+}
+
+export async function sendKnowledgeArticleCorrectionRequest(
+  slug: string,
+  payload: { comment?: string; session_id?: string },
+): Promise<KnowledgePortalEventResponse> {
+  const response = await fetch(`/api/knowledge/articles/${encodeURIComponent(slug)}/correction-request`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgePortalEventResponse>(response, "Не удалось отправить запрос на исправление");
+}
+
+export async function setKnowledgePortalBookmark(
+  slug: string,
+  payload: { session_id?: string } = {},
+): Promise<KnowledgePortalBookmarkResponse> {
+  const response = await fetch(`/api/knowledge/articles/${encodeURIComponent(slug)}/bookmark`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgePortalBookmarkResponse>(response, "Не удалось добавить статью в закладки");
+}
+
+export async function removeKnowledgePortalBookmark(slug: string): Promise<KnowledgePortalBookmarkResponse> {
+  const response = await fetch(`/api/knowledge/articles/${encodeURIComponent(slug)}/bookmark`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  return readJson<KnowledgePortalBookmarkResponse>(response, "Не удалось убрать статью из закладок");
 }
 
 export async function askKnowledgePortal(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeAskResult> {
