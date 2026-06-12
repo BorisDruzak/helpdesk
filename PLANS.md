@@ -2759,9 +2759,18 @@ Phase 11 requester attempts / passport draft slice, 2026-06-12:
   * `python scripts/verify_workspace.py` passed after updating `scripts/navigation_catalog.py`.
   * `git diff --check` passed with CRLF warnings only on existing dirty/generated files.
 
-* Remote/live validation:
+* Remote/live validation, 2026-06-12:
 
-  * Pending after local commit/deploy. Required checks: open `/app/knowledge` with `ticket_id`, confirm requester attempts and ticket suggestions render, create passport draft through the browser session, open `/app/tickets` Knowledge tab for the same ticket, verify no console/network errors, and stop remote services after validation.
+  * Deployed commit `1eac39b9c8f7d0f91869e1a9087d6de1142b7670` with `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+  * Quick release gate passed: `verify_workspace.py` passed, webapp bundle built, migrations ran to head, and remote `/api/health` returned 200 on smoke attempt 2.
+  * Created live public validation ticket `T-000689` (`d0132bf4-5a22-4cec-ba85-68593d13e447`) through `/public_api/tickets/create` with two requester-portal `knowledge_attempts` for article `a3c566b0-7d36-4879-831d-a38a5e9e86bf`.
+  * `GET /api/web/support/tickets/d0132bf4-5a22-4cec-ba85-68593d13e447/knowledge-suggestions` returned 200 with two safe `requester_attempts`; probe metadata fields/values were absent from the response.
+  * Browser route `/app/knowledge?ticket_id=d0132bf4-5a22-4cec-ba85-68593d13e447` rendered `Self-service попытки` with `Просмотрена` and `Не помогла`; the `Создать черновик из паспорта` UI action returned `Черновик знания подготовлен: Draft from T-000689...` and showed `Открыть черновик`.
+  * Browser route `/app/tickets/d0132bf4-5a22-4cec-ba85-68593d13e447` rendered the same attempts in the Knowledge tab through the shared mapper.
+  * Browser route `/app/knowledge?ticket_id=9ec63696-5109-409f-9452-5dd403970100` confirmed ticket-scoped suggested article rendering for `Codex Phase 8 history 20260612072045`.
+  * Evidence: `knowledge-support-requester-attempts-1eac39b9.png`, `knowledge-support-requester-attempts-ticket-tab-1eac39b9.png`, `knowledge-support-requester-attempts-console-1eac39b9.log`, `knowledge-support-requester-attempts-network-1eac39b9.log`, `knowledge-support-ticket-suggestions-console-1eac39b9.log`, `knowledge-support-ticket-suggestions-network-1eac39b9.log`.
+  * Console evidence for the final `/app/tickets` and ticket-suggestions browser checks had `Errors: 0`; non-static network requests returned 200.
+  * Remote `server` and `control` services were stopped after validation.
 
 Exit criteria:
 
