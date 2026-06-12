@@ -1339,6 +1339,37 @@ Goal:
 * Keep Ask disabled unless explicitly enabled.
 * Provide useful fallback when AI is disabled.
 
+Status 2026-06-12:
+
+* Phase 6A Ask foundation is implemented:
+
+  * `KnowledgeAskService` validates global search settings and keeps Ask disabled unless `rag_answer_enabled=true` and `effective_mode=rag_answer`;
+  * disabled Ask returns `answer_status=ai_disabled`, Russian `display_message`, citations/search fallback payloads and requester-safe retrieval results;
+  * enabled Ask uses `KnowledgeRetrievalService` evidence, OpenRouter-compatible answer model profiles, `ai_policy_profiles.answer_allowed`, env-backed secret refs and injected transport for mocked tests;
+  * provider/config/request failures return `answer_status=provider_unavailable` with top search results instead of breaking requester flow;
+  * insufficient evidence returns `answer_status=not_enough_evidence`;
+  * AI calls write redacted `ai_request_audit` rows, and workflow states emit Observer-visible `knowledge.rag.ai_disabled`, `knowledge.rag.provider_unavailable`, `knowledge.rag.not_enough_evidence`, `knowledge.rag.policy_blocked` and `knowledge.rag.answer_generated`.
+* Ask APIs are implemented:
+
+  * public-compatible requester-safe `POST /api/knowledge/ask`;
+  * authenticated `POST /api/web/knowledge/ask`;
+  * authenticated `POST /api/web/knowledge/ask/preview`.
+* `/app/kb/ask` is implemented:
+
+  * protected requester workspace route;
+  * Russian-first question box, answer panel, citation panel and fallback search results;
+  * requester navigation includes `AI-вопрос`.
+* Focused verification:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py -q --tb=short` passed with 4 tests.
+  * `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts src/features/knowledge/api.test.ts` passed with 4 files / 25 tests.
+* Remaining Phase 6 work:
+
+  * stricter citation validation for uncited critical claims;
+  * helpful/not helpful feedback, create-ticket CTA and correction request from Ask;
+  * admin/support Ask debug view with chunk/score/policy details;
+  * browser/live evidence after deploy and optional OpenRouter key setup.
+
 Backend:
 
 Add `KnowledgeAskService`:

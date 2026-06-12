@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ADMIN_HOME_PATH,
+  REQUESTER_KB_ASK_PATH,
   REQUESTER_KB_SEARCH_PATH,
   SUPPORT_HOME_PATH,
   findFirstVisibleDomainItem,
@@ -48,6 +49,7 @@ describe("navigation helpers", () => {
     expect(getActiveNavItem("/app/admin/inventory?panel=requests")?.label).toBe("Инвентарь устройств");
     expect(getActiveNavItem("/app/admin/policy-health?service=mail")?.label).toBe("Проверка политик");
     expect(getActiveNavItem("/app/kb/search?query=vpn", ["workspace.requester.view"])?.label).toBe("База знаний");
+    expect(getActiveNavItem("/app/kb/ask", ["workspace.requester.view"])?.label).toBe("AI-вопрос");
   });
 
   it("filters admin domain groups by permissions and hides empty groups", () => {
@@ -119,8 +121,10 @@ describe("navigation helpers", () => {
     expect(SUPPORT_HOME_PATH).toBe("/app/support");
     expect(ADMIN_HOME_PATH).toBe("/app/admin");
     expect(REQUESTER_KB_SEARCH_PATH).toBe("/app/kb/search");
+    expect(REQUESTER_KB_ASK_PATH).toBe("/app/kb/ask");
     expect(isWorkspacePath("/app/knowledge?query=printer", "support")).toBe(true);
     expect(isWorkspacePath("/app/kb/search?q=vpn", "requester")).toBe(true);
+    expect(isWorkspacePath("/app/kb/ask", "requester")).toBe(true);
     expect(isWorkspacePath("/app/admin/forms#policy", "admin")).toBe(true);
     expect(isWorkspacePath("/app/help", "support")).toBe(false);
     expect(isWorkspacePath("/app/ticket/T-1", "support")).toBe(false);

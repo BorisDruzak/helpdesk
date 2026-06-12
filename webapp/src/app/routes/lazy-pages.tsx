@@ -36,6 +36,10 @@ export const KnowledgePortalSearchPage = lazy(() =>
   import("../../pages/kb/search-page").then((module) => ({ default: module.KnowledgePortalSearchPage })),
 );
 
+export const KnowledgePortalAskPage = lazy(() =>
+  import("../../pages/kb/ask-page").then((module) => ({ default: module.KnowledgePortalAskPage })),
+);
+
 export const HelpPage = lazy(() =>
   import("../../pages/help").then((module) => ({ default: module.HelpPage })),
 );

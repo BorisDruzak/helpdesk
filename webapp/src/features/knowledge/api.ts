@@ -335,6 +335,31 @@ export type KnowledgeRetrievalResult = {
   }>;
 };
 
+export type KnowledgeAskResult = {
+  status: string;
+  answer?: string | null;
+  answer_status: "answered" | "not_enough_evidence" | "ai_disabled" | "provider_unavailable" | "policy_blocked" | string;
+  citations?: Array<{
+    ref_id?: string;
+    item_id?: string;
+    version_id?: string;
+    chunk_id?: string | null;
+    segment_id?: string | null;
+    title?: string | null;
+    snippet?: string | null;
+  }>;
+  retrieval_results?: KnowledgeRetrievalResult["results"];
+  confidence?: string | null;
+  suggested_actions?: Array<{ type?: string; label?: string }>;
+  observer_event_id?: string | null;
+  audit_id?: string | null;
+  ai_used?: boolean;
+  search_mode?: string;
+  effective_mode?: string;
+  fallback_mode?: string | null;
+  display_message?: string;
+};
+
 export type KnowledgeSegment = {
   segment_id: string;
   item_id: string;
@@ -774,6 +799,26 @@ export async function searchKnowledgePortal(payload: KnowledgeSearchPreviewReque
     body: JSON.stringify(payload),
   });
   return readJson<KnowledgeSearchPreviewResult>(response, "Не удалось выполнить поиск по базе знаний");
+}
+
+export async function askKnowledgePortal(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeAskResult> {
+  const response = await fetch("/api/knowledge/ask", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgeAskResult>(response, "Не удалось выполнить AI-вопрос по базе знаний");
+}
+
+export async function previewKnowledgeAsk(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeAskResult> {
+  const response = await fetch("/api/web/knowledge/ask/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgeAskResult>(response, "Не удалось выполнить preview AI-вопроса");
 }
 
 export async function retrieveKnowledge(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeRetrievalResult> {

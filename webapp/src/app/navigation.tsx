@@ -29,6 +29,7 @@ export const SUPPORT_HOME_PATH = "/app/support";
 export const ADMIN_HOME_PATH = "/app/admin";
 export const REQUESTER_HOME_PATH = "/app/requester";
 export const REQUESTER_KB_SEARCH_PATH = "/app/kb/search";
+export const REQUESTER_KB_ASK_PATH = "/app/kb/ask";
 
 export type AppWorkspaceId = "support" | "admin" | "requester";
 export type AppDomainId =
@@ -171,6 +172,17 @@ export const appNavigation: AppNavItem[] = [
     to: REQUESTER_KB_SEARCH_PATH,
     permission: "workspace.requester.view",
     order: 20,
+  },
+  {
+    label: "AI-вопрос",
+    description: "Ответы с источниками, если AI включён",
+    icon: Bot,
+    section: "requester",
+    workspace: "requester",
+    domainId: "requester-primary",
+    to: REQUESTER_KB_ASK_PATH,
+    permission: "workspace.requester.view",
+    order: 30,
   },
   {
     label: "Центр действий",

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyKnowledgeContentPack,
+  askKnowledgePortal,
   checkKnowledgeAiProviderHealth,
   fetchKnowledgeGaps,
   fetchKnowledgeAiAudit,
@@ -25,6 +26,7 @@ import {
   createKnowledgeSegment,
   fetchKnowledgeTemplates,
   proposeKnowledgeAiSegments,
+  previewKnowledgeAsk,
   revalidateKnowledgeSegments,
   reindexKnowledgeAll,
   reindexKnowledgeItem,
@@ -325,6 +327,40 @@ describe("knowledge search settings api", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       "/api/web/knowledge/search/preview",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+  });
+
+  it("runs Knowledge Ask through requester and preview endpoints", async () => {
+    const askPayload = {
+      status: "ok",
+      answer: null,
+      answer_status: "ai_disabled",
+      display_message: "AI-ответы отключены. Ниже показаны результаты поиска по базе знаний.",
+      ai_used: false,
+      retrieval_results: [],
+      citations: [],
+    };
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(askPayload)).mockResolvedValueOnce(jsonResponse({ ...askPayload, answer_status: "provider_unavailable" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(askKnowledgePortal({ query: "VPN", surface: "requester_portal" })).resolves.toMatchObject({
+      answer_status: "ai_disabled",
+      ai_used: false,
+    });
+    await expect(previewKnowledgeAsk({ query: "VPN", surface: "admin_ask_preview" })).resolves.toMatchObject({
+      answer_status: "provider_unavailable",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/knowledge/ask",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ query: "VPN", surface: "requester_portal" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/ask/preview",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
   });

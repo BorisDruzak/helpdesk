@@ -193,6 +193,8 @@ Phase 4 indexing stores optional embeddings in `knowledge_chunk_embeddings` and 
 
 Phase 5 retrieval introduces `KnowledgeRetrievalService` for explainable hybrid retrieval previews. It merges keyword, manual segment, binding and optional JSONB-vector candidates after ACL filtering, returns score parts/source modes/citations for admin/support, records search analytics, and writes safe `knowledge.retrieval.executed` / `knowledge.retrieval.zero_results` audit events. Optional OpenRouter-compatible rerank runs only when settings, provider, model profile, policy, secret and injected transport are all available; failures keep the pre-rerank order and emit `knowledge.retrieval.rerank_failed_fallback`. Existing public `POST /api/knowledge/search` remains backward-compatible; `/api/web/knowledge/retrieve` and `/api/web/knowledge/search/preview` expose the richer admin/support contract, `/app/admin/knowledge/search-settings` uses that preview to show source modes, citations and score breakdown, and `/app/kb/search` gives requesters a protected standalone product search over the public-compatible search contract without admin diagnostics.
 
+Phase 6 Ask introduces `KnowledgeAskService` and the `/app/kb/ask` requester route. Ask is disabled unless search settings produce `effective_mode=rag_answer`; disabled/provider-unavailable/no-evidence states return Russian fallback messages plus requester-safe retrieval results. When enabled, Ask uses `KnowledgeRetrievalService` citations, an OpenRouter-compatible `answer` model profile, `ai_policy_profiles.answer_allowed`, env-backed secret refs and injected transport. Raw keys and raw vectors are never returned. AI calls write redacted `ai_request_audit` rows, and Observer-visible events use `knowledge.rag.ai_disabled`, `knowledge.rag.provider_unavailable`, `knowledge.rag.not_enough_evidence`, `knowledge.rag.policy_blocked` and `knowledge.rag.answer_generated`.
+
 ## Knowledge vNext Target Routes
 
 Phase 0 фиксирует целевые границы, но не регистрирует недоделанные runtime routes. Реализация должна вводить эти поверхности по фазам:
@@ -201,7 +203,7 @@ Phase 0 фиксирует целевые границы, но не регист
 |---|---|---|
 | `/app/kb` | Редирект на requester-safe поиск по базе знаний | Search |
 | `/app/kb/search` | Реализованный самостоятельный поиск по базе знаний через `POST /api/knowledge/search` | Search |
-| `/app/kb/ask` | Optional RAG Ask с citations и AI-off fallback | RAG |
+| `/app/kb/ask` | Реализованный AI Ask с citations, AI-off/provider fallback и requester-safe результатами | RAG |
 | `/app/kb/articles/:slug` | Requester-safe article reader | Portal |
 | `/app/knowledge` | Рабочая база знаний поддержки | Support workspace |
 | `/app/knowledge/articles/:id` | Support article/runbook/known-error view | Support workspace |

@@ -15,6 +15,7 @@ from knowledge.contracts import (
     actor_visible_visibilities,
     can_mutate_knowledge_visibility,
 )
+from knowledge.ask_service import KnowledgeAskService
 from knowledge.content_pack_service import KnowledgeContentPackService
 from knowledge.embedding_service import KnowledgeEmbeddingService
 from knowledge.feedback_service import KnowledgeFeedbackService
@@ -56,6 +57,10 @@ def _safe_query_vector(value: object) -> list[float] | None:
 
 
 def _get_retrieval_transport(request: web.Request):
+    return request.app.get("knowledge_ai_openrouter_transport")
+
+
+def _get_ask_transport(request: web.Request):
     return request.app.get("knowledge_ai_openrouter_transport")
 
 
@@ -181,6 +186,10 @@ async def handle_knowledge_search(request: web.Request) -> web.Response:
     return await _handle_knowledge_search_response(request)
 
 
+async def handle_knowledge_ask(request: web.Request) -> web.Response:
+    return await _handle_knowledge_ask_response(request, force_role="requester")
+
+
 async def _handle_knowledge_search_response(request: web.Request) -> web.Response:
     try:
         _actor_id, actor_role = _actor(request)
@@ -223,6 +232,46 @@ async def _handle_knowledge_search_response(request: web.Request) -> web.Respons
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_search(request: web.Request) -> web.Response:
     return await _handle_knowledge_search_response(request)
+
+
+async def _handle_knowledge_ask_response(request: web.Request, *, force_role: str | None = None) -> web.Response:
+    try:
+        _actor_id, actor_role = _actor(request)
+        role = force_role or actor_role
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            result = await KnowledgeAskService(session, transport=_get_ask_transport(request)).ask(
+                query=payload.get("query"),
+                actor_role=role,
+                surface=str(payload.get("surface") or "knowledge_ask"),
+                session_id=payload.get("session_id"),
+                limit=payload.get("limit"),
+                query_vector=_safe_query_vector(payload.get("query_vector")),
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", **result})
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры AI-вопроса",
+                "details": str(exc),
+            },
+            status=400,
+        )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_ask(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    return await _handle_knowledge_ask_response(request, force_role=role)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_ask_preview(request: web.Request) -> web.Response:
+    return await handle_web_knowledge_ask(request)
 
 
 @require_auth("admin", "support", "auditor")

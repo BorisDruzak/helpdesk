@@ -32,6 +32,7 @@ import {
   AdminTechPage,
   HelpPage,
   KnowledgeBasePage,
+  KnowledgePortalAskPage,
   KnowledgePortalSearchPage,
   ReportsPage,
   RequesterTicketPage,
@@ -282,6 +283,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="requester">
                 <KnowledgePortalSearchPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "kb/ask",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <KnowledgePortalAskPage />
               </WorkspaceAccessGate>
             )
           },
