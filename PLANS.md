@@ -1793,6 +1793,14 @@ Remaining Phase 8 product hardening before declaring the full phase complete:
 * Add create-new-draft flow, rollback/archive/supersede controls and richer structured block editing.
 * Add browser/live evidence for the deployed `/app/admin/knowledge/studio` route and manual segment flow.
 
+Phase 8 live/browser result, deployed commit `ae402548`, 2026-06-12:
+
+* Deployed `codex/helpdesk-process-model` to `192.168.100.17` with quick release gate and remote smoke `GET /api/health -> 200`.
+* Browser evidence captured under `artifacts/browser_live_validation/knowledge-studio-ae402548/`.
+* Verified admin web session can load `/app/admin/knowledge/studio` and `GET /api/web/knowledge/items` returns `200`.
+* Verified visible Russian Studio surfaces: `Студия статей`, `Черновики и статьи`, `Метаданные статьи`, `Редактор`, `Предпросмотр`, `Проверка публикации`, `AI-инструменты отключены` and `Разметка статьи`.
+* Verified no console/page/network errors and no visible mojibake markers during the live browser run.
+
 ---
 
 ## Phase 9 — Visual Knowledge Graph Studio
