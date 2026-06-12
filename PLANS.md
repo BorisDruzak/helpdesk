@@ -1,6 +1,6 @@
 ## Active Work: Knowledge Platform vNext — Product KB, RAG, AI Settings, Manual Markup, Graph Studio and Observer v2
 
-Status: active implementation / partial product signoff. Phases 0-13 contain implemented slices and verification evidence, but Knowledge vNext is not final-complete until the real-key OpenRouter signoff and dedicated semantic retrieval browser/live evidence are closed.
+Status: active implementation / partial product signoff. Phases 0-14 contain implemented slices and verification evidence, but Knowledge vNext is not final-complete until the real-key OpenRouter signoff and dedicated semantic retrieval browser/live evidence are closed.
 
 Branch target:
 
@@ -3297,7 +3297,7 @@ Phase 14 follow-up remote/live verification, 2026-06-13:
 
 Phase 14 follow-up hardening addendum, 2026-06-13:
 
-Status: active. Review found one remaining security boundary issue and one remaining Russian-first UI gap before treating the Phase 14 metadata model as product-complete.
+Status: implemented and live validated on runtime commit `736972c6`, 2026-06-13. The item metadata visibility ACL and Knowledge Ops Russian-first addendum are closed; final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 Required fixes:
 
@@ -3324,9 +3324,23 @@ Phase 14 follow-up addendum local verification, 2026-06-13:
 * `pnpm --dir webapp test -- src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts` passed with 4 files / 36 tests.
 * `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `pnpm --dir webapp build`, `python scripts/verify_workspace.py`, targeted `git diff --check` and UTF-8 replacement-character scan over changed files passed.
 
+Phase 14 follow-up addendum remote/live verification, 2026-06-13:
+
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed runtime commit `736972c6`, left services running for browser/API validation and passed remote `/api/health` smoke with HTTP 200 on attempt 2.
+* Live API scenario authenticated through `POST /api/web/session/login`, created a temporary support user through the protected admin API using the web-session UI token as Bearer auth, then deactivated the user after validation.
+* Live API scenario created Knowledge space `phase14-live-0df3499f`, item `phase14-live-0df3499f-article`, `admin_internal` taxonomy term `phase14-admin-term-0df3499f`, property `phase14-property-0df3499f`, one applicability rule and quality model `phase14-quality-0df3499f`.
+* Admin successfully attached and read the `admin_internal` taxonomy term on a requester-visible item. Support live read filtered that term out of `GET /api/web/knowledge/items/{item_id}/metadata`, and support live assignment of the known hidden `term_id` was denied with HTTP 400.
+* Live `GET /api/web/knowledge/metadata` verified the created taxonomy/property/applicability/quality model in the metadata bundle and reported active/total summary counts: taxonomy `2/2`, properties `2/2`, applicability `2/2`, quality models `2/2`, item metadata `40`.
+* Live public-compatible `POST /api/knowledge/search` with `surface=requester_portal` recursively scanned response bodies and found no metadata bundle, quality model, weights, thresholds, applicability rules, property values, taxonomy terms, score parts or diagnostics.
+* Browser evidence opened `https://192.168.100.17:9443/app/admin/knowledge?phase14=736972c6` and confirmed Russian-first labels `Центр операций базы знаний`, `Поиск и RAG`, `Покрытие и проверка`, `AI, индексация и граф`, `Деградации из Observer` and `Модель метаданных знаний`; old English labels were absent and mojibake scan was clean.
+* Browser evidence opened `https://192.168.100.17:9443/app/kb/search?phase14=736972c6` and confirmed the requester Knowledge route rendered without admin metadata/model diagnostics and without mojibake.
+* Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/browser_live_validation/phase14-item-acl-736972c6-20260613-020442/phase14-live-evidence-summary.json`, `api-live-report.json`, `admin-knowledge-snapshot.md`, `admin-knowledge.png`, `kb-search-snapshot.md` and `kb-search.png`.
+* Intermediate login snapshots were removed because the live login page displays local fixture credential hints. Secret scan over the final evidence directory found no known live credential, temporary support password or `pc_client_web_session` marker.
+* Browser console evidence contained repeated existing `[webapp-realtime] websocket bridge reported an error` warnings from the shared realtime layer; no render failure, metadata projection leak or new Knowledge metadata diagnostics exposure was observed.
+
 Remaining Phase 14 work:
 
-* Deploy the addendum commit, collect live mutation/projection evidence again and update this section. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
+* No Phase 14 metadata-model hardening item remains open. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
 
