@@ -1670,6 +1670,14 @@ Phase 7 hardening local result, 2026-06-12:
 * GREEN checks: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_portal.py -q --tb=short` passed with 9 tests; `pnpm --dir webapp test -- src/pages/kb/home-page.test.tsx src/pages/kb/article-page.test.tsx src/pages/kb/collection-page.test.tsx src/features/knowledge/api.test.ts` passed with 4 files / 20 tests.
 * Sanity checks passed: `pnpm --dir webapp build`, `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py`, and focused `git diff --check`.
 
+Phase 7 hardening remote/browser result, deployed commit `c88aba7b`, 2026-06-12:
+
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `c88aba7b`; Alembic applied `113 -> 114`; `/api/health` returned 200 on smoke attempt 2.
+* Browser opened `https://192.168.100.17:9443/app/kb` and confirmed the requester Knowledge Portal renders `Рекомендуемые статьи`, the new `Популярные` section and `Недавно обновленные`.
+* Browser opened `https://192.168.100.17:9443/app/kb/articles/codex-stage2b-requester-kb-20260608-2107`, confirmed the article reader shows `Комментарий к исправлению`, filled `Live Phase 7 hardening check: уточнить шаг питания.`, submitted `Предложить исправление` and saw `Запрос на исправление отправлен.`.
+* The same live page clicked `В закладки` and saw `Статья добавлена в закладки.`.
+* Browser network evidence for the article run: `GET /api/knowledge/articles/codex-stage2b-requester-kb-20260608-2107 -> 200`, `POST /correction-request -> 200`, `POST /bookmark -> 200`; console errors after the article run: 0.
+
 TDD checkpoints:
 
 * RED API tests for article reader ACL.
