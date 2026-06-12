@@ -1330,6 +1330,7 @@ TOPICS: tuple[Topic, ...] = (
             "rag eval",
             "top_k_recall",
             "acl_leakage_count",
+            "provider_failure_count",
             "knowledge vnext",
             "ai provider settings",
             "ai_providers",

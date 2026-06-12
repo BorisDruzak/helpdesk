@@ -43,6 +43,12 @@ class KnowledgeEvalRecorder:
         self._record_fallback_status(status)
         self.case_results.append({"name": name, "kind": "no_answer", "hit": hit, "answer_status": status})
 
+    def record_answer_status_case(self, name: str, result: dict[str, Any], *, expected_status: str) -> None:
+        status = str(result.get("answer_status") or "")
+        hit = status == expected_status
+        self._record_fallback_status(status)
+        self.case_results.append({"name": name, "kind": "answer_status", "hit": hit, "expected_status": expected_status, "answer_status": status})
+
     def record_citation_case(self, name: str, *, allowed_item_ids: set[str], citations: list[dict[str, Any]]) -> None:
         self.citation_cases += 1
         allowed = 0

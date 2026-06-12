@@ -2556,6 +2556,29 @@ Phase 13 first slice, 2026-06-12:
   * Added evaluation harness notes to `server/docs/KNOWLEDGE_PLATFORM.md`.
   * Added CODEMAP/navigation entries for `server/knowledge/evaluation.py` and `server/tests/test_knowledge_rag_eval.py`.
 
+Phase 13 second slice, 2026-06-12:
+
+* Extended `KnowledgeEvalRecorder` with `record_answer_status_case()` so provider-unavailable Ask/RAG statuses increment `fallback_count` and `provider_failure_count`.
+* Extended the controlled eval suite to cover additional Phase 13 safety/usefulness cases:
+
+  * body-only full-text recall;
+  * JSONB-vector semantic recall when `vector_enabled=true`;
+  * vector-disabled keyword fallback;
+  * mocked OpenRouter-compatible rerank ordering;
+  * archived item exclusion;
+  * old-version exclusion with current-version recall.
+
+* TDD status:
+
+  * RED `server/tests/test_knowledge_rag_eval.py` failed on missing `KnowledgeEvalRecorder.record_answer_status_case()`.
+  * GREEN after adding the recorder method, 2 eval tests passed.
+
+* Local verification:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_rag_eval.py -q --tb=short` passed, 2 tests.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_rag_eval.py server/tests/test_knowledge_hybrid_retrieval.py::test_retrieval_rerank_reorders_candidates_with_mocked_openrouter server/tests/test_knowledge_vector_search.py::test_vector_search_merges_jsonb_embeddings_without_raw_vector server/tests/test_knowledge_ask.py::test_knowledge_ask_ai_disabled_returns_search_fallback server/tests/test_knowledge_search.py::test_knowledge_search_filters_visibility_and_boosts_offering_binding -q --tb=short` passed, 6 tests.
+  * `python scripts/verify_workspace.py` passed.
+
 Verification:
 
 * `python -m pytest server/tests/test_knowledge_rag_eval.py server/tests/test_knowledge_rag_acl.py server/tests/test_knowledge_search_eval.py -v --tb=short`
