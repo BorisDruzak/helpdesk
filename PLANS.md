@@ -2507,6 +2507,55 @@ TDD checkpoints:
 * RED stale embedding tests.
 * RED observer event tests.
 
+Phase 13 first slice, 2026-06-12:
+
+* Added lightweight `KnowledgeEvalRecorder` for repeatable search/RAG evaluation metrics:
+
+  * `top_k_recall`;
+  * `citation_precision`;
+  * `no_answer_correctness`;
+  * `acl_leakage_count`;
+  * `fallback_count`;
+  * `latency_ms`;
+  * `provider_failure_count`.
+
+* Added `server/tests/test_knowledge_rag_eval.py` with a controlled dataset covering:
+
+  * requester-safe article;
+  * support_internal runbook;
+  * admin_internal article;
+  * security_restricted article;
+  * known_error;
+  * workaround;
+  * manual requester segment with keyword recall;
+  * Service Catalog binding.
+
+* First evaluation assertions cover:
+
+  * manual segment keyword search finds the requester article;
+  * requester search does not leak support/admin/security content;
+  * support search does not leak admin/security content;
+  * Ask returns `not_enough_evidence` when retrieval has no evidence;
+  * requester citations are restricted to allowed requester-safe item ids.
+
+* TDD status:
+
+  * RED `server/tests/test_knowledge_rag_eval.py` failed on missing `knowledge.evaluation`.
+  * GREEN after adding `KnowledgeEvalRecorder` and correcting fixtures for known-error lint and RAG effective mode.
+
+* Local verification:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_rag_eval.py -q --tb=short` passed, 1 test.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_rag_eval.py server/tests/test_knowledge_ask.py::test_knowledge_ask_ai_disabled_returns_search_fallback server/tests/test_knowledge_search.py::test_knowledge_search_filters_visibility_and_boosts_offering_binding -q --tb=short` passed, 3 tests.
+  * `python scripts/verify_workspace.py` passed.
+  * `git diff --check -- PLANS.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md server/docs/KNOWLEDGE_PLATFORM.md scripts/navigation_catalog.py server/knowledge/evaluation.py server/tests/test_knowledge_rag_eval.py` passed with CRLF conversion warnings only.
+
+* Documentation/navigation:
+
+  * Added Phase 13 routing notes to `docs/QUICK_LOOKUP.md`.
+  * Added evaluation harness notes to `server/docs/KNOWLEDGE_PLATFORM.md`.
+  * Added CODEMAP/navigation entries for `server/knowledge/evaluation.py` and `server/tests/test_knowledge_rag_eval.py`.
+
 Verification:
 
 * `python -m pytest server/tests/test_knowledge_rag_eval.py server/tests/test_knowledge_rag_acl.py server/tests/test_knowledge_search_eval.py -v --tb=short`
