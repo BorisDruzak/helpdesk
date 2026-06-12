@@ -13,6 +13,7 @@ from auth.middleware import require_auth
 from knowledge.contracts import (
     KNOWLEDGE_RELATION_TYPES,
     KnowledgePublicationBlockedError,
+    KnowledgeValidationError,
     actor_visible_visibilities,
     can_mutate_knowledge_visibility,
 )
@@ -1461,3 +1462,30 @@ async def handle_web_knowledge_ingestion_jobs(request: web.Request) -> web.Respo
                 ],
             }
         )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_import_preview(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    if role not in {"admin", "support", "auditor"}:
+        return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+    payload = await _json_payload(request)
+    async with get_session() as session:
+        try:
+            preview = KnowledgeIngestionService(session).preview_import(payload)
+        except KnowledgeValidationError as exc:
+            return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+    return web.json_response({"status": "ok", "preview": preview})
+
+
+@require_auth("admin", "support")
+async def handle_web_knowledge_import_create_drafts(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    payload = await _json_payload(request)
+    async with get_session() as session:
+        try:
+            result = await KnowledgeIngestionService(session).create_drafts_from_import(payload, actor_id=actor_id, actor_role=role)
+        except KnowledgeValidationError as exc:
+            return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+        await session.commit()
+    return web.json_response({"status": "ok", **result})

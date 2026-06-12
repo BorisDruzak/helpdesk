@@ -550,6 +550,26 @@ export type KnowledgeSegmentPayload = {
   status?: string;
 };
 
+export type KnowledgeImportPreview = {
+  source_kind: string;
+  source_name: string;
+  body_format?: string;
+  detected_title: string;
+  word_count?: number;
+  section_count: number;
+  sections: Array<{ heading: string; preview?: string }>;
+  ai_enrichment: { enabled: boolean; status: string; proposals?: Array<Record<string, unknown>> };
+};
+
+export type KnowledgeImportDraftResult = {
+  preview: KnowledgeImportPreview;
+  ai_enrichment: KnowledgeImportPreview["ai_enrichment"];
+  job: { job_id: string; status: string };
+  item: KnowledgeItem;
+  version: KnowledgeItemVersion;
+  chunk_count?: number;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -588,6 +608,27 @@ export async function createKnowledgeItem(payload: Record<string, unknown>) {
     body: JSON.stringify(payload),
   });
   return readJson<{ item: KnowledgeItem }>(response, "Не удалось создать черновик знания");
+}
+
+export async function previewKnowledgeImport(payload: Record<string, unknown>): Promise<KnowledgeImportPreview> {
+  const response = await fetch("/api/web/knowledge/import/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await readJson<{ preview: KnowledgeImportPreview }>(response, "Не удалось выполнить preview импорта");
+  return result.preview;
+}
+
+export async function createKnowledgeImportDrafts(payload: Record<string, unknown>): Promise<KnowledgeImportDraftResult> {
+  const response = await fetch("/api/web/knowledge/import/create-drafts", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgeImportDraftResult>(response, "Не удалось создать черновик из импорта");
 }
 
 export async function fetchKnowledgeGraphNodes(): Promise<KnowledgeGraphNode[]> {

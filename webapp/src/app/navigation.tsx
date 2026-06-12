@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Ticket,
+  UploadCloud,
   UserRound,
   Workflow,
 } from "lucide-react";
@@ -426,6 +427,17 @@ export const appNavigation: AppNavItem[] = [
     to: "/app/admin/knowledge/graph",
     permission: "admin.forms.view",
     order: 18,
+  },
+  {
+    label: "Импорт знаний",
+    description: "Preview источника и создание draft без AI по умолчанию",
+    icon: UploadCloud,
+    section: "admin",
+    workspace: "admin",
+    domainId: "knowledge",
+    to: "/app/admin/knowledge/import",
+    permission: "admin.forms.view",
+    order: 19,
   },
   {
     label: "Настройки поиска",

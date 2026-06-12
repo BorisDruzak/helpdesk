@@ -85,6 +85,8 @@ The support workspace knowledge panel keeps the existing `/api/web/support/ticke
 
 P2 supports manual text/markdown ingestion. Ingestion creates a job, draft item, first version and chunks, then moves the job to review-required/completed state. Errors are redacted. Uploaded/imported sources default to internal draft unless an admin explicitly changes visibility and publishes after review.
 
+Knowledge vNext Phase 10 adds the first `/app/admin/knowledge/import` slice. `POST /api/web/knowledge/import/preview` parses `text`, `markdown` and `html` source payloads without AI, detects the title/sections/word count and returns AI enrichment as `disabled` by default or `blocked_pending_policy` when requested. `POST /api/web/knowledge/import/create-drafts` reuses the ingestion service to create review-required drafts from the preview payload; PDF/DOCX/URL/Git parsers, indexing queue integration and governed AI enrichment proposals remain follow-up work.
+
 ## P2.2 Knowledge Operations
 
 P2.2 makes the platform operable day-to-day without replacing the P2/P2.1 contracts.
@@ -146,6 +148,8 @@ Admin/support management:
 - `GET|POST /api/web/knowledge/graph/nodes`
 - `GET /api/web/knowledge/graph/nodes/{node_id}/neighborhood`
 - `POST /api/web/knowledge/graph/edges`
+- `POST /api/web/knowledge/import/preview`
+- `POST /api/web/knowledge/import/create-drafts`
 - `GET|POST /api/web/knowledge/ingestion/jobs`
 - `GET /api/web/knowledge/metrics/summary`
 - `GET /api/web/knowledge/content-packs`
@@ -179,6 +183,7 @@ Ticket compatibility:
 - `/app/admin/knowledge`: governance/editor route with spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup for the selected immutable version, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview context.
 - `/app/admin/knowledge/studio`: dedicated Knowledge Authoring Studio route with draft/article browser, new draft creation, metadata editor, Markdown editor, template insertion, requester-safe preview, selected-version comparison, rollback by publishing an older immutable version, publish checklist, review lifecycle actions, AI-disabled state and embedded retrieval segment markup panel.
 - `/app/admin/knowledge/graph`: dedicated Visual Graph Studio route with Russian-first node search, SVG neighborhood canvas, node inspector, manual node creation and edge creation over existing graph node/edge APIs. Persisted layouts and AI proposal review remain a later Phase 9 backend slice.
+- `/app/admin/knowledge/import`: dedicated Import/Ingestion wizard for text, markdown and HTML preview plus AI-off review draft creation through the import preview/create-drafts APIs. Rich document parsers, indexing queueing and AI enrichment proposal review remain later Phase 10 slices.
 - `/app/admin/knowledge/indexing`: Russian-first indexing dashboard for embedding status, disabled/failed/indexed counters, index jobs and item reindex controls. It shows model/status/error metadata but never raw vectors.
 - `/app/knowledge`: support-facing knowledge entry using the same real backend data but without admin-first mutation controls. Support cannot create `admin_internal` / `security_restricted` content through this route.
 - `/app/help`: service/offering suggestions, deflection feedback and failed-article attempts before ticket submit.

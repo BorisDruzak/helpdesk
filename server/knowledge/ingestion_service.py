@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 from typing import Any
 import uuid
@@ -26,9 +27,85 @@ def _redact_error(error: BaseException) -> str:
     return text[:500]
 
 
+def _strip_html(value: str) -> str:
+    text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", value)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</(p|div|li|h[1-6])>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return html.unescape(re.sub(r"[ \t]+", " ", text)).strip()
+
+
+def _first_non_empty_line(body: str) -> str:
+    for line in body.splitlines():
+        cleaned = line.strip().strip("#").strip()
+        if cleaned:
+            return cleaned[:120]
+    return "Imported knowledge"
+
+
+def _markdown_sections(body: str) -> list[dict[str, Any]]:
+    headings: list[tuple[str, int]] = []
+    for match in re.finditer(r"(?m)^(#{2,6})\s+(.+?)\s*$", body):
+        headings.append((match.group(2).strip(), match.end()))
+    sections: list[dict[str, Any]] = []
+    for index, (heading, start) in enumerate(headings):
+        end = headings[index + 1][1] if index + 1 < len(headings) else len(body)
+        preview = re.sub(r"\s+", " ", body[start:end].strip())[:240]
+        sections.append({"heading": heading, "preview": preview})
+    return sections
+
+
+def _text_sections(body: str) -> list[dict[str, Any]]:
+    paragraphs = [paragraph.strip() for paragraph in re.split(r"\n\s*\n", body) if paragraph.strip()]
+    return [{"heading": f"Section {index + 1}", "preview": re.sub(r"\s+", " ", paragraph)[:240]} for index, paragraph in enumerate(paragraphs[:12])]
+
+
 class KnowledgeIngestionService:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    def preview_import(self, payload: dict[str, Any]) -> dict[str, Any]:
+        source_kind = str(payload.get("source_kind") or "text").lower()
+        if source_kind not in {"text", "markdown", "html"}:
+            raise KnowledgeValidationError(f"unsupported import source_kind: {source_kind}")
+        source_name = str(payload.get("source_name") or payload.get("title") or "manual text")
+        raw_body = str(payload.get("body") or "")
+        parsed_body = _strip_html(raw_body) if source_kind == "html" else raw_body.strip()
+        if not parsed_body:
+            raise KnowledgeValidationError("import body is required")
+        body_format = "markdown" if source_kind == "markdown" else ("html" if source_kind == "html" else "plain_text")
+        title_match = re.search(r"(?m)^#\s+(.+?)\s*$", parsed_body) if source_kind == "markdown" else None
+        detected_title = str(payload.get("title") or (title_match.group(1).strip() if title_match else "") or _first_non_empty_line(parsed_body))
+        sections = _markdown_sections(parsed_body) if source_kind == "markdown" else _text_sections(parsed_body)
+        ai_requested = bool(payload.get("ai_enrichment_enabled"))
+        return {
+            "source_kind": source_kind,
+            "source_name": source_name,
+            "body_format": body_format,
+            "detected_title": detected_title,
+            "word_count": len(re.findall(r"\S+", parsed_body)),
+            "section_count": len(sections),
+            "sections": sections,
+            "ai_enrichment": {
+                "enabled": ai_requested,
+                "status": "blocked_pending_policy" if ai_requested else "disabled",
+                "proposals": [],
+            },
+        }
+
+    async def create_drafts_from_import(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
+        preview = self.preview_import(payload)
+        result = await self.ingest_text(
+            {
+                **payload,
+                "source_kind": preview["source_kind"],
+                "source_name": preview["source_name"],
+                "title": payload.get("title") or preview["detected_title"],
+            },
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+        return {"preview": preview, "ai_enrichment": preview["ai_enrichment"], **result}
 
     async def ingest_text(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
         repo = KnowledgeRepo(self.session)

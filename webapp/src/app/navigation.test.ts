@@ -102,12 +102,14 @@ describe("navigation helpers", () => {
     );
     const studioItem = getActiveNavItem("/app/admin/knowledge/studio", fullAdminPermissions);
     const graphItem = getActiveNavItem("/app/admin/knowledge/graph", fullAdminPermissions);
+    const importItem = getActiveNavItem("/app/admin/knowledge/import", fullAdminPermissions);
     const indexingItem = getActiveNavItem("/app/admin/knowledge/indexing", fullAdminPermissions);
     const aiItem = getActiveNavItem("/app/admin/knowledge/ai", fullAdminPermissions);
     const searchItem = getActiveNavItem("/app/admin/knowledge/search-settings", fullAdminPermissions);
 
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/studio");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/graph");
+    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/import");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/indexing");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/ai");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/search-settings");
@@ -115,6 +117,8 @@ describe("navigation helpers", () => {
     expect(studioItem?.label).toBe("Студия знаний");
     expect(graphItem?.to).toBe("/app/admin/knowledge/graph");
     expect(graphItem?.label).toBe("Граф знаний");
+    expect(importItem?.to).toBe("/app/admin/knowledge/import");
+    expect(importItem?.label).toBe("Импорт знаний");
     expect(indexingItem?.to).toBe("/app/admin/knowledge/indexing");
     expect(indexingItem?.label).toBe("Индексация");
     expect(aiItem?.to).toBe("/app/admin/knowledge/ai");

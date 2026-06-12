@@ -2127,6 +2127,36 @@ Live checks:
   * AI enrichment proposal;
   * observer event.
 
+Phase 10 first slice, 2026-06-12:
+
+* Implemented `/app/admin/knowledge/import` as a Russian-first Import/Ingestion wizard route.
+* Added backend APIs:
+
+  * `POST /api/web/knowledge/import/preview`
+  * `POST /api/web/knowledge/import/create-drafts`
+
+* Supported source kinds in this slice: `text`, `markdown`, `html`.
+* Preview parses markdown H1 as detected title, H2-H6 headings as sections, plain text paragraphs as sections and strips HTML tags before calculating word/section counts.
+* Draft creation reuses the existing `KnowledgeIngestionService.ingest_text()` path, creates review-required drafts and keeps AI enrichment disabled by default.
+* If `ai_enrichment_enabled=true`, preview returns `blocked_pending_policy` with no proposals; real AI enrichment/proposal review remains a later subphase.
+* Navigation now includes `Импорт знаний`, and the route is lazy-loaded through the React app router.
+* Local verification completed before docs/live follow-up:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_import_api.py -q --tb=short` -> 2 passed.
+  * `pnpm --dir webapp test -- src/features/knowledge/import-wizard.test.tsx` -> 1 passed.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_import_api.py server/tests/test_knowledge_api.py::test_knowledge_api_admin_crud_and_requester_safe_suggest -q --tb=short` -> 3 passed.
+  * `pnpm --dir webapp test -- src/features/knowledge/import-wizard.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` -> 3 files, 28 tests passed.
+  * `pnpm --dir webapp build` -> passed.
+
+Phase 10 remaining work:
+
+* Add PDF/DOCX/URL/Git parsers and safe fetch/upload policy.
+* Add explicit segmentation profile selection and optional auto-segmentation after import.
+* Queue indexing after draft creation when indexing is enabled.
+* Implement governed AI enrichment proposals for summary/tags/glossary/graph/duplicates with review actions.
+* Add import job detail APIs and Observer v2 events listed above.
+* Capture live browser evidence for `/app/admin/knowledge/import`.
+
 Exit criteria:
 
 * KB can be populated from documents.
