@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
@@ -17,6 +18,14 @@ from knowledge.search_settings_service import KnowledgeSearchSettingsService
 
 
 Transport = Callable[..., Awaitable[dict[str, Any]]]
+_CITATION_MARK_RE = re.compile(r"\[(\d{1,2})\]")
+_CRITICAL_CLAIM_RE = re.compile(
+    r"("
+    r"access|delete|disable|enable|install|must|password|reset|security|should|vpn|"
+    r"доступ|отключ|парол|сброс|удал|установ|mfa"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def _now() -> datetime:
@@ -201,6 +210,31 @@ class KnowledgeAskService:
                 citations=citations,
             )
 
+        citation_error = self._answer_citation_error(answer, citations)
+        if citation_error:
+            audit_id = await self._record_ai_audit(
+                provider_id=str(provider["provider_id"]),
+                model_profile_id=str(profile["profile_id"]),
+                status="blocked",
+                error_code=citation_error,
+                error_message="AI answer failed citation validation",
+                prompt=prompt,
+                output=answer,
+                metadata={"surface": surface, "citation_count": len(citations)},
+            )
+            await self._record_observer_event(
+                "knowledge.rag.not_enough_evidence",
+                actor_role=actor_role,
+                details={"surface": surface, "reason": citation_error.lower(), "result_count": len(retrieval_results)},
+            )
+            return self._fallback_response(
+                answer_status="not_enough_evidence",
+                display_message="AI не смог подготовить подтверждённый ответ по материалам базы знаний.",
+                retrieval=retrieval,
+                citations=citations,
+                audit_id=audit_id,
+            )
+
         audit_id = await self._record_ai_audit(
             provider_id=str(provider["provider_id"]),
             model_profile_id=str(profile["profile_id"]),
@@ -284,6 +318,14 @@ class KnowledgeAskService:
         for index, citation in enumerate(citations, start=1):
             source_lines.append(f"[{index}] {citation.get('title') or 'Источник'}: {citation.get('snippet') or ''}")
         return f"Вопрос: {query}\n\nИсточники:\n" + "\n".join(source_lines)
+
+    def _answer_citation_error(self, answer: str, citations: list[dict[str, Any]]) -> str | None:
+        markers = [int(match.group(1)) for match in _CITATION_MARK_RE.finditer(answer)]
+        if any(marker < 1 or marker > len(citations) for marker in markers):
+            return "UNKNOWN_CITATION"
+        if not markers and _CRITICAL_CLAIM_RE.search(answer):
+            return "UNCITED_CRITICAL_CLAIM"
+        return None
 
     async def _get_ai_profile(self, task_type: str) -> dict[str, Any] | None:
         row = (

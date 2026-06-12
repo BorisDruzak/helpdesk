@@ -1374,9 +1374,15 @@ Status 2026-06-12:
   * Build/docs sanity: `pnpm --dir webapp build`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check -- PLANS.md docs/QUICK_LOOKUP.md server/docs/KNOWLEDGE_PLATFORM.md server/docs/CODEMAP.md webapp/src/pages/kb/ask-page.tsx webapp/src/pages/kb/ask-page.test.tsx` passed; diff check reported CRLF conversion warnings only.
   * Remote validation: `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `db9d9ee0`; `/api/health` returned 200 on smoke attempt 2.
   * Browser/live evidence: in-app browser opened `https://192.168.100.17:9443/app/kb/ask`, submitted `VPN`, received AI-off fallback/search results and confirmed visible actions `Ответ полезен`, `Ответ не помог`, `Предложить исправление` and `Создать обращение`.
+* Phase 6C citation validation hardening, 2026-06-12:
+
+  * `KnowledgeAskService` now blocks AI answers that contain critical operational claims without any valid `[1]..[N]` source marker.
+  * Out-of-range citation markers are blocked as `UNKNOWN_CITATION`; uncited critical claims are blocked as `UNCITED_CRITICAL_CLAIM`.
+  * Blocked answers are not shown to requesters/support. Ask returns safe `answer_status=not_enough_evidence`, preserves retrieval fallback/citations, writes a blocked `ai_request_audit` row and emits `knowledge.rag.not_enough_evidence` with reason metadata.
+  * RED test: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py::test_knowledge_ask_blocks_uncited_critical_claims -q --tb=short` failed before implementation because the uncited critical answer was returned as `answered`.
+  * GREEN tests: the same focused test passed with 1 test, and `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py -q --tb=short` passed with 5 tests.
 * Remaining Phase 6 work:
 
-  * stricter citation validation for uncited critical claims;
   * deeper Ask feedback analytics and optional ticket prefill from the Ask context;
   * admin/support Ask debug view with chunk/score/policy details;
   * browser/live evidence after deploy and optional OpenRouter key setup.

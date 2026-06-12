@@ -211,6 +211,45 @@ async def test_knowledge_ask_uses_mocked_answer_model_with_citations(test_engine
 
 
 @pytest.mark.asyncio
+async def test_knowledge_ask_blocks_uncited_critical_claims(test_engine, monkeypatch) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _published_item(session, slug="ask-critical-vpn", title="VPN critical evidence", body="VPN evidence for cited answer.")
+        await _enable_rag(session)
+        await _enable_answer_ai(session)
+        await session.commit()
+
+    monkeypatch.setenv("OPENROUTER_ANSWER_TEST_KEY", "test-answer-secret")
+
+    async def fake_transport(**kwargs):
+        assert "[1]" in kwargs["json"]["messages"][1]["content"]
+        return {"choices": [{"message": {"content": "Сбросьте пароль администратора и отключите MFA."}}]}
+
+    async with session_maker() as session:
+        result = await KnowledgeAskService(session, transport=fake_transport).ask(query="VPN", actor_role="support", surface="admin_ask_preview")
+        await session.commit()
+
+    assert result["answer_status"] == "not_enough_evidence"
+    assert result["answer"] is None
+    assert result["ai_used"] is False
+    assert result["retrieval_results"][0]["item"]["slug"] == "ask-critical-vpn"
+
+    async with test_engine.connect() as conn:
+        blocked = (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM ai_request_audit WHERE task_type = 'answer' AND status = 'blocked' AND error_code = 'UNCITED_CRITICAL_CLAIM'")
+            )
+        ).scalar_one()
+        fallback = (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM agent_runtime_audit WHERE event_type = 'knowledge.rag.not_enough_evidence' AND details_json ->> 'reason' = 'uncited_critical_claim'")
+            )
+        ).scalar_one()
+    assert blocked >= 1
+    assert fallback >= 1
+
+
+@pytest.mark.asyncio
 async def test_web_knowledge_ask_preview_falls_back_when_provider_unavailable(test_client, test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
