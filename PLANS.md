@@ -2290,6 +2290,22 @@ Phase 11 first slice, 2026-06-12:
   * RED `webapp/src/features/knowledge/support-workspace-page.test.tsx` failed on missing component before implementation.
   * GREEN focused test now covers support search, runbook filtering, detail route and requester-safe copy guard.
 
+* Local verification:
+
+  * `pnpm --dir webapp test -- src/features/knowledge/support-workspace-page.test.tsx src/app/navigation.test.ts` passed, 11 tests.
+  * `pnpm --dir webapp build` passed.
+  * `python scripts/verify_workspace.py` passed.
+  * `git diff --check -- PLANS.md docs/QUICK_LOOKUP.md server/docs/KNOWLEDGE_PLATFORM.md server/docs/CODEMAP.md scripts/navigation_catalog.py webapp/src/features/knowledge/support-workspace-page.tsx webapp/src/features/knowledge/support-workspace-page.test.tsx webapp/src/pages/knowledge/index.tsx webapp/src/app/router.tsx` passed with CRLF warnings only.
+
+* Remote/live validation, 2026-06-12:
+
+  * Deployed commit `9eb1f838` with `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`; health smoke returned 200.
+  * Playwright checked `https://192.168.100.17:9443/app/knowledge` and `/app/knowledge/articles/7041042b-3a27-45ee-b142-006c7b17a7ea`.
+  * Verified support heading, search placeholder, type/visibility filters, deep-link article detail, and `support_internal` copy-safe guard.
+  * `adminTitleCount=0`; the support workspace no longer shows the admin knowledge title.
+  * Console warnings/errors, failed requests and HTTP errors were empty.
+  * Evidence: `artifacts/browser_live_validation/knowledge-support-9eb1f838-1781239434437/report.json` and `artifacts/browser_live_validation/knowledge-support-9eb1f838-1781239434437/knowledge-support-live.png`.
+
 Exit criteria:
 
 * Helpdesk integration remains strong.
