@@ -1,0 +1,173 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { KnowledgeGraphStudioPage } from "./graph-studio-page";
+
+function jsonResponse(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function setupFetch() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "/api/web/knowledge/graph/nodes" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        nodes: [
+          {
+            node_id: "node-vpn",
+            stable_key: "concept:vpn",
+            node_type: "concept",
+            label: "VPN concept",
+            visibility: "support_internal",
+            status: "active",
+          },
+          {
+            node_id: "node-article",
+            stable_key: "knowledge_item:vpn-access",
+            node_type: "knowledge_item",
+            label: "VPN access article",
+            visibility: "requester",
+            status: "active",
+          },
+        ],
+      });
+    }
+    if (url === "/api/web/knowledge/graph/nodes/concept%3Avpn/neighborhood?depth=2") {
+      return jsonResponse({
+        status: "ok",
+        nodes: [
+          {
+            node_id: "node-vpn",
+            stable_key: "concept:vpn",
+            node_type: "concept",
+            label: "VPN concept",
+            visibility: "support_internal",
+            status: "active",
+          },
+          {
+            node_id: "node-article",
+            stable_key: "knowledge_item:vpn-access",
+            node_type: "knowledge_item",
+            label: "VPN access article",
+            visibility: "requester",
+            status: "active",
+          },
+        ],
+        edges: [
+          {
+            edge_id: "edge-1",
+            source_node_id: "node-vpn",
+            target_node_id: "node-article",
+            relation_type: "related_to",
+            visibility: "support_internal",
+            status: "active",
+          },
+        ],
+      });
+    }
+    if (url === "/api/web/knowledge/graph/nodes" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({
+        status: "ok",
+        node: {
+          node_id: "node-mfa",
+          stable_key: body.stable_key,
+          label: body.label,
+          node_type: body.node_type,
+          visibility: body.visibility,
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/graph/edges" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        edge: {
+          edge_id: "edge-2",
+          relation_type: JSON.parse(String(init.body)).relation_type,
+        },
+      });
+    }
+    throw new Error(`Unexpected fetch ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock as typeof fetch);
+  return fetchMock;
+}
+
+function renderGraphStudio() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <KnowledgeGraphStudioPage />
+    </QueryClientProvider>,
+  );
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe("KnowledgeGraphStudioPage", () => {
+  it("loads a visual graph canvas and creates nodes and edges through graph APIs", async () => {
+    const fetchMock = setupFetch();
+    renderGraphStudio();
+
+    expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
+    expect((await screen.findAllByRole("button", { name: /VPN concept/ }))[0]).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Карта графа знаний" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /VPN concept/ })[0]);
+    expect((await screen.findAllByText("related_to")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("VPN access article").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByLabelText("Ключ узла"), { target: { value: "concept:mfa" } });
+    fireEvent.change(screen.getByLabelText("Метка узла"), { target: { value: "MFA concept" } });
+    fireEvent.change(screen.getByLabelText("Тип узла"), { target: { value: "concept" } });
+    fireEvent.change(screen.getByLabelText("Видимость узла"), { target: { value: "support_internal" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать узел" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/nodes",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const createNodeCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/nodes" && call[1]?.method === "POST");
+    expect(JSON.parse(String(createNodeCall?.[1]?.body))).toMatchObject({
+      stable_key: "concept:mfa",
+      label: "MFA concept",
+      node_type: "concept",
+      visibility: "support_internal",
+    });
+
+    const edgeForm = screen.getByRole("group", { name: "Новая связь" });
+    fireEvent.change(within(edgeForm).getByLabelText("Источник edge"), { target: { value: "concept:mfa" } });
+    fireEvent.change(within(edgeForm).getByLabelText("Цель edge"), { target: { value: "concept:vpn" } });
+    fireEvent.change(within(edgeForm).getByLabelText("Тип связи"), { target: { value: "related_to" } });
+    fireEvent.click(within(edgeForm).getByRole("button", { name: "Создать связь" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/edges",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const createEdgeCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/edges" && call[1]?.method === "POST");
+    expect(JSON.parse(String(createEdgeCall?.[1]?.body))).toMatchObject({
+      source_stable_key: "concept:mfa",
+      target_stable_key: "concept:vpn",
+      relation_type: "related_to",
+      visibility: "support_internal",
+    });
+  });
+});

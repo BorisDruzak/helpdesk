@@ -43,6 +43,32 @@ export type KnowledgeItem = {
   updated_at?: string | null;
 };
 
+export type KnowledgeGraphNode = {
+  node_id: string;
+  node_type: string;
+  stable_key: string;
+  label: string;
+  visibility: string;
+  linked_item_id?: string | null;
+  service_code?: string | null;
+  offering_code?: string | null;
+  status?: string | null;
+};
+
+export type KnowledgeGraphEdge = {
+  edge_id: string;
+  source_node_id: string;
+  target_node_id: string;
+  relation_type: string;
+  visibility: string;
+  status?: string | null;
+};
+
+export type KnowledgeGraphNeighborhood = {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+};
+
 export type KnowledgeMetricsSummary = {
   deflection?: {
     deflected_count?: number;
@@ -562,6 +588,40 @@ export async function createKnowledgeItem(payload: Record<string, unknown>) {
     body: JSON.stringify(payload),
   });
   return readJson<{ item: KnowledgeItem }>(response, "Не удалось создать черновик знания");
+}
+
+export async function fetchKnowledgeGraphNodes(): Promise<KnowledgeGraphNode[]> {
+  const response = await fetch("/api/web/knowledge/graph/nodes", { credentials: "same-origin" });
+  const payload = await readJson<{ nodes: KnowledgeGraphNode[] }>(response, "Не удалось загрузить узлы графа знаний");
+  return payload.nodes ?? [];
+}
+
+export async function fetchKnowledgeGraphNeighborhood(nodeIdOrStableKey: string, depth = 2): Promise<KnowledgeGraphNeighborhood> {
+  const response = await fetch(
+    `/api/web/knowledge/graph/nodes/${encodeURIComponent(nodeIdOrStableKey)}/neighborhood?depth=${encodeURIComponent(String(depth))}`,
+    { credentials: "same-origin" },
+  );
+  return readJson<KnowledgeGraphNeighborhood>(response, "Не удалось загрузить связи графа знаний");
+}
+
+export async function createKnowledgeGraphNode(payload: Record<string, unknown>) {
+  const response = await fetch("/api/web/knowledge/graph/nodes", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ node: KnowledgeGraphNode }>(response, "Не удалось создать узел графа знаний");
+}
+
+export async function createKnowledgeGraphEdge(payload: Record<string, unknown>) {
+  const response = await fetch("/api/web/knowledge/graph/edges", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ edge: KnowledgeGraphEdge }>(response, "Не удалось создать связь графа знаний");
 }
 
 export async function createKnowledgeVersion(itemIdOrSlug: string, payload: Record<string, unknown>) {

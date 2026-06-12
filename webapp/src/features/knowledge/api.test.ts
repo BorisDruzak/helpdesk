@@ -5,10 +5,14 @@ import {
   askKnowledgePortal,
   checkKnowledgeAiProviderHealth,
   fetchKnowledgeGaps,
+  createKnowledgeGraphEdge,
+  createKnowledgeGraphNode,
   fetchKnowledgeAiAudit,
   fetchKnowledgeAiModelProfiles,
   fetchKnowledgeAiPolicies,
   fetchKnowledgeAiProviders,
+  fetchKnowledgeGraphNeighborhood,
+  fetchKnowledgeGraphNodes,
   fetchKnowledgeSearchSettings,
   fetchKnowledgeSegments,
   fetchKnowledgeSegmentationProfiles,
@@ -133,6 +137,42 @@ describe("knowledge operations api", () => {
       "/api/web/knowledge/rollout-policies",
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
+  });
+});
+
+describe("knowledge graph api", () => {
+  it("loads graph nodes and neighborhood and posts node/edge mutations", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", nodes: [{ node_id: "n1", stable_key: "concept:vpn", label: "VPN", node_type: "concept", visibility: "support_internal" }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", nodes: [{ node_id: "n1", stable_key: "concept:vpn", label: "VPN", node_type: "concept", visibility: "support_internal" }], edges: [] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", node: { node_id: "n2", stable_key: "concept:mfa", label: "MFA", node_type: "concept", visibility: "support_internal" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", edge: { edge_id: "e1", relation_type: "related_to" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeGraphNodes()).resolves.toHaveLength(1);
+    await expect(fetchKnowledgeGraphNeighborhood("concept:vpn", 2)).resolves.toMatchObject({ nodes: [{ stable_key: "concept:vpn" }], edges: [] });
+    await createKnowledgeGraphNode({ stable_key: "concept:mfa", label: "MFA", node_type: "concept", visibility: "support_internal" });
+    await createKnowledgeGraphEdge({ source_stable_key: "concept:mfa", target_stable_key: "concept:vpn", relation_type: "related_to", visibility: "support_internal" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/graph/nodes", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/graph/nodes/concept%3Avpn/neighborhood?depth=2", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/web/knowledge/graph/nodes",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({ stable_key: "concept:mfa", label: "MFA" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/web/knowledge/graph/edges",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toMatchObject({
+      source_stable_key: "concept:mfa",
+      target_stable_key: "concept:vpn",
+      relation_type: "related_to",
+    });
   });
 });
 

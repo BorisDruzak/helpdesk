@@ -1988,6 +1988,31 @@ Exit criteria:
 * Graph changes are governed and observable.
 * AI proposals are optional and review-only.
 
+Phase 9 first slice, 2026-06-12:
+
+* `/app/admin/knowledge/graph` now routes to a dedicated Russian-first Visual Graph Studio.
+* Frontend uses no new graph dependency yet; `webapp/src/features/knowledge/graph-studio-page.tsx` renders an SVG graph canvas with deterministic layout, node search/list, clickable nodes, edge labels, right-side inspector, warning/coverage counters, manual node creation and manual edge creation.
+* Typed webapp helpers in `webapp/src/features/knowledge/api.ts` cover the existing backend graph endpoints:
+
+  * `GET /api/web/knowledge/graph/nodes`
+  * `POST /api/web/knowledge/graph/nodes`
+  * `GET /api/web/knowledge/graph/nodes/{node_id_or_stable_key}/neighborhood?depth=2`
+  * `POST /api/web/knowledge/graph/edges`
+
+* Navigation now exposes `Граф знаний` inside the admin Knowledge domain.
+* Focused coverage:
+
+  * `webapp/src/features/knowledge/graph-studio.test.tsx` covers graph canvas load, neighborhood display, node creation payload and edge creation payload.
+  * `webapp/src/features/knowledge/api.test.ts` covers graph helper endpoint/payload contracts.
+  * `webapp/src/app/navigation.test.ts` covers Knowledge domain route exposure.
+
+Phase 9 remaining work:
+
+* Backend schema/API for `knowledge_graph_layouts` and persisted canvas layout save/load.
+* Full graph CRUD beyond existing upsert/create: PATCH/DELETE nodes, GET/PATCH/DELETE edges and search endpoint.
+* AI proposal tables/API/review UI and observer events for proposal lifecycle.
+* Browser/live evidence after deploy for open graph studio, create concept node, link to article node and create relation edge.
+
 ---
 
 ## Phase 10 — Import/Ingestion wizard with AI-off and AI-assisted enrichment

@@ -417,6 +417,17 @@ export const appNavigation: AppNavItem[] = [
     order: 15,
   },
   {
+    label: "Граф знаний",
+    description: "Узлы, связи и article relationships",
+    icon: GitBranch,
+    section: "admin",
+    workspace: "admin",
+    domainId: "knowledge",
+    to: "/app/admin/knowledge/graph",
+    permission: "admin.forms.view",
+    order: 18,
+  },
+  {
     label: "Настройки поиска",
     description: "Режимы retrieval, AI-off baseline, веса и лимиты",
     icon: SlidersHorizontal,
