@@ -3381,7 +3381,7 @@ Remote/live verification:
 
 Phase 14C - Knowledge metadata management editor, 2026-06-13:
 
-Status: implemented locally; deploy/live mutation evidence pending. Required follow-up after Phase 14 backend metadata foundation and Phase 14B Authoring Studio regression.
+Status: implemented and live validated on commit `ee6e31e1`, 2026-06-13. Required follow-up after Phase 14 backend metadata foundation and Phase 14B Authoring Studio regression is closed; final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 Scope:
 
@@ -3428,18 +3428,20 @@ Exit criteria:
 * `/app/admin/knowledge/metadata` and Studio metadata tabs are Russian-first, mojibake-free and browser-validated at 1366x768 and 1920x1080.
 * Requester/public projections remain safe and backward-compatible after deploy.
 
-Live/deploy evidence still required:
+Remote/live verification:
 
-* Deploy committed Phase 14C state to `192.168.100.17`.
-* Create or update taxonomy/property/applicability/quality model rows through protected admin UI/API and verify `/app/admin/knowledge` active metadata counts update.
-* Browser-validate `/app/admin/knowledge/metadata` and Studio metadata tabs at 1366x768 and 1920x1080 with console/network checks.
-* Verify requester `/app/kb/search`, public-compatible `/api/knowledge/search` and support `/app/knowledge` keep safe projections without admin metadata diagnostics.
-* Preserve evidence under `artifacts/knowledge-metadata-editor-live-YYYYMMDD-HHMMSS/`; evidence artifacts are local/untracked and must be preserved outside git if needed for audit.
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `ee6e31e1`; remote `/api/health` smoke returned HTTP 200.
+* Live protected admin scenario created Knowledge space `phase14c-live-9ee748e7`, item `phase14c-live-9ee748e7-article`, taxonomy terms `phase14c-access-9ee748e7` / `phase14c-vpn-9ee748e7`, property `phase14c-audience-9ee748e7`, item metadata, one applicability rule and quality model `phase14c-quality-9ee748e7`.
+* Playwright browser evidence verified `/app/admin/knowledge/metadata` at 1366x768 and 1920x1080, including the created taxonomy term; `/app/admin/knowledge/studio` rendered metadata tabs `Таксономия`, `Свойства`, `Применимость`, `Качество`; `/app/admin/knowledge` rendered the metadata/Ops card after mutation.
+* Requester `/app/kb/search`, public-compatible `/api/knowledge/search` and support `/app/knowledge` kept safe projections. Public search returned only `ai_used`, `display_message`, `effective_mode`, `results`, `search_mode`, `status`; recursive scan found no forbidden metadata diagnostics.
+* Browser run recorded `console_errors=0` and `page_errors=0`.
+* Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/knowledge-metadata-editor-live-20260612-234114/report.json`, `api/public-search.safe.json`, `screenshots/admin-knowledge-metadata-1366.png`, `admin-knowledge-metadata-1920.png`, `admin-knowledge-studio-metadata-tabs-1920.png`, `admin-knowledge-ops-after-metadata.png`, `requester-kb-search-safe.png` and `support-knowledge-safe.png`.
+* Post-validation remote cleanup stopped both `server` and `control`; `python scripts/manage_remote_stack.py status server --json` and `status control --json` reported `display_state=stopped`, `active_state=inactive`, `sub_state=dead`.
 
 Remaining Phase 14 work:
 
 * Phase 14 metadata-model hardening is complete. Phase 14B editor regression and live validation are complete.
-* Phase 14C metadata management editor is locally implemented; deploy/live mutation evidence remains pending in this iteration.
+* Phase 14C metadata management editor is complete with local tests, deploy, live mutation evidence, browser evidence and requester/public projection checks.
 * Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
