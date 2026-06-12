@@ -18,6 +18,36 @@ import {
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
 
+const visibilityOptions = [
+  { label: "Портал заявителя", value: "requester" },
+  { label: "Безопасно для агента и заявителя", value: "agent_requester_safe" },
+  { label: "Внутреннее для поддержки", value: "support_internal" },
+  { label: "Только администраторы", value: "admin_internal" },
+];
+
+const segmentStatusLabels: Record<string, string> = {
+  active: "Активный",
+  archived: "Архив",
+  draft: "Черновик",
+  rejected: "Отклонён",
+  stale: "Устарел",
+};
+
+const segmentTypeLabels: Record<string, string> = {
+  ai_proposed: "AI-предложение",
+  auto: "Авто",
+  manual: "Ручной",
+};
+
+const segmentSourceLabels: Record<string, string> = {
+  ai_markup: "AI-разметка",
+  editor_selection: "Выделение редактора",
+  heading_split: "По заголовкам",
+  length_split: "По длине",
+  manual: "Ручной ввод",
+  paragraph_split: "По абзацам",
+};
+
 function tone(status: string) {
   if (status === "active") {
     return "success" as const;
@@ -29,6 +59,13 @@ function tone(status: string) {
     return "danger" as const;
   }
   return "neutral" as const;
+}
+
+function segmentLabel(labels: Record<string, string>, value: string | null | undefined, fallback: string) {
+  if (!value) {
+    return fallback;
+  }
+  return labels[value] ?? value;
 }
 
 function keywordsFromInput(value: string): string[] {
@@ -180,7 +217,7 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
             <Blocks className="h-5 w-5" />
             Разметка статьи
           </CardTitle>
-          <CardDescription>Выберите item и версию для разметки.</CardDescription>
+          <CardDescription>Выберите статью и версию для разметки.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -193,7 +230,7 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
           <Blocks className="h-5 w-5" />
           Разметка статьи
         </CardTitle>
-        <CardDescription>Ручные и автоматические retrieval segments для поиска без AI и будущих embeddings.</CardDescription>
+        <CardDescription>Ручные и автоматические сегменты поиска без AI и будущих эмбеддингов.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <label className="text-sm font-medium">
@@ -227,14 +264,15 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
             <label className="text-sm font-medium">
               Видимость
               <select className={fieldClass} value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value })}>
-                <option value="requester">requester</option>
-                <option value="agent_requester_safe">agent_requester_safe</option>
-                <option value="support_internal">support_internal</option>
-                <option value="admin_internal">admin_internal</option>
+                {visibilityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="text-sm font-medium">
-              Boost
+              Вес поиска
               <input
                 className={fieldClass}
                 type="number"
@@ -253,7 +291,7 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
                 checked={draft.full_text_enabled}
                 onChange={(event) => setDraft({ ...draft, full_text_enabled: event.target.checked })}
               />
-              Full-text
+              Полнотекстовый поиск
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -261,7 +299,7 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
                 checked={draft.embedding_enabled}
                 onChange={(event) => setDraft({ ...draft, embedding_enabled: event.target.checked })}
               />
-              Embeddings
+              Эмбеддинги
             </label>
           </div>
           <Button onClick={() => createMutation.mutate()} disabled={!canManage || !versionId || !draft.text || createMutation.isPending}>
@@ -304,12 +342,12 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
                   <p className="font-medium text-slate-900">{segment.title}</p>
                   <p className="mt-1 line-clamp-3 text-xs text-slate-600">{segment.text}</p>
                 </div>
-                <Badge tone={tone(segment.status)}>{segment.status}</Badge>
+                <Badge tone={tone(segment.status)}>{segmentLabel(segmentStatusLabels, segment.status, "Без статуса")}</Badge>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
-                <Badge tone="neutral">{segment.segment_type}</Badge>
-                <Badge tone="info">{segment.source ?? "manual"}</Badge>
-                <Badge tone="brand">boost {segment.boost ?? 1}</Badge>
+                <Badge tone="neutral">{segmentLabel(segmentTypeLabels, segment.segment_type, "Сегмент")}</Badge>
+                <Badge tone="info">{segmentLabel(segmentSourceLabels, segment.source, "Ручной ввод")}</Badge>
+                <Badge tone="brand">вес {segment.boost ?? 1}</Badge>
                 {(segment.keywords ?? []).map((keyword) => (
                   <Badge key={keyword} tone="neutral">
                     {keyword}

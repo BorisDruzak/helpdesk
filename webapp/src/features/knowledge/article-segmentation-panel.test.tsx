@@ -106,6 +106,11 @@ describe("ArticleSegmentationPanel", () => {
     expect(await screen.findByRole("heading", { name: "Разметка статьи" })).toBeInTheDocument();
     expect(await screen.findByText("VPN checks")).toBeInTheDocument();
     expect(await screen.findByText("Авторазметка по заголовкам")).toBeInTheDocument();
+    expect(screen.getByText("Портал заявителя")).toBeInTheDocument();
+    expect(screen.getByText("Активный")).toBeInTheDocument();
+    expect(screen.getByText("Ручной")).toBeInTheDocument();
+    expect(screen.getByText("Выделение редактора")).toBeInTheDocument();
+    expect(screen.getByText("вес 2")).toBeInTheDocument();
 
     const source = screen.getByLabelText("Текст версии для выделения") as HTMLTextAreaElement;
     const selectedText = "Check the tunnel adapter and DNS suffix before escalation.";
@@ -138,6 +143,15 @@ describe("ArticleSegmentationPanel", () => {
     );
 
     const visibleText = document.body.textContent ?? "";
+    expect(visibleText).toContain("Вес поиска");
+    expect(visibleText).toContain("Полнотекстовый поиск");
+    expect(visibleText).toContain("Эмбеддинги");
+    expect(visibleText).not.toContain("requesteragent_requester_safe");
+    expect(visibleText).not.toContain("Boost");
+    expect(visibleText).not.toContain("Full-text");
+    expect(visibleText).not.toContain("Embeddings");
+    expect(visibleText).not.toContain("boost 2");
+    expect(visibleText).not.toContain("editor_selection");
     expect(visibleText).not.toContain("Рџ");
   });
 });

@@ -3352,13 +3352,16 @@ Scope:
 Implementation results:
 
 * Replaced remaining English Authoring Studio visible labels with Russian-first text: heading eyebrow, item status/visibility badges, owner/reviewer labels, item type/visibility option labels, publish checklist copy, review comment/archive wording, requester-safe tag copy, editor-history diff cache copy and AI-disabled description.
+* Live browser review found that embedded `ArticleSegmentationPanel` still exposed raw visibility/status/source labels; hardened that editor sub-panel with Russian-first visibility options, segment status/type/source badges, search weight/full-text/embedding copy and segment description text while preserving submitted enum values.
 * Kept technical API values and event codes unchanged: `article`, `requester`, `submit_review`, `approve`, `archive`, `version_created` and editor-history payload contracts remain stable.
-* Added webapp regression coverage for Russian Studio labels, old English label absence and mojibake-free rendered panel text.
+* Added webapp regression coverage for Russian Studio labels, Russian segment panel visibility/status/source labels, old English label absence and mojibake-free rendered panel text.
 
 Local verification:
 
 * RED: `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx` failed before implementation on missing Russian labels (`Владелец`, `Ревьюер`, `Назначен ревьюер`, `Комментарий ревью`) and old English Studio copy.
 * GREEN: `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx` passed with 5 tests.
+* RED: `pnpm --dir webapp test -- src/features/knowledge/article-segmentation-panel.test.tsx` failed before the follow-up fix because the embedded segment panel still rendered `requester`, `Boost`, `Full-text`, `Embeddings`, `active`, `manual`, `editor_selection` and `boost 2` as visible UI text.
+* GREEN: `pnpm --dir webapp test -- src/features/knowledge/article-segmentation-panel.test.tsx` passed with 1 test.
 * GREEN: `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/article-segmentation-panel.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` passed with 4 files / 40 tests.
 * GREEN: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_api.py::test_knowledge_authoring_studio_records_editor_history -q --tb=short` passed with 1 test.
 * GREEN: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py server/tests/test_knowledge_api.py::test_knowledge_authoring_studio_records_editor_history -q --tb=short` passed with 12 tests.
