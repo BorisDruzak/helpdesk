@@ -2149,6 +2149,14 @@ Phase 9 persisted layout slice, 2026-06-12:
   * RED frontend API test failed because `fetchKnowledgeGraphLayout` was missing.
   * RED Graph Studio test failed because the layout status/control was not rendered.
   * GREEN targeted backend/API/Graph Studio tests now pass.
+* Remote/live validation:
+
+  * Deployed commits `a7a19491` and responsive follow-up `19efe98d` to `192.168.100.17` with quick release gate; remote smoke returned `GET /api/health -> 200`.
+  * Remote Alembic migration ran `115 -> 116`.
+  * Browser route validated: `https://192.168.100.17:9443/app/admin/knowledge/graph`.
+  * UI rendered `Сохранить layout` and `Layout сохранен для scope default`; final viewport evidence captured as `phase9-graph-layout-final.png` and `phase9-graph-layout-coverage-final.png`.
+  * Live API flow verified `GET /api/web/knowledge/graph/layouts/default` -> 200, `POST /api/web/knowledge/graph/layouts/default` -> 200, repeated GET -> 200, sanitized unexpected layout keys, and persisted coordinates `x=111`, `y=222`.
+  * Current Graph Studio Knowledge API requests returned 200 for nodes, layout and neighborhood. Browser console errors: none.
 
 Phase 9 remaining work:
 
