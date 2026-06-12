@@ -2203,10 +2203,31 @@ Phase 9 AI proposal lifecycle slice, 2026-06-12:
   * RED frontend API test failed with `fetchKnowledgeAiProposals is not a function`.
   * RED Graph Studio test failed because `AI proposals` was not rendered.
   * GREEN targeted backend/API/Graph Studio tests now pass.
+* Remote/live validation:
+
+  * Deployed commit `6583551d` to `192.168.100.17` with quick release gate; remote Alembic ran `116 -> 117`, and health smoke returned `GET /api/health -> 200` on attempt 2.
+  * Browser route validated: `https://192.168.100.17:9443/app/admin/knowledge/graph`.
+  * Live API flow verified `POST /api/web/knowledge/ai/proposals`, `GET /api/web/knowledge/ai/proposals?target_kind=graph&status=pending`, `POST /api/web/knowledge/ai/proposals/941e4fb1-2a0e-4d3b-b747-9b2ffc38b2e3/review`, `GET /api/web/knowledge/graph/search?q=concept:ai-proposal-live-1781264653569` and approved proposal listing all returned `200`.
+  * Approval applied graph refs `10b7f870-133c-4cac-a2b4-8354cd6247c3`, `cd16a6a3-02f4-4bd9-aa66-3c87b60467c3` and edge `af4d8dac-0aaf-4b87-89aa-952a3cd20967`; graph search found the `similar_to` edge.
+  * Safe response scan found no forbidden raw keys: `source_ticket_id`, `device_id`, `token`, `secret-token`. Browser console warnings/errors: none.
+  * Evidence: `phase9-ai-proposals-live.png`, `phase9-ai-proposals-console.json`, `phase9-ai-proposals-network.json`.
+
+Phase 9 live/test graph cleanup slice, 2026-06-12:
+
+* Used the live governed graph DELETE workflow to archive only explicit `support_internal` test nodes matching `concept:crud-live-*`, `concept:ai-proposal-live-*`, `concept:ai-proposal-live-target-*` and `concept:codex-live-graph-*`.
+* Archived nodes:
+
+  * `concept:ai-proposal-live-1781264653569`;
+  * `concept:ai-proposal-live-target-1781264653569`;
+  * `concept:codex-live-graph-1781236521026`;
+  * `concept:codex-live-graph-1781236903632`;
+  * `concept:crud-live-target-1781262810209`.
+
+* All archive calls returned `200` with `status=archived`; repeated live searches by cleanup prefixes returned no remaining active support_internal test graph nodes.
 
 Phase 9 remaining work:
 
-* Cleanup/delete workflow for support_internal live/test graph nodes and edges once graph DELETE endpoints exist.
+* None for the graph CRUD/layout/AI-proposal scope. Continue with the remaining Phase 10 ingestion hardening items.
 
 ---
 
