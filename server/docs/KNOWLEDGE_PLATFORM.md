@@ -121,6 +121,8 @@ Admin/support management:
 
 - `GET|POST /api/web/knowledge/search-settings`
 - `POST /api/web/knowledge/search`
+- `POST /api/web/knowledge/search/preview`
+- `POST /api/web/knowledge/retrieve`
 - `GET /api/web/knowledge/indexing/status`
 - `GET|POST /api/web/knowledge/indexing/jobs`
 - `POST /api/web/knowledge/indexing/reindex-item`
@@ -188,6 +190,8 @@ Segment index sync writes active `full_text_enabled` article segments into versi
 Phase 4 indexing stores optional embeddings in `knowledge_chunk_embeddings` and observable jobs in `knowledge_index_jobs`. `KnowledgeEmbeddingService` builds provider input from article title, segment title/summary, keywords, heading path and chunk text; vector-disabled settings or AI policy blocks create `disabled` rows and audit evidence instead of breaking baseline search. Provider/key failures are redacted as safe job/embedding errors, while successful OpenRouter-compatible calls persist vectors only in DB and return no raw vector data through web APIs. Indexing can be scoped to one item, one segment, one space or a bounded full run through dedicated endpoints or `POST /api/web/knowledge/indexing/jobs` with `scope_type=item|segment|space|all`.
 
 `KnowledgeVectorSearchService` provides the Phase 4 JSONB-vector fallback for environments without pgvector. Web search merges vector hits only when `vector_enabled=true` and a safe numeric `query_vector` is supplied. ACL filters run before cosine scoring, requester-safe projection hides diagnostic vector fields, support/admin responses may include `retrieval_source=vector` and `vector_score`, and raw `embedding_vector` values remain DB-only.
+
+Phase 5 retrieval introduces `KnowledgeRetrievalService` for explainable hybrid retrieval previews. It merges keyword, manual segment, binding and optional JSONB-vector candidates after ACL filtering, returns score parts/source modes/citations for admin/support, records search analytics, and writes safe `knowledge.retrieval.executed` / `knowledge.retrieval.zero_results` audit events. Existing public `POST /api/knowledge/search` remains backward-compatible; `/api/web/knowledge/retrieve` and `/api/web/knowledge/search/preview` expose the richer admin/support contract.
 
 ## Knowledge vNext Target Routes
 

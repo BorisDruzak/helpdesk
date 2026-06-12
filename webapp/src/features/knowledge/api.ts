@@ -313,6 +313,28 @@ export type KnowledgeSearchPreviewResult = {
   }>;
 };
 
+export type KnowledgeRetrievalResult = {
+  status: string;
+  display_message?: string;
+  search_mode?: string;
+  effective_mode?: string;
+  fallback_mode?: string | null;
+  ai_used?: boolean;
+  settings?: Record<string, boolean>;
+  results: Array<{
+    item: KnowledgeItem;
+    version?: { version_id: string; title?: string | null };
+    chunk_id?: string | null;
+    segment_id?: string | null;
+    snippet?: string | null;
+    score?: number;
+    score_parts?: Record<string, number>;
+    source_mode?: string[];
+    fallback_mode?: string | null;
+    citations?: Array<Record<string, unknown>>;
+  }>;
+};
+
 export type KnowledgeSegment = {
   segment_id: string;
   item_id: string;
@@ -742,6 +764,26 @@ export async function previewKnowledgeSearch(payload: KnowledgeSearchPreviewRequ
     body: JSON.stringify(payload),
   });
   return readJson<KnowledgeSearchPreviewResult>(response, "Не удалось выполнить проверочный поиск");
+}
+
+export async function retrieveKnowledge(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeRetrievalResult> {
+  const response = await fetch("/api/web/knowledge/retrieve", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgeRetrievalResult>(response, "Не удалось выполнить retrieval знаний");
+}
+
+export async function previewKnowledgeRetrieval(payload: KnowledgeSearchPreviewRequest & { query_vector?: number[]; limit?: number }): Promise<KnowledgeRetrievalResult> {
+  const response = await fetch("/api/web/knowledge/search/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<KnowledgeRetrievalResult>(response, "Не удалось выполнить preview retrieval");
 }
 
 export async function fetchKnowledgeSegments(itemIdOrSlug: string): Promise<KnowledgeSegment[]> {

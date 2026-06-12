@@ -22,6 +22,7 @@ from knowledge.graph_service import KnowledgeGraphService
 from knowledge.ingestion_service import KnowledgeIngestionService
 from knowledge.metrics_service import KnowledgeMetricsService
 from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsService
+from knowledge.retrieval_service import KnowledgeRetrievalService
 from knowledge.gap_service import KnowledgeGapService, serialize_gap_finding
 from knowledge.review_task_service import KnowledgeReviewTaskService, serialize_review_task
 from knowledge.search_service import KnowledgeSearchService
@@ -218,6 +219,43 @@ async def _handle_knowledge_search_response(request: web.Request) -> web.Respons
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_search(request: web.Request) -> web.Response:
     return await _handle_knowledge_search_response(request)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_retrieve(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    try:
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            result = await KnowledgeRetrievalService(session).retrieve(
+                query=payload.get("query"),
+                actor_role=role,
+                service_code=payload.get("service_code"),
+                offering_code=payload.get("offering_code"),
+                request_template_key=payload.get("request_template_key"),
+                surface=str(payload.get("surface") or "admin_knowledge_retrieve"),
+                session_id=payload.get("session_id"),
+                limit=payload.get("limit"),
+                query_vector=_safe_query_vector(payload.get("query_vector")),
+            )
+            await session.commit()
+        return web.json_response({"status": "ok", **result, "display_message": "Retrieval выполнен"})
+    except ValueError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "validation_error",
+                "error_code": "VALIDATION_ERROR",
+                "display_message": "Проверьте параметры retrieval",
+                "details": str(exc),
+            },
+            status=400,
+        )
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_search_preview(request: web.Request) -> web.Response:
+    return await handle_web_knowledge_retrieve(request)
 
 
 def _search_settings_forbidden() -> web.Response:

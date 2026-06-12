@@ -17,6 +17,7 @@ import {
   fetchKnowledgeIndexingStatus,
   fetchKnowledgeIndexJobs,
   previewKnowledgeSearch,
+  previewKnowledgeRetrieval,
   archiveKnowledgeSegment,
   approveKnowledgeAiSegment,
   autoSegmentKnowledgeItem,
@@ -29,6 +30,7 @@ import {
   reindexKnowledgeItem,
   reindexKnowledgeSegment,
   reindexKnowledgeSpace,
+  retrieveKnowledge,
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
   saveKnowledgeAiProvider,
@@ -232,6 +234,61 @@ describe("knowledge search settings api", () => {
       actor_role: "support",
       surface: "admin_knowledge_search",
     });
+  });
+
+  it("runs explainable retrieval through Phase 5 endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          display_message: "Retrieval выполнен",
+          effective_mode: "hybrid_vector",
+          ai_used: true,
+          results: [
+            {
+              item: { item_id: "ki-1", space_id: "ks-1", slug: "vpn", item_type: "article", type: "article", title: "VPN", status: "published", visibility: "requester" },
+              version: { version_id: "ver-1", title: "VPN" },
+              snippet: "VPN segment",
+              score: 125,
+              score_parts: { keyword_title: 50, vector: 75 },
+              source_mode: ["keyword", "vector"],
+              citations: [{ chunk_id: "chunk-1" }],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          display_message: "Retrieval выполнен",
+          effective_mode: "hybrid_no_ai",
+          ai_used: false,
+          results: [],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(retrieveKnowledge({ query: "VPN", query_vector: [0.1, 0.2], actor_role: "support" })).resolves.toMatchObject({
+      effective_mode: "hybrid_vector",
+      results: [{ item: { slug: "vpn" }, score_parts: { vector: 75 } }],
+    });
+    await expect(previewKnowledgeRetrieval({ query: "none", actor_role: "support" })).resolves.toMatchObject({
+      effective_mode: "hybrid_no_ai",
+      results: [],
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/web/knowledge/retrieve",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ query: "VPN", query_vector: [0.1, 0.2] });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/search/preview",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
   });
 });
 
