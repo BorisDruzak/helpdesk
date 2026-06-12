@@ -3195,7 +3195,7 @@ Exit criteria:
 
 ## Phase 14 - Knowledge taxonomy, properties, applicability and quality model
 
-Status: implemented locally; remote deploy/browser validation pending, 2026-06-12.
+Status: implemented and live validated on commit `9941a454`, 2026-06-12.
 
 Scope:
 
@@ -3241,9 +3241,17 @@ Local verification, 2026-06-12:
 * `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx src/features/requester/api.test.ts src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx src/app/navigation.test.ts` passed with 6 files / 61 tests.
 * `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `pnpm --dir webapp build`, `python scripts/verify_workspace.py` and targeted `git diff --check` passed.
 
+Remote/live verification, 2026-06-12:
+
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `9941a454`, applied migration `117 -> 118`, started control/server and passed remote `/api/health` smoke with HTTP 200 on attempt 2.
+* Browser MCP opened `https://192.168.100.17:9443/app/admin/knowledge` as admin and confirmed the deployed page renders `Knowledge metadata model`, `Taxonomy terms`, `Properties`, `Applicability rules`, `Item metadata` and active quality model `builtin-default`.
+* Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/browser_live_validation/phase14-knowledge-metadata-9941a454/report.json`, `snapshot.md` and `01-admin-knowledge-metadata-model.png`.
+* Direct shell API probe with `test-ui-admin-token` returned 401 on the live stand; this is expected because live does not accept test bearer tokens. The browser evidence uses the authenticated admin session and rendered metadata payload.
+* Evidence text scan found no `sk-or-`, `sk-proj-`, `BEGIN PRIVATE KEY`, `secret-token` or `password=hidden` markers.
+
 Remaining Phase 14 work:
 
-* Deploy the committed slice to `192.168.100.17`, run remote smoke, and capture browser evidence that `/app/admin/knowledge` shows the metadata model card against the deployed bundle.
+* None for the Phase 14 slice. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
 
