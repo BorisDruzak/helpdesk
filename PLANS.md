@@ -2481,6 +2481,15 @@ Phase 10 allowlisted remote import policy slice, 2026-06-12:
   * `python scripts/docs_inventory.py --check-links` -> passed.
   * `python scripts/verify_workspace.py` -> passed.
 
+* Remote/live validation:
+
+  * Commit `84fad303` was pushed to `origin/codex/helpdesk-process-model` and deployed with `scripts/release_server_to_remote.py --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+  * Remote smoke verified `https://192.168.100.17:9443/api/health -> 200`.
+  * Browser route loaded: `https://192.168.100.17:9443/app/admin/knowledge/import`.
+  * Same-origin browser API checks against deployed default config verified URL preview -> `400 remote_import_blocked` and Git preview -> `400 remote_import_blocked`.
+  * Safe response scans found no leaked `secret-token`, `password=hidden` or `outside.example.test` host fragments.
+  * Browser screenshot captured as `knowledge-import-remote-policy-84fad303.png`; console recorded expected failed-resource entries for the deliberate `400` policy-block responses.
+
 Phase 10 remaining work:
 
 * Add import wizard UI controls for file upload, remote-source policy messages and segmentation profile selection.
