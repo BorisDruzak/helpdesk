@@ -369,7 +369,7 @@ export function KnowledgeGraphStudioPage() {
               </CardTitle>
               <CardDescription>Ручные nodes/edges и persisted layout; AI proposals идут отдельным backend slice.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3 text-sm text-slate-600 md:grid-cols-4">
+            <CardContent className="grid gap-3 text-sm text-slate-600 md:grid-cols-2 2xl:grid-cols-4">
               <div className="rounded-md bg-slate-50 p-3">
                 <p className="font-semibold text-slate-900">Узлы</p>
                 <p>{graphNodes.length} в текущем neighborhood</p>
