@@ -1381,6 +1381,7 @@ Status 2026-06-12:
   * Blocked answers are not shown to requesters/support. Ask returns safe `answer_status=not_enough_evidence`, preserves retrieval fallback/citations, writes a blocked `ai_request_audit` row and emits `knowledge.rag.not_enough_evidence` with reason metadata.
   * RED test: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py::test_knowledge_ask_blocks_uncited_critical_claims -q --tb=short` failed before implementation because the uncited critical answer was returned as `answered`.
   * GREEN tests: the same focused test passed with 1 test, and `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py -q --tb=short` passed with 5 tests.
+  * Remote validation: `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `661a7b43`; `/api/health` returned 200 on smoke attempt 2.
 * Remaining Phase 6 work:
 
   * deeper Ask feedback analytics and optional ticket prefill from the Ask context;
