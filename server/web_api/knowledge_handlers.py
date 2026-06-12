@@ -1411,7 +1411,37 @@ async def handle_web_knowledge_rollout_effective_preview(request: web.Request) -
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_graph_nodes(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
+    node_ref = str(request.match_info.get("node_id") or "")
     async with get_session() as session:
+        graph = KnowledgeGraphService(session)
+        if node_ref and request.method == "GET":
+            node = await graph.get_node(node_ref, actor_role=role)
+            if node is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            return web.json_response({"status": "ok", "node": graph.serialize_node(node)})
+        if node_ref and request.method == "PATCH":
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            payload = await _json_payload(request)
+            visibility = payload.get("visibility")
+            if visibility is not None and not can_mutate_knowledge_visibility(role, str(visibility)):
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            try:
+                node = await graph.update_node(node_ref, payload, actor_role=role, actor_id=actor_id)
+            except ValueError as exc:
+                return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+            if node is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            await session.commit()
+            return web.json_response({"status": "ok", "node": node})
+        if node_ref and request.method == "DELETE":
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            node = await graph.archive_node(node_ref, actor_role=role, actor_id=actor_id)
+            if node is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            await session.commit()
+            return web.json_response({"status": "ok", "node": node, "display_message": "Узел графа архивирован"})
         if request.method == "POST":
             if role not in {"admin", "support"}:
                 return web.json_response({"status": "error", "error": "forbidden"}, status=403)
@@ -1419,42 +1449,36 @@ async def handle_web_knowledge_graph_nodes(request: web.Request) -> web.Response
             visibility = str(payload.get("visibility") or "support_internal")
             if not can_mutate_knowledge_visibility(role, visibility):
                 return web.json_response({"status": "error", "error": "forbidden"}, status=403)
-            node = await KnowledgeGraphService(session).upsert_node(
-                stable_key=str(payload.get("stable_key") or ""),
-                node_type=str(payload.get("node_type") or "concept"),
-                label=str(payload.get("label") or payload.get("stable_key") or ""),
-                visibility=visibility,
-                linked_item_id=payload.get("linked_item_id"),
-                service_code=payload.get("service_code"),
-                offering_code=payload.get("offering_code"),
-                actor_id=actor_id,
-            )
+            try:
+                node = await graph.upsert_node(
+                    stable_key=str(payload.get("stable_key") or ""),
+                    node_type=str(payload.get("node_type") or "concept"),
+                    label=str(payload.get("label") or payload.get("stable_key") or ""),
+                    visibility=visibility,
+                    linked_item_id=payload.get("linked_item_id"),
+                    service_code=payload.get("service_code"),
+                    offering_code=payload.get("offering_code"),
+                    actor_id=actor_id,
+                )
+                if payload.get("description") is not None:
+                    await graph.update_node(node.stable_key, {"description": payload.get("description")}, actor_role=role, actor_id=actor_id)
+            except ValueError as exc:
+                return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
             await session.commit()
-            return web.json_response({"status": "ok", "node": {"node_id": node.node_id, "stable_key": node.stable_key, "label": node.label}})
-        allowed = set(actor_visible_visibilities(role))
-        rows = (
-            await session.execute(
-                select(KnowledgeNode)
-                .where(KnowledgeNode.visibility.in_(allowed))
-                .order_by(KnowledgeNode.updated_at.desc())
-                .limit(100)
-            )
-        ).scalars().all()
-        return web.json_response(
-            {
-                "status": "ok",
-                "nodes": [
-                    {
-                        "node_id": row.node_id,
-                        "stable_key": row.stable_key,
-                        "node_type": row.node_type,
-                        "label": row.label,
-                        "visibility": row.visibility,
-                    }
-                    for row in rows
-                ],
-            }
-        )
+            saved = await graph.get_node(node.stable_key, actor_role=role)
+            return web.json_response({"status": "ok", "node": graph.serialize_node(saved) if saved else {"node_id": node.node_id, "stable_key": node.stable_key, "label": node.label}})
+        nodes = await graph.list_nodes(actor_role=role, q=request.query.get("q"), limit=int(request.query.get("limit") or 100))
+        return web.json_response({"status": "ok", "nodes": nodes})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_graph_search(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    query = str(request.query.get("q") or request.query.get("query") or "")
+    limit = int(request.query.get("limit") or 50)
+    async with get_session() as session:
+        result = await KnowledgeGraphService(session).search(query=query, actor_role=role, limit=limit)
+    return web.json_response({"status": "ok", **result})
 
 
 @require_auth("admin", "support", "auditor")
@@ -1501,12 +1525,42 @@ async def handle_web_knowledge_graph_layouts(request: web.Request) -> web.Respon
     return web.json_response({"status": "ok", "layout": layout})
 
 
-@require_auth("admin", "support")
+@require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_graph_edges(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
-    payload = await _json_payload(request)
+    edge_id = str(request.match_info.get("edge_id") or "")
     async with get_session() as session:
         graph = KnowledgeGraphService(session)
+        if request.method == "GET" and edge_id:
+            edge = await graph.get_edge(edge_id, actor_role=role)
+            if edge is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            return web.json_response({"status": "ok", "edge": graph.serialize_edge(edge)})
+        if request.method == "GET":
+            edges = await graph.list_edges(actor_role=role, q=request.query.get("q"), limit=int(request.query.get("limit") or 100))
+            return web.json_response({"status": "ok", "edges": edges})
+        if role not in {"admin", "support"}:
+            return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+        if request.method == "PATCH" and edge_id:
+            payload = await _json_payload(request)
+            visibility = payload.get("visibility")
+            if visibility is not None and not can_mutate_knowledge_visibility(role, str(visibility)):
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            try:
+                edge = await graph.update_edge(edge_id, payload, actor_role=role, actor_id=actor_id)
+            except ValueError as exc:
+                return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+            if edge is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            await session.commit()
+            return web.json_response({"status": "ok", "edge": edge})
+        if request.method == "DELETE" and edge_id:
+            edge = await graph.archive_edge(edge_id, actor_role=role, actor_id=actor_id)
+            if edge is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            await session.commit()
+            return web.json_response({"status": "ok", "edge": edge, "display_message": "Связь графа архивирована"})
+        payload = await _json_payload(request)
         source = (
             await session.execute(select(KnowledgeNode).where(KnowledgeNode.stable_key == str(payload.get("source_stable_key") or "")))
         ).scalar_one_or_none()
@@ -1532,7 +1586,7 @@ async def handle_web_knowledge_graph_edges(request: web.Request) -> web.Response
             actor_id=actor_id,
         )
         await session.commit()
-    return web.json_response({"status": "ok", "edge": {"edge_id": edge.edge_id, "relation_type": edge.relation_type}})
+    return web.json_response({"status": "ok", "edge": graph.serialize_edge(edge)})
 
 
 @require_auth("admin", "support", "auditor")

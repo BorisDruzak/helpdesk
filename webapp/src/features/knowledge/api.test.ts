@@ -7,6 +7,9 @@ import {
   fetchKnowledgeGaps,
   createKnowledgeGraphEdge,
   createKnowledgeGraphNode,
+  deleteKnowledgeGraphEdge,
+  deleteKnowledgeGraphNode,
+  fetchKnowledgeGraphEdge,
   fetchKnowledgeAiAudit,
   fetchKnowledgeAiModelProfiles,
   fetchKnowledgeAiPolicies,
@@ -14,6 +17,7 @@ import {
   fetchKnowledgeGraphNeighborhood,
   fetchKnowledgeGraphNodes,
   fetchKnowledgeGraphLayout,
+  searchKnowledgeGraph,
   fetchKnowledgeSearchSettings,
   fetchKnowledgeSegments,
   fetchKnowledgeSegmentationProfiles,
@@ -58,6 +62,8 @@ import {
   submitKnowledgeReviewTaskAction,
   syncKnowledgeSegmentIndex,
   rejectKnowledgeAiSegment,
+  updateKnowledgeGraphEdge,
+  updateKnowledgeGraphNode,
   updateKnowledgeSegment,
 } from "./api";
 
@@ -205,6 +211,50 @@ describe("knowledge graph api", () => {
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ layout_json: layout.layout_json });
+  });
+
+  it("searches graph and sends node and edge update/archive mutations", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", nodes: [{ node_id: "n1", stable_key: "concept:vpn", label: "VPN" }], edges: [] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", node: { node_id: "n1", stable_key: "concept:vpn", label: "VPN updated" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", edge: { edge_id: "e1", relation_type: "mentions", status: "confirmed" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", edge: { edge_id: "e1", relation_type: "supersedes", weight: 2 } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", edge: { edge_id: "e1", status: "archived" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", node: { node_id: "n1", status: "archived" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(searchKnowledgeGraph("vpn")).resolves.toMatchObject({ nodes: [{ stable_key: "concept:vpn" }], edges: [] });
+    await updateKnowledgeGraphNode("concept:vpn", { label: "VPN updated" });
+    await fetchKnowledgeGraphEdge("e1");
+    await updateKnowledgeGraphEdge("e1", { relation_type: "supersedes", weight: 2 });
+    await deleteKnowledgeGraphEdge("e1");
+    await deleteKnowledgeGraphNode("concept:vpn");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/graph/search?q=vpn", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/web/knowledge/graph/nodes/concept%3Avpn",
+      expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ label: "VPN updated" });
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/web/knowledge/graph/edges/e1", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "/api/web/knowledge/graph/edges/e1",
+      expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toMatchObject({ relation_type: "supersedes", weight: 2 });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      5,
+      "/api/web/knowledge/graph/edges/e1",
+      expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      "/api/web/knowledge/graph/nodes/concept%3Avpn",
+      expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+    );
   });
 });
 

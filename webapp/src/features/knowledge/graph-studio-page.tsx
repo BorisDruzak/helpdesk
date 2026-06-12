@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw, Save } from "lucide-react";
+import { GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw, Save, Trash2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -9,10 +9,13 @@ import { PageHeading } from "../../components/ui/page-heading";
 import {
   createKnowledgeGraphEdge,
   createKnowledgeGraphNode,
+  deleteKnowledgeGraphEdge,
+  deleteKnowledgeGraphNode,
   fetchKnowledgeGraphLayout,
   fetchKnowledgeGraphNeighborhood,
   fetchKnowledgeGraphNodes,
   saveKnowledgeGraphLayout,
+  updateKnowledgeGraphNode,
   type KnowledgeGraphEdge,
   type KnowledgeGraphLayout,
   type KnowledgeGraphNode,
@@ -111,6 +114,7 @@ export function KnowledgeGraphStudioPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedStableKey, setSelectedStableKey] = useState("");
+  const [selectedLabel, setSelectedLabel] = useState("");
   const [nodeDraft, setNodeDraft] = useState<NodeDraft>({
     label: "",
     linked_item_id: "",
@@ -164,6 +168,12 @@ export function KnowledgeGraphStudioPage() {
     }
   }, [edgeDraft.source_stable_key, selectedNode?.stable_key]);
 
+  useEffect(() => {
+    if (selectedNode?.stable_key) {
+      setSelectedLabel(selectedNode.label);
+    }
+  }, [selectedNode?.stable_key, selectedNode?.label]);
+
   const createNodeMutation = useMutation({
     mutationFn: () =>
       createKnowledgeGraphNode({
@@ -184,6 +194,31 @@ export function KnowledgeGraphStudioPage() {
 
   const createEdgeMutation = useMutation({
     mutationFn: () => createKnowledgeGraphEdge(edgeDraft),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
+    },
+  });
+
+  const updateSelectedNodeMutation = useMutation({
+    mutationFn: () => updateKnowledgeGraphNode(selectedNode?.stable_key ?? "", { label: selectedLabel.trim() }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
+    },
+  });
+
+  const archiveSelectedNodeMutation = useMutation({
+    mutationFn: () => deleteKnowledgeGraphNode(selectedNode?.stable_key ?? ""),
+    onSuccess: () => {
+      setSelectedStableKey("");
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
+    },
+  });
+
+  const archiveEdgeMutation = useMutation({
+    mutationFn: (edgeId: string) => deleteKnowledgeGraphEdge(edgeId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
@@ -419,6 +454,30 @@ export function KnowledgeGraphStudioPage() {
                     <Badge tone="neutral">{selectedNode.visibility}</Badge>
                     <Badge tone={selectedNode.status === "archived" ? "danger" : "success"}>{selectedNode.status ?? "active"}</Badge>
                   </div>
+                  <div className="space-y-2 rounded-md border border-slate-200 p-3">
+                    <label className="text-sm font-medium">
+                      Метка выбранного узла
+                      <input className={fieldClass} value={selectedLabel} onChange={(event) => setSelectedLabel(event.target.value)} />
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        disabled={!selectedNode || !selectedLabel.trim() || updateSelectedNodeMutation.isPending}
+                        onClick={() => updateSelectedNodeMutation.mutate()}
+                        size="sm"
+                      >
+                        Сохранить узел
+                      </Button>
+                      <Button
+                        disabled={!selectedNode || archiveSelectedNodeMutation.isPending}
+                        onClick={() => archiveSelectedNodeMutation.mutate()}
+                        size="sm"
+                        variant="outline"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Архивировать выбранный узел
+                      </Button>
+                    </div>
+                  </div>
                 </>
               ) : (
                 <p className="text-slate-500">Выберите узел графа.</p>
@@ -429,6 +488,17 @@ export function KnowledgeGraphStudioPage() {
                   <div className="rounded-md border border-slate-200 p-3" key={edge.edge_id}>
                     <p className="font-semibold text-slate-900">{edge.relation_type}</p>
                     <p className="mt-1 break-all text-xs text-slate-500">{edgeKey(edge, graphNodesById)}</p>
+                    <Button
+                      aria-label={`Архивировать связь ${edge.edge_id}`}
+                      className="mt-3"
+                      disabled={archiveEdgeMutation.isPending}
+                      onClick={() => archiveEdgeMutation.mutate(edge.edge_id)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Архивировать
+                    </Button>
                   </div>
                 ))}
                 {!graphEdges.length ? <p className="text-slate-500">Для выбранного узла связи не найдены.</p> : null}

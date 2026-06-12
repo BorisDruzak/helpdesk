@@ -60,11 +60,20 @@ export type KnowledgeGraphEdge = {
   source_node_id: string;
   target_node_id: string;
   relation_type: string;
+  weight?: number;
+  confidence_score?: number | null;
   visibility: string;
   status?: string | null;
+  source_kind?: string | null;
+  source_ref?: string | null;
 };
 
 export type KnowledgeGraphNeighborhood = {
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+};
+
+export type KnowledgeGraphSearchResult = {
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
 };
@@ -749,6 +758,11 @@ export async function fetchKnowledgeGraphNodes(): Promise<KnowledgeGraphNode[]> 
   return payload.nodes ?? [];
 }
 
+export async function searchKnowledgeGraph(query: string): Promise<KnowledgeGraphSearchResult> {
+  const response = await fetch(`/api/web/knowledge/graph/search?q=${encodeURIComponent(query)}`, { credentials: "same-origin" });
+  return readJson<KnowledgeGraphSearchResult>(response, "Не удалось выполнить поиск по графу знаний");
+}
+
 export async function fetchKnowledgeGraphNeighborhood(nodeIdOrStableKey: string, depth = 2): Promise<KnowledgeGraphNeighborhood> {
   const response = await fetch(
     `/api/web/knowledge/graph/nodes/${encodeURIComponent(nodeIdOrStableKey)}/neighborhood?depth=${encodeURIComponent(String(depth))}`,
@@ -783,6 +797,24 @@ export async function createKnowledgeGraphNode(payload: Record<string, unknown>)
   return readJson<{ node: KnowledgeGraphNode }>(response, "Не удалось создать узел графа знаний");
 }
 
+export async function updateKnowledgeGraphNode(nodeIdOrStableKey: string, payload: Record<string, unknown>) {
+  const response = await fetch(`/api/web/knowledge/graph/nodes/${encodeURIComponent(nodeIdOrStableKey)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ node: KnowledgeGraphNode; display_message?: string }>(response, "Не удалось обновить узел графа знаний");
+}
+
+export async function deleteKnowledgeGraphNode(nodeIdOrStableKey: string) {
+  const response = await fetch(`/api/web/knowledge/graph/nodes/${encodeURIComponent(nodeIdOrStableKey)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  return readJson<{ node: KnowledgeGraphNode; display_message?: string }>(response, "Не удалось архивировать узел графа знаний");
+}
+
 export async function createKnowledgeGraphEdge(payload: Record<string, unknown>) {
   const response = await fetch("/api/web/knowledge/graph/edges", {
     method: "POST",
@@ -791,6 +823,29 @@ export async function createKnowledgeGraphEdge(payload: Record<string, unknown>)
     body: JSON.stringify(payload),
   });
   return readJson<{ edge: KnowledgeGraphEdge }>(response, "Не удалось создать связь графа знаний");
+}
+
+export async function fetchKnowledgeGraphEdge(edgeId: string) {
+  const response = await fetch(`/api/web/knowledge/graph/edges/${encodeURIComponent(edgeId)}`, { credentials: "same-origin" });
+  return readJson<{ edge: KnowledgeGraphEdge }>(response, "Не удалось загрузить связь графа знаний");
+}
+
+export async function updateKnowledgeGraphEdge(edgeId: string, payload: Record<string, unknown>) {
+  const response = await fetch(`/api/web/knowledge/graph/edges/${encodeURIComponent(edgeId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ edge: KnowledgeGraphEdge; display_message?: string }>(response, "Не удалось обновить связь графа знаний");
+}
+
+export async function deleteKnowledgeGraphEdge(edgeId: string) {
+  const response = await fetch(`/api/web/knowledge/graph/edges/${encodeURIComponent(edgeId)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
+  return readJson<{ edge: KnowledgeGraphEdge; display_message?: string }>(response, "Не удалось архивировать связь графа знаний");
 }
 
 export async function createKnowledgeVersion(itemIdOrSlug: string, payload: Record<string, unknown>) {

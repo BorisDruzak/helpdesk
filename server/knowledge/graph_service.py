@@ -5,11 +5,56 @@ import math
 from typing import Any
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db.models import KnowledgeEdge, KnowledgeGraphLayout, KnowledgeItem, KnowledgeNode
 from knowledge.contracts import actor_visible_visibilities
+
+
+NODE_TYPES = {
+    "knowledge_item",
+    "article",
+    "known_error",
+    "workaround",
+    "glossary_term",
+    "service",
+    "offering",
+    "ticket",
+    "asset",
+    "registry_service",
+    "diagnostic_playbook",
+    "external_entity",
+    "concept",
+    "document",
+}
+NODE_STATUSES = {"proposed", "confirmed", "rejected", "archived"}
+EDGE_STATUSES = {"proposed", "confirmed", "rejected", "archived"}
+EDGE_RELATION_TYPES = {
+    "explains",
+    "causes",
+    "caused_by",
+    "depends_on",
+    "affects",
+    "affected_by",
+    "has_workaround",
+    "has_permanent_fix",
+    "requires",
+    "replaces",
+    "duplicates",
+    "similar_to",
+    "belongs_to_service",
+    "belongs_to_offering",
+    "suggested_for",
+    "tried_in_ticket",
+    "resolved_by",
+    "source_of",
+    "mentions",
+    "synonym_of",
+    "contradicts",
+    "supersedes",
+}
 
 
 def _new_id() -> str:
@@ -22,6 +67,7 @@ def _serialize_node(row: KnowledgeNode) -> dict[str, Any]:
         "node_type": row.node_type,
         "stable_key": row.stable_key,
         "label": row.label,
+        "description": row.description,
         "visibility": row.visibility,
         "linked_item_id": row.linked_item_id,
         "service_code": row.service_code,
@@ -31,13 +77,20 @@ def _serialize_node(row: KnowledgeNode) -> dict[str, Any]:
 
 
 def _serialize_edge(row: KnowledgeEdge) -> dict[str, Any]:
+    weight = float(row.weight) if row.weight is not None else 1
+    if weight.is_integer():
+        weight = int(weight)
     return {
         "edge_id": row.edge_id,
         "source_node_id": row.source_node_id,
         "target_node_id": row.target_node_id,
         "relation_type": row.relation_type,
+        "weight": weight,
+        "confidence_score": float(row.confidence_score) if row.confidence_score is not None else None,
         "visibility": row.visibility,
         "status": row.status,
+        "source_kind": row.source_kind,
+        "source_ref": row.source_ref,
     }
 
 
@@ -99,9 +152,36 @@ def _sanitize_layout_json(value: Any) -> dict[str, Any]:
     return sanitized
 
 
+def _clean_text(value: Any, *, max_length: int | None = None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if max_length is not None:
+        text = text[:max_length]
+    return text
+
+
+def _safe_weight(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("weight must be a number") from None
+    if not math.isfinite(number) or number < 0:
+        raise ValueError("weight must be non-negative")
+    return round(number, 3)
+
+
 class KnowledgeGraphService:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    def serialize_node(self, row: KnowledgeNode) -> dict[str, Any]:
+        return _serialize_node(row)
+
+    def serialize_edge(self, row: KnowledgeEdge) -> dict[str, Any]:
+        return _serialize_edge(row)
 
     async def upsert_node(
         self,
@@ -119,6 +199,10 @@ class KnowledgeGraphService:
             await self.session.execute(select(KnowledgeNode).where(KnowledgeNode.stable_key == stable_key))
         ).scalar_one_or_none()
         if row is None:
+            if not stable_key:
+                raise ValueError("stable_key is required")
+            if node_type not in NODE_TYPES:
+                raise ValueError("unsupported node_type")
             row = KnowledgeNode(
                 node_id=_new_id(),
                 stable_key=stable_key,
@@ -138,6 +222,99 @@ class KnowledgeGraphService:
             row.updated_by = actor_id
         await self.session.flush()
         return row
+
+    async def list_nodes(self, *, actor_role: str, q: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        allowed = set(actor_visible_visibilities(actor_role))
+        stmt = (
+            select(KnowledgeNode)
+            .where(KnowledgeNode.visibility.in_(allowed), KnowledgeNode.status != "archived")
+            .order_by(KnowledgeNode.updated_at.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+        query = _clean_text(q, max_length=120)
+        if query:
+            needle = f"%{query.lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(KnowledgeNode.stable_key).like(needle),
+                    func.lower(KnowledgeNode.label).like(needle),
+                    func.lower(KnowledgeNode.node_type).like(needle),
+                    func.lower(KnowledgeNode.visibility).like(needle),
+                    func.lower(func.coalesce(KnowledgeNode.service_code, "")).like(needle),
+                    func.lower(func.coalesce(KnowledgeNode.offering_code, "")).like(needle),
+                )
+            )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return [_serialize_node(row) for row in rows]
+
+    async def get_node(self, node_ref: str, *, actor_role: str) -> KnowledgeNode | None:
+        allowed = set(actor_visible_visibilities(actor_role))
+        return (
+            await self.session.execute(
+                select(KnowledgeNode).where(
+                    (KnowledgeNode.node_id == node_ref) | (KnowledgeNode.stable_key == node_ref),
+                    KnowledgeNode.visibility.in_(allowed),
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def update_node(
+        self,
+        node_ref: str,
+        payload: dict[str, Any],
+        *,
+        actor_role: str,
+        actor_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        row = await self.get_node(node_ref, actor_role=actor_role)
+        if row is None:
+            return None
+        if "label" in payload:
+            label = _clean_text(payload.get("label"), max_length=500)
+            if not label:
+                raise ValueError("label is required")
+            row.label = label
+        if "description" in payload:
+            row.description = _clean_text(payload.get("description"), max_length=4000)
+        if "node_type" in payload:
+            node_type = _clean_text(payload.get("node_type"), max_length=40) or ""
+            if node_type not in NODE_TYPES:
+                raise ValueError("unsupported node_type")
+            row.node_type = node_type
+        if "visibility" in payload:
+            visibility = _clean_text(payload.get("visibility"), max_length=40) or ""
+            row.visibility = visibility
+        if "status" in payload:
+            status = _clean_text(payload.get("status"), max_length=30) or ""
+            if status not in NODE_STATUSES:
+                raise ValueError("unsupported status")
+            row.status = status
+        for field in ("linked_item_id", "service_code", "offering_code"):
+            if field in payload:
+                setattr(row, field, _clean_text(payload.get(field), max_length=240))
+        row.updated_by = actor_id
+        await self.session.flush()
+        return _serialize_node(row)
+
+    async def archive_node(self, node_ref: str, *, actor_role: str, actor_id: str | None = None) -> dict[str, Any] | None:
+        row = await self.get_node(node_ref, actor_role=actor_role)
+        if row is None:
+            return None
+        row.status = "archived"
+        row.updated_by = actor_id
+        connected_edges = (
+            await self.session.execute(
+                select(KnowledgeEdge).where(
+                    (KnowledgeEdge.source_node_id == row.node_id) | (KnowledgeEdge.target_node_id == row.node_id),
+                    KnowledgeEdge.status != "archived",
+                )
+            )
+        ).scalars().all()
+        for edge in connected_edges:
+            edge.status = "archived"
+            edge.updated_by = actor_id
+        await self.session.flush()
+        return _serialize_node(row)
 
     async def create_edge(
         self,
@@ -159,6 +336,8 @@ class KnowledgeGraphService:
         ).scalar_one_or_none()
         if existing is not None:
             return existing
+        if relation_type not in EDGE_RELATION_TYPES:
+            raise ValueError("unsupported relation_type")
         row = KnowledgeEdge(
             edge_id=_new_id(),
             source_node_id=source.node_id,
@@ -171,6 +350,150 @@ class KnowledgeGraphService:
         self.session.add(row)
         await self.session.flush()
         return row
+
+    async def list_edges(self, *, actor_role: str, q: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        allowed = set(actor_visible_visibilities(actor_role))
+        source_node = aliased(KnowledgeNode)
+        target_node = aliased(KnowledgeNode)
+        stmt = (
+            select(KnowledgeEdge)
+            .join(source_node, KnowledgeEdge.source_node_id == source_node.node_id)
+            .join(target_node, KnowledgeEdge.target_node_id == target_node.node_id)
+            .where(
+                KnowledgeEdge.visibility.in_(allowed),
+                KnowledgeEdge.status != "archived",
+                source_node.visibility.in_(allowed),
+                target_node.visibility.in_(allowed),
+                source_node.status != "archived",
+                target_node.status != "archived",
+            )
+            .order_by(KnowledgeEdge.updated_at.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+        query = _clean_text(q, max_length=120)
+        if query:
+            needle = f"%{query.lower()}%"
+            stmt = stmt.where(func.lower(KnowledgeEdge.relation_type).like(needle))
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return [_serialize_edge(row) for row in rows]
+
+    async def get_edge(self, edge_id: str, *, actor_role: str) -> KnowledgeEdge | None:
+        allowed = set(actor_visible_visibilities(actor_role))
+        source_node = aliased(KnowledgeNode)
+        target_node = aliased(KnowledgeNode)
+        return (
+            await self.session.execute(
+                select(KnowledgeEdge)
+                .join(source_node, KnowledgeEdge.source_node_id == source_node.node_id)
+                .join(target_node, KnowledgeEdge.target_node_id == target_node.node_id)
+                .where(
+                    KnowledgeEdge.edge_id == edge_id,
+                    KnowledgeEdge.visibility.in_(allowed),
+                    source_node.visibility.in_(allowed),
+                    target_node.visibility.in_(allowed),
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def update_edge(
+        self,
+        edge_id: str,
+        payload: dict[str, Any],
+        *,
+        actor_role: str,
+        actor_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        row = await self.get_edge(edge_id, actor_role=actor_role)
+        if row is None:
+            return None
+        if "relation_type" in payload:
+            relation_type = _clean_text(payload.get("relation_type"), max_length=50) or ""
+            if relation_type not in EDGE_RELATION_TYPES:
+                raise ValueError("unsupported relation_type")
+            row.relation_type = relation_type
+        if "visibility" in payload:
+            row.visibility = _clean_text(payload.get("visibility"), max_length=40) or row.visibility
+        if "status" in payload:
+            status = _clean_text(payload.get("status"), max_length=30) or ""
+            if status not in EDGE_STATUSES:
+                raise ValueError("unsupported status")
+            row.status = status
+        if "weight" in payload:
+            row.weight = _safe_weight(payload.get("weight"))
+        if "source_kind" in payload:
+            row.source_kind = _clean_text(payload.get("source_kind"), max_length=40)
+        if "source_ref" in payload:
+            row.source_ref = _clean_text(payload.get("source_ref"), max_length=1000)
+        row.updated_by = actor_id
+        await self.session.flush()
+        return _serialize_edge(row)
+
+    async def archive_edge(self, edge_id: str, *, actor_role: str, actor_id: str | None = None) -> dict[str, Any] | None:
+        row = await self.get_edge(edge_id, actor_role=actor_role)
+        if row is None:
+            return None
+        row.status = "archived"
+        row.updated_by = actor_id
+        await self.session.flush()
+        return _serialize_edge(row)
+
+    async def search(self, *, query: str, actor_role: str, limit: int = 50) -> dict[str, Any]:
+        query = _clean_text(query, max_length=120) or ""
+        nodes = await self.list_nodes(actor_role=actor_role, q=query, limit=limit)
+        node_ids = {node["node_id"] for node in nodes}
+        allowed = set(actor_visible_visibilities(actor_role))
+        edge_rows: list[KnowledgeEdge] = []
+        if node_ids:
+            source_node = aliased(KnowledgeNode)
+            target_node = aliased(KnowledgeNode)
+            edge_rows.extend(
+                (
+                    await self.session.execute(
+                        select(KnowledgeEdge)
+                        .join(source_node, KnowledgeEdge.source_node_id == source_node.node_id)
+                        .join(target_node, KnowledgeEdge.target_node_id == target_node.node_id)
+                        .where(
+                            KnowledgeEdge.visibility.in_(allowed),
+                            KnowledgeEdge.status != "archived",
+                            source_node.visibility.in_(allowed),
+                            target_node.visibility.in_(allowed),
+                            source_node.status != "archived",
+                            target_node.status != "archived",
+                            (KnowledgeEdge.source_node_id.in_(node_ids)) | (KnowledgeEdge.target_node_id.in_(node_ids)),
+                        )
+                        .limit(max(1, min(limit, 200)))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        if query:
+            needle = f"%{query.lower()}%"
+            source_node = aliased(KnowledgeNode)
+            target_node = aliased(KnowledgeNode)
+            edge_rows.extend(
+                (
+                    await self.session.execute(
+                        select(KnowledgeEdge)
+                        .join(source_node, KnowledgeEdge.source_node_id == source_node.node_id)
+                        .join(target_node, KnowledgeEdge.target_node_id == target_node.node_id)
+                        .where(
+                            KnowledgeEdge.visibility.in_(allowed),
+                            KnowledgeEdge.status != "archived",
+                            source_node.visibility.in_(allowed),
+                            target_node.visibility.in_(allowed),
+                            source_node.status != "archived",
+                            target_node.status != "archived",
+                            func.lower(KnowledgeEdge.relation_type).like(needle),
+                        )
+                        .limit(max(1, min(limit, 200)))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        deduped_edges = {edge.edge_id: edge for edge in edge_rows}
+        return {"nodes": nodes, "edges": [_serialize_edge(row) for row in deduped_edges.values()]}
 
     async def get_layout(self, *, scope_ref: str, scope_type: str = "graph") -> dict[str, Any]:
         row = (

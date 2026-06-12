@@ -328,6 +328,111 @@ async def test_knowledge_graph_layouts_save_and_load(test_client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_knowledge_graph_crud_search_and_archive(test_client) -> None:
+    source_resp = await test_client.post(
+        "/api/web/knowledge/graph/nodes",
+        headers=_admin_headers(),
+        json={
+            "stable_key": "concept:crud-source",
+            "node_type": "concept",
+            "label": "CRUD source",
+            "description": "Initial graph CRUD source",
+            "visibility": "support_internal",
+        },
+    )
+    assert source_resp.status == 200
+    target_resp = await test_client.post(
+        "/api/web/knowledge/graph/nodes",
+        headers=_admin_headers(),
+        json={
+            "stable_key": "concept:crud-target",
+            "node_type": "concept",
+            "label": "CRUD target",
+            "visibility": "support_internal",
+        },
+    )
+    assert target_resp.status == 200
+
+    search_resp = await test_client.get(
+        "/api/web/knowledge/graph/search?q=crud-source",
+        headers=_admin_headers(),
+    )
+    assert search_resp.status == 200
+    search_payload = await search_resp.json()
+    assert [node["stable_key"] for node in search_payload["nodes"]] == ["concept:crud-source"]
+    assert _forbidden_paths(search_payload) == []
+
+    patch_node_resp = await test_client.patch(
+        "/api/web/knowledge/graph/nodes/concept:crud-source",
+        headers=_admin_headers(),
+        json={"label": "CRUD source updated", "description": "Updated safely", "status": "confirmed"},
+    )
+    assert patch_node_resp.status == 200
+    patched_node = (await patch_node_resp.json())["node"]
+    assert patched_node["label"] == "CRUD source updated"
+    assert patched_node["description"] == "Updated safely"
+
+    edge_resp = await test_client.post(
+        "/api/web/knowledge/graph/edges",
+        headers=_admin_headers(),
+        json={
+            "source_stable_key": "concept:crud-source",
+            "target_stable_key": "concept:crud-target",
+            "relation_type": "mentions",
+            "visibility": "support_internal",
+        },
+    )
+    assert edge_resp.status == 200
+    edge_id = (await edge_resp.json())["edge"]["edge_id"]
+
+    get_edge_resp = await test_client.get(
+        f"/api/web/knowledge/graph/edges/{edge_id}",
+        headers=_admin_headers(),
+    )
+    assert get_edge_resp.status == 200
+    assert (await get_edge_resp.json())["edge"]["relation_type"] == "mentions"
+
+    patch_edge_resp = await test_client.patch(
+        f"/api/web/knowledge/graph/edges/{edge_id}",
+        headers=_admin_headers(),
+        json={"relation_type": "supersedes", "weight": 2, "status": "confirmed"},
+    )
+    assert patch_edge_resp.status == 200
+    patched_edge = (await patch_edge_resp.json())["edge"]
+    assert patched_edge["relation_type"] == "supersedes"
+    assert patched_edge["weight"] == 2
+
+    auditor_patch_resp = await test_client.patch(
+        f"/api/web/knowledge/graph/edges/{edge_id}",
+        headers=_auditor_headers(),
+        json={"status": "archived"},
+    )
+    assert auditor_patch_resp.status == 403
+
+    delete_edge_resp = await test_client.delete(
+        f"/api/web/knowledge/graph/edges/{edge_id}",
+        headers=_admin_headers(),
+    )
+    assert delete_edge_resp.status == 200
+    assert (await delete_edge_resp.json())["edge"]["status"] == "archived"
+
+    delete_node_resp = await test_client.delete(
+        "/api/web/knowledge/graph/nodes/concept:crud-source",
+        headers=_admin_headers(),
+    )
+    assert delete_node_resp.status == 200
+    assert (await delete_node_resp.json())["node"]["status"] == "archived"
+
+    archived_search_resp = await test_client.get(
+        "/api/web/knowledge/graph/search?q=crud-source",
+        headers=_admin_headers(),
+    )
+    assert archived_search_resp.status == 200
+    archived_payload = await archived_search_resp.json()
+    assert archived_payload["nodes"] == []
+
+
+@pytest.mark.asyncio
 async def test_knowledge_operations_api_exposes_real_packs_quality_gaps_and_rollout(test_client) -> None:
     pack = {
         "code": "it-self-service-api",

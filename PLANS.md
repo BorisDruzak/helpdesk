@@ -2158,9 +2158,26 @@ Phase 9 persisted layout slice, 2026-06-12:
   * Live API flow verified `GET /api/web/knowledge/graph/layouts/default` -> 200, `POST /api/web/knowledge/graph/layouts/default` -> 200, repeated GET -> 200, sanitized unexpected layout keys, and persisted coordinates `x=111`, `y=222`.
   * Current Graph Studio Knowledge API requests returned 200 for nodes, layout and neighborhood. Browser console errors: none.
 
+Phase 9 graph CRUD/search slice, 2026-06-12:
+
+* Added full governed graph CRUD beyond initial upsert/create:
+
+  * `GET /api/web/knowledge/graph/search?q=...` returns ACL-filtered active nodes plus matching/connected edges;
+  * `GET/PATCH/DELETE /api/web/knowledge/graph/nodes/{node_id_or_stable_key}`;
+  * `GET /api/web/knowledge/graph/edges`, `GET/PATCH/DELETE /api/web/knowledge/graph/edges/{edge_id}`;
+  * DELETE archives nodes/edges instead of hard-deleting; node archive also archives connected active edges.
+
+* Graph mutations remain admin/support only; auditor is read-only and receives `403` for PATCH/DELETE.
+* Graph Studio now lets operators edit the selected node label and archive visible edges or the selected node from the inspector, then refreshes nodes/neighborhood queries.
+* TDD status:
+
+  * RED backend `server/tests/test_knowledge_api.py::test_knowledge_graph_crud_search_and_archive` failed with `404` on `/api/web/knowledge/graph/search`.
+  * RED frontend API test failed with `searchKnowledgeGraph is not a function`.
+  * RED Graph Studio test failed because `Метка выбранного узла` and archive controls were not rendered.
+  * GREEN targeted backend/API/Graph Studio tests now pass.
+
 Phase 9 remaining work:
 
-* Full graph CRUD beyond existing upsert/create: PATCH/DELETE nodes, GET/PATCH/DELETE edges and search endpoint.
 * AI proposal tables/API/review UI and observer events for proposal lifecycle.
 * Cleanup/delete workflow for support_internal live/test graph nodes and edges once graph DELETE endpoints exist.
 

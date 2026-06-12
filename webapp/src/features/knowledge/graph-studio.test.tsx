@@ -109,6 +109,46 @@ function setupFetch() {
         },
       });
     }
+    if (url === "/api/web/knowledge/graph/nodes/concept%3Avpn" && init?.method === "PATCH") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({
+        status: "ok",
+        node: {
+          node_id: "node-vpn",
+          stable_key: "concept:vpn",
+          label: body.label,
+          node_type: "concept",
+          visibility: "support_internal",
+          status: "confirmed",
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/graph/edges/edge-1" && init?.method === "DELETE") {
+      return jsonResponse({
+        status: "ok",
+        edge: {
+          edge_id: "edge-1",
+          source_node_id: "node-vpn",
+          target_node_id: "node-article",
+          relation_type: "mentions",
+          visibility: "support_internal",
+          status: "archived",
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/graph/nodes/concept%3Avpn" && init?.method === "DELETE") {
+      return jsonResponse({
+        status: "ok",
+        node: {
+          node_id: "node-vpn",
+          stable_key: "concept:vpn",
+          label: "VPN concept",
+          node_type: "concept",
+          visibility: "support_internal",
+          status: "archived",
+        },
+      });
+    }
     if (url === "/api/web/knowledge/graph/layouts/default" && init?.method === "POST") {
       return jsonResponse({
         status: "ok",
@@ -214,5 +254,32 @@ describe("KnowledgeGraphStudioPage", () => {
         },
       },
     });
+
+    fireEvent.change(screen.getByLabelText("Метка выбранного узла"), { target: { value: "VPN concept updated" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить узел" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/nodes/concept%3Avpn",
+        expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
+      ),
+    );
+    const updateNodeCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/nodes/concept%3Avpn" && call[1]?.method === "PATCH");
+    expect(JSON.parse(String(updateNodeCall?.[1]?.body))).toMatchObject({ label: "VPN concept updated" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Архивировать связь edge-1" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/edges/edge-1",
+        expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+      ),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Архивировать выбранный узел" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/nodes/concept%3Avpn",
+        expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+      ),
+    );
   });
 });
