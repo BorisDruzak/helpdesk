@@ -2490,9 +2490,28 @@ Phase 10 allowlisted remote import policy slice, 2026-06-12:
   * Safe response scans found no leaked `secret-token`, `password=hidden` or `outside.example.test` host fragments.
   * Browser screenshot captured as `knowledge-import-remote-policy-84fad303.png`; console recorded expected failed-resource entries for the deliberate `400` policy-block responses.
 
+Phase 10 import wizard UI controls slice, 2026-06-12:
+
+* Extended `/app/admin/knowledge/import` controls:
+
+  * format selector now includes `text`, `markdown`, `html`, `docx`, `pdf`, `url` and `git`;
+  * DOCX/PDF upload reads selected file into `file_content_base64`, updates `source_name` and uses the existing preview API;
+  * URL/Git modes expose dedicated URL/repo/ref fields plus a visible remote import policy message;
+  * auto-segmentation can be enabled before draft creation and uses selectable profiles loaded from `/api/web/knowledge/segmentation-profiles`;
+  * preview can display safe `remote_source` metadata and result can display segmentation status/profile.
+
+* TDD status:
+
+  * RED `pnpm --dir webapp test -- src/features/knowledge/import-wizard.test.tsx` initially failed after adding the new controls because the test contract and query payload expectations did not cover segmentation profile loading and remote controls.
+  * GREEN focused import wizard test now passes with 2 tests.
+  * `pnpm --dir webapp test -- src/features/knowledge/import-wizard.test.tsx src/features/knowledge/api.test.ts` -> 2 files, 22 tests passed.
+  * `pnpm --dir webapp build` -> passed.
+  * `python -m compileall -q scripts/navigation_catalog.py` -> passed.
+  * `python scripts/docs_inventory.py --check-links` -> passed.
+  * `python scripts/verify_workspace.py` -> passed.
+
 Phase 10 remaining work:
 
-* Add import wizard UI controls for file upload, remote-source policy messages and segmentation profile selection.
 * Add import job detail APIs and Observer v2 events listed above.
 * Capture live browser evidence for `/app/admin/knowledge/import`.
 
