@@ -339,6 +339,17 @@ export type KnowledgeMetadataBundle = {
   applicability_rules: KnowledgeApplicabilityRule[];
   quality_models: KnowledgeQualityModel[];
   item_metadata: KnowledgeItemMetadata[];
+  summary?: {
+    taxonomy_terms_total: number;
+    taxonomy_terms_active: number;
+    property_definitions_total: number;
+    property_definitions_active: number;
+    applicability_rules_total: number;
+    applicability_rules_active: number;
+    quality_models_total: number;
+    quality_models_active: number;
+    item_metadata_total: number;
+  };
 };
 
 export type KnowledgeQualitySummary = {
@@ -1156,7 +1167,7 @@ export async function fetchKnowledgeOpsSummary(): Promise<KnowledgeOpsSummary> {
 
 export async function fetchKnowledgeMetadata(): Promise<KnowledgeMetadataBundle> {
   const response = await fetch("/api/web/knowledge/metadata", { credentials: "same-origin" });
-  const payload = await readJson<{ metadata: KnowledgeMetadataBundle }>(response, "Failed to load knowledge metadata model");
+  const payload = await readJson<{ metadata: KnowledgeMetadataBundle }>(response, "Не удалось загрузить модель метаданных знаний");
   return payload.metadata;
 }
 
@@ -1167,7 +1178,7 @@ export async function saveKnowledgeTaxonomyTerm(payload: Partial<KnowledgeTaxono
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ term: KnowledgeTaxonomyTerm }>(response, "Failed to save knowledge taxonomy term");
+  return readJson<{ term: KnowledgeTaxonomyTerm }>(response, "Не удалось сохранить термин таксономии");
 }
 
 export async function saveKnowledgePropertyDefinition(
@@ -1179,7 +1190,7 @@ export async function saveKnowledgePropertyDefinition(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ property: KnowledgePropertyDefinition }>(response, "Failed to save knowledge property definition");
+  return readJson<{ property: KnowledgePropertyDefinition }>(response, "Не удалось сохранить свойство знаний");
 }
 
 export async function saveKnowledgeItemMetadata(itemIdOrSlug: string, payload: { properties?: Record<string, unknown>; taxonomy_term_ids?: string[] }) {
@@ -1189,7 +1200,7 @@ export async function saveKnowledgeItemMetadata(itemIdOrSlug: string, payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ item_metadata: KnowledgeItemMetadata }>(response, "Failed to save knowledge item metadata");
+  return readJson<{ item_metadata: KnowledgeItemMetadata }>(response, "Не удалось сохранить метаданные статьи");
 }
 
 export async function saveKnowledgeApplicabilityRules(itemIdOrSlug: string, rules: Array<Partial<KnowledgeApplicabilityRule>>) {
@@ -1199,7 +1210,7 @@ export async function saveKnowledgeApplicabilityRules(itemIdOrSlug: string, rule
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ rules }),
   });
-  return readJson<{ rules: KnowledgeApplicabilityRule[] }>(response, "Failed to save knowledge applicability rules");
+  return readJson<{ rules: KnowledgeApplicabilityRule[] }>(response, "Не удалось сохранить правила применимости");
 }
 
 export async function saveKnowledgeQualityModel(payload: Partial<KnowledgeQualityModel> & { code: string; title: string }) {
@@ -1209,7 +1220,7 @@ export async function saveKnowledgeQualityModel(payload: Partial<KnowledgeQualit
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  return readJson<{ quality_model: KnowledgeQualityModel }>(response, "Failed to save knowledge quality model");
+  return readJson<{ quality_model: KnowledgeQualityModel }>(response, "Не удалось сохранить модель качества знаний");
 }
 
 export async function fetchKnowledgeContentPacks(): Promise<KnowledgeContentPack[]> {

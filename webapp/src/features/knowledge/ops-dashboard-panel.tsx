@@ -52,40 +52,44 @@ function MetadataModelPanel({ metadata }: { metadata?: KnowledgeMetadataBundle }
   const activeModel = metadata?.quality_models?.find((model) => model.is_default && model.status === "active") ?? metadata?.quality_models?.find((model) => model.status === "active");
   const weights = activeModel?.weights ?? {};
   const weightEntries = Object.entries(weights).slice(0, 6);
+  const activeTaxonomyTerms = metadata?.summary?.taxonomy_terms_active ?? metadata?.taxonomy_terms?.filter((row) => row.status === "active").length ?? 0;
+  const activePropertyDefinitions = metadata?.summary?.property_definitions_active ?? metadata?.property_definitions?.filter((row) => row.status === "active").length ?? 0;
+  const activeApplicabilityRules = metadata?.summary?.applicability_rules_active ?? metadata?.applicability_rules?.length ?? 0;
+  const itemMetadataCount = metadata?.summary?.item_metadata_total ?? metadata?.item_metadata?.length ?? 0;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Layers className="h-4 w-4" />
-          Knowledge metadata model
+          Модель метаданных знаний
         </CardTitle>
-        <CardDescription>Taxonomy, typed properties, applicability rules and quality model coverage.</CardDescription>
+        <CardDescription>Таксономия, типизированные свойства, правила применимости и покрытие модели качества.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 md:grid-cols-4">
           <div>
-            <p className="text-xs uppercase text-slate-500">Taxonomy terms</p>
-            <p className="text-2xl font-semibold text-slate-950">{metadata?.taxonomy_terms?.length ?? 0}</p>
+            <p className="text-xs uppercase text-slate-500">Термины таксономии</p>
+            <p className="text-2xl font-semibold text-slate-950">{activeTaxonomyTerms}</p>
           </div>
           <div>
-            <p className="text-xs uppercase text-slate-500">Properties</p>
-            <p className="text-2xl font-semibold text-slate-950">{metadata?.property_definitions?.length ?? 0}</p>
+            <p className="text-xs uppercase text-slate-500">Свойства</p>
+            <p className="text-2xl font-semibold text-slate-950">{activePropertyDefinitions}</p>
           </div>
           <div>
-            <p className="text-xs uppercase text-slate-500">Applicability rules</p>
-            <p className="text-2xl font-semibold text-slate-950">{metadata?.applicability_rules?.length ?? 0}</p>
+            <p className="text-xs uppercase text-slate-500">Правила применимости</p>
+            <p className="text-2xl font-semibold text-slate-950">{activeApplicabilityRules}</p>
           </div>
           <div>
-            <p className="text-xs uppercase text-slate-500">Item metadata</p>
-            <p className="text-2xl font-semibold text-slate-950">{metadata?.item_metadata?.length ?? 0}</p>
+            <p className="text-xs uppercase text-slate-500">Метаданные статей</p>
+            <p className="text-2xl font-semibold text-slate-950">{itemMetadataCount}</p>
           </div>
         </div>
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">Active quality model:</span>
+            <span className="font-medium">Активная модель качества:</span>
             <Badge tone={activeModel ? "success" : "warning"}>{activeModel?.code ?? "builtin-default"}</Badge>
-            <span className="text-slate-500">{activeModel?.title ?? "Built-in quality model"}</span>
+            <span className="text-slate-500">{activeModel?.title ?? "Встроенная модель качества"}</span>
           </div>
           {weightEntries.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -96,7 +100,7 @@ function MetadataModelPanel({ metadata }: { metadata?: KnowledgeMetadataBundle }
               ))}
             </div>
           ) : (
-            <p className="mt-2 text-xs text-slate-500">No custom quality weights configured.</p>
+            <p className="mt-2 text-xs text-slate-500">Пользовательские веса качества не настроены.</p>
           )}
         </div>
       </CardContent>

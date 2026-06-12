@@ -3195,7 +3195,7 @@ Exit criteria:
 
 ## Phase 14 - Knowledge taxonomy, properties, applicability and quality model
 
-Status: implemented and live validated on commit `9941a454`, 2026-06-12.
+Status: implemented and live validated on commit `9941a454`, 2026-06-12; Phase 14 follow-up hardening active on 2026-06-13.
 
 Scope:
 
@@ -3221,7 +3221,7 @@ Exit criteria:
 * `GET /api/web/knowledge/metadata` returns spaces, taxonomy terms, property definitions, applicability rules, quality models and item metadata summary for admin/support/auditor.
 * `POST /api/web/knowledge/taxonomy`, `POST /api/web/knowledge/properties`, `PUT /api/web/knowledge/items/{item_id}/metadata`, `POST /api/web/knowledge/items/{item_id}/applicability` and `POST /api/web/knowledge/quality-models` validate inputs and forbid unauthorized mutation.
 * Quality summary includes `quality_model` and uses property/applicability requirements in scoring.
-* `/app/admin/knowledge` shows "Knowledge metadata model", active taxonomy/property/applicability counts and quality weights after deploy.
+* `/app/admin/knowledge` shows the Russian-first metadata model card, active taxonomy/property/applicability counts and quality weights after deploy.
 * Requester/public Knowledge paths remain backward-compatible and do not expose admin metadata diagnostics.
 
 Implementation results, 2026-06-12:
@@ -3249,9 +3249,48 @@ Remote/live verification, 2026-06-12:
 * Direct shell API probe with `test-ui-admin-token` returned 401 on the live stand; this is expected because live does not accept test bearer tokens. The browser evidence uses the authenticated admin session and rendered metadata payload.
 * Evidence text scan found no `sk-or-`, `sk-proj-`, `BEGIN PRIVATE KEY`, `secret-token` or `password=hidden` markers.
 
+Phase 14 follow-up hardening plan, 2026-06-13:
+
+* Replace English Knowledge metadata model card labels and metadata API fallback errors with Russian-first text, and add webapp tests that assert the metadata panel is mojibake-free.
+* Harden taxonomy term mutation so support can mutate only requested term visibilities allowed for support, not merely terms inside a support-visible space.
+* Add DB-enforced quality model uniqueness with partial indexes for global model code, active default global model and active default model per space.
+* Keep `/api/web/knowledge/metadata` as a full visible metadata bundle for admin/support/auditor management, and add `summary` total/active counts. Knowledge Ops dashboard must use active counts for model coverage so draft/archived taxonomy terms and property definitions are not counted as active coverage.
+* Add local and live mutation evidence: create taxonomy/property/applicability/quality model through protected admin UI/API, verify `/app/admin/knowledge` updates, and verify requester/public Knowledge projections still hide admin metadata diagnostics.
+
+Phase 14 follow-up hardening exit criteria:
+
+* Phase 14 remains live-rendered.
+* Metadata mutation rules are role-safe for requested taxonomy term visibility.
+* Quality model uniqueness is DB-enforced.
+* Ops counts are semantically correct and active-only.
+* Visible metadata card text is Russian-first and mojibake-free.
+* Requester/public Knowledge projections remain safe.
+
+Phase 14 follow-up implementation results, 2026-06-13:
+
+* Hardened `KnowledgeMetadataService.upsert_taxonomy_term()` so requested taxonomy term `visibility` is checked against the actor role in addition to the parent space visibility.
+* Added migration `119` and ORM indexes for DB-enforced global quality model code uniqueness, one active default global model and one active default model per space. The migration normalizes any pre-existing duplicate global codes/defaults before creating indexes.
+* Extended `GET /api/web/knowledge/metadata` with `summary` total/active counts while keeping the full visible management bundle for admin/support/auditor workflows.
+* Updated `/app/admin/knowledge` metadata model card to Russian-first labels and active coverage counts; draft/archived taxonomy terms and properties no longer count as active model coverage.
+* Updated Knowledge metadata API fallback errors to Russian-first strings.
+* Updated docs, CODEMAP, quick lookup and navigation catalog for migration `119`, active summary counts and requested taxonomy visibility ACL.
+
+Phase 14 follow-up local verification, 2026-06-13:
+
+* RED checks failed before implementation for support admin-internal taxonomy mutation, support visibility escalation, missing metadata `summary`, duplicate global quality model code/defaults and English metadata UI/API text.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py -q --tb=short` passed with 9 tests.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py server/tests/test_knowledge_api.py::test_knowledge_api_admin_crud_and_requester_safe_suggest server/tests/test_knowledge_acl_hardening.py::test_web_acl_denies_support_restricted_mutation_and_auditor_publish server/tests/test_knowledge_rag_eval.py -q --tb=short` passed with 13 tests.
+* `pnpm --dir webapp test -- src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx` passed with 2 files / 25 tests.
+* `pnpm --dir webapp test -- src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx src/pages/kb/search-page.test.tsx src/app/navigation.test.ts` passed with 4 files / 36 tests.
+* `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `pnpm --dir webapp build`, `python scripts/verify_workspace.py` and targeted `git diff --check` passed.
+
+Phase 14 follow-up remote/live verification, 2026-06-13:
+
+* Pending deploy/live mutation evidence for the committed hardening slice.
+
 Remaining Phase 14 work:
 
-* None for the Phase 14 slice. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
+* Deploy the 2026-06-13 follow-up hardening slice and collect live mutation/projection evidence. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
 

@@ -193,6 +193,17 @@ describe("knowledge operations api", () => {
             applicability_rules: [{ rule_id: "rule-1", item_id: "item-1", scope_type: "service", scope_ref: "network", include_mode: "include", priority: 10 }],
             quality_models: [{ model_id: "qm-1", space_id: "ks-1", code: "metadata-required", title: "Metadata required", weights: { properties: 12 }, status: "active", is_default: true }],
             item_metadata: [{ item_id: "item-1", space_id: "ks-1", slug: "vpn", title: "VPN", properties: { audience: "requester" }, taxonomy_terms: [], applicability_rules: [] }],
+            summary: {
+              taxonomy_terms_total: 1,
+              taxonomy_terms_active: 1,
+              property_definitions_total: 1,
+              property_definitions_active: 1,
+              applicability_rules_total: 1,
+              applicability_rules_active: 1,
+              quality_models_total: 1,
+              quality_models_active: 1,
+              item_metadata_total: 1,
+            },
           },
         }),
       )
@@ -216,6 +227,25 @@ describe("knowledge operations api", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/web/knowledge/items/item-1/metadata", expect.objectContaining({ method: "PUT" }));
     expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/web/knowledge/items/item-1/applicability", expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenNthCalledWith(6, "/api/web/knowledge/quality-models", expect.objectContaining({ method: "POST" }));
+  });
+
+  it("uses Russian fallback errors for knowledge metadata model endpoints", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({}, 500));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const calls: Array<[() => Promise<unknown>, string]> = [
+      [() => fetchKnowledgeMetadata(), "Не удалось загрузить модель метаданных знаний"],
+      [() => saveKnowledgeTaxonomyTerm({ space_id: "ks-1", term_type: "tag", code: "vpn", title: "VPN" }), "Не удалось сохранить термин таксономии"],
+      [() => saveKnowledgePropertyDefinition({ space_id: "ks-1", code: "audience", title: "Audience", value_type: "text" }), "Не удалось сохранить свойство знаний"],
+      [() => saveKnowledgeItemMetadata("item-1", { properties: { audience: "requester" }, taxonomy_term_ids: [] }), "Не удалось сохранить метаданные статьи"],
+      [() => saveKnowledgeApplicabilityRules("item-1", [{ scope_type: "service", scope_ref: "network" }]), "Не удалось сохранить правила применимости"],
+      [() => saveKnowledgeQualityModel({ code: "metadata-required", title: "Metadata required" }), "Не удалось сохранить модель качества знаний"],
+    ];
+
+    for (const [call, message] of calls) {
+      await expect(call()).rejects.toThrow(message);
+      expect(message).not.toMatch(/Failed to|knowledge metadata model|�|Р[°µґ»]|С[ЊЃ]/);
+    }
   });
 
   it("posts content pack, review action, and rollout policy payloads", async () => {

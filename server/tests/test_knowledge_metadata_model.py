@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+import uuid
+
 import pytest
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.db.models import KnowledgeQualityModel, KnowledgeSpace
+
+
+def _unique_code(prefix: str) -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
 def _admin_headers() -> dict[str, str]:
@@ -180,3 +190,211 @@ async def test_knowledge_metadata_mutation_forbidden_for_requester_and_public_pr
     payload = await public_search.json()
     assert "metadata" not in payload
     assert "quality_model" not in payload
+
+
+@pytest.mark.asyncio
+async def test_support_cannot_create_admin_internal_taxonomy_in_support_visible_space(test_client) -> None:
+    code = _unique_code("acl-space")
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": code, "title": "ACL Space", "visibility": "support_internal", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+    space = (await space_resp.json())["space"]
+
+    term_resp = await test_client.post(
+        "/api/web/knowledge/taxonomy",
+        headers=_support_headers(),
+        json={
+            "space_id": space["space_id"],
+            "term_type": "tag",
+            "code": _unique_code("restricted-term"),
+            "title": "Restricted term",
+            "visibility": "admin_internal",
+            "status": "active",
+        },
+    )
+    assert term_resp.status in {400, 403}
+
+
+@pytest.mark.asyncio
+async def test_support_cannot_escalate_existing_taxonomy_visibility(test_client) -> None:
+    code = _unique_code("acl-escalate")
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": code, "title": "ACL Escalate", "visibility": "support_internal", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+    space = (await space_resp.json())["space"]
+    term_code = _unique_code("support-term")
+
+    create_resp = await test_client.post(
+        "/api/web/knowledge/taxonomy",
+        headers=_admin_headers(),
+        json={
+            "space_id": space["space_id"],
+            "term_type": "tag",
+            "code": term_code,
+            "title": "Support term",
+            "visibility": "support_internal",
+            "status": "active",
+        },
+    )
+    assert create_resp.status == 200
+    assert (await create_resp.json())["term"]["visibility"] == "support_internal"
+
+    escalate_resp = await test_client.post(
+        "/api/web/knowledge/taxonomy",
+        headers=_support_headers(),
+        json={
+            "space_id": space["space_id"],
+            "term_type": "tag",
+            "code": term_code,
+            "title": "Support term escalated",
+            "visibility": "admin_internal",
+            "status": "active",
+        },
+    )
+    assert escalate_resp.status in {400, 403}
+
+    bundle_resp = await test_client.get("/api/web/knowledge/metadata", headers=_admin_headers())
+    assert bundle_resp.status == 200
+    terms = (await bundle_resp.json())["metadata"]["taxonomy_terms"]
+    persisted = next(row for row in terms if row["space_id"] == space["space_id"] and row["code"] == term_code)
+    assert persisted["visibility"] == "support_internal"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_create_admin_internal_taxonomy_in_support_visible_space(test_client) -> None:
+    code = _unique_code("acl-admin")
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": code, "title": "ACL Admin", "visibility": "support_internal", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+    space = (await space_resp.json())["space"]
+
+    term_resp = await test_client.post(
+        "/api/web/knowledge/taxonomy",
+        headers=_admin_headers(),
+        json={
+            "space_id": space["space_id"],
+            "term_type": "tag",
+            "code": _unique_code("admin-term"),
+            "title": "Admin term",
+            "visibility": "admin_internal",
+            "status": "active",
+        },
+    )
+    assert term_resp.status == 200
+    assert (await term_resp.json())["term"]["visibility"] == "admin_internal"
+
+
+@pytest.mark.asyncio
+async def test_metadata_bundle_summary_counts_only_active_taxonomy_and_properties(test_client) -> None:
+    code = _unique_code("counts-space")
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": code, "title": "Counts Space", "visibility": "requester", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+    space = (await space_resp.json())["space"]
+
+    for term_code, status in (("active-term", "active"), ("draft-term", "draft"), ("archived-term", "archived")):
+        term_resp = await test_client.post(
+            "/api/web/knowledge/taxonomy",
+            headers=_admin_headers(),
+            json={
+                "space_id": space["space_id"],
+                "term_type": "tag",
+                "code": f"{term_code}-{uuid.uuid4().hex[:6]}",
+                "title": term_code,
+                "visibility": "requester",
+                "status": status,
+            },
+        )
+        assert term_resp.status == 200
+
+    for property_code, status in (("active-property", "active"), ("draft-property", "draft"), ("archived-property", "archived")):
+        property_resp = await test_client.post(
+            "/api/web/knowledge/properties",
+            headers=_admin_headers(),
+            json={
+                "space_id": space["space_id"],
+                "code": f"{property_code}-{uuid.uuid4().hex[:6]}",
+                "title": property_code,
+                "value_type": "text",
+                "status": status,
+            },
+        )
+        assert property_resp.status == 200
+
+    bundle_resp = await test_client.get("/api/web/knowledge/metadata", headers=_admin_headers())
+    assert bundle_resp.status == 200
+    metadata = (await bundle_resp.json())["metadata"]
+    scoped_terms = [row for row in metadata["taxonomy_terms"] if row["space_id"] == space["space_id"]]
+    scoped_properties = [row for row in metadata["property_definitions"] if row["space_id"] == space["space_id"]]
+    assert len(scoped_terms) == 3
+    assert len(scoped_properties) == 3
+    assert metadata["summary"]["taxonomy_terms_active"] == sum(1 for row in metadata["taxonomy_terms"] if row["status"] == "active")
+    assert metadata["summary"]["property_definitions_active"] == sum(1 for row in metadata["property_definitions"] if row["status"] == "active")
+    assert metadata["summary"]["taxonomy_terms_active"] < metadata["summary"]["taxonomy_terms_total"]
+    assert metadata["summary"]["property_definitions_active"] < metadata["summary"]["property_definitions_total"]
+
+
+@pytest.mark.asyncio
+async def test_quality_model_global_code_uniqueness_is_db_enforced(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    code = _unique_code("global-quality")
+    async with session_maker() as session:
+        session.add_all(
+            [
+                KnowledgeQualityModel(model_id=str(uuid.uuid4()), space_id=None, code=code, title="Global quality one", weights_json={}, thresholds_json={}, status="active"),
+                KnowledgeQualityModel(model_id=str(uuid.uuid4()), space_id=None, code=code, title="Global quality two", weights_json={}, thresholds_json={}, status="active"),
+            ]
+        )
+        with pytest.raises(IntegrityError):
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_quality_model_global_default_uniqueness_is_db_enforced(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add_all(
+            [
+                KnowledgeQualityModel(model_id=str(uuid.uuid4()), space_id=None, code=_unique_code("global-default-a"), title="Global default one", weights_json={}, thresholds_json={}, status="active", is_default=True),
+                KnowledgeQualityModel(model_id=str(uuid.uuid4()), space_id=None, code=_unique_code("global-default-b"), title="Global default two", weights_json={}, thresholds_json={}, status="active", is_default=True),
+            ]
+        )
+        with pytest.raises(IntegrityError):
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_quality_model_space_default_uniqueness_is_db_enforced(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    space_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(
+            KnowledgeSpace(
+                space_id=space_id,
+                code=_unique_code("default-space"),
+                title="Default Space",
+                visibility="requester",
+                lifecycle_status="active",
+            )
+        )
+        await session.flush()
+        session.add_all(
+            [
+                KnowledgeQualityModel(model_id=str(uuid.uuid4()), space_id=space_id, code=_unique_code("space-default-a"), title="Space default one", weights_json={}, thresholds_json={}, status="active", is_default=True),
+                KnowledgeQualityModel(model_id=str(uuid.uuid4()), space_id=space_id, code=_unique_code("space-default-b"), title="Space default two", weights_json={}, thresholds_json={}, status="active", is_default=True),
+            ]
+        )
+        with pytest.raises(IntegrityError):
+            await session.commit()

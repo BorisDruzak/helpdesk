@@ -185,6 +185,8 @@ class KnowledgeMetadataService:
         visibility = str(payload.get("visibility") or "support_internal")
         if visibility not in KNOWLEDGE_VISIBILITIES:
             raise KnowledgeValidationError("unsupported taxonomy visibility")
+        if not can_mutate_knowledge_visibility(actor_role, visibility):
+            raise KnowledgeValidationError("actor cannot mutate taxonomy term visibility")
         status = str(payload.get("status") or "active")
         if status not in {"active", "draft", "archived"}:
             raise KnowledgeValidationError("unsupported taxonomy status")
@@ -595,6 +597,12 @@ class KnowledgeMetadataService:
         ).scalars().all()
         item_metadata = [await self.item_metadata(row.item_id, actor_role=actor_role) for row in items]
         rules = [rule for item in item_metadata for rule in item["applicability_rules"]]
+        serialized_terms = [serialize_taxonomy_term(row) for row in terms]
+        serialized_properties = [serialize_property_definition(row) for row in properties]
+        serialized_quality_models = [serialize_quality_model(row) for row in quality_models]
+        active_terms = sum(1 for row in serialized_terms if row["status"] == "active")
+        active_properties = sum(1 for row in serialized_properties if row["status"] == "active")
+        active_quality_models = sum(1 for row in serialized_quality_models if row["status"] == "active")
         return {
             "spaces": [
                 {
@@ -606,9 +614,20 @@ class KnowledgeMetadataService:
                 }
                 for row in spaces
             ],
-            "taxonomy_terms": [serialize_taxonomy_term(row) for row in terms],
-            "property_definitions": [serialize_property_definition(row) for row in properties],
+            "taxonomy_terms": serialized_terms,
+            "property_definitions": serialized_properties,
             "applicability_rules": rules,
-            "quality_models": [serialize_quality_model(row) for row in quality_models],
+            "quality_models": serialized_quality_models,
             "item_metadata": item_metadata,
+            "summary": {
+                "taxonomy_terms_total": len(serialized_terms),
+                "taxonomy_terms_active": active_terms,
+                "property_definitions_total": len(serialized_properties),
+                "property_definitions_active": active_properties,
+                "applicability_rules_total": len(rules),
+                "applicability_rules_active": len(rules),
+                "quality_models_total": len(serialized_quality_models),
+                "quality_models_active": active_quality_models,
+                "item_metadata_total": len(item_metadata),
+            },
         }

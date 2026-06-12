@@ -123,7 +123,7 @@ APIs:
 
 Phase 14 quality model extension:
 
-- `knowledge_quality_models` stores per-space or global scoring models with `weights` and `thresholds`.
+- `knowledge_quality_models` stores per-space or global scoring models with `weights` and `thresholds`; migration `119` enforces unique global `code`, one active default global model and one active default model per space.
 - When a space has an active/default model, `GET /api/web/knowledge/quality` includes `quality_model` and adds metadata dimensions from model weights.
 - `properties` weight is granted only when applicable required properties are present; otherwise issue code `missing_required_property:<code>` is emitted.
 - `taxonomy` weight is granted when the item has at least one governed taxonomy term.
@@ -139,11 +139,12 @@ Phase 14 adds governed metadata operations without changing requester/public pro
 - `knowledge_item_properties` and `knowledge_item_taxonomy_terms`: validated item metadata assignments.
 - `knowledge_applicability_rules`: explicit include/exclude item applicability by service, offering, request template, role, device OS/family, audience, taxonomy term or custom scope.
 - `knowledge_quality_models`: active/default scoring models.
+- `GET /api/web/knowledge/metadata` returns all visible management rows plus `summary` total/active counts. Dashboard coverage must use active counts so draft/archived taxonomy terms and property definitions do not count as active model coverage.
 
 APIs:
 
 - `GET /api/web/knowledge/metadata`: admin/support/auditor read bundle.
-- `POST /api/web/knowledge/taxonomy`: admin/support upsert taxonomy term.
+- `POST /api/web/knowledge/taxonomy`: admin/support upsert taxonomy term; mutation checks the requested term `visibility` as well as the parent space, so support cannot create or escalate terms to `admin_internal` or `security_restricted`.
 - `POST /api/web/knowledge/properties`: admin/support upsert property definition.
 - `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`: read/update item property values and taxonomy terms.
 - `GET|POST /api/web/knowledge/items/{item_id_or_slug}/applicability`: read/replace applicability rules.

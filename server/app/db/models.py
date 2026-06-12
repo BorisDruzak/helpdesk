@@ -1213,6 +1213,19 @@ class KnowledgeQualityModel(Base):
         sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_knowledge_quality_models_code_safe"),
         sa.CheckConstraint("status IN ('active', 'draft', 'archived')", name="ck_knowledge_quality_models_status"),
         Index("ix_knowledge_quality_models_space_default", "space_id", "is_default", "status"),
+        Index("uq_knowledge_quality_models_global_code", "code", unique=True, postgresql_where=sa.text("space_id IS NULL")),
+        Index(
+            "uq_knowledge_quality_models_global_active_default",
+            "is_default",
+            unique=True,
+            postgresql_where=sa.text("space_id IS NULL AND status = 'active' AND is_default IS TRUE"),
+        ),
+        Index(
+            "uq_knowledge_quality_models_space_active_default",
+            "space_id",
+            unique=True,
+            postgresql_where=sa.text("space_id IS NOT NULL AND status = 'active' AND is_default IS TRUE"),
+        ),
     )
 
 

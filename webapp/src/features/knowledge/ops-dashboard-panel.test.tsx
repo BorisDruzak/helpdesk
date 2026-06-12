@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { KnowledgeOpsDashboardPanel } from "./ops-dashboard-panel";
@@ -19,7 +19,7 @@ function renderPanel() {
     },
   });
 
-  render(
+  return render(
     <QueryClientProvider client={queryClient}>
       <KnowledgeOpsDashboardPanel />
     </QueryClientProvider>,
@@ -110,11 +110,30 @@ describe("KnowledgeOpsDashboardPanel", () => {
             status: "ok",
             metadata: {
               spaces: [{ space_id: "ks-1", code: "it", title: "IT", visibility: "requester", lifecycle_status: "active" }],
-              taxonomy_terms: [{ term_id: "term-1", space_id: "ks-1", term_type: "product", code: "vpn", title: "VPN", visibility: "requester", status: "active" }],
-              property_definitions: [{ property_id: "prop-1", space_id: "ks-1", code: "audience", title: "Audience", value_type: "select", required: true, status: "active" }],
+              taxonomy_terms: [
+                { term_id: "term-1", space_id: "ks-1", term_type: "product", code: "vpn", title: "VPN", visibility: "requester", status: "active" },
+                { term_id: "term-2", space_id: "ks-1", term_type: "tag", code: "draft", title: "Draft", visibility: "requester", status: "draft" },
+                { term_id: "term-3", space_id: "ks-1", term_type: "tag", code: "archived", title: "Archived", visibility: "requester", status: "archived" },
+              ],
+              property_definitions: [
+                { property_id: "prop-1", space_id: "ks-1", code: "audience", title: "Audience", value_type: "select", required: true, status: "active" },
+                { property_id: "prop-2", space_id: "ks-1", code: "draft_property", title: "Draft property", value_type: "text", required: false, status: "draft" },
+                { property_id: "prop-3", space_id: "ks-1", code: "archived_property", title: "Archived property", value_type: "text", required: false, status: "archived" },
+              ],
               applicability_rules: [{ rule_id: "rule-1", item_id: "item-1", scope_type: "service", scope_ref: "network", include_mode: "include", priority: 10 }],
               quality_models: [{ model_id: "qm-1", space_id: "ks-1", code: "metadata-required", title: "Metadata required", weights: { properties: 12, applicability: 8 }, status: "active", is_default: true }],
               item_metadata: [{ item_id: "item-1", space_id: "ks-1", slug: "vpn", title: "VPN", properties: { audience: "requester" }, taxonomy_terms: [], applicability_rules: [] }],
+              summary: {
+                taxonomy_terms_total: 3,
+                taxonomy_terms_active: 1,
+                property_definitions_total: 3,
+                property_definitions_active: 1,
+                applicability_rules_total: 1,
+                applicability_rules_active: 1,
+                quality_models_total: 1,
+                quality_models_active: 1,
+                item_metadata_total: 1,
+              },
             },
           }),
         );
@@ -123,7 +142,7 @@ describe("KnowledgeOpsDashboardPanel", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    renderPanel();
+    const { container } = renderPanel();
 
     expect(await screen.findByText("Degraded")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Knowledge Operations Center" })).toBeInTheDocument();
@@ -134,9 +153,21 @@ describe("KnowledgeOpsDashboardPanel", () => {
     expect(screen.getByText("Observer-backed degradation")).toBeInTheDocument();
     expect(screen.getByText("knowledge.indexing.failed")).toBeInTheDocument();
     expect(screen.getByText("Embedding provider unavailable")).toBeInTheDocument();
-    expect(await screen.findByText("Knowledge metadata model")).toBeInTheDocument();
+    const metadataHeading = await screen.findByRole("heading", { name: "Модель метаданных знаний" });
+    const metadataCard = metadataHeading.closest(".surface-panel") as HTMLElement;
+    expect(metadataCard).toBeTruthy();
+    expect(within(metadataCard).getByText("Термины таксономии")).toBeInTheDocument();
+    expect(within(metadataCard).getByText("Свойства")).toBeInTheDocument();
+    expect(within(metadataCard).getByText("Правила применимости")).toBeInTheDocument();
+    expect(within(metadataCard).getByText("Метаданные статей")).toBeInTheDocument();
+    expect(within(metadataCard).getByText("Активная модель качества:")).toBeInTheDocument();
+    expect(within(metadataCard).getAllByText("1")).toHaveLength(4);
+    expect(within(metadataCard).queryByText("3")).not.toBeInTheDocument();
     expect(screen.getByText("metadata-required")).toBeInTheDocument();
     expect(screen.getByText("properties: 12")).toBeInTheDocument();
+    expect(metadataCard.textContent ?? "").not.toMatch(/Knowledge metadata model|Taxonomy terms|Properties|Applicability rules|Item metadata|Active quality model/);
+    expect(metadataCard.textContent ?? "").not.toMatch(/�|Р[°µґ»]|С[ЊЃ]/);
+    expect(container.textContent ?? "").not.toMatch(/Модель метаданных зна�/);
     expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/ops/summary", { credentials: "same-origin" });
     expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/metadata", { credentials: "same-origin" });
   });
