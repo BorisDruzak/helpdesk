@@ -24,6 +24,29 @@ import {
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
 const textareaClass = `${fieldClass} min-h-72 font-mono text-xs leading-6`;
 
+const itemTypeOptions = [
+  { label: "Статья", value: "article" },
+  { label: "FAQ", value: "faq" },
+  { label: "Пошаговая инструкция", value: "runbook" },
+  { label: "Известная ошибка", value: "known_error" },
+  { label: "Обходное решение", value: "workaround" },
+];
+
+const visibilityOptions = [
+  { label: "Портал заявителя", value: "requester" },
+  { label: "Безопасно для агента и заявителя", value: "agent_requester_safe" },
+  { label: "Внутреннее для поддержки", value: "support_internal" },
+  { label: "Только администраторы", value: "admin_internal" },
+];
+
+const statusLabels: Record<string, string> = {
+  archived: "Архив",
+  draft: "Черновик",
+  in_review: "На ревью",
+  published: "Опубликована",
+  retired: "Выведена",
+};
+
 type EditorDraft = {
   body: string;
   body_format: string;
@@ -85,6 +108,17 @@ function normalizeList(value: string) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function statusLabel(value: string | null | undefined) {
+  if (!value) {
+    return "Без статуса";
+  }
+  return statusLabels[value] ?? value;
+}
+
+function visibilityLabel(value: string | null | undefined) {
+  return visibilityOptions.find((option) => option.value === value)?.label ?? value ?? "Без видимости";
 }
 
 function markdownPreview(markdown: string) {
@@ -306,7 +340,7 @@ export function KnowledgeAuthoringStudioPage() {
   return (
     <section className="space-y-6">
       <PageHeading
-        eyebrow="Knowledge Authoring"
+        eyebrow="Редактор базы знаний"
         title="Студия статей"
         description="Редактор статей, версий, разметки и публикации для продуктовой базы знаний."
       />
@@ -339,8 +373,8 @@ export function KnowledgeAuthoringStudioPage() {
                     <span className="block font-semibold text-slate-950">{item.title}</span>
                     <span className="block text-xs text-slate-500">{item.slug}</span>
                     <span className="mt-2 flex flex-wrap gap-2">
-                      <Badge>{item.status}</Badge>
-                      <Badge>{item.visibility}</Badge>
+                      <Badge>{statusLabel(item.status)}</Badge>
+                      <Badge>{visibilityLabel(item.visibility)}</Badge>
                     </span>
                   </button>
                 ))}
@@ -384,30 +418,31 @@ export function KnowledgeAuthoringStudioPage() {
                 <label className="text-sm font-medium">
                   Тип нового черновика
                   <select className={fieldClass} value={newDraft.item_type} onChange={(event) => setNewDraft({ ...newDraft, item_type: event.target.value })}>
-                    <option value="article">article</option>
-                    <option value="faq">faq</option>
-                    <option value="runbook">runbook</option>
-                    <option value="known_error">known_error</option>
-                    <option value="workaround">workaround</option>
+                    {itemTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
               <label className="text-sm font-medium">
                 Видимость нового черновика
                 <select className={fieldClass} value={newDraft.visibility} onChange={(event) => setNewDraft({ ...newDraft, visibility: event.target.value })}>
-                  <option value="requester">requester</option>
-                  <option value="agent_requester_safe">agent_requester_safe</option>
-                  <option value="support_internal">support_internal</option>
-                  <option value="admin_internal">admin_internal</option>
+                  {visibilityOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="text-sm font-medium">
-                  Owner нового черновика
+                  Владелец нового черновика
                   <input className={fieldClass} value={newDraft.owner_actor_id} onChange={(event) => setNewDraft({ ...newDraft, owner_actor_id: event.target.value })} />
                 </label>
                 <label className="text-sm font-medium">
-                  Reviewer нового черновика
+                  Ревьюер нового черновика
                   <input className={fieldClass} value={newDraft.reviewer_actor_id} onChange={(event) => setNewDraft({ ...newDraft, reviewer_actor_id: event.target.value })} />
                 </label>
               </div>
@@ -427,7 +462,7 @@ export function KnowledgeAuthoringStudioPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Метаданные статьи</CardTitle>
-                <CardDescription>Первый срез Studio использует существующие item/version API без новых таблиц.</CardDescription>
+                <CardDescription>Студия использует существующие API статей и версий без новых таблиц.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-2">
                 <label className="text-sm font-medium">
@@ -451,20 +486,21 @@ export function KnowledgeAuthoringStudioPage() {
                 <label className="text-sm font-medium">
                   Тип
                   <select className={fieldClass} value={draft.item_type} onChange={(event) => updateDraft("item_type", event.target.value)}>
-                    <option value="article">article</option>
-                    <option value="faq">faq</option>
-                    <option value="runbook">runbook</option>
-                    <option value="known_error">known_error</option>
-                    <option value="workaround">workaround</option>
+                    {itemTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="text-sm font-medium">
                   Видимость
                   <select className={fieldClass} value={draft.visibility} onChange={(event) => updateDraft("visibility", event.target.value)}>
-                    <option value="requester">requester</option>
-                    <option value="agent_requester_safe">agent_requester_safe</option>
-                    <option value="support_internal">support_internal</option>
-                    <option value="admin_internal">admin_internal</option>
+                    {visibilityOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="text-sm font-medium">
@@ -472,11 +508,11 @@ export function KnowledgeAuthoringStudioPage() {
                   <input className={fieldClass} value={draft.tags} onChange={(event) => updateDraft("tags", event.target.value)} />
                 </label>
                 <label className="text-sm font-medium">
-                  Owner
+                  Владелец
                   <input className={fieldClass} value={draft.owner_actor_id} onChange={(event) => updateDraft("owner_actor_id", event.target.value)} />
                 </label>
                 <label className="text-sm font-medium">
-                  Reviewer
+                  Ревьюер
                   <input className={fieldClass} value={draft.reviewer_actor_id} onChange={(event) => updateDraft("reviewer_actor_id", event.target.value)} />
                 </label>
               </CardContent>
@@ -505,8 +541,8 @@ export function KnowledgeAuthoringStudioPage() {
                   {[
                     ["body", "Markdown заполнен"],
                     ["summary", "Есть краткое описание"],
-                    ["visibility", "Выбрана requester-safe видимость"],
-                    ["reviewer", "Назначен reviewer"],
+                    ["visibility", "Выбрана безопасная видимость для портала"],
+                    ["reviewer", "Назначен ревьюер"],
                   ].map(([key, label]) => (
                     <label key={key} className="flex items-center gap-2 text-sm">
                       <input
@@ -534,7 +570,7 @@ export function KnowledgeAuthoringStudioPage() {
                   Откатить к выбранной версии
                 </Button>
                 <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-                  Requester-safe теги: {normalizeList(draft.tags).slice(0, 5).join(", ") || "нет"}
+                  Теги для портала заявителя: {normalizeList(draft.tags).slice(0, 5).join(", ") || "нет"}
                 </div>
               </CardContent>
             </Card>
@@ -546,11 +582,11 @@ export function KnowledgeAuthoringStudioPage() {
                 <ShieldCheck className="h-5 w-5" />
                 Ревью и жизненный цикл
               </CardTitle>
-              <CardDescription>Governed status actions используют существующий review-action API и пишут событие в metadata article.</CardDescription>
+              <CardDescription>Статусные действия используют существующий API ревью и пишут событие истории статьи.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <label className="text-sm font-medium">
-                Комментарий review
+                Комментарий ревью
                 <input className={fieldClass} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} />
               </label>
               <div className="flex flex-wrap gap-2">
@@ -572,11 +608,11 @@ export function KnowledgeAuthoringStudioPage() {
                 </Button>
                 <Button disabled={!selectedItem || reviewActionMutation.isPending} onClick={() => reviewActionMutation.mutate("archive")} variant="outline">
                   <Archive className="h-4 w-4" />
-                  Архивировать / supersede
+                  Архивировать / заменить
                 </Button>
               </div>
               <p className="text-xs leading-5 text-slate-500">
-                Supersede в первом hardening-срезе оформляется как архивирование старого item с review note и созданием нового черновика через Studio.
+                Замена статьи оформляется как архивирование старого материала с комментарием ревью и созданием нового черновика через студию.
               </p>
             </CardContent>
           </Card>
@@ -655,15 +691,15 @@ export function KnowledgeAuthoringStudioPage() {
               <Card>
                 <CardHeader>
                   <CardTitle>История редактора</CardTitle>
-                  <CardDescription>События Studio и сохраненный diff cache для выбранной статьи.</CardDescription>
+                  <CardDescription>События студии и сохраненный кэш различий для выбранной статьи.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   {latestDiffCache ? (
                     <p className="font-medium text-slate-700">
-                      Diff cache: +{latestDiffCache.added_lines} / -{latestDiffCache.removed_lines}
+                      Кэш различий: +{latestDiffCache.added_lines} / -{latestDiffCache.removed_lines}
                     </p>
                   ) : (
-                    <p className="text-slate-500">Diff cache еще не создан.</p>
+                    <p className="text-slate-500">Кэш различий еще не создан.</p>
                   )}
                   <div className="space-y-2">
                     {(editorHistory?.events ?? []).slice(0, 6).map((event) => (
@@ -676,7 +712,7 @@ export function KnowledgeAuthoringStudioPage() {
                       </div>
                     ))}
                     {!editorHistoryQuery.isLoading && !(editorHistory?.events ?? []).length ? (
-                      <p className="text-slate-500">История появится после создания версии, review или публикации.</p>
+                      <p className="text-slate-500">История появится после создания версии, ревью или публикации.</p>
                     ) : null}
                   </div>
                 </CardContent>
@@ -687,7 +723,7 @@ export function KnowledgeAuthoringStudioPage() {
                     <Sparkles className="h-5 w-5" />
                     AI-инструменты отключены
                   </CardTitle>
-                  <CardDescription>Rewrite, summarize и FAQ generation появятся только после policy-gated AI tools slice.</CardDescription>
+                  <CardDescription>Переписывание, резюме и генерация FAQ появятся только после отдельного AI-среза с политиками доступа.</CardDescription>
                 </CardHeader>
               </Card>
             </div>

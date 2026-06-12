@@ -236,8 +236,8 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByLabelText("Slug")).toHaveValue("vpn-access");
     expect(screen.getByLabelText("Пространство")).toHaveValue("it-self-service");
     expect(screen.getAllByLabelText("Видимость")[0]).toHaveValue("requester");
-    expect(screen.getByLabelText("Owner")).toHaveValue("owner");
-    expect(screen.getByLabelText("Reviewer")).toHaveValue("reviewer");
+    expect(screen.getByLabelText("Владелец")).toHaveValue("owner");
+    expect(screen.getByLabelText("Ревьюер")).toHaveValue("reviewer");
     expect(screen.getByLabelText("Теги")).toHaveValue("vpn, remote");
     expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter.");
     expect(screen.getByText("Предпросмотр")).toBeInTheDocument();
@@ -248,9 +248,20 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(await screen.findByText("История редактора")).toBeInTheDocument();
     expect(screen.getByText("version_created")).toBeInTheDocument();
     expect(screen.getByText("Publish from Studio")).toBeInTheDocument();
-    expect(screen.getByText("Diff cache: +2 / -1")).toBeInTheDocument();
+    expect(screen.getByText("Кэш различий: +2 / -1")).toBeInTheDocument();
 
     const visibleText = document.body.textContent ?? "";
+    expect(visibleText).toContain("Редактор базы знаний");
+    expect(visibleText).toContain("Владелец нового черновика");
+    expect(visibleText).toContain("Ревьюер нового черновика");
+    expect(visibleText).toContain("Теги для портала заявителя");
+    expect(visibleText).not.toContain("Knowledge Authoring");
+    expect(visibleText).not.toContain("Owner нового черновика");
+    expect(visibleText).not.toContain("Reviewer нового черновика");
+    expect(visibleText).not.toContain("Requester-safe теги");
+    expect(visibleText).not.toContain("requester-safe");
+    expect(visibleText).not.toContain("Diff cache");
+    expect(visibleText).not.toContain("Rewrite, summarize");
     expect(visibleText).not.toContain(String.fromCharCode(0x0420, 0x045f));
   });
 
@@ -295,8 +306,8 @@ describe("AdminKnowledgeStudioPage", () => {
     const checklist = screen.getByRole("group", { name: "Проверка публикации" });
     fireEvent.click(within(checklist).getByLabelText("Markdown заполнен"));
     fireEvent.click(within(checklist).getByLabelText("Есть краткое описание"));
-    fireEvent.click(within(checklist).getByLabelText("Выбрана requester-safe видимость"));
-    fireEvent.click(within(checklist).getByLabelText("Назначен reviewer"));
+    fireEvent.click(within(checklist).getByLabelText("Выбрана безопасная видимость для портала"));
+    fireEvent.click(within(checklist).getByLabelText("Назначен ревьюер"));
     fireEvent.change(screen.getByLabelText("Комментарий к публикации"), {
       target: { value: "Готово к порталу" },
     });
@@ -343,7 +354,7 @@ describe("AdminKnowledgeStudioPage", () => {
       item_type: "article",
     });
 
-    fireEvent.change(screen.getByLabelText("Комментарий review"), {
+    fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
       target: { value: "Материал готов к проверке" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Отправить на ревью" }));
@@ -375,7 +386,7 @@ describe("AdminKnowledgeStudioPage", () => {
       expect(rollbackCall).toBeDefined();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Архивировать / supersede" }));
+    fireEvent.click(screen.getByRole("button", { name: "Архивировать / заменить" }));
     await waitFor(() => {
       const archiveCall = fetchMock.mock.calls.find(
         (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "archive",
@@ -391,7 +402,7 @@ describe("AdminKnowledgeStudioPage", () => {
     await screen.findByRole("heading", { name: "Студия статей" });
     await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
 
-    fireEvent.change(screen.getByLabelText("Комментарий review"), {
+    fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
       target: { value: "Reviewer comment" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Добавить комментарий" }));
@@ -403,7 +414,7 @@ describe("AdminKnowledgeStudioPage", () => {
       expect(JSON.parse(String(commentCall?.[1]?.body))).toMatchObject({ action: "comment", note: "Reviewer comment" });
     });
 
-    fireEvent.change(screen.getByLabelText("Комментарий review"), {
+    fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
       target: { value: "Approved by reviewer" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Одобрить" }));

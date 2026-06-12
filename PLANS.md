@@ -3338,9 +3338,36 @@ Phase 14 follow-up addendum remote/live verification, 2026-06-13:
 * Intermediate login snapshots were removed because the live login page displays local fixture credential hints. Secret scan over the final evidence directory found no known live credential, temporary support password or `pc_client_web_session` marker.
 * Browser console evidence contained repeated existing `[webapp-realtime] websocket bridge reported an error` warnings from the shared realtime layer; no render failure, metadata projection leak or new Knowledge metadata diagnostics exposure was observed.
 
+Phase 14B - Authoring Studio editor regression after metadata hardening, 2026-06-13:
+
+Status: implemented locally; remote/live validation pending.
+
+Scope:
+
+* Re-validate `/app/admin/knowledge/studio` after Phase 14 metadata model and item-metadata ACL hardening.
+* Keep editor API contracts unchanged while ensuring visible Authoring Studio copy is Russian-first and mojibake-free.
+* Prove the editor still loads articles, creates drafts, inserts templates/structured Markdown blocks, creates versions, publishes/rolls back selected versions, writes review actions and renders persisted editor history/diff summaries.
+* Live validation must create or mutate a disposable article through Studio/API, verify editor history and browser rendering, and confirm requester/public Knowledge projections still do not expose admin metadata diagnostics.
+
+Implementation results:
+
+* Replaced remaining English Authoring Studio visible labels with Russian-first text: heading eyebrow, item status/visibility badges, owner/reviewer labels, item type/visibility option labels, publish checklist copy, review comment/archive wording, requester-safe tag copy, editor-history diff cache copy and AI-disabled description.
+* Kept technical API values and event codes unchanged: `article`, `requester`, `submit_review`, `approve`, `archive`, `version_created` and editor-history payload contracts remain stable.
+* Added webapp regression coverage for Russian Studio labels, old English label absence and mojibake-free rendered panel text.
+
+Local verification:
+
+* RED: `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx` failed before implementation on missing Russian labels (`Владелец`, `Ревьюер`, `Назначен ревьюер`, `Комментарий ревью`) and old English Studio copy.
+* GREEN: `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx` passed with 5 tests.
+* GREEN: `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/article-segmentation-panel.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` passed with 4 files / 40 tests.
+* GREEN: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_api.py::test_knowledge_authoring_studio_records_editor_history -q --tb=short` passed with 1 test.
+* GREEN: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py server/tests/test_knowledge_api.py::test_knowledge_authoring_studio_records_editor_history -q --tb=short` passed with 12 tests.
+* `python scripts/bootstrap_web_toolchain.py`, `pnpm --dir webapp build`, `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py`, targeted `git diff --check` and UTF-8 replacement-character scan over changed files passed.
+
 Remaining Phase 14 work:
 
-* No Phase 14 metadata-model hardening item remains open. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
+* Phase 14 metadata-model hardening is complete. Phase 14B editor live validation remains pending until the committed Studio slice is deployed and browser/API evidence is captured.
+* Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
 
