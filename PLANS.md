@@ -3286,11 +3286,18 @@ Phase 14 follow-up local verification, 2026-06-13:
 
 Phase 14 follow-up remote/live verification, 2026-06-13:
 
-* Pending deploy/live mutation evidence for the committed hardening slice.
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `1214efcf`, applied migration `118 -> 119`, started control/server and passed remote `/api/health` smoke with HTTP 200 on attempt 2.
+* Live API scenario authenticated as admin through web session, created Knowledge space `phase14-hardening-12201341`, item `phase14-hardening-item-12201341`, taxonomy term `phase14-term-12201341`, property `phase14-property-12201341`, one applicability rule and active default quality model `phase14-quality-12201341`.
+* Live `GET /api/web/knowledge/metadata` verified the created taxonomy/property/item metadata/quality model are present and active `summary` counts incremented: taxonomy `0 -> 1`, properties `0 -> 1`, applicability `0 -> 1`, quality models `0 -> 1`, item metadata `38 -> 39`.
+* Live public-compatible `POST /api/knowledge/search` with `surface=requester_portal` returned only safe top-level keys: `ai_used`, `display_message`, `effective_mode`, `results`, `search_mode`, `status`; recursive scan found no metadata bundle, quality model, weights, thresholds, applicability rules, property values, taxonomy terms, score parts or diagnostics.
+* Browser MCP opened `https://192.168.100.17:9443/app/admin/knowledge?phase14=1214efcf` after deploy and confirmed the loaded card renders `Модель метаданных знаний`, `Термины таксономии`, `Свойства`, `Правила применимости`, `Метаданные статей`, `Активная модель качества:` and active model `phase14-quality-12201341`; scan found no old English metadata labels or mojibake patterns in the card snapshot.
+* Browser MCP opened `https://192.168.100.17:9443/app/kb/search?phase14=1214efcf` and confirmed the requester Knowledge search route renders without admin metadata/model diagnostics.
+* Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/browser_live_validation/phase14-hardening-1214efcf-20260612201341/report.json`, `admin-knowledge-loaded-snapshot.md`, `admin-knowledge-loaded.png`, `kb-search-loaded-snapshot.md` and `kb-search-loaded.png`.
+* Evidence text scan found no `password`, `secret`, `cookie`, `Authorization`, `sk-`, `BEGIN PRIVATE KEY` or `pc_client_web_session` markers.
 
 Remaining Phase 14 work:
 
-* Deploy the 2026-06-13 follow-up hardening slice and collect live mutation/projection evidence. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
+* None for the Phase 14 follow-up hardening slice. Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
 
