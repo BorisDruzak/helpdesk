@@ -2405,6 +2405,13 @@ Phase 10 import auto-segmentation contract slice, 2026-06-12:
   * RED `server/tests/test_knowledge_import_api.py::test_knowledge_import_create_drafts_can_run_auto_segmentation_profile` failed because the create-drafts response had no `segmentation` field.
   * GREEN `server/tests/test_knowledge_import_api.py` now passes with 5 tests.
 
+* Live validation:
+
+  * Commit `730cf5e3` was pushed to `origin/codex/helpdesk-process-model` and deployed with `scripts/release_server_to_remote.py --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+  * Remote smoke verified `https://192.168.100.17:9443/api/health -> 200`.
+  * Browser same-origin API check on `/app/admin/knowledge/import` verified `POST /api/web/knowledge/import/create-drafts -> 200` with `auto_segment_after_import=true`, `segmentation.status=completed`, profile `default-auto`, and segment titles `Symptoms`, `Fix`.
+  * Follow-up `GET /api/web/knowledge/items/<item_id>/segments -> 200` returned the same two live segments.
+
 Phase 10 remaining work:
 
 * Add an explicit allowlisted safe fetch/clone implementation for URL/Git imports if remote sources are enabled.
