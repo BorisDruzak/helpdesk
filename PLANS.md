@@ -2384,6 +2384,12 @@ Phase 10 parser/upload policy slice, 2026-06-12:
 
   * RED `server/tests/test_knowledge_import_api.py` failed because DOCX/PDF preview returned `400` and URL/Git returned generic `validation_error`.
   * GREEN focused import API tests now pass with 4 tests.
+* Remote/live validation:
+
+  * Deployed commit `d8df7b62` to `192.168.100.17` with quick release gate; remote smoke returned `GET /api/health -> 200` on attempt 2.
+  * Browser route loaded: `https://192.168.100.17:9443/app/admin/knowledge/import`.
+  * Same-origin live API checks verified DOCX preview -> `200` with detected title `Live DOCX Import`, PDF preview -> `200` with detected title `Live PDF Import Reconnect client`, URL preview -> `400 remote_import_blocked`, and Git preview -> `400 remote_import_blocked`.
+  * Safe response scan for URL/Git policy blocks found no leaked `secret-token`, `password=hidden` or remote private URL fragments. Browser console recorded expected failed-resource entries for the deliberate `400` policy-block responses.
 
 Phase 10 remaining work:
 
