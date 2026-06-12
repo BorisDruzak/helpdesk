@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import config
 from app.db.models import KnowledgeIngestionJob
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.ai_proposal_service import KnowledgeAiProposalService
 from knowledge.contracts import KNOWLEDGE_BODY_FORMATS, KNOWLEDGE_INGESTION_SOURCE_KINDS, KnowledgeValidationError
@@ -390,6 +391,25 @@ class KnowledgeIngestionService:
         preview, _parsed_body = _parse_import_payload(payload, self.remote_fetcher)
         return preview
 
+    async def record_observer_event(
+        self,
+        event_type: str,
+        *,
+        actor_id: str | None,
+        actor_role: str,
+        details: dict[str, Any],
+        severity: str = "info",
+    ) -> None:
+        await AgentRuntimeAuditRepo(self.session).add(
+            device_id="server",
+            event_type=event_type,
+            severity=severity,
+            source="knowledge_import",
+            actor_id=actor_id,
+            actor_role=actor_role,
+            details_json=details,
+        )
+
     async def create_drafts_from_import(self, payload: dict[str, Any], *, actor_id: str | None, actor_role: str = "admin") -> dict[str, Any]:
         preview, parsed_body = _parse_import_payload(payload, self.remote_fetcher)
         ingestion_source_kind = {
@@ -431,7 +451,21 @@ class KnowledgeIngestionService:
             }
         ai_enrichment = dict(preview["ai_enrichment"])
         if ai_enrichment["enabled"]:
-            proposals = await self._create_ai_enrichment_proposals(preview, result, actor_id=actor_id, actor_role=actor_role)
+            try:
+                proposals = await self._create_ai_enrichment_proposals(preview, result, actor_id=actor_id, actor_role=actor_role)
+            except Exception:
+                await self.record_observer_event(
+                    "knowledge.import.ai_enrichment_failed",
+                    severity="error",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    details={
+                        "job_id": result["job"]["job_id"],
+                        "item_id": result["item"]["item_id"],
+                        "source_kind": preview["source_kind"],
+                    },
+                )
+                raise
             ai_enrichment = {**ai_enrichment, "status": "review_required", "proposals": proposals}
         indexing = await self._index_after_import_if_enabled(result, actor_id=actor_id, actor_role=actor_role)
         return {"preview": preview, "ai_enrichment": ai_enrichment, "segmentation": segmentation, "indexing": indexing, **result}

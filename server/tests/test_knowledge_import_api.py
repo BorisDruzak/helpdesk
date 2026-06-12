@@ -13,6 +13,10 @@ def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 
 
+def _auditor_headers() -> dict[str, str]:
+    return {"Authorization": "Bearer test-ui-auditor-token"}
+
+
 @pytest.mark.asyncio
 async def test_knowledge_import_preview_parses_markdown_without_ai(test_client) -> None:
     resp = await test_client.post(
@@ -72,6 +76,134 @@ async def test_knowledge_import_create_drafts_uses_preview_payload_without_ai(te
     assert payload["item"]["visibility"] == "support_internal"
     assert payload["version"]["body_format"] == "markdown"
     assert payload["preview"]["detected_title"] == "VPN Import API"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_import_jobs_list_and_detail_are_acl_safe(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "import-job-detail", "title": "Import Job Detail", "visibility": "support_internal", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+
+    create_resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-job-detail",
+            "source_kind": "markdown",
+            "source_name": "detail-secret-token.md",
+            "slug": "import-job-detail-api",
+            "item_type": "article",
+            "title": "Import Job Detail API",
+            "visibility": "support_internal",
+            "body": "# Import Job Detail API\n\n## Steps\nReconnect VPN.",
+            "ai_enrichment_enabled": False,
+        },
+    )
+    assert create_resp.status == 200
+    created = await create_resp.json()
+    job_id = created["job"]["job_id"]
+
+    list_resp = await test_client.get("/api/web/knowledge/import/jobs", headers=_auditor_headers())
+    assert list_resp.status == 200
+    jobs_payload = await list_resp.json()
+    listed = next(job for job in jobs_payload["jobs"] if job["job_id"] == job_id)
+    assert listed["source_name"] == "detail-secret-token.md"
+    assert listed["status"] == "review_required"
+
+    detail_resp = await test_client.get(f"/api/web/knowledge/import/jobs/{job_id}", headers=_auditor_headers())
+    assert detail_resp.status == 200
+    detail_payload = await detail_resp.json()
+    job = detail_payload["job"]
+    assert job["job_id"] == job_id
+    assert job["status"] == "review_required"
+    assert job["space"]["code"] == "import-job-detail"
+    assert job["created_item_id"] == created["item"]["item_id"]
+    assert job["created_version_id"] == created["version"]["version_id"]
+    assert job["stats_json"]["chunk_count"] >= 1
+    assert job["metadata_json"] == {}
+    assert "body" not in str(detail_payload).lower()
+
+    missing_resp = await test_client.get("/api/web/knowledge/import/jobs/not-a-job", headers=_auditor_headers())
+    assert missing_resp.status == 404
+
+
+@pytest.mark.asyncio
+async def test_knowledge_import_observer_events_are_recorded_and_redacted(test_client) -> None:
+    preview_resp = await test_client.post(
+        "/api/web/knowledge/import/preview",
+        headers=_admin_headers(),
+        json={
+            "source_kind": "markdown",
+            "source_name": "observer-secret-token.md",
+            "body": "# Observer Import\n\n## Steps\nReconnect VPN.",
+            "ai_enrichment_enabled": True,
+        },
+    )
+    assert preview_resp.status == 200
+
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "import-observer", "title": "Import Observer", "visibility": "support_internal", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+
+    create_resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-observer",
+            "source_kind": "markdown",
+            "source_name": "observer-secret-token.md",
+            "slug": "import-observer-api",
+            "item_type": "article",
+            "title": "Import Observer API",
+            "visibility": "support_internal",
+            "body": "# Import Observer API\n\n## Steps\nReconnect VPN.",
+            "ai_enrichment_enabled": False,
+        },
+    )
+    assert create_resp.status == 200
+    created = await create_resp.json()
+
+    blocked_resp = await test_client.post(
+        "/api/web/knowledge/import/preview",
+        headers=_admin_headers(),
+        json={
+            "source_kind": "url",
+            "source_name": "blocked-secret-token",
+            "url": "https://outside.example.test/runbook.md?token=secret-token&password=hidden",
+        },
+    )
+    assert blocked_resp.status == 400
+
+    from sqlalchemy import select
+
+    from app.db import get_session
+    from app.db.models import AgentRuntimeAudit
+
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(AgentRuntimeAudit)
+                .where(AgentRuntimeAudit.source == "knowledge_import")
+                .order_by(AgentRuntimeAudit.created_at.asc())
+            )
+        ).scalars().all()
+
+    event_types = [row.event_type for row in rows]
+    assert "knowledge.import.preview_created" in event_types
+    assert "knowledge.import.ai_enrichment_blocked" in event_types
+    assert "knowledge.import.drafts_created" in event_types
+    assert "knowledge.import.failed" in event_types
+    assert any((row.details_json or {}).get("job_id") == created["job"]["job_id"] for row in rows)
+    audit_dump = str([row.details_json for row in rows])
+    assert "secret-token" not in audit_dump
+    assert "password=hidden" not in audit_dump
+    assert "outside.example.test" not in audit_dump
 
 
 @pytest.mark.asyncio

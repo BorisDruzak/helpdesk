@@ -737,6 +737,31 @@ export type KnowledgeImportDraftResult = {
   chunk_count?: number;
 };
 
+export type KnowledgeImportJob = {
+  job_id: string;
+  space_id: string;
+  space?: {
+    space_id: string;
+    code: string;
+    title: string;
+    visibility: string;
+  };
+  source_kind: string;
+  source_name: string;
+  source_uri?: string | null;
+  source_hash?: string | null;
+  status: string;
+  created_item_id?: string | null;
+  created_version_id?: string | null;
+  error_message_redacted?: string | null;
+  stats_json?: Record<string, unknown>;
+  metadata_json?: Record<string, unknown>;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+};
+
 async function readJson<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -796,6 +821,18 @@ export async function createKnowledgeImportDrafts(payload: Record<string, unknow
     body: JSON.stringify(payload),
   });
   return readJson<KnowledgeImportDraftResult>(response, "Не удалось создать черновик из импорта");
+}
+
+export async function fetchKnowledgeImportJobs(): Promise<KnowledgeImportJob[]> {
+  const response = await fetch("/api/web/knowledge/import/jobs", { credentials: "same-origin" });
+  const payload = await readJson<{ jobs: KnowledgeImportJob[] }>(response, "Не удалось загрузить задания импорта");
+  return payload.jobs ?? [];
+}
+
+export async function fetchKnowledgeImportJob(jobId: string): Promise<KnowledgeImportJob> {
+  const response = await fetch(`/api/web/knowledge/import/jobs/${encodeURIComponent(jobId)}`, { credentials: "same-origin" });
+  const payload = await readJson<{ job: KnowledgeImportJob }>(response, "Не удалось загрузить задание импорта");
+  return payload.job;
 }
 
 export async function fetchKnowledgeGraphNodes(): Promise<KnowledgeGraphNode[]> {

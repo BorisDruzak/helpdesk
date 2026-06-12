@@ -2520,7 +2520,38 @@ Phase 10 import wizard UI controls slice, 2026-06-12:
 
 Phase 10 remaining work:
 
-* Add import job detail APIs and Observer v2 events listed above.
+Phase 10 import job detail and Observer events slice, 2026-06-12:
+
+* Added ACL-filtered import job read APIs:
+
+  * `GET /api/web/knowledge/import/jobs`;
+  * `GET /api/web/knowledge/import/jobs/{job_id}`;
+  * compatibility `GET /api/web/knowledge/ingestion/jobs/{job_id}`.
+
+* Job detail returns safe ingestion job metadata, created item/version ids, stats, metadata and the visible knowledge space summary without import body content.
+* Import preview/create/failure paths now emit redacted Observer-visible `agent_runtime_audit` rows with source `knowledge_import`:
+
+  * `knowledge.import.preview_created`;
+  * `knowledge.import.drafts_created`;
+  * `knowledge.import.failed`;
+  * `knowledge.import.ai_enrichment_blocked`;
+  * `knowledge.import.ai_enrichment_failed`.
+
+* Updated typed webapp import job helpers and docs/CODEMAP/navigation catalog.
+
+* TDD status:
+
+  * RED `python -m pytest server/tests/test_knowledge_import_api.py -q --tb=short` failed with `404` for `/api/web/knowledge/import/jobs` and empty `knowledge_import` audit feed.
+  * GREEN `python -m pytest server/tests/test_knowledge_import_api.py -q --tb=short` -> 12 passed.
+  * `pnpm --dir webapp test -- src/features/knowledge/api.test.ts` -> 1 file, 21 tests passed.
+  * `python -m compileall -q server\knowledge\ingestion_service.py server\web_api\knowledge_handlers.py server\routes.py server\tests\test_knowledge_import_api.py scripts\navigation_catalog.py` -> passed.
+  * `pnpm --dir webapp build` -> passed.
+  * `python scripts/docs_inventory.py --check-links` -> passed.
+  * `python scripts/verify_workspace.py` -> passed.
+
+Phase 10 remaining work:
+
+* None for the import job detail / Observer events scope. Continue with Phase 11.
 
 Exit criteria:
 

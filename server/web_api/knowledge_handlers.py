@@ -77,6 +77,35 @@ async def _json_payload(request: web.Request) -> dict:
     return payload
 
 
+def _serialize_ingestion_job(row: KnowledgeIngestionJob, space: KnowledgeSpace | None = None, *, include_detail: bool = False) -> dict:
+    payload = {
+        "job_id": row.job_id,
+        "space_id": row.space_id,
+        "source_kind": row.source_kind,
+        "source_name": row.source_name,
+        "source_uri": row.source_uri,
+        "source_hash": row.source_hash,
+        "status": row.status,
+        "created_item_id": row.created_item_id,
+        "created_version_id": row.created_version_id,
+        "error_message_redacted": row.error_message_redacted,
+        "stats_json": row.stats_json or {},
+        "metadata_json": row.metadata_json or {},
+        "created_by": row.created_by,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "completed_at": row.completed_at.isoformat() if row.completed_at else None,
+    }
+    if include_detail and space is not None:
+        payload["space"] = {
+            "space_id": space.space_id,
+            "code": space.code,
+            "title": space.title,
+            "visibility": space.visibility,
+        }
+    return payload
+
+
 @require_auth("admin", "auditor", "support")
 async def handle_web_knowledge_spaces(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
@@ -1637,6 +1666,7 @@ async def handle_web_knowledge_graph_edges(request: web.Request) -> web.Response
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_ingestion_jobs(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
+    job_id = request.match_info.get("job_id")
     async with get_session() as session:
         if request.method == "POST":
             if role not in {"admin", "support"}:
@@ -1646,46 +1676,54 @@ async def handle_web_knowledge_ingestion_jobs(request: web.Request) -> web.Respo
             await session.commit()
             return web.json_response({"status": "ok", **result})
         allowed = set(actor_visible_visibilities(role))
+        if job_id:
+            row = (
+                await session.execute(
+                    select(KnowledgeIngestionJob, KnowledgeSpace)
+                    .join(KnowledgeSpace, KnowledgeIngestionJob.space_id == KnowledgeSpace.space_id)
+                    .where(KnowledgeIngestionJob.job_id == job_id, KnowledgeSpace.visibility.in_(allowed))
+                )
+            ).first()
+            if row is None:
+                return web.json_response({"status": "error", "error": "not_found"}, status=404)
+            job, space = row
+            return web.json_response({"status": "ok", "job": _serialize_ingestion_job(job, space, include_detail=True)})
         rows = (
             await session.execute(
-                select(KnowledgeIngestionJob)
+                select(KnowledgeIngestionJob, KnowledgeSpace)
                 .join(KnowledgeSpace, KnowledgeIngestionJob.space_id == KnowledgeSpace.space_id)
                 .where(KnowledgeSpace.visibility.in_(allowed))
                 .order_by(KnowledgeIngestionJob.created_at.desc())
                 .limit(100)
             )
-        ).scalars().all()
+        ).all()
         return web.json_response(
             {
                 "status": "ok",
-                "jobs": [
-                    {
-                        "job_id": row.job_id,
-                        "space_id": row.space_id,
-                        "source_kind": row.source_kind,
-                        "source_name": row.source_name,
-                        "status": row.status,
-                        "created_item_id": row.created_item_id,
-                        "created_version_id": row.created_version_id,
-                        "created_at": row.created_at.isoformat() if row.created_at else None,
-                        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
-                    }
-                    for row in rows
-                ],
+                "jobs": [_serialize_ingestion_job(row, space) for row, space in rows],
             }
         )
 
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_import_preview(request: web.Request) -> web.Response:
-    _actor_id, role = _actor(request)
+    actor_id, role = _actor(request)
     if role not in {"admin", "support", "auditor"}:
         return web.json_response({"status": "error", "error": "forbidden"}, status=403)
     payload = await _json_payload(request)
     async with get_session() as session:
+        service = KnowledgeIngestionService(session)
         try:
-            preview = KnowledgeIngestionService(session).preview_import(payload)
+            preview = service.preview_import(payload)
         except KnowledgeRemoteImportBlockedError:
+            await service.record_observer_event(
+                "knowledge.import.failed",
+                severity="warning",
+                actor_id=actor_id,
+                actor_role=role,
+                details={"stage": "preview", "source_kind": str(payload.get("source_kind") or "text"), "reason": "remote_import_blocked"},
+            )
+            await session.commit()
             return web.json_response(
                 {
                     "status": "error",
@@ -1695,7 +1733,36 @@ async def handle_web_knowledge_import_preview(request: web.Request) -> web.Respo
                 status=400,
             )
         except KnowledgeValidationError as exc:
+            await service.record_observer_event(
+                "knowledge.import.failed",
+                severity="warning",
+                actor_id=actor_id,
+                actor_role=role,
+                details={"stage": "preview", "source_kind": str(payload.get("source_kind") or "text"), "reason": "validation_error"},
+            )
+            await session.commit()
             return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+        await service.record_observer_event(
+            "knowledge.import.preview_created",
+            actor_id=actor_id,
+            actor_role=role,
+            details={
+                "source_kind": preview["source_kind"],
+                "body_format": preview["body_format"],
+                "word_count": preview["word_count"],
+                "section_count": preview["section_count"],
+                "ai_enrichment_enabled": bool(preview["ai_enrichment"]["enabled"]),
+            },
+        )
+        if bool(preview["ai_enrichment"]["enabled"]) and preview["ai_enrichment"].get("status") == "blocked_pending_policy":
+            await service.record_observer_event(
+                "knowledge.import.ai_enrichment_blocked",
+                severity="warning",
+                actor_id=actor_id,
+                actor_role=role,
+                details={"stage": "preview", "source_kind": preview["source_kind"], "reason": "pending_governed_create"},
+            )
+        await session.commit()
     return web.json_response({"status": "ok", "preview": preview})
 
 
@@ -1704,13 +1771,22 @@ async def handle_web_knowledge_import_create_drafts(request: web.Request) -> web
     actor_id, role = _actor(request)
     payload = await _json_payload(request)
     async with get_session() as session:
+        service = KnowledgeIngestionService(session, embedding_transport=_get_embedding_transport(request))
         try:
-            result = await KnowledgeIngestionService(session, embedding_transport=_get_embedding_transport(request)).create_drafts_from_import(
+            result = await service.create_drafts_from_import(
                 payload,
                 actor_id=actor_id,
                 actor_role=role,
             )
         except KnowledgeRemoteImportBlockedError:
+            await service.record_observer_event(
+                "knowledge.import.failed",
+                severity="warning",
+                actor_id=actor_id,
+                actor_role=role,
+                details={"stage": "create_drafts", "source_kind": str(payload.get("source_kind") or "text"), "reason": "remote_import_blocked"},
+            )
+            await session.commit()
             return web.json_response(
                 {
                     "status": "error",
@@ -1720,6 +1796,28 @@ async def handle_web_knowledge_import_create_drafts(request: web.Request) -> web
                 status=400,
             )
         except KnowledgeValidationError as exc:
+            await service.record_observer_event(
+                "knowledge.import.failed",
+                severity="warning",
+                actor_id=actor_id,
+                actor_role=role,
+                details={"stage": "create_drafts", "source_kind": str(payload.get("source_kind") or "text"), "reason": "validation_error"},
+            )
+            await session.commit()
             return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+        await service.record_observer_event(
+            "knowledge.import.drafts_created",
+            actor_id=actor_id,
+            actor_role=role,
+            details={
+                "job_id": result["job"]["job_id"],
+                "item_id": result["item"]["item_id"],
+                "version_id": result["version"]["version_id"],
+                "source_kind": result["preview"]["source_kind"],
+                "segmentation_enabled": bool(result["segmentation"]["enabled"]),
+                "indexing_status": result["indexing"]["status"],
+                "ai_enrichment_status": result["ai_enrichment"]["status"],
+            },
+        )
         await session.commit()
     return web.json_response({"status": "ok", **result})

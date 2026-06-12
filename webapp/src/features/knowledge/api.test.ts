@@ -28,6 +28,8 @@ import {
   fetchKnowledgeRolloutPolicies,
   fetchKnowledgeIndexingStatus,
   fetchKnowledgeIndexJobs,
+  fetchKnowledgeImportJob,
+  fetchKnowledgeImportJobs,
   fetchKnowledgePortalArticle,
   fetchKnowledgePortalCollection,
   fetchKnowledgePortalHome,
@@ -757,6 +759,38 @@ describe("knowledge article segmentation api", () => {
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
     expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toMatchObject({ reason: "Дубль существующего сегмента" });
+  });
+
+  it("loads import jobs and job detail through import route aliases", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          jobs: [{ job_id: "job-1", source_kind: "markdown", source_name: "vpn.md", status: "review_required" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          job: {
+            job_id: "job-1",
+            source_kind: "markdown",
+            source_name: "vpn.md",
+            status: "review_required",
+            stats_json: { chunk_count: 1 },
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeImportJobs()).resolves.toEqual([
+      expect.objectContaining({ job_id: "job-1", status: "review_required" }),
+    ]);
+    await expect(fetchKnowledgeImportJob("job-1")).resolves.toMatchObject({ job_id: "job-1", stats_json: { chunk_count: 1 } });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/import/jobs", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/import/jobs/job-1", { credentials: "same-origin" });
   });
 
   it("lists, creates and reviews governed AI proposals", async () => {
