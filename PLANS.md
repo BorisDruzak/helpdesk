@@ -3340,7 +3340,7 @@ Phase 14 follow-up addendum remote/live verification, 2026-06-13:
 
 Phase 14B - Authoring Studio editor regression after metadata hardening, 2026-06-13:
 
-Status: implemented locally; remote/live validation pending.
+Status: implemented and live validated on runtime commit `cf2f6af0`, 2026-06-13.
 
 Scope:
 
@@ -3367,9 +3367,21 @@ Local verification:
 * GREEN: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py server/tests/test_knowledge_api.py::test_knowledge_authoring_studio_records_editor_history -q --tb=short` passed with 12 tests.
 * `python scripts/bootstrap_web_toolchain.py`, `pnpm --dir webapp build`, `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py`, targeted `git diff --check` and UTF-8 replacement-character scan over changed files passed.
 
+Remote/live verification:
+
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed final runtime commit `cf2f6af0`, uploaded the rebuilt webapp bundle, left services running for validation and passed remote `/api/health` smoke with HTTP 200 on attempt 2.
+* Live API scenario authenticated through web session with same-origin headers, created Knowledge space `phase14b-studio-final-20260613-033529-d95888`, item `phase14b-studio-final-article-20260613-033529-d95888`, immutable version `0902cb01-760c-404b-8415-9f1d24b09410` and manual segment `e3b8e258-3635-46bb-ad9d-f8962be54ae6`.
+* Live API scenario published the created version, submitted review, added a comment, approved the article and verified `GET /api/web/knowledge/items/{item_id}/editor-history` returns `approved`, `commented`, `review_submitted`, `published`, `version_created`, `draft_created` plus diff cache `added_lines=4`.
+* Live public-compatible `POST /api/knowledge/search` with `surface=requester_portal` returned only safe top-level keys: `ai_used`, `display_message`, `effective_mode`, `results`, `search_mode`, `status`; recursive scan found no metadata bundle, quality model, weights, thresholds, applicability rules, property values, taxonomy terms, score parts or diagnostics.
+* Browser MCP opened `https://192.168.100.17:9443/app/admin/knowledge/studio?phase14b=cf2f6af0-033529`, filtered the final live article and verified Russian-first Studio/editor labels, segment panel labels, `Кэш различий`, `Вес поиска`, `Полнотекстовый поиск`, `Эмбеддинги`, `Активный`, `Ручной`, `Выделение редактора` and `вес 1.5`; old English labels such as `Knowledge Authoring`, `Requester-safe теги`, `Diff cache`, `Boost`, `Full-text`, `Embeddings`, `editor_selection` and mojibake markers were absent.
+* Browser MCP checked `/app/admin/knowledge/studio` at 1366x768 and 1920x1080; both viewports had no horizontal overflow. Browser console warn/error logs for Studio were empty.
+* Browser MCP opened `https://192.168.100.17:9443/app/kb/search?phase14b=cf2f6af0-033529`, searched for the final live slug and verified the requester route rendered a safe result/empty state without admin metadata/model diagnostics, mojibake or horizontal overflow. Browser console warn/error logs were empty.
+* Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/browser_live_validation/phase14b-studio-cf2f6af0-20260613-033529/api-live-report.json`, `created-item.safe.json`, `studio-1366-checks.json`, `studio-1366-snapshot.md`, `studio-1366.png`, `studio-1920-checks.json`, `studio-1920-snapshot.md`, `studio-1920.png`, `studio-console-warn-error.json`, `kb-search-1366-checks.json`, `kb-search-1366-snapshot.md`, `kb-search-1366.png` and `kb-search-console-warn-error.json`.
+* Evidence text scan found no `password`, `secret`, `cookie`, `Authorization`, `pc_client_web_session`, `sk-` or `BEGIN PRIVATE KEY` markers.
+
 Remaining Phase 14 work:
 
-* Phase 14 metadata-model hardening is complete. Phase 14B editor live validation remains pending until the committed Studio slice is deployed and browser/API evidence is captured.
+* Phase 14 metadata-model hardening is complete. Phase 14B editor regression and live validation are complete.
 * Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 ---
