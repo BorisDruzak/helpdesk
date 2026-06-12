@@ -82,21 +82,32 @@ describe("KnowledgeSearchSettingsPage", () => {
           },
         });
       }
-      if (url === "/api/web/knowledge/search" && init?.method === "POST") {
+      if (url === "/api/web/knowledge/search/preview" && init?.method === "POST") {
         return jsonResponse({
           status: "ok",
-          display_message: "Поиск выполнен без AI",
+          display_message: "Retrieval выполнен",
           search_mode: "keyword_only",
           effective_mode: "keyword_only",
           ai_used: false,
           results: [
             {
-              item_id: "ki-1",
-              slug: "vpn-keyword-baseline",
-              title: "VPN keyword baseline",
-              summary: "Keyword search result without AI",
-              visibility: "requester",
-              score: 1,
+              item: {
+                item_id: "ki-1",
+                space_id: "ks-1",
+                slug: "vpn-keyword-baseline",
+                item_type: "article",
+                type: "article",
+                title: "VPN keyword baseline",
+                summary: "Keyword search result without AI",
+                status: "published",
+                visibility: "requester",
+              },
+              version: { version_id: "ver-1", title: "VPN keyword baseline" },
+              snippet: "Keyword search result without AI",
+              score: 75,
+              score_parts: { keyword_title: 50, keyword_summary: 25 },
+              source_mode: ["keyword"],
+              citations: [{ chunk_id: "chunk-1" }],
             },
           ],
         });
@@ -140,10 +151,13 @@ describe("KnowledgeSearchSettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Проверить поиск" }));
 
     await waitFor(() => expect(screen.getByText("VPN keyword baseline")).toBeInTheDocument());
-    expect(screen.getByText("Поиск выполнен без AI")).toBeInTheDocument();
+    expect(screen.getByText("Retrieval выполнен")).toBeInTheDocument();
     expect(screen.getByText("AI не использовался")).toBeInTheDocument();
+    expect(screen.getByText("keyword_title")).toBeInTheDocument();
+    expect(screen.getByText("50.00")).toBeInTheDocument();
+    expect(screen.getByText("citations: 1", { exact: false })).toBeInTheDocument();
     expect(screen.getAllByText("keyword_only").length).toBeGreaterThanOrEqual(1);
-    const previewCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/search" && call[1]?.method === "POST");
+    const previewCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/search/preview" && call[1]?.method === "POST");
     expect(previewCall).toBeDefined();
     expect(previewCall?.[1]).toEqual(expect.objectContaining({ method: "POST", credentials: "same-origin" }));
     expect(JSON.parse(previewCall?.[1]?.body as string)).toMatchObject({

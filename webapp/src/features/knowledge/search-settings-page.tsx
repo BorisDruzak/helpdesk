@@ -8,10 +8,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { PageHeading } from "../../components/ui/page-heading";
 import {
   fetchKnowledgeSearchSettings,
-  previewKnowledgeSearch,
+  previewKnowledgeRetrieval,
   saveKnowledgeSearchSettings,
   type KnowledgeSearchSettings,
-  type KnowledgeSearchPreviewResult,
+  type KnowledgeRetrievalResult,
 } from "./api";
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
@@ -96,7 +96,7 @@ export function KnowledgeSearchSettingsPage() {
   const [previewQuery, setPreviewQuery] = useState("");
   const [previewActorRole, setPreviewActorRole] = useState("support");
   const [previewSurface, setPreviewSurface] = useState("admin_knowledge_search");
-  const [previewResult, setPreviewResult] = useState<KnowledgeSearchPreviewResult | null>(null);
+  const [previewResult, setPreviewResult] = useState<KnowledgeRetrievalResult | null>(null);
 
   useEffect(() => {
     if (settingsQuery.data && !draftInitialized) {
@@ -131,7 +131,7 @@ export function KnowledgeSearchSettingsPage() {
 
   const previewMutation = useMutation({
     mutationFn: () =>
-      previewKnowledgeSearch({
+      previewKnowledgeRetrieval({
         query: previewQuery.trim(),
         actor_role: previewActorRole,
         surface: previewSurface,
@@ -372,19 +372,39 @@ export function KnowledgeSearchSettingsPage() {
               </div>
               {previewResult.results.length ? (
                 <div className="space-y-2">
-                  {previewResult.results.map((result, index) => (
-                    <div key={result.item_id ?? result.slug ?? `${result.title}-${index}`} className="rounded-md border border-slate-200 bg-white p-3">
+                  {previewResult.results.map((result, index) => {
+                    const scoreParts = Object.entries(result.score_parts ?? {});
+                    return (
+                    <div key={result.item.item_id ?? result.item.slug ?? `${result.item.title}-${index}`} className="rounded-md border border-slate-200 bg-white p-3">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="font-medium text-slate-950">{result.title}</p>
-                        {result.visibility ? <Badge>{result.visibility}</Badge> : null}
+                        <p className="font-medium text-slate-950">{result.item.title}</p>
+                        {result.item.visibility ? <Badge>{result.item.visibility}</Badge> : null}
                       </div>
-                      {result.summary ? <p className="mt-1 text-sm text-slate-600">{result.summary}</p> : null}
+                      {result.item.summary ? <p className="mt-1 text-sm text-slate-600">{result.item.summary}</p> : null}
+                      {result.snippet ? <p className="mt-2 text-sm text-slate-700">{result.snippet}</p> : null}
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(result.source_mode ?? []).map((source) => (
+                          <Badge key={source}>{source}</Badge>
+                        ))}
+                        {typeof result.score === "number" ? <Badge tone="success">score {result.score}</Badge> : null}
+                      </div>
+                      {scoreParts.length ? (
+                        <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
+                          {scoreParts.map(([key, value]) => (
+                            <div key={key} className="rounded border border-slate-100 bg-slate-50 px-2 py-1">
+                              <dt className="font-medium text-slate-600">{key}</dt>
+                              <dd className="text-slate-900">{Number(value).toFixed(2)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : null}
                       <p className="mt-2 text-xs text-slate-500">
-                        {result.slug ? `slug: ${result.slug}` : "slug не задан"}
-                        {typeof result.score === "number" ? ` · score: ${result.score}` : ""}
+                        {result.item.slug ? `slug: ${result.item.slug}` : "slug не задан"}
+                        {result.citations?.length ? ` · citations: ${result.citations.length}` : ""}
                       </p>
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               ) : (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">

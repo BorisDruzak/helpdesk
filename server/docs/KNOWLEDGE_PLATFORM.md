@@ -191,7 +191,7 @@ Phase 4 indexing stores optional embeddings in `knowledge_chunk_embeddings` and 
 
 `KnowledgeVectorSearchService` provides the Phase 4 JSONB-vector fallback for environments without pgvector. Web search merges vector hits only when `vector_enabled=true` and a safe numeric `query_vector` is supplied. ACL filters run before cosine scoring, requester-safe projection hides diagnostic vector fields, support/admin responses may include `retrieval_source=vector` and `vector_score`, and raw `embedding_vector` values remain DB-only.
 
-Phase 5 retrieval introduces `KnowledgeRetrievalService` for explainable hybrid retrieval previews. It merges keyword, manual segment, binding and optional JSONB-vector candidates after ACL filtering, returns score parts/source modes/citations for admin/support, records search analytics, and writes safe `knowledge.retrieval.executed` / `knowledge.retrieval.zero_results` audit events. Optional OpenRouter-compatible rerank runs only when settings, provider, model profile, policy, secret and injected transport are all available; failures keep the pre-rerank order and emit `knowledge.retrieval.rerank_failed_fallback`. Existing public `POST /api/knowledge/search` remains backward-compatible; `/api/web/knowledge/retrieve` and `/api/web/knowledge/search/preview` expose the richer admin/support contract.
+Phase 5 retrieval introduces `KnowledgeRetrievalService` for explainable hybrid retrieval previews. It merges keyword, manual segment, binding and optional JSONB-vector candidates after ACL filtering, returns score parts/source modes/citations for admin/support, records search analytics, and writes safe `knowledge.retrieval.executed` / `knowledge.retrieval.zero_results` audit events. Optional OpenRouter-compatible rerank runs only when settings, provider, model profile, policy, secret and injected transport are all available; failures keep the pre-rerank order and emit `knowledge.retrieval.rerank_failed_fallback`. Existing public `POST /api/knowledge/search` remains backward-compatible; `/api/web/knowledge/retrieve` and `/api/web/knowledge/search/preview` expose the richer admin/support contract, and `/app/admin/knowledge/search-settings` uses that preview to show source modes, citations and score breakdown.
 
 ## Knowledge vNext Target Routes
 
@@ -209,7 +209,7 @@ Phase 0 фиксирует целевые границы, но не регист
 | `/app/admin/knowledge/studio` | Authoring Studio для статей и версий | Authoring |
 | `/app/admin/knowledge/graph` | Visual Graph Studio | Graph |
 | `/app/admin/knowledge/ai` | AI providers, model profiles, policies, health | AI settings |
-| `/app/admin/knowledge/search-settings` | Настройки search/retrieval и preview | Search settings |
+| `/app/admin/knowledge/search-settings` | Настройки search/retrieval, explainable preview and score breakdown | Search settings |
 | `/app/admin/knowledge/indexing` | Indexing jobs, embeddings, stale state | Indexing |
 | `/app/admin/knowledge/import` | Import/Ingestion wizard | Import |
 | `/app/admin/knowledge/review` | Review and curation queue | Review |
