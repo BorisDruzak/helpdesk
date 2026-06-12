@@ -1,6 +1,6 @@
 ## Active Work: Knowledge Platform vNext — Product KB, RAG, AI Settings, Manual Markup, Graph Studio and Observer v2
 
-Status: active implementation / partial product signoff. Phases 0-13 contain implemented slices and verification evidence, but Knowledge vNext is not final-complete until the real-key OpenRouter signoff and full Ask -> requester ticket submit regression are closed.
+Status: active implementation / partial product signoff. Phases 0-13 contain implemented slices and verification evidence, but Knowledge vNext is not final-complete until the real-key OpenRouter signoff and dedicated semantic retrieval browser/live evidence are closed.
 
 Branch target:
 
@@ -46,7 +46,7 @@ Current baseline context:
 Current open gates before final Knowledge vNext signoff:
 
 * Live OpenRouter answer signoff with a real operator-provided key remains pending. Mock/client/provider tests are valid regression evidence, but they are not product signoff for the external provider.
-* Full Ask -> requester create-ticket -> `ticket_created_after_view` analytics remains pending until browser/live validation uses a requester session whose account/person/device or no-device state enables ticket creation.
+* Full Ask -> requester create-ticket -> `ticket_created_after_view` analytics is closed by the 2026-06-12 live no-device requester run recorded in Phase 6E correction below.
 * Dedicated retrieval browser/live evidence after deploy must cover semantic search behavior, not only route load: requester-safe search, AI-off fallback, ACL-safe projection and diagnostics separation.
 * Knowledge -> requester regressions must stay bundled with Knowledge changes: requester knowledge suggestions, Ask fallback -> requester ticket prefill, requester ticket create with `knowledge_attempts`, `ticket_created_after_view` analytics and public `/app/help` deflection.
 * Evidence paths under `artifacts/` may be local/untracked operational artifacts; audit docs must say when evidence must be preserved outside git or regenerated.
@@ -1435,11 +1435,13 @@ Status 2026-06-12:
   * The Ask ticket draft is now a read-once `sessionStorage` value on `/app/requester/new`; it is removed immediately after the first read attempt and ignored after 30 minutes. This prevents stale Ask context from being replayed after page reloads or a logout/login in the same browser tab.
   * Targeted regression added this storage cleanup assertion to `webapp/src/pages/requester/index.test.tsx`.
   * Local verification: `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx src/features/requester/api.test.ts src/features/knowledge/api.test.ts src/app/navigation.test.ts` passed with 5 files / 59 tests; `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_knowledge_feedback.py server/tests/test_knowledge_ask.py server/tests/test_ticket_knowledge_links_compat.py -q --tb=short` passed with 27 tests; `pnpm --dir webapp build`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` and `git diff --check -- PLANS.md docs/completed/BROWSER_REQUESTER_AGENT_IDENTITY_MODEL.md webapp/src/pages/requester/index.tsx webapp/src/pages/requester/index.test.tsx` passed.
-  * Full live submit still requires a requester account/person/device or no-device requester state with an enabled create button; the previous admin-backed requester session remains valid evidence only for fallback action visibility and ticket draft prefill.
+  * Remote validation: `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `f50279db`; `/api/health` returned 200 on smoke attempt 2.
+  * Browser/live submit validation: Playwright browser used requester web user `knowledge-live-requester@example.test` with a linked `RegistryPerson` and no devices, opened `/app/kb/ask`, submitted `VPN`, clicked `Create ticket`, confirmed `/app/requester/new` prefill, confirmed `pc_client.knowledge_ask.ticket_context` was cleared from `sessionStorage`, filled the live required form fields, previewed the request and submitted the ticket.
+  * Live result: ticket `bf968d13-ea5d-4c6e-8153-0dc612ec6a55` was created with `request_context=no_device`, `requester_account_mode=browser_no_device`, 4 stored `knowledge_attempts` all carrying `result=ticket_created_after_view`, and a `knowledge_feedback_events` row with `event_type=ticket_created_after_view`, `source_surface=requester_portal`, `actor_role=requester` and 4 metadata attempts.
+  * Live evidence: `artifacts/browser_live_validation/ask-requester-submit-f50279db-1781286917167/report.json`, `01-requester-prefill.png`, `02-requester-created.png`, `network.json` and `console.json`. Console was empty; network/status evidence had no probe leaks for `sk-or-`, `sk-proj-`, `BEGIN PRIVATE KEY`, `secret-token` or `password=hidden`.
 * Remaining Phase 6 work:
 
-  * Browser/live evidence after deploy is complete only for the AI-off/fallback requester prefill and support debug flows.
-  * Full Ask -> requester ticket submit -> `ticket_created_after_view` analytics live evidence remains pending until the browser session has sufficient requester permissions and an enabled create button.
+  * Browser/live evidence after deploy is complete for the AI-off/fallback requester prefill, full no-device requester ticket submit/analytics, and support debug flows.
   * Optional live OpenRouter answer signoff remains pending until an operator provides a key through the approved secret/config path.
 
 Backend:
@@ -3279,7 +3281,7 @@ Run as many as practical locally, and document any environment limitation explic
 
 Final verification run, 2026-06-12:
 
-This run is the local and route-level deployed verification for the implemented slices. It does not close final Knowledge vNext product signoff: real-key OpenRouter answer signoff, dedicated semantic retrieval browser/live evidence and full Ask -> requester ticket submit -> `ticket_created_after_view` analytics remain open gates.
+This run is the local and route-level deployed verification for the implemented slices. It does not close final Knowledge vNext product signoff: real-key OpenRouter answer signoff and dedicated semantic retrieval browser/live evidence remain open gates. Full Ask -> requester ticket submit -> `ticket_created_after_view` analytics was closed by the later Phase 6E correction run above.
 
 * Local backend and contract checks:
 
@@ -3310,7 +3312,7 @@ This run is the local and route-level deployed verification for the implemented 
   * Browser evidence found no route-level session gate, login redirect, expected-text miss, console warn/error or probe leak for `secret-token`, `password=hidden`, `sk-or-`, `sk-proj-` or `BEGIN PRIVATE KEY`.
   * Browser read-only evaluation did not expose `fetch` or `XMLHttpRequest`, so same-origin API body scan from that browser surface was not available. Product data loading was verified through rendered pages and `/api/health` was verified by release smoke.
   * Live OpenRouter health check with a real key was not run because no operator-provided key was supplied. Mocked OpenRouter/client/provider tests passed and the AI settings route loaded with masked provider controls.
-  * Full Ask -> requester ticket submit was not run because the available browser session still did not provide a requester create flow with an enabled submit button. Prefill evidence exists; end-to-end submit/analytics evidence remains pending.
+  * Historical note: full Ask -> requester ticket submit was not run in this route-level pass, but was later closed by the Phase 6E correction live no-device requester run on commit `f50279db`.
   * Remote `server` and `control` services were stopped after validation; follow-up status showed both inactive/dead.
 
 Known risks:
