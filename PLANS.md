@@ -2175,6 +2175,14 @@ Phase 9 graph CRUD/search slice, 2026-06-12:
   * RED frontend API test failed with `searchKnowledgeGraph is not a function`.
   * RED Graph Studio test failed because `Метка выбранного узла` and archive controls were not rendered.
   * GREEN targeted backend/API/Graph Studio tests now pass.
+* Remote/live validation:
+
+  * Deployed commit `02f51240` to `192.168.100.17` with quick release gate; remote smoke returned `GET /api/health -> 200` on attempt 2.
+  * Browser route validated: `https://192.168.100.17:9443/app/admin/knowledge/graph`.
+  * UI rendered `Метка выбранного узла`, `Сохранить узел`, `Архивировать выбранный узел` and per-edge archive controls.
+  * Live API flow verified `GET /api/web/knowledge/graph/search`, `PATCH /api/web/knowledge/graph/nodes/{stable_key}`, `GET/PATCH/DELETE /api/web/knowledge/graph/edges/{edge_id}` and `DELETE /api/web/knowledge/graph/nodes/{stable_key}` all returned `200`.
+  * Temporary live node `concept:crud-live-1781262810209` was archived; post-delete search returned zero nodes for that stable key.
+  * Safe response scan found no forbidden raw keys. Browser console warnings/errors: none. Evidence screenshot: `phase9-graph-crud-live.png`.
 
 Phase 9 remaining work:
 
