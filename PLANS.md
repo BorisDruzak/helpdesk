@@ -954,9 +954,15 @@ Status 2026-06-12:
   * generic `POST /api/web/knowledge/indexing/jobs` dispatches `scope_type=item|segment|space|all` instead of item-only execution;
   * typed webapp API helpers cover item/segment/space/all reindex and generic job creation without exposing raw vectors;
   * focused verification: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_embeddings.py -q --tb=short` passed with 5 tests and only existing aiohttp app-key warnings.
+* Phase 4C vector retrieval fallback is implemented:
+
+  * `KnowledgeVectorSearchService` performs ACL-first cosine similarity over stored JSONB embeddings for environments without pgvector;
+  * `KnowledgeSearchService` merges vector hits into search results only when vector search is enabled and a safe numeric `query_vector` is supplied;
+  * requester-safe projection still hides diagnostic vector fields, support/admin responses may include `retrieval_source=vector` and `vector_score`, and no response includes raw `embedding_vector`;
+  * focused verification: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_vector_search.py server/tests/test_knowledge_embeddings.py server/tests/test_knowledge_segments.py server/tests/test_knowledge_search_segments.py server/tests/test_knowledge_search_settings.py server/tests/test_knowledge_search.py -q --tb=short` passed with 23 tests and only existing aiohttp app-key warnings.
 * Remaining Phase 4 work:
 
-  * add vector similarity search service and retrieval integration; Phase 4A stores embeddings but Phase 5 still owns hybrid retrieval/rerank ranking;
+  * pgvector-native acceleration and full hybrid/rerank ranking remain Phase 5 work; Phase 4C provides the safe JSONB fallback and retrieval contract;
   * add live OpenRouter signoff with a real operator-provided key and screenshots after deploy.
 
 Backend schema:

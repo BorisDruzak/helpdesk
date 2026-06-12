@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from aiohttp import web
 from loguru import logger
 from sqlalchemy import select
@@ -35,6 +37,21 @@ def _actor(request: web.Request) -> tuple[str | None, str]:
     if actor_role == "user":
         actor_role = "requester"
     return actor_id, actor_role
+
+
+def _safe_query_vector(value: object) -> list[float] | None:
+    if not isinstance(value, list):
+        return None
+    vector: list[float] = []
+    for item in value[:4096]:
+        try:
+            number = float(item)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(number):
+            return None
+        vector.append(number)
+    return vector or None
 
 
 async def _json_payload(request: web.Request) -> dict:
@@ -178,6 +195,9 @@ async def _handle_knowledge_search_response(request: web.Request) -> web.Respons
                 session_id=payload.get("session_id"),
                 limit=min(requested_limit, configured_limit),
                 snippet_length=snippet_length,
+                vector_enabled=bool(settings.get("vector_enabled")),
+                query_vector=_safe_query_vector(payload.get("query_vector")),
+                vector_weight=float(settings.get("vector_weight") or 1.0),
             )
             await session.commit()
         ai_used = bool(settings.get("ai_enabled"))

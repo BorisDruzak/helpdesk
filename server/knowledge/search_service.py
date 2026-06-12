@@ -10,6 +10,7 @@ from app.db.models import KnowledgeBinding, KnowledgeChunk, KnowledgeItem, Knowl
 from app.repos.knowledge_repo import serialize_item
 from knowledge.contracts import actor_visible_visibilities, sanitize_requester_knowledge_projection
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
+from knowledge.vector_search_service import KnowledgeVectorSearchService
 
 
 def _snippet(text: str, query: str, *, max_length: int = 180) -> str:
@@ -65,6 +66,9 @@ class KnowledgeSearchService:
         session_id: str | None = None,
         limit: int = 10,
         snippet_length: int = 180,
+        vector_enabled: bool = False,
+        query_vector: list[float] | None = None,
+        vector_weight: float = 1.0,
     ) -> list[dict[str, Any]]:
         allowed = actor_visible_visibilities(actor_role)
         q = str(query or "").strip()
@@ -132,6 +136,37 @@ class KnowledgeSearchService:
                 payload["snippet"] = _snippet(row.get("segment_text") or version.body, q, max_length=snippet_length)
                 payload["quality_label"] = _quality_label(item.confidence_score)
                 payload["freshness_label"] = _freshness_label(item.review_due_at)
+                if actor_role in {"requester", "agent", "public"}:
+                    payload = sanitize_requester_knowledge_projection(payload)
+                current = scored.get(item.item_id)
+                if current is None or score > current[0]:
+                    scored[item.item_id] = (score, payload)
+        if vector_enabled and query_vector:
+            vector_rows = await KnowledgeVectorSearchService(self.session).search(
+                query_vector=query_vector,
+                actor_role=actor_role,
+                limit=limit,
+            )
+            for row in vector_rows:
+                item = await self.session.get(KnowledgeItem, row["item_id"])
+                version = await self.session.get(KnowledgeItemVersion, row["version_id"])
+                if item is None or version is None:
+                    continue
+                try:
+                    score = int(float(row.get("score") or 0) * 100 * max(0.0, float(vector_weight or 1.0)))
+                except (TypeError, ValueError):
+                    score = 0
+                if score <= 0:
+                    continue
+                payload = serialize_item(item, current_version=version)
+                payload["version_id"] = version.version_id
+                payload["snippet"] = _snippet(row.get("chunk_text") or version.body, q, max_length=snippet_length)
+                payload["quality_label"] = _quality_label(item.confidence_score)
+                payload["freshness_label"] = _freshness_label(item.review_due_at)
+                payload["retrieval_source"] = "vector"
+                payload["vector_score"] = round(float(row.get("score") or 0), 6)
+                if row.get("segment_id"):
+                    payload["segment_id"] = row["segment_id"]
                 if actor_role in {"requester", "agent", "public"}:
                     payload = sanitize_requester_knowledge_projection(payload)
                 current = scored.get(item.item_id)
