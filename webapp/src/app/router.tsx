@@ -372,6 +372,14 @@ export const appRoutes: RouteObject[] = [
             )
           },
           {
+            path: "knowledge/articles/:itemId",
+            element: (
+              <WorkspaceAccessGate workspace="support">
+                <KnowledgeBasePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
             path: "knowledge",
             element: (
               <WorkspaceAccessGate workspace="support">

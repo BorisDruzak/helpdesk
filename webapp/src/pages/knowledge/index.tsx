@@ -1,5 +1,5 @@
-import { KnowledgeAdminPanel } from "../../features/knowledge/knowledge-admin-panel";
+import { KnowledgeSupportWorkspacePage } from "../../features/knowledge/support-workspace-page";
 
 export function KnowledgeBasePage() {
-  return <KnowledgeAdminPanel mode="support" />;
+  return <KnowledgeSupportWorkspacePage />;
 }

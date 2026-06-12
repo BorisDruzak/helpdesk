@@ -185,7 +185,8 @@ Ticket compatibility:
 - `/app/admin/knowledge/graph`: dedicated Visual Graph Studio route with Russian-first node search, SVG neighborhood canvas, node inspector, manual node creation and edge creation over existing graph node/edge APIs. Persisted layouts and AI proposal review remain a later Phase 9 backend slice.
 - `/app/admin/knowledge/import`: dedicated Import/Ingestion wizard for text, markdown and HTML preview plus AI-off review draft creation through the import preview/create-drafts APIs. Rich document parsers, indexing queueing and AI enrichment proposal review remain later Phase 10 slices.
 - `/app/admin/knowledge/indexing`: Russian-first indexing dashboard for embedding status, disabled/failed/indexed counters, index jobs and item reindex controls. It shows model/status/error metadata but never raw vectors.
-- `/app/knowledge`: support-facing knowledge entry using the same real backend data but without admin-first mutation controls. Support cannot create `admin_internal` / `security_restricted` content through this route.
+- `/app/knowledge`: dedicated support Knowledge Workspace over existing item/version APIs. It provides fast search, requester-safe/support-internal/type filters, selected article/runbook detail, guarded requester-safe copy action and ticket-integration placeholders without admin publish/governance controls.
+- `/app/knowledge/articles/:id`: support article/runbook/known-error detail route rendered by the same support workspace and selected by item id or slug.
 - `/app/help`: service/offering suggestions, deflection feedback and failed-article attempts before ticket submit.
 - `/app/tickets/:ticketId`: existing Knowledge tab receives platform-backed support suggestions and passport-to-draft results.
 

@@ -2272,6 +2272,24 @@ Live checks:
   * draft from resolution;
   * observer event.
 
+Phase 11 first slice, 2026-06-12:
+
+* Replaced `/app/knowledge` support surface with a dedicated `KnowledgeSupportWorkspacePage` instead of reusing `KnowledgeAdminPanel mode="support"`.
+* Added support article route `/app/knowledge/articles/:itemId` through the existing support workspace gate.
+* First slice uses existing knowledge item/version APIs only; no backend contract changes yet.
+* Implemented support-facing UX:
+
+  * fast local search over title, slug, summary, type and visibility;
+  * filters for requester-safe, support internal, article, runbook, known error and workaround;
+  * selected article/runbook detail card with current version body;
+  * requester-safe copy action guarded by visibility;
+  * disabled placeholders for link-to-ticket and weak-article reporting until ticket context/backend endpoints are added.
+
+* TDD status:
+
+  * RED `webapp/src/features/knowledge/support-workspace-page.test.tsx` failed on missing component before implementation.
+  * GREEN focused test now covers support search, runbook filtering, detail route and requester-safe copy guard.
+
 Exit criteria:
 
 * Helpdesk integration remains strong.
