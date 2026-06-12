@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.db import get_session
 from app.db.models import KnowledgeContentPack, KnowledgeGapFinding, KnowledgeIngestionJob, KnowledgeNode, KnowledgeReviewTask, KnowledgeSpace
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.knowledge_repo import KnowledgeRepo
 from auth.middleware import require_auth
 from knowledge.contracts import (
@@ -1023,6 +1024,32 @@ async def handle_knowledge_feedback(request: web.Request) -> web.Response:
     payload = await _json_payload(request)
     async with get_session() as session:
         event = await KnowledgeFeedbackService(session).record_event(payload, actor_role=actor_role, actor_id=actor_id)
+        if event.get("source_surface") == "support_workspace":
+            observer_event_type = None
+            severity = "info"
+            if event.get("event_type") == "support_used":
+                observer_event_type = "knowledge.support.article_used"
+            elif event.get("event_type") == "not_helpful" and event.get("result") == "weak_article_reported":
+                observer_event_type = "knowledge.support.weak_article_reported"
+                severity = "warning"
+            if observer_event_type:
+                await AgentRuntimeAuditRepo(session).add(
+                    device_id="server",
+                    event_type=observer_event_type,
+                    severity=severity,
+                    source="knowledge_support",
+                    ticket_id=event.get("ticket_id"),
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    details_json={
+                        "event_id": event.get("event_id"),
+                        "item_id": event.get("item_id"),
+                        "version_id": event.get("version_id"),
+                        "ticket_id": event.get("ticket_id"),
+                        "result": event.get("result"),
+                        "source_surface": "support_workspace",
+                    },
+                )
         await session.commit()
     return web.json_response({"status": "ok", "event": event})
 

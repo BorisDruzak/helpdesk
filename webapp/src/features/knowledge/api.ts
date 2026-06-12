@@ -835,6 +835,29 @@ export async function fetchKnowledgeImportJob(jobId: string): Promise<KnowledgeI
   return payload.job;
 }
 
+export async function linkKnowledgeArticleToTicket(
+  ticketId: string,
+  payload: { article_ref: string; title?: string; source?: string },
+): Promise<{ kb_link: Record<string, unknown> }> {
+  const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/kb_links`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ kb_link: Record<string, unknown> }>(response, "Не удалось связать статью с тикетом");
+}
+
+export async function recordKnowledgeSupportFeedback(payload: Record<string, unknown>): Promise<{ event: Record<string, unknown> }> {
+  const response = await fetch("/api/knowledge/feedback", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ event: Record<string, unknown> }>(response, "Не удалось записать использование знания");
+}
+
 export async function fetchKnowledgeGraphNodes(): Promise<KnowledgeGraphNode[]> {
   const response = await fetch("/api/web/knowledge/graph/nodes", { credentials: "same-origin" });
   const payload = await readJson<{ nodes: KnowledgeGraphNode[] }>(response, "Не удалось загрузить узлы графа знаний");

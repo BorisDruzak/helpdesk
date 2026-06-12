@@ -7,7 +7,15 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
-import { fetchKnowledgeItems, fetchKnowledgeItemVersions, previewKnowledgeAsk, type KnowledgeAskResult, type KnowledgeItem } from "./api";
+import {
+  fetchKnowledgeItems,
+  fetchKnowledgeItemVersions,
+  linkKnowledgeArticleToTicket,
+  previewKnowledgeAsk,
+  recordKnowledgeSupportFeedback,
+  type KnowledgeAskResult,
+  type KnowledgeItem,
+} from "./api";
 
 const requesterSafeVisibilities = new Set(["public", "requester", "agent_requester_safe"]);
 const supportVisibilities = new Set(["public", "requester", "agent_requester_safe", "support_internal"]);
@@ -64,7 +72,10 @@ export function KnowledgeSupportWorkspacePage() {
   const [typeFilter, setTypeFilter] = useState<(typeof supportTypes)[number]>("all");
   const [visibilityFilter, setVisibilityFilter] = useState<"all" | "requester_safe" | "support_internal">("all");
   const [copyMessage, setCopyMessage] = useState("");
+  const [actionMessage, setActionMessage] = useState("");
   const [askDebugQuery, setAskDebugQuery] = useState(searchParams.get("query") ?? "");
+  const ticketId = searchParams.get("ticket_id") ?? "";
+  const ticketQuerySuffix = ticketId ? `?ticket_id=${encodeURIComponent(ticketId)}` : "";
 
   const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
   const items = useMemo(() => (itemsQuery.data ?? []).filter((item) => supportVisibilities.has(item.visibility)), [itemsQuery.data]);
@@ -112,6 +123,55 @@ export function KnowledgeSupportWorkspacePage() {
         limit: 5,
       }),
   });
+  const linkMutation = useMutation({
+    mutationFn: () => {
+      if (!ticketId || !selectedItem) {
+        throw new Error("ticket context is required");
+      }
+      return linkKnowledgeArticleToTicket(ticketId, {
+        article_ref: selectedItem.item_id,
+        title: selectedItem.title,
+        source: "knowledge_support_workspace",
+      });
+    },
+    onSuccess: () => setActionMessage("Статья связана с тикетом."),
+    onError: () => setActionMessage("Не удалось связать статью с тикетом."),
+  });
+  const supportUsedMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedItem) {
+        throw new Error("article is required");
+      }
+      return recordKnowledgeSupportFeedback({
+        item_id: selectedItem.item_id,
+        version_id: selectedVersion?.version_id,
+        event_type: "support_used",
+        ticket_id: ticketId || undefined,
+        surface: "support_workspace",
+        metadata: { source: "support_workspace" },
+      });
+    },
+    onSuccess: () => setActionMessage("Использование статьи записано."),
+    onError: () => setActionMessage("Не удалось записать использование статьи."),
+  });
+  const weakArticleMutation = useMutation({
+    mutationFn: () => {
+      if (!selectedItem) {
+        throw new Error("article is required");
+      }
+      return recordKnowledgeSupportFeedback({
+        item_id: selectedItem.item_id,
+        version_id: selectedVersion?.version_id,
+        event_type: "not_helpful",
+        result: "weak_article_reported",
+        ticket_id: ticketId || undefined,
+        surface: "support_workspace",
+        metadata: { source: "support_workspace" },
+      });
+    },
+    onSuccess: () => setActionMessage("Слабая статья отмечена для улучшения."),
+    onError: () => setActionMessage("Не удалось отметить слабую статью."),
+  });
 
   async function copySafeAnswer() {
     if (!selectedItem || !requesterSafeVisibilities.has(selectedItem.visibility)) {
@@ -124,7 +184,8 @@ export function KnowledgeSupportWorkspacePage() {
 
   function selectItem(item: KnowledgeItem) {
     setCopyMessage("");
-    navigate(`/app/knowledge/articles/${encodeURIComponent(item.item_id)}`);
+    setActionMessage("");
+    navigate(`/app/knowledge/articles/${encodeURIComponent(item.item_id)}${ticketQuerySuffix}`);
   }
 
   return (
@@ -134,6 +195,18 @@ export function KnowledgeSupportWorkspacePage() {
         title="База знаний поддержки"
         description="Быстрый поиск по requester-safe статьям, support runbook, known error и workaround без админских операций публикации."
       />
+
+      {ticketId ? (
+        <Card>
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
+            <div>
+              <p className="text-xs font-semibold uppercase text-slate-500">Ticket context</p>
+              <p className="font-medium text-slate-900">{ticketId}</p>
+            </div>
+            <Badge tone="info">support workspace</Badge>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -255,17 +328,28 @@ export function KnowledgeSupportWorkspacePage() {
                       <ClipboardCheck className="mr-2 h-4 w-4" />
                       Copy-safe answer
                     </Button>
-                    <Button disabled size="sm" title="Появится в ticket context slice" variant="outline">
+                    <Button
+                      disabled={!ticketId || linkMutation.isPending}
+                      onClick={() => linkMutation.mutate()}
+                      size="sm"
+                      title={ticketId ? "Связать статью с текущим тикетом" : "Добавьте ticket_id в URL"}
+                      variant="outline"
+                    >
                       <Link2 className="mr-2 h-4 w-4" />
-                      Link to ticket
+                      Связать с тикетом
                     </Button>
-                    <Button disabled size="sm" title="Появится вместе с feedback endpoint" variant="outline">
+                    <Button disabled={supportUsedMutation.isPending} onClick={() => supportUsedMutation.mutate()} size="sm" variant="outline">
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      Отметить использование
+                    </Button>
+                    <Button disabled={weakArticleMutation.isPending} onClick={() => weakArticleMutation.mutate()} size="sm" variant="outline">
                       <TriangleAlert className="mr-2 h-4 w-4" />
-                      Report weak article
+                      Сообщить о слабой статье
                     </Button>
                   </div>
                   {copyMessage ? <p className="text-sm text-slate-600">{copyMessage}</p> : null}
-                  <Link className="inline-flex text-sm font-medium text-brand-700 hover:underline" to={`/app/knowledge/articles/${encodeURIComponent(selectedItem.item_id)}`}>
+                  {actionMessage ? <p className="text-sm text-slate-600">{actionMessage}</p> : null}
+                  <Link className="inline-flex text-sm font-medium text-brand-700 hover:underline" to={`/app/knowledge/articles/${encodeURIComponent(selectedItem.item_id)}${ticketQuerySuffix}`}>
                     Открыть постоянную карточку
                   </Link>
                 </>
@@ -366,8 +450,8 @@ export function KnowledgeSupportWorkspacePage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-slate-600">
-              <p>Следующий slice подключит выбранный ticket context: requester attempts, linked articles, support_used и draft from passport.</p>
-              <p>Эта страница уже отделена от admin publish/governance controls и подходит для повторяющейся работы линии поддержки.</p>
+              <p>Ticket context подключается через параметр ticket_id, чтобы связать статью с тикетом, записать support_used и отметить слабую статью.</p>
+              <p>Requester attempts и draft from passport остаются следующим slice.</p>
             </CardContent>
           </Card>
 

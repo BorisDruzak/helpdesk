@@ -2697,6 +2697,28 @@ Phase 11 first slice, 2026-06-12:
   * Console warnings/errors, failed requests and HTTP errors were empty.
   * Evidence: `artifacts/browser_live_validation/knowledge-support-9eb1f838-1781239434437/report.json` and `artifacts/browser_live_validation/knowledge-support-9eb1f838-1781239434437/knowledge-support-live.png`.
 
+Phase 11 support ticket actions slice, 2026-06-12:
+
+* `/app/knowledge` and `/app/knowledge/articles/:itemId` now preserve optional `ticket_id` query context and show a ticket context banner when present.
+* The selected support article card now enables:
+
+  * `Link to ticket` through existing compatibility endpoint `POST /api/tickets/{ticket_id}/kb_links` with `source=knowledge_support_workspace`;
+  * `Mark support used` through existing `POST /api/knowledge/feedback` with `event_type=support_used` and `surface=support_workspace`;
+  * `Report weak article` through existing `POST /api/knowledge/feedback` with `event_type=not_helpful`, `result=weak_article_reported` and `surface=support_workspace`.
+
+* Backend Observer-visible audit rows are emitted without new tables:
+
+  * `knowledge.support.ticket_linked` from `server/tickets/handlers.py`;
+  * `knowledge.support.article_used` from `server/web_api/knowledge_handlers.py`;
+  * `knowledge.support.weak_article_reported` from `server/web_api/knowledge_handlers.py`.
+
+* Safety contract: audit details include only article/item/version/ticket/link ids and safe action metadata; test metadata containing `secret-token` or `password=hidden` is not persisted into runtime audit details.
+* TDD status:
+
+  * RED backend tests failed before implementation because ticket link/support feedback did not emit Observer rows.
+  * GREEN backend tests: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ticket_knowledge_links_compat.py server/tests/test_knowledge_feedback.py -q --tb=short` passed with 6 tests.
+  * GREEN frontend tests: `pnpm --dir webapp test -- src/features/knowledge/support-workspace-page.test.tsx src/features/knowledge/api.test.ts` passed with 2 files / 24 tests.
+
 Exit criteria:
 
 * Helpdesk integration remains strong.

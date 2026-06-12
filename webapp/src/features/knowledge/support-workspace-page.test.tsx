@@ -190,4 +190,82 @@ describe("KnowledgeSupportWorkspacePage", () => {
       limit: 5,
     });
   });
+
+  it("links the selected article to ticket context and records support feedback", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/knowledge/items") {
+        return Promise.resolve(jsonResponse(itemsPayload));
+      }
+      if (url === "/api/web/knowledge/items/item-requester/versions") {
+        return Promise.resolve(
+          jsonResponse({
+            status: "ok",
+            versions: [
+              {
+                version_id: "version-requester",
+                item_id: "item-requester",
+                version_number: 1,
+                title: "VPN requester guide",
+                summary: "Requester-safe VPN answer.",
+                body_format: "markdown",
+                body: "Reconnect VPN from the requester portal.",
+              },
+            ],
+          }),
+        );
+      }
+      if (url === "/api/tickets/ticket-1/kb_links" && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ status: "ok", kb_link: { id: 42, article_ref: "item-requester" } }));
+      }
+      if (url === "/api/knowledge/feedback" && init?.method === "POST") {
+        return Promise.resolve(jsonResponse({ status: "ok", event: { event_id: "event-1" } }));
+      }
+      return Promise.resolve(jsonResponse({ status: "ok", versions: [] }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkspace("/app/knowledge/articles/item-requester?ticket_id=ticket-1");
+
+    expect(await screen.findByText("Ticket context")).toBeInTheDocument();
+    expect(screen.getByText("ticket-1")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "VPN requester guide" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Связать с тикетом" }));
+    await waitFor(() => expect(screen.getByText("Статья связана с тикетом.")).toBeInTheDocument());
+    expect(JSON.parse(fetchMock.mock.calls.find((call) => String(call[0]) === "/api/tickets/ticket-1/kb_links")?.[1]?.body as string)).toMatchObject({
+      article_ref: "item-requester",
+      title: "VPN requester guide",
+      source: "knowledge_support_workspace",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Отметить использование" }));
+    await waitFor(() => expect(screen.getByText("Использование статьи записано.")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Сообщить о слабой статье" }));
+    await waitFor(() => expect(screen.getByText("Слабая статья отмечена для улучшения.")).toBeInTheDocument());
+
+    const feedbackBodies = fetchMock.mock.calls
+      .filter((call) => String(call[0]) === "/api/knowledge/feedback")
+      .map((call) => JSON.parse(call[1]?.body as string));
+    expect(feedbackBodies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          item_id: "item-requester",
+          version_id: "version-requester",
+          event_type: "support_used",
+          ticket_id: "ticket-1",
+          surface: "support_workspace",
+        }),
+        expect.objectContaining({
+          item_id: "item-requester",
+          version_id: "version-requester",
+          event_type: "not_helpful",
+          result: "weak_article_reported",
+          ticket_id: "ticket-1",
+          surface: "support_workspace",
+        }),
+      ]),
+    );
+  });
 });

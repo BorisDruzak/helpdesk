@@ -25,6 +25,7 @@ from app.repos import (
     ProblemsRepo,
     TicketEventsRepo,
 )
+from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from auth.context import AuthContext, AuthType
 from tickets.assignment_service import (
@@ -2770,6 +2771,21 @@ async def handle_ticket_kb_links_post(request: web.Request) -> web.Response:
             source=data.get("source"),
             created_by=auth_context.actor_id,
         )
+        if str(data.get("source") or "") == "knowledge_support_workspace":
+            await AgentRuntimeAuditRepo(session).add(
+                device_id="server",
+                event_type="knowledge.support.ticket_linked",
+                severity="info",
+                source="knowledge_support",
+                ticket_id=ticket.ticket_id,
+                actor_id=auth_context.actor_id,
+                actor_role=auth_context.actor_role,
+                details_json={
+                    "kb_link_id": kb_link.id,
+                    "article_ref": article_ref,
+                    "source": "knowledge_support_workspace",
+                },
+            )
         await session.commit()
         return _json_ok(kb_link=_serialize_ticket_kb_link(kb_link))
 
