@@ -2435,6 +2435,15 @@ Phase 12 first slice, 2026-06-12:
   * `pnpm --dir webapp test -- src/features/knowledge/ops-dashboard-panel.test.tsx src/features/knowledge/api.test.ts src/app/navigation.test.ts` passed, 28 tests.
   * `pnpm --dir webapp build` passed.
 
+* Remote/live validation, 2026-06-12:
+
+  * Deployed commit `dd0b4ddb` with `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`; health smoke returned 200.
+  * Playwright checked `GET /api/web/knowledge/ops/summary` and `https://192.168.100.17:9443/app/admin/knowledge`.
+  * API returned `status=ok`, `summary.status=degraded`, `generated_at=2026-06-12T04:59:14.841795+00:00`.
+  * Dashboard rendered `Knowledge Operations Center`, requester-safe coverage, zero-result searches, RAG no-answer, failed indexing jobs and Observer-backed degradation cards.
+  * Console warnings/errors, failed requests and HTTP errors were empty.
+  * Evidence: `artifacts/browser_live_validation/knowledge-ops-dd0b4ddb-1781240295274/report.json` and `artifacts/browser_live_validation/knowledge-ops-dd0b4ddb-1781240295274/knowledge-ops-live.png`.
+
 Exit criteria:
 
 * Knowledge health is observable.
