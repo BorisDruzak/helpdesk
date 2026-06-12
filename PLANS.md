@@ -3286,7 +3286,14 @@ Final verification run, 2026-06-12:
 
 * Live/browser validation:
 
-  * Pending after commit and deploy of this final verification slice.
+  * Commit `34b9236d` was pushed to `origin/codex/helpdesk-process-model` and deployed with `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --leave-running --smoke-insecure-tls`.
+  * Quick release flow passed `python scripts/verify_workspace.py`, rebuilt the webapp bundle, applied remote Alembic migrations to head and verified remote `/api/health -> 200` on smoke attempt 2.
+  * Browser route evidence passed for `https://192.168.100.17:9443/app/admin/knowledge`, `/app/admin/knowledge/ai`, `/app/admin/knowledge/search-settings`, `/app/admin/knowledge/studio`, `/app/admin/knowledge/indexing`, `/app/admin/knowledge/graph`, `/app/kb/search`, `/app/kb/ask`, `/app/knowledge` and `/app/tickets/d0132bf4-5a22-4cec-ba85-68593d13e447`.
+  * Browser report: `artifacts/browser_live_validation/knowledge-final-34b9236d-1781283207077/report.json`; screenshots are in the same directory.
+  * Browser evidence found no route-level session gate, login redirect, expected-text miss, console warn/error or probe leak for `secret-token`, `password=hidden`, `sk-or-`, `sk-proj-` or `BEGIN PRIVATE KEY`.
+  * Browser read-only evaluation did not expose `fetch` or `XMLHttpRequest`, so same-origin API body scan from that browser surface was not available. Product data loading was verified through rendered pages and `/api/health` was verified by release smoke.
+  * Live OpenRouter health check with a real key was not run because no operator-provided key was supplied. Mocked OpenRouter/client/provider tests passed and the AI settings route loaded with masked provider controls.
+  * Remote `server` and `control` services were stopped after validation; follow-up status showed both inactive/dead.
 
 Known risks:
 
