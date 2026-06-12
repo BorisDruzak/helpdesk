@@ -413,6 +413,17 @@ export const appNavigation: AppNavItem[] = [
     order: 30,
   },
   {
+    label: "Индексация",
+    description: "Embeddings, vector state, задания и ошибки",
+    icon: Layers3,
+    section: "admin",
+    workspace: "admin",
+    domainId: "knowledge",
+    to: "/app/admin/knowledge/indexing",
+    permission: "admin.forms.view",
+    order: 35,
+  },
+  {
     label: "Модули",
     description: "ZIP/SDK-модули агента",
     icon: Layers3,

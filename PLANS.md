@@ -937,6 +937,23 @@ Goal:
 * Support OpenRouter embeddings first.
 * Prepare for local embedding providers later.
 
+Status 2026-06-12:
+
+* Phase 4A backend/UI vertical slice is implemented:
+
+  * migration `113` adds `knowledge_chunk_embeddings` and `knowledge_index_jobs` without requiring pgvector in local/test DB;
+  * `KnowledgeEmbeddingService` builds safe embedding input from segment chunks and existing chunks, honors AI-off/vector-disabled search settings, gates cloud embeddings through `ai_policy_profiles`, and uses injected OpenRouter embedding transport for provider-backed indexing;
+  * `POST /api/web/knowledge/indexing/reindex-item`, `GET /api/web/knowledge/indexing/status` and `GET|POST /api/web/knowledge/indexing/jobs` are live for admin/support indexing operations and auditor read;
+  * disabled policy/vector settings create `disabled` embedding rows and `knowledge.embedding.policy_blocked` audit evidence instead of failing search;
+  * missing provider/secret/transport fails jobs safely with redacted `embedding provider unavailable` state and `knowledge.embedding.provider_unavailable` audit evidence;
+  * successful fake/OpenRouter-compatible embedding calls persist vectors only in DB, update chunk `embedding_ref`/`embedding_model`, return no raw vectors to web clients and emit `knowledge.embedding.index_completed`;
+  * React route `/app/admin/knowledge/indexing` shows Russian-first indexing status, disabled warnings, jobs and item reindex controls.
+* Remaining Phase 4 work:
+
+  * implement dedicated `reindex-space`, `reindex-all` and `reindex-segment` orchestration endpoints instead of item-only execution;
+  * add vector similarity search service and retrieval integration; Phase 4A stores embeddings but Phase 5 still owns hybrid retrieval/rerank ranking;
+  * add live OpenRouter signoff with a real operator-provided key and screenshots after deploy.
+
 Backend schema:
 
 Add:

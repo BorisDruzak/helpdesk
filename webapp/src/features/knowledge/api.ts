@@ -338,6 +338,46 @@ export type KnowledgeSegment = {
   updated_at?: string | null;
 };
 
+export type KnowledgeIndexingStatus = {
+  embeddings: Record<string, number>;
+  jobs: Record<string, number>;
+  vector_enabled: boolean;
+  embedding_model?: string | null;
+  model_profile_id?: string | null;
+};
+
+export type KnowledgeIndexJob = {
+  job_id: string;
+  scope_type: string;
+  scope_ref?: string | null;
+  model_profile_id?: string | null;
+  status: string;
+  requested_by?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  stats_json?: Record<string, number>;
+  error_redacted?: string | null;
+  metadata_json?: Record<string, unknown>;
+};
+
+export type KnowledgeEmbeddingRecord = {
+  embedding_id: string;
+  chunk_id: string;
+  segment_id?: string | null;
+  item_id: string;
+  version_id: string;
+  model_profile_id?: string | null;
+  embedding_model?: string | null;
+  embedding_dimensions?: number | null;
+  content_hash: string;
+  embedding_input_hash?: string | null;
+  visibility: string;
+  status: string;
+  indexed_at?: string | null;
+  error_redacted?: string | null;
+  metadata_json?: Record<string, unknown>;
+};
+
 export type KnowledgeSegmentationProfile = {
   profile_id: string;
   code: string;
@@ -791,6 +831,37 @@ export async function syncKnowledgeSegmentIndex(itemIdOrSlug: string, payload: {
     response,
     "Не удалось синхронизировать индекс сегментов",
   );
+}
+
+export async function fetchKnowledgeIndexingStatus() {
+  const response = await fetch("/api/web/knowledge/indexing/status", { credentials: "same-origin" });
+  return readJson<{ indexing: KnowledgeIndexingStatus; display_message?: string }>(
+    response,
+    "Не удалось загрузить статус индексации знаний",
+  ).then((payload) => payload.indexing);
+}
+
+export async function fetchKnowledgeIndexJobs() {
+  const response = await fetch("/api/web/knowledge/indexing/jobs", { credentials: "same-origin" });
+  return readJson<{ jobs: KnowledgeIndexJob[]; display_message?: string }>(
+    response,
+    "Не удалось загрузить задания индексации знаний",
+  ).then((payload) => payload.jobs ?? []);
+}
+
+export async function reindexKnowledgeItem(payload: { item_id: string; version_id?: string }) {
+  const response = await fetch("/api/web/knowledge/indexing/reindex-item", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{
+    job: KnowledgeIndexJob;
+    embeddings: KnowledgeEmbeddingRecord[];
+    stats: Record<string, number>;
+    display_message?: string;
+  }>(response, "Не удалось запустить индексацию статьи");
 }
 
 export async function approveKnowledgeAiSegment(segmentId: string) {

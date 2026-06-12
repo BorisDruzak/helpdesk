@@ -14,6 +14,7 @@ import {
   AdminFormsPage,
   AdminInventoryPage,
   AdminKnowledgeAiPage,
+  AdminKnowledgeIndexingPage,
   AdminKnowledgePage,
   AdminKnowledgeSearchSettingsPage,
   AdminKnowledgeStudioPage,
@@ -464,6 +465,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminKnowledgeAiPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "admin/knowledge/indexing",
+            element: (
+              <WorkspaceAccessGate workspace="admin">
+                <AdminKnowledgeIndexingPage />
               </WorkspaceAccessGate>
             )
           },

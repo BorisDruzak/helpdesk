@@ -14,6 +14,8 @@ import {
   fetchKnowledgeQuality,
   fetchKnowledgeReviewQueue,
   fetchKnowledgeRolloutPolicies,
+  fetchKnowledgeIndexingStatus,
+  fetchKnowledgeIndexJobs,
   previewKnowledgeSearch,
   archiveKnowledgeSegment,
   approveKnowledgeAiSegment,
@@ -22,6 +24,7 @@ import {
   fetchKnowledgeTemplates,
   proposeKnowledgeAiSegments,
   revalidateKnowledgeSegments,
+  reindexKnowledgeItem,
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
   saveKnowledgeAiProvider,
@@ -370,6 +373,37 @@ describe("knowledge article segmentation api", () => {
       expect.objectContaining({ method: "POST", credentials: "same-origin" }),
     );
     expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toMatchObject({ reason: "Дубль существующего сегмента" });
+  });
+
+  it("loads indexing status, jobs and runs item reindex without exposing raw vectors", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", indexing: { embeddings: { indexed: 2 }, jobs: { completed: 1 }, vector_enabled: false, embedding_model: null } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", jobs: [{ job_id: "job-1", scope_type: "item", status: "completed" }] }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          display_message: "Индексация embeddings выполнена",
+          job: { job_id: "job-2", scope_type: "item", status: "completed" },
+          embeddings: [{ embedding_id: "emb-1", chunk_id: "chunk-1", item_id: "ki-1", version_id: "ver-1", status: "indexed", content_hash: "hash", visibility: "requester" }],
+          stats: { indexed_embeddings: 1 },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeIndexingStatus()).resolves.toMatchObject({ vector_enabled: false, embeddings: { indexed: 2 } });
+    await expect(fetchKnowledgeIndexJobs()).resolves.toMatchObject([{ job_id: "job-1" }]);
+    const result = await reindexKnowledgeItem({ item_id: "ki-1", version_id: "ver-1" });
+
+    expect(result.embeddings[0]).not.toHaveProperty("embedding_vector");
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/indexing/status", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/indexing/jobs", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "/api/web/knowledge/indexing/reindex-item",
+      expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+    );
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toMatchObject({ item_id: "ki-1", version_id: "ver-1" });
   });
 });
 

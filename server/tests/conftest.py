@@ -708,6 +708,8 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
                 diagnostic_evidence,
                 diagnostic_steps,
                 diagnostic_sessions,
+                knowledge_chunk_embeddings,
+                knowledge_index_jobs,
                 ai_request_audit,
                 ai_policy_profiles,
                 ai_model_profiles,

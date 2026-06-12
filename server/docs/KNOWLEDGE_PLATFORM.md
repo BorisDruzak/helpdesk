@@ -121,6 +121,9 @@ Admin/support management:
 
 - `GET|POST /api/web/knowledge/search-settings`
 - `POST /api/web/knowledge/search`
+- `GET /api/web/knowledge/indexing/status`
+- `GET|POST /api/web/knowledge/indexing/jobs`
+- `POST /api/web/knowledge/indexing/reindex-item`
 - `GET|POST /api/web/knowledge/spaces`
 - `GET|POST /api/web/knowledge/items`
 - `GET|POST /api/web/knowledge/segmentation-profiles`
@@ -170,6 +173,7 @@ Ticket compatibility:
 
 - `/app/admin/knowledge`: governance/editor route with spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup for the selected immutable version, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview context.
 - `/app/admin/knowledge/studio`: initial Knowledge Authoring Studio route. It currently reuses the existing article editor and retrieval segment markup panel while future authoring-specific workflow is phased in.
+- `/app/admin/knowledge/indexing`: Russian-first indexing dashboard for embedding status, disabled/failed/indexed counters, index jobs and item reindex controls. It shows model/status/error metadata but never raw vectors.
 - `/app/knowledge`: support-facing knowledge entry using the same real backend data but without admin-first mutation controls. Support cannot create `admin_internal` / `security_restricted` content through this route.
 - `/app/help`: service/offering suggestions, deflection feedback and failed-article attempts before ticket submit.
 - `/app/tickets/:ticketId`: existing Knowledge tab receives platform-backed support suggestions and passport-to-draft results.
@@ -177,6 +181,8 @@ Ticket compatibility:
 Knowledge vNext product UI является Russian-first. Новые portal, support, admin, authoring, graph, AI/search/indexing/import/review surfaces должны использовать русские пользовательские labels, validation messages, empty states, toasts и safe error text. Route paths, API fields, enum values, observer event codes и metric names остаются стабильными английскими техническими контрактами. Tests для новых UI pages должны проверять репрезентативный русский copy и ловить mojibake в visible text.
 
 Segment index sync writes active `full_text_enabled` article segments into version-scoped `knowledge_chunks` rows with `metadata_json.source=article_segment`. Chunks with segment embeddings enabled are marked `embedding_status=pending`; actual provider-backed embedding generation belongs to the Phase 4 indexing worker and must keep keyword/full-text search usable when AI is disabled.
+
+Phase 4 indexing stores optional embeddings in `knowledge_chunk_embeddings` and observable jobs in `knowledge_index_jobs`. `KnowledgeEmbeddingService` builds provider input from article title, segment title/summary, keywords, heading path and chunk text; vector-disabled settings or AI policy blocks create `disabled` rows and audit evidence instead of breaking baseline search. Provider/key failures are redacted as safe job/embedding errors, while successful OpenRouter-compatible calls persist vectors only in DB and return no raw vector data through web APIs.
 
 ## Knowledge vNext Target Routes
 

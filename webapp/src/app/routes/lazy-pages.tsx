@@ -138,6 +138,10 @@ export const AdminKnowledgeSearchSettingsPage = lazy(() =>
   })),
 );
 
+export const AdminKnowledgeIndexingPage = lazy(() =>
+  import("../../pages/admin/knowledge-indexing-page").then((module) => ({ default: module.AdminKnowledgeIndexingPage })),
+);
+
 export const AdminQualityPage = lazy(() =>
   import("../../pages/admin/quality-page").then((module) => ({ default: module.AdminQualityPage })),
 );

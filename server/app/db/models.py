@@ -6500,3 +6500,72 @@ class KnowledgeSearchSettings(Base):
         sa.CheckConstraint("snippet_length BETWEEN 80 AND 1000", name="ck_knowledge_search_settings_snippet_length"),
         Index("ix_knowledge_search_settings_scope", "scope_type", "space_id", "visibility"),
     )
+
+
+class KnowledgeChunkEmbedding(Base):
+    """Optional embedding/vector state for a Knowledge chunk."""
+
+    __tablename__ = "knowledge_chunk_embeddings"
+
+    embedding_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    chunk_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_chunks.chunk_id", ondelete="CASCADE"), nullable=False)
+    segment_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    version_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_item_versions.version_id", ondelete="CASCADE"), nullable=False)
+    model_profile_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ai_model_profiles.profile_id", ondelete="SET NULL"), nullable=True)
+    embedding_model: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    embedding_dimensions: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    embedding_vector: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding_input_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="pending")
+    indexed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    error_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('pending', 'indexed', 'failed', 'stale', 'disabled')",
+            name="ck_knowledge_chunk_embeddings_status",
+        ),
+        sa.CheckConstraint(
+            "visibility IN ('public', 'requester', 'agent_requester_safe', 'support_internal', 'admin_internal', 'security_restricted', 'auditor_read')",
+            name="ck_knowledge_chunk_embeddings_visibility",
+        ),
+        Index("ix_knowledge_chunk_embeddings_chunk_status", "chunk_id", "status"),
+        Index("ix_knowledge_chunk_embeddings_item_version", "item_id", "version_id", "status"),
+        Index("ix_knowledge_chunk_embeddings_segment", "segment_id"),
+    )
+
+
+class KnowledgeIndexJob(Base):
+    """Observable Knowledge indexing job."""
+
+    __tablename__ = "knowledge_index_jobs"
+
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    scope_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    scope_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    model_profile_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("ai_model_profiles.profile_id", ondelete="SET NULL"), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="queued")
+    requested_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    stats_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    error_redacted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "scope_type IN ('item', 'version', 'space', 'all', 'segment')",
+            name="ck_knowledge_index_jobs_scope_type",
+        ),
+        sa.CheckConstraint(
+            "status IN ('queued', 'running', 'completed', 'failed', 'canceled')",
+            name="ck_knowledge_index_jobs_status",
+        ),
+        Index("ix_knowledge_index_jobs_scope_status", "scope_type", "scope_ref", "status"),
+    )
