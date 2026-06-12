@@ -171,7 +171,11 @@ export function KnowledgeAuthoringStudioPage() {
     }
     return items.filter((item) => [item.title, item.slug, item.status, item.visibility].some((value) => String(value ?? "").toLowerCase().includes(needle)));
   }, [items, search]);
-  const selectedItem = items.find((item) => item.item_id === selectedItemId) ?? filteredItems[0] ?? null;
+  const defaultItem = useMemo(() => {
+    const activeItems = filteredItems.filter((item) => item.status !== "archived");
+    return activeItems.find((item) => item.current_version_id) ?? activeItems[0] ?? filteredItems.find((item) => item.current_version_id) ?? filteredItems[0] ?? null;
+  }, [filteredItems]);
+  const selectedItem = items.find((item) => item.item_id === selectedItemId) ?? defaultItem;
 
   const versionsQuery = useQuery({
     queryKey: ["knowledge-item-versions", selectedItem?.item_id],
@@ -255,7 +259,10 @@ export function KnowledgeAuthoringStudioPage() {
         action,
         note: reviewNote.trim() || null,
       }),
-    onSuccess: () => {
+    onSuccess: (_result, action) => {
+      if (action === "archive" || action === "retire") {
+        setSelectedItemId("");
+      }
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });

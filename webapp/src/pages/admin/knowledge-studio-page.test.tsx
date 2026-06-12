@@ -30,6 +30,22 @@ const itemsPayload = {
   status: "ok",
   items: [
     {
+      item_id: "item-archived",
+      space_id: "space-1",
+      slug: "archived-live-draft",
+      item_type: "article",
+      type: "article",
+      title: "Archived live draft",
+      summary: "Archived item without versions should not be selected by default",
+      status: "archived",
+      visibility: "requester",
+      owner_actor_id: "owner",
+      reviewer_actor_id: "reviewer",
+      tags: ["archived"],
+      current_version_id: null,
+      updated_at: "2026-06-12T08:00:00Z",
+    },
+    {
       item_id: "item-1",
       space_id: "space-1",
       slug: "vpn-access",
