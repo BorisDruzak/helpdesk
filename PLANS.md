@@ -1922,6 +1922,25 @@ Phase 8 completion result, 2026-06-12:
   * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx -t "runs review comment"` -> passed, 1 selected test.
   * `pnpm --dir webapp test -- src/pages/admin/knowledge-studio-page.test.tsx -t "structured markdown"` -> passed, 1 selected test.
 
+Phase 8 final remote/live validation, 2026-06-12:
+
+* Deployed commit `4d5eff4e` to `192.168.100.17` with `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls`.
+* Remote Alembic migration ran `114 -> 115` and health smoke returned `GET /api/health -> 200`.
+* Browser route validated: `https://192.168.100.17:9443/app/admin/knowledge/studio`.
+* Live Studio workflow created article `codex-phase8-history-20260612072045` (`item_id=a3c566b0-7d36-4879-831d-a38a5e9e86bf`, `version_id=f6b167a8-c232-4910-81e0-ffbb1a400a92`) and verified:
+
+  * `POST /api/web/knowledge/items` -> 200;
+  * `POST /api/web/knowledge/items/{item_id}/versions` -> 200;
+  * `POST /api/web/knowledge/items/{item_id}/publish` -> 200;
+  * `POST /api/web/knowledge/items/{item_id}/review-action` for `comment` and `approve` -> 200;
+  * `GET /api/web/knowledge/items/{item_id}/editor-history` -> 200.
+
+* Editor history returned and UI rendered `draft_created`, `version_created`, `published`, `commented`, `approved`; diff cache rendered `Diff cache: +4 / -0`.
+* Safety scan found no forbidden raw-history fields in the editor-history API response.
+* Browser evidence: screenshot `phase8-studio-history.png`; network requests for current Studio run returned 200 for session, spaces, items, versions, segments, segmentation profiles and editor-history.
+* Browser console errors for the current Studio run: none.
+* Remote `server` and `control` services were stopped after validation.
+
 ---
 
 ## Phase 9 — Visual Knowledge Graph Studio
