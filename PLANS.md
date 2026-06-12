@@ -1389,6 +1389,8 @@ Status 2026-06-12:
   * Debug result rows expose support/admin-safe score, `score_parts`, `source_mode`, `chunk_id` and `segment_id`; requester `/app/kb/ask` still hides admin diagnostics.
   * RED test: `pnpm --dir webapp test -- src/features/knowledge/support-workspace-page.test.tsx` failed before implementation because `Ask debug query` was absent.
   * GREEN test: the same focused test passed with 1 file / 2 tests after implementation.
+  * Remote validation: `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `165c4747`; `/api/health` returned 200 on smoke attempt 2.
+  * Browser validation: Playwright/browser opened `https://192.168.100.17:9443/app/knowledge`, confirmed the `Ask debug` panel, filled `VPN`, ran `Проверить Ask`, and saw `ai_disabled`, `keyword_only`, `AI fallback`, 5 citations plus per-result `score`, `source_mode`, `chunk_id`, `segment_id` and `keyword_*` score parts.
 * Remaining Phase 6 work:
 
   * deeper Ask feedback analytics and optional ticket prefill from the Ask context;
