@@ -121,6 +121,36 @@ APIs:
 - `POST /api/web/knowledge/quality/recompute`
 - compatibility summary: `GET /api/web/knowledge/quality`
 
+Phase 14 quality model extension:
+
+- `knowledge_quality_models` stores per-space or global scoring models with `weights` and `thresholds`.
+- When a space has an active/default model, `GET /api/web/knowledge/quality` includes `quality_model` and adds metadata dimensions from model weights.
+- `properties` weight is granted only when applicable required properties are present; otherwise issue code `missing_required_property:<code>` is emitted.
+- `taxonomy` weight is granted when the item has at least one governed taxonomy term.
+- `applicability` weight is granted when the item has explicit include/exclude applicability rules.
+- The legacy completeness/governance/safety/usefulness/freshness/coverage dimensions remain backward-compatible.
+
+## Metadata Model
+
+Phase 14 adds governed metadata operations without changing requester/public projection:
+
+- `knowledge_taxonomy_terms`: space-scoped category/product/audience/topic/tag terms.
+- `knowledge_property_definitions`: typed property definitions with value type, allowed values, required flag, item-type applicability and optional quality weight.
+- `knowledge_item_properties` and `knowledge_item_taxonomy_terms`: validated item metadata assignments.
+- `knowledge_applicability_rules`: explicit include/exclude item applicability by service, offering, request template, role, device OS/family, audience, taxonomy term or custom scope.
+- `knowledge_quality_models`: active/default scoring models.
+
+APIs:
+
+- `GET /api/web/knowledge/metadata`: admin/support/auditor read bundle.
+- `POST /api/web/knowledge/taxonomy`: admin/support upsert taxonomy term.
+- `POST /api/web/knowledge/properties`: admin/support upsert property definition.
+- `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`: read/update item property values and taxonomy terms.
+- `GET|POST /api/web/knowledge/items/{item_id_or_slug}/applicability`: read/replace applicability rules.
+- `POST /api/web/knowledge/quality-models`: admin/support upsert quality model.
+
+Requester/public endpoints (`/api/knowledge/search`, `/api/knowledge/suggest`, `/api/knowledge/ask`, portal article APIs and `/app/help`) must not include this admin metadata bundle, raw property diagnostics, applicability internals or quality model weights.
+
 ## Gap Detection
 
 `KnowledgeGapService` persists findings in `knowledge_gap_findings`.

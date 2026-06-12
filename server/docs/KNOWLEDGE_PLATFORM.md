@@ -24,6 +24,7 @@ P2 adds a universal company knowledge layer and uses it for helpdesk self-servic
 - `knowledge_gap_findings`: persisted Service Catalog, ticket-volume and feedback-driven knowledge gap findings with accept/dismiss/create-draft workflow.
 - `knowledge_search_events`: privacy-preserving search analytics with query hash and redacted query text for zero-result and ticket-after-search analysis.
 - `knowledge_segmentation_profiles` / `knowledge_article_segments` / `knowledge_segmentation_jobs`: Knowledge vNext article markup foundation. Manual and auto segments are tied to an immutable item version by offsets plus content hash, carry title/summary/keywords/boost/visibility flags, and can be used by AI-off search before vector/RAG features are enabled.
+- `knowledge_taxonomy_terms`, `knowledge_property_definitions`, `knowledge_item_properties`, `knowledge_item_taxonomy_terms`, `knowledge_applicability_rules` and `knowledge_quality_models`: Phase 14 governed metadata model. Taxonomy and typed properties are scoped to a knowledge space; item metadata stores validated property values and taxonomy assignments; applicability rules state explicit include/exclude scope separate from search bindings; quality models add persisted weights and thresholds used by the explainable quality summary.
 - `ticket_knowledge_links`: normalized future link table. Existing `ticket_kb_links` and `/api/tickets/{id}/kb_links` remain compatible.
 
 ## Item Types
@@ -102,6 +103,7 @@ P2.2 makes the platform operable day-to-day without replacing the P2/P2.1 contra
 - Rollout policy management is exposed by `GET|POST /api/web/knowledge/rollout-policies`, plus aliases `GET /api/web/knowledge/rollout`, `POST /api/web/knowledge/rollout/save` and `POST /api/web/knowledge/rollout/effective-preview`. Requester/agent suggestion calls honor the effective policy before search; support/admin/auditor and `support_workspace` remain visible so operations can continue during requester rollout pauses.
 - Search analytics are recorded by `KnowledgeSearchAnalyticsService` during knowledge search with hashed/redacted query text; raw requester identifiers, device identifiers and raw custom fields are not stored.
 - Phase 12 adds `KnowledgeOpsSummaryService` and `GET /api/web/knowledge/ops/summary` as the first Knowledge Operations Center snapshot. It aggregates existing coverage, quality, search/RAG, indexing, AI, graph, review and Observer v2 degradation signals without adding new tables. The endpoint is the dashboard contract for `/app/admin/knowledge`; deeper event emission and richer Observer mappings remain later Phase 12 slices.
+- Phase 14 adds `KnowledgeMetadataService` and `GET /api/web/knowledge/metadata` for governed taxonomy, property definitions, item metadata, applicability rules and quality models. Mutations are admin/support only: `POST /api/web/knowledge/taxonomy`, `POST /api/web/knowledge/properties`, `PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`, `POST /api/web/knowledge/items/{item_id_or_slug}/applicability` and `POST /api/web/knowledge/quality-models`. Auditor can read the bundle; requester/public APIs do not receive this admin metadata bundle or quality model diagnostics.
 
 Operational detail and rollback notes live in [KNOWLEDGE_OPERATIONS.md](KNOWLEDGE_OPERATIONS.md).
 
@@ -174,6 +176,12 @@ Admin/support management:
 - `GET /api/web/knowledge/review/tasks/{task_id}`
 - `POST /api/web/knowledge/review/tasks/{task_id}/assign|start|complete|dismiss`
 - `POST /api/web/knowledge/review/generate`
+- `GET /api/web/knowledge/metadata`
+- `POST /api/web/knowledge/taxonomy`
+- `POST /api/web/knowledge/properties`
+- `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`
+- `GET|POST /api/web/knowledge/items/{item_id_or_slug}/applicability`
+- `POST /api/web/knowledge/quality-models`
 - `GET /api/web/knowledge/quality`
 - `GET /api/web/knowledge/gaps`
 - `GET /api/web/knowledge/gap-findings`
@@ -193,7 +201,7 @@ Ticket compatibility:
 
 ## UI
 
-- `/app/admin/knowledge`: Knowledge Operations Center plus governance/editor route. The top dashboard reads `GET /api/web/knowledge/ops/summary` for coverage, quality, search/RAG, indexing, AI, graph, review and Observer-backed degradation cards; existing spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview controls remain below it.
+- `/app/admin/knowledge`: Knowledge Operations Center plus governance/editor route. The top dashboard reads `GET /api/web/knowledge/ops/summary` for coverage, quality, search/RAG, indexing, AI, graph, review and Observer-backed degradation cards, and `GET /api/web/knowledge/metadata` for taxonomy/property/applicability/quality-model counts plus active quality weights. Existing spaces, item draft/version/publish workflow, selected-version publish controls, article retrieval segment markup, stale-passport acknowledgement, content pack operations, review queue, quality score, gap detection, rollout policies, metrics, graph/ingestion foundation and requester-safe preview controls remain below it.
 - `/app/admin/knowledge/studio`: dedicated Knowledge Authoring Studio route with draft/article browser, new draft creation, metadata editor, Markdown editor, template insertion, structured Markdown block insertion, requester-safe preview, selected-version comparison, rollback by publishing an older immutable version, publish checklist, review lifecycle actions, persisted editor history/diff cache, AI-disabled state and embedded retrieval segment markup panel.
 - `/app/admin/knowledge/graph`: dedicated Visual Graph Studio route with Russian-first node search, SVG neighborhood canvas, node inspector, selected-node label edit, manual node creation, edge creation, edge/node archive controls, pending graph AI proposal review and persisted canvas layout save/load over graph node/edge/layout/proposal APIs.
 - `/app/admin/knowledge/import`: dedicated Import/Ingestion wizard for text, markdown and HTML preview plus AI-off review draft creation through the import preview/create-drafts APIs. The backend preview contract already accepts safe DOCX/PDF base64 uploads, fail-closed-by-default URL/Git source kinds with explicit host allowlist fetch/clone support, optional non-AI auto segmentation after draft creation, indexing metadata that runs the existing item indexing path when `vector_enabled=true`, governed summary/tag/glossary/graph/duplicate AI enrichment proposals behind review, ACL-filtered import job list/detail APIs and redacted Observer-visible `knowledge.import.*` audit events. The UI exposes text/markdown/html/DOCX/PDF/URL/Git source controls, file upload, remote policy messaging, auto-segmentation toggle and segmentation profile selection; richer indexing/proposal controls remain later Phase 10 slices.

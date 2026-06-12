@@ -1062,6 +1062,160 @@ class KnowledgeBinding(Base):
     )
 
 
+class KnowledgeTaxonomyTerm(Base):
+    """Governed taxonomy term attached to a knowledge space."""
+
+    __tablename__ = "knowledge_taxonomy_terms"
+
+    term_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    space_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_spaces.space_id", ondelete="CASCADE"), nullable=False)
+    term_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    code: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    parent_term_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_taxonomy_terms.term_id", ondelete="SET NULL"), nullable=True)
+    visibility: Mapped[str] = mapped_column(String(40), nullable=False, server_default="support_internal")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("0"))
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "term_type", "code", name="uq_knowledge_taxonomy_terms_space_type_code"),
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_knowledge_taxonomy_terms_code_safe"),
+        sa.CheckConstraint("term_type IN ('category', 'product', 'audience', 'topic', 'tag')", name="ck_knowledge_taxonomy_terms_type"),
+        sa.CheckConstraint("visibility IN ('public', 'requester', 'agent_requester_safe', 'support_internal', 'admin_internal', 'security_restricted', 'auditor_read')", name="ck_knowledge_taxonomy_terms_visibility"),
+        sa.CheckConstraint("status IN ('active', 'draft', 'archived')", name="ck_knowledge_taxonomy_terms_status"),
+        Index("ix_knowledge_taxonomy_terms_space_type", "space_id", "term_type", "status"),
+    )
+
+
+class KnowledgePropertyDefinition(Base):
+    """Typed property definition for knowledge item metadata."""
+
+    __tablename__ = "knowledge_property_definitions"
+
+    property_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    space_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_spaces.space_id", ondelete="CASCADE"), nullable=False)
+    code: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    value_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default="text")
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    allowed_values_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    applies_to_item_types_json: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa.text("'[]'::jsonb"))
+    quality_weight: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("0"))
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "code", name="uq_knowledge_property_definitions_space_code"),
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_knowledge_property_definitions_code_safe"),
+        sa.CheckConstraint("value_type IN ('text', 'number', 'boolean', 'date', 'select', 'multi_select', 'url')", name="ck_knowledge_property_definitions_value_type"),
+        sa.CheckConstraint("status IN ('active', 'draft', 'archived')", name="ck_knowledge_property_definitions_status"),
+        sa.CheckConstraint("quality_weight >= 0", name="ck_knowledge_property_definitions_weight"),
+        Index("ix_knowledge_property_definitions_space_status", "space_id", "status"),
+    )
+
+
+class KnowledgeItemPropertyValue(Base):
+    """Per-item value for a governed knowledge property."""
+
+    __tablename__ = "knowledge_item_properties"
+
+    item_property_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    property_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_property_definitions.property_id", ondelete="CASCADE"), nullable=False)
+    value_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("item_id", "property_id", name="uq_knowledge_item_properties_item_property"),
+        Index("ix_knowledge_item_properties_item", "item_id"),
+        Index("ix_knowledge_item_properties_property", "property_id"),
+    )
+
+
+class KnowledgeItemTaxonomyTerm(Base):
+    """Item-to-taxonomy assignment."""
+
+    __tablename__ = "knowledge_item_taxonomy_terms"
+
+    item_term_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    term_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_taxonomy_terms.term_id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("item_id", "term_id", name="uq_knowledge_item_taxonomy_terms_item_term"),
+        Index("ix_knowledge_item_taxonomy_terms_item", "item_id"),
+        Index("ix_knowledge_item_taxonomy_terms_term", "term_id"),
+    )
+
+
+class KnowledgeApplicabilityRule(Base):
+    """Explicit include/exclude applicability rule for a knowledge item."""
+
+    __tablename__ = "knowledge_applicability_rules"
+
+    rule_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    item_id: Mapped[str] = mapped_column(String(36), sa.ForeignKey("knowledge_items.item_id", ondelete="CASCADE"), nullable=False)
+    scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    scope_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    include_mode: Mapped[str] = mapped_column(String(20), nullable=False, server_default="include")
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa.text("100"))
+    conditions_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("scope_type IN ('service', 'offering', 'request_template', 'role', 'device_os', 'device_family', 'audience', 'taxonomy_term', 'custom')", name="ck_knowledge_applicability_rules_scope_type"),
+        sa.CheckConstraint("include_mode IN ('include', 'exclude')", name="ck_knowledge_applicability_rules_include_mode"),
+        Index("ix_knowledge_applicability_rules_item", "item_id", "priority"),
+        Index("ix_knowledge_applicability_rules_scope", "scope_type", "scope_ref"),
+    )
+
+
+class KnowledgeQualityModel(Base):
+    """Persisted scoring model for knowledge quality."""
+
+    __tablename__ = "knowledge_quality_models"
+
+    model_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    space_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("knowledge_spaces.space_id", ondelete="CASCADE"), nullable=True)
+    code: Mapped[str] = mapped_column(String(120), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    weights_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    thresholds_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        UniqueConstraint("space_id", "code", name="uq_knowledge_quality_models_space_code"),
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_knowledge_quality_models_code_safe"),
+        sa.CheckConstraint("status IN ('active', 'draft', 'archived')", name="ck_knowledge_quality_models_status"),
+        Index("ix_knowledge_quality_models_space_default", "space_id", "is_default", "status"),
+    )
+
+
 class KnowledgeNode(Base):
     """Knowledge graph node."""
 

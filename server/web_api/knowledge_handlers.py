@@ -26,6 +26,7 @@ from knowledge.embedding_service import KnowledgeEmbeddingService
 from knowledge.feedback_service import KnowledgeFeedbackService
 from knowledge.graph_service import KnowledgeGraphService
 from knowledge.ingestion_service import KnowledgeIngestionService, KnowledgeRemoteImportBlockedError
+from knowledge.metadata_service import KnowledgeMetadataService
 from knowledge.metrics_service import KnowledgeMetricsService
 from knowledge.ops_summary_service import KnowledgeOpsSummaryService
 from knowledge.operations_service import CONTENT_TEMPLATES, KnowledgeOperationsService
@@ -1435,6 +1436,111 @@ async def handle_web_knowledge_quality(request: web.Request) -> web.Response:
     async with get_session() as session:
         quality = await KnowledgeOperationsService(session).quality_summary(actor_role=role)
     return web.json_response({"status": "ok", "quality": quality})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_metadata(request: web.Request) -> web.Response:
+    _actor_id, role = _actor(request)
+    async with get_session() as session:
+        metadata = await KnowledgeMetadataService(session).bundle(actor_role=role)
+    return web.json_response({"status": "ok", "metadata": metadata})
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_taxonomy(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+    try:
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            term = await KnowledgeMetadataService(session).upsert_taxonomy_term(payload, actor_id=actor_id, actor_role=role)
+            await session.commit()
+        return web.json_response({"status": "ok", "term": term})
+    except (KnowledgeValidationError, ValueError) as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_properties(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+    try:
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            property_definition = await KnowledgeMetadataService(session).upsert_property_definition(payload, actor_id=actor_id, actor_role=role)
+            await session.commit()
+        return web.json_response({"status": "ok", "property": property_definition})
+    except (KnowledgeValidationError, ValueError) as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_item_metadata(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    item_ref = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        async with get_session() as session:
+            service = KnowledgeMetadataService(session)
+            if request.method == "GET":
+                item_metadata = await service.item_metadata(item_ref, actor_role=role)
+                return web.json_response({"status": "ok", "item_metadata": item_metadata})
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            item_metadata = await service.update_item_metadata(
+                item_ref,
+                await _json_payload(request),
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+            return web.json_response({"status": "ok", "item_metadata": item_metadata})
+    except (KnowledgeValidationError, ValueError) as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_item_applicability(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    item_ref = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        async with get_session() as session:
+            service = KnowledgeMetadataService(session)
+            if request.method == "GET":
+                rules = await service.item_applicability_rules(item_ref, actor_role=role)
+                return web.json_response({"status": "ok", "rules": rules})
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            payload = await _json_payload(request)
+            rules_payload = payload.get("rules")
+            if not isinstance(rules_payload, list):
+                raise KnowledgeValidationError("rules must be a list")
+            rules = await service.replace_applicability_rules(
+                item_ref,
+                [entry for entry in rules_payload if isinstance(entry, dict)],
+                actor_id=actor_id,
+                actor_role=role,
+            )
+            await session.commit()
+            return web.json_response({"status": "ok", "rules": rules})
+    except (KnowledgeValidationError, ValueError) as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_quality_models(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    if role not in {"admin", "support"}:
+        return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+    try:
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            quality_model = await KnowledgeMetadataService(session).upsert_quality_model(payload, actor_id=actor_id, actor_role=role)
+            await session.commit()
+        return web.json_response({"status": "ok", "quality_model": quality_model})
+    except (KnowledgeValidationError, ValueError) as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
 
 
 @require_auth("admin", "support", "auditor")

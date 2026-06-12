@@ -104,6 +104,21 @@ describe("KnowledgeOpsDashboardPanel", () => {
           }),
         );
       }
+      if (url === "/api/web/knowledge/metadata") {
+        return Promise.resolve(
+          jsonResponse({
+            status: "ok",
+            metadata: {
+              spaces: [{ space_id: "ks-1", code: "it", title: "IT", visibility: "requester", lifecycle_status: "active" }],
+              taxonomy_terms: [{ term_id: "term-1", space_id: "ks-1", term_type: "product", code: "vpn", title: "VPN", visibility: "requester", status: "active" }],
+              property_definitions: [{ property_id: "prop-1", space_id: "ks-1", code: "audience", title: "Audience", value_type: "select", required: true, status: "active" }],
+              applicability_rules: [{ rule_id: "rule-1", item_id: "item-1", scope_type: "service", scope_ref: "network", include_mode: "include", priority: 10 }],
+              quality_models: [{ model_id: "qm-1", space_id: "ks-1", code: "metadata-required", title: "Metadata required", weights: { properties: 12, applicability: 8 }, status: "active", is_default: true }],
+              item_metadata: [{ item_id: "item-1", space_id: "ks-1", slug: "vpn", title: "VPN", properties: { audience: "requester" }, taxonomy_terms: [], applicability_rules: [] }],
+            },
+          }),
+        );
+      }
       return Promise.resolve(jsonResponse({ status: "error" }, 404));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -119,6 +134,10 @@ describe("KnowledgeOpsDashboardPanel", () => {
     expect(screen.getByText("Observer-backed degradation")).toBeInTheDocument();
     expect(screen.getByText("knowledge.indexing.failed")).toBeInTheDocument();
     expect(screen.getByText("Embedding provider unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("Knowledge metadata model")).toBeInTheDocument();
+    expect(screen.getByText("metadata-required")).toBeInTheDocument();
+    expect(screen.getByText("properties: 12")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/ops/summary", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/metadata", { credentials: "same-origin" });
   });
 });

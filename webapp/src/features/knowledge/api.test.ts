@@ -17,6 +17,7 @@ import {
   fetchKnowledgeAiPolicies,
   fetchKnowledgeAiProviders,
   fetchKnowledgeGraphNeighborhood,
+  fetchKnowledgeMetadata,
   fetchKnowledgeGraphNodes,
   fetchKnowledgeGraphLayout,
   fetchKnowledgeAiProposals,
@@ -52,13 +53,18 @@ import {
   reindexKnowledgeSegment,
   reindexKnowledgeSpace,
   retrieveKnowledge,
+  saveKnowledgeApplicabilityRules,
   saveKnowledgeAiModelProfile,
   saveKnowledgeAiPolicy,
   saveKnowledgeAiProvider,
+  saveKnowledgeItemMetadata,
+  saveKnowledgePropertyDefinition,
+  saveKnowledgeQualityModel,
   saveKnowledgeGraphLayout,
   saveKnowledgeSearchSettings,
   saveKnowledgeSegmentationProfile,
   saveKnowledgeRolloutPolicy,
+  saveKnowledgeTaxonomyTerm,
   searchKnowledgePortal,
   sendKnowledgeArticleCorrectionRequest,
   sendKnowledgeArticleFeedback,
@@ -172,6 +178,44 @@ describe("knowledge operations api", () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/web/knowledge/quality", { credentials: "same-origin" });
     expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/web/knowledge/gap-findings", { credentials: "same-origin" });
     expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/web/knowledge/rollout-policies", { credentials: "same-origin" });
+  });
+
+  it("loads and mutates knowledge metadata model endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "ok",
+          metadata: {
+            spaces: [{ space_id: "ks-1", code: "it", title: "IT", visibility: "requester", lifecycle_status: "active" }],
+            taxonomy_terms: [{ term_id: "term-1", space_id: "ks-1", term_type: "product", code: "vpn", title: "VPN", visibility: "requester", status: "active" }],
+            property_definitions: [{ property_id: "prop-1", space_id: "ks-1", code: "audience", title: "Audience", value_type: "select", required: true, status: "active" }],
+            applicability_rules: [{ rule_id: "rule-1", item_id: "item-1", scope_type: "service", scope_ref: "network", include_mode: "include", priority: 10 }],
+            quality_models: [{ model_id: "qm-1", space_id: "ks-1", code: "metadata-required", title: "Metadata required", weights: { properties: 12 }, status: "active", is_default: true }],
+            item_metadata: [{ item_id: "item-1", space_id: "ks-1", slug: "vpn", title: "VPN", properties: { audience: "requester" }, taxonomy_terms: [], applicability_rules: [] }],
+          },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", term: { term_id: "term-1", code: "vpn" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", property: { property_id: "prop-1", code: "audience" } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", item_metadata: { item_id: "item-1", properties: { audience: "requester" }, taxonomy_terms: [], applicability_rules: [] } }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", rules: [{ rule_id: "rule-1", item_id: "item-1", scope_type: "service", scope_ref: "network", include_mode: "include", priority: 10 }] }))
+      .mockResolvedValueOnce(jsonResponse({ status: "ok", quality_model: { model_id: "qm-1", code: "metadata-required", title: "Metadata required", status: "active", is_default: true } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchKnowledgeMetadata()).resolves.toMatchObject({ taxonomy_terms: [{ code: "vpn" }] });
+    await saveKnowledgeTaxonomyTerm({ space_id: "ks-1", term_type: "product", code: "vpn", title: "VPN" });
+    await saveKnowledgePropertyDefinition({ space_id: "ks-1", code: "audience", title: "Audience", value_type: "select" });
+    await saveKnowledgeItemMetadata("item-1", { properties: { audience: "requester" }, taxonomy_term_ids: ["term-1"] });
+    await saveKnowledgeApplicabilityRules("item-1", [{ scope_type: "service", scope_ref: "network", include_mode: "include", priority: 10 }]);
+    await saveKnowledgeQualityModel({ space_id: "ks-1", code: "metadata-required", title: "Metadata required", is_default: true, weights: { properties: 12 } });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/web/knowledge/metadata", { credentials: "same-origin" });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/web/knowledge/taxonomy", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "/api/web/knowledge/properties", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, "/api/web/knowledge/items/item-1/metadata", expect.objectContaining({ method: "PUT" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(5, "/api/web/knowledge/items/item-1/applicability", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(6, "/api/web/knowledge/quality-models", expect.objectContaining({ method: "POST" }));
   });
 
   it("posts content pack, review action, and rollout policy payloads", async () => {

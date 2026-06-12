@@ -7,8 +7,20 @@ import uuid
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import KnowledgeBinding, KnowledgeFeedbackEvent, KnowledgeItem, KnowledgeItemVersion, KnowledgeQualitySnapshot
+from app.db.models import (
+    KnowledgeApplicabilityRule,
+    KnowledgeBinding,
+    KnowledgeFeedbackEvent,
+    KnowledgeItem,
+    KnowledgeItemPropertyValue,
+    KnowledgeItemTaxonomyTerm,
+    KnowledgeItemVersion,
+    KnowledgePropertyDefinition,
+    KnowledgeQualityModel,
+    KnowledgeQualitySnapshot,
+)
 from knowledge.content_lint import lint_knowledge_content
+from knowledge.metadata_service import serialize_quality_model
 
 
 def _new_id() -> str:
@@ -34,6 +46,124 @@ def _issue(severity: str, code: str, message: str, suggested_fix: str) -> dict[s
 class KnowledgeQualityService:
     def __init__(self, session: AsyncSession):
         self.session = session
+
+    def _builtin_quality_model(self) -> dict[str, Any]:
+        return {
+            "model_id": None,
+            "space_id": None,
+            "code": "builtin-default",
+            "title": "Built-in quality model",
+            "weights": {},
+            "thresholds": {"good": 80, "review": 70},
+            "status": "active",
+            "is_default": True,
+        }
+
+    async def _active_quality_model(self, space_id: str | None) -> KnowledgeQualityModel | None:
+        if space_id:
+            scoped = (
+                await self.session.execute(
+                    select(KnowledgeQualityModel)
+                    .where(KnowledgeQualityModel.space_id == space_id, KnowledgeQualityModel.status == "active")
+                    .order_by(KnowledgeQualityModel.is_default.desc(), KnowledgeQualityModel.updated_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if scoped is not None:
+                return scoped
+        return (
+            await self.session.execute(
+                select(KnowledgeQualityModel)
+                .where(KnowledgeQualityModel.space_id.is_(None), KnowledgeQualityModel.status == "active")
+                .order_by(KnowledgeQualityModel.is_default.desc(), KnowledgeQualityModel.updated_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+    async def _metadata_dimensions(self, item: KnowledgeItem, model: KnowledgeQualityModel | None) -> tuple[dict[str, int], list[dict[str, str]]]:
+        if model is None:
+            return {}, []
+        weights = model.weights_json if isinstance(model.weights_json, dict) else {}
+        property_weight = max(0, int(weights.get("properties") or 0))
+        taxonomy_weight = max(0, int(weights.get("taxonomy") or 0))
+        applicability_weight = max(0, int(weights.get("applicability") or 0))
+        dimensions: dict[str, int] = {}
+        issues: list[dict[str, str]] = []
+
+        if property_weight:
+            definitions = (
+                await self.session.execute(
+                    select(KnowledgePropertyDefinition).where(
+                        KnowledgePropertyDefinition.space_id == item.space_id,
+                        KnowledgePropertyDefinition.status == "active",
+                    )
+                )
+            ).scalars().all()
+            values = (
+                await self.session.execute(
+                    select(KnowledgeItemPropertyValue).where(KnowledgeItemPropertyValue.item_id == item.item_id)
+                )
+            ).scalars().all()
+            value_property_ids = {row.property_id for row in values}
+            applicable_definitions = [
+                definition
+                for definition in definitions
+                if not definition.applies_to_item_types_json or item.item_type in {str(entry) for entry in definition.applies_to_item_types_json}
+            ]
+            missing_required = [definition for definition in applicable_definitions if definition.required and definition.property_id not in value_property_ids]
+            if missing_required:
+                dimensions["properties"] = 0
+                for definition in missing_required:
+                    issues.append(
+                        _issue(
+                            "error",
+                            f"missing_required_property:{definition.code}",
+                            "Required knowledge property is missing.",
+                            "Set the required property before publishing or signoff.",
+                        )
+                    )
+            elif value_property_ids:
+                dimensions["properties"] = property_weight
+            else:
+                dimensions["properties"] = 0
+                issues.append(
+                    _issue(
+                        "warning",
+                        "missing_properties",
+                        "No governed properties are attached.",
+                        "Attach applicable metadata properties.",
+                    )
+                )
+
+        if taxonomy_weight:
+            taxonomy_count = (
+                await self.session.execute(
+                    select(func.count(KnowledgeItemTaxonomyTerm.item_term_id)).where(
+                        KnowledgeItemTaxonomyTerm.item_id == item.item_id
+                    )
+                )
+            ).scalar_one()
+            if int(taxonomy_count or 0):
+                dimensions["taxonomy"] = taxonomy_weight
+            else:
+                dimensions["taxonomy"] = 0
+                issues.append(_issue("warning", "missing_taxonomy", "No taxonomy term is attached.", "Attach at least one taxonomy term."))
+
+        if applicability_weight:
+            applicability_count = (
+                await self.session.execute(
+                    select(func.count(KnowledgeApplicabilityRule.rule_id)).where(KnowledgeApplicabilityRule.item_id == item.item_id)
+                )
+            ).scalar_one()
+            if int(applicability_count or 0):
+                dimensions["applicability"] = applicability_weight
+            else:
+                dimensions["applicability"] = 0
+                issues.append(
+                    _issue("warning", "missing_applicability", "No applicability rule is defined.", "Add include/exclude applicability rules.")
+                )
+
+        return dimensions, issues
 
     async def score_item(self, item_id_or_slug: str, *, store_snapshot: bool = False) -> dict[str, Any]:
         item = (
@@ -146,6 +276,11 @@ class KnowledgeQualityService:
         if item.item_type in {"article", "faq", "runbook", "known_error", "workaround", "glossary_term"}:
             dimensions["coverage"] += 5
 
+        quality_model = await self._active_quality_model(item.space_id)
+        metadata_dimensions, metadata_issues = await self._metadata_dimensions(item, quality_model)
+        dimensions.update(metadata_dimensions)
+        issues.extend(metadata_issues)
+
         score = max(0, min(100, int(sum(dimensions.values()))))
         result = {
             "item_id": item.item_id,
@@ -160,6 +295,7 @@ class KnowledgeQualityService:
             "dimensions": dimensions,
             "issues": issues,
             "feedback": feedback,
+            "quality_model": serialize_quality_model(quality_model) if quality_model is not None else self._builtin_quality_model(),
             "computed_at": now.isoformat(),
         }
         if store_snapshot:
@@ -187,8 +323,10 @@ class KnowledgeQualityService:
             )
         ).scalars().all()
         items = [await self.score_item(row.item_id) for row in rows]
+        quality_model = next((item.get("quality_model") for item in items if item.get("quality_model")), self._builtin_quality_model())
         return {
             "items": items,
+            "quality_model": quality_model,
             "average_quality_score": (sum(item["score"] for item in items) / len(items)) if items else 0.0,
             "low_quality_count": sum(1 for item in items if item["score"] < 70),
         }

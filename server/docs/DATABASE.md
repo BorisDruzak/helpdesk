@@ -50,6 +50,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 **Knowledge AI proposals (migration 117):** `knowledge_ai_proposals` stores governed AI-generated summary, tag, glossary, graph and duplicate proposals. Proposals are ACL-filtered, sanitized before storage/response, and remain `pending` until admin/support review. Approving graph node/edge proposals applies the safe payload to `knowledge_nodes`/`knowledge_edges`; create/review actions write Observer-visible rows to `agent_runtime_audit` with source `knowledge_ai_proposals`.
 
+**Knowledge metadata model (migration 118):** `knowledge_taxonomy_terms`, `knowledge_property_definitions`, `knowledge_item_properties`, `knowledge_item_taxonomy_terms`, `knowledge_applicability_rules`, and `knowledge_quality_models` store governed taxonomy, typed item properties, item-to-term assignments, explicit applicability include/exclude rules and per-space/global quality scoring models. The schema is additive and does not replace `knowledge_bindings`, `knowledge_items.tags` or `metadata_json`; requester/public APIs must not expose the admin metadata bundle or raw quality model weights.
+
 **Knowledge embeddings/indexing (migration 113):** `knowledge_chunk_embeddings` and `knowledge_index_jobs` store optional embedding state and observable indexing jobs. The local/test schema stores vectors as JSONB so pgvector is not required for normal development checks; provider-backed vector search can later migrate storage behind capability detection. Index jobs are AI-off safe: disabled vector settings or AI policy blocks create `disabled` embedding rows, provider/key/transport failures create redacted `failed` rows, and web APIs never return `embedding_vector`.
 
 **Quality Loop (migrations 088-089):** `ticket_feedback`, `ticket_reopen_events`, `ticket_quality_reviews`, `ticket_quality_review_comments`, `continuous_improvement_actions`, `service_quality_snapshots`, and `quality_policies`. These tables implement structured CSAT, mandatory reopen reason taxonomy, internal QA review queues, continuous improvement actions and aggregate service/offering quality analytics. Migration `089` adds the partial unique index `uq_ticket_feedback_latest_per_ticket` so only one `is_latest=true` feedback row can exist per ticket. Analytics snapshots intentionally avoid requester PII and are recomputed by the quality snapshot scheduler plus the manual recompute API. See [QUALITY_LOOP.md](QUALITY_LOOP.md).
@@ -218,6 +220,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 | `job_events_repo.py` | job_events |
 | `agent_builds_repo.py` | agent_builds |
 | `knowledge_repo.py` | knowledge_spaces, knowledge_items, knowledge_item_versions, knowledge_chunks, knowledge_bindings |
+| `knowledge.metadata_service` | knowledge_taxonomy_terms, knowledge_property_definitions, knowledge_item_properties, knowledge_item_taxonomy_terms, knowledge_applicability_rules, knowledge_quality_models |
 | `knowledge.content_pack_service` | knowledge_content_packs, knowledge_content_pack_items |
 | `knowledge.review_task_service` | knowledge_review_tasks, knowledge_review_comments |
 | `knowledge.quality_service` | knowledge_quality_snapshots |

@@ -3193,6 +3193,60 @@ Exit criteria:
 
 ---
 
+## Phase 14 - Knowledge taxonomy, properties, applicability and quality model
+
+Status: implemented locally; remote deploy/browser validation pending, 2026-06-12.
+
+Scope:
+
+* Add first-class taxonomy terms for Knowledge spaces so categories, products, audiences, topics and tags are governed data instead of only free-form `tags`.
+* Add configurable property definitions and per-item property values, with validation by value type and item type applicability.
+* Add explicit applicability rules for items, separate from existing search `knowledge_bindings`, so operators can state include/exclude scope for services, offerings, request templates, roles, device OS/family and custom scopes.
+* Add a persisted quality model per space with weights and thresholds. The existing quality summary must expose the active model and apply metadata-driven scoring without breaking previous clients.
+* Expose protected admin/support/auditor APIs for reading the model; only admin/support may mutate taxonomy, item metadata and applicability.
+* Add admin Knowledge Ops UI evidence for taxonomy/properties/applicability/model status.
+* Preserve requester/public projection safety: requester KB, public `/app/help`, Ask fallback and requester ticket creation must not receive admin-only taxonomy diagnostics or raw quality internals.
+
+Implementation checkpoints:
+
+* RED backend tests for taxonomy CRUD, property value validation, applicability include/exclude, quality model application and requester ACL projection.
+* Migration adds additive tables only; no destructive schema changes.
+* Backend service/API returns a single metadata bundle suitable for UI and live validation.
+* Frontend API/types and `/app/admin/knowledge` panel render taxonomy, property definitions, applicability rules and model weights.
+* Docs/CODEMAP/QUICK_LOOKUP explain the new model and audit boundaries.
+* Local verification and live browser evidence after deploy.
+
+Exit criteria:
+
+* `GET /api/web/knowledge/metadata` returns spaces, taxonomy terms, property definitions, applicability rules, quality models and item metadata summary for admin/support/auditor.
+* `POST /api/web/knowledge/taxonomy`, `POST /api/web/knowledge/properties`, `PUT /api/web/knowledge/items/{item_id}/metadata`, `POST /api/web/knowledge/items/{item_id}/applicability` and `POST /api/web/knowledge/quality-models` validate inputs and forbid unauthorized mutation.
+* Quality summary includes `quality_model` and uses property/applicability requirements in scoring.
+* `/app/admin/knowledge` shows "Knowledge metadata model", active taxonomy/property/applicability counts and quality weights after deploy.
+* Requester/public Knowledge paths remain backward-compatible and do not expose admin metadata diagnostics.
+
+Implementation results, 2026-06-12:
+
+* Added additive migration `118` and ORM models for `knowledge_taxonomy_terms`, `knowledge_property_definitions`, `knowledge_item_properties`, `knowledge_item_taxonomy_terms`, `knowledge_applicability_rules` and `knowledge_quality_models`.
+* Added `KnowledgeMetadataService` and protected web APIs for metadata bundle reads, taxonomy/property upsert, item metadata update, applicability replacement and quality model upsert.
+* Mutation is role and visibility constrained: requester cannot mutate, auditor is read-only, support cannot mutate `admin_internal` or other non-support-visible Knowledge spaces, and global quality models are admin-only.
+* Extended quality scoring so an active persisted quality model can add weighted `properties`, `taxonomy` and `applicability` dimensions while preserving the built-in fallback model.
+* Extended `/app/admin/knowledge` Knowledge Ops panel with the "Knowledge metadata model" card, counts and active model weights.
+* Updated Knowledge docs, CODEMAP, `docs/QUICK_LOOKUP.md`, `docs/ARCHITECTURE_BOUNDARIES.md` and `scripts/navigation_catalog.py`.
+
+Local verification, 2026-06-12:
+
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py -q --tb=short` passed with 2 tests.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py server/tests/test_requester_workspace_api.py server/tests/test_knowledge_feedback.py server/tests/test_knowledge_ask.py server/tests/test_ticket_knowledge_links_compat.py server/tests/test_knowledge_rag_eval.py -q --tb=short` passed with 31 tests.
+* `pnpm --dir webapp test -- src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx` passed with 2 files / 24 tests.
+* `pnpm --dir webapp test -- src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx src/features/requester/api.test.ts src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx src/app/navigation.test.ts` passed with 6 files / 61 tests.
+* `python -m compileall -q server shared scripts`, `python scripts/docs_inventory.py --check-links`, `pnpm --dir webapp build`, `python scripts/verify_workspace.py` and targeted `git diff --check` passed.
+
+Remaining Phase 14 work:
+
+* Deploy the committed slice to `192.168.100.17`, run remote smoke, and capture browser evidence that `/app/admin/knowledge` shows the metadata model card against the deployed bundle.
+
+---
+
 ## Documentation updates required across phases
 
 Update:

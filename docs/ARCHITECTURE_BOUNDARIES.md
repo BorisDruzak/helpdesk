@@ -158,6 +158,7 @@ Target product routes:
 Boundary rules:
 
 - `Knowledge Core` must not depend on ticket-specific code; helpdesk uses Knowledge through adapter services.
+- Governed taxonomy, property definitions, item metadata, applicability rules and quality models are Knowledge-owned metadata; they must not replace Service Catalog ownership, `knowledge_bindings`, requester-safe ACL filtering or ticket create contracts.
 - AI/RAG is optional and must never become a hard dependency for baseline article viewing, authoring, search, graph editing or helpdesk linking.
 - Retrieval/RAG must filter ACL before vectorization, rerank or answer generation.
 - Russian-first applies to visible Knowledge vNext product text, safe errors, empty states, toasts and live-check notes.

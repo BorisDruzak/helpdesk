@@ -3,7 +3,7 @@ import { AlertTriangle, Bot, FileSearch, Gauge, GitBranch, Layers, Search, Shiel
 
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { fetchKnowledgeOpsSummary, type KnowledgeOpsMetric, type KnowledgeOpsSummary } from "./api";
+import { fetchKnowledgeMetadata, fetchKnowledgeOpsSummary, type KnowledgeMetadataBundle, type KnowledgeOpsMetric, type KnowledgeOpsSummary } from "./api";
 
 function metricValue(metric?: KnowledgeOpsMetric | null) {
   return Number(metric?.total ?? 0);
@@ -48,8 +48,65 @@ function SummaryGrid({ summary }: { summary: KnowledgeOpsSummary }) {
   );
 }
 
+function MetadataModelPanel({ metadata }: { metadata?: KnowledgeMetadataBundle }) {
+  const activeModel = metadata?.quality_models?.find((model) => model.is_default && model.status === "active") ?? metadata?.quality_models?.find((model) => model.status === "active");
+  const weights = activeModel?.weights ?? {};
+  const weightEntries = Object.entries(weights).slice(0, 6);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Layers className="h-4 w-4" />
+          Knowledge metadata model
+        </CardTitle>
+        <CardDescription>Taxonomy, typed properties, applicability rules and quality model coverage.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-4">
+          <div>
+            <p className="text-xs uppercase text-slate-500">Taxonomy terms</p>
+            <p className="text-2xl font-semibold text-slate-950">{metadata?.taxonomy_terms?.length ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-slate-500">Properties</p>
+            <p className="text-2xl font-semibold text-slate-950">{metadata?.property_definitions?.length ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-slate-500">Applicability rules</p>
+            <p className="text-2xl font-semibold text-slate-950">{metadata?.applicability_rules?.length ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase text-slate-500">Item metadata</p>
+            <p className="text-2xl font-semibold text-slate-950">{metadata?.item_metadata?.length ?? 0}</p>
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">Active quality model:</span>
+            <Badge tone={activeModel ? "success" : "warning"}>{activeModel?.code ?? "builtin-default"}</Badge>
+            <span className="text-slate-500">{activeModel?.title ?? "Built-in quality model"}</span>
+          </div>
+          {weightEntries.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {weightEntries.map(([key, value]) => (
+                <Badge key={key} tone="neutral">
+                  {key}: {value}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">No custom quality weights configured.</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function KnowledgeOpsDashboardPanel() {
   const summaryQuery = useQuery({ queryKey: ["knowledge-ops-summary"], queryFn: fetchKnowledgeOpsSummary });
+  const metadataQuery = useQuery({ queryKey: ["knowledge-metadata"], queryFn: fetchKnowledgeMetadata });
   const summary = summaryQuery.data;
 
   if (summaryQuery.isLoading) {
@@ -92,6 +149,8 @@ export function KnowledgeOpsDashboardPanel() {
       </div>
 
       <SummaryGrid summary={summary} />
+
+      <MetadataModelPanel metadata={metadataQuery.data} />
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Card>

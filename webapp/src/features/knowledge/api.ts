@@ -263,13 +263,94 @@ export type KnowledgeEditorHistory = {
   diff_cache: KnowledgeVersionDiffCacheEntry[];
 };
 
+export type KnowledgeTaxonomyTerm = {
+  term_id: string;
+  space_id: string;
+  term_type: string;
+  code: string;
+  title: string;
+  description?: string | null;
+  parent_term_id?: string | null;
+  visibility: string;
+  status: string;
+  sort_order?: number;
+  metadata?: Record<string, unknown>;
+};
+
+export type KnowledgePropertyDefinition = {
+  property_id: string;
+  space_id: string;
+  code: string;
+  title: string;
+  description?: string | null;
+  value_type: string;
+  required: boolean;
+  allowed_values?: unknown[];
+  applies_to_item_types?: string[];
+  quality_weight?: number;
+  status: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type KnowledgeApplicabilityRule = {
+  rule_id: string;
+  item_id: string;
+  scope_type: string;
+  scope_ref: string;
+  include_mode: "include" | "exclude" | string;
+  priority: number;
+  conditions?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+};
+
+export type KnowledgeQualityModel = {
+  model_id?: string | null;
+  space_id?: string | null;
+  code: string;
+  title: string;
+  weights?: Record<string, number>;
+  thresholds?: Record<string, number>;
+  status: string;
+  is_default: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type KnowledgeItemMetadata = {
+  item_id: string;
+  space_id: string;
+  slug: string;
+  title: string;
+  properties: Record<string, unknown>;
+  property_values?: Array<{
+    item_property_id: string;
+    property_id: string;
+    code: string;
+    title: string;
+    value: unknown;
+  }>;
+  taxonomy_terms: KnowledgeTaxonomyTerm[];
+  applicability_rules: KnowledgeApplicabilityRule[];
+};
+
+export type KnowledgeMetadataBundle = {
+  spaces: Array<Pick<KnowledgeSpace, "space_id" | "code" | "title" | "visibility" | "lifecycle_status">>;
+  taxonomy_terms: KnowledgeTaxonomyTerm[];
+  property_definitions: KnowledgePropertyDefinition[];
+  applicability_rules: KnowledgeApplicabilityRule[];
+  quality_models: KnowledgeQualityModel[];
+  item_metadata: KnowledgeItemMetadata[];
+};
+
 export type KnowledgeQualitySummary = {
   average_quality_score: number;
+  quality_model?: KnowledgeQualityModel;
   items: Array<
     KnowledgeItem & {
       quality_score: number;
+      dimensions?: Record<string, number>;
       issues: string[];
       feedback?: Record<string, number>;
+      quality_model?: KnowledgeQualityModel;
     }
   >;
 };
@@ -1071,6 +1152,64 @@ export async function fetchKnowledgeOpsSummary(): Promise<KnowledgeOpsSummary> {
   const response = await fetch("/api/web/knowledge/ops/summary", { credentials: "same-origin" });
   const payload = await readJson<{ summary: KnowledgeOpsSummary }>(response, "Не удалось загрузить Knowledge Ops summary");
   return payload.summary;
+}
+
+export async function fetchKnowledgeMetadata(): Promise<KnowledgeMetadataBundle> {
+  const response = await fetch("/api/web/knowledge/metadata", { credentials: "same-origin" });
+  const payload = await readJson<{ metadata: KnowledgeMetadataBundle }>(response, "Failed to load knowledge metadata model");
+  return payload.metadata;
+}
+
+export async function saveKnowledgeTaxonomyTerm(payload: Partial<KnowledgeTaxonomyTerm> & { space_id: string; term_type: string; code: string; title: string }) {
+  const response = await fetch("/api/web/knowledge/taxonomy", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ term: KnowledgeTaxonomyTerm }>(response, "Failed to save knowledge taxonomy term");
+}
+
+export async function saveKnowledgePropertyDefinition(
+  payload: Partial<KnowledgePropertyDefinition> & { space_id: string; code: string; title: string; value_type: string },
+) {
+  const response = await fetch("/api/web/knowledge/properties", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ property: KnowledgePropertyDefinition }>(response, "Failed to save knowledge property definition");
+}
+
+export async function saveKnowledgeItemMetadata(itemIdOrSlug: string, payload: { properties?: Record<string, unknown>; taxonomy_term_ids?: string[] }) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/metadata`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ item_metadata: KnowledgeItemMetadata }>(response, "Failed to save knowledge item metadata");
+}
+
+export async function saveKnowledgeApplicabilityRules(itemIdOrSlug: string, rules: Array<Partial<KnowledgeApplicabilityRule>>) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/applicability`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rules }),
+  });
+  return readJson<{ rules: KnowledgeApplicabilityRule[] }>(response, "Failed to save knowledge applicability rules");
+}
+
+export async function saveKnowledgeQualityModel(payload: Partial<KnowledgeQualityModel> & { code: string; title: string }) {
+  const response = await fetch("/api/web/knowledge/quality-models", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ quality_model: KnowledgeQualityModel }>(response, "Failed to save knowledge quality model");
 }
 
 export async function fetchKnowledgeContentPacks(): Promise<KnowledgeContentPack[]> {
