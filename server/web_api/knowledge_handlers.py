@@ -55,6 +55,10 @@ def _safe_query_vector(value: object) -> list[float] | None:
     return vector or None
 
 
+def _get_retrieval_transport(request: web.Request):
+    return request.app.get("knowledge_ai_openrouter_transport")
+
+
 async def _json_payload(request: web.Request) -> dict:
     payload = await request.json()
     if not isinstance(payload, dict):
@@ -227,7 +231,7 @@ async def handle_web_knowledge_retrieve(request: web.Request) -> web.Response:
     try:
         payload = await _json_payload(request)
         async with get_session() as session:
-            result = await KnowledgeRetrievalService(session).retrieve(
+            result = await KnowledgeRetrievalService(session, transport=_get_retrieval_transport(request)).retrieve(
                 query=payload.get("query"),
                 actor_role=role,
                 service_code=payload.get("service_code"),

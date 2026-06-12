@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ai.provider_registry import AIProviderRegistry
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.retrieval_service import KnowledgeRetrievalService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
@@ -99,16 +100,56 @@ async def _insert_embedding(session: AsyncSession, *, item: dict, version: dict,
     )
 
 
-async def _enable_hybrid(session: AsyncSession, *, vector_enabled: bool) -> None:
+async def _enable_hybrid(session: AsyncSession, *, vector_enabled: bool, rerank_enabled: bool = False) -> None:
     await KnowledgeSearchSettingsService(session).upsert_settings(
         {
-            "search_mode": "hybrid_vector" if vector_enabled else "hybrid_no_ai",
+            "search_mode": "hybrid_vector_rerank" if rerank_enabled else ("hybrid_vector" if vector_enabled else "hybrid_no_ai"),
             "keyword_enabled": True,
             "full_text_enabled": True,
             "vector_enabled": vector_enabled,
-            "rerank_enabled": False,
+            "rerank_enabled": rerank_enabled,
             "vector_weight": 1.25,
             "max_results": 10,
+        },
+        actor_id="admin",
+    )
+
+
+async def _enable_rerank_ai(session: AsyncSession) -> None:
+    registry = AIProviderRegistry(session)
+    suffix = uuid.uuid4().hex[:8]
+    provider = await registry.create_provider(
+        {
+            "code": f"openrouter-rerank-{suffix}",
+            "title": "OpenRouter rerank",
+            "provider_type": "openrouter",
+            "base_url": "https://openrouter.ai/api/v1",
+            "auth_type": "api_key",
+            "api_key_secret_ref": "env:OPENROUTER_RERANK_TEST_KEY",
+            "enabled": True,
+        },
+        actor_id="admin",
+    )
+    await registry.create_model_profile(
+        {
+            "provider_id": provider["provider_id"],
+            "code": f"rerank-default-{suffix}",
+            "title": "Rerank default",
+            "task_type": "rerank",
+            "model_name": "cohere/rerank-v3.5",
+            "is_default": True,
+            "enabled": True,
+        },
+        actor_id="admin",
+    )
+    await registry.upsert_policy(
+        {
+            "policy_id": "rerank-global-test",
+            "scope_type": "global",
+            "task_type": "rerank",
+            "enabled": True,
+            "ai_allowed": True,
+            "rerank_allowed": True,
         },
         actor_id="admin",
     )
@@ -239,6 +280,67 @@ async def test_web_retrieve_endpoint_returns_explainable_results_and_observer_ev
         count = (
             await conn.execute(
                 text("SELECT COUNT(*) FROM agent_runtime_audit WHERE event_type = 'knowledge.retrieval.executed'")
+            )
+        ).scalar_one()
+    assert count >= 1
+
+
+@pytest.mark.asyncio
+async def test_retrieval_rerank_reorders_candidates_with_mocked_openrouter(test_engine, monkeypatch) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _published_item(session, slug="rerank-alpha", title="VPN alpha", body="VPN alpha body.")
+        await _published_item(session, slug="rerank-beta", title="VPN beta", body="VPN beta body.")
+        await _enable_hybrid(session, vector_enabled=True, rerank_enabled=True)
+        await _enable_rerank_ai(session)
+        await session.commit()
+
+    monkeypatch.setenv("OPENROUTER_RERANK_TEST_KEY", "test-rerank-secret")
+
+    async def fake_transport(**kwargs):
+        assert kwargs["json"]["model"] == "cohere/rerank-v3.5"
+        assert kwargs["json"]["query"] == "VPN"
+        assert len(kwargs["json"]["documents"]) >= 2
+        assert "test-rerank-secret" in kwargs["headers"]["Authorization"]
+        return {"results": [{"index": 1, "relevance_score": 0.99}, {"index": 0, "relevance_score": 0.1}]}
+
+    async with session_maker() as session:
+        result = await KnowledgeRetrievalService(session, transport=fake_transport).retrieve(query="VPN", actor_role="support")
+        await session.commit()
+
+    assert result["results"][0]["item"]["slug"] == "rerank-beta"
+    assert result["results"][0]["score_parts"]["rerank"] == 99.0
+    assert "rerank" in result["results"][0]["source_mode"]
+    assert result["fallback_mode"] in {None, "query_vector_missing"}
+    assert result["ai_used"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieval_rerank_failure_returns_pre_rerank_fallback(test_engine, monkeypatch) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _published_item(session, slug="rerank-fallback-alpha", title="VPN fallback alpha", body="VPN fallback alpha body.")
+        await _published_item(session, slug="rerank-fallback-beta", title="VPN fallback beta", body="VPN fallback beta body.")
+        await _enable_hybrid(session, vector_enabled=True, rerank_enabled=True)
+        await _enable_rerank_ai(session)
+        await session.commit()
+
+    monkeypatch.setenv("OPENROUTER_RERANK_TEST_KEY", "test-rerank-secret")
+
+    async def failing_transport(**kwargs):
+        raise RuntimeError("provider unavailable")
+
+    async with session_maker() as session:
+        result = await KnowledgeRetrievalService(session, transport=failing_transport).retrieve(query="VPN fallback", actor_role="support")
+        await session.commit()
+
+    assert result["results"][0]["item"]["slug"] == "rerank-fallback-alpha"
+    assert result["fallback_mode"] in {"rerank_request_failed", "query_vector_missing"}
+    assert result["ai_used"] is False
+    async with test_engine.connect() as conn:
+        count = (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM agent_runtime_audit WHERE event_type = 'knowledge.retrieval.rerank_failed_fallback'")
             )
         ).scalar_one()
     assert count >= 1

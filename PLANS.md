@@ -1174,14 +1174,20 @@ Status 2026-06-12:
   * `POST /api/web/knowledge/retrieve` and `POST /api/web/knowledge/search/preview` are live for admin/support/auditor retrieval preview without changing the existing public search contract;
   * retrieval writes safe `knowledge.retrieval.executed` / `knowledge.retrieval.zero_results` audit events and records search analytics;
   * typed webapp helpers `retrieveKnowledge` and `previewKnowledgeRetrieval` cover the new endpoints.
+* Phase 5B optional rerank slice is implemented:
+
+  * `KnowledgeRetrievalService` uses OpenRouter-compatible rerank only when search settings enable rerank and a rerank model profile, provider, secret, policy and injected transport are available;
+  * successful mocked rerank adds `score_parts.rerank`, tags `source_mode=rerank`, reorders candidates and emits `knowledge.retrieval.rerank_used`;
+  * provider/config/request failures keep the pre-rerank candidate order, set safe fallback mode and emit `knowledge.retrieval.rerank_failed_fallback`;
+  * no normal unit test performs network calls.
 * Focused verification:
 
   * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_hybrid_retrieval.py -q --tb=short` passed with 3 tests;
   * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_vector_search.py server/tests/test_knowledge_embeddings.py server/tests/test_knowledge_segments.py server/tests/test_knowledge_search_segments.py server/tests/test_knowledge_search_settings.py server/tests/test_knowledge_search.py -q --tb=short` passed with 26 tests and only existing aiohttp app-key warnings;
   * `pnpm --dir webapp test -- src/features/knowledge/api.test.ts` passed with 11 tests.
+  * After Phase 5B, `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_hybrid_retrieval.py -q --tb=short` passed with 5 tests.
 * Remaining Phase 5 work:
 
-  * OpenRouter rerank integration and failure fallback;
   * full `/app/kb/search` product UI;
   * score breakdown UI in admin search settings;
   * browser/live evidence after deploy.

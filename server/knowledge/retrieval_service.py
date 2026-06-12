@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ai.contracts import AIModelProfile, AIProviderConfig
+from ai.openrouter_client import OpenRouterClient
 from app.db.models import KnowledgeItem, KnowledgeItemVersion
 from app.repos.knowledge_repo import serialize_item
 from knowledge.contracts import actor_visible_visibilities, sanitize_requester_knowledge_projection
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from knowledge.vector_search_service import KnowledgeVectorSearchService
+
+
+Transport = Callable[..., Awaitable[dict[str, Any]]]
 
 
 def _now() -> datetime:
@@ -37,8 +44,9 @@ def _snippet(text_value: Any, query: str, *, max_length: int) -> str:
 
 
 class KnowledgeRetrievalService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, *, transport: Transport | None = None):
         self.session = session
+        self.transport = transport
 
     async def retrieve(
         self,
@@ -105,6 +113,16 @@ class KnowledgeRetrievalService:
 
         ordered = sorted(candidates.values(), key=lambda item: (-float(item["score"]), str(item["item"].get("title") or "")))
         results = ordered[:max_results]
+        rerank_used = False
+        if bool(settings.get("rerank_enabled", False)) and len(results) > 1:
+            reranked, rerank_fallback, rerank_used = await self._maybe_rerank(
+                results,
+                query=query_text,
+                actor_role=actor_role,
+                existing_fallback=vector_fallback,
+            )
+            results = reranked
+            vector_fallback = rerank_fallback
         if actor_role in {"requester", "agent", "public"}:
             for result in results:
                 result.pop("score_parts", None)
@@ -125,6 +143,7 @@ class KnowledgeRetrievalService:
                 "effective_mode": effective_mode,
                 "result_count": len(results),
                 "vector_used": vector_used,
+                "rerank_used": rerank_used,
                 "fallback_mode": vector_fallback,
             },
         )
@@ -133,7 +152,7 @@ class KnowledgeRetrievalService:
             "search_mode": settings.get("search_mode"),
             "effective_mode": effective_mode,
             "fallback_mode": vector_fallback,
-            "ai_used": bool(settings.get("ai_enabled")) and vector_used,
+            "ai_used": bool(settings.get("ai_enabled")) and (vector_used or rerank_used),
             "settings": {
                 "keyword_enabled": bool(settings.get("keyword_enabled", True)),
                 "full_text_enabled": bool(settings.get("full_text_enabled", False)),
@@ -141,6 +160,93 @@ class KnowledgeRetrievalService:
                 "rerank_enabled": bool(settings.get("rerank_enabled", False)),
             },
         }
+
+    async def _maybe_rerank(
+        self,
+        results: list[dict[str, Any]],
+        *,
+        query: str,
+        actor_role: str,
+        existing_fallback: str | None,
+    ) -> tuple[list[dict[str, Any]], str | None, bool]:
+        if not query:
+            return results, existing_fallback or "rerank_query_missing", False
+        profile = await self._get_ai_profile("rerank")
+        provider = await self._get_provider(profile["provider_id"]) if profile else None
+        if not profile or not provider or not await self._ai_task_allowed("rerank"):
+            await self._record_observer_event(
+                "knowledge.retrieval.rerank_failed_fallback",
+                actor_role=actor_role,
+                details={"reason": "rerank_not_configured", "result_count": len(results)},
+            )
+            return results, existing_fallback or "rerank_not_configured", False
+        api_key = _resolve_secret_ref(provider.get("api_key_secret_ref"))
+        if not api_key or self.transport is None:
+            await self._record_observer_event(
+                "knowledge.retrieval.rerank_failed_fallback",
+                actor_role=actor_role,
+                details={"reason": "rerank_provider_unavailable", "result_count": len(results)},
+            )
+            return results, existing_fallback or "rerank_provider_unavailable", False
+        documents = [f"{item['item'].get('title') or ''}\n{item.get('snippet') or ''}".strip() for item in results]
+        try:
+            client = OpenRouterClient(
+                AIProviderConfig(
+                    provider_id=str(provider["provider_id"]),
+                    code=str(provider["code"]),
+                    base_url=str(provider.get("base_url") or "https://openrouter.ai/api/v1"),
+                    api_key=api_key,
+                ),
+                transport=self.transport,
+            )
+            rerank_result = await client.rerank(
+                AIModelProfile(
+                    profile_id=str(profile["profile_id"]),
+                    provider_id=str(profile["provider_id"]),
+                    task_type="rerank",
+                    model_name=str(profile["model_name"]),
+                    timeout_ms=int(profile.get("timeout_ms") or 30_000),
+                ),
+                query=query,
+                documents=documents,
+            )
+        except Exception:
+            await self._record_observer_event(
+                "knowledge.retrieval.rerank_failed_fallback",
+                actor_role=actor_role,
+                details={"reason": "rerank_request_failed", "result_count": len(results)},
+            )
+            return results, existing_fallback or "rerank_request_failed", False
+
+        by_index: dict[int, float] = {}
+        for item in rerank_result.results:
+            try:
+                index = int(item.get("index"))
+                score = float(item.get("relevance_score", item.get("score", 0)))
+            except (TypeError, ValueError):
+                continue
+            if 0 <= index < len(results):
+                by_index[index] = score
+        if not by_index:
+            return results, existing_fallback or "rerank_empty_response", False
+
+        reranked: list[dict[str, Any]] = []
+        for index, item in enumerate(results):
+            updated = dict(item)
+            score_parts = dict(updated.get("score_parts") or {})
+            if index in by_index:
+                score_parts["rerank"] = by_index[index] * 100
+                updated["source_mode"] = [*updated.get("source_mode", []), "rerank"] if "rerank" not in updated.get("source_mode", []) else updated.get("source_mode", [])
+                updated["score_parts"] = score_parts
+                updated["score"] = round(sum(float(value) for value in score_parts.values()), 6)
+            reranked.append(updated)
+        reranked.sort(key=lambda item: (-float((item.get("score_parts") or {}).get("rerank") or -1), -float(item.get("score") or 0)))
+        await self._record_observer_event(
+            "knowledge.retrieval.rerank_used",
+            actor_role=actor_role,
+            details={"result_count": len(reranked), "model_profile_id": profile["profile_id"]},
+        )
+        return reranked, existing_fallback, True
 
     async def _merge_keyword_candidates(
         self,
@@ -390,3 +496,65 @@ class KnowledgeRetrievalService:
                 "created_at": _now(),
             },
         )
+
+    async def _get_ai_profile(self, task_type: str) -> dict[str, Any] | None:
+        row = (
+            await self.session.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM ai_model_profiles
+                    WHERE task_type = :task_type
+                      AND enabled = true
+                    ORDER BY is_default DESC, created_at DESC, profile_id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"task_type": task_type},
+            )
+        ).mappings().first()
+        return dict(row) if row else None
+
+    async def _get_provider(self, provider_id: str) -> dict[str, Any] | None:
+        row = (
+            await self.session.execute(
+                text(
+                    """
+                    SELECT *
+                    FROM ai_providers
+                    WHERE provider_id = :provider_id
+                      AND enabled = true
+                      AND provider_type = 'openrouter'
+                    """
+                ),
+                {"provider_id": provider_id},
+            )
+        ).mappings().first()
+        return dict(row) if row else None
+
+    async def _ai_task_allowed(self, task_type: str) -> bool:
+        row = (
+            await self.session.execute(
+                text(
+                    """
+                    SELECT policy_id
+                    FROM ai_policy_profiles
+                    WHERE enabled = true
+                      AND ai_allowed = true
+                      AND (:task_type <> 'rerank' OR rerank_allowed = true)
+                      AND (task_type IS NULL OR task_type = :task_type)
+                    ORDER BY updated_at DESC, policy_id DESC
+                    LIMIT 1
+                    """
+                ),
+                {"task_type": task_type},
+            )
+        ).first()
+        return row is not None
+
+
+def _resolve_secret_ref(secret_ref: str | None) -> str | None:
+    value = str(secret_ref or "").strip()
+    if value.startswith("env:"):
+        return os.getenv(value[4:])
+    return None
