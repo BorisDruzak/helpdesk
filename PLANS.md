@@ -2579,6 +2579,34 @@ Phase 13 second slice, 2026-06-12:
   * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_rag_eval.py server/tests/test_knowledge_hybrid_retrieval.py::test_retrieval_rerank_reorders_candidates_with_mocked_openrouter server/tests/test_knowledge_vector_search.py::test_vector_search_merges_jsonb_embeddings_without_raw_vector server/tests/test_knowledge_ask.py::test_knowledge_ask_ai_disabled_returns_search_fallback server/tests/test_knowledge_search.py::test_knowledge_search_filters_visibility_and_boosts_offering_binding -q --tb=short` passed, 6 tests.
   * `python scripts/verify_workspace.py` passed.
 
+Final Phase 13 verification, 2026-06-12:
+
+* Focused backend Knowledge vNext gates were run sequentially because `PC_CLIENT_ALLOW_SHARED_TEST_DB=1` uses a destructive shared cleanup path. A parallel attempt was invalid and failed with shared-test-DB connection/cleanup contention, not with assertion regressions.
+* Sequential backend results:
+
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ai_provider_settings.py server/tests/test_ai_openrouter_client.py server/tests/test_knowledge_ai_api.py server/tests/test_knowledge_search_settings.py -q --tb=short` passed, 15 tests.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_segments.py server/tests/test_knowledge_search_segments.py server/tests/test_knowledge_embeddings.py server/tests/test_knowledge_vector_search.py -q --tb=short` passed, 19 tests, with existing aiohttp app-state/config warnings in the embedding transport test.
+  * `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_ask.py server/tests/test_knowledge_portal.py server/tests/test_knowledge_import_api.py server/tests/test_knowledge_ops_summary.py server/tests/test_knowledge_rag_eval.py -q --tb=short` passed, 22 tests.
+
+* General verification:
+
+  * `pnpm --dir webapp test` passed, 89 files / 406 tests.
+  * `pnpm --dir webapp build` passed.
+  * `python -m compileall -q server shared scripts` passed.
+  * `python scripts/docs_inventory.py --check-links` passed.
+  * `python scripts/verify_workspace.py` passed.
+  * `git diff --check; git diff --cached --check` passed with CRLF warnings only on pre-existing unrelated dirty files.
+
+* Remote validation:
+
+  * `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` completed for commit `2937960e`; `/api/health` returned 200 on smoke attempt 2.
+  * `python scripts/manage_remote_stack.py --remote altserver@192.168.100.17 stop server` stopped the server.
+  * `python scripts/manage_remote_stack.py --remote altserver@192.168.100.17 stop control` stopped the control service.
+
+* Browser/live note:
+
+  * Phase 13 changes are backend test/evaluation harness and documentation only, with no new UI route or runtime API contract. Full browser workflow evidence from Phases 10-12 remains the current product evidence; no additional browser screenshots were captured for this test-only slice.
+
 Verification:
 
 * `python -m pytest server/tests/test_knowledge_rag_eval.py server/tests/test_knowledge_rag_acl.py server/tests/test_knowledge_search_eval.py -v --tb=short`
