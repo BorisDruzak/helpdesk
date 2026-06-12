@@ -1382,10 +1382,16 @@ Status 2026-06-12:
   * RED test: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py::test_knowledge_ask_blocks_uncited_critical_claims -q --tb=short` failed before implementation because the uncited critical answer was returned as `answered`.
   * GREEN tests: the same focused test passed with 1 test, and `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py -q --tb=short` passed with 5 tests.
   * Remote validation: `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `661a7b43`; `/api/health` returned 200 on smoke attempt 2.
+* Phase 6D support/admin Ask debug view, 2026-06-12:
+
+  * `/app/knowledge` support Knowledge Workspace now includes an `Ask debug` panel that runs `POST /api/web/knowledge/ask/preview` through `previewKnowledgeAsk()`.
+  * The panel submits `surface=support_ask_debug`, `limit=5`, and renders answer status, effective mode, AI fallback/used state, fallback mode, audit id, citation count and per-result retrieval diagnostics.
+  * Debug result rows expose support/admin-safe score, `score_parts`, `source_mode`, `chunk_id` and `segment_id`; requester `/app/kb/ask` still hides admin diagnostics.
+  * RED test: `pnpm --dir webapp test -- src/features/knowledge/support-workspace-page.test.tsx` failed before implementation because `Ask debug query` was absent.
+  * GREEN test: the same focused test passed with 1 file / 2 tests after implementation.
 * Remaining Phase 6 work:
 
   * deeper Ask feedback analytics and optional ticket prefill from the Ask context;
-  * admin/support Ask debug view with chunk/score/policy details;
   * browser/live evidence after deploy and optional OpenRouter key setup.
 
 Backend:

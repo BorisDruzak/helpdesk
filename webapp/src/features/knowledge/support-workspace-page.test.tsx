@@ -129,4 +129,65 @@ describe("KnowledgeSupportWorkspacePage", () => {
     await waitFor(() => expect(navigator.clipboard.writeText).not.toHaveBeenCalled());
     expect(screen.getByText("Только requester-safe материалы можно копировать как ответ пользователю.")).toBeInTheDocument();
   });
+
+  it("runs support Ask preview and renders debug score, chunk and policy details", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/knowledge/items") {
+        return Promise.resolve(jsonResponse(itemsPayload));
+      }
+      if (url === "/api/web/knowledge/items/item-runbook/versions") {
+        return Promise.resolve(jsonResponse({ status: "ok", versions: [] }));
+      }
+      if (url === "/api/web/knowledge/ask/preview" && init?.method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            status: "ok",
+            answer: null,
+            answer_status: "provider_unavailable",
+            display_message: "AI-провайдер недоступен. Ниже показаны результаты поиска.",
+            ai_used: false,
+            effective_mode: "rag_answer",
+            search_mode: "rag_answer",
+            fallback_mode: "provider_unavailable",
+            audit_id: "audit-1",
+            citations: [{ ref_id: "chunk-1", title: "VPN support runbook", chunk_id: "chunk-1", segment_id: "segment-1" }],
+            retrieval_results: [
+              {
+                item: itemsPayload.items[0],
+                snippet: "Restart VPN service and verify tunnel health.",
+                chunk_id: "chunk-1",
+                segment_id: "segment-1",
+                score: 57,
+                score_parts: { keyword_title: 42, keyword_chunk: 15 },
+                source_mode: ["keyword", "segment"],
+                citations: [{ chunk_id: "chunk-1", segment_id: "segment-1" }],
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ status: "ok", versions: [] }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkspace("/app/knowledge/articles/item-runbook");
+
+    await screen.findByRole("heading", { name: "База знаний поддержки" });
+    fireEvent.change(screen.getByLabelText("Ask debug query"), { target: { value: "VPN error" } });
+    fireEvent.click(screen.getByRole("button", { name: "Проверить Ask" }));
+
+    await waitFor(() => expect(screen.getByText("provider_unavailable")).toBeInTheDocument());
+    expect(screen.getByText("rag_answer")).toBeInTheDocument();
+    expect(screen.getByText("audit-1")).toBeInTheDocument();
+    expect(screen.getByText("chunk-1")).toBeInTheDocument();
+    expect(screen.getByText("segment-1")).toBeInTheDocument();
+    expect(screen.getByText("keyword_title: 42")).toBeInTheDocument();
+    expect(screen.getByText("keyword_chunk: 15")).toBeInTheDocument();
+    expect(JSON.parse(fetchMock.mock.calls.find((call) => String(call[0]) === "/api/web/knowledge/ask/preview")?.[1]?.body as string)).toMatchObject({
+      query: "VPN error",
+      surface: "support_ask_debug",
+      limit: 5,
+    });
+  });
 });

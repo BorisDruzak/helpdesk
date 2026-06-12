@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { BookOpen, ClipboardCheck, FileText, Link2, Search, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { BookOpen, Bot, ClipboardCheck, FileText, Link2, Search, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
-import { fetchKnowledgeItems, fetchKnowledgeItemVersions, type KnowledgeItem } from "./api";
+import { fetchKnowledgeItems, fetchKnowledgeItemVersions, previewKnowledgeAsk, type KnowledgeAskResult, type KnowledgeItem } from "./api";
 
 const requesterSafeVisibilities = new Set(["public", "requester", "agent_requester_safe"]);
 const supportVisibilities = new Set(["public", "requester", "agent_requester_safe", "support_internal"]);
@@ -48,6 +48,14 @@ function buildSafeAnswer(item: KnowledgeItem, body?: string | null) {
   return [item.title, item.summary, body].filter(Boolean).join("\n\n").trim();
 }
 
+function scorePartEntries(scoreParts?: Record<string, number>) {
+  return Object.entries(scoreParts ?? {}).map(([key, value]) => `${key}: ${value}`);
+}
+
+function citationValue(value: unknown) {
+  return value == null || value === "" ? "нет" : String(value);
+}
+
 export function KnowledgeSupportWorkspacePage() {
   const navigate = useNavigate();
   const params = useParams();
@@ -56,6 +64,7 @@ export function KnowledgeSupportWorkspacePage() {
   const [typeFilter, setTypeFilter] = useState<(typeof supportTypes)[number]>("all");
   const [visibilityFilter, setVisibilityFilter] = useState<"all" | "requester_safe" | "support_internal">("all");
   const [copyMessage, setCopyMessage] = useState("");
+  const [askDebugQuery, setAskDebugQuery] = useState(searchParams.get("query") ?? "");
 
   const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
   const items = useMemo(() => (itemsQuery.data ?? []).filter((item) => supportVisibilities.has(item.visibility)), [itemsQuery.data]);
@@ -95,6 +104,14 @@ export function KnowledgeSupportWorkspacePage() {
   const supportInternalCount = items.filter((item) => item.visibility === "support_internal").length;
   const runbookCount = items.filter((item) => item.item_type === "runbook").length;
   const knownErrorCount = items.filter((item) => item.item_type === "known_error").length;
+  const askDebugMutation = useMutation<KnowledgeAskResult>({
+    mutationFn: () =>
+      previewKnowledgeAsk({
+        query: askDebugQuery.trim(),
+        surface: "support_ask_debug",
+        limit: 5,
+      }),
+  });
 
   async function copySafeAnswer() {
     if (!selectedItem || !requesterSafeVisibilities.has(selectedItem.visibility)) {
@@ -255,6 +272,89 @@ export function KnowledgeSupportWorkspacePage() {
               ) : (
                 <p className="text-sm text-slate-500">Материалы поддержки пока не загрузились.</p>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bot className="h-5 w-5" />
+                Ask debug
+              </CardTitle>
+              <CardDescription>Preview RAG/Ask policy, retrieval score and source chunks before replying.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <label className="block text-sm font-medium text-slate-700">
+                Ask debug query
+                <textarea
+                  aria-label="Ask debug query"
+                  className="mt-1 min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm"
+                  onChange={(event) => setAskDebugQuery(event.target.value)}
+                  placeholder="VPN error, MFA token, known error"
+                  value={askDebugQuery}
+                />
+              </label>
+              <Button
+                disabled={!askDebugQuery.trim() || askDebugMutation.isPending}
+                leadingIcon={<Bot className="h-4 w-4" />}
+                onClick={() => askDebugMutation.mutate()}
+                size="sm"
+                variant="outline"
+              >
+                Проверить Ask
+              </Button>
+
+              {askDebugMutation.isError ? <p className="text-sm text-red-700">Не удалось выполнить Ask preview.</p> : null}
+
+              {askDebugMutation.data ? (
+                <div className="space-y-4 rounded-md border border-slate-200 p-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Badge tone={askDebugMutation.data.answer_status === "answered" ? "success" : "warning"}>{askDebugMutation.data.answer_status}</Badge>
+                    {askDebugMutation.data.effective_mode ? <Badge tone="info">{askDebugMutation.data.effective_mode}</Badge> : null}
+                    <Badge tone={askDebugMutation.data.ai_used ? "success" : "warning"}>{askDebugMutation.data.ai_used ? "AI used" : "AI fallback"}</Badge>
+                  </div>
+                  <div className="grid gap-2 text-xs text-slate-600">
+                    {askDebugMutation.data.fallback_mode ? <p>fallback_mode: {askDebugMutation.data.fallback_mode}</p> : null}
+                    {askDebugMutation.data.audit_id ? (
+                      <p>
+                        audit_id: <code>{askDebugMutation.data.audit_id}</code>
+                      </p>
+                    ) : null}
+                    <p>citations: {askDebugMutation.data.citations?.length ?? 0}</p>
+                  </div>
+                  <div className="space-y-3">
+                    {(askDebugMutation.data.retrieval_results ?? []).map((result, index) => {
+                      const firstCitation = result.citations?.[0] ?? {};
+                      const chunkId = result.chunk_id ?? firstCitation.chunk_id;
+                      const segmentId = result.segment_id ?? firstCitation.segment_id;
+                      return (
+                        <div className="rounded-md border border-slate-100 bg-slate-50 p-3 text-sm" key={`${result.item?.item_id ?? result.item?.slug ?? index}-${index}`}>
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div>
+                              <p className="font-semibold text-slate-900">{result.item?.title ?? "Knowledge result"}</p>
+                              {result.snippet ? <p className="mt-1 text-slate-600">{result.snippet}</p> : null}
+                            </div>
+                            {typeof result.score === "number" ? <Badge tone="neutral">score {result.score}</Badge> : null}
+                          </div>
+                          <div className="mt-3 grid gap-1 text-xs text-slate-600">
+                            {result.source_mode?.length ? <p>source_mode: {result.source_mode.join(", ")}</p> : null}
+                            <p>
+                              chunk_id: <code>{citationValue(chunkId)}</code>
+                            </p>
+                            <p>
+                              segment_id: <code>{citationValue(segmentId)}</code>
+                            </p>
+                            {scorePartEntries(result.score_parts).map((entry) => (
+                              <p key={entry}>{entry}</p>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {!(askDebugMutation.data.retrieval_results ?? []).length ? <p className="text-sm text-slate-500">Retrieval не вернул результатов для debug preview.</p> : null}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
