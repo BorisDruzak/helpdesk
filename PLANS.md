@@ -764,6 +764,32 @@ Phase 4 execution, 2026-06-13:
 * Remaining Phase 4 work:
   * run the real connected agent registration scenarios before Phase 4 exit.
 
+Phase 4 live-agent handoff context, 2026-06-14:
+
+* `scripts/registry_workflow_smoke.py` is useful preflight/support evidence for Registry Management Center invariants: it drives admin/agent HTTP APIs, issues short-lived admin/agent tokens through `AuthService`, and verifies DB-side person/binding/account-session/ticket-access invariants. It does not replace the Phase 4 exit requirement because it does not prove the real Windows agent GUI, WebSocket runtime, browser pairing pages or UIA-visible account gate transitions.
+* Canonical live stand/browser target remains `https://192.168.100.17:9443/admin`. Browser-visible evidence must use the real admin/requester/support UI paths (`/app/admin/registry`, `/app/device/login`, `/app/device/register`, `/app/device/pair` where applicable), not only direct HTTP/DB checks.
+* Use a named isolated Windows agent instance for the live run, for example `phase4-reg-<run_id>`, through `python scripts/manage_local_agent.py ...`; do not reuse a real user's daily agent state or manually patch the Linux/SMB mirrors.
+* Use one clean run marker across every object and artifact, for example `phase4-agent-YYYYMMDD-<short_sha>` in reason strings, test department/location/person names, ticket title/description and evidence filenames. DB/API/browser checks must filter by that marker rather than old rows.
+* Record policy state before changing `registration.department_mode` / `registration.location_mode`, set both to `required_existing` for Scenario A/B, and restore or explicitly record the final policy state at cleanup. Do not leave strict test policy active silently on a shared stand.
+* Treat `scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls` as an optional preflight for registry side effects before the real agent run. A green smoke can shorten diagnosis, but Phase 4 is still blocked until the real agent/browser/UIA evidence is captured.
+* Required Phase 4 pass evidence follows `docs/LIVE_TESTING_DEBUG_RULES.md` no-single-signal rule:
+  * transport/API: registration form policy fields, browser-pairing create/poll/confirm responses, account-state and account-session validate responses;
+  * server DB: `device_registration_claims`, `device_user_bindings`, `device_account_sessions`, derived inventory/asset rows and created ticket requester fields;
+  * agent local state: UIA account gate / account page / ticket create state from `scripts/live_agent_uia_state_probe.py` or a tighter UIA probe if needed;
+  * browser/UI: admin pending claim, approval diff, support ticket requester context and any requester/device pairing page used in the scenario;
+  * logs/action trace: server and agent logs around the run marker, with auth/account-session validation errors classified instead of ignored.
+* Sanitization is a hard condition: evidence may contain safe ids, token lengths, safe prefixes or hashes, but must not contain raw account-session tokens, machine tokens, cookies, auth headers, private keys, browser-pairing tokens or manual pairing codes after the one-time create/entry moment.
+* Stop rather than substituting evidence if the real agent is not connected through WebSocket, the account gate is not UIA-readable, or a browser-visible step cannot be confirmed in the browser. Record the blocker and layer (`agent`, `UIA`, `browser`, `API`, `DB`, `test contamination`) in this plan before patching or rerunning.
+* Cleanup expectations: revoke/expire test account sessions when possible, leave test registry objects identifiable by run marker, stop the isolated local agent and stop remote services unless the user explicitly asks to leave them running.
+* Suggested execution order for the next Phase 4 run:
+  1. `git status -sb`, capture current commit SHA and run `python scripts/verify_workspace.py`.
+  2. Deploy/sync only through project scripts if the stand is not already on the target commit; start remote services through project runtime scripts and stop them at the end.
+  3. Create the run marker and test CMDB objects/users, then optionally run `python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls`.
+  4. Start the isolated agent, verify connection/account gate via UIA, and collect pre-registration account-state evidence.
+  5. Execute Scenario A and Scenario B with strict department/location policies, then Scenario C on a confirmed binding.
+  6. Capture browser, API, DB, UIA and log evidence under `artifacts/browser_live_validation/registry-phase4-agent-<short_sha>-YYYYMMDD/` or a sibling run-specific folder.
+  7. Restore policy/cleanup, stop services, update this Phase 4 block with exact commands, artifact paths and remaining limitations.
+
 Verification:
 
 python -m pytest server/tests/test_registry_registration_policy.py
@@ -1137,6 +1163,13 @@ Use real HTTP APIs for requester/support/admin checks.
 Use agent endpoints/account-session validation where possible.
 Never print raw tokens.
 Emit sanitized JSON report under artifacts/registry-visibility-foundation-YYYYMMDD/.
+
+Phase 7 efficiency context:
+
+* Reuse the Phase 4 live-agent harness, run-marker discipline, isolated agent instance and evidence matrix instead of creating a parallel validation flow for account sessions.
+* `scripts/registry_visibility_live_smoke.py` may automate setup, requester/support/admin HTTP checks and sanitized report generation, but it must not claim real-agent proof unless it either drives the actual connected agent flow or links to same-run UIA/browser evidence from the real agent.
+* Phase 7 should consume Phase 4 registration/account-session evidence as the identity baseline, then add Knowledge visibility assertions on top: visible scoped article, hidden foreign scoped article, support ticket requester context, revoked-session denial and absence of hidden article metadata in network/API payloads.
+* If Phase 4 live evidence is stale relative to the Phase 7 commit, rerun the Phase 4 Scenario A/C account-session portions before signing off Knowledge visibility.
 
 Agent live matrix:
 
