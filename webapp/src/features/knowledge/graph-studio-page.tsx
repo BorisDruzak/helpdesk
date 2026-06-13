@@ -366,8 +366,8 @@ export function KnowledgeGraphStudioPage() {
         description="Визуальная карта узлов, связей и article relationships поверх существующего graph API."
       />
 
-      <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-        <aside className="space-y-4">
+      <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+        <aside className="space-y-4 xl:col-start-1 xl:row-start-1">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -447,7 +447,7 @@ export function KnowledgeGraphStudioPage() {
           </Card>
         </aside>
 
-        <div className="space-y-4">
+        <div className="space-y-4 xl:col-start-2 xl:row-start-1 2xl:col-start-2">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -536,7 +536,7 @@ export function KnowledgeGraphStudioPage() {
           </Card>
         </div>
 
-        <aside className="space-y-4">
+        <aside className="space-y-4 xl:col-span-2 2xl:col-span-1 2xl:col-start-3 2xl:row-start-1">
           <Card>
             <CardHeader>
               <CardTitle>
