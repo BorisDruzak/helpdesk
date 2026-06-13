@@ -10,6 +10,7 @@ export type RegistryTabKey =
   | "quality"
   | "locations"
   | "departments"
+  | "access_groups"
   | "audience_groups"
   | "policies";
 

@@ -149,6 +149,49 @@ const audienceGroupsPayload = {
   ],
 };
 
+const accessSummaryPayload = {
+  version: "test",
+  users: [
+    {
+      user_login: "ivan@example.test",
+      actor_role: "user",
+      role_label: "Пользователь",
+      is_active: true,
+      groups: ["support_l1"],
+      queue_count: 1,
+    },
+  ],
+  queues: [
+    {
+      queue_id: 1,
+      queue_code: "support",
+      queue_name: "Support",
+      is_active: true,
+      members_count: 1,
+    },
+  ],
+  access_groups: [
+    {
+      group_id: 10,
+      code: "support_l1",
+      name: "Support L1",
+      description: "Первая линия поддержки",
+      is_active: true,
+      permissions: ["tickets.view"],
+      members: ["ivan@example.test"],
+      queue_grants: [
+        {
+          queue_id: 1,
+          queue_code: "support",
+          queue_name: "Support",
+          role_in_queue: "member",
+        },
+      ],
+    },
+  ],
+  notes: ["Тестовая сводка RBAC"],
+};
+
 function jsonResponse(data: unknown) {
   return Promise.resolve(new Response(JSON.stringify({ status: "success", data }), {
     headers: { "Content-Type": "application/json" },
@@ -207,6 +250,9 @@ describe("AdminRegistryPage", () => {
             warnings: [],
           },
         });
+      }
+      if (url === "/api/web/admin/access/summary") {
+        return jsonResponse(accessSummaryPayload);
       }
       if (url === "/api/web/admin/registry/bulk/preview") {
         return jsonResponse({
@@ -289,5 +335,23 @@ describe("AdminRegistryPage", () => {
       "/api/web/admin/registry/audience-groups/aud-1/members",
       expect.objectContaining({ method: "PUT" })
     ));
+  });
+
+  it("shows access groups as a registry summary with a link to the canonical RBAC editor", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Группы доступа/ }));
+
+    expect(await screen.findByText("Support L1")).toBeInTheDocument();
+    expect(screen.getByText("Первая линия поддержки")).toBeInTheDocument();
+    expect(screen.getByText("1 permissions")).toBeInTheDocument();
+    expect(screen.getByText("1 members")).toBeInTheDocument();
+    expect(screen.getByText("1 queues")).toBeInTheDocument();
+    expect(screen.getByText("Тестовая сводка RBAC")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Открыть RBAC-редактор" })).toHaveAttribute("href", "/app/admin/access");
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/web\/admin\/access\/groups/),
+      expect.objectContaining({ method: expect.stringMatching(/POST|PUT|PATCH|DELETE/) }),
+    );
   });
 });

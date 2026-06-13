@@ -61,6 +61,7 @@ import {
   type AdminRegistryPayload,
 } from "../../features/admin/api";
 import { RegistryAccountSessionsTab } from "../../features/admin/registry/registry-account-sessions-tab";
+import { RegistryAccessGroupsTab } from "../../features/admin/registry/registry-access-groups-tab";
 import { RegistryAudienceGroupsTab } from "../../features/admin/registry/registry-audience-groups-tab";
 import { RegistryBindPersonDialog, type BindPersonDialogState } from "../../features/admin/registry/registry-bind-person-dialog";
 import { RegistryBindingsTab } from "../../features/admin/registry/registry-bindings-tab";
@@ -95,6 +96,7 @@ const tabs: Array<{ key: RegistryTabKey; label: string; p1?: boolean }> = [
   { key: "quality", label: "Качество данных" },
   { key: "locations", label: "Локации", p1: true },
   { key: "departments", label: "Подразделения", p1: true },
+  { key: "access_groups", label: "Группы доступа", p1: true },
   { key: "audience_groups", label: "Аудитории", p1: true },
   { key: "policies", label: "Политики", p1: true },
 ];
@@ -565,6 +567,7 @@ export function AdminRegistryPage() {
               ))}
             />
           ) : null}
+          {tab === "access_groups" ? <RegistryAccessGroupsTab /> : null}
           {visibleRegistry && tab === "audience_groups" ? (
             <RegistryAudienceGroupsTab
               busy={mutation.isPending}

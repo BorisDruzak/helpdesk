@@ -84,6 +84,7 @@ The Registry Visibility Foundation extends this management center without changi
 - Phase 1 admin explain/read APIs live under `/api/web/admin/registry/identity/*` and are read-only;
 - agent machine identity remains technical device identity and must not identify the requester without a valid server account session;
 - `registry_audience_groups` may include people, departments, department trees, locations, roles, access groups or services, but they do not grant RBAC permissions;
+- `/app/admin/registry` exposes `Группы доступа · P1` as a read-only RBAC summary and deep link to `/app/admin/access`; access-group mutations stay in the canonical Access Control Center;
 - `/app/admin/registry` exposes the first audience-group management UI in the `Аудитории · P1` tab and keeps member save behind preview plus required reason;
 - normal bulk, quality and UI-login linking paths use dialogs with searchable pickers/reason/result reports instead of raw `window.prompt` flows;
 - future Knowledge audience rules refine coarse Knowledge visibility and must never make `support_internal`, `admin_internal` or `security_restricted` content requester-visible;
