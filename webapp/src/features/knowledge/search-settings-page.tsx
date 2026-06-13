@@ -56,6 +56,8 @@ const searchModes = [
   ["rag_answer", "RAG answer"],
 ] as const;
 
+const aiDependentSwitches = new Set(["vector_enabled", "rerank_enabled", "ai_query_rewrite_enabled", "rag_answer_enabled"]);
+
 function draftFromSettings(settings?: KnowledgeSearchSettings): SearchSettingsDraft {
   if (!settings) {
     return defaultDraft;
@@ -106,6 +108,7 @@ export function KnowledgeSearchSettingsPage() {
   }, [draftInitialized, settingsQuery.data]);
 
   const aiSwitchesEnabled = draft.vector_enabled || draft.rerank_enabled || draft.ai_query_rewrite_enabled || draft.rag_answer_enabled;
+  const aiControlsDisabled = settingsQuery.data ? !settingsQuery.data.ai_enabled : false;
   const effectiveMode = settingsQuery.data?.effective_mode ?? draft.search_mode;
   const savePayload = useMemo(
     () => ({
@@ -236,20 +239,28 @@ export function KnowledgeSearchSettingsPage() {
                 ["rerank_enabled", "Rerank"],
                 ["ai_query_rewrite_enabled", "AI rewrite"],
                 ["rag_answer_enabled", "RAG ответы"],
-              ].map(([key, label]) => (
-                <label key={key} className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm">
+              ].map(([key, label]) => {
+                const disabled = aiControlsDisabled && aiDependentSwitches.has(key);
+                return (
+                <label key={key} className={`flex items-center justify-between rounded-md border border-slate-200 px-3 py-2 text-sm ${disabled ? "bg-slate-50 text-slate-400" : ""}`}>
                   <span>{label}</span>
                   <input
                     type="checkbox"
+                    disabled={disabled}
                     checked={Boolean(draft[key as keyof SearchSettingsDraft])}
                     onChange={(event) => updateBoolean(key as keyof SearchSettingsDraft, event.target.checked)}
                   />
                 </label>
-              ))}
+              );
+              })}
             </div>
 
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              {aiSwitchesEnabled ? "Включены AI-зависимые переключатели. Проверьте политики AI и провайдеры перед production." : "AI-зависимые переключатели выключены. Поиск останется в безопасном baseline режиме."}
+              {aiControlsDisabled
+                ? "AI-политика выключена. Vector, rerank, rewrite и RAG включаются через AI Governance перед изменением retrieval."
+                : aiSwitchesEnabled
+                  ? "Включены AI-зависимые переключатели. Проверьте политики AI и провайдеры перед production."
+                  : "AI-зависимые переключатели выключены. Поиск останется в безопасном baseline режиме."}
             </div>
           </CardContent>
         </Card>

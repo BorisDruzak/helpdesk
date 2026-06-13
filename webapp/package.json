@@ -14,6 +14,11 @@
   },
   "dependencies": {
     "@tanstack/react-query": "5.99.2",
+    "@tiptap/extension-highlight": "^3.26.1",
+    "@tiptap/pm": "^3.26.1",
+    "@tiptap/react": "^3.26.1",
+    "@tiptap/starter-kit": "^3.26.1",
+    "@xyflow/react": "^12.11.0",
     "clsx": "^2.1.1",
     "lucide-react": "^1.8.0",
     "react": "19.2.5",

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { PageHeading } from "../../components/ui/page-heading";
 import { ArticleMetadataPanel } from "./article-metadata-panel";
 import { ArticleSegmentationPanel } from "./article-segmentation-panel";
+import { KnowledgeTipTapEditor } from "./knowledge-tiptap-editor";
 import {
   createKnowledgeItem,
   createKnowledgeVersion,
@@ -23,7 +24,6 @@ import {
 } from "./api";
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
-const textareaClass = `${fieldClass} min-h-72 font-mono text-xs leading-6`;
 
 const itemTypeOptions = [
   { label: "Статья", value: "article" },
@@ -540,7 +540,7 @@ export function KnowledgeAuthoringStudioPage() {
                 </label>
                 <fieldset aria-label="Проверка публикации" className="grid gap-2">
                   {[
-                    ["body", "Markdown заполнен"],
+                    ["body", "Текст статьи заполнен"],
                     ["summary", "Есть краткое описание"],
                     ["visibility", "Выбрана безопасная видимость для портала"],
                     ["reviewer", "Назначен ревьюер"],
@@ -623,37 +623,18 @@ export function KnowledgeAuthoringStudioPage() {
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]">
             <Card>
               <CardHeader>
-                <CardTitle>Редактор</CardTitle>
-                <CardDescription>Markdown, шаблоны и новая версия без AI-зависимости.</CardDescription>
+                <CardTitle>Единый редактор</CardTitle>
+                <CardDescription>Одна рабочая область для текста, ручной разметки, AI-предложений и автосегментов.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {(templatesQuery.data ?? []).map((template) => (
-                    <Button key={template.type} variant="outline" onClick={() => insertTemplate(template.sections)}>
-                      Вставить шаблон: {template.title}
-                    </Button>
-                  ))}
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("> [!NOTE]\n> Важное уточнение для читателя.")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить callout
-                  </Button>
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("| Шаг | Действие |\n| --- | --- |\n| 1 | Описать проверку |")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить таблицу
-                  </Button>
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("```text\nКоманда или лог\n```")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить код
-                  </Button>
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("- [ ] Проверить результат\n- [ ] Обновить статью после проверки")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить checklist
-                  </Button>
-                </div>
-                <label className="text-sm font-medium">
-                  Markdown
-                  <textarea className={textareaClass} value={draft.body} onChange={(event) => updateDraft("body", event.target.value)} />
-                </label>
+                <KnowledgeTipTapEditor
+                  isDisabled={!selectedItem}
+                  onChange={(value) => updateDraft("body", value)}
+                  onInsertBlock={insertMarkdownBlock}
+                  onInsertTemplate={insertTemplate}
+                  templates={templatesQuery.data ?? []}
+                  value={draft.body}
+                />
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="text-sm font-medium">
                     Краткое описание версии

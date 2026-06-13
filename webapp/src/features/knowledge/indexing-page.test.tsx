@@ -50,6 +50,24 @@ describe("KnowledgeIndexingPage", () => {
           jobs: [{ job_id: "job-123456", scope_type: "item", status: "completed", stats_json: { indexed_embeddings: 2, failed_embeddings: 0 } }],
         });
       }
+      if (url === "/api/web/knowledge/items") {
+        return jsonResponse({
+          status: "ok",
+          items: [
+            {
+              item_id: "ki-1",
+              space_id: "space-1",
+              slug: "vpn-access",
+              item_type: "article",
+              type: "article",
+              title: "VPN access",
+              summary: "VPN reconnect guide",
+              status: "published",
+              visibility: "requester",
+            },
+          ],
+        });
+      }
       if (url === "/api/web/knowledge/indexing/reindex-item" && init?.method === "POST") {
         return jsonResponse({
           status: "ok",
@@ -70,8 +88,10 @@ describe("KnowledgeIndexingPage", () => {
     expect(screen.getByText(/Raw vectors не показываются/)).toBeInTheDocument();
     expect(await screen.findByText("job-1234")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Статья"), { target: { value: "ki-1" } });
-    fireEvent.change(screen.getByLabelText("Версия"), { target: { value: "ver-1" } });
+    fireEvent.change(screen.getByLabelText("Поиск статьи"), { target: { value: "vpn" } });
+    fireEvent.click(await screen.findByRole("button", { name: /VPN access/ }));
+    fireEvent.click(screen.getByText("Advanced: raw ids"));
+    fireEvent.change(screen.getByLabelText("Raw version id"), { target: { value: "ver-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Запустить reindex" }));
 
     await waitFor(() => expect(screen.getByText("Индексация embeddings выполнена")).toBeInTheDocument());

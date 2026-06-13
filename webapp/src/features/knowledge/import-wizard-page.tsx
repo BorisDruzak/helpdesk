@@ -150,6 +150,24 @@ export function KnowledgeImportWizardPage() {
         description="Мастер импортирует text/markdown без AI по умолчанию, показывает preview структуры и создает review draft."
       />
 
+      <div className="surface-panel flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-700">
+          {["1. Источник", "2. Preview", "3. Черновик"].map((step, index) => (
+            <span className={`rounded-md px-3 py-1 ${index === 0 && !preview ? "bg-brand-600 text-white" : index === 1 && preview && !result ? "bg-brand-600 text-white" : index === 2 && result ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700"}`} key={step}>
+              {step}
+            </span>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={!canPreview || previewMutation.isPending} onClick={() => previewMutation.mutate()}>
+            Предпросмотр
+          </Button>
+          <Button disabled={!preview || createMutation.isPending} onClick={() => createMutation.mutate()} variant="secondary">
+            Создать черновик
+          </Button>
+        </div>
+      </div>
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card>
           <CardHeader>
@@ -291,14 +309,6 @@ export function KnowledgeImportWizardPage() {
               <input checked={draft.ai_enrichment_enabled} onChange={(event) => setDraft({ ...draft, ai_enrichment_enabled: event.target.checked })} type="checkbox" />
               Запросить AI enrichment после preview
             </label>
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={!canPreview || previewMutation.isPending} onClick={() => previewMutation.mutate()}>
-                Предпросмотр
-              </Button>
-              <Button disabled={!preview || createMutation.isPending} onClick={() => createMutation.mutate()} variant="secondary">
-                Создать черновик
-              </Button>
-            </div>
             {previewMutation.error ? <p className="text-sm text-rose-700">{String(previewMutation.error.message)}</p> : null}
             {createMutation.error ? <p className="text-sm text-rose-700">{String(createMutation.error.message)}</p> : null}
           </CardContent>

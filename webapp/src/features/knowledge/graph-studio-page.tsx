@@ -6,6 +6,8 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
+import { AdvancedDisclosure } from "../../components/ui-page/advanced-disclosure";
+import { KnowledgeGraphCanvas, type KnowledgeGraphCanvasPosition } from "./knowledge-graph-canvas";
 import {
   createKnowledgeGraphEdge,
   createKnowledgeGraphNode,
@@ -56,6 +58,16 @@ type LayoutPosition = {
 function emptyToNull(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function stableKeyFromLabel(nodeType: string, label: string) {
+  const slug = label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return `${nodeType || "concept"}:${slug || "new-node"}`;
 }
 
 function savedPosition(layout: KnowledgeGraphLayout | undefined, stableKey: string): LayoutPosition | null {
@@ -118,6 +130,7 @@ export function KnowledgeGraphStudioPage() {
   const [search, setSearch] = useState("");
   const [selectedStableKey, setSelectedStableKey] = useState("");
   const [selectedLabel, setSelectedLabel] = useState("");
+  const [flowPositions, setFlowPositions] = useState<Record<string, KnowledgeGraphCanvasPosition>>({});
   const [nodeDraft, setNodeDraft] = useState<NodeDraft>({
     label: "",
     linked_item_id: "",
@@ -160,7 +173,14 @@ export function KnowledgeGraphStudioPage() {
     queryFn: () => fetchKnowledgeAiProposals({ target_kind: "graph", status: "pending" }),
   });
   const positionedNodes = useMemo(() => layoutNodes(graphNodes, layoutQuery.data), [graphNodes, layoutQuery.data]);
-  const positionedById = useMemo(() => new Map(positionedNodes.map((node) => [node.node_id, node])), [positionedNodes]);
+  const positionedNodesForCanvas = useMemo(
+    () =>
+      positionedNodes.map((node) => {
+        const position = flowPositions[node.stable_key];
+        return position ? { ...node, x: position.x, y: position.y } : node;
+      }),
+    [flowPositions, positionedNodes],
+  );
   const graphNodesById = useMemo(() => new Map(graphNodes.map((node) => [node.node_id, node])), [graphNodes]);
 
   useEffect(() => {
@@ -189,7 +209,7 @@ export function KnowledgeGraphStudioPage() {
         node_type: nodeDraft.node_type,
         offering_code: emptyToNull(nodeDraft.offering_code),
         service_code: emptyToNull(nodeDraft.service_code),
-        stable_key: nodeDraft.stable_key.trim(),
+        stable_key: nodeDraft.stable_key.trim() || stableKeyFromLabel(nodeDraft.node_type, nodeDraft.label),
         visibility: nodeDraft.visibility,
       }),
     onSuccess: (result) => {
@@ -200,7 +220,7 @@ export function KnowledgeGraphStudioPage() {
   });
 
   const createEdgeMutation = useMutation({
-    mutationFn: () => createKnowledgeGraphEdge(edgeDraft),
+    mutationFn: (draftOverride?: EdgeDraft) => createKnowledgeGraphEdge(draftOverride ?? edgeDraft),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
@@ -235,7 +255,7 @@ export function KnowledgeGraphStudioPage() {
   const saveLayoutMutation = useMutation({
     mutationFn: () =>
       saveKnowledgeGraphLayout("default", {
-        nodes: Object.fromEntries(positionedNodes.map((node) => [node.stable_key, { x: node.x, y: node.y }])),
+        nodes: Object.fromEntries(positionedNodesForCanvas.map((node) => [node.stable_key, { x: node.x, y: node.y }])),
         viewport: { zoom: 1, pan_x: 0, pan_y: 0 },
       }),
     onSuccess: () => {
@@ -252,6 +272,21 @@ export function KnowledgeGraphStudioPage() {
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
     },
   });
+
+  function selectGraphNode(stableKey: string) {
+    setSelectedStableKey(stableKey);
+    setEdgeDraft((current) => ({ ...current, source_stable_key: stableKey }));
+  }
+
+  function connectGraphNodes(connection: { source_stable_key: string; target_stable_key: string }) {
+    const nextDraft = {
+      ...edgeDraft,
+      source_stable_key: connection.source_stable_key,
+      target_stable_key: connection.target_stable_key,
+    };
+    setEdgeDraft(nextDraft);
+    createEdgeMutation.mutate(nextDraft);
+  }
 
   return (
     <section className="space-y-6">
@@ -283,10 +318,7 @@ export function KnowledgeGraphStudioPage() {
                       node.stable_key === selectedNode?.stable_key ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-slate-300"
                     }`}
                     key={node.node_id}
-                    onClick={() => {
-                      setSelectedStableKey(node.stable_key);
-                      setEdgeDraft((current) => ({ ...current, source_stable_key: node.stable_key }));
-                    }}
+                    onClick={() => selectGraphNode(node.stable_key)}
                     type="button"
                   >
                     <span className="font-semibold text-slate-950">{node.label}</span>
@@ -307,10 +339,6 @@ export function KnowledgeGraphStudioPage() {
               <CardDescription>Manual graph edits пишутся в существующий governed node API.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <label className="text-sm font-medium">
-                Ключ узла
-                <input className={fieldClass} value={nodeDraft.stable_key} onChange={(event) => setNodeDraft({ ...nodeDraft, stable_key: event.target.value })} />
-              </label>
               <label className="text-sm font-medium">
                 Метка узла
                 <input className={fieldClass} value={nodeDraft.label} onChange={(event) => setNodeDraft({ ...nodeDraft, label: event.target.value })} />
@@ -335,17 +363,25 @@ export function KnowledgeGraphStudioPage() {
                   <option value="admin_internal">admin_internal</option>
                 </select>
               </label>
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <AdvancedDisclosure description="Stable key и технические ссылки нужны для миграций, точного связывания и debug-сценариев." title="Advanced: graph ids">
+                <label className="text-sm font-medium">
+                  Ключ узла
+                  <input className={fieldClass} value={nodeDraft.stable_key} onChange={(event) => setNodeDraft({ ...nodeDraft, stable_key: event.target.value })} />
+                </label>
                 <label className="text-sm font-medium">
                   Service code
                   <input className={fieldClass} value={nodeDraft.service_code} onChange={(event) => setNodeDraft({ ...nodeDraft, service_code: event.target.value })} />
                 </label>
                 <label className="text-sm font-medium">
+                  Offering code
+                  <input className={fieldClass} value={nodeDraft.offering_code} onChange={(event) => setNodeDraft({ ...nodeDraft, offering_code: event.target.value })} />
+                </label>
+                <label className="text-sm font-medium">
                   Linked item id
                   <input className={fieldClass} value={nodeDraft.linked_item_id} onChange={(event) => setNodeDraft({ ...nodeDraft, linked_item_id: event.target.value })} />
                 </label>
-              </div>
-              <Button disabled={!nodeDraft.stable_key.trim() || !nodeDraft.label.trim() || createNodeMutation.isPending} onClick={() => createNodeMutation.mutate()}>
+              </AdvancedDisclosure>
+              <Button disabled={!nodeDraft.label.trim() || createNodeMutation.isPending} onClick={() => createNodeMutation.mutate()}>
                 Создать узел
               </Button>
             </CardContent>
@@ -405,57 +441,18 @@ export function KnowledgeGraphStudioPage() {
                 <MousePointer2 className="h-5 w-5" />
                 Карта graph neighborhood
               </CardTitle>
-              <CardDescription>SVG canvas без новой зависимости: nodes/edges кликабельны, layout пересчитывается из текущего neighborhood.</CardDescription>
+              <CardDescription>React Flow рабочая область: выбор, drag layout и connect создают реальные изменения через graph API.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border border-slate-200 bg-slate-950 p-3">
-                <svg aria-label="Карта графа знаний" className="h-[560px] w-full" role="img" viewBox="0 0 900 560">
-                  <title>Карта графа знаний</title>
-                  <rect fill="#0f172a" height="560" rx="8" width="900" />
-                  {graphEdges.map((edge) => {
-                    const source = positionedById.get(edge.source_node_id);
-                    const target = positionedById.get(edge.target_node_id);
-                    if (!source || !target) {
-                      return null;
-                    }
-                    const midX = (source.x + target.x) / 2;
-                    const midY = (source.y + target.y) / 2;
-                    return (
-                      <g key={edge.edge_id}>
-                        <line stroke="#38bdf8" strokeOpacity="0.55" strokeWidth="2" x1={source.x} x2={target.x} y1={source.y} y2={target.y} />
-                        <text fill="#bae6fd" fontSize="12" textAnchor="middle" x={midX} y={midY - 8}>
-                          {edge.relation_type}
-                        </text>
-                      </g>
-                    );
-                  })}
-                  {positionedNodes.map((node) => {
-                    const selected = node.stable_key === selectedNode?.stable_key;
-                    return (
-                      <g
-                        aria-label={node.label}
-                        key={node.node_id}
-                        onClick={() => setSelectedStableKey(node.stable_key)}
-                        role="button"
-                        tabIndex={0}
-                      >
-                        <circle fill={selected ? "#f8fafc" : "#1e293b"} r={selected ? 42 : 36} stroke={selected ? "#22c55e" : "#94a3b8"} strokeWidth="3" cx={node.x} cy={node.y} />
-                        <text fill={selected ? "#0f172a" : "#e2e8f0"} fontSize="12" fontWeight="700" textAnchor="middle" x={node.x} y={node.y - 4}>
-                          {node.label.slice(0, 24)}
-                        </text>
-                        <text fill={selected ? "#334155" : "#cbd5e1"} fontSize="10" textAnchor="middle" x={node.x} y={node.y + 14}>
-                          {node.node_type}
-                        </text>
-                      </g>
-                    );
-                  })}
-                  {!positionedNodes.length ? (
-                    <text fill="#cbd5e1" fontSize="18" textAnchor="middle" x="450" y="280">
-                      Нет узлов для отображения
-                    </text>
-                  ) : null}
-                </svg>
-              </div>
+              <KnowledgeGraphCanvas
+                edges={graphEdges}
+                nodes={positionedNodesForCanvas}
+                nodesById={graphNodesById}
+                onConnectNodes={connectGraphNodes}
+                onLayoutChange={setFlowPositions}
+                onSelectNode={selectGraphNode}
+                selectedStableKey={selectedNode?.stable_key}
+              />
             </CardContent>
           </Card>
 
@@ -485,7 +482,7 @@ export function KnowledgeGraphStudioPage() {
                 <p>{layoutQuery.data?.layout_id ? "Layout сохранен для scope default" : "Layout еще не сохранен"}</p>
                 <Button
                   className="mt-3"
-                  disabled={!positionedNodes.length || saveLayoutMutation.isPending}
+                  disabled={!positionedNodesForCanvas.length || saveLayoutMutation.isPending}
                   onClick={() => saveLayoutMutation.mutate()}
                   size="sm"
                   variant="secondary"
@@ -608,7 +605,7 @@ export function KnowledgeGraphStudioPage() {
                 </label>
                 <Button
                   disabled={!edgeDraft.source_stable_key.trim() || !edgeDraft.target_stable_key.trim() || createEdgeMutation.isPending}
-                  onClick={() => createEdgeMutation.mutate()}
+                  onClick={() => createEdgeMutation.mutate(undefined)}
                 >
                   Создать связь
                 </Button>

@@ -51,6 +51,15 @@ Current open gates before final Knowledge vNext signoff:
 * Knowledge -> requester regressions must stay bundled with Knowledge changes: requester knowledge suggestions, Ask fallback -> requester ticket prefill, requester ticket create with `knowledge_attempts`, `ticket_created_after_view` analytics and public `/app/help` deflection.
 * Evidence paths under `artifacts/` may be local/untracked operational artifacts; audit docs must say when evidence must be preserved outside git or regenerated.
 
+2026-06-13 UI refactor note:
+
+* `/app/admin/knowledge` переведён в Knowledge Operations Center: обзор здоровья и быстрые переходы вместо старой mega-form со всеми CRUD/rollout/content pack блоками.
+* `/app/admin/knowledge/studio` получил единый TipTap/ProseMirror editor surface с визуальными состояниями ручной разметки, AI-предложений, автосегментов и изменённого текста; version/publish/review API остаются прежними.
+* `/app/admin/knowledge/graph` получил React Flow canvas как основной editor surface: выбор узла, drag layout, connect edge и save layout связаны с текущими graph API.
+* `/app/admin/knowledge/import`, `/search-settings`, `/ai`, `/indexing` приведены к сценарному контракту: wizard/action bar, AI-gated controls, secret refs и raw ids в Advanced, item picker для reindex.
+* Проверено локально: `pnpm --dir webapp exec tsc --noEmit --pretty false`; `pnpm --dir webapp exec vitest run src/features/knowledge src/pages/admin/knowledge-studio-page.test.tsx --reporter=dot` — 12 файлов, 44 теста.
+* Остаётся до signoff: `pnpm --dir webapp build`, `python scripts/verify_workspace.py`, browser evidence для 1366×768 и 1920×1080 по всем семи admin Knowledge routes.
+
 Target product surfaces:
 
 * `/app/kb`
