@@ -805,6 +805,15 @@ Phase 4 partial live/preflight execution, 2026-06-14:
 * Cleanup: local instance `phase4-reg-ba41cce8` was stopped; remote `server` and `control` were stopped and confirmed inactive. Registration policy was not changed in this partial run, so no policy restore was needed.
 * This does not close Phase 4. Still required for Phase 4 exit: rerun Scenario A with `registration.department_mode=required_existing` and `registration.location_mode=required_existing`; complete browser confirmation on the device registration page with a test UI user; verify pending claim/diff/approval in `/app/admin/registry`; verify agent leaves pending and creates a ticket with requester account-session fields; run Scenario B invalid strict department/location; run Scenario C other-account boundary; collect browser/API/DB/UIA/log evidence for the same clean run marker.
 
+Phase 4 continuation audit, 2026-06-14:
+
+* Current code inspection shows a planning risk for the next strict-policy live run: `/app/device/register` calls `confirmDevicePairing(pairing_id, "registration")` with an empty JSON body; `handle_web_registry_browser_pairing_registration_confirm()` ignores request body; `BrowserPairingService.confirm_registration_pairing_for_web_user()` builds the claim profile only from the web actor id via `_profile_from_actor()` and therefore cannot submit `department_id` / `location_id`.
+* Because `RegistrationService.submit_agent_profile_claim()` raises `RegistrationValidationError("department_id is required")` and `RegistrationValidationError("location_id is required")` when `registration.department_mode` / `registration.location_mode` are `required_existing` and no registry ids are present, the current browser-registration confirmation path is not enough to satisfy "strict policy + browser confirmation" in one run unless code changes add a picker/payload path or the scenario is split.
+* Efficient next options before the next live run:
+  * preferred product fix: extend the device registration page/API so registration browser confirmation can submit existing `department_id` / `location_id` under strict policy, with server tests, webapp tests and browser evidence;
+  * validation split if no product change is intended yet: keep strict `required_existing` for Scenario B and agent-form policy validation, but run browser-pairing confirmation with policy relaxed/restored explicitly and record that it is not a strict-policy pass.
+* Focused DB-backed pytest attempts for `server/tests/test_registration_api.py::test_registration_pairing_approval_surfaces_confirmed_binding_to_agent` timed out locally after 180s without producing assertion output. Treat this as a local test-environment/slow DB limitation for this audit, not as pass/fail evidence. Re-run with the standard project test DB setup before using it as a gate.
+
 Verification:
 
 python -m pytest server/tests/test_registry_registration_policy.py
