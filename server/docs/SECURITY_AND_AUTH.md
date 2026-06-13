@@ -19,7 +19,7 @@ Security update 2026-05-25:
 - Real `server/.env` and `db_config.json` are local files only and must not be tracked by git; `scripts/verify_workspace.py` checks this hygiene rule.
 
 Security update 2026-06-10:
-- HttpOnly web-session cookie authentication now has a same-origin guard for unsafe methods on browser bridge paths (`/api/web/*`, `/api/upload`, `/api/artifacts/*`, `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/ticket_forms/*`, `/api/notifications`). When the request is authenticated by the web-session cookie, unsafe methods require an `Origin` or `Referer` whose origin matches the current host, reverse-proxy public host from `Forwarded` / `X-Forwarded-Proto` + `X-Forwarded-Host`, `SERVER_PUBLIC_BASE_URL`, or `WEB_CSRF_TRUSTED_ORIGINS`; missing or mismatched origin returns 403.
+- HttpOnly web-session cookie authentication now has a same-origin guard for unsafe methods on browser bridge paths (`/api/web/*`, `/api/upload`, `/api/artifacts/*`, `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/ticket_forms/*`, `/api/registry/options`, `/api/notifications`). When the request is authenticated by the web-session cookie, unsafe methods require an `Origin` or `Referer` whose origin matches the current host, reverse-proxy public host from `Forwarded` / `X-Forwarded-Proto` + `X-Forwarded-Host`, `SERVER_PUBLIC_BASE_URL`, or `WEB_CSRF_TRUSTED_ORIGINS`; missing or mismatched origin returns 403.
 - The guard is controlled by `WEB_CSRF_SAME_ORIGIN_ENABLED=true` by default. `WEB_CSRF_TRUSTED_ORIGINS` is a comma-separated override for explicit public browser origins. Bearer UI tokens, agent tokens and public ticket token paths are not treated as cookie-auth browser requests by this guard.
 - Direct browser pairing lookup by `pairing_id` is safe-projected: expired, consumed, superseded, failed, canceled and unknown pairings do not return device facts or raw pairing secrets. The endpoint also rate-limits direct pairing-id probes.
 
@@ -35,7 +35,7 @@ Security update 2026-06-11:
 
 - **Агенты:** аутентификация по токену (agent token) при WebSocket handshake и при HTTP API.
 - **UI:** legacy shell-страницы используют логин/пароль с выдачей UI токена; новый `webapp` под `/app/*` использует тот же UI token storage на сервере, но выдаёт его клиенту только как httpOnly cookie-session.
-- **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token), а cookie `pc_client_web_session` используется не только на `/api/web/*`, но и на canonical React bridges для нового webapp: `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/ticket_forms/*`, `/api/upload` и `/api/artifacts/*`.
+- **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token), а cookie `pc_client_web_session` используется не только на `/api/web/*`, но и на canonical React bridges для нового webapp: `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/ticket_forms/*`, `/api/registry/options`, `/api/upload` и `/api/artifacts/*`.
 - **Control-plane:** отдельный сервис на порту `8667` использует те же Bearer UI/agent токены, но имеет собственный middleware, CORS-ограничение по origin и отдельный RBAC для runtime actions.
 - **Роли и контекст:** `AuthContext` — единственный источник истины для `actor_id` и `actor_role`; данные из JSON/WebSocket payload **никогда** не доверяются для роли.
 

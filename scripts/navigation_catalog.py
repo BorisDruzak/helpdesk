@@ -321,7 +321,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="auth",
         title="Auth / token bootstrap",
-        summary="Token sources, AuthContext, admin-only manual `/api/login`, admin-only legacy device token list/revoke with device-scoped token-hash revoke, typed React fleet token list `GET /api/web/admin/device-tokens` plus per-device token revoke, protected connection-request polling with `request_id` + `poll_secret`, manual approve without raw token storage and token generation only on valid poll, delivery marking scoped to `request_id + device_id + approved`, deprecated raw-token approval helpers as no-op, missing connection policy defaulting to manual unless explicit insecure dev is enabled, trusted-proxy-only `X-Forwarded-For` rate-limit keys, active agent-token limits with explicit rotation, hardened UI role/password handling, `APP_ENV=pilot|prod` / legacy `PILOT_STAND_MODE=true` strict fail-closed security and DB-persistence validation, secure local config hygiene with tracked `server/.env` and `db_config.json` blocked by workspace verify, secure production defaults, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification/upload/artifact-download surfaces with same-origin protection on unsafe cookie-auth requests including reverse-proxy public origins from Forwarded/X-Forwarded headers and configured trusted origins, no anonymous `ticket_id` download bypass, operation-bound agent artifact uploads authorized by matching operation/ticket/device context, public-ticket token auth on artifact downloads, RFC 5987 `filename*` artifact download names, typed notification preferences returning plain JSON payloads, requester-safe auth-whitelisted knowledge search/suggest/feedback for public help deflection with ACL filtering, safe direct browser pairing visibility for only pending/confirmed non-expired pairings, and security invariants.",
+        summary="Token sources, AuthContext, admin-only manual `/api/login`, admin-only legacy device token list/revoke with device-scoped token-hash revoke, typed React fleet token list `GET /api/web/admin/device-tokens` plus per-device token revoke, protected connection-request polling with `request_id` + `poll_secret`, manual approve without raw token storage and token generation only on valid poll, delivery marking scoped to `request_id + device_id + approved`, deprecated raw-token approval helpers as no-op, missing connection policy defaulting to manual unless explicit insecure dev is enabled, trusted-proxy-only `X-Forwarded-For` rate-limit keys, active agent-token limits with explicit rotation, hardened UI role/password handling, `APP_ENV=pilot|prod` / legacy `PILOT_STAND_MODE=true` strict fail-closed security and DB-persistence validation, secure local config hygiene with tracked `server/.env` and `db_config.json` blocked by workspace verify, secure production defaults, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification/upload/artifact-download surfaces plus the narrow `/api/registry/options` picker bridge, with same-origin protection on unsafe cookie-auth requests including reverse-proxy public origins from Forwarded/X-Forwarded headers and configured trusted origins, no anonymous `ticket_id` download bypass, operation-bound agent artifact uploads authorized by matching operation/ticket/device context, public-ticket token auth on artifact downloads, RFC 5987 `filename*` artifact download names, typed notification preferences returning plain JSON payloads, requester-safe auth-whitelisted knowledge search/suggest/feedback for public help deflection with ACL filtering, safe direct browser pairing visibility for only pending/confirmed non-expired pairings, and security invariants.",
         aliases=(
             "auth",
             "token",
@@ -338,6 +338,7 @@ TOPICS: tuple[Topic, ...] = (
             "request_id",
             "legacy ui login",
             "web session cookie",
+            "api/registry/options cookie",
             "csrf",
             "same origin",
             "Origin",
@@ -376,6 +377,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/auth/connection_request_handlers.py",
             "server/auth/connection_request_service.py",
             "server/auth/password_service.py",
+            "server/tests/test_web_session_api.py",
             "pc_agent/auth/token_source.py",
             "pc_agent/auth/connection_request.py",
             "pc_agent/core/identity.py",
@@ -391,6 +393,7 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             'python scripts/agent_find.py "auth" --dir server',
             'python scripts/agent_find.py "token" --dir pc_agent',
+            "python -m pytest server/tests/test_web_session_api.py::test_web_session_cookie_auth_bridges_react_workbench_paths -q",
         ),
         mode="Auth / token bootstrap",
         skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
@@ -415,6 +418,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/config.py",
             "server/routes.py",
             "server/server.py",
+            "server/tests/test_web_session_api.py",
             "scripts/navigation_catalog.py",
             "pc_agent/core/identity.py",
             "pc_agent/core/device_fingerprint.py",

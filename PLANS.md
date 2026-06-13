@@ -820,7 +820,9 @@ Phase 4 strict browser-registration payload slice, 2026-06-14:
 * Backend confirmation now accepts only optional `department_id` / `location_id` from the browser payload and delegates validation to `RegistrationService`, preserving the existing rule that browser users cannot override person, binding, account-session or token fields.
 * Added regression anchors:
   * `server/tests/test_registration_api.py::test_registration_pairing_confirmation_accepts_required_registry_ids`
+  * `server/tests/test_web_session_api.py::test_web_session_cookie_auth_bridges_react_workbench_paths[/api/registry/options]`
   * `webapp/src/pages/device-pairing/device-pairing-page.test.tsx` coverage for selected department/location ids in the registration confirm POST body.
+* Live browser check on `https://192.168.100.17:9443/app/device/register?pairing_id=...` initially exposed a missing auth bridge: the page could fetch `/api/web/registry/browser-pairings/{pairing_id}` only for a `user` web session, but the new `/api/registry/options` request did not accept the same web-session cookie and collapsed to the generic authentication-required state. `server/auth/middleware.py` now includes the narrow `/api/registry/options` cookie bridge so the page can load registry picker options without broadening cookie auth to all agent registry endpoints.
 * This removes the previously documented need to relax strict policy for browser pairing, but Phase 4 still requires a real live rerun with strict policies, browser confirmation, admin approval diff, agent account-state transition and ticket requester account-session fields.
 
 Verification:

@@ -200,6 +200,7 @@ async def test_web_session_me_accepts_web_cookie_auth(monkeypatch):
         "/api/admin/tech/traces/runtime",
         "/api/admin/settings/observer",
         "/api/ticket_forms/packs",
+        "/api/registry/options",
         "/api/notifications/preferences",
         "/api/notifications",
     ],
