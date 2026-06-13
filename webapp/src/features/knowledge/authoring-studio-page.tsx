@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { PageHeading } from "../../components/ui/page-heading";
@@ -55,6 +56,8 @@ function emptyNewDraft(): NewItemDraft {
 
 export function KnowledgeAuthoringStudioPage() {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const requestedItemParam = searchParams.get("item") ?? "";
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selectedItemId, setSelectedItemId] = useState("");
@@ -88,7 +91,11 @@ export function KnowledgeAuthoringStudioPage() {
     const activeItems = filteredItems.filter((item) => item.status !== "archived");
     return activeItems.find((item) => item.current_version_id) ?? activeItems[0] ?? filteredItems.find((item) => item.current_version_id) ?? filteredItems[0] ?? null;
   }, [filteredItems]);
-  const selectedItem = items.find((item) => item.item_id === selectedItemId) ?? defaultItem;
+  const requestedItem = useMemo(
+    () => items.find((item) => item.item_id === requestedItemParam || item.slug === requestedItemParam) ?? null,
+    [items, requestedItemParam],
+  );
+  const selectedItem = items.find((item) => item.item_id === selectedItemId) ?? requestedItem ?? defaultItem;
 
   const versionsQuery = useQuery({
     queryKey: ["knowledge-item-versions", selectedItem?.item_id],
@@ -120,6 +127,12 @@ export function KnowledgeAuthoringStudioPage() {
   const validationChecks = useMemo(() => validationChecksFor(draft, activeSegmentsCount), [activeSegmentsCount, draft]);
   const checklistComplete = validationChecks.every((check) => check.ok);
   const currentDiff = diffSummary(selectedVersion?.body ?? "", draft.body);
+
+  useEffect(() => {
+    if (requestedItem?.item_id) {
+      setSelectedItemId(requestedItem.item_id);
+    }
+  }, [requestedItem?.item_id]);
 
   useEffect(() => {
     if (!selectedItem?.item_id) {

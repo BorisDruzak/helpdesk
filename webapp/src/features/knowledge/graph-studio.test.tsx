@@ -31,6 +31,7 @@ function setupFetch() {
             stable_key: "knowledge_item:vpn-access",
             node_type: "knowledge_item",
             label: "VPN access article",
+            linked_item_id: "item-vpn",
             visibility: "requester",
             status: "active",
           },
@@ -54,6 +55,7 @@ function setupFetch() {
             stable_key: "knowledge_item:vpn-access",
             node_type: "knowledge_item",
             label: "VPN access article",
+            linked_item_id: "item-vpn",
             visibility: "requester",
             status: "active",
           },
@@ -231,7 +233,7 @@ beforeEach(() => {
 });
 
 describe("KnowledgeGraphStudioPage", () => {
-  it("renders React Flow as the primary editable graph canvas instead of a read-only SVG map", async () => {
+  it("renders React Flow as the primary editable graph canvas with explicit graph editing modes", async () => {
     setupFetch();
     renderGraphStudio();
 
@@ -239,11 +241,28 @@ describe("KnowledgeGraphStudioPage", () => {
     expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
     expect(screen.getByText("React Flow canvas")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Показать весь граф" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Выбор" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Добавить узел" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Связать узлы" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Авторазложить" })).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Карта графа знаний" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Добавить узел" }));
+    expect(screen.getByRole("heading", { name: "Создание узла" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Связать узлы" }));
+    expect(screen.getByRole("heading", { name: "Связать узлы" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Источник связи")).toHaveValue("concept:vpn");
+    expect(screen.getByLabelText("Целевой узел")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /VPN access article/ })[0]);
+    expect(screen.getByRole("link", { name: "Открыть статью в Studio" })).toHaveAttribute(
+      "href",
+      "/app/admin/knowledge/studio?item=item-vpn",
+    );
   });
 
-  it("loads a visual graph canvas and creates nodes and edges through graph APIs", async () => {
+  it("creates nodes and edges through explicit graph editor controls", async () => {
     const fetchMock = setupFetch();
     renderGraphStudio();
 
@@ -259,12 +278,13 @@ describe("KnowledgeGraphStudioPage", () => {
     expect((await screen.findAllByText("mentions")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("VPN access article").length).toBeGreaterThan(0);
 
+    fireEvent.click(screen.getByRole("button", { name: "Добавить узел" }));
     fireEvent.change(screen.getByLabelText("Метка узла"), { target: { value: "MFA concept" } });
     fireEvent.change(screen.getByLabelText("Тип узла"), { target: { value: "concept" } });
     fireEvent.change(screen.getByLabelText("Видимость узла"), { target: { value: "support_internal" } });
     fireEvent.click(screen.getByText("Advanced: graph ids"));
     fireEvent.change(screen.getByLabelText("Ключ узла"), { target: { value: "concept:mfa" } });
-    fireEvent.click(screen.getByRole("button", { name: "Создать узел" }));
+    fireEvent.click(screen.getByRole("button", { name: "Добавить узел на граф" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -280,9 +300,10 @@ describe("KnowledgeGraphStudioPage", () => {
       visibility: "support_internal",
     });
 
-    const edgeForm = screen.getByRole("group", { name: "Новая связь" });
-    fireEvent.change(within(edgeForm).getByLabelText("Источник edge"), { target: { value: "concept:mfa" } });
-    fireEvent.change(within(edgeForm).getByLabelText("Цель edge"), { target: { value: "concept:vpn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Связать узлы" }));
+    const edgeForm = screen.getByRole("group", { name: "Связать узлы" });
+    fireEvent.change(within(edgeForm).getByLabelText("Источник связи"), { target: { value: "knowledge_item:vpn-access" } });
+    fireEvent.change(within(edgeForm).getByLabelText("Целевой узел"), { target: { value: "concept:vpn" } });
     fireEvent.change(within(edgeForm).getByLabelText("Тип связи"), { target: { value: "mentions" } });
     fireEvent.click(within(edgeForm).getByRole("button", { name: "Создать связь" }));
 
@@ -294,7 +315,7 @@ describe("KnowledgeGraphStudioPage", () => {
     );
     const createEdgeCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/edges" && call[1]?.method === "POST");
     expect(JSON.parse(String(createEdgeCall?.[1]?.body))).toMatchObject({
-      source_stable_key: "concept:mfa",
+      source_stable_key: "knowledge_item:vpn-access",
       target_stable_key: "concept:vpn",
       relation_type: "mentions",
       visibility: "support_internal",

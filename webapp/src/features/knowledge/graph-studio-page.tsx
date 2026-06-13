@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
+import { ExternalLink, GitBranch, Link2, MousePointer2, PlusCircle, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -42,6 +42,18 @@ type EdgeDraft = {
   relation_type: string;
   source_stable_key: string;
   target_stable_key: string;
+  visibility: string;
+};
+
+type GraphMode = "select" | "create_node" | "connect";
+
+type SelectedNodeDraft = {
+  label: string;
+  linked_item_id: string;
+  node_type: string;
+  offering_code: string;
+  service_code: string;
+  status: string;
   visibility: string;
 };
 
@@ -125,11 +137,25 @@ function edgeKey(edge: KnowledgeGraphEdge, nodesById: Map<string, KnowledgeGraph
   return `${source} -> ${target}`;
 }
 
+function selectedDraftFromNode(node: KnowledgeGraphNode | null): SelectedNodeDraft {
+  return {
+    label: node?.label ?? "",
+    linked_item_id: node?.linked_item_id ?? "",
+    node_type: node?.node_type ?? "concept",
+    offering_code: node?.offering_code ?? "",
+    service_code: node?.service_code ?? "",
+    status: node?.status ?? "confirmed",
+    visibility: node?.visibility ?? "support_internal",
+  };
+}
+
 export function KnowledgeGraphStudioPage() {
   const queryClient = useQueryClient();
+  const [graphMode, setGraphMode] = useState<GraphMode>("select");
   const [search, setSearch] = useState("");
   const [selectedStableKey, setSelectedStableKey] = useState("");
-  const [selectedLabel, setSelectedLabel] = useState("");
+  const [selectedNodeDraft, setSelectedNodeDraft] = useState<SelectedNodeDraft>(() => selectedDraftFromNode(null));
+  const [statusMessage, setStatusMessage] = useState("");
   const [flowPositions, setFlowPositions] = useState<Record<string, KnowledgeGraphCanvasPosition>>({});
   const [nodeDraft, setNodeDraft] = useState<NodeDraft>({
     label: "",
@@ -197,9 +223,9 @@ export function KnowledgeGraphStudioPage() {
 
   useEffect(() => {
     if (selectedNode?.stable_key) {
-      setSelectedLabel(selectedNode.label);
+      setSelectedNodeDraft(selectedDraftFromNode(selectedNode));
     }
-  }, [selectedNode?.stable_key, selectedNode?.label]);
+  }, [selectedNode]);
 
   const createNodeMutation = useMutation({
     mutationFn: () =>
@@ -214,7 +240,10 @@ export function KnowledgeGraphStudioPage() {
       }),
     onSuccess: (result) => {
       setSelectedStableKey(result.node.stable_key);
+      setFlowPositions((current) => ({ ...current, [result.node.stable_key]: current[result.node.stable_key] ?? { x: 450, y: 280 } }));
       setNodeDraft((current) => ({ ...current, label: "", linked_item_id: "", offering_code: "", service_code: "", stable_key: "" }));
+      setGraphMode("select");
+      setStatusMessage("Узел добавлен в граф. После обновления списка его можно связывать с другими узлами.");
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
     },
   });
@@ -222,14 +251,27 @@ export function KnowledgeGraphStudioPage() {
   const createEdgeMutation = useMutation({
     mutationFn: (draftOverride?: EdgeDraft) => createKnowledgeGraphEdge(draftOverride ?? edgeDraft),
     onSuccess: () => {
+      setGraphMode("select");
+      setStatusMessage("Связь создана через graph API.");
+      setEdgeDraft((current) => ({ ...current, target_stable_key: "" }));
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
-      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood"] });
     },
   });
 
   const updateSelectedNodeMutation = useMutation({
-    mutationFn: () => updateKnowledgeGraphNode(selectedNode?.stable_key ?? "", { label: selectedLabel.trim() }),
+    mutationFn: () =>
+      updateKnowledgeGraphNode(selectedNode?.stable_key ?? "", {
+        label: selectedNodeDraft.label.trim(),
+        linked_item_id: emptyToNull(selectedNodeDraft.linked_item_id),
+        node_type: selectedNodeDraft.node_type,
+        offering_code: emptyToNull(selectedNodeDraft.offering_code),
+        service_code: emptyToNull(selectedNodeDraft.service_code),
+        status: selectedNodeDraft.status,
+        visibility: selectedNodeDraft.visibility,
+      }),
     onSuccess: () => {
+      setStatusMessage("Узел обновлен через graph API.");
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
     },
@@ -239,6 +281,8 @@ export function KnowledgeGraphStudioPage() {
     mutationFn: () => deleteKnowledgeGraphNode(selectedNode?.stable_key ?? ""),
     onSuccess: () => {
       setSelectedStableKey("");
+      setGraphMode("select");
+      setStatusMessage("Узел и его активные связи архивированы.");
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
     },
@@ -247,6 +291,7 @@ export function KnowledgeGraphStudioPage() {
   const archiveEdgeMutation = useMutation({
     mutationFn: (edgeId: string) => deleteKnowledgeGraphEdge(edgeId),
     onSuccess: () => {
+      setStatusMessage("Связь архивирована.");
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-nodes"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-neighborhood", selectedNode?.stable_key] });
     },
@@ -259,6 +304,7 @@ export function KnowledgeGraphStudioPage() {
         viewport: { zoom: 1, pan_x: 0, pan_y: 0 },
       }),
     onSuccess: () => {
+      setStatusMessage("Layout сохранен для текущего графа.");
       queryClient.invalidateQueries({ queryKey: ["knowledge-graph-layout", "default"] });
     },
   });
@@ -273,9 +319,18 @@ export function KnowledgeGraphStudioPage() {
     },
   });
 
-  function selectGraphNode(stableKey: string) {
+  function selectNodeFromCanvas(stableKey: string) {
     setSelectedStableKey(stableKey);
-    setEdgeDraft((current) => ({ ...current, source_stable_key: stableKey }));
+    if (graphMode !== "connect") {
+      setEdgeDraft((current) => ({ ...current, source_stable_key: stableKey }));
+      return;
+    }
+    setEdgeDraft((current) => {
+      if (!current.source_stable_key || current.source_stable_key === stableKey) {
+        return { ...current, source_stable_key: stableKey, target_stable_key: "" };
+      }
+      return { ...current, target_stable_key: stableKey };
+    });
   }
 
   function connectGraphNodes(connection: { source_stable_key: string; target_stable_key: string }) {
@@ -293,6 +348,14 @@ export function KnowledgeGraphStudioPage() {
       layoutNodes(graphNodes).map((node) => [node.stable_key, { x: node.x, y: node.y }]),
     );
     setFlowPositions(nextPositions);
+  }
+
+  function switchMode(mode: GraphMode) {
+    setGraphMode(mode);
+    setStatusMessage("");
+    if (mode === "connect" && selectedNode?.stable_key) {
+      setEdgeDraft((current) => ({ ...current, source_stable_key: selectedNode.stable_key }));
+    }
   }
 
   return (
@@ -325,7 +388,7 @@ export function KnowledgeGraphStudioPage() {
                       node.stable_key === selectedNode?.stable_key ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-slate-300"
                     }`}
                     key={node.node_id}
-                    onClick={() => selectGraphNode(node.stable_key)}
+                    onClick={() => selectNodeFromCanvas(node.stable_key)}
                     type="button"
                   >
                     <span className="font-semibold text-slate-950">{node.label}</span>
@@ -334,63 +397,6 @@ export function KnowledgeGraphStudioPage() {
                 ))}
                 {!nodesQuery.isLoading && !filteredNodes.length ? <p className="text-sm text-slate-500">Узлы графа не найдены.</p> : null}
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <PlusCircle className="h-5 w-5" />
-                Новый узел
-              </CardTitle>
-              <CardDescription>Manual graph edits пишутся в существующий governed node API.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <label className="text-sm font-medium">
-                Метка узла
-                <input className={fieldClass} value={nodeDraft.label} onChange={(event) => setNodeDraft({ ...nodeDraft, label: event.target.value })} />
-              </label>
-              <label className="text-sm font-medium">
-                Тип узла
-                <select className={fieldClass} value={nodeDraft.node_type} onChange={(event) => setNodeDraft({ ...nodeDraft, node_type: event.target.value })}>
-                  <option value="concept">concept</option>
-                  <option value="knowledge_item">knowledge_item</option>
-                  <option value="service">service</option>
-                  <option value="offering">offering</option>
-                  <option value="known_error">known_error</option>
-                  <option value="workaround">workaround</option>
-                </select>
-              </label>
-              <label className="text-sm font-medium">
-                Видимость узла
-                <select className={fieldClass} value={nodeDraft.visibility} onChange={(event) => setNodeDraft({ ...nodeDraft, visibility: event.target.value })}>
-                  <option value="requester">requester</option>
-                  <option value="agent_requester_safe">agent_requester_safe</option>
-                  <option value="support_internal">support_internal</option>
-                  <option value="admin_internal">admin_internal</option>
-                </select>
-              </label>
-              <AdvancedDisclosure description="Stable key и технические ссылки нужны для миграций, точного связывания и debug-сценариев." title="Advanced: graph ids">
-                <label className="text-sm font-medium">
-                  Ключ узла
-                  <input className={fieldClass} value={nodeDraft.stable_key} onChange={(event) => setNodeDraft({ ...nodeDraft, stable_key: event.target.value })} />
-                </label>
-                <label className="text-sm font-medium">
-                  Service code
-                  <input className={fieldClass} value={nodeDraft.service_code} onChange={(event) => setNodeDraft({ ...nodeDraft, service_code: event.target.value })} />
-                </label>
-                <label className="text-sm font-medium">
-                  Offering code
-                  <input className={fieldClass} value={nodeDraft.offering_code} onChange={(event) => setNodeDraft({ ...nodeDraft, offering_code: event.target.value })} />
-                </label>
-                <label className="text-sm font-medium">
-                  Linked item id
-                  <input className={fieldClass} value={nodeDraft.linked_item_id} onChange={(event) => setNodeDraft({ ...nodeDraft, linked_item_id: event.target.value })} />
-                </label>
-              </AdvancedDisclosure>
-              <Button disabled={!nodeDraft.label.trim() || createNodeMutation.isPending} onClick={() => createNodeMutation.mutate()}>
-                Создать узел
-              </Button>
             </CardContent>
           </Card>
 
@@ -451,10 +457,18 @@ export function KnowledgeGraphStudioPage() {
               <CardDescription>React Flow рабочая область: выбор, drag layout и connect создают реальные изменения через graph API.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="text-sm text-slate-600">
-                  Выберите узел, перетащите его на канвасе или соедините два узла линией. Изменения узлов и связей уходят в graph API.
-                </p>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                <div className="flex flex-wrap gap-2" aria-label="Режимы графового редактора">
+                  <Button leadingIcon={<MousePointer2 className="h-4 w-4" />} onClick={() => switchMode("select")} size="sm" variant={graphMode === "select" ? "primary" : "outline"}>
+                    Выбор
+                  </Button>
+                  <Button leadingIcon={<PlusCircle className="h-4 w-4" />} onClick={() => switchMode("create_node")} size="sm" variant={graphMode === "create_node" ? "primary" : "outline"}>
+                    Добавить узел
+                  </Button>
+                  <Button leadingIcon={<Link2 className="h-4 w-4" />} onClick={() => switchMode("connect")} size="sm" variant={graphMode === "connect" ? "primary" : "outline"}>
+                    Связать узлы
+                  </Button>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button disabled={!graphNodes.length} onClick={applyAutoLayout} size="sm" variant="outline">
                     Авторазложить
@@ -470,13 +484,24 @@ export function KnowledgeGraphStudioPage() {
                   </Button>
                 </div>
               </div>
+
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-sm text-slate-600">
+                  {graphMode === "create_node"
+                    ? "Заполните форму в инспекторе справа. Новый узел будет создан через graph API и выбран на canvas."
+                    : graphMode === "connect"
+                      ? "Кликните source и target на canvas или выберите их в инспекторе, затем подтвердите создание связи."
+                      : "Выберите узел, перетащите его на канвасе или откройте связанную статью в Studio из инспектора."}
+                </p>
+                {statusMessage ? <p className="text-sm font-semibold text-brand-700">{statusMessage}</p> : null}
+              </div>
               <KnowledgeGraphCanvas
                 edges={graphEdges}
                 nodes={positionedNodesForCanvas}
                 nodesById={graphNodesById}
                 onConnectNodes={connectGraphNodes}
                 onLayoutChange={setFlowPositions}
-                onSelectNode={selectGraphNode}
+                onSelectNode={selectNodeFromCanvas}
                 selectedStableKey={selectedNode?.stable_key}
               />
             </CardContent>
@@ -514,11 +539,132 @@ export function KnowledgeGraphStudioPage() {
         <aside className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Инспектор</CardTitle>
-              <CardDescription>Выбранный node и связи neighborhood.</CardDescription>
+              <CardTitle>
+                {graphMode === "create_node" ? "Создание узла" : graphMode === "connect" ? "Связать узлы" : "Инспектор"}
+              </CardTitle>
+              <CardDescription>
+                {graphMode === "create_node"
+                  ? "Создайте новый graph node без ручного перехода в API."
+                  : graphMode === "connect"
+                    ? "Выберите source и target, затем подтвердите edge."
+                    : "Выбранный node, статья и связи neighborhood."}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              {selectedNode ? (
+              {graphMode === "create_node" ? (
+                <>
+                  <label className="text-sm font-medium">
+                    Метка узла
+                    <input className={fieldClass} value={nodeDraft.label} onChange={(event) => setNodeDraft({ ...nodeDraft, label: event.target.value })} />
+                  </label>
+                  <label className="text-sm font-medium">
+                    Тип узла
+                    <select className={fieldClass} value={nodeDraft.node_type} onChange={(event) => setNodeDraft({ ...nodeDraft, node_type: event.target.value })}>
+                      <option value="concept">concept</option>
+                      <option value="knowledge_item">knowledge_item</option>
+                      <option value="service">service</option>
+                      <option value="offering">offering</option>
+                      <option value="known_error">known_error</option>
+                      <option value="workaround">workaround</option>
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium">
+                    Видимость узла
+                    <select className={fieldClass} value={nodeDraft.visibility} onChange={(event) => setNodeDraft({ ...nodeDraft, visibility: event.target.value })}>
+                      <option value="requester">requester</option>
+                      <option value="agent_requester_safe">agent_requester_safe</option>
+                      <option value="support_internal">support_internal</option>
+                      <option value="admin_internal">admin_internal</option>
+                    </select>
+                  </label>
+                  <AdvancedDisclosure description="Stable key и технические ссылки нужны для миграций, точного связывания и debug-сценариев." title="Advanced: graph ids">
+                    <label className="text-sm font-medium">
+                      Ключ узла
+                      <input className={fieldClass} value={nodeDraft.stable_key} onChange={(event) => setNodeDraft({ ...nodeDraft, stable_key: event.target.value })} />
+                    </label>
+                    <label className="text-sm font-medium">
+                      Service code
+                      <input className={fieldClass} value={nodeDraft.service_code} onChange={(event) => setNodeDraft({ ...nodeDraft, service_code: event.target.value })} />
+                    </label>
+                    <label className="text-sm font-medium">
+                      Offering code
+                      <input className={fieldClass} value={nodeDraft.offering_code} onChange={(event) => setNodeDraft({ ...nodeDraft, offering_code: event.target.value })} />
+                    </label>
+                    <label className="text-sm font-medium">
+                      Linked item id
+                      <input className={fieldClass} value={nodeDraft.linked_item_id} onChange={(event) => setNodeDraft({ ...nodeDraft, linked_item_id: event.target.value })} />
+                    </label>
+                  </AdvancedDisclosure>
+                  <Button disabled={!nodeDraft.label.trim() || createNodeMutation.isPending} onClick={() => createNodeMutation.mutate()}>
+                    Добавить узел на граф
+                  </Button>
+                </>
+              ) : null}
+
+              {graphMode === "connect" ? (
+                <>
+                  {selectedNode?.linked_item_id ? (
+                    <a
+                      className="inline-flex items-center gap-2 rounded-pill border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100"
+                      href={`/app/admin/knowledge/studio?item=${encodeURIComponent(selectedNode.linked_item_id)}`}
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Открыть статью в Studio
+                    </a>
+                  ) : null}
+                  <fieldset aria-label="Связать узлы" className="space-y-3">
+                    <label className="text-sm font-medium">
+                      Источник связи
+                      <select className={fieldClass} value={edgeDraft.source_stable_key} onChange={(event) => setEdgeDraft({ ...edgeDraft, source_stable_key: event.target.value })}>
+                        <option value="">Выберите source</option>
+                        {nodes.map((node) => (
+                          <option key={node.node_id} value={node.stable_key}>
+                            {node.label} · {node.stable_key}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium">
+                      Целевой узел
+                      <select className={fieldClass} value={edgeDraft.target_stable_key} onChange={(event) => setEdgeDraft({ ...edgeDraft, target_stable_key: event.target.value })}>
+                        <option value="">Выберите target</option>
+                        {nodes.map((node) => (
+                          <option key={node.node_id} value={node.stable_key}>
+                            {node.label} · {node.stable_key}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium">
+                      Тип связи
+                      <select className={fieldClass} value={edgeDraft.relation_type} onChange={(event) => setEdgeDraft({ ...edgeDraft, relation_type: event.target.value })}>
+                        <option value="mentions">mentions</option>
+                        <option value="belongs_to_service">belongs_to_service</option>
+                        <option value="belongs_to_offering">belongs_to_offering</option>
+                        <option value="supersedes">supersedes</option>
+                        <option value="contradicts">contradicts</option>
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium">
+                      Видимость edge
+                      <select className={fieldClass} value={edgeDraft.visibility} onChange={(event) => setEdgeDraft({ ...edgeDraft, visibility: event.target.value })}>
+                        <option value="requester">requester</option>
+                        <option value="agent_requester_safe">agent_requester_safe</option>
+                        <option value="support_internal">support_internal</option>
+                        <option value="admin_internal">admin_internal</option>
+                      </select>
+                    </label>
+                    <Button
+                      disabled={!edgeDraft.source_stable_key.trim() || !edgeDraft.target_stable_key.trim() || edgeDraft.source_stable_key === edgeDraft.target_stable_key || createEdgeMutation.isPending}
+                      onClick={() => createEdgeMutation.mutate(undefined)}
+                    >
+                      Создать связь
+                    </Button>
+                  </fieldset>
+                </>
+              ) : null}
+
+              {graphMode === "select" && selectedNode ? (
                 <>
                   <div className="space-y-1">
                     <p className="text-xs uppercase text-slate-500">Node</p>
@@ -533,11 +679,66 @@ export function KnowledgeGraphStudioPage() {
                   <div className="space-y-2 rounded-md border border-slate-200 p-3">
                     <label className="text-sm font-medium">
                       Метка выбранного узла
-                      <input className={fieldClass} value={selectedLabel} onChange={(event) => setSelectedLabel(event.target.value)} />
+                      <input className={fieldClass} value={selectedNodeDraft.label} onChange={(event) => setSelectedNodeDraft({ ...selectedNodeDraft, label: event.target.value })} />
                     </label>
+                    <label className="text-sm font-medium">
+                      Тип выбранного узла
+                      <select className={fieldClass} value={selectedNodeDraft.node_type} onChange={(event) => setSelectedNodeDraft({ ...selectedNodeDraft, node_type: event.target.value })}>
+                        <option value="concept">concept</option>
+                        <option value="knowledge_item">knowledge_item</option>
+                        <option value="service">service</option>
+                        <option value="offering">offering</option>
+                        <option value="known_error">known_error</option>
+                        <option value="workaround">workaround</option>
+                        <option value="glossary_term">glossary_term</option>
+                      </select>
+                    </label>
+                    <label className="text-sm font-medium">
+                      Видимость выбранного узла
+                      <select className={fieldClass} value={selectedNodeDraft.visibility} onChange={(event) => setSelectedNodeDraft({ ...selectedNodeDraft, visibility: event.target.value })}>
+                        <option value="requester">requester</option>
+                        <option value="agent_requester_safe">agent_requester_safe</option>
+                        <option value="support_internal">support_internal</option>
+                        <option value="admin_internal">admin_internal</option>
+                      </select>
+                    </label>
+                    <AdvancedDisclosure description="Свяжите node со статьёй или service/offering кодами, когда узел должен открываться в других Knowledge инструментах." title="Advanced: связь с объектами">
+                      <label className="text-sm font-medium">
+                        Linked item id
+                        <input className={fieldClass} value={selectedNodeDraft.linked_item_id} onChange={(event) => setSelectedNodeDraft({ ...selectedNodeDraft, linked_item_id: event.target.value })} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Service code
+                        <input className={fieldClass} value={selectedNodeDraft.service_code} onChange={(event) => setSelectedNodeDraft({ ...selectedNodeDraft, service_code: event.target.value })} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Offering code
+                        <input className={fieldClass} value={selectedNodeDraft.offering_code} onChange={(event) => setSelectedNodeDraft({ ...selectedNodeDraft, offering_code: event.target.value })} />
+                      </label>
+                      <label className="text-sm font-medium">
+                        Статус узла
+                        <select className={fieldClass} value={selectedNodeDraft.status} onChange={(event) => setSelectedNodeDraft({ ...selectedNodeDraft, status: event.target.value })}>
+                          <option value="proposed">proposed</option>
+                          <option value="confirmed">confirmed</option>
+                          <option value="rejected">rejected</option>
+                          <option value="archived">archived</option>
+                        </select>
+                      </label>
+                    </AdvancedDisclosure>
+                    {selectedNode.linked_item_id ? (
+                      <a
+                        className="inline-flex items-center gap-2 rounded-pill border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100"
+                        href={`/app/admin/knowledge/studio?item=${encodeURIComponent(selectedNode.linked_item_id)}`}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Открыть статью в Studio
+                      </a>
+                    ) : (
+                      <p className="text-xs leading-5 text-slate-500">Для перехода в Studio укажите linked item id в Advanced и сохраните узел.</p>
+                    )}
                     <div className="flex flex-wrap gap-2">
                       <Button
-                        disabled={!selectedNode || !selectedLabel.trim() || updateSelectedNodeMutation.isPending}
+                        disabled={!selectedNode || !selectedNodeDraft.label.trim() || updateSelectedNodeMutation.isPending}
                         onClick={() => updateSelectedNodeMutation.mutate()}
                         size="sm"
                       >
@@ -555,9 +756,12 @@ export function KnowledgeGraphStudioPage() {
                     </div>
                   </div>
                 </>
-              ) : (
+              ) : null}
+
+              {graphMode === "select" && !selectedNode ? (
                 <p className="text-slate-500">Выберите узел графа.</p>
-              )}
+              ) : null}
+
               <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase text-slate-500">Связи</p>
                 {graphEdges.map((edge) => (
@@ -579,53 +783,6 @@ export function KnowledgeGraphStudioPage() {
                 ))}
                 {!graphEdges.length ? <p className="text-slate-500">Для выбранного узла связи не найдены.</p> : null}
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Link2 className="h-5 w-5" />
-                Новая связь
-              </CardTitle>
-              <CardDescription>Связь создается по stable_key source/target.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <fieldset aria-label="Новая связь" className="space-y-3">
-                <label className="text-sm font-medium">
-                  Источник edge
-                  <input className={fieldClass} value={edgeDraft.source_stable_key} onChange={(event) => setEdgeDraft({ ...edgeDraft, source_stable_key: event.target.value })} />
-                </label>
-                <label className="text-sm font-medium">
-                  Цель edge
-                  <input className={fieldClass} value={edgeDraft.target_stable_key} onChange={(event) => setEdgeDraft({ ...edgeDraft, target_stable_key: event.target.value })} />
-                </label>
-                <label className="text-sm font-medium">
-                  Тип связи
-                  <select className={fieldClass} value={edgeDraft.relation_type} onChange={(event) => setEdgeDraft({ ...edgeDraft, relation_type: event.target.value })}>
-                    <option value="mentions">mentions</option>
-                    <option value="belongs_to_service">belongs_to_service</option>
-                    <option value="belongs_to_offering">belongs_to_offering</option>
-                    <option value="supersedes">supersedes</option>
-                    <option value="contradicts">contradicts</option>
-                  </select>
-                </label>
-                <label className="text-sm font-medium">
-                  Видимость edge
-                  <select className={fieldClass} value={edgeDraft.visibility} onChange={(event) => setEdgeDraft({ ...edgeDraft, visibility: event.target.value })}>
-                    <option value="requester">requester</option>
-                    <option value="agent_requester_safe">agent_requester_safe</option>
-                    <option value="support_internal">support_internal</option>
-                    <option value="admin_internal">admin_internal</option>
-                  </select>
-                </label>
-                <Button
-                  disabled={!edgeDraft.source_stable_key.trim() || !edgeDraft.target_stable_key.trim() || createEdgeMutation.isPending}
-                  onClick={() => createEdgeMutation.mutate(undefined)}
-                >
-                  Создать связь
-                </Button>
-              </fieldset>
             </CardContent>
           </Card>
         </aside>

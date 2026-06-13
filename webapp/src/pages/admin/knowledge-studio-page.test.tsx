@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 import { AdminKnowledgeStudioPage } from "./knowledge-studio-page";
 
@@ -61,6 +62,22 @@ const itemsPayload = {
       current_version_id: "ver-1",
       updated_at: "2026-06-12T07:00:00Z",
     },
+    {
+      item_id: "item-2",
+      space_id: "space-1",
+      slug: "printer-reset",
+      item_type: "article",
+      type: "article",
+      title: "Printer reset",
+      summary: "Reset a workplace printer safely",
+      status: "draft",
+      visibility: "support_internal",
+      owner_actor_id: "owner",
+      reviewer_actor_id: "reviewer",
+      tags: ["printer"],
+      current_version_id: "ver-printer",
+      updated_at: "2026-06-12T06:00:00Z",
+    },
   ],
 };
 
@@ -103,6 +120,23 @@ const templatesPayload = {
   ],
 };
 
+const item2VersionsPayload = {
+  status: "ok",
+  versions: [
+    {
+      version_id: "ver-printer",
+      item_id: "item-2",
+      version_number: 1,
+      title: "Printer reset",
+      summary: "Reset a workplace printer safely",
+      body_format: "markdown",
+      body: "# Printer reset\n\nPower-cycle the printer and verify the queue.",
+      created_at: "2026-06-12T06:00:00Z",
+      published_at: null,
+    },
+  ],
+};
+
 function setupFetch() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -118,7 +152,7 @@ function setupFetch() {
         status: "ok",
         item: {
           ...itemsPayload.items[0],
-          item_id: "item-2",
+          item_id: "item-created",
           title: body.title,
           slug: body.slug,
           summary: body.summary,
@@ -132,6 +166,9 @@ function setupFetch() {
     }
     if (url === "/api/web/knowledge/items/item-1/versions" && !init?.method) {
       return jsonResponse(versionsPayload);
+    }
+    if (url === "/api/web/knowledge/items/item-2/versions" && !init?.method) {
+      return jsonResponse(item2VersionsPayload);
     }
     if (url === "/api/web/knowledge/items/item-1/editor-history" && !init?.method) {
       return jsonResponse({
@@ -162,6 +199,13 @@ function setupFetch() {
             summary: { change_summary: "Initial authoring version" },
           },
         ],
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-2/editor-history" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        events: [],
+        diff_cache: [],
       });
     }
     if (url === "/api/web/knowledge/items/item-1/versions" && init?.method === "POST") {
@@ -211,6 +255,12 @@ function setupFetch() {
             source: "editor_selection",
           },
         ],
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-2/segments" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        segments: [],
       });
     }
     if (url === "/api/web/knowledge/items/item-1/segments" && init?.method === "POST") {
@@ -287,7 +337,24 @@ function setupFetch() {
         },
       });
     }
+    if (url === "/api/web/knowledge/items/item-2/metadata" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        item_metadata: {
+          item_id: "item-2",
+          space_id: "space-1",
+          slug: "printer-reset",
+          title: "Printer reset",
+          properties: {},
+          taxonomy_terms: [],
+          applicability_rules: [],
+        },
+      });
+    }
     if (url === "/api/web/knowledge/items/item-1/applicability" && !init?.method) {
+      return jsonResponse({ status: "ok", rules: [] });
+    }
+    if (url === "/api/web/knowledge/items/item-2/applicability" && !init?.method) {
       return jsonResponse({ status: "ok", rules: [] });
     }
     throw new Error(`Unexpected fetch ${url}`);
@@ -296,7 +363,7 @@ function setupFetch() {
   return fetchMock;
 }
 
-function renderStudio() {
+function renderStudio(initialEntry = "/app/admin/knowledge/studio") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -306,7 +373,9 @@ function renderStudio() {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <AdminKnowledgeStudioPage />
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <AdminKnowledgeStudioPage />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -322,6 +391,16 @@ afterEach(() => {
 });
 
 describe("AdminKnowledgeStudioPage", () => {
+  it("selects the article requested by the item query parameter", async () => {
+    setupFetch();
+    renderStudio("/app/admin/knowledge/studio?item=item-2");
+
+    expect(await screen.findByRole("heading", { name: "Студия знаний" })).toBeInTheDocument();
+    const editor = await screen.findByTestId("knowledge-editor-content");
+    await waitFor(() => expect(editor.textContent ?? "").toContain("Power-cycle the printer"));
+    expect(screen.getByLabelText("Заголовок")).toHaveValue("Printer reset");
+  });
+
   it("renders one TipTap authoring editor with visible markup states instead of a raw markdown textarea", async () => {
     setupFetch();
     renderStudio();

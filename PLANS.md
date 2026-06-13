@@ -3691,3 +3691,29 @@ Known risks:
 * ACL leakage is the highest-risk area. Add regression tests before enabling RAG answers.
 * `/app/kb/*` remains a protected requester-owned route family; every browser/live gate must include unauthenticated redirect, requester-safe projection, support/admin diagnostics separation and public `/app/help` compatibility.
 * AI/RAG provider secret leakage checks must include browser console/network evidence, server audit/log/error redaction paths and screenshots; route-only rendering is not sufficient when a real provider key is enabled.
+
+---
+
+## Knowledge Graph editor correction, 2026-06-13
+
+Changed:
+
+* `/app/admin/knowledge/graph` was moved from a mostly visual graph view to an explicit graph editor workflow with modes for selection, node creation and node linking.
+* The graph inspector now edits selected node fields through the existing graph API, archives nodes/edges through API mutations, and opens linked articles in Studio.
+* `/app/admin/knowledge/studio?item=...` now selects the requested article by `item_id` or slug after Knowledge items load, so graph-to-Studio navigation opens the intended article instead of the default item.
+
+Scenarios checked locally:
+
+* Graph mode controls render: selection, add node, link nodes.
+* Add node submits `POST /api/web/knowledge/graph/nodes`.
+* Link nodes submits `POST /api/web/knowledge/graph/edges`.
+* Edit node submits `PATCH /api/web/knowledge/graph/nodes/{stable_key}`.
+* Archive edge/node still calls the existing DELETE endpoints.
+* Studio honors `?item=item-2` and loads the requested article body/title.
+
+Still required before closing the browser-visible gate:
+
+* Deploy the current branch to the remote stand.
+* Browser screenshots for `/app/admin/knowledge/graph` at 1366x768 and 1920x1080.
+* Browser verification that there is no horizontal scroll and that primary graph actions are visible without scrolling.
+* Browser verification that add-node, link-node and Studio navigation are usable on the live UI.
