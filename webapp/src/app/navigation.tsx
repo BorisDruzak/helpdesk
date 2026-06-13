@@ -430,7 +430,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Граф знаний",
-    description: "Узлы, связи и article relationships",
+    description: "Узлы, связи и отношения статей",
     icon: GitBranch,
     section: "admin",
     workspace: "admin",

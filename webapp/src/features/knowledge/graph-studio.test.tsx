@@ -11,66 +11,55 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
+const graphNodes = [
+  {
+    node_id: "node-vpn",
+    stable_key: "concept:vpn",
+    node_type: "concept",
+    label: "VPN: подключение",
+    visibility: "support_internal",
+    status: "active",
+  },
+  {
+    node_id: "node-article",
+    stable_key: "knowledge_item:vpn-access",
+    node_type: "knowledge_item",
+    label: "Статья про доступ VPN",
+    linked_item_id: "item-vpn",
+    visibility: "requester",
+    status: "active",
+  },
+  {
+    node_id: "node-service",
+    stable_key: "service:network",
+    node_type: "service",
+    label: "Сетевые сервисы",
+    visibility: "support_internal",
+    status: "active",
+  },
+];
+
+const graphEdges = [
+  {
+    edge_id: "edge-1",
+    source_node_id: "node-vpn",
+    target_node_id: "node-article",
+    relation_type: "mentions",
+    visibility: "support_internal",
+    status: "active",
+    weight: 1,
+    confidence_score: 0.8,
+  },
+];
+
 function setupFetch() {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/web/knowledge/graph/nodes" && !init?.method) {
-      return jsonResponse({
-        status: "ok",
-        nodes: [
-          {
-            node_id: "node-vpn",
-            stable_key: "concept:vpn",
-            node_type: "concept",
-            label: "VPN concept",
-            visibility: "support_internal",
-            status: "active",
-          },
-          {
-            node_id: "node-article",
-            stable_key: "knowledge_item:vpn-access",
-            node_type: "knowledge_item",
-            label: "VPN access article",
-            linked_item_id: "item-vpn",
-            visibility: "requester",
-            status: "active",
-          },
-        ],
-      });
+      return jsonResponse({ status: "ok", nodes: graphNodes });
     }
-    if (url === "/api/web/knowledge/graph/nodes/concept%3Avpn/neighborhood?depth=2") {
-      return jsonResponse({
-        status: "ok",
-        nodes: [
-          {
-            node_id: "node-vpn",
-            stable_key: "concept:vpn",
-            node_type: "concept",
-            label: "VPN concept",
-            visibility: "support_internal",
-            status: "active",
-          },
-          {
-            node_id: "node-article",
-            stable_key: "knowledge_item:vpn-access",
-            node_type: "knowledge_item",
-            label: "VPN access article",
-            linked_item_id: "item-vpn",
-            visibility: "requester",
-            status: "active",
-          },
-        ],
-        edges: [
-          {
-            edge_id: "edge-1",
-            source_node_id: "node-vpn",
-            target_node_id: "node-article",
-            relation_type: "mentions",
-            visibility: "support_internal",
-            status: "active",
-          },
-        ],
-      });
+    if (url.startsWith("/api/web/knowledge/graph/nodes/") && url.endsWith("/neighborhood?depth=2")) {
+      return jsonResponse({ status: "ok", nodes: graphNodes, edges: graphEdges });
     }
     if (url === "/api/web/knowledge/graph/layouts/default" && !init?.method) {
       return jsonResponse({
@@ -81,8 +70,9 @@ function setupFetch() {
           scope_ref: "default",
           layout_json: {
             nodes: {
-              "concept:vpn": { x: 450, y: 90 },
-              "knowledge_item:vpn-access": { x: 450, y: 470 },
+              "concept:vpn": { x: 160, y: 180 },
+              "knowledge_item:vpn-access": { x: 480, y: 180 },
+              "service:network": { x: 320, y: 380 },
             },
             viewport: { zoom: 1 },
           },
@@ -98,7 +88,7 @@ function setupFetch() {
             proposal_type: "graph_edge",
             target_kind: "graph",
             target_ref: "default",
-            title: "Connect VPN concept to article",
+            title: "Связать понятие VPN со статьёй",
             status: "pending",
             confidence_score: 0.82,
             proposed_payload: {
@@ -118,7 +108,7 @@ function setupFetch() {
           proposal_type: "graph_edge",
           target_kind: "graph",
           target_ref: "default",
-          title: "Connect VPN concept to article",
+          title: "Связать понятие VPN со статьёй",
           status: "approved",
         },
       });
@@ -128,7 +118,7 @@ function setupFetch() {
       return jsonResponse({
         status: "ok",
         node: {
-          node_id: "node-mfa",
+          node_id: "node-new",
           stable_key: body.stable_key,
           label: body.label,
           node_type: body.node_type,
@@ -137,53 +127,40 @@ function setupFetch() {
       });
     }
     if (url === "/api/web/knowledge/graph/edges" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
       return jsonResponse({
         status: "ok",
         edge: {
           edge_id: "edge-2",
-          relation_type: JSON.parse(String(init.body)).relation_type,
+          source_node_id: "node-article",
+          target_node_id: "node-service",
+          relation_type: body.relation_type,
+          visibility: body.visibility,
+          status: "active",
         },
       });
     }
-    if (url === "/api/web/knowledge/graph/nodes/concept%3Avpn" && init?.method === "PATCH") {
+    if (url === "/api/web/knowledge/graph/edges/edge-1" && init?.method === "PATCH") {
       const body = JSON.parse(String(init.body));
       return jsonResponse({
         status: "ok",
-        node: {
-          node_id: "node-vpn",
-          stable_key: "concept:vpn",
-          label: body.label,
-          node_type: "concept",
-          visibility: "support_internal",
-          status: "confirmed",
+        edge: {
+          ...graphEdges[0],
+          relation_type: body.relation_type,
+          visibility: body.visibility,
+          weight: body.weight,
         },
       });
     }
     if (url === "/api/web/knowledge/graph/edges/edge-1" && init?.method === "DELETE") {
-      return jsonResponse({
-        status: "ok",
-        edge: {
-          edge_id: "edge-1",
-          source_node_id: "node-vpn",
-          target_node_id: "node-article",
-          relation_type: "mentions",
-          visibility: "support_internal",
-          status: "archived",
-        },
-      });
+      return jsonResponse({ status: "ok", edge: { ...graphEdges[0], status: "archived" } });
+    }
+    if (url === "/api/web/knowledge/graph/nodes/concept%3Avpn" && init?.method === "PATCH") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({ status: "ok", node: { ...graphNodes[0], label: body.label } });
     }
     if (url === "/api/web/knowledge/graph/nodes/concept%3Avpn" && init?.method === "DELETE") {
-      return jsonResponse({
-        status: "ok",
-        node: {
-          node_id: "node-vpn",
-          stable_key: "concept:vpn",
-          label: "VPN concept",
-          node_type: "concept",
-          visibility: "support_internal",
-          status: "archived",
-        },
-      });
+      return jsonResponse({ status: "ok", node: { ...graphNodes[0], status: "archived" } });
     }
     if (url === "/api/web/knowledge/graph/layouts/default" && init?.method === "POST") {
       return jsonResponse({
@@ -217,6 +194,10 @@ function renderGraphStudio() {
   );
 }
 
+function edgePostCount(fetchMock: ReturnType<typeof setupFetch>) {
+  return fetchMock.mock.calls.filter((call) => call[0] === "/api/web/knowledge/graph/edges" && call[1]?.method === "POST").length;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -233,58 +214,53 @@ beforeEach(() => {
 });
 
 describe("KnowledgeGraphStudioPage", () => {
-  it("renders React Flow as the primary editable graph canvas with explicit graph editing modes", async () => {
+  it("renders a localized canvas-first graph workbench", async () => {
     setupFetch();
     renderGraphStudio();
 
     expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
     expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
-    expect(screen.getByText("React Flow canvas")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Показать весь граф" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Выбор" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Проводник" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Холст" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Инспектор" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Выбрать" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Связать" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Добавить узел" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Связать узлы" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Авторазложить" })).toBeInTheDocument();
-    expect(screen.queryByRole("img", { name: "Карта графа знаний" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Проверить" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Авто-схема" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить схему" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Добавить узел" }));
-    expect(screen.getByRole("heading", { name: "Создание узла" })).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /Production Graph Editor|Explorer|Canvas|Inspector|Connect Mode|Connect|Save graph|Relation palette|Connection inspector|Node palette|All nodes|Label|Type|Visibility|Status|Approve|Reject/i,
+      ),
+    ).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Связать узлы" }));
-    expect(screen.getByRole("heading", { name: "Связать узлы" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Источник связи")).toHaveValue("concept:vpn");
-    expect(screen.getByLabelText("Целевой узел")).toBeInTheDocument();
+  it("selects nodes and opens linked articles from the inspector", async () => {
+    setupFetch();
+    renderGraphStudio();
 
-    fireEvent.click(screen.getAllByRole("button", { name: /VPN access article/ })[0]);
-    expect(screen.getByRole("link", { name: "Открыть статью в Studio" })).toHaveAttribute(
+    fireEvent.click((await screen.findAllByRole("button", { name: /Статья про доступ VPN/ }))[0]);
+
+    expect(await screen.findByRole("heading", { name: "Свойства узла" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Название узла")).toHaveValue("Статья про доступ VPN");
+    expect(screen.getByRole("link", { name: "Открыть статью в Студии" })).toHaveAttribute(
       "href",
       "/app/admin/knowledge/studio?item=item-vpn",
     );
   });
 
-  it("creates nodes and edges through explicit graph editor controls", async () => {
+  it("creates a node from the graph editor without manual stable key entry", async () => {
     const fetchMock = setupFetch();
     renderGraphStudio();
 
-    expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
-    expect((await screen.findAllByRole("button", { name: /VPN concept/ }))[0]).toBeInTheDocument();
-    expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
-    expect(screen.getByText("React Flow canvas")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Авторазложить" }));
-    expect(screen.queryByRole("img", { name: "Карта графа знаний" })).not.toBeInTheDocument();
-    expect(await screen.findByText("Layout сохранен для scope default")).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole("button", { name: /VPN concept/ })[0]);
-    expect((await screen.findAllByText("mentions")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("VPN access article").length).toBeGreaterThan(0);
-
+    await screen.findByRole("heading", { name: "Граф знаний" });
     fireEvent.click(screen.getByRole("button", { name: "Добавить узел" }));
-    fireEvent.change(screen.getByLabelText("Метка узла"), { target: { value: "MFA concept" } });
-    fireEvent.change(screen.getByLabelText("Тип узла"), { target: { value: "concept" } });
-    fireEvent.change(screen.getByLabelText("Видимость узла"), { target: { value: "support_internal" } });
-    fireEvent.click(screen.getByText("Advanced: graph ids"));
-    fireEvent.change(screen.getByLabelText("Ключ узла"), { target: { value: "concept:mfa" } });
-    fireEvent.click(screen.getByRole("button", { name: "Добавить узел на граф" }));
+    fireEvent.change(screen.getByLabelText("Название нового узла"), { target: { value: "Новая статья" } });
+    fireEvent.change(screen.getByLabelText("Тип нового узла"), { target: { value: "knowledge_item" } });
+    fireEvent.change(screen.getByLabelText("Видимость нового узла"), { target: { value: "requester" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать узел" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -294,18 +270,35 @@ describe("KnowledgeGraphStudioPage", () => {
     );
     const createNodeCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/nodes" && call[1]?.method === "POST");
     expect(JSON.parse(String(createNodeCall?.[1]?.body))).toMatchObject({
-      stable_key: "concept:mfa",
-      label: "MFA concept",
-      node_type: "concept",
-      visibility: "support_internal",
+      stable_key: "knowledge_item:novaya-statya",
+      label: "Новая статья",
+      node_type: "knowledge_item",
+      visibility: "requester",
     });
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Связать узлы" }));
-    const edgeForm = screen.getByRole("group", { name: "Связать узлы" });
-    fireEvent.change(within(edgeForm).getByLabelText("Источник связи"), { target: { value: "knowledge_item:vpn-access" } });
-    fireEvent.change(within(edgeForm).getByLabelText("Целевой узел"), { target: { value: "concept:vpn" } });
-    fireEvent.change(within(edgeForm).getByLabelText("Тип связи"), { target: { value: "mentions" } });
-    fireEvent.click(within(edgeForm).getByRole("button", { name: "Создать связь" }));
+  it("validates connection drafts and creates real graph edges", async () => {
+    const fetchMock = setupFetch();
+    renderGraphStudio();
+
+    await screen.findByRole("heading", { name: "Граф знаний" });
+    fireEvent.click(screen.getByRole("button", { name: "Связать" }));
+    const draft = screen.getByRole("group", { name: "Черновик связи" });
+
+    fireEvent.change(within(draft).getByLabelText("Источник"), { target: { value: "concept:vpn" } });
+    fireEvent.change(within(draft).getByLabelText("Цель"), { target: { value: "concept:vpn" } });
+    fireEvent.click(within(draft).getByRole("button", { name: "Создать связь" }));
+    expect(await screen.findByText("Нельзя связать узел с самим собой.")).toBeInTheDocument();
+    expect(edgePostCount(fetchMock)).toBe(0);
+
+    fireEvent.change(within(draft).getByLabelText("Цель"), { target: { value: "knowledge_item:vpn-access" } });
+    fireEvent.change(within(draft).getByLabelText("Тип связи"), { target: { value: "mentions" } });
+    fireEvent.click(within(draft).getByRole("button", { name: "Создать связь" }));
+    expect(await screen.findByText("Такая связь уже есть в графе.")).toBeInTheDocument();
+    expect(edgePostCount(fetchMock)).toBe(0);
+
+    fireEvent.change(within(draft).getByLabelText("Тип связи"), { target: { value: "related_to" } });
+    fireEvent.click(within(draft).getByRole("button", { name: "Создать связь" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -315,13 +308,51 @@ describe("KnowledgeGraphStudioPage", () => {
     );
     const createEdgeCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/edges" && call[1]?.method === "POST");
     expect(JSON.parse(String(createEdgeCall?.[1]?.body))).toMatchObject({
-      source_stable_key: "knowledge_item:vpn-access",
-      target_stable_key: "concept:vpn",
-      relation_type: "mentions",
+      source_stable_key: "concept:vpn",
+      target_stable_key: "knowledge_item:vpn-access",
+      relation_type: "related_to",
       visibility: "support_internal",
     });
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить layout" }));
+  it("edits selected edges through the inspector", async () => {
+    const fetchMock = setupFetch();
+    renderGraphStudio();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Выбрать связь Упоминает" }));
+
+    expect(await screen.findByRole("heading", { name: "Свойства связи" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Тип выбранной связи"), { target: { value: "supersedes" } });
+    fireEvent.change(screen.getByLabelText("Вес связи"), { target: { value: "0.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить связь" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/edges/edge-1",
+        expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
+      ),
+    );
+    const patchCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/edges/edge-1" && call[1]?.method === "PATCH");
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toMatchObject({ relation_type: "supersedes", weight: 0.5 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Архивировать связь" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/graph/edges/edge-1",
+        expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
+      ),
+    );
+  });
+
+  it("saves dirty layout state and reviews AI proposals", async () => {
+    const fetchMock = setupFetch();
+    renderGraphStudio();
+
+    await screen.findByRole("heading", { name: "Граф знаний" });
+    fireEvent.click(screen.getByRole("button", { name: "Авто-схема" }));
+    expect(screen.getByText("Есть несохранённые изменения схемы")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить схему" }));
+
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/knowledge/graph/layouts/default",
@@ -337,36 +368,9 @@ describe("KnowledgeGraphStudioPage", () => {
       },
     });
 
-    fireEvent.change(screen.getByLabelText("Метка выбранного узла"), { target: { value: "VPN concept updated" } });
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить узел" }));
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/knowledge/graph/nodes/concept%3Avpn",
-        expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
-      ),
-    );
-    const updateNodeCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/graph/nodes/concept%3Avpn" && call[1]?.method === "PATCH");
-    expect(JSON.parse(String(updateNodeCall?.[1]?.body))).toMatchObject({ label: "VPN concept updated" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Архивировать связь edge-1" }));
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/knowledge/graph/edges/edge-1",
-        expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
-      ),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "Архивировать выбранный узел" }));
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/knowledge/graph/nodes/concept%3Avpn",
-        expect.objectContaining({ method: "DELETE", credentials: "same-origin" }),
-      ),
-    );
-
-    expect(await screen.findByText("AI proposals")).toBeInTheDocument();
-    expect(screen.getByText("Connect VPN concept to article")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Approve proposal prop-graph-1" }));
+    expect(await screen.findByText("Предложения AI")).toBeInTheDocument();
+    expect(screen.getByText("Связать понятие VPN со статьёй")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Одобрить предложение" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/knowledge/ai/proposals/prop-graph-1/review",

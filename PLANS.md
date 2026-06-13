@@ -3720,3 +3720,47 @@ Browser/live validation completed:
 * Confirmed graph-to-Studio navigation opens `/app/admin/knowledge/studio?item=...` and loads Studio.
 * Confirmed live UI mutations hit real graph endpoints: `POST /api/web/knowledge/graph/nodes`, `POST /api/web/knowledge/graph/edges`, and cleanup `DELETE /api/web/knowledge/graph/nodes/{stable_key}` all returned 200.
 * Browser console had no warning/error entries during the external Chrome validation. The in-app Browser tab had a comment-overlay layer, so functional clicks were verified in a clean Chrome context using the same authenticated session; in-app Browser was still used for visual/DOM orientation.
+
+---
+
+## Knowledge Graph production editor redesign, 2026-06-13
+
+Changed:
+
+* `/app/admin/knowledge/graph` rebuilt as a Russian-localized Workbench: left conductor/palettes, central React Flow canvas, right sticky inspector.
+* Graph operations moved into canvas and inspector: select, connect, add node, pan, lasso placeholder, validate, auto layout, undo/redo, save layout.
+* Nodes and edges now use custom React Flow renderers with visible handles, type coloring, relation labels and inline node actions.
+* Edge editing is no longer visual-only: selecting a relation opens the edge inspector with relation type, visibility, weight, confidence, save and archive actions.
+* Node creation generates stable keys from the Russian label and does not require manual key entry in the primary workflow.
+* Self-loop and duplicate relation validation blocks API calls before `createKnowledgeGraphEdge`.
+
+Scenarios checked locally:
+
+* Russian page/workbench labels render without English production-editor labels.
+* Selecting a node opens the node inspector and exposes the linked Studio route.
+* Add node submits `POST /api/web/knowledge/graph/nodes` with generated `stable_key`.
+* Connect mode blocks self-loop and duplicate relations before API call, then creates a valid relation through `POST /api/web/knowledge/graph/edges`.
+* Selecting an edge opens the edge inspector; save calls `PATCH /api/web/knowledge/graph/edges/{edge_id}` and archive calls `DELETE`.
+* Auto layout marks dirty state; save layout calls `POST /api/web/knowledge/graph/layouts/default`.
+* AI graph proposal review calls `POST /api/web/knowledge/ai/proposals/{proposal_id}/review`.
+
+Verification:
+
+* `pnpm --dir webapp exec vitest run src/features/knowledge/graph-studio.test.tsx --reporter=dot` passed, 6 tests.
+* `pnpm --dir webapp exec tsc --noEmit --pretty false` passed.
+* `pnpm --dir webapp build` passed.
+* `python scripts/verify_workspace.py` passed.
+* `python -m pytest server/tests/test_knowledge_api.py::test_knowledge_graph_layouts_save_and_load server/tests/test_knowledge_api.py::test_knowledge_graph_crud_search_and_archive -q --tb=short` passed, 2 tests.
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` passed and returned remote `/api/health -> 200`.
+
+Browser/live evidence:
+
+* Evidence folder: `artifacts/browser_live_validation/knowledge-graph-production-editor-final-1781348876864/`.
+* Captured `graph-1366-first-screen.png` and `graph-1920-first-screen.png`.
+* Captured interaction screenshots for connect mode, selected node, selected edge, add node state, validation error and dirty layout state.
+* Browser DOM checks passed: no horizontal body scroll at 1366x768 or 1920x1080; primary canvas actions are visible above the first-screen fold; Graph navigation label is Russian-localized and old English `article relationships` text is absent.
+* Browser console check returned no errors/warnings during final graph validation.
+
+Follow-up:
+
+* Full CI/full release gate was not run for this UI-only graph editor refactor; quick deploy gate plus targeted frontend/backend checks were used.
