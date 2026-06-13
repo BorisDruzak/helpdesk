@@ -61,6 +61,16 @@ Current open gates before final Knowledge vNext signoff:
 * Browser evidence собрано для всех семи admin Knowledge routes на 1366×768 и 1920×1080: `knowledge-ops-final-*`, `knowledge-studio-final-*`, `knowledge-graph-final-*`, `knowledge-import-final-*`, `knowledge-search-settings-final-*`, `knowledge-ai-final-*`, `knowledge-indexing-final-*`. Проверено: primary actions видны без прокрутки, horizontal scroll отсутствует, Studio показывает единый редактор и визуальные легенды разметки, Graph показывает React Flow editor canvas и inspector action.
 * Осталось вне этого UI signoff: общий Knowledge vNext product signoff по live OpenRouter/retrieval остаётся в верхних open gates и не блокирует админский UI refactor.
 
+2026-06-13 Knowledge Studio reference 01 follow-up:
+
+* `/app/admin/knowledge/studio` дополнительно перестроен по приложенному reference 01: первый экран теперь `Article Explorer -> Unified Article Editor -> Inspector`, без нижней ленты независимых карточек.
+* Постоянная форма `Новый черновик` убрана из левой колонки; создание открывается в drawer, а owner/reviewer/tags скрыты в `Advanced / служебные поля`.
+* Основные поля, metadata model, preview, diff, history, validation, publish и segmentation перенесены внутрь шагов единого редактора; inspector держит версии, computed checklist и publish/review/rollback/archive действия без прокрутки.
+* Разметка встроена в шаг `Разметка`: TipTap передаёт выделение текста в сегментацию, auto-markup и список сегментов версии находятся рядом с формой сегмента.
+* Проверено локально: `pnpm --dir webapp exec tsc --noEmit --pretty false`; `pnpm --dir webapp exec vitest run src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/article-segmentation-panel.test.tsx src/features/knowledge/article-metadata-panel.test.tsx --reporter=dot` — 3 файла, 8 тестов.
+* Browser evidence обновлено на стенде `https://192.168.100.17:9443/app/admin/knowledge/studio`; артефакты локальные/untracked: `knowledge-studio-reference-1366x768.png`, `knowledge-studio-reference-1920x1080.png`, `knowledge-studio-reference-segments-form-1366x768.png`, `knowledge-studio-reference-new-draft-drawer-1366x768.png`, `knowledge-studio-reference-console.json`, `knowledge-studio-reference-network.json`.
+* Browser checks: 1366×768 и 1920×1080 без horizontal body scroll; `Создать версию` видна без прокрутки; три зоны `Черновики и статьи`, `Единый редактор статьи`, `Инспектор и публикация` видны; старые bottom-card labels отсутствуют; drawer `Новый черновик` открывается как `role=dialog`; console warnings/errors = 0; network requests = 200.
+
 Target product surfaces:
 
 * `/app/kb`

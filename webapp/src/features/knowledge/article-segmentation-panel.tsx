@@ -4,7 +4,7 @@ import { Blocks, SplitSquareHorizontal, Trash2 } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import {
   archiveKnowledgeSegment,
   autoSegmentKnowledgeItem,
@@ -97,12 +97,19 @@ type SegmentDraft = {
 };
 
 type ArticleSegmentationPanelProps = {
-  item: KnowledgeItem | null;
-  version: KnowledgeItemVersion | null;
   canManage: boolean;
+  editorSelection?: {
+    from: number;
+    text: string;
+    to: number;
+  };
+  embedded?: boolean;
+  item: KnowledgeItem | null;
+  sourceBody?: string;
+  version: KnowledgeItemVersion | null;
 };
 
-export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSegmentationPanelProps) {
+export function ArticleSegmentationPanel({ canManage, editorSelection, embedded = false, item, sourceBody, version }: ArticleSegmentationPanelProps) {
   const queryClient = useQueryClient();
   const sourceRef = useRef<HTMLTextAreaElement | null>(null);
   const [message, setMessage] = useState("");
@@ -126,7 +133,7 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
 
   const itemId = item?.item_id ?? "";
   const versionId = version?.version_id ?? "";
-  const versionBody = version?.body ?? "";
+  const versionBody = sourceBody ?? version?.body ?? "";
   const segmentsQuery = useQuery({
     queryKey: ["knowledge-segments", itemId],
     queryFn: () => fetchKnowledgeSegments(itemId),
@@ -209,7 +216,35 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
     setMessage(`Выделено ${selectedText.length} символов`);
   }
 
+  function takeEditorSelection() {
+    const selectedText = editorSelection?.text.trim() ?? "";
+    if (!selectedText) {
+      setMessage("Выделите текст в редакторе статьи перед созданием сегмента");
+      return;
+    }
+    const normalizedStart = versionBody.indexOf(selectedText);
+    setDraft((current) => ({
+      ...current,
+      title: current.title || firstMeaningfulLine(selectedText),
+      text: selectedText,
+      start_offset: normalizedStart >= 0 ? normalizedStart : null,
+      end_offset: normalizedStart >= 0 ? normalizedStart + selectedText.length : null,
+    }));
+    setMessage(`Выделение редактора перенесено в сегмент: ${selectedText.length} символов`);
+  }
+
   if (!item || !version) {
+    if (embedded) {
+      return (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+            <Blocks className="h-5 w-5" />
+            Разметка статьи
+          </p>
+          <p className="mt-1 text-sm text-slate-500">Выберите статью и версию для разметки.</p>
+        </div>
+      );
+    }
     return (
       <Card>
         <CardHeader>
@@ -223,18 +258,34 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
     );
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Blocks className="h-5 w-5" />
-          Разметка статьи
-        </CardTitle>
-        <CardDescription>Ручные и автоматические сегменты поиска без AI и будущих эмбеддингов.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+  const content = (
+    <>
+      {embedded ? (
+        <div className="mb-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+            <Blocks className="h-5 w-5" />
+            Разметка статьи
+          </p>
+          <p className="mt-1 text-sm text-slate-500">Ручные и автоматические сегменты встроены в единый редактор.</p>
+        </div>
+      ) : (
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Blocks className="h-5 w-5" />
+            Разметка статьи
+          </CardTitle>
+          <CardDescription>Ручные и автоматические сегменты поиска без AI и будущих эмбеддингов.</CardDescription>
+        </CardHeader>
+      )}
+      <div className={`space-y-4 ${embedded ? "" : "px-6 pb-6"}`}>
+        <div className="rounded-md border border-brand-100 bg-brand-50 px-3 py-2 text-sm text-brand-900">
+          {editorSelection?.text ? `В редакторе выделено ${editorSelection.text.length} символов.` : "Выделите текст в редакторе статьи, затем создайте сегмент из выделения."}
+        </div>
+        <Button variant="outline" size="sm" onClick={takeEditorSelection} disabled={!canManage || !editorSelection?.text}>
+          Создать сегмент из выделения редактора
+        </Button>
         <label className="text-sm font-medium">
-          Текст версии для выделения
+          Текст версии для fallback-выделения
           <textarea
             ref={sourceRef}
             aria-label="Текст версии для выделения"
@@ -247,129 +298,143 @@ export function ArticleSegmentationPanel({ item, version, canManage }: ArticleSe
           Взять выделенный текст
         </Button>
 
-        <div className="grid gap-3">
-          <label className="text-sm font-medium">
-            Заголовок сегмента
-            <input className={fieldClass} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
-          </label>
-          <label className="text-sm font-medium">
-            Текст сегмента
-            <textarea className={`${fieldClass} min-h-28`} value={draft.text} onChange={(event) => setDraft({ ...draft, text: event.target.value })} />
-          </label>
-          <label className="text-sm font-medium">
-            Ключевые слова
-            <input className={fieldClass} value={draft.keywords} onChange={(event) => setDraft({ ...draft, keywords: event.target.value })} />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div className="space-y-3">
             <label className="text-sm font-medium">
-              Видимость
-              <select className={fieldClass} value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value })}>
-                {visibilityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              Заголовок сегмента
+              <input className={fieldClass} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
             </label>
             <label className="text-sm font-medium">
-              Вес поиска
-              <input
-                className={fieldClass}
-                type="number"
-                min={0}
-                max={10}
-                step={0.5}
-                value={draft.boost}
-                onChange={(event) => setDraft({ ...draft, boost: Number(event.target.value) })}
-              />
+              Текст сегмента
+              <textarea className={`${fieldClass} min-h-28`} value={draft.text} onChange={(event) => setDraft({ ...draft, text: event.target.value })} />
             </label>
-          </div>
-          <div className="flex flex-wrap gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={draft.full_text_enabled}
-                onChange={(event) => setDraft({ ...draft, full_text_enabled: event.target.checked })}
-              />
-              Полнотекстовый поиск
+            <label className="text-sm font-medium">
+              Ключевые слова
+              <input className={fieldClass} value={draft.keywords} onChange={(event) => setDraft({ ...draft, keywords: event.target.value })} />
             </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={draft.embedding_enabled}
-                onChange={(event) => setDraft({ ...draft, embedding_enabled: event.target.checked })}
-              />
-              Эмбеддинги
-            </label>
-          </div>
-          <Button onClick={() => createMutation.mutate()} disabled={!canManage || !versionId || !draft.text || createMutation.isPending}>
-            Создать сегмент
-          </Button>
-        </div>
-
-        <div className="rounded-md border border-slate-200 p-3">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="min-w-0 flex-1 text-sm font-medium">
-              Профиль авторазметки
-              <select className={fieldClass} value={profileCode} onChange={(event) => setProfileCode(event.target.value)}>
-                {(profilesQuery.data ?? []).map((profile) => (
-                  <option key={profile.code} value={profile.code}>
-                    {profile.title}
-                  </option>
-                ))}
-                {!profilesQuery.data?.length ? <option value="default-auto">Авторазметка по заголовкам</option> : null}
-              </select>
-            </label>
-            <Button
-              variant="outline"
-              onClick={() => autoMutation.mutate()}
-              disabled={!canManage || !versionId || autoMutation.isPending}
-              leadingIcon={<SplitSquareHorizontal className="h-4 w-4" />}
-            >
-              Запустить авторазметку
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm font-medium">
+                Видимость
+                <select className={fieldClass} value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value })}>
+                  {visibilityOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Вес поиска
+                <input
+                  className={fieldClass}
+                  type="number"
+                  min={0}
+                  max={10}
+                  step={0.5}
+                  value={draft.boost}
+                  onChange={(event) => setDraft({ ...draft, boost: Number(event.target.value) })}
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={draft.full_text_enabled}
+                  onChange={(event) => setDraft({ ...draft, full_text_enabled: event.target.checked })}
+                />
+                Полнотекстовый поиск
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={draft.embedding_enabled}
+                  onChange={(event) => setDraft({ ...draft, embedding_enabled: event.target.checked })}
+                />
+                Эмбеддинги
+              </label>
+            </div>
+            <Button onClick={() => createMutation.mutate()} disabled={!canManage || !versionId || !draft.text || createMutation.isPending}>
+              Создать сегмент
             </Button>
           </div>
-        </div>
 
-        {message ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{message}</p> : null}
-
-        <div className="space-y-2">
-          <div className="text-xs font-semibold uppercase text-slate-500">Сегменты версии</div>
-          {activeSegments.map((segment: KnowledgeSegment) => (
-            <div key={segment.segment_id} className="rounded-md border border-slate-200 p-3 text-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-medium text-slate-900">{segment.title}</p>
-                  <p className="mt-1 line-clamp-3 text-xs text-slate-600">{segment.text}</p>
-                </div>
-                <Badge tone={tone(segment.status)}>{segmentLabel(segmentStatusLabels, segment.status, "Без статуса")}</Badge>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge tone="neutral">{segmentLabel(segmentTypeLabels, segment.segment_type, "Сегмент")}</Badge>
-                <Badge tone="info">{segmentLabel(segmentSourceLabels, segment.source, "Ручной ввод")}</Badge>
-                <Badge tone="brand">вес {segment.boost ?? 1}</Badge>
-                {(segment.keywords ?? []).map((keyword) => (
-                  <Badge key={keyword} tone="neutral">
-                    {keyword}
-                  </Badge>
-                ))}
-              </div>
-              <div className="mt-3 flex justify-end">
+          <div className="space-y-3">
+            <div className="rounded-md border border-slate-200 p-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="min-w-0 flex-1 text-sm font-medium">
+                  Профиль авторазметки
+                  <select className={fieldClass} value={profileCode} onChange={(event) => setProfileCode(event.target.value)}>
+                    {(profilesQuery.data ?? []).map((profile) => (
+                      <option key={profile.code} value={profile.code}>
+                        {profile.title}
+                      </option>
+                    ))}
+                    {!profilesQuery.data?.length ? <option value="default-auto">Авторазметка по заголовкам</option> : null}
+                  </select>
+                </label>
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => archiveMutation.mutate(segment.segment_id)}
-                  disabled={!canManage || archiveMutation.isPending}
-                  leadingIcon={<Trash2 className="h-4 w-4" />}
+                  variant="outline"
+                  onClick={() => autoMutation.mutate()}
+                  disabled={!canManage || !versionId || autoMutation.isPending}
+                  leadingIcon={<SplitSquareHorizontal className="h-4 w-4" />}
                 >
-                  Архивировать
+                  Запустить авторазметку
                 </Button>
               </div>
             </div>
-          ))}
-          {!segmentsQuery.isLoading && !activeSegments.length ? <p className="text-sm text-slate-500">Для выбранной версии сегменты ещё не созданы.</p> : null}
+
+            {message ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">{message}</p> : null}
+
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase text-slate-500">Сегменты версии</div>
+              {activeSegments.map((segment: KnowledgeSegment) => (
+                <div key={segment.segment_id} className="rounded-md border border-slate-200 p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-900">{segment.title}</p>
+                      <p className="mt-1 line-clamp-3 text-xs text-slate-600">{segment.text}</p>
+                    </div>
+                    <Badge tone={tone(segment.status)}>{segmentLabel(segmentStatusLabels, segment.status, "Без статуса")}</Badge>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge tone="neutral">{segmentLabel(segmentTypeLabels, segment.segment_type, "Сегмент")}</Badge>
+                    <Badge tone="info">{segmentLabel(segmentSourceLabels, segment.source, "Ручной ввод")}</Badge>
+                    <Badge tone="brand">вес {segment.boost ?? 1}</Badge>
+                    {(segment.keywords ?? []).map((keyword) => (
+                      <Badge key={keyword} tone="neutral">
+                        {keyword}
+                      </Badge>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => archiveMutation.mutate(segment.segment_id)}
+                      disabled={!canManage || archiveMutation.isPending}
+                      leadingIcon={<Trash2 className="h-4 w-4" />}
+                    >
+                      Архивировать
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {!segmentsQuery.isLoading && !activeSegments.length ? <p className="text-sm text-slate-500">Для выбранной версии сегменты ещё не созданы.</p> : null}
+            </div>
+          </div>
         </div>
-      </CardContent>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="rounded-lg border border-slate-200 bg-white p-4">{content}</div>;
+  }
+
+  return (
+    <Card>
+      {content}
     </Card>
   );
 }

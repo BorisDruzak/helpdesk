@@ -25,6 +25,7 @@ type KnowledgeTipTapEditorProps = {
   onChange: (value: string) => void;
   onInsertBlock: (block: string) => void;
   onInsertTemplate: (sections: string[]) => void;
+  onSelectionChange?: (selection: { from: number; text: string; to: number }) => void;
   templates: KnowledgeTemplateOption[];
   value: string;
 };
@@ -149,7 +150,15 @@ function serializeTipTapDocument(documentNode: TipTapNode) {
     .join("\n\n");
 }
 
-export function KnowledgeTipTapEditor({ isDisabled = false, onChange, onInsertBlock, onInsertTemplate, templates, value }: KnowledgeTipTapEditorProps) {
+export function KnowledgeTipTapEditor({
+  isDisabled = false,
+  onChange,
+  onInsertBlock,
+  onInsertTemplate,
+  onSelectionChange,
+  templates,
+  value,
+}: KnowledgeTipTapEditorProps) {
   const editor = useEditor({
     content: markdownToHtml(value),
     editorProps: {
@@ -161,6 +170,11 @@ export function KnowledgeTipTapEditor({ isDisabled = false, onChange, onInsertBl
     extensions: [StarterKit, Highlight.configure({ multicolor: true })],
     onUpdate: ({ editor: activeEditor }) => {
       onChange(serializeTipTapDocument(activeEditor.getJSON() as TipTapNode));
+    },
+    onSelectionUpdate: ({ editor: activeEditor }) => {
+      const { from, to } = activeEditor.state.selection;
+      const text = from === to ? "" : activeEditor.state.doc.textBetween(from, to, "\n").trim();
+      onSelectionChange?.({ from, text, to });
     },
   });
 

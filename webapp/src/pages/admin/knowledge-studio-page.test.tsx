@@ -192,8 +192,46 @@ function setupFetch() {
         },
       });
     }
-    if (url === "/api/web/knowledge/items/item-1/segments") {
-      return jsonResponse({ status: "ok", segments: [] });
+    if (url === "/api/web/knowledge/items/item-1/segments" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        segments: [
+          {
+            segment_id: "seg-1",
+            item_id: "item-1",
+            version_id: "ver-1",
+            segment_index: 1,
+            segment_type: "manual",
+            title: "VPN диагностика",
+            text: "Check the tunnel adapter.",
+            keywords: ["vpn"],
+            boost: 1,
+            visibility: "requester",
+            status: "active",
+            source: "editor_selection",
+          },
+        ],
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1/segments" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        display_message: "Сегмент знаний сохранён",
+        segment: {
+          segment_id: "seg-2",
+          item_id: "item-1",
+          version_id: "ver-1",
+          segment_index: 2,
+          segment_type: "manual",
+          title: "Новый сегмент",
+          text: JSON.parse(String(init.body)).text,
+          keywords: [],
+          boost: 1,
+          visibility: "requester",
+          status: "active",
+          source: "editor_selection",
+        },
+      });
     }
     if (url === "/api/web/knowledge/segmentation-profiles") {
       return jsonResponse({ status: "ok", profiles: [] });
@@ -294,7 +332,7 @@ describe("AdminKnowledgeStudioPage", () => {
     setupFetch();
     renderStudio();
 
-    expect(await screen.findByRole("heading", { name: "Студия статей" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Студия знаний" })).toBeInTheDocument();
     expect(await screen.findByTestId("knowledge-tiptap-editor")).toBeInTheDocument();
     expect(screen.getByText("Ручная разметка")).toBeInTheDocument();
     expect(screen.getByText("AI-предложение")).toBeInTheDocument();
@@ -307,28 +345,41 @@ describe("AdminKnowledgeStudioPage", () => {
     setupFetch();
     renderStudio();
 
-    expect(await screen.findByRole("heading", { name: "Студия статей" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Студия знаний" })).toBeInTheDocument();
     expect(screen.getByText("Черновики и статьи")).toBeInTheDocument();
+    expect(screen.getByText("Единый редактор статьи")).toBeInTheDocument();
+    expect(screen.getByText("Инспектор и публикация")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /VPN access/ })).toBeInTheDocument();
     const editor = await loadedEditorContent();
     expect(screen.getByLabelText("Заголовок")).toHaveValue("VPN access");
+    expect(editor.textContent ?? "").toContain("Check the tunnel adapter.");
+    expect(screen.getByText("Живой предпросмотр")).toBeInTheDocument();
+    expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "Проверка публикации" })).getByLabelText("Текст статьи заполнен")).toBeChecked();
+    expect(within(screen.getByRole("group", { name: "Проверка публикации" })).getByLabelText(/Есть сегменты поиска/)).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "2. Метаданные" }));
     expect(screen.getByLabelText("Slug")).toHaveValue("vpn-access");
     expect(screen.getByLabelText("Пространство")).toHaveValue("it-self-service");
     expect(screen.getAllByLabelText("Видимость")[0]).toHaveValue("requester");
     expect(screen.getByLabelText("Владелец")).toHaveValue("owner");
     expect(screen.getByLabelText("Ревьюер")).toHaveValue("reviewer");
     expect(screen.getByLabelText("Теги")).toHaveValue("vpn, remote");
-    expect(editor.textContent ?? "").toContain("Check the tunnel adapter.");
-    expect(screen.getByText("Предпросмотр")).toBeInTheDocument();
-    expect(screen.getAllByRole("heading", { name: "VPN access" }).length).toBeGreaterThan(0);
-    expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Метаданные статьи" })).toBeInTheDocument();
+    expect(screen.getByText("Метаданные статьи")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Таксономия" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Свойства" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Применимость" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Качество" })).toBeInTheDocument();
-    expect(screen.getByText("AI-инструменты отключены")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "3. Разметка" }));
+    expect(await screen.findByText("Создать сегмент из выделения редактора")).toBeInTheDocument();
+    expect(screen.getByText("Сегменты версии")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "4. Проверка" }));
+    expect(screen.getByText("Computed checklist")).toBeInTheDocument();
+    expect(screen.getByText("Diff текущего draft")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "История" }));
     expect(await screen.findByText("История редактора")).toBeInTheDocument();
     expect(screen.getByText("version_created")).toBeInTheDocument();
     expect(screen.getByText("Publish from Studio")).toBeInTheDocument();
@@ -336,9 +387,10 @@ describe("AdminKnowledgeStudioPage", () => {
 
     const visibleText = document.body.textContent ?? "";
     expect(visibleText).toContain("Редактор базы знаний");
-    expect(visibleText).toContain("Владелец нового черновика");
-    expect(visibleText).toContain("Ревьюер нового черновика");
-    expect(visibleText).toContain("Теги для портала заявителя");
+    expect(visibleText).toContain("единый authoring workbench");
+    expect(visibleText).not.toContain("Основные поля статьи");
+    expect(visibleText).not.toContain("Ревью и жизненный цикл");
+    expect(visibleText).not.toContain("AI-инструменты отключены");
     expect(visibleText).not.toContain("Knowledge Authoring");
     expect(visibleText).not.toContain("Owner нового черновика");
     expect(visibleText).not.toContain("Reviewer нового черновика");
@@ -353,7 +405,7 @@ describe("AdminKnowledgeStudioPage", () => {
     const fetchMock = setupFetch();
     renderStudio();
 
-    await screen.findByRole("heading", { name: "Студия статей" });
+    await screen.findByRole("heading", { name: "Студия знаний" });
     const editor = await loadedEditorContent();
     fireEvent.click(await screen.findByRole("button", { name: "Вставить шаблон: Шаблон решения" }));
     await waitFor(() => expect(editor.textContent ?? "").toContain("Симптом"));
@@ -384,10 +436,11 @@ describe("AdminKnowledgeStudioPage", () => {
     });
 
     const checklist = screen.getByRole("group", { name: "Проверка публикации" });
-    fireEvent.click(within(checklist).getByLabelText("Текст статьи заполнен"));
-    fireEvent.click(within(checklist).getByLabelText("Есть краткое описание"));
-    fireEvent.click(within(checklist).getByLabelText("Выбрана безопасная видимость для портала"));
-    fireEvent.click(within(checklist).getByLabelText("Назначен ревьюер"));
+    expect(within(checklist).getByLabelText("Текст статьи заполнен")).toBeChecked();
+    expect(within(checklist).getByLabelText("Есть краткое описание")).toBeChecked();
+    expect(within(checklist).getByLabelText(/Безопасная видимость выбрана/)).toBeChecked();
+    expect(within(checklist).getByLabelText("Назначен ревьюер")).toBeChecked();
+    expect(within(checklist).getByLabelText(/Есть сегменты поиска/)).toBeChecked();
     fireEvent.change(screen.getByLabelText("Комментарий к публикации"), {
       target: { value: "Готово к порталу" },
     });
@@ -410,9 +463,11 @@ describe("AdminKnowledgeStudioPage", () => {
     const fetchMock = setupFetch();
     renderStudio();
 
-    await screen.findByRole("heading", { name: "Студия статей" });
+    await screen.findByRole("heading", { name: "Студия знаний" });
     await loadedEditorContent();
 
+    fireEvent.click(screen.getByRole("button", { name: "Новый черновик" }));
+    expect(screen.getByRole("dialog", { name: "Новый черновик" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Новый заголовок"), { target: { value: "Wi-Fi reconnect" } });
     fireEvent.change(screen.getByLabelText("Новый slug"), { target: { value: "wifi-reconnect" } });
     fireEvent.change(screen.getByLabelText("Краткое описание нового черновика"), { target: { value: "How to reconnect corporate Wi-Fi" } });
@@ -479,7 +534,7 @@ describe("AdminKnowledgeStudioPage", () => {
     const fetchMock = setupFetch();
     renderStudio();
 
-    await screen.findByRole("heading", { name: "Студия статей" });
+    await screen.findByRole("heading", { name: "Студия знаний" });
     await loadedEditorContent();
 
     fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
@@ -511,7 +566,7 @@ describe("AdminKnowledgeStudioPage", () => {
     setupFetch();
     renderStudio();
 
-    await screen.findByRole("heading", { name: "Студия статей" });
+    await screen.findByRole("heading", { name: "Студия знаний" });
     const editor = await loadedEditorContent();
 
     fireEvent.click(screen.getByRole("button", { name: "Callout" }));

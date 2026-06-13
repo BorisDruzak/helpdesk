@@ -45,7 +45,13 @@ function emptyRule(): RuleDraft {
   return { include_mode: "include", priority: "100", scope_ref: "", scope_type: "service" };
 }
 
-export function ArticleMetadataPanel({ canManage, item }: { canManage: boolean; item: KnowledgeItem | null }) {
+type ArticleMetadataPanelProps = {
+  canManage: boolean;
+  embedded?: boolean;
+  item: KnowledgeItem | null;
+};
+
+export function ArticleMetadataPanel({ canManage, embedded = false, item }: ArticleMetadataPanelProps) {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("taxonomy");
   const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
@@ -137,6 +143,14 @@ export function ArticleMetadataPanel({ canManage, item }: { canManage: boolean; 
   }
 
   if (!item) {
+    if (embedded) {
+      return (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="text-sm font-semibold text-slate-950">Метаданные статьи</p>
+          <p className="mt-1 text-sm text-slate-500">Выберите статью для редактирования таксономии, свойств и применимости.</p>
+        </div>
+      );
+    }
     return (
       <Card>
         <CardHeader>
@@ -147,13 +161,9 @@ export function ArticleMetadataPanel({ canManage, item }: { canManage: boolean; 
     );
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Метаданные статьи</CardTitle>
-        <CardDescription>Таксономия, свойства, применимость и качество выбранного материала.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+  const body = (
+    <>
+      <div className="space-y-4">
         <Tabs items={tabs} onValueChange={setActiveTab} value={activeTab} />
         {metadataQuery.isLoading || itemMetadataQuery.isLoading ? <p className="text-sm text-slate-500">Загрузка метаданных статьи...</p> : null}
 
@@ -276,7 +286,29 @@ export function ArticleMetadataPanel({ canManage, item }: { canManage: boolean; 
             <p>Термины: {selectedTermIds.length}; свойства: {propertyDefinitions.length - missingRequired.length}/{propertyDefinitions.length}; правила: {rules.length}</p>
           </div>
         ) : null}
-      </CardContent>
+      </div>
+    </>
+  );
+
+  if (embedded) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-slate-950">Метаданные статьи</p>
+          <p className="mt-1 text-sm text-slate-500">Таксономия, свойства, применимость и качество выбранного материала.</p>
+        </div>
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Метаданные статьи</CardTitle>
+        <CardDescription>Таксономия, свойства, применимость и качество выбранного материала.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">{body}</CardContent>
     </Card>
   );
 }
