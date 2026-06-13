@@ -29,9 +29,6 @@ export function ArticleExplorer({
   selectedItem,
   statusFilter,
 }: ArticleExplorerProps) {
-  const visibleItems = items.slice(0, 10);
-  const hiddenItemsCount = Math.max(items.length - visibleItems.length, 0);
-
   return (
     <Card className="flex max-h-[calc(100vh-10rem)] flex-col overflow-hidden xl:min-h-[calc(100vh-14rem)]">
       <CardHeader className="pb-3">
@@ -78,7 +75,7 @@ export function ArticleExplorer({
           data-testid="knowledge-article-explorer"
         >
           {isLoading ? <p className="text-sm text-slate-500">Загрузка статей...</p> : null}
-          {visibleItems.map((item) => (
+          {items.map((item) => (
             <button
               key={item.item_id}
               className={`w-full rounded-lg border px-3 py-3 text-left text-sm transition-colors ${
@@ -99,9 +96,9 @@ export function ArticleExplorer({
               </span>
             </button>
           ))}
-          {hiddenItemsCount ? (
+          {!isLoading && items.length > 10 ? (
             <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
-              Показаны первые 10 из {items.length}. Уточните поиск или фильтр, чтобы открыть остальные.
+              Прокрутите список, чтобы увидеть все {items.length} материалов.
             </p>
           ) : null}
           {!isLoading && !items.length ? <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-500">Нет статей для выбранного фильтра.</p> : null}

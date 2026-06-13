@@ -3764,3 +3764,28 @@ Browser/live evidence:
 Follow-up:
 
 * Full CI/full release gate was not run for this UI-only graph editor refactor; quick deploy gate plus targeted frontend/backend checks were used.
+
+---
+
+## Knowledge Studio explorer scroll and metadata UX audit, 2026-06-13
+
+Changed:
+
+* `/app/admin/knowledge/studio` article explorer now renders all filtered articles inside its own scroll container instead of capping the visible DOM list at the first 10 items.
+* Search and status filters stay in place; the helper text now tells the admin to scroll the list when more than 10 materials are available.
+
+Scenarios checked locally:
+
+* The explorer remains `overflow-y-auto`.
+* Filtered article 11 is reachable without changing the search query.
+* The old `Показаны первые 10...` cap message is absent.
+
+UI audit evidence captured:
+
+* `/app/admin/knowledge/studio` at 1366x768 before deploy showed only 10 rendered article buttons despite a scrollable explorer container.
+* `/app/admin/knowledge/metadata` at 1366x768 showed the current metadata page as a global dictionary editor, not a simple per-article metadata workflow.
+
+Follow-up:
+
+* Studio needs a clearer article metadata step for visibility, category/taxonomy, properties and applicability inside the article authoring flow.
+* Metadata needs picker-based editors for service/offering/category/property values, visible save states, rule edit/delete controls and dry-run/preview before broad changes.

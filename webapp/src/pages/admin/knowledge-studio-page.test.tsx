@@ -27,6 +27,26 @@ const spacesPayload = {
   ],
 };
 
+const extraArticleItems = Array.from({ length: 11 }, (_, index) => {
+  const number = index + 1;
+  return {
+    item_id: `item-extra-${number}`,
+    space_id: "space-1",
+    slug: `scrollable-article-${number}`,
+    item_type: "article",
+    type: "article",
+    title: `Scrollable article ${number}`,
+    summary: `Extra article ${number} for explorer scrolling`,
+    status: "draft",
+    visibility: "requester",
+    owner_actor_id: "owner",
+    reviewer_actor_id: "reviewer",
+    tags: ["scroll"],
+    current_version_id: null,
+    updated_at: `2026-06-12T05:${String(number).padStart(2, "0")}:00Z`,
+  };
+});
+
 const itemsPayload = {
   status: "ok",
   items: [
@@ -78,6 +98,7 @@ const itemsPayload = {
       current_version_id: "ver-printer",
       updated_at: "2026-06-12T06:00:00Z",
     },
+    ...extraArticleItems,
   ],
 };
 
@@ -474,6 +495,19 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(visibleText).not.toContain("Diff cache");
     expect(visibleText).not.toContain("Rewrite, summarize");
     expect(visibleText).not.toContain(String.fromCharCode(0x0420, 0x045f));
+  });
+
+  it("keeps every filtered article reachable in the explorer scroll list", async () => {
+    setupFetch();
+    renderStudio();
+
+    await screen.findByRole("heading", { name: "Студия знаний" });
+    const explorer = await screen.findByTestId("knowledge-article-explorer");
+
+    expect(explorer).toHaveClass("overflow-y-auto");
+    expect(within(explorer).getByText("Scrollable article 11")).toBeInTheDocument();
+    expect(within(explorer).queryByText(/Показаны первые 10/)).not.toBeInTheDocument();
+    expect(within(explorer).getByText("Прокрутите список, чтобы увидеть все 14 материалов.")).toBeInTheDocument();
   });
 
   it("inserts a template, creates a version and publishes with checklist payload", async () => {
