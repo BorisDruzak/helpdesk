@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AppSidebar } from "./app-sidebar";
 
@@ -11,6 +11,7 @@ const fullPermissions = [
   "admin.access.view",
   "admin.forms.view",
   "admin.inventory.view",
+  "knowledge.metadata.manage",
   "admin.modules.view",
   "admin.observer.view",
   "admin.playbooks.view",
@@ -127,5 +128,47 @@ describe("AppSidebar", () => {
 
     expect(screen.getByRole("button", { name: /Автоматизация/ })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: /Модули/ })).toHaveAttribute("title", expect.stringContaining("Модули"));
+  });
+
+  it("collapses after expanded admin navigation and expands before using collapsed icons", () => {
+    const handleCollapsedChange = vi.fn();
+    const handleNavigate = vi.fn();
+    const { rerender } = render(
+      <MemoryRouter initialEntries={["/app/admin/knowledge/studio"]}>
+        <AppSidebar
+          hasAdminAccess
+          hasSupportAccess={false}
+          onCollapsedChange={handleCollapsedChange}
+          onNavigate={handleNavigate}
+          permissions={fullPermissions}
+          showCollapseToggle
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: /Граф знаний/ }));
+    expect(handleNavigate).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Свернуть меню" }));
+    expect(handleCollapsedChange).toHaveBeenCalledWith(true);
+
+    handleCollapsedChange.mockClear();
+    handleNavigate.mockClear();
+    rerender(
+      <MemoryRouter initialEntries={["/app/admin/knowledge/studio"]}>
+        <AppSidebar
+          collapsed
+          hasAdminAccess
+          hasSupportAccess={false}
+          onCollapsedChange={handleCollapsedChange}
+          onNavigate={handleNavigate}
+          permissions={fullPermissions}
+          showCollapseToggle
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: /Граф знаний/ }));
+    expect(handleCollapsedChange).toHaveBeenCalledWith(false);
+    expect(handleNavigate).not.toHaveBeenCalled();
   });
 });

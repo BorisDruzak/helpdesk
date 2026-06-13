@@ -20,6 +20,7 @@ type AppShellProps = {
   children: ReactNode;
 };
 
+const ADMIN_SIDEBAR_STORAGE_KEY = "pc-client:admin-sidebar-collapsed";
 const FORMS_BUILDER_SIDEBAR_STORAGE_KEY = "pc-client:forms-builder-sidebar-collapsed";
 
 function deriveRoleLabel(value: string | null | undefined) {
@@ -34,11 +35,18 @@ function deriveRoleLabel(value: string | null | undefined) {
   return value ?? "Оператор";
 }
 
-function readFormsSidebarCollapsed() {
+function readAdminSidebarCollapsed(isFormsBuilderRoute: boolean) {
   if (typeof window === "undefined") {
-    return true;
+    return isFormsBuilderRoute;
   }
-  return window.localStorage.getItem(FORMS_BUILDER_SIDEBAR_STORAGE_KEY) !== "expanded";
+  const storedValue = window.localStorage.getItem(ADMIN_SIDEBAR_STORAGE_KEY);
+  if (storedValue) {
+    return storedValue === "collapsed";
+  }
+  if (isFormsBuilderRoute) {
+    return window.localStorage.getItem(FORMS_BUILDER_SIDEBAR_STORAGE_KEY) !== "expanded";
+  }
+  return false;
 }
 
 export function AppShell({ children }: AppShellProps) {
@@ -50,14 +58,15 @@ export function AppShell({ children }: AppShellProps) {
   const hasRequester = hasWorkspaceAccess(session, "requester");
   const isTicketWorkspaceRoute = /^\/app\/tickets(?:\/[^/]+)?\/?$/.test(location.pathname);
   const isFormsBuilderRoute = /^\/app\/admin\/forms\/?$/.test(location.pathname);
-  const [formsSidebarCollapsed, setFormsSidebarCollapsed] = useState(readFormsSidebarCollapsed);
   const currentWorkspace = getActiveWorkspace(location.pathname) ?? "support";
+  const [adminSidebarCollapsed, setAdminSidebarCollapsed] = useState(() => readAdminSidebarCollapsed(isFormsBuilderRoute));
+  const shouldManageSidebar = currentWorkspace === "admin";
 
   useEffect(() => {
-    if (isFormsBuilderRoute) {
-      setFormsSidebarCollapsed(readFormsSidebarCollapsed());
+    if (currentWorkspace === "admin") {
+      setAdminSidebarCollapsed(readAdminSidebarCollapsed(isFormsBuilderRoute));
     }
-  }, [isFormsBuilderRoute]);
+  }, [currentWorkspace, isFormsBuilderRoute]);
 
   useEffect(() => {
     const currentPath = `${location.pathname}${location.search}${location.hash}`;
@@ -95,10 +104,19 @@ export function AppShell({ children }: AppShellProps) {
     });
   }
 
-  function handleFormsSidebarCollapsedChange(collapsed: boolean) {
-    setFormsSidebarCollapsed(collapsed);
+  function handleAdminSidebarCollapsedChange(collapsed: boolean) {
+    setAdminSidebarCollapsed(collapsed);
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(FORMS_BUILDER_SIDEBAR_STORAGE_KEY, collapsed ? "collapsed" : "expanded");
+      window.localStorage.setItem(ADMIN_SIDEBAR_STORAGE_KEY, collapsed ? "collapsed" : "expanded");
+      if (isFormsBuilderRoute) {
+        window.localStorage.setItem(FORMS_BUILDER_SIDEBAR_STORAGE_KEY, collapsed ? "collapsed" : "expanded");
+      }
+    }
+  }
+
+  function handleSidebarNavigate() {
+    if (currentWorkspace === "admin") {
+      handleAdminSidebarCollapsedChange(true);
     }
   }
 
@@ -106,13 +124,14 @@ export function AppShell({ children }: AppShellProps) {
     <div className="min-h-screen bg-app text-slate-950">
       <div className="flex min-h-screen">
         <AppSidebar
-          collapsed={isFormsBuilderRoute ? formsSidebarCollapsed : false}
+          collapsed={shouldManageSidebar ? adminSidebarCollapsed : false}
           hasAdminAccess={hasAdmin}
           hasRequesterAccess={hasRequester}
           hasSupportAccess={hasSupport}
-          onCollapsedChange={handleFormsSidebarCollapsedChange}
+          onCollapsedChange={handleAdminSidebarCollapsedChange}
+          onNavigate={handleSidebarNavigate}
           permissions={session?.permissions ?? []}
-          showCollapseToggle={isFormsBuilderRoute}
+          showCollapseToggle={shouldManageSidebar}
         />
 
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">

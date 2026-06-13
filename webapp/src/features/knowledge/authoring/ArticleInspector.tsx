@@ -99,7 +99,13 @@ export function ArticleInspector({
           <input className={fieldClass} value={reviewNote} onChange={(event) => onReviewNoteChange(event.target.value)} />
         </label>
 
-        <div className="space-y-2">
+        <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">Жизненный цикл версии</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Эти действия меняют статус, публикацию или выбранную версию. Текст редактора фиксируется кнопкой «Создать версию».
+            </p>
+          </div>
           <Button
             className="w-full"
             disabled={!selectedItem || isReviewing}
@@ -132,7 +138,13 @@ export function ArticleInspector({
           </Button>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 rounded-lg border border-slate-200 p-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-950">Ревью</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Комментарий, одобрение и запрос правок отправляются в review-action и не сохраняют текст статьи.
+            </p>
+          </div>
           <Button className="w-full" disabled={!selectedItem || isReviewing} onClick={() => onReviewAction("comment")} size="sm" variant="outline" leadingIcon={<MessageSquare className="h-4 w-4" />}>
             Добавить комментарий
           </Button>

@@ -317,12 +317,6 @@ async function loadedEditorContent() {
   return editor;
 }
 
-function replaceEditorText(value: string) {
-  const editor = screen.getByTestId("knowledge-editor-content");
-  editor.textContent = value;
-  fireEvent.input(editor);
-}
-
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -353,6 +347,8 @@ describe("AdminKnowledgeStudioPage", () => {
     const editor = await loadedEditorContent();
     expect(screen.getByLabelText("Заголовок")).toHaveValue("VPN access");
     expect(editor.textContent ?? "").toContain("Check the tunnel adapter.");
+    expect(screen.queryByText("Живой предпросмотр")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByText("Живой предпросмотр")).toBeInTheDocument();
     expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
     expect(within(screen.getByRole("group", { name: "Проверка публикации" })).getByLabelText("Текст статьи заполнен")).toBeChecked();
@@ -413,7 +409,6 @@ describe("AdminKnowledgeStudioPage", () => {
     await waitFor(() => expect(editor.textContent ?? "").toContain("Симптом"));
     expect(editor.textContent ?? "").toContain("Решение");
 
-    replaceEditorText("# VPN access\n\nUpdated requester-safe body.\n\n## Решение\nReconnect profile.");
     fireEvent.change(screen.getByLabelText("Краткое описание версии"), {
       target: { value: "Updated requester-safe body" },
     });
@@ -433,7 +428,7 @@ describe("AdminKnowledgeStudioPage", () => {
       title: "VPN access",
       summary: "Updated requester-safe body",
       body_format: "markdown",
-      body: expect.stringContaining("Updated requester-safe body."),
+      body: expect.stringContaining("## Симптом"),
       change_summary: "Добавлен requester-safe раздел решения",
     });
 

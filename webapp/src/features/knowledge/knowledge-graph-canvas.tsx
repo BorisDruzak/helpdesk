@@ -9,6 +9,7 @@ import {
   type Edge,
   type Node,
   type NodeChange,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -32,6 +33,9 @@ type GraphCanvasProps = {
 };
 
 type FlowGraphNode = Node<Record<string, unknown>>;
+
+const GRAPH_NODE_WIDTH = 220;
+const GRAPH_NODE_HEIGHT = 84;
 
 function nodeBorder(node: KnowledgeGraphCanvasNode, selectedStableKey?: string) {
   if (node.stable_key === selectedStableKey) {
@@ -63,7 +67,12 @@ export function KnowledgeGraphCanvas({ edges, nodes, nodesById, onConnectNodes, 
           nodeType: node.node_type,
           stableKey: node.stable_key,
         },
+        ariaLabel: node.label,
+        height: GRAPH_NODE_HEIGHT,
         id: node.stable_key,
+        initialHeight: GRAPH_NODE_HEIGHT,
+        initialWidth: GRAPH_NODE_WIDTH,
+        measured: { height: GRAPH_NODE_HEIGHT, width: GRAPH_NODE_WIDTH },
         position: { x: node.x, y: node.y },
         selected: node.stable_key === selectedStableKey,
         style: {
@@ -73,9 +82,17 @@ export function KnowledgeGraphCanvas({ edges, nodes, nodesById, onConnectNodes, 
           color: "#0f172a",
           fontSize: 12,
           fontWeight: 700,
-          minWidth: 160,
+          height: GRAPH_NODE_HEIGHT,
+          lineHeight: 1.35,
+          maxWidth: GRAPH_NODE_WIDTH,
+          overflow: "hidden",
           padding: 10,
+          textOverflow: "ellipsis",
+          whiteSpace: "normal",
+          width: GRAPH_NODE_WIDTH,
+          wordBreak: "break-word",
         },
+        width: GRAPH_NODE_WIDTH,
       })),
     [nodes, selectedStableKey],
   );
@@ -104,10 +121,23 @@ export function KnowledgeGraphCanvas({ edges, nodes, nodesById, onConnectNodes, 
   );
 
   const [localNodes, setLocalNodes] = useState(flowNodes);
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
 
   useEffect(() => {
     setLocalNodes(flowNodes);
   }, [flowNodes]);
+
+  useEffect(() => {
+    if (!flowInstance || !localNodes.length) {
+      return;
+    }
+    const requestFrame = window.requestAnimationFrame ?? ((callback: FrameRequestCallback) => window.setTimeout(callback, 0));
+    const cancelFrame = window.cancelAnimationFrame ?? window.clearTimeout;
+    const animationFrame = requestFrame(() => {
+      flowInstance.fitView({ duration: 250, padding: 0.18 });
+    });
+    return () => cancelFrame(animationFrame);
+  }, [flowEdges.length, flowInstance, localNodes.length, selectedStableKey]);
 
   function handleNodesChange(changes: NodeChange[]) {
     setLocalNodes((currentNodes) => {
@@ -124,11 +154,27 @@ export function KnowledgeGraphCanvas({ edges, nodes, nodesById, onConnectNodes, 
     onConnectNodes({ source_stable_key: connection.source, target_stable_key: connection.target });
   }
 
+  function fitVisibleGraph() {
+    flowInstance?.fitView({ duration: 250, padding: 0.18 });
+  }
+
   return (
     <div className="overflow-hidden rounded-md border border-slate-200 bg-slate-950" data-testid="knowledge-react-flow-canvas">
-      <div className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-200">
-        <span>React Flow canvas</span>
-        <span>{nodes.length ? `${nodes.length} узлов, ${flowEdges.length} связей` : "Нет узлов для отображения"}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-200">
+        <div className="min-w-0">
+          <span>React Flow canvas</span>
+          <span className="ml-3 text-slate-400">
+            {nodes.length ? `${nodes.length} узлов, ${flowEdges.length} связей` : "Нет узлов для отображения"}
+          </span>
+        </div>
+        <button
+          className="rounded-pill border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-100 transition-colors hover:border-slate-400 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!nodes.length}
+          onClick={fitVisibleGraph}
+          type="button"
+        >
+          Показать весь граф
+        </button>
       </div>
       <div className="h-[560px]">
         <ReactFlow
@@ -137,6 +183,7 @@ export function KnowledgeGraphCanvas({ edges, nodes, nodesById, onConnectNodes, 
           minZoom={0.35}
           nodes={localNodes}
           onConnect={handleConnect}
+          onInit={setFlowInstance}
           onNodeClick={(_event, node) => onSelectNode(node.id)}
           onNodesChange={handleNodesChange}
           proOptions={{ hideAttribution: true }}

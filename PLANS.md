@@ -72,6 +72,21 @@ Current open gates before final Knowledge vNext signoff:
 * Browser evidence обновлено на стенде `https://192.168.100.17:9443/app/admin/knowledge/studio`; артефакты локальные/untracked: `knowledge-studio-reference-1366x768.png`, `knowledge-studio-reference-1920x1080.png`, `knowledge-studio-reference-segments-form-1366x768.png`, `knowledge-studio-reference-new-draft-drawer-1366x768.png`, `knowledge-studio-reference-console.json`, `knowledge-studio-reference-network.json`.
 * Browser checks: 1366×768 и 1920×1080 без horizontal body scroll; `Создать версию` видна без прокрутки; три зоны `Черновики и статьи`, `Единый редактор статьи`, `Инспектор и публикация` видны; старые bottom-card labels отсутствуют; drawer `Новый черновик` открывается как `role=dialog`; console warnings/errors = 0; network requests = 200.
 
+2026-06-13 Knowledge Studio/Graph browser comments follow-up:
+
+* `/app/admin/knowledge/studio`: удалён ложный дубль `Сохранить`, потому что он вызывал тот же `createVersion`; осталась одна primary action `Создать версию` с пояснением, что она фиксирует текущий текст и метаданные как новую версию.
+* Inspector разделён по смыслу: lifecycle/publish/rollback/archive описаны как действия над статусом и выбранной версией, review comment/approve/request changes описаны как `review-action`, а не сохранение текста статьи.
+* TipTap editor больше не перезаписывает документ через `textContent`; изменение идёт через TipTap `onUpdate`, поэтому заголовки, списки, bold/italic/code и highlight-разметка не должны сбрасываться в плоский текст.
+* `Preview` убран из постоянной правой колонки шага `Текст`; предпросмотр открывается только через быструю вкладку `Preview`.
+* Левый список статей ограничен прокручиваемой областью и выводит первые 10 результатов с подсказкой уточнить поиск/фильтр, если найдено больше.
+* Admin sidebar теперь сворачивается для всего admin workspace: есть кнопка `Свернуть/Развернуть меню`, выбор пункта навигации сворачивает панель, а клик по значку в свёрнутом состоянии сначала раскрывает панель.
+* `/app/admin/knowledge/graph`: React Flow canvas получил auto-fit после загрузки узлов, кнопку `Показать весь граф`, верхние действия `Авторазложить` и `Сохранить layout`; сохранение layout продолжает идти через существующий graph layout API.
+* Browser-debug по graph canvas нашёл реальную причину пустого вида: React Flow создавал node, но держал его `visibility:hidden` до измерения. Узлам заданы явные `width/height/initial/measured` размеры и ограничение длинного label; полный label остаётся в inspector/sidebar.
+* Проверено локально: `pnpm --dir webapp exec tsc --noEmit --pretty false`; `pnpm --dir webapp exec vitest run src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/graph-studio.test.tsx src/components/shell/app-sidebar.test.tsx --reporter=dot` — 3 файла, 16 тестов.
+* Проверено локально после graph fix: `pnpm --dir webapp build`; `python scripts/verify_workspace.py`; `git diff --check`.
+* Remote/browser evidence на `https://192.168.100.17:9443`: Studio 1366×768 и 1920×1080 без horizontal scroll; `Создать версию` ровно одна, `Сохранить` отсутствует, preview скрыт до клика вкладки `Preview`, список показывает первые 10 из 45; sidebar collapse 260→64px, labels `sr-only`, клик по иконке раскрывает без navigation, второй клик по раскрытому пункту открывает `/graph` и снова сворачивает sidebar.
+* Graph browser evidence: canvas содержит видимый React Flow node, toolbar `Авторазложить`, `Сохранить layout`, `Показать весь граф`; DOM node `visibility: visible`, внутри canvas top/bottom 244–412 из 609px; graph API network requests 200. Screenshots: `knowledge-studio-comments-followup-1366x768.png`, `knowledge-studio-comments-followup-1920x1080.png`, `knowledge-graph-comments-followup-visible-node-1366x768.png`, `knowledge-graph-comments-followup-visible-node-1920x1080.png`.
+
 Target product surfaces:
 
 * `/app/kb`

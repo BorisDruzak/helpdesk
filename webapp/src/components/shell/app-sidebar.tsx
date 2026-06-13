@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -23,6 +23,7 @@ type AppSidebarProps = {
   hasRequesterAccess?: boolean;
   hasSupportAccess: boolean;
   onCollapsedChange?: (collapsed: boolean) => void;
+  onNavigate?: () => void;
   permissions?: string[];
   showCollapseToggle?: boolean;
 };
@@ -86,10 +87,14 @@ function SidebarNavLink({
   collapsed = false,
   item,
   currentPath,
+  onCollapsedChange,
+  onNavigate,
 }: {
   collapsed?: boolean;
   item: AppNavItem;
   currentPath: string;
+  onCollapsedChange?: (collapsed: boolean) => void;
+  onNavigate?: () => void;
 }) {
   const Icon = item.icon;
   const isAvailable = canUseNavigationItemInContext(item, currentPath);
@@ -124,6 +129,15 @@ function SidebarNavLink({
     );
   }
 
+  function handleClick(event: MouseEvent<HTMLAnchorElement>) {
+    if (collapsed && onCollapsedChange) {
+      event.preventDefault();
+      onCollapsedChange(false);
+      return;
+    }
+    onNavigate?.();
+  }
+
   return (
     <Link
       aria-current={isActive ? "page" : undefined}
@@ -133,6 +147,7 @@ function SidebarNavLink({
         collapsed ? "justify-center px-2" : "",
         isActive ? "bg-white text-brand-900 shadow-soft" : "text-brand-50/90 hover:bg-white/10 hover:text-white",
       )}
+      onClick={handleClick}
       title={collapsed ? title : undefined}
       to={target}
     >
@@ -145,15 +160,26 @@ function SupportSidebar({
   collapsed,
   items,
   currentPath,
+  onCollapsedChange,
+  onNavigate,
 }: {
   collapsed: boolean;
   items: AppNavItem[];
   currentPath: string;
+  onCollapsedChange?: (collapsed: boolean) => void;
+  onNavigate?: () => void;
 }) {
   return (
     <nav aria-label="Навигация поддержки" className="space-y-1">
       {items.map((item) => (
-        <SidebarNavLink collapsed={collapsed} currentPath={currentPath} item={item} key={item.to} />
+        <SidebarNavLink
+          collapsed={collapsed}
+          currentPath={currentPath}
+          item={item}
+          key={item.to}
+          onCollapsedChange={onCollapsedChange}
+          onNavigate={onNavigate}
+        />
       ))}
     </nav>
   );
@@ -162,10 +188,14 @@ function SupportSidebar({
 function AdminSidebar({
   collapsed,
   currentPath,
+  onCollapsedChange,
+  onNavigate,
   permissions,
 }: {
   collapsed: boolean;
   currentPath: string;
+  onCollapsedChange?: (collapsed: boolean) => void;
+  onNavigate?: () => void;
   permissions: string[];
 }) {
   const activeDomain = getActiveNavigationDomain(currentPath, permissions);
@@ -205,7 +235,14 @@ function AdminSidebar({
   return (
     <nav aria-label="Навигация администрирования" className="space-y-4">
       {primaryItems.map((item) => (
-        <SidebarNavLink collapsed={collapsed} currentPath={currentPath} item={item} key={item.to} />
+        <SidebarNavLink
+          collapsed={collapsed}
+          currentPath={currentPath}
+          item={item}
+          key={item.to}
+          onCollapsedChange={onCollapsedChange}
+          onNavigate={onNavigate}
+        />
       ))}
 
       <div className="space-y-2">
@@ -230,7 +267,7 @@ function AdminSidebar({
                   "flex w-full items-center gap-2 rounded-panel px-3 py-2.5 text-left text-sm font-semibold text-white transition-colors hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700",
                   collapsed ? "justify-center px-2" : "",
                 )}
-                onClick={() => toggleGroup(domain.id)}
+                onClick={() => (collapsed ? onCollapsedChange?.(false) : toggleGroup(domain.id))}
                 title={collapsed ? domain.label : undefined}
                 type="button"
               >
@@ -248,7 +285,14 @@ function AdminSidebar({
               {isOpen ? (
                 <div className="space-y-1 px-1 pb-2" id={panelId}>
                   {domain.items.map((item) => (
-                    <SidebarNavLink collapsed={collapsed} currentPath={currentPath} item={item} key={item.to} />
+                    <SidebarNavLink
+                      collapsed={collapsed}
+                      currentPath={currentPath}
+                      item={item}
+                      key={item.to}
+                      onCollapsedChange={onCollapsedChange}
+                      onNavigate={onNavigate}
+                    />
                   ))}
                 </div>
               ) : null}
@@ -266,6 +310,7 @@ export function AppSidebar({
   hasRequesterAccess = false,
   hasSupportAccess,
   onCollapsedChange,
+  onNavigate,
   permissions = [],
   showCollapseToggle = false,
 }: AppSidebarProps) {
@@ -316,13 +361,31 @@ export function AppSidebar({
 
       <div className="flex-1 overflow-y-auto pr-1">
         {workspace === "support" ? (
-          <SupportSidebar collapsed={collapsed} currentPath={currentPath} items={supportItems} />
+          <SupportSidebar
+            collapsed={collapsed}
+            currentPath={currentPath}
+            items={supportItems}
+            onCollapsedChange={onCollapsedChange}
+            onNavigate={onNavigate}
+          />
         ) : null}
         {workspace === "requester" ? (
-          <SupportSidebar collapsed={collapsed} currentPath={currentPath} items={requesterItems} />
+          <SupportSidebar
+            collapsed={collapsed}
+            currentPath={currentPath}
+            items={requesterItems}
+            onCollapsedChange={onCollapsedChange}
+            onNavigate={onNavigate}
+          />
         ) : null}
         {workspace === "admin" ? (
-          <AdminSidebar collapsed={collapsed} currentPath={currentPath} permissions={permissions} />
+          <AdminSidebar
+            collapsed={collapsed}
+            currentPath={currentPath}
+            onCollapsedChange={onCollapsedChange}
+            onNavigate={onNavigate}
+            permissions={permissions}
+          />
         ) : null}
       </div>
 

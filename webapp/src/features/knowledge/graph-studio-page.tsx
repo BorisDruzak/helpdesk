@@ -288,6 +288,13 @@ export function KnowledgeGraphStudioPage() {
     createEdgeMutation.mutate(nextDraft);
   }
 
+  function applyAutoLayout() {
+    const nextPositions = Object.fromEntries(
+      layoutNodes(graphNodes).map((node) => [node.stable_key, { x: node.x, y: node.y }]),
+    );
+    setFlowPositions(nextPositions);
+  }
+
   return (
     <section className="space-y-6">
       <PageHeading
@@ -444,6 +451,25 @@ export function KnowledgeGraphStudioPage() {
               <CardDescription>React Flow рабочая область: выбор, drag layout и connect создают реальные изменения через graph API.</CardDescription>
             </CardHeader>
             <CardContent>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="text-sm text-slate-600">
+                  Выберите узел, перетащите его на канвасе или соедините два узла линией. Изменения узлов и связей уходят в graph API.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={!graphNodes.length} onClick={applyAutoLayout} size="sm" variant="outline">
+                    Авторазложить
+                  </Button>
+                  <Button
+                    disabled={!positionedNodesForCanvas.length || saveLayoutMutation.isPending}
+                    onClick={() => saveLayoutMutation.mutate()}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    <Save className="h-4 w-4" />
+                    Сохранить layout
+                  </Button>
+                </div>
+              </div>
               <KnowledgeGraphCanvas
                 edges={graphEdges}
                 nodes={positionedNodesForCanvas}
@@ -480,16 +506,6 @@ export function KnowledgeGraphStudioPage() {
               <div className="rounded-md bg-emerald-50 p-3 text-emerald-900">
                 <p className="font-semibold">Layout</p>
                 <p>{layoutQuery.data?.layout_id ? "Layout сохранен для scope default" : "Layout еще не сохранен"}</p>
-                <Button
-                  className="mt-3"
-                  disabled={!positionedNodesForCanvas.length || saveLayoutMutation.isPending}
-                  onClick={() => saveLayoutMutation.mutate()}
-                  size="sm"
-                  variant="secondary"
-                >
-                  <Save className="h-4 w-4" />
-                  Сохранить layout
-                </Button>
               </div>
             </CardContent>
           </Card>

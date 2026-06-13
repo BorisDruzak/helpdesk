@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import Highlight from "@tiptap/extension-highlight";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -225,13 +225,6 @@ export function KnowledgeTipTapEditor({
     setIsTemplateMenuOpen(false);
   }
 
-  function handleEditorInput(event: FormEvent<HTMLDivElement>) {
-    const text = event.currentTarget.textContent ?? "";
-    if (text.trim()) {
-      onChange(text.trim());
-    }
-  }
-
   return (
     <div className="space-y-4" data-testid="knowledge-tiptap-editor">
       <div className="flex flex-wrap items-center gap-2">
@@ -324,7 +317,7 @@ export function KnowledgeTipTapEditor({
       </div>
 
       <div className="knowledge-tiptap-editor rounded-md border border-slate-200 bg-white">
-        <EditorContent data-testid="knowledge-editor-content" editor={editor} onInput={handleEditorInput} />
+        <EditorContent data-testid="knowledge-editor-content" editor={editor} />
       </div>
     </div>
   );

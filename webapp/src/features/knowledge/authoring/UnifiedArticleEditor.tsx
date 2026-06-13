@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Save } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -81,13 +80,13 @@ export function UnifiedArticleEditor({
               {currentSpace ? <Badge tone="info">{currentSpace.title}</Badge> : null}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button disabled={!selectedItem || isCreatingVersion} onClick={onCreateVersion} variant="secondary" leadingIcon={<Save className="h-4 w-4" />}>
-              Сохранить
-            </Button>
+          <div className="flex max-w-xs flex-col items-end gap-1 text-right">
             <Button disabled={!selectedItem || isCreatingVersion} onClick={onCreateVersion}>
               Создать версию
             </Button>
+            <p className="text-xs leading-5 text-slate-500">
+              Фиксирует текущий текст и метаданные как новую версию статьи.
+            </p>
           </div>
         </div>
       </CardHeader>

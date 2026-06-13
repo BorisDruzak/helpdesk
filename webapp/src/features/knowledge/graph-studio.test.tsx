@@ -238,6 +238,8 @@ describe("KnowledgeGraphStudioPage", () => {
     expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
     expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
     expect(screen.getByText("React Flow canvas")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Показать весь граф" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Авторазложить" })).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "Карта графа знаний" })).not.toBeInTheDocument();
   });
 
@@ -249,6 +251,7 @@ describe("KnowledgeGraphStudioPage", () => {
     expect((await screen.findAllByRole("button", { name: /VPN concept/ }))[0]).toBeInTheDocument();
     expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
     expect(screen.getByText("React Flow canvas")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Авторазложить" }));
     expect(screen.queryByRole("img", { name: "Карта графа знаний" })).not.toBeInTheDocument();
     expect(await screen.findByText("Layout сохранен для scope default")).toBeInTheDocument();
 
