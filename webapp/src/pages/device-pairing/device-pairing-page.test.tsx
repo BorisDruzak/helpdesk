@@ -173,6 +173,9 @@ describe("DevicePairingPage", () => {
           },
         });
       }
+      if (url === "/api/registry/options") {
+        return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
+      }
       if (url === "/api/web/registry/browser-pairings/pair-2/registration/confirm") {
         expect(init?.method).toBe("POST");
         return jsonResponse({
@@ -199,5 +202,59 @@ describe("DevicePairingPage", () => {
     expect(screen.getByText("pending_admin_review")).toBeInTheDocument();
     expect(screen.getByText("NEW-PC")).toBeInTheDocument();
     expect(screen.getByText("Windows")).toBeInTheDocument();
+  });
+
+  it("sends selected registry department and location when confirming registration", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/registry/browser-pairings/pair-strict") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-strict",
+            purpose: "registration",
+            status: "pending",
+            device: { hostname: "STRICT-PC", os: "Windows", agent_version: "3.1.62" },
+          },
+        });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            departments: [{ value: "dept-1", label: "ИТ" }],
+            locations: [{ value: "loc-1", label: "Офис 7 / 701" }],
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-strict/registration/confirm") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({
+          department_id: "dept-1",
+          location_id: "loc-1",
+        });
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-strict",
+            purpose: "registration",
+            status: "confirmed",
+            claim_id: "claim-strict",
+            registration: { status: "pending_admin_review", device_id: "device-strict" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderPage("/app/device/register?pairing_id=pair-strict");
+
+    expect(await screen.findByText("STRICT-PC")).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Подразделение"), { target: { value: "dept-1" } });
+    fireEvent.change(screen.getByLabelText("Локация"), { target: { value: "loc-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить регистрацию" }));
+
+    expect(await screen.findByText("Регистрация подтверждена")).toBeInTheDocument();
   });
 });

@@ -14,6 +14,7 @@ from auth.rate_limit import reset_rate_limits
 from registry.browser_pairing_service import BrowserPairingService
 from registry.account_session_service import AccountSessionService
 from auth.service import AuthService
+from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService
 from server import create_app
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
@@ -406,6 +407,63 @@ async def test_registration_pairing_approval_surfaces_confirmed_binding_to_agent
         claim = await session.get(DeviceRegistrationClaim, claim_id)
     assert claim is not None
     assert claim.status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_registration_pairing_confirmation_accepts_required_registry_ids(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        department = await service.registry_repo.get_or_create_department(
+            name="Browser Strict Department",
+            source="manual",
+            status="active",
+        )
+        location = await service.registry_repo.get_or_create_location(
+            building="Browser HQ",
+            floor="7",
+            room="701",
+            source="manual",
+            status="active",
+        )
+        await RegistryPolicyService(session).update_policies(
+            {
+                "registration": {
+                    "department_mode": "required_existing",
+                    "location_mode": "required_existing",
+                }
+            },
+            actor_id="admin",
+        )
+        await session.commit()
+
+    created = await test_client.post(
+        "/api/registry/agent/browser-pairings",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"purpose": "registration"},
+    )
+    assert created.status == 200, await created.text()
+    pairing = (await created.json())["data"]
+
+    confirmed = await test_client.post(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/registration/confirm",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}strict-browser@example.test"),
+        json={"department_id": department.department_id, "location_id": location.location_id},
+    )
+    payload = await confirmed.json()
+
+    assert confirmed.status == 200, payload
+    assert payload["data"]["status"] == "confirmed"
+    assert payload["data"]["claim_id"]
+
+    async with session_maker() as session:
+        claim = await session.get(DeviceRegistrationClaim, payload["data"]["claim_id"])
+
+    assert claim is not None
+    assert claim.profile_snapshot["department_id"] == department.department_id
+    assert claim.profile_snapshot["location_id"] == location.location_id
 
 
 @pytest.mark.asyncio

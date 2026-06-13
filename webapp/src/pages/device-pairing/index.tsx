@@ -7,9 +7,11 @@ import {
   confirmDevicePairing,
   DevicePairingApiError,
   fetchDevicePairing,
+  fetchRegistryOptions,
   lookupDevicePairingCode,
   type DevicePairingPayload,
   type DevicePairingPurpose,
+  type RegistryOption,
 } from "./api";
 
 type DevicePairingPageProps = {
@@ -121,6 +123,10 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
   const pairingId = searchParams.get("pairing_id") ?? "";
   const [pairing, setPairing] = useState<DevicePairingPayload | null>(null);
   const [confirmed, setConfirmed] = useState<DevicePairingPayload | null>(null);
+  const [departments, setDepartments] = useState<RegistryOption[]>([]);
+  const [locations, setLocations] = useState<RegistryOption[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState("");
+  const [selectedLocationId, setSelectedLocationId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -136,11 +142,20 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
         if (!pairingId) {
           throw new DevicePairingApiError("Не указан pairing_id", 400, "PAIRING_ID_REQUIRED");
         }
-        const payload = await fetchDevicePairing(pairingId);
+        const [payload, options] = await Promise.all([
+          fetchDevicePairing(pairingId),
+          purpose === "registration" ? fetchRegistryOptions() : Promise.resolve(null),
+        ]);
         if (!active) {
           return;
         }
         setPairing(payload);
+        if (options) {
+          setDepartments(options.departments ?? []);
+          setLocations(options.locations ?? []);
+          setSelectedDepartmentId("");
+          setSelectedLocationId("");
+        }
       } catch (err) {
         if (!active) {
           return;
@@ -156,7 +171,7 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
     return () => {
       active = false;
     };
-  }, [pairingId]);
+  }, [pairingId, purpose]);
 
   async function handleConfirm() {
     if (!pairingId) {
@@ -165,7 +180,16 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
     setError(null);
     setIsConfirming(true);
     try {
-      const payload = await confirmDevicePairing(pairingId, purpose);
+      const payload = await confirmDevicePairing(
+        pairingId,
+        purpose,
+        purpose === "registration"
+          ? {
+              ...(selectedDepartmentId ? { department_id: selectedDepartmentId } : {}),
+              ...(selectedLocationId ? { location_id: selectedLocationId } : {}),
+            }
+          : {},
+      );
       const nextPayload = {
         ...payload,
         device: payload.device ?? pairing?.device ?? confirmed?.device,
@@ -239,13 +263,55 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
                   </div>
                 </div>
               ) : (
-                <Button
-                  disabled={isConfirming || pairing?.purpose !== purpose || pairing?.status !== "pending"}
-                  leadingIcon={<ShieldCheck className="h-4 w-4" />}
-                  onClick={handleConfirm}
-                >
-                  {isConfirming ? "Подтверждаем..." : copy.action}
-                </Button>
+                <div className="space-y-4">
+                  {purpose === "registration" && (departments.length || locations.length) ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {departments.length ? (
+                        <label className="block text-sm font-semibold text-slate-900">
+                          Подразделение
+                          <select
+                            className="mt-2 h-11 w-full rounded-[0.5rem] border border-border bg-white px-3 text-sm text-slate-950 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                            disabled={isConfirming}
+                            onChange={(event) => setSelectedDepartmentId(event.target.value)}
+                            value={selectedDepartmentId}
+                          >
+                            <option value="">Не выбрано</option>
+                            {departments.map((department) => (
+                              <option key={department.value} value={department.value}>
+                                {department.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                      {locations.length ? (
+                        <label className="block text-sm font-semibold text-slate-900">
+                          Локация
+                          <select
+                            className="mt-2 h-11 w-full rounded-[0.5rem] border border-border bg-white px-3 text-sm text-slate-950 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                            disabled={isConfirming}
+                            onChange={(event) => setSelectedLocationId(event.target.value)}
+                            value={selectedLocationId}
+                          >
+                            <option value="">Не выбрано</option>
+                            {locations.map((location) => (
+                              <option key={location.value} value={location.value}>
+                                {location.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <Button
+                    disabled={isConfirming || pairing?.purpose !== purpose || pairing?.status !== "pending"}
+                    leadingIcon={<ShieldCheck className="h-4 w-4" />}
+                    onClick={handleConfirm}
+                  >
+                    {isConfirming ? "Подтверждаем..." : copy.action}
+                  </Button>
+                </div>
               )}
             </div>
           )}

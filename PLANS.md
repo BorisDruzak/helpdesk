@@ -814,6 +814,15 @@ Phase 4 continuation audit, 2026-06-14:
   * validation split if no product change is intended yet: keep strict `required_existing` for Scenario B and agent-form policy validation, but run browser-pairing confirmation with policy relaxed/restored explicitly and record that it is not a strict-policy pass.
 * Focused DB-backed pytest attempts for `server/tests/test_registration_api.py::test_registration_pairing_approval_surfaces_confirmed_binding_to_agent` timed out locally after 180s without producing assertion output. Treat this as a local test-environment/slow DB limitation for this audit, not as pass/fail evidence. Re-run with the standard project test DB setup before using it as a gate.
 
+Phase 4 strict browser-registration payload slice, 2026-06-14:
+
+* Implemented the preferred product fix for the strict-policy browser confirmation path: `/app/device/register` now loads `/api/registry/options`, renders department/location pickers when options exist, and sends selected `department_id` / `location_id` in the `/api/web/registry/browser-pairings/{pairing_id}/registration/confirm` JSON body.
+* Backend confirmation now accepts only optional `department_id` / `location_id` from the browser payload and delegates validation to `RegistrationService`, preserving the existing rule that browser users cannot override person, binding, account-session or token fields.
+* Added regression anchors:
+  * `server/tests/test_registration_api.py::test_registration_pairing_confirmation_accepts_required_registry_ids`
+  * `webapp/src/pages/device-pairing/device-pairing-page.test.tsx` coverage for selected department/location ids in the registration confirm POST body.
+* This removes the previously documented need to relax strict policy for browser pairing, but Phase 4 still requires a real live rerun with strict policies, browser confirmation, admin approval diff, agent account-state transition and ticket requester account-session fields.
+
 Verification:
 
 python -m pytest server/tests/test_registry_registration_policy.py

@@ -19,6 +19,21 @@ export type DevicePairingPayload = {
   } | null;
 };
 
+export type RegistryOption = {
+  value: string;
+  label: string;
+};
+
+export type DeviceRegistrationConfirmationPayload = {
+  department_id?: string;
+  location_id?: string;
+};
+
+export type RegistryOptionsPayload = {
+  departments?: RegistryOption[];
+  locations?: RegistryOption[];
+};
+
 export type DevicePairingCodeLookupPayload = {
   pairing_id: string;
   purpose: DevicePairingPurpose;
@@ -90,9 +105,18 @@ export async function lookupDevicePairingCode(pairingCode: string): Promise<Devi
   return readSuccess<DevicePairingCodeLookupPayload>(response, "Код подключения не найден или истек");
 }
 
+export async function fetchRegistryOptions(): Promise<RegistryOptionsPayload> {
+  const response = await fetch("/api/registry/options", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  return readSuccess<RegistryOptionsPayload>(response, "Не удалось загрузить справочники регистрации");
+}
+
 export async function confirmDevicePairing(
   pairingId: string,
   purpose: DevicePairingPurpose,
+  registrationPayload: DeviceRegistrationConfirmationPayload = {},
 ): Promise<DevicePairingPayload> {
   const response = await fetch(
     `/api/web/registry/browser-pairings/${encodeURIComponent(pairingId)}/${purpose}/confirm`,
@@ -102,7 +126,7 @@ export async function confirmDevicePairing(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify(registrationPayload),
     },
   );
   return readSuccess<DevicePairingPayload>(response, "Не удалось подтвердить устройство");

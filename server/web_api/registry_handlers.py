@@ -531,12 +531,19 @@ async def handle_web_registry_browser_pairing_login_confirm(request: web.Request
 async def handle_web_registry_browser_pairing_registration_confirm(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     pairing_id = str(request.match_info.get("pairing_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    if not isinstance(data, dict):
+        data = {}
     async with get_session() as session:
         service = BrowserPairingService(session)
         try:
             payload = await service.confirm_registration_pairing_for_web_user(
                 pairing_id=pairing_id,
                 actor_id=auth_context.actor_id,
+                profile_updates={
+                    "department_id": data.get("department_id"),
+                    "location_id": data.get("location_id"),
+                },
             )
             await session.commit()
         except ValueError as exc:

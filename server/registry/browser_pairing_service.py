@@ -280,9 +280,15 @@ class BrowserPairingService:
         *,
         pairing_id: str,
         actor_id: str,
+        profile_updates: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         row = await self._require_pending_pairing_link(pairing_id, purpose="registration")
         profile = _profile_from_actor(actor_id)
+        if profile_updates:
+            for key in ("department_id", "location_id"):
+                value = _clean_text(profile_updates.get(key), max_length=36)
+                if value:
+                    profile[key] = value
         result = await RegistrationService(self.session).submit_agent_profile_claim(
             device_id=row.device_id,
             requester_id=actor_id,
