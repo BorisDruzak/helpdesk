@@ -72,6 +72,14 @@ export function valueTypeLabel(value: string | null | undefined) {
   return optionLabel(valueTypeOptions, value);
 }
 
+export function scopeTypeLabel(value: string | null | undefined) {
+  return optionLabel(scopeTypeOptions, value);
+}
+
+export function includeModeLabel(value: string | null | undefined) {
+  return optionLabel(includeModeOptions, value);
+}
+
 export function splitLines(value: string) {
   return value
     .split(/\r?\n|,/)

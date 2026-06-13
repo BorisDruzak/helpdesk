@@ -455,9 +455,13 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(within(screen.getByRole("group", { name: "Проверка публикации" })).getByLabelText(/Есть сегменты поиска/)).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: "2. Метаданные" }));
-    expect(screen.getByLabelText("Slug")).toHaveValue("vpn-access");
-    expect(screen.getByLabelText("Пространство")).toHaveValue("it-self-service");
-    expect(screen.getAllByLabelText("Видимость")[0]).toHaveValue("requester");
+    expect(screen.getByText("Куда попадёт статья")).toBeInTheDocument();
+    expect(screen.getByLabelText("Пространство статьи")).toHaveValue("it-self-service");
+    expect(screen.getByLabelText("Тип материала")).toHaveValue("article");
+    expect(screen.getByLabelText("Кому видна статья")).toHaveValue("requester");
+    expect(screen.getByText("Advanced / служебные поля статьи")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Advanced / служебные поля статьи"));
+    expect(screen.getByLabelText("Адрес статьи")).toHaveValue("vpn-access");
     expect(screen.getByLabelText("Владелец")).toHaveValue("owner");
     expect(screen.getByLabelText("Ревьюер")).toHaveValue("reviewer");
     expect(screen.getByLabelText("Теги")).toHaveValue("vpn, remote");

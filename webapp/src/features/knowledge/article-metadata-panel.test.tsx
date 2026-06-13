@@ -92,6 +92,18 @@ function setupFetch() {
     if (url === "/api/web/knowledge/metadata" && !init?.method) {
       return jsonResponse({ status: "ok", metadata: metadataBundle });
     }
+    if (url === "/api/service-catalog/current") {
+      return jsonResponse({
+        catalog_version: "test",
+        services: [
+          {
+            service_code: "network",
+            title: "Сетевые сервисы",
+            offerings: [{ offering_code: "vpn", full_code: "network.vpn", title: "VPN доступ" }],
+          },
+        ],
+      });
+    }
     if (url === "/api/web/knowledge/items/item-1/metadata" && !init?.method) {
       return jsonResponse({
         status: "ok",
@@ -160,11 +172,13 @@ describe("ArticleMetadataPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Свойства" }));
     expect(screen.getByText("Не заполнено обязательное свойство: Аудитория")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Свойство Аудитория"), { target: { value: "requester" } });
-    const platformsInput = screen.getByLabelText("Свойство Платформы") as HTMLTextAreaElement;
-    expect(platformsInput.tagName).toBe("TEXTAREA");
-    fireEvent.change(platformsInput, { target: { value: "windows\nlinux" } });
+    expect(screen.queryByLabelText("Свойство Платформы")).not.toBeInTheDocument();
+    const platformsGroup = screen.getByRole("group", { name: "Свойство Платформы" });
+    fireEvent.click(within(platformsGroup).getByRole("checkbox", { name: "windows" }));
+    fireEvent.click(within(platformsGroup).getByRole("checkbox", { name: "linux" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить метаданные статьи" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/items/item-1/metadata", expect.objectContaining({ method: "PUT" })));
+    expect(await screen.findByText("Метаданные статьи сохранены")).toBeInTheDocument();
     const metadataCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items/item-1/metadata" && call[1]?.method === "PUT");
     expect(JSON.parse(String(metadataCall?.[1]?.body))).toMatchObject({
       properties: { audience: "requester", platforms: ["windows", "linux"] },
@@ -172,11 +186,22 @@ describe("ArticleMetadataPanel", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Применимость" }));
-    fireEvent.change(screen.getByLabelText("Тип области статьи"), { target: { value: "service" } });
-    fireEvent.change(screen.getByLabelText("Значение области статьи"), { target: { value: "network/vpn" } });
+    expect(await screen.findByText("Выберите сервис или услугу из каталога, когда это возможно.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Тип области статьи"), { target: { value: "offering" } });
+    fireEvent.change(screen.getByLabelText("Сервис или услуга"), { target: { value: "network.vpn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить правило статьи" }));
+    expect(screen.getByText("Услуга: network.vpn")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Редактировать правило Услуга: network.vpn" }));
+    fireEvent.change(screen.getByLabelText("Сервис или услуга"), { target: { value: "network" } });
+    fireEvent.click(screen.getByRole("button", { name: "Обновить правило статьи" }));
+    expect(screen.getByText("Услуга: network")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Удалить правило Услуга: network" }));
+    expect(screen.queryByText("Услуга: network")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Сервис или услуга"), { target: { value: "network.vpn" } });
     fireEvent.click(screen.getByRole("button", { name: "Добавить правило статьи" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить правила статьи" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/items/item-1/applicability", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByText("Правила применимости сохранены")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Качество" }));
     expect(screen.getByText("Модель: metadata-required")).toBeInTheDocument();

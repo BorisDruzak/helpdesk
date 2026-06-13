@@ -7,6 +7,8 @@ import { Badge } from "../../components/ui/badge";
 import { saveKnowledgePropertyDefinition, type KnowledgeMetadataBundle, type KnowledgePropertyDefinition } from "./api";
 import { fieldClass, splitLines, statusLabel, statusOptions, valueTypeLabel, valueTypeOptions } from "./metadata-editor-common";
 
+const itemTypeOptions = ["article", "faq", "runbook", "known_error", "workaround", "service_description"];
+
 type PropertyDraft = {
   allowed_values: string;
   applies_to_item_types: string;
@@ -52,8 +54,12 @@ export function MetadataPropertyPanel({ metadata, onChanged }: { metadata?: Know
   const [spaceId, setSpaceId] = useState("");
   const [selectedPropertyId, setSelectedPropertyId] = useState("");
   const [draft, setDraft] = useState<PropertyDraft>(() => emptyDraft());
+  const [newAllowedValue, setNewAllowedValue] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
   const selectedProperty = (metadata?.property_definitions ?? []).find((row) => row.property_id === selectedPropertyId);
   const effectiveSpaceId = spaceId || spaces[0]?.space_id || "";
+  const allowedValues = splitLines(draft.allowed_values);
+  const appliesToItemTypes = splitLines(draft.applies_to_item_types);
   const properties = useMemo(
     () => (metadata?.property_definitions ?? []).filter((row) => row.space_id === effectiveSpaceId).sort((a, b) => a.code.localeCompare(b.code)),
     [metadata, effectiveSpaceId],
@@ -68,10 +74,13 @@ export function MetadataPropertyPanel({ metadata, onChanged }: { metadata?: Know
   useEffect(() => {
     if (selectedProperty) {
       setDraft(draftFromProperty(selectedProperty));
+      setNewAllowedValue("");
+      setSaveMessage("");
     }
   }, [selectedProperty?.property_id]);
 
   const saveMutation = useMutation({
+    onMutate: () => setSaveMessage(""),
     mutationFn: (statusOverride?: string) =>
       saveKnowledgePropertyDefinition({
         ...(selectedProperty ? { property_id: selectedProperty.property_id } : {}),
@@ -89,9 +98,35 @@ export function MetadataPropertyPanel({ metadata, onChanged }: { metadata?: Know
     onSuccess: () => {
       setSelectedPropertyId("");
       setDraft(emptyDraft());
+      setNewAllowedValue("");
+      setSaveMessage("Свойство знаний сохранено");
       onChanged();
     },
+    onError: () => setSaveMessage("Не удалось сохранить свойство знаний"),
   });
+
+  function addAllowedValue() {
+    const value = newAllowedValue.trim();
+    if (!value || allowedValues.includes(value)) {
+      return;
+    }
+    setDraft({ ...draft, allowed_values: [...allowedValues, value].join("\n") });
+    setNewAllowedValue("");
+  }
+
+  function removeAllowedValue(valueToRemove: string) {
+    setDraft({ ...draft, allowed_values: allowedValues.filter((value) => value !== valueToRemove).join("\n") });
+  }
+
+  function toggleItemType(itemType: string, checked: boolean) {
+    const next = new Set(appliesToItemTypes);
+    if (checked) {
+      next.add(itemType);
+    } else {
+      next.delete(itemType);
+    }
+    setDraft({ ...draft, applies_to_item_types: Array.from(next).join("\n") });
+  }
 
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -136,7 +171,7 @@ export function MetadataPropertyPanel({ metadata, onChanged }: { metadata?: Know
       <Card>
         <CardHeader>
           <CardTitle>{selectedProperty ? "Редактировать свойство" : "Новое свойство"}</CardTitle>
-          <CardDescription>Разрешённые значения указываются построчно; raw JSON для обычного сценария не нужен.</CardDescription>
+          <CardDescription>Настройте значения и типы материалов через поля выбора; raw JSON для обычного сценария не нужен.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <label className="text-sm font-medium">
@@ -161,14 +196,40 @@ export function MetadataPropertyPanel({ metadata, onChanged }: { metadata?: Know
             <input checked={draft.required} onChange={(event) => setDraft({ ...draft, required: event.target.checked })} type="checkbox" />
             Обязательное свойство
           </label>
-          <label className="text-sm font-medium">
-            Разрешённые значения
-            <textarea className={fieldClass} value={draft.allowed_values} onChange={(event) => setDraft({ ...draft, allowed_values: event.target.value })} />
-          </label>
-          <label className="text-sm font-medium">
-            Типы статей
-            <textarea className={fieldClass} value={draft.applies_to_item_types} onChange={(event) => setDraft({ ...draft, applies_to_item_types: event.target.value })} />
-          </label>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-medium">Разрешённые значения</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {allowedValues.map((value) => (
+                <span key={value} className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                  {value}
+                  <button className="text-emerald-700 hover:text-emerald-950" onClick={() => removeAllowedValue(value)} type="button">
+                    Удалить значение {value}
+                  </button>
+                </span>
+              ))}
+              {!allowedValues.length ? <span className="text-xs text-slate-500">Список пока пуст.</span> : null}
+            </div>
+            <div className="mt-3 flex flex-wrap items-end gap-2">
+              <label className="min-w-0 flex-1 text-sm font-medium">
+                Новое разрешённое значение
+                <input className={fieldClass} value={newAllowedValue} onChange={(event) => setNewAllowedValue(event.target.value)} />
+              </label>
+              <Button disabled={!newAllowedValue.trim()} onClick={addAllowedValue} type="button" variant="outline">
+                Добавить значение
+              </Button>
+            </div>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm font-medium">Типы статей</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {itemTypeOptions.map((itemType) => (
+                <label key={itemType} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700">
+                  <input checked={appliesToItemTypes.includes(itemType)} onChange={(event) => toggleItemType(itemType, event.target.checked)} type="checkbox" />
+                  {itemType}
+                </label>
+              ))}
+            </div>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium">
               Вес качества
@@ -199,6 +260,7 @@ export function MetadataPropertyPanel({ metadata, onChanged }: { metadata?: Know
               </Button>
             ) : null}
           </div>
+          {saveMessage ? <p className="text-sm font-medium text-emerald-700">{saveMessage}</p> : null}
         </CardContent>
       </Card>
     </div>

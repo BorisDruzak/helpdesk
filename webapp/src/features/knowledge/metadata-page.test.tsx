@@ -109,6 +109,18 @@ function setupFetch() {
     if (url === "/api/web/knowledge/items" && !init?.method) {
       return jsonResponse(itemsPayload);
     }
+    if (url === "/api/service-catalog/current") {
+      return jsonResponse({
+        catalog_version: "test",
+        services: [
+          {
+            service_code: "network",
+            title: "Сетевые сервисы",
+            offerings: [{ offering_code: "vpn", full_code: "network.vpn", title: "VPN доступ" }],
+          },
+        ],
+      });
+    }
     if (url === "/api/web/knowledge/taxonomy" && init?.method === "POST") {
       return jsonResponse({ status: "ok", term: { term_id: "term-mfa", ...JSON.parse(String(init.body)) } });
     }
@@ -182,17 +194,39 @@ describe("KnowledgeMetadataPage", () => {
     expect(document.body.textContent ?? "").not.toMatch(/\bselect\b/);
     fireEvent.change(screen.getByLabelText("Код свойства"), { target: { value: "audience" } });
     fireEvent.change(screen.getByLabelText("Название свойства"), { target: { value: "Аудитория" } });
-    fireEvent.change(screen.getByLabelText("Разрешённые значения"), { target: { value: "requester\nsupport" } });
+    fireEvent.change(screen.getByLabelText("Новое разрешённое значение"), { target: { value: "requester" } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить значение" }));
+    fireEvent.change(screen.getByLabelText("Новое разрешённое значение"), { target: { value: "support" } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить значение" }));
+    expect(screen.getByRole("button", { name: "Удалить значение requester" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Разрешённые значения")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "article" }));
     fireEvent.click(screen.getByLabelText("Обязательное свойство"));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить свойство" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/properties", expect.objectContaining({ method: "POST" })));
+    const propertyCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/properties");
+    expect(JSON.parse(String(propertyCall?.[1]?.body))).toMatchObject({
+      allowed_values: ["requester", "support"],
+      applies_to_item_types: ["faq", "runbook"],
+    });
+    expect(await screen.findByText("Свойство знаний сохранено")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Применимость" }));
-    fireEvent.change(screen.getByLabelText("Тип области"), { target: { value: "service" } });
-    fireEvent.change(screen.getByLabelText("Значение области"), { target: { value: "network/vpn" } });
+    expect(await screen.findByText("Выберите сервис или услугу из каталога, когда это возможно.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Тип области"), { target: { value: "offering" } });
+    fireEvent.change(screen.getByLabelText("Сервис или услуга"), { target: { value: "network.vpn" } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить правило" }));
+    expect(screen.getByText("Услуга: network.vpn")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Редактировать правило Услуга: network.vpn" }));
+    fireEvent.change(screen.getByLabelText("Сервис или услуга"), { target: { value: "network" } });
+    fireEvent.click(screen.getByRole("button", { name: "Обновить правило" }));
+    fireEvent.click(screen.getByRole("button", { name: "Удалить правило Услуга: network" }));
+    expect(screen.queryByText("Услуга: network")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Сервис или услуга"), { target: { value: "network.vpn" } });
     fireEvent.click(screen.getByRole("button", { name: "Добавить правило" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить применимость" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/items/item-1/applicability", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByText("Применимость сохранена")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Модель качества" }));
     fireEvent.change(screen.getByLabelText("Код модели"), { target: { value: "metadata-required-v2" } });

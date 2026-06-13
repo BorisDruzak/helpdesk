@@ -352,6 +352,13 @@ export type KnowledgeMetadataBundle = {
   };
 };
 
+export type KnowledgeServiceCatalogOption = {
+  label: string;
+  service_code?: string | null;
+  type: "service" | "offering";
+  value: string;
+};
+
 export type KnowledgeQualitySummary = {
   average_quality_score: number;
   quality_model?: KnowledgeQualityModel;
@@ -1169,6 +1176,33 @@ export async function fetchKnowledgeMetadata(): Promise<KnowledgeMetadataBundle>
   const response = await fetch("/api/web/knowledge/metadata", { credentials: "same-origin" });
   const payload = await readJson<{ metadata: KnowledgeMetadataBundle }>(response, "Не удалось загрузить модель метаданных знаний");
   return payload.metadata;
+}
+
+export async function fetchKnowledgeServiceCatalogOptions(): Promise<KnowledgeServiceCatalogOption[]> {
+  const response = await fetch("/api/service-catalog/current", { credentials: "same-origin" });
+  const payload = await readJson<{
+    services?: Array<{
+      service_code: string;
+      title?: string | null;
+      offerings?: Array<{ full_code?: string | null; offering_code?: string | null; title?: string | null }>;
+    }>;
+  }>(response, "Не удалось загрузить каталог услуг");
+  return (payload.services ?? []).flatMap((service) => [
+    {
+      label: service.title ? `${service.title} · ${service.service_code}` : service.service_code,
+      service_code: service.service_code,
+      type: "service" as const,
+      value: service.service_code,
+    },
+    ...(service.offerings ?? [])
+      .map((offering) => ({
+        label: offering.title ? `${offering.title} · ${offering.full_code ?? offering.offering_code ?? ""}` : offering.full_code ?? offering.offering_code ?? "",
+        service_code: service.service_code,
+        type: "offering" as const,
+        value: offering.full_code ?? offering.offering_code ?? "",
+      }))
+      .filter((option) => option.value),
+  ]);
 }
 
 export async function fetchKnowledgeItemMetadata(itemIdOrSlug: string): Promise<KnowledgeItemMetadata> {

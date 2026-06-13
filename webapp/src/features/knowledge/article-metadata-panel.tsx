@@ -13,17 +13,16 @@ import {
   type KnowledgeApplicabilityRule,
   type KnowledgeItem,
 } from "./api";
+import { MetadataApplicabilityEditor } from "./metadata-applicability-editor";
 import {
   activeQualityScore,
   fieldClass,
-  includeModeOptions,
   propertiesForItem,
   propertyInputToValue,
   propertyValueToInput,
-  scopeTypeOptions,
+  splitLines,
   termsForSpace,
   termTypeLabel,
-  textareaClass,
   visibilityLabel,
 } from "./metadata-editor-common";
 
@@ -33,17 +32,6 @@ const tabs = [
   { label: "Применимость", value: "applicability" },
   { label: "Качество", value: "quality" },
 ];
-
-type RuleDraft = {
-  include_mode: "include" | "exclude";
-  priority: string;
-  scope_ref: string;
-  scope_type: string;
-};
-
-function emptyRule(): RuleDraft {
-  return { include_mode: "include", priority: "100", scope_ref: "", scope_type: "service" };
-}
 
 type ArticleMetadataPanelProps = {
   canManage: boolean;
@@ -57,7 +45,8 @@ export function ArticleMetadataPanel({ canManage, embedded = false, item }: Arti
   const [selectedTermIds, setSelectedTermIds] = useState<string[]>([]);
   const [propertyValues, setPropertyValues] = useState<Record<string, string>>({});
   const [rules, setRules] = useState<Array<Partial<KnowledgeApplicabilityRule>>>([]);
-  const [ruleDraft, setRuleDraft] = useState<RuleDraft>(() => emptyRule());
+  const [metadataSaveMessage, setMetadataSaveMessage] = useState("");
+  const [rulesSaveMessage, setRulesSaveMessage] = useState("");
 
   const metadataQuery = useQuery({ queryKey: ["knowledge-metadata"], queryFn: fetchKnowledgeMetadata, enabled: Boolean(item?.item_id) });
   const itemMetadataQuery = useQuery({
@@ -96,6 +85,7 @@ export function ArticleMetadataPanel({ canManage, embedded = false, item }: Arti
   }, [applicabilityQuery.data, itemMetadataQuery.data?.item_id]);
 
   const saveMetadataMutation = useMutation({
+    onMutate: () => setMetadataSaveMessage(""),
     mutationFn: () =>
       saveKnowledgeItemMetadata(item?.item_id ?? "", {
         taxonomy_term_ids: selectedTermIds,
@@ -109,37 +99,38 @@ export function ArticleMetadataPanel({ canManage, embedded = false, item }: Arti
       queryClient.setQueryData(["knowledge-item-metadata", item?.item_id], result.item_metadata);
       queryClient.invalidateQueries({ queryKey: ["knowledge-metadata"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });
+      setMetadataSaveMessage("Метаданные статьи сохранены");
     },
+    onError: () => setMetadataSaveMessage("Не удалось сохранить метаданные статьи"),
   });
 
   const saveRulesMutation = useMutation({
+    onMutate: () => setRulesSaveMessage(""),
     mutationFn: () => saveKnowledgeApplicabilityRules(item?.item_id ?? "", rules),
     onSuccess: (result) => {
       setRules(result.rules);
       queryClient.setQueryData(["knowledge-item-applicability", item?.item_id], result.rules);
       queryClient.invalidateQueries({ queryKey: ["knowledge-metadata"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });
+      setRulesSaveMessage("Правила применимости сохранены");
     },
+    onError: () => setRulesSaveMessage("Не удалось сохранить правила применимости"),
   });
 
   function toggleTerm(termId: string) {
     setSelectedTermIds((current) => (current.includes(termId) ? current.filter((value) => value !== termId) : [...current, termId]));
   }
 
-  function addRule() {
-    if (!ruleDraft.scope_ref.trim()) {
-      return;
-    }
-    setRules((current) => [
-      ...current,
-      {
-        scope_type: ruleDraft.scope_type,
-        scope_ref: ruleDraft.scope_ref.trim(),
-        include_mode: ruleDraft.include_mode,
-        priority: Number(ruleDraft.priority || 100),
-      },
-    ]);
-    setRuleDraft(emptyRule());
+  function togglePropertyOption(propertyCode: string, optionValue: string, checked: boolean) {
+    setPropertyValues((current) => {
+      const values = new Set(splitLines(current[propertyCode] ?? ""));
+      if (checked) {
+        values.add(optionValue);
+      } else {
+        values.delete(optionValue);
+      }
+      return { ...current, [propertyCode]: Array.from(values).join("\n") };
+    });
   }
 
   if (!item) {
@@ -192,17 +183,32 @@ export function ArticleMetadataPanel({ canManage, embedded = false, item }: Arti
               </p>
             ))}
             {propertyDefinitions.map((definition) => (
-              <label key={definition.property_id} className="text-sm font-medium">
-                Свойство {definition.title}
+              <div key={definition.property_id} className="text-sm font-medium">
                 {definition.value_type === "multi_select" ? (
-                  <textarea
-                    className={textareaClass}
-                    disabled={!canManage}
-                    value={propertyValues[definition.code] ?? ""}
-                    onChange={(event) => setPropertyValues({ ...propertyValues, [definition.code]: event.target.value })}
-                    placeholder={(definition.allowed_values ?? []).join("\n")}
-                  />
+                  <fieldset className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                    <legend className="px-1 text-sm font-medium">Свойство {definition.title}</legend>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {(definition.allowed_values ?? []).map((value) => {
+                        const optionValue = String(value);
+                        const checked = splitLines(propertyValues[definition.code] ?? "").includes(optionValue);
+                        return (
+                          <label
+                            key={optionValue}
+                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${
+                              checked ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600"
+                            }`}
+                          >
+                            <input checked={checked} disabled={!canManage} onChange={(event) => togglePropertyOption(definition.code, optionValue, event.target.checked)} type="checkbox" />
+                            {optionValue}
+                          </label>
+                        );
+                      })}
+                      {!definition.allowed_values?.length ? <p className="text-xs text-slate-500">Для свойства нет разрешённых значений.</p> : null}
+                    </div>
+                  </fieldset>
                 ) : definition.value_type === "select" ? (
+                  <label className="text-sm font-medium">
+                    Свойство {definition.title}
                   <select
                     className={fieldClass}
                     disabled={!canManage}
@@ -216,67 +222,42 @@ export function ArticleMetadataPanel({ canManage, embedded = false, item }: Arti
                       </option>
                     ))}
                   </select>
+                  </label>
                 ) : (
+                  <label className="text-sm font-medium">
+                    Свойство {definition.title}
                   <input
                     className={fieldClass}
                     disabled={!canManage}
                     value={propertyValues[definition.code] ?? ""}
                     onChange={(event) => setPropertyValues({ ...propertyValues, [definition.code]: event.target.value })}
                   />
+                  </label>
                 )}
-              </label>
+              </div>
             ))}
             <Button disabled={!canManage || saveMetadataMutation.isPending} onClick={() => saveMetadataMutation.mutate()}>
               Сохранить метаданные статьи
             </Button>
+            {metadataSaveMessage ? <p className="text-sm font-medium text-emerald-700">{metadataSaveMessage}</p> : null}
           </div>
         ) : null}
 
         {activeTab === "applicability" ? (
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-2">
-              {rules.map((rule, index) => (
-                <div key={`${rule.scope_type}-${rule.scope_ref}-${index}`} className="rounded-md border border-slate-200 px-3 py-2 text-sm">
-                  {rule.include_mode === "exclude" ? "Исключить" : "Включить"} · {rule.scope_type}: {rule.scope_ref}
-                </div>
-              ))}
-              {!rules.length ? <p className="text-sm text-slate-500">Правил применимости пока нет.</p> : null}
-            </div>
-            <div className="space-y-3">
-              <label className="text-sm font-medium">
-                Тип области статьи
-                <select className={fieldClass} value={ruleDraft.scope_type} onChange={(event) => setRuleDraft({ ...ruleDraft, scope_type: event.target.value })}>
-                  {scopeTypeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm font-medium">
-                Значение области статьи
-                <input className={fieldClass} value={ruleDraft.scope_ref} onChange={(event) => setRuleDraft({ ...ruleDraft, scope_ref: event.target.value })} />
-              </label>
-              <label className="text-sm font-medium">
-                Режим правила статьи
-                <select className={fieldClass} value={ruleDraft.include_mode} onChange={(event) => setRuleDraft({ ...ruleDraft, include_mode: event.target.value as "include" | "exclude" })}>
-                  {includeModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={!canManage || !ruleDraft.scope_ref.trim()} onClick={addRule} variant="outline">
-                  Добавить правило статьи
-                </Button>
-                <Button disabled={!canManage || saveRulesMutation.isPending} onClick={() => saveRulesMutation.mutate()}>
-                  Сохранить правила статьи
-                </Button>
-              </div>
-            </div>
-          </div>
+          <MetadataApplicabilityEditor
+            addButtonLabel="Добавить правило статьи"
+            canManage={canManage}
+            emptyMessage="Правил применимости пока нет."
+            onRulesChange={setRules}
+            onSave={() => saveRulesMutation.mutate()}
+            rules={rules}
+            saveButtonLabel="Сохранить правила статьи"
+            saveMessage={rulesSaveMessage}
+            savePending={saveRulesMutation.isPending}
+            scopeTypeLabelText="Тип области статьи"
+            taxonomyTerms={taxonomyTerms}
+            updateButtonLabel="Обновить правило статьи"
+          />
         ) : null}
 
         {activeTab === "quality" ? (
