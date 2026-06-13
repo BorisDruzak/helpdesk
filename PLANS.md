@@ -3711,9 +3711,12 @@ Scenarios checked locally:
 * Archive edge/node still calls the existing DELETE endpoints.
 * Studio honors `?item=item-2` and loads the requested article body/title.
 
-Still required before closing the browser-visible gate:
+Browser/live validation completed:
 
-* Deploy the current branch to the remote stand.
-* Browser screenshots for `/app/admin/knowledge/graph` at 1366x768 and 1920x1080.
-* Browser verification that there is no horizontal scroll and that primary graph actions are visible without scrolling.
-* Browser verification that add-node, link-node and Studio navigation are usable on the live UI.
+* Deployed commit `3d57d64e` to `https://192.168.100.17:9443` with the quick release gate and `/api/health -> 200`.
+* Screenshots captured for `/app/admin/knowledge/graph` at 1366x768 and 1920x1080 in `artifacts/browser_live_validation/knowledge-graph-editor-3d57d64e/`.
+* Confirmed no horizontal scroll at 1366x768 or 1920x1080.
+* Confirmed primary graph actions are visible without scrolling: selection, add node, link nodes, auto layout and save layout.
+* Confirmed graph-to-Studio navigation opens `/app/admin/knowledge/studio?item=...` and loads Studio.
+* Confirmed live UI mutations hit real graph endpoints: `POST /api/web/knowledge/graph/nodes`, `POST /api/web/knowledge/graph/edges`, and cleanup `DELETE /api/web/knowledge/graph/nodes/{stable_key}` all returned 200.
+* Browser console had no warning/error entries during the external Chrome validation. The in-app Browser tab had a comment-overlay layer, so functional clicks were verified in a clean Chrome context using the same authenticated session; in-app Browser was still used for visual/DOM orientation.
