@@ -273,11 +273,36 @@ function renderStudio() {
   );
 }
 
+async function loadedEditorContent() {
+  const editor = await screen.findByTestId("knowledge-editor-content");
+  await waitFor(() => expect(editor.textContent ?? "").toContain("Check the tunnel adapter."));
+  return editor;
+}
+
+function replaceEditorText(value: string) {
+  const editor = screen.getByTestId("knowledge-editor-content");
+  editor.textContent = value;
+  fireEvent.input(editor);
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("AdminKnowledgeStudioPage", () => {
+  it("renders one TipTap authoring editor with visible markup states instead of a raw markdown textarea", async () => {
+    setupFetch();
+    renderStudio();
+
+    expect(await screen.findByRole("heading", { name: "Студия статей" })).toBeInTheDocument();
+    expect(await screen.findByTestId("knowledge-tiptap-editor")).toBeInTheDocument();
+    expect(screen.getByText("Ручная разметка")).toBeInTheDocument();
+    expect(screen.getByText("AI-предложение")).toBeInTheDocument();
+    expect(screen.getByText("Автосегмент")).toBeInTheDocument();
+    expect(screen.getByText("Изменённый текст")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Markdown")).not.toBeInTheDocument();
+  });
+
   it("loads a dedicated product authoring workspace with metadata, editor, preview and publish checklist", async () => {
     setupFetch();
     renderStudio();
@@ -285,7 +310,7 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(await screen.findByRole("heading", { name: "Студия статей" })).toBeInTheDocument();
     expect(screen.getByText("Черновики и статьи")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /VPN access/ })).toBeInTheDocument();
-    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+    const editor = await loadedEditorContent();
     expect(screen.getByLabelText("Заголовок")).toHaveValue("VPN access");
     expect(screen.getByLabelText("Slug")).toHaveValue("vpn-access");
     expect(screen.getByLabelText("Пространство")).toHaveValue("it-self-service");
@@ -293,9 +318,9 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByLabelText("Владелец")).toHaveValue("owner");
     expect(screen.getByLabelText("Ревьюер")).toHaveValue("reviewer");
     expect(screen.getByLabelText("Теги")).toHaveValue("vpn, remote");
-    expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter.");
+    expect(editor.textContent ?? "").toContain("Check the tunnel adapter.");
     expect(screen.getByText("Предпросмотр")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "VPN access" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "VPN access" }).length).toBeGreaterThan(0);
     expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Метаданные статьи" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Таксономия" })).toBeInTheDocument();
@@ -329,16 +354,12 @@ describe("AdminKnowledgeStudioPage", () => {
     renderStudio();
 
     await screen.findByRole("heading", { name: "Студия статей" });
-    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+    const editor = await loadedEditorContent();
     fireEvent.click(await screen.findByRole("button", { name: "Вставить шаблон: Шаблон решения" }));
-    expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("## Симптом");
-    expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("## Решение");
+    await waitFor(() => expect(editor.textContent ?? "").toContain("Симптом"));
+    expect(editor.textContent ?? "").toContain("Решение");
 
-    fireEvent.change(screen.getByLabelText("Markdown"), {
-      target: {
-        value: "# VPN access\n\nUpdated requester-safe body.\n\n## Решение\nReconnect profile.",
-      },
-    });
+    replaceEditorText("# VPN access\n\nUpdated requester-safe body.\n\n## Решение\nReconnect profile.");
     fireEvent.change(screen.getByLabelText("Краткое описание версии"), {
       target: { value: "Updated requester-safe body" },
     });
@@ -363,7 +384,7 @@ describe("AdminKnowledgeStudioPage", () => {
     });
 
     const checklist = screen.getByRole("group", { name: "Проверка публикации" });
-    fireEvent.click(within(checklist).getByLabelText("Markdown заполнен"));
+    fireEvent.click(within(checklist).getByLabelText("Текст статьи заполнен"));
     fireEvent.click(within(checklist).getByLabelText("Есть краткое описание"));
     fireEvent.click(within(checklist).getByLabelText("Выбрана безопасная видимость для портала"));
     fireEvent.click(within(checklist).getByLabelText("Назначен ревьюер"));
@@ -390,7 +411,7 @@ describe("AdminKnowledgeStudioPage", () => {
     renderStudio();
 
     await screen.findByRole("heading", { name: "Студия статей" });
-    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+    await loadedEditorContent();
 
     fireEvent.change(screen.getByLabelText("Новый заголовок"), { target: { value: "Wi-Fi reconnect" } });
     fireEvent.change(screen.getByLabelText("Новый slug"), { target: { value: "wifi-reconnect" } });
@@ -459,7 +480,7 @@ describe("AdminKnowledgeStudioPage", () => {
     renderStudio();
 
     await screen.findByRole("heading", { name: "Студия статей" });
-    await waitFor(() => expect((screen.getByLabelText("Markdown") as HTMLTextAreaElement).value).toContain("Check the tunnel adapter."));
+    await loadedEditorContent();
 
     fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
       target: { value: "Reviewer comment" },
@@ -491,17 +512,16 @@ describe("AdminKnowledgeStudioPage", () => {
     renderStudio();
 
     await screen.findByRole("heading", { name: "Студия статей" });
-    const markdown = screen.getByLabelText("Markdown") as HTMLTextAreaElement;
-    await waitFor(() => expect(markdown.value).toContain("Check the tunnel adapter."));
+    const editor = await loadedEditorContent();
 
-    fireEvent.click(screen.getByRole("button", { name: "Вставить callout" }));
-    fireEvent.click(screen.getByRole("button", { name: "Вставить таблицу" }));
-    fireEvent.click(screen.getByRole("button", { name: "Вставить код" }));
-    fireEvent.click(screen.getByRole("button", { name: "Вставить checklist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Callout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Таблица" }));
+    fireEvent.click(screen.getByRole("button", { name: "Код" }));
+    fireEvent.click(screen.getByRole("button", { name: "Checklist" }));
 
-    expect(markdown.value).toContain("> [!NOTE]");
-    expect(markdown.value).toContain("| Шаг | Действие |");
-    expect(markdown.value).toContain("```text");
-    expect(markdown.value).toContain("- [ ] Проверить результат");
+    await waitFor(() => expect(editor.textContent ?? "").toContain("[!NOTE]"));
+    expect(editor.textContent ?? "").toContain("| Шаг | Действие |");
+    expect(editor.textContent ?? "").toContain("Команда или лог");
+    expect(editor.textContent ?? "").toContain("[ ] Проверить результат");
   });
 });

@@ -258,6 +258,73 @@
     color: #0f172a !important;
   }
 
+  .knowledge-tiptap-editor .ProseMirror {
+    min-height: 24rem;
+    padding: 1.25rem;
+    outline: none;
+    color: #0f172a;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror h1,
+  .knowledge-tiptap-editor .ProseMirror h2,
+  .knowledge-tiptap-editor .ProseMirror h3 {
+    margin: 1rem 0 0.5rem;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror h1 {
+    font-size: 1.55rem;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror h2 {
+    font-size: 1.25rem;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror h3 {
+    font-size: 1.05rem;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror p {
+    margin: 0.65rem 0;
+    line-height: 1.75;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror ul,
+  .knowledge-tiptap-editor .ProseMirror ol {
+    margin: 0.75rem 0;
+    padding-left: 1.5rem;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror blockquote {
+    margin: 1rem 0;
+    border-left: 3px solid #8dc8a1;
+    background: #f1f6ef;
+    padding: 0.75rem 1rem;
+    color: #334155;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror pre {
+    overflow-x: auto;
+    border-radius: 0.5rem;
+    background: #0f172a;
+    padding: 0.9rem 1rem;
+    color: #e2e8f0;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror code {
+    border-radius: 0.35rem;
+    background: #f1f5f9;
+    padding: 0.12rem 0.3rem;
+    color: #0f172a;
+  }
+
+  .knowledge-tiptap-editor .ProseMirror pre code {
+    background: transparent;
+    padding: 0;
+    color: inherit;
+  }
+
   .support-workspace[data-theme="light"] .text-slate-200,
   .support-workspace[data-theme="light"] .text-slate-300 {
     color: #334155 !important;

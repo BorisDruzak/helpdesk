@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { KnowledgeGraphStudioPage } from "./graph-studio-page";
 
@@ -219,24 +219,48 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class ResizeObserver {
+      disconnect() {}
+      observe() {}
+      unobserve() {}
+    },
+  );
+});
+
 describe("KnowledgeGraphStudioPage", () => {
+  it("renders React Flow as the primary editable graph canvas instead of a read-only SVG map", async () => {
+    setupFetch();
+    renderGraphStudio();
+
+    expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
+    expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
+    expect(screen.getByText("React Flow canvas")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Карта графа знаний" })).not.toBeInTheDocument();
+  });
+
   it("loads a visual graph canvas and creates nodes and edges through graph APIs", async () => {
     const fetchMock = setupFetch();
     renderGraphStudio();
 
     expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
     expect((await screen.findAllByRole("button", { name: /VPN concept/ }))[0]).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Карта графа знаний" })).toBeInTheDocument();
+    expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
+    expect(screen.getByText("React Flow canvas")).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "Карта графа знаний" })).not.toBeInTheDocument();
     expect(await screen.findByText("Layout сохранен для scope default")).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /VPN concept/ })[0]);
     expect((await screen.findAllByText("mentions")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("VPN access article").length).toBeGreaterThan(0);
 
-    fireEvent.change(screen.getByLabelText("Ключ узла"), { target: { value: "concept:mfa" } });
     fireEvent.change(screen.getByLabelText("Метка узла"), { target: { value: "MFA concept" } });
     fireEvent.change(screen.getByLabelText("Тип узла"), { target: { value: "concept" } });
     fireEvent.change(screen.getByLabelText("Видимость узла"), { target: { value: "support_internal" } });
+    fireEvent.click(screen.getByText("Advanced: graph ids"));
+    fireEvent.change(screen.getByLabelText("Ключ узла"), { target: { value: "concept:mfa" } });
     fireEvent.click(screen.getByRole("button", { name: "Создать узел" }));
 
     await waitFor(() =>

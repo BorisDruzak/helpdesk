@@ -6,7 +6,8 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
-import { fetchKnowledgeIndexingStatus, fetchKnowledgeIndexJobs, reindexKnowledgeItem } from "./api";
+import { AdvancedDisclosure } from "../../components/ui-page/advanced-disclosure";
+import { fetchKnowledgeIndexingStatus, fetchKnowledgeIndexJobs, fetchKnowledgeItems, reindexKnowledgeItem } from "./api";
 
 const inputClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
 
@@ -31,7 +32,9 @@ export function KnowledgeIndexingPage() {
   const queryClient = useQueryClient();
   const statusQuery = useQuery({ queryKey: ["knowledge-indexing-status"], queryFn: fetchKnowledgeIndexingStatus });
   const jobsQuery = useQuery({ queryKey: ["knowledge-indexing-jobs"], queryFn: fetchKnowledgeIndexJobs });
+  const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
   const [itemId, setItemId] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
   const [versionId, setVersionId] = useState("");
   const [message, setMessage] = useState("");
 
@@ -51,6 +54,15 @@ export function KnowledgeIndexingPage() {
   const embeddings = indexing?.embeddings ?? {};
   const jobs = jobsQuery.data ?? [];
   const vectorDisabled = indexing ? !indexing.vector_enabled : false;
+  const filteredItems = (itemsQuery.data ?? [])
+    .filter((item) => {
+      const needle = itemSearch.trim().toLowerCase();
+      if (!needle) {
+        return true;
+      }
+      return [item.title, item.slug, item.status, item.visibility].some((value) => String(value ?? "").toLowerCase().includes(needle));
+    })
+    .slice(0, 6);
 
   return (
     <div className="space-y-6">
@@ -94,17 +106,40 @@ export function KnowledgeIndexingPage() {
               <DatabaseZap className="h-5 w-5" />
               Reindex статьи
             </CardTitle>
-            <CardDescription>Введите item id или slug. Version id можно оставить пустым для всех chunks статьи.</CardDescription>
+            <CardDescription>Выберите статью из реестра. Raw item id доступен только в Advanced.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <label className="block text-sm font-medium text-slate-700">
-              Статья
-              <input className={inputClass} value={itemId} onChange={(event) => setItemId(event.target.value)} placeholder="knowledge item id или slug" />
+              Поиск статьи
+              <input className={inputClass} value={itemSearch} onChange={(event) => setItemSearch(event.target.value)} placeholder="Название, slug, статус" />
             </label>
-            <label className="block text-sm font-medium text-slate-700">
-              Версия
-              <input className={inputClass} value={versionId} onChange={(event) => setVersionId(event.target.value)} placeholder="опционально" />
-            </label>
+            <div className="max-h-56 space-y-2 overflow-auto pr-1">
+              {filteredItems.map((item) => (
+                <button
+                  className={`w-full rounded-md border px-3 py-2 text-left text-sm ${itemId === item.item_id ? "border-brand-300 bg-brand-50" : "border-slate-200 bg-white hover:border-brand-200"}`}
+                  key={item.item_id}
+                  onClick={() => {
+                    setItemId(item.item_id);
+                    setItemSearch(item.title);
+                  }}
+                  type="button"
+                >
+                  <span className="block font-semibold text-slate-950">{item.title}</span>
+                  <span className="block text-xs text-slate-500">{item.slug}</span>
+                </button>
+              ))}
+              {!itemsQuery.isLoading && !filteredItems.length ? <p className="text-sm text-slate-500">Статьи не найдены.</p> : null}
+            </div>
+            <AdvancedDisclosure description="Используйте только для диагностики, миграций или когда статья ещё не попала в picker." title="Advanced: raw ids">
+              <label className="block text-sm font-medium text-slate-700">
+                Raw item id or slug
+                <input className={inputClass} value={itemId} onChange={(event) => setItemId(event.target.value)} placeholder="knowledge item id или slug" />
+              </label>
+              <label className="block text-sm font-medium text-slate-700">
+                Raw version id
+                <input className={inputClass} value={versionId} onChange={(event) => setVersionId(event.target.value)} placeholder="опционально" />
+              </label>
+            </AdvancedDisclosure>
             <Button type="button" onClick={() => reindexMutation.mutate()} disabled={!itemId.trim() || reindexMutation.isPending}>
               <RefreshCw className="h-4 w-4" />
               Запустить reindex

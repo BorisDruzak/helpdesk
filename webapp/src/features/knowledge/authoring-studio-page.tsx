@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { PageHeading } from "../../components/ui/page-heading";
 import { ArticleMetadataPanel } from "./article-metadata-panel";
 import { ArticleSegmentationPanel } from "./article-segmentation-panel";
+import { KnowledgeTipTapEditor } from "./knowledge-tiptap-editor";
 import {
   createKnowledgeItem,
   createKnowledgeVersion,
@@ -23,7 +24,6 @@ import {
 } from "./api";
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
-const textareaClass = `${fieldClass} min-h-72 font-mono text-xs leading-6`;
 
 const itemTypeOptions = [
   { label: "Статья", value: "article" },
@@ -459,6 +459,103 @@ export function KnowledgeAuthoringStudioPage() {
         </aside>
 
         <div className="space-y-5">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <CardTitle>Единый редактор</CardTitle>
+                    <CardDescription>Одна рабочая область для текста, ручной разметки, AI-предложений и автосегментов.</CardDescription>
+                  </div>
+                  <Button disabled={!selectedItem || createVersionMutation.isPending} onClick={() => createVersionMutation.mutate()}>
+                    Создать версию
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="text-sm font-medium">
+                    Краткое описание версии
+                    <input className={fieldClass} value={draft.summary} onChange={(event) => updateDraft("summary", event.target.value)} />
+                  </label>
+                  <label className="text-sm font-medium">
+                    Описание изменения
+                    <input className={fieldClass} value={draft.change_summary} onChange={(event) => updateDraft("change_summary", event.target.value)} />
+                  </label>
+                </div>
+                <KnowledgeTipTapEditor
+                  isDisabled={!selectedItem}
+                  onChange={(value) => updateDraft("body", value)}
+                  onInsertBlock={insertMarkdownBlock}
+                  onInsertTemplate={insertTemplate}
+                  templates={templatesQuery.data ?? []}
+                  value={draft.body}
+                />
+              </CardContent>
+            </Card>
+
+            <div className="space-y-5">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Предпросмотр</CardTitle>
+                  <CardDescription>Как статья будет читаться без перехода в портал.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">{markdownPreview(draft.body)}</CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <GitCompare className="h-5 w-5" />
+                    Diff версии
+                  </CardTitle>
+                  <CardDescription>Лёгкая проверка отличий draft от выбранной версии.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <p className="font-medium text-emerald-700">Добавлено: {currentDiff.added.length}</p>
+                  <p className="font-medium text-red-700">Удалено: {currentDiff.removed.length}</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>История редактора</CardTitle>
+                  <CardDescription>События студии и сохраненный кэш различий для выбранной статьи.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {latestDiffCache ? (
+                    <p className="font-medium text-slate-700">
+                      Кэш различий: +{latestDiffCache.added_lines} / -{latestDiffCache.removed_lines}
+                    </p>
+                  ) : (
+                    <p className="text-slate-500">Кэш различий еще не создан.</p>
+                  )}
+                  <div className="space-y-2">
+                    {(editorHistory?.events ?? []).slice(0, 6).map((event) => (
+                      <div key={event.event_id} className="rounded-md border border-slate-200 px-3 py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge>{event.event_type}</Badge>
+                          {event.actor_id ? <span className="text-xs text-slate-500">{event.actor_id}</span> : null}
+                        </div>
+                        {event.summary ? <p className="mt-1 text-slate-700">{event.summary}</p> : null}
+                      </div>
+                    ))}
+                    {!editorHistoryQuery.isLoading && !(editorHistory?.events ?? []).length ? (
+                      <p className="text-slate-500">История появится после создания версии, ревью или публикации.</p>
+                    ) : null}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5" />
+                    AI-инструменты отключены
+                  </CardTitle>
+                  <CardDescription>Переписывание, резюме и генерация FAQ появятся только после отдельного AI-среза с политиками доступа.</CardDescription>
+                </CardHeader>
+              </Card>
+            </div>
+          </div>
+
           <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
             <Card>
               <CardHeader>
@@ -540,7 +637,7 @@ export function KnowledgeAuthoringStudioPage() {
                 </label>
                 <fieldset aria-label="Проверка публикации" className="grid gap-2">
                   {[
-                    ["body", "Markdown заполнен"],
+                    ["body", "Текст статьи заполнен"],
                     ["summary", "Есть краткое описание"],
                     ["visibility", "Выбрана безопасная видимость для портала"],
                     ["reviewer", "Назначен ревьюер"],
@@ -619,118 +716,6 @@ export function KnowledgeAuthoringStudioPage() {
               </p>
             </CardContent>
           </Card>
-
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.7fr)]">
-            <Card>
-              <CardHeader>
-                <CardTitle>Редактор</CardTitle>
-                <CardDescription>Markdown, шаблоны и новая версия без AI-зависимости.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {(templatesQuery.data ?? []).map((template) => (
-                    <Button key={template.type} variant="outline" onClick={() => insertTemplate(template.sections)}>
-                      Вставить шаблон: {template.title}
-                    </Button>
-                  ))}
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("> [!NOTE]\n> Важное уточнение для читателя.")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить callout
-                  </Button>
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("| Шаг | Действие |\n| --- | --- |\n| 1 | Описать проверку |")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить таблицу
-                  </Button>
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("```text\nКоманда или лог\n```")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить код
-                  </Button>
-                  <Button variant="outline" onClick={() => insertMarkdownBlock("- [ ] Проверить результат\n- [ ] Обновить статью после проверки")}>
-                    <PlusCircle className="h-4 w-4" />
-                    Вставить checklist
-                  </Button>
-                </div>
-                <label className="text-sm font-medium">
-                  Markdown
-                  <textarea className={textareaClass} value={draft.body} onChange={(event) => updateDraft("body", event.target.value)} />
-                </label>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="text-sm font-medium">
-                    Краткое описание версии
-                    <input className={fieldClass} value={draft.summary} onChange={(event) => updateDraft("summary", event.target.value)} />
-                  </label>
-                  <label className="text-sm font-medium">
-                    Описание изменения
-                    <input className={fieldClass} value={draft.change_summary} onChange={(event) => updateDraft("change_summary", event.target.value)} />
-                  </label>
-                </div>
-                <Button disabled={!selectedItem || createVersionMutation.isPending} onClick={() => createVersionMutation.mutate()}>
-                  Создать версию
-                </Button>
-              </CardContent>
-            </Card>
-
-            <div className="space-y-5">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Предпросмотр</CardTitle>
-                  <CardDescription>Как статья будет читаться без перехода в портал.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">{markdownPreview(draft.body)}</CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <GitCompare className="h-5 w-5" />
-                    Diff версии
-                  </CardTitle>
-                  <CardDescription>Лёгкая проверка отличий draft от выбранной версии.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <p className="font-medium text-emerald-700">Добавлено: {currentDiff.added.length}</p>
-                  <p className="font-medium text-red-700">Удалено: {currentDiff.removed.length}</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>История редактора</CardTitle>
-                  <CardDescription>События студии и сохраненный кэш различий для выбранной статьи.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  {latestDiffCache ? (
-                    <p className="font-medium text-slate-700">
-                      Кэш различий: +{latestDiffCache.added_lines} / -{latestDiffCache.removed_lines}
-                    </p>
-                  ) : (
-                    <p className="text-slate-500">Кэш различий еще не создан.</p>
-                  )}
-                  <div className="space-y-2">
-                    {(editorHistory?.events ?? []).slice(0, 6).map((event) => (
-                      <div key={event.event_id} className="rounded-md border border-slate-200 px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge>{event.event_type}</Badge>
-                          {event.actor_id ? <span className="text-xs text-slate-500">{event.actor_id}</span> : null}
-                        </div>
-                        {event.summary ? <p className="mt-1 text-slate-700">{event.summary}</p> : null}
-                      </div>
-                    ))}
-                    {!editorHistoryQuery.isLoading && !(editorHistory?.events ?? []).length ? (
-                      <p className="text-slate-500">История появится после создания версии, ревью или публикации.</p>
-                    ) : null}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Sparkles className="h-5 w-5" />
-                    AI-инструменты отключены
-                  </CardTitle>
-                  <CardDescription>Переписывание, резюме и генерация FAQ появятся только после отдельного AI-среза с политиками доступа.</CardDescription>
-                </CardHeader>
-              </Card>
-            </div>
-          </div>
 
           <ArticleSegmentationPanel item={selectedItem} version={selectedVersion ?? null} canManage={Boolean(selectedItem)} />
         </div>

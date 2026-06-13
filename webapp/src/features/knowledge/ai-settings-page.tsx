@@ -6,6 +6,7 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
+import { AdvancedDisclosure } from "../../components/ui-page/advanced-disclosure";
 import {
   checkKnowledgeAiProviderHealth,
   fetchKnowledgeAiAudit,
@@ -262,15 +263,17 @@ export function KnowledgeAiSettingsPage() {
                 Base URL
                 <input className={fieldClass} value={providerDraft.base_url} onChange={(event) => setProviderDraft({ ...providerDraft, base_url: event.target.value })} />
               </label>
-              <label className="text-sm font-medium">
-                Secret ref
-                <input
-                  className={fieldClass}
-                  value={providerDraft.api_key_secret_ref}
-                  onChange={(event) => setProviderDraft({ ...providerDraft, api_key_secret_ref: event.target.value })}
-                  placeholder="env:<имя переменной>"
-                />
-              </label>
+              <AdvancedDisclosure description="Укажите только approved secret/config reference. Значения ключей, токены и cookies здесь не вводятся." title="Advanced: secret reference">
+                <label className="text-sm font-medium">
+                  Secret ref
+                  <input
+                    className={fieldClass}
+                    value={providerDraft.api_key_secret_ref}
+                    onChange={(event) => setProviderDraft({ ...providerDraft, api_key_secret_ref: event.target.value })}
+                    placeholder="env:<имя переменной>"
+                  />
+                </label>
+              </AdvancedDisclosure>
               <label className="flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={providerDraft.enabled} onChange={(event) => setProviderDraft({ ...providerDraft, enabled: event.target.checked })} />
                 Провайдер включен
