@@ -223,7 +223,9 @@ Plan context refresh, 2026-06-14:
 * For docs-only plan/context edits, verification should stay local (`python scripts/verify_workspace.py`, `git diff --check`) and should not deploy, start agents or leave remote services running. For any subsequent live scenario, use project runtime/deploy scripts only and record final service state.
 * Latest docs-only context refresh for this PLANS.md update used `python scripts/build_context_pack.py --topic "PLANS Phase 4 Scenario B device registration strict registry ids safe Russian error live validation"` and `python scripts/search_context_index.py "Phase 4 Scenario B device registration strict registry ids safe Russian error account session live validation" --profile debug`. The useful anchors stayed concentrated in Phase 4 registration, `docs/LIVE_TESTING_DEBUG_RULES.md`, `server/registry/registration_service.py`, `server/registry/browser_pairing_service.py`, `server/auth/middleware.py`, `webapp/src/pages/device-pairing/api.ts`, `webapp/src/pages/device-pairing/index.tsx` and `webapp/src/pages/device-pairing/device-pairing-page.test.tsx`.
 * The context index was rebuilt again after stale warnings from current plan/webapp edits: 21,438 items, 1,523 chunks, 847 routes, 16,983 symbols and 2,061 tests. Treat future stale-index warnings as a stop-and-rebuild signal before relying on search output for handoff decisions.
-* Current workspace hygiene for the next handoff: `PLANS.md`, `webapp/src/pages/device-pairing/api.ts` and `webapp/src/pages/device-pairing/device-pairing-page.test.tsx` belong to the active Scenario B UI/error-mapping checkpoint; `.codex/config.toml`, `pc_agent/ui_gui/tickets_list_model.py` and `scripts/live_agent_uia_state_probe.py` are unrelated dirty tracked files and must not be staged or reverted as part of this plan-context update.
+* Current workspace hygiene for the next handoff: this docs-only update should stage only `PLANS.md`. The Scenario B UI/error-mapping files are already part of the `b675d99` checkpoint; `.codex/config.toml`, `pc_agent/ui_gui/tickets_list_model.py` and `scripts/live_agent_uia_state_probe.py` remain unrelated dirty tracked files and must not be staged or reverted as part of this plan-context update.
+* Latest Scenario C context refresh for this PLANS.md update used `python scripts/build_context_pack.py --topic "Phase 4 Scenario C verified other-account session safety live validation account gate PLANS context"` and `python scripts/search_context_index.py "Scenario C verified_other_account account-login-requests requester_account_warning owner ticket visibility account session live validation" --profile debug`. The useful anchors are `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`, `docs/LIVE_TESTING_DEBUG_RULES.md`, `server/registry/account_session_service.py`, `server/tickets/account_access_service.py`, `pc_agent/ui_gui/account_gate.py`, `pc_agent/ui_gui/main_window.py`, `pc_agent/ui_gui/server_api.py`, `webapp/src/pages/tickets/list-page.tsx`, and the focused tests named in the Scenario C handoff below.
+* Auth/runtime efficiency note for the next live agent: `scripts/manage_local_agent.py start --issue-token` still issues through `/api/login`, while the hardened stand keeps manual token issue admin-only. Prefer the project-approved connection request flow or a short-lived remote `AuthService.generate_agent_token(..., replace_existing=True)` helper that never prints the raw token; store only hash prefix/length in safe artifacts and delete any temp secret file immediately after the isolated agent starts.
 
 ---
 
@@ -889,6 +891,21 @@ Phase 4 Scenario B partial live evidence and next conditions, 2026-06-14:
 * Scenario B status after `b675d99`: the post-fix requester-visible safe Russian error layer and DB no-side-effect layer are closed for the canonical stand. Rerun Scenario B only if the exit bar is tightened to require the same-run pairing to be created by the real Windows GUI agent action instead of the seeded browser-pairing setup; in that case reuse the `b675d99` harness constraints and keep the rerun narrow.
 * Scenario C may proceed only after recording that Scenario B is accepted at the `b675d99` evidence level or explicitly noting the stricter real-agent-pairing caveat above. If Scenario C proceeds first, add contamination checks so later Knowledge/Phase 7 work does not treat other-account coverage as a substitute for negative strict registration coverage.
 
+Phase 4 Scenario C live-run handoff, 2026-06-14:
+
+* Current next gap: Scenario C is the next Phase 4 live gate after accepting Scenario B at the `b675d99` evidence level. Keep the next checkpoint limited to other-account safety; do not start Phase 5 Knowledge ACL work until Scenario C either passes or is explicitly recorded as blocked with evidence.
+* Preferred setup is a same-run confirmed owner. If that is too expensive, reuse the Scenario A confirmed owner only with a contamination baseline: `run_marker=phase4-agent-20260614-4ca9a116`, `device_id=efad5e17-14a3-4378-b8a4-d09fb63f3d69`, `person_id=cb64f08c-365a-4467-990a-abf84a3ff7f1`, `binding_id=f0920fc4-587b-47c5-b7a9-6689ee0a7299`, owner ticket `T-000693` / `6dbb8d18-18c0-41d2-af6e-abe9e482488b`, department `989e865a-03a0-456c-9474-4a8711bffb07`, location `6f74fc1f-dc26-487b-ab44-a9da04af9b39`.
+* First artifact for a reuse run must be `pre_other_account_baseline.safe.json`: active binding id/status/type, registered owner person/department/location, owner historical ticket list before the other-account request, existing claims/sessions for the device, and an explicit note that owner ticket `T-000693` is expected contamination used only for denial checks.
+* The request path must be the real agent account gate: UIA opens `Войти в другой аккаунт`, fills `full_name`, `login`, optional `phone`/`email`, and required `reason`, then submits. The product endpoints behind this are `POST /api/registry/agent/account-login-requests`, admin `GET|POST /api/web/admin/registry/account-login-requests/*`, and agent `GET /api/registry/agent/account-login-requests/{request_id}`. `/ui/automation/run` or direct HTTP can support evidence, but cannot replace UIA proof that the local GUI reached pending, check-status and approved other-account states.
+* Approval/pickup evidence must prove one-time token semantics safely: first agent poll after admin approval returns a `verified_other_account` session and token; subsequent poll must not expose another raw token. Artifacts may store session id, status, mode, token hash prefix/length and token-present booleans, never the token itself.
+* Ticket B must be created through an agent requester path that carries the selected account session. DB evidence must show `requester_account_session_id`, `requester_account_mode=verified_other_account`, `requester_account_warning=ticket_created_from_other_account_on_registered_device`, and `custom_fields.requester_account_context.declared_account` plus active registered owner/binding context.
+* Boundary proof must include both positive and negative requester checks: the other-account session can list/open ticket B, cannot list/open owner ticket `T-000693`, and cannot use only the agent machine token as requester identity. Support/admin visibility remains a separate staff route and is not a substitute for requester-session denial.
+* Mutation proof must compare before/after snapshots: no new registration claim for the Scenario C marker, active `device_user_bindings` unchanged, registered owner `registry_people.department_id/location_id` unchanged, `registry_assets.assigned_person_id` and `device_inventory_bindings.source_binding_id` still point to the original owner binding.
+* Support UI proof must use the canonical browser target and ticket detail/workspace: `/app/tickets` or the direct ticket route on `https://192.168.100.17:9443/admin`. The visible Russian warning must be `Обращение создано с другого аккаунта на зарегистрированном устройстве.` and the requester context must show declared name/login/phone/reason plus active registered owner/binding.
+* Revocation proof can revoke only the new other-account session instead of the base binding to keep the reused owner device stable. After revoke, agent/requester list/detail/create actions with that session must fail with an account-session invalid/revoked error, and the agent UI must return to or show the account gate/session-invalid state. If the base binding is revoked instead, record and restore/replace the owner baseline explicitly because it invalidates the reused Scenario A state.
+* Minimum artifact set for the run folder: `run_id.txt`, `pre_other_account_baseline.safe.json`, `agent_account_gate_before_other_uia.*`, `agent_other_account_request_submitted.safe.json`, `admin_account_login_request_before_approve.*`, `admin_account_login_request_approved.safe.json`, `agent_other_account_after_check_uia.*`, `ticket_b_create.safe.json`, `db_after_ticket_b.safe.json`, `requester_visibility_owner_ticket_denied.safe.json`, `support_ticket_b_warning.*`, `session_revoke_and_denial.safe.json`, `cleanup_status.safe.json`, and filtered server/agent logs by run marker.
+* Focused verification before broad gates: `python -m pytest server/tests/test_account_session_service.py::test_other_account_login_request_approval_creates_verified_session`, `python -m pytest server/tests/test_account_session_service.py::test_revoked_base_binding_invalidates_verified_other_account_session`, `python -m pytest server/tests/test_ticket_account_access.py::test_verified_other_account_can_only_view_own_session_ticket`, `python -m pytest server/tests/test_ticket_registration_enrichment.py::test_verified_other_account_session_marks_ticket_without_registration_claim`, `python -m pytest server/tests/test_registry_effective_identity_service.py::test_verified_other_account_does_not_use_registered_owner_as_requester_identity`, `python -m pytest server/tests/test_registration_api.py::test_other_account_login_request_and_admin_approval_endpoints`, and `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts --reporter=dot`. If the pytest bundle hangs, rerun one target at a time and record timeout as a test-environment blocker, not as a pass.
+
 Verification:
 
 python -m pytest server/tests/test_registry_registration_policy.py
@@ -946,15 +963,22 @@ Verify observer/quality event if implemented.
 
 Scenario C — other-account session safety:
 
-Device has confirmed owner.
-Login/request another account from agent.
-Admin approves other-account request.
-Agent receives verified other-account session.
-Create ticket.
+Device has confirmed owner and owner historical ticket A.
+Record a pre-run baseline for owner binding/person/department/location, owner ticket list, existing claims and existing account sessions.
+Request another account from the real agent account gate with declared name/login/phone/reason.
+Admin approves the other-account request.
+Agent checks/polls the request and receives a `verified_other_account` session token once.
+Login/select the verified other-account session in the agent.
+Create ticket B through an agent requester path carrying the selected account session.
 Verify:
 device binding did not change;
-owner historical ticket is not visible to other-account session;
-support UI shows other-account warning.
+no registration claim was created for the other-account flow;
+registered owner person/department/location did not change;
+ticket B stores `requester_account_session_id`, `requester_account_mode=verified_other_account`, `requester_account_warning=ticket_created_from_other_account_on_registered_device` and `custom_fields.requester_account_context`;
+other-account session can list/open ticket B;
+owner historical ticket A is not visible/openable to other-account session;
+support UI shows `Обращение создано с другого аккаунта на зарегистрированном устройстве.`;
+revoking the other-account session or base binding invalidates subsequent agent requester actions.
 
 Evidence:
 
