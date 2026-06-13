@@ -183,7 +183,7 @@ export function GraphCanvas({
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-slate-950">Холст</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">Все операции выполняются прямо на графе: выбор, drag, связь, проверка и сохранение схемы.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Все операции выполняются прямо на графе: выбор, перетаскивание, связь, проверка и сохранение схемы.</p>
         </div>
         <div className="rounded-pill border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
           Текущая связь: {relationTypeLabel(activeRelationType)}
