@@ -1,6 +1,6 @@
 ## Active Work: Registry Visibility Foundation — Production Registry, Registration and Knowledge Audience Scopes
 
-Status: active implementation. Phase 0 architecture/docs contract, Phase 1 backend resolver/API slice and Phase 2 backend audience-group slice completed on 2026-06-13. Phase 3 production Registry UI slice is in local implementation: prompt-free bulk/quality/link dialogs and audience-group management are added; live browser signoff and remaining UI completeness checks are still required before Phase 3 exit.
+Status: active implementation. Phase 0 architecture/docs contract, Phase 1 backend resolver/API slice and Phase 2 backend audience-group slice completed on 2026-06-13. Phase 3 production Registry UI slice is implemented at local commit `3fb13ea8` (`server: add registry visibility foundation`): prompt-free bulk/quality/link dialogs and audience-group management are added, deployed through the quick stand path, and browser evidence is recorded under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/`. Remaining Phase 3 decision: whether Registry needs an embedded `Группы доступа` read/entry surface or whether `/app/admin/access` remains the canonical RBAC editor. Phase 4+ registration, Knowledge audience-rule enforcement, live-agent signoff and final operability hardening remain open.
 
 Branch target:
 
@@ -173,6 +173,8 @@ Implementation efficiency rules:
 * Knowledge ACL enforcement must be placed at candidate selection and final projection. Do not rely only on UI filtering or post-search masking.
 * Search, suggestions, portal, support knowledge, agent suggestion APIs and RAG/vector retrieval must all share the same access service or a thin wrapper over it.
 * Any live script or browser evidence must redact account-session token, machine token, pairing token/code, cookies, raw auth headers and hidden article content.
+* Treat `/app/admin/access` as the canonical RBAC/access-group editor until the plan explicitly says otherwise. If Phase 3 adds a Registry `Группы доступа` surface, prefer a read-only summary/deep link over a second mutation UI unless operator workflow, tests and docs justify duplication.
+* For docs-only plan/context updates, run docs/navigation verification instead of deploy. Do not run release scripts just to update `PLANS.md`.
 
 Phase dependency gates:
 
@@ -201,6 +203,19 @@ Current context from intake, 2026-06-13:
 * Existing policy code already validates `registration.department_mode` and `registration.location_mode` values in `server/registry/policy_service.py`; Phase 4 should expose/enforce the existing contract rather than invent new mode names.
 * Existing Knowledge visibility levels are `public`, `requester`, `agent_requester_safe`, `support_internal`, `admin_internal`, `security_restricted` and `auditor_read`. Audience rules refine these levels; they must not make internal/support-only content requester-visible.
 * Existing tests already cover important anchors such as account sessions, registration, Knowledge visibility/search, vector ACL-before-similarity and RAG ACL evaluation. Reuse and extend them before creating broad new suites.
+
+Current handoff context, 2026-06-13:
+
+* Current local branch at this intake is `codex/helpdesk-process-model`. Before starting the next implementation step, run `git status -sb` and verify the branch contains `3fb13ea8`; do not assume the local branch, GitHub `origin` and deployed stand are aligned without checking.
+* Phase 3 live/browser evidence for commit `3fb13ea8` is under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/`.
+* Browser evidence covers `/app/admin/registry` overview at 1366 and 1920 widths, `Аудитории · P1` create/preview/save/archive, member preview counts, device bulk dialog with reason/preview controls, and people/UI-account linking controls. The temporary test audience code `codex_phase3_3fb13ea8` was archived during cleanup.
+* Access groups already have a production surface at `/app/admin/access` backed by `webapp/src/features/access-control/api.ts`, `webapp/src/pages/admin/access-page.tsx` and `/api/web/admin/access/*` in `server/web_api/access_handlers.py`.
+* Access groups are RBAC/queue-permission facts. Registry effective identity and audience expansion may read them as targeting facts, but Registry audience groups must not grant or mutate access-group permissions.
+* If resuming Phase 3, decide the `Группы доступа` expectation first:
+  * use `/app/admin/access` as canonical editor and add only a Registry summary/deep link; or
+  * intentionally embed a Registry tab, with tests proving it reuses existing Access Control APIs and does not create a competing permissions model.
+* Current workspace contains unrelated tracked changes in `.codex/config.toml`, `pc_agent/ui_gui/tickets_list_model.py` and `scripts/live_agent_uia_state_probe.py`, plus many untracked artifacts. Stage only files that belong to the active task.
+* If the remote stack is still running from browser validation and no further live checks are planned, stop it through `python scripts/manage_remote_stack.py stop server` and `python scripts/manage_remote_stack.py stop control`.
 
 ---
 
@@ -635,11 +650,16 @@ Phase 3 UI execution, 2026-06-13:
   * `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot`
   * `pnpm --dir webapp exec tsc --noEmit --pretty false`
   * `rg -n "window\.prompt|prompt\(" webapp\src\pages\admin\registry-page.tsx webapp\src\features\admin\registry`
+* Phase 3 verification and evidence completed after the initial local slice:
+  * focused Registry vitest suite, registry backend pytest, docs drift/link checks, webapp typecheck, webapp build, `python scripts/verify_workspace.py` and `git diff --check` passed before commit `3fb13ea8`;
+  * quick stand deploy applied migration `120` and uploaded the webapp bundle for browser validation;
+  * browser evidence under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/` confirms no horizontal body scroll and no captured console/network errors on the checked Registry paths;
+  * checked flows: Registry overview, `Аудитории · P1` empty/create/preview/save/archive, device bulk dialog reason/preview controls, people tab UI-account linking controls.
 * Remaining Phase 3 work before exit:
-  * live/browser evidence on the project canonical stand;
-  * broader registry webapp test/build run;
-  * verify access-group UI expectations if the "Группы доступа" tab is meant to be embedded in Registry rather than staying in `/app/admin/access`;
-  * update any operator docs/screenshots after live signoff.
+  * decide and document the `Группы доступа` Registry expectation. Default efficient path: keep `/app/admin/access` as canonical editor and add only a Registry summary/deep link if operators need discovery from Registry;
+  * if an embedded Registry access-groups tab is implemented, reuse `fetchAccessSummary` / existing `/api/web/admin/access/*` contracts and add targeted `registry-page.test.tsx` coverage for labels, no mutation duplication and navigation to `/app/admin/access`;
+  * collect one additional browser screenshot only if the access-groups Registry surface changes;
+  * update operator docs/screenshots after the access-groups decision.
 
 ---
 
