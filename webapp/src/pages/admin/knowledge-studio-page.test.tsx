@@ -407,7 +407,9 @@ describe("AdminKnowledgeStudioPage", () => {
 
     await screen.findByRole("heading", { name: "Студия знаний" });
     const editor = await loadedEditorContent();
-    fireEvent.click(await screen.findByRole("button", { name: "Вставить шаблон: Шаблон решения" }));
+    expect(screen.queryByRole("button", { name: "Вставить шаблон: Шаблон решения" })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Вставить шаблон" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Шаблон решения" }));
     await waitFor(() => expect(editor.textContent ?? "").toContain("Симптом"));
     expect(editor.textContent ?? "").toContain("Решение");
 

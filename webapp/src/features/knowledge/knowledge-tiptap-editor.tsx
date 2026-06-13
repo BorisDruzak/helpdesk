@@ -1,8 +1,8 @@
-import { useEffect, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Highlight from "@tiptap/extension-highlight";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Bold, Code2, Heading2, Highlighter, Italic, List, Quote } from "lucide-react";
+import { Bold, ChevronDown, Code2, FileText, Heading2, Highlighter, Italic, List, Quote } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 
@@ -159,6 +159,8 @@ export function KnowledgeTipTapEditor({
   templates,
   value,
 }: KnowledgeTipTapEditorProps) {
+  const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false);
+  const templateMenuRef = useRef<HTMLDivElement | null>(null);
   const editor = useEditor({
     content: markdownToHtml(value),
     editorProps: {
@@ -188,8 +190,39 @@ export function KnowledgeTipTapEditor({
     }
   }, [editor, value]);
 
+  useEffect(() => {
+    if (!isTemplateMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (templateMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsTemplateMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsTemplateMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isTemplateMenuOpen]);
+
   function applyHighlight(color: string) {
     editor?.chain().focus().setHighlight({ color }).run();
+  }
+
+  function handleTemplateSelect(sections: string[]) {
+    onInsertTemplate(sections);
+    setIsTemplateMenuOpen(false);
   }
 
   function handleEditorInput(event: FormEvent<HTMLDivElement>) {
@@ -202,11 +235,38 @@ export function KnowledgeTipTapEditor({
   return (
     <div className="space-y-4" data-testid="knowledge-tiptap-editor">
       <div className="flex flex-wrap items-center gap-2">
-        {(templates ?? []).map((template) => (
-          <Button disabled={isDisabled} key={template.type} onClick={() => onInsertTemplate(template.sections)} size="sm" variant="outline">
-            Вставить шаблон: {template.title}
+        <div className="relative" ref={templateMenuRef}>
+          <Button
+            aria-expanded={isTemplateMenuOpen}
+            aria-haspopup="menu"
+            disabled={isDisabled || !(templates ?? []).length}
+            leadingIcon={<FileText className="h-4 w-4" />}
+            onClick={() => setIsTemplateMenuOpen((value) => !value)}
+            size="sm"
+            trailingIcon={<ChevronDown className="h-4 w-4" />}
+            variant="outline"
+          >
+            Вставить шаблон
           </Button>
-        ))}
+          {isTemplateMenuOpen ? (
+            <div
+              className="absolute left-0 top-[calc(100%+0.5rem)] z-30 min-w-72 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
+              role="menu"
+            >
+              {(templates ?? []).map((template) => (
+                <button
+                  className="block w-full rounded-md px-3 py-2 text-left text-sm font-medium text-slate-700 transition-colors hover:bg-brand-50 hover:text-brand-800 focus:bg-brand-50 focus:text-brand-800 focus:outline-none"
+                  key={template.type}
+                  onClick={() => handleTemplateSelect(template.sections)}
+                  role="menuitem"
+                  type="button"
+                >
+                  {template.title}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <Button disabled={isDisabled || !editor} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} size="icon" title="Заголовок H2" variant="outline">
           <Heading2 className="h-4 w-4" />
         </Button>
