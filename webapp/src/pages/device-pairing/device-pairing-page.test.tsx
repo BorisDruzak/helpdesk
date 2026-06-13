@@ -257,4 +257,59 @@ describe("DevicePairingPage", () => {
 
     expect(await screen.findByText("Регистрация подтверждена")).toBeInTheDocument();
   });
+
+  it("shows a safe Russian error when strict registration ids are rejected", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/registry/browser-pairings/pair-invalid") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-invalid",
+            purpose: "registration",
+            status: "pending",
+            device: { hostname: "STRICT-PC", os: "Windows", agent_version: "3.1.62" },
+          },
+        });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            departments: [{ value: "dept-1", label: "Dept 1" }],
+            locations: [{ value: "loc-1", label: "Office 7 / 701" }],
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-invalid/registration/confirm") {
+        expect(init?.method).toBe("POST");
+        return jsonResponse(
+          {
+            status: "error",
+            error: "department_id not found",
+            error_code: "NOT_FOUND",
+          },
+          404,
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderPage("/app/device/register?pairing_id=pair-invalid");
+
+    expect(await screen.findByText("STRICT-PC")).toBeInTheDocument();
+    const selects = await screen.findAllByRole("combobox");
+    fireEvent.change(selects[0], { target: { value: "dept-1" } });
+    fireEvent.change(selects[1], { target: { value: "loc-1" } });
+    fireEvent.click(screen.getByRole("button"));
+
+    expect(
+      await screen.findByText(
+        "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u043e\u0434\u0440\u0430\u0437\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u0438\u0437 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("department_id not found")).not.toBeInTheDocument();
+  });
+
 });

@@ -72,12 +72,27 @@ async function readJson<T>(response: Response): Promise<T | null> {
   return (await response.json()) as T;
 }
 
+function safePairingErrorMessage(errorPayload: ErrorResponse | null, fallbackMessage: string): string {
+  const error = errorPayload?.error?.trim() ?? "";
+  const normalized = error.toLowerCase();
+  if (normalized.includes("department_id")) {
+    return "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u043e\u0434\u0440\u0430\u0437\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u0438\u0437 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430.";
+  }
+  if (normalized.includes("location_id")) {
+    return "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043b\u043e\u043a\u0430\u0446\u0438\u044e \u0438\u0437 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430.";
+  }
+  if (normalized.includes("_id") || normalized.includes(" not found")) {
+    return fallbackMessage;
+  }
+  return error || fallbackMessage;
+}
+
 async function readSuccess<T>(response: Response, fallbackMessage: string): Promise<T> {
   const payload = await readJson<SuccessResponse<T> | ErrorResponse>(response);
   if (!response.ok || !payload || payload.status !== "success") {
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new DevicePairingApiError(
-      errorPayload?.error ?? fallbackMessage,
+      safePairingErrorMessage(errorPayload, fallbackMessage),
       response.status,
       errorPayload?.error_code,
     );
