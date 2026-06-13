@@ -57,8 +57,9 @@ Current open gates before final Knowledge vNext signoff:
 * `/app/admin/knowledge/studio` получил единый TipTap/ProseMirror editor surface с визуальными состояниями ручной разметки, AI-предложений, автосегментов и изменённого текста; version/publish/review API остаются прежними.
 * `/app/admin/knowledge/graph` получил React Flow canvas как основной editor surface: выбор узла, drag layout, connect edge и save layout связаны с текущими graph API.
 * `/app/admin/knowledge/import`, `/search-settings`, `/ai`, `/indexing` приведены к сценарному контракту: wizard/action bar, AI-gated controls, secret refs и raw ids в Advanced, item picker для reindex.
-* Проверено локально: `pnpm --dir webapp exec tsc --noEmit --pretty false`; `pnpm --dir webapp exec vitest run src/features/knowledge src/pages/admin/knowledge-studio-page.test.tsx --reporter=dot` — 12 файлов, 44 теста.
-* Остаётся до signoff: `pnpm --dir webapp build`, `python scripts/verify_workspace.py`, browser evidence для 1366×768 и 1920×1080 по всем семи admin Knowledge routes.
+* Проверено локально: `pnpm --dir webapp build`; `pnpm --dir webapp test -- --reporter=dot` — 91 файл, 428 тестов; `python scripts/verify_workspace.py`.
+* Browser evidence собрано для всех семи admin Knowledge routes на 1366×768 и 1920×1080: `knowledge-ops-final-*`, `knowledge-studio-final-*`, `knowledge-graph-final-*`, `knowledge-import-final-*`, `knowledge-search-settings-final-*`, `knowledge-ai-final-*`, `knowledge-indexing-final-*`. Проверено: primary actions видны без прокрутки, horizontal scroll отсутствует, Studio показывает единый редактор и визуальные легенды разметки, Graph показывает React Flow editor canvas и inspector action.
+* Осталось вне этого UI signoff: общий Knowledge vNext product signoff по live OpenRouter/retrieval остаётся в верхних open gates и не блокирует админский UI refactor.
 
 Target product surfaces:
 
