@@ -1,6 +1,6 @@
 ## Active Work: Registry Visibility Foundation — Production Registry, Registration and Knowledge Audience Scopes
 
-Status: active implementation. Phase 0 architecture/docs contract, Phase 1 backend resolver/API slice and Phase 2 backend audience-group slice completed on 2026-06-13. Phase 3 production Registry UI slice is implemented at local commits `3fb13ea8` (`server: add registry visibility foundation`) and `6204c749` (`webapp: add registry access groups summary`): prompt-free bulk/quality/link dialogs, audience-group management and read-only `Группы доступа · P1` discovery are added, deployed through the quick stand path, and browser evidence is recorded under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/` plus `artifacts/browser_live_validation/registry-access-groups-6204c749-20260613/`. The remaining Phase 3 `Группы доступа` decision is resolved as a read-only Registry summary/deep link over the canonical `/app/admin/access` RBAC editor. Phase 4+ registration, Knowledge audience-rule enforcement, live-agent signoff and final operability hardening remain open.
+Status: active implementation. Phase 0 architecture/docs contract, Phase 1 backend resolver/API slice and Phase 2 backend audience-group slice completed on 2026-06-13. Phase 3 production Registry UI slice is implemented at local commits `3fb13ea8` (`server: add registry visibility foundation`) and `6204c749` (`webapp: add registry access groups summary`): prompt-free bulk/quality/link dialogs, audience-group management and read-only `Группы доступа · P1` discovery are added, deployed through the quick stand path, and browser evidence is recorded under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/` plus `artifacts/browser_live_validation/registry-access-groups-6204c749-20260613/`. The remaining Phase 3 `Группы доступа` decision is resolved as a read-only Registry summary/deep link over the canonical `/app/admin/access` RBAC editor. Phase 4 registration hardening is in progress in current local work with the admin approval diff UI slice; deploy/browser evidence for this slice is still required. Phase 4 live-agent signoff, Phase 5+ Knowledge audience-rule enforcement and final operability hardening remain open.
 
 Branch target:
 
@@ -733,6 +733,23 @@ RED backend test pending registration session invalidates after approval/reject.
 RED webapp test for policy UI fields.
 RED webapp test for approval diff.
 RED agent/API test for account gate behavior if existing pc_agent test patterns support it.
+
+Phase 4 execution, 2026-06-13:
+
+* First implemented slice: `/app/admin/registry` -> `Заявки` now shows a compact approval diff for every registration claim before admin actions.
+* Diff source stays read-only from the existing `/api/web/admin/registry` payload; no new route or mutation contract was added.
+* The diff shows existing device/binding context, claimed person, claimed department/location labels, proposed identity, proposed binding type and conflict/blocker reason.
+* Guard test: `webapp/src/pages/admin/registry-page.test.tsx` / `shows an approval diff for registration claims before admin actions`.
+* Local verification so far:
+  * RED: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` failed on missing `Дифф подтверждения`.
+  * GREEN: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` passed 5 tests.
+  * Focused: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx src/features/admin/registry/registry-requests-tab.test.ts --reporter=dot` passed 8 tests.
+  * `pnpm --dir webapp exec tsc --noEmit --pretty false` passed.
+* Remaining Phase 4 work:
+  * collect browser evidence for the approval diff slice on the canonical stand after local checks and commit;
+  * expose first-class `department_mode` / `location_mode` controls in the Registry policies tab if the current UI still lacks them;
+  * add/verify explicit backend tests for strict department/location enforcement and approval update side effects under the Phase 4 command names;
+  * run the real connected agent registration scenarios before Phase 4 exit.
 
 Verification:
 

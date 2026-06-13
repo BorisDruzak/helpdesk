@@ -2,18 +2,26 @@ import { Check, X } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
-import type { AdminAccountLoginRequest, AdminRegistrationClaim } from "../api";
+import type { AdminAccountLoginRequest, AdminDeviceUserBinding, AdminRegistrationClaim, AdminRegistryPayload } from "../api";
 import { formatDateTime, statusTone, type RegistrySelection } from "./registry-utils";
+
+type RegistryApprovalContext = Pick<AdminRegistryPayload, "assets" | "people" | "locations" | "departments" | "active_bindings" | "bindings">;
 
 type Props = {
   claims: AdminRegistrationClaim[];
   loginRequests: AdminAccountLoginRequest[];
+  registry: RegistryApprovalContext;
   onApproveClaim: (claim: AdminRegistrationClaim, replaceExisting?: boolean, override?: boolean) => void;
   onRejectClaim: (claim: AdminRegistrationClaim) => void;
   onApproveLoginRequest: (request: AdminAccountLoginRequest) => void;
   onRejectLoginRequest: (request: AdminAccountLoginRequest) => void;
   onSelect: (selection: RegistrySelection) => void;
 };
+
+function textValue(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
 
 function accountName(request: AdminAccountLoginRequest): string {
   return String(request.requested_account.display_name ?? request.requested_account.full_name ?? request.requested_account.login ?? "Аккаунт не указан");
@@ -38,7 +46,56 @@ export function claimActionHint(claim: AdminRegistrationClaim): string | null {
   return null;
 }
 
-export function RegistryRequestsTab({ claims, loginRequests, onApproveClaim, onApproveLoginRequest, onRejectClaim, onRejectLoginRequest, onSelect }: Props) {
+function findCurrentBinding(claim: AdminRegistrationClaim, registry: RegistryApprovalContext): AdminDeviceUserBinding | null {
+  const bindings = registry.bindings ?? registry.active_bindings;
+  return bindings.find((binding) => (
+    binding.device_id === claim.device_id
+    && binding.status === "active"
+    && binding.relationship_type === "primary_user"
+  )) ?? bindings.find((binding) => binding.device_id === claim.device_id && binding.status === "active") ?? null;
+}
+
+function labelDepartment(registry: RegistryApprovalContext, departmentId: string | null): string {
+  if (!departmentId) return "не указано";
+  const department = registry.departments.find((item) => (item.department_id ?? item.id) === departmentId);
+  return department?.name ?? departmentId;
+}
+
+function labelLocation(registry: RegistryApprovalContext, locationId: string | null): string {
+  if (!locationId) return "не указано";
+  const location = registry.locations.find((item) => (item.location_id ?? item.id) === locationId);
+  return location?.display_name ?? locationId;
+}
+
+function ApprovalDiff({ claim, registry }: { claim: AdminRegistrationClaim; registry: RegistryApprovalContext }) {
+  const profile = claim.profile_snapshot;
+  const currentBinding = findCurrentBinding(claim, registry);
+  const asset = registry.assets.find((item) => item.device_id === claim.device_id || item.id === claim.asset_id) ?? null;
+  const claimedName = textValue(profile.full_name) ?? textValue(profile.display_name) ?? claim.person_name ?? "не указано";
+  const claimedDepartmentId = textValue(profile.department_id);
+  const claimedLocationId = textValue(profile.location_id);
+  const identity = [textValue(profile.email), textValue(profile.login)].filter(Boolean).join(" / ") || "не указано";
+  const deviceLabel = textValue(profile.hostname) ?? asset?.hostname ?? claim.device_id;
+  const currentBindingLabel = currentBinding
+    ? `${currentBinding.person_name ?? currentBinding.person_id} · ${currentBinding.relationship_type}`
+    : "нет активной привязки";
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900">
+      <p className="font-semibold text-amber-950">Дифф подтверждения</p>
+      <p>Устройство: {deviceLabel}</p>
+      <p>Текущая привязка: {currentBindingLabel}</p>
+      <p>Заявлено: {claimedName}</p>
+      <p>Подразделение: {labelDepartment(registry, claimedDepartmentId)}</p>
+      <p>Локация: {labelLocation(registry, claimedLocationId)}</p>
+      <p>Идентичность: {identity}</p>
+      <p>Тип привязки: {claim.relationship_type}</p>
+      {claim.conflict_reason ? <p>Блокер: {claim.conflict_reason}</p> : null}
+    </div>
+  );
+}
+
+export function RegistryRequestsTab({ claims, loginRequests, registry, onApproveClaim, onApproveLoginRequest, onRejectClaim, onRejectLoginRequest, onSelect }: Props) {
   return (
     <div className="space-y-5">
       <section className="overflow-x-auto rounded-lg border border-border">
@@ -59,6 +116,7 @@ export function RegistryRequestsTab({ claims, loginRequests, onApproveClaim, onA
               <Badge tone={statusTone(claim.status)}>{claim.status}</Badge>
               <span>{formatDateTime(claim.submitted_at)}</span>
               <div className="space-y-1">
+                <ApprovalDiff claim={claim} registry={registry} />
                 <div className="flex flex-wrap gap-2">
                   <Button disabled={!canApprove} leadingIcon={<Check className="h-4 w-4" />} onClick={() => onApproveClaim(claim)} size="sm" title={!canApprove ? "Нужно подтверждение пользователя или админский override" : undefined} variant="outline">Подтвердить</Button>
                   <Button disabled={!isConflict || (!canApprove && !claim.user_confirmed_at)} onClick={() => onApproveClaim(claim, true)} size="sm" variant="outline">С заменой</Button>

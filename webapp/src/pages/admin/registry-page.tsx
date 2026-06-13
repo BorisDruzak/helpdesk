@@ -500,6 +500,7 @@ export function AdminRegistryPage() {
             <RegistryRequestsTab
               claims={visibleRegistry.registration_claims}
               loginRequests={pendingLoginRequests}
+              registry={visibleRegistry}
               onApproveClaim={(claim: AdminRegistrationClaim, replaceExisting = false, override = false) => {
                 if (override) {
                   runWithReason("Причина админского подтверждения", "Проверено администратором", (reason) => approveAdminRegistrationClaim(claim.claim_id, replaceExisting, true, reason));

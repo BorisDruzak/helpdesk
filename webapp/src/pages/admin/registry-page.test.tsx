@@ -131,6 +131,66 @@ const registryPayload = {
   ],
 };
 
+const registryPayloadWithApprovalDiff = {
+  ...registryPayload,
+  registration_claims: [
+    {
+      claim_id: "claim-1",
+      device_id: "device-1",
+      asset_id: "asset-1",
+      person_id: "person-claim",
+      person_name: "Анна Смирнова",
+      status: "conflict",
+      claim_type: "self_reported",
+      relationship_type: "primary_user",
+      confidence: 0.9,
+      submitted_at: "2026-06-13T12:00:00Z",
+      user_confirmed_at: "2026-06-13T12:05:00Z",
+      conflict_reason: "active_primary_user_exists",
+      profile_snapshot: {
+        hostname: "PC-01",
+        full_name: "Анна Смирнова",
+        login: "anna",
+        email: "anna@example.test",
+        department_id: "dept-1",
+        location_id: "loc-1",
+      },
+    },
+  ],
+  active_bindings: [
+    {
+      binding_id: "binding-1",
+      device_id: "device-1",
+      asset_id: "asset-1",
+      hostname: "PC-01",
+      person_id: "person-1",
+      person_name: "Иван Петров",
+      relationship_type: "primary_user",
+      status: "active",
+      source: "registration_claim",
+      source_claim_id: "old-claim",
+      confirmed_at: "2026-06-12T09:00:00Z",
+      confirmed_by_admin: "admin",
+    },
+  ],
+  bindings: [
+    {
+      binding_id: "binding-1",
+      device_id: "device-1",
+      asset_id: "asset-1",
+      hostname: "PC-01",
+      person_id: "person-1",
+      person_name: "Иван Петров",
+      relationship_type: "primary_user",
+      status: "active",
+      source: "registration_claim",
+      source_claim_id: "old-claim",
+      confirmed_at: "2026-06-12T09:00:00Z",
+      confirmed_by_admin: "admin",
+    },
+  ],
+};
+
 const audienceGroupsPayload = {
   groups: [
     {
@@ -217,15 +277,17 @@ function renderRegistry() {
 
 describe("AdminRegistryPage", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
+  let currentRegistryPayload: unknown;
 
   beforeEach(() => {
+    currentRegistryPayload = registryPayload;
     fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith("/api/web/admin/registry/account-login-requests")) {
         return jsonResponse({ items: [] });
       }
       if (url === "/api/web/admin/registry") {
-        return jsonResponse(registryPayload);
+        return jsonResponse(currentRegistryPayload);
       }
       if (url === "/api/web/admin/registry/audience-groups") {
         if (init?.method === "POST") {
@@ -353,5 +415,21 @@ describe("AdminRegistryPage", () => {
       expect.stringMatching(/\/api\/web\/admin\/access\/groups/),
       expect.objectContaining({ method: expect.stringMatching(/POST|PUT|PATCH|DELETE/) }),
     );
+  });
+
+  it("shows an approval diff for registration claims before admin actions", async () => {
+    currentRegistryPayload = registryPayloadWithApprovalDiff;
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Заявки" }));
+
+    expect(await screen.findByText("Дифф подтверждения")).toBeInTheDocument();
+    expect(screen.getByText("Текущая привязка: Иван Петров · primary_user")).toBeInTheDocument();
+    expect(screen.getByText("Заявлено: Анна Смирнова")).toBeInTheDocument();
+    expect(screen.getByText("Подразделение: ИТ")).toBeInTheDocument();
+    expect(screen.getByText("Локация: Кабинет 101")).toBeInTheDocument();
+    expect(screen.getByText("Идентичность: anna@example.test / anna")).toBeInTheDocument();
+    expect(screen.getByText("Тип привязки: primary_user")).toBeInTheDocument();
+    expect(screen.getByText("Блокер: active_primary_user_exists")).toBeInTheDocument();
   });
 });
