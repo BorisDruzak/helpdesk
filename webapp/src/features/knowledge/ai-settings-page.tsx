@@ -135,6 +135,29 @@ export function KnowledgeAiSettingsPage() {
         description="Провайдеры, профили моделей, политики безопасности и журнал проверок. AI отключается политикой и не нужен для базового поиска или просмотра статей."
       />
 
+      <div className="sticky top-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Основные действия</p>
+          <p className="text-xs text-slate-500">Сохранить провайдера, профиль модели или AI policy без прокрутки к форме.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveProviderMutation.mutate()} disabled={saveProviderMutation.isPending}>
+            Сохранить провайдера
+          </Button>
+          <Button
+            leadingIcon={<Save className="h-4 w-4" />}
+            onClick={() => saveProfileMutation.mutate()}
+            disabled={!profileDraft.provider_id || saveProfileMutation.isPending}
+            variant="outline"
+          >
+            Сохранить профиль
+          </Button>
+          <Button leadingIcon={<Save className="h-4 w-4" />} onClick={() => savePolicyMutation.mutate()} disabled={savePolicyMutation.isPending} variant="outline">
+            Сохранить политику
+          </Button>
+        </div>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader>
@@ -278,9 +301,6 @@ export function KnowledgeAiSettingsPage() {
                 <input type="checkbox" checked={providerDraft.enabled} onChange={(event) => setProviderDraft({ ...providerDraft, enabled: event.target.checked })} />
                 Провайдер включен
               </label>
-              <Button leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveProviderMutation.mutate()} disabled={saveProviderMutation.isPending}>
-                Сохранить провайдера
-              </Button>
             </CardContent>
           </Card>
 
@@ -313,9 +333,6 @@ export function KnowledgeAiSettingsPage() {
                 <input type="checkbox" checked={profileDraft.enabled} onChange={(event) => setProfileDraft({ ...profileDraft, enabled: event.target.checked })} />
                 Профиль включен
               </label>
-              <Button leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveProfileMutation.mutate()} disabled={!profileDraft.provider_id || saveProfileMutation.isPending}>
-                Сохранить профиль
-              </Button>
             </CardContent>
           </Card>
 
@@ -348,9 +365,6 @@ export function KnowledgeAiSettingsPage() {
                   {label}
                 </label>
               ))}
-              <Button leadingIcon={<Save className="h-4 w-4" />} onClick={() => savePolicyMutation.mutate()} disabled={savePolicyMutation.isPending}>
-                Сохранить политику
-              </Button>
             </CardContent>
           </Card>
         </aside>

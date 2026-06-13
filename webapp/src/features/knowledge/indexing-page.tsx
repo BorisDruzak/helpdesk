@@ -72,6 +72,17 @@ export function KnowledgeIndexingPage() {
         description="Embeddings и vector index остаются опциональными: при выключенном AI поиск продолжает работать через keyword/full-text."
       />
 
+      <div className="sticky top-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Основное действие</p>
+          <p className="text-xs text-slate-500">Выберите статью и запустите reindex через существующий indexing API.</p>
+        </div>
+        <Button type="button" onClick={() => reindexMutation.mutate()} disabled={!itemId.trim() || reindexMutation.isPending}>
+          <RefreshCw className="h-4 w-4" />
+          Запустить reindex
+        </Button>
+      </div>
+
       <div className="grid gap-3 md:grid-cols-4">
         {[
           ["indexed", "Индексировано", countOf(embeddings, "indexed")],
@@ -140,10 +151,6 @@ export function KnowledgeIndexingPage() {
                 <input className={inputClass} value={versionId} onChange={(event) => setVersionId(event.target.value)} placeholder="опционально" />
               </label>
             </AdvancedDisclosure>
-            <Button type="button" onClick={() => reindexMutation.mutate()} disabled={!itemId.trim() || reindexMutation.isPending}>
-              <RefreshCw className="h-4 w-4" />
-              Запустить reindex
-            </Button>
             {message ? <p className="text-sm text-slate-600">{message}</p> : null}
           </CardContent>
         </Card>

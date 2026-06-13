@@ -167,6 +167,20 @@ export function KnowledgeSearchSettingsPage() {
         description="Базовый поиск работает без AI-провайдеров, embeddings и vector index. Векторные и RAG режимы включаются отдельно."
       />
 
+      <div className="sticky top-20 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div>
+          <p className="text-sm font-semibold text-slate-950">Основное действие</p>
+          <p className="text-xs text-slate-500">Сохранить режим retrieval, веса и лимиты выдачи.</p>
+        </div>
+        <Button
+          leadingIcon={<Save className="h-4 w-4" />}
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending || settingsQuery.isLoading}
+        >
+          Сохранить настройки
+        </Button>
+      </div>
+
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
@@ -313,13 +327,6 @@ export function KnowledgeSearchSettingsPage() {
                 />
               </label>
             ))}
-            <Button
-              leadingIcon={<Save className="h-4 w-4" />}
-              onClick={() => saveMutation.mutate()}
-              disabled={saveMutation.isPending || settingsQuery.isLoading}
-            >
-              Сохранить настройки
-            </Button>
           </CardContent>
         </Card>
       </div>
