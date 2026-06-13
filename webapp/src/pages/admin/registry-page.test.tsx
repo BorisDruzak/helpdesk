@@ -252,6 +252,74 @@ const accessSummaryPayload = {
   notes: ["Тестовая сводка RBAC"],
 };
 
+const registryPoliciesPayload = {
+  defaults: {
+    registration: {
+      require_user_confirmation: true,
+      require_admin_confirmation: true,
+      auto_approve_first_binding: false,
+      allow_shared_devices: true,
+      allow_responsible_binding: true,
+      max_primary_devices_per_person: 3,
+      stale_after_days: 90,
+      department_mode: "allow_pending_request",
+      location_mode: "allow_pending_request",
+    },
+    account_sessions: {
+      confirmed_binding_ttl_hours: null,
+      verified_other_account_ttl_hours: 24,
+      registration_pending_ttl_hours: 72,
+      allow_other_account_login: true,
+      other_account_requires_reason: true,
+      other_account_requires_admin_approval: true,
+      allow_other_account_on_shared_or_responsible: true,
+    },
+    ticket_visibility: {
+      owner_can_see_historical_tickets: true,
+      other_account_only_own_session_tickets: true,
+    },
+  },
+  effective: {
+    registration: {
+      require_user_confirmation: true,
+      require_admin_confirmation: true,
+      auto_approve_first_binding: false,
+      allow_shared_devices: true,
+      allow_responsible_binding: true,
+      max_primary_devices_per_person: 3,
+      stale_after_days: 90,
+      department_mode: "allow_pending_request",
+      location_mode: "allow_pending_request",
+    },
+    account_sessions: {
+      confirmed_binding_ttl_hours: null,
+      verified_other_account_ttl_hours: 24,
+      registration_pending_ttl_hours: 72,
+      allow_other_account_login: true,
+      other_account_requires_reason: true,
+      other_account_requires_admin_approval: true,
+      allow_other_account_on_shared_or_responsible: true,
+    },
+    ticket_visibility: {
+      owner_can_see_historical_tickets: true,
+      other_account_only_own_session_tickets: true,
+    },
+  },
+  changed_from_defaults: {},
+  warnings: [],
+  validation: {
+    "registration.max_primary_devices_per_person": { type: "integer", minimum: 1, maximum: 50, nullable: false },
+    "registration.stale_after_days": { type: "integer", minimum: 1, maximum: 3650, nullable: false },
+    "registration.department_mode": { type: "enum", values: ["allow_pending_request", "optional", "required_existing"] },
+    "registration.location_mode": { type: "enum", values: ["allow_pending_request", "optional", "required_existing"] },
+    "account_sessions.confirmed_binding_ttl_hours": { type: "integer", minimum: 1, maximum: 87600, nullable: true },
+    "account_sessions.verified_other_account_ttl_hours": { type: "integer", minimum: 1, maximum: 8760, nullable: false },
+    "account_sessions.registration_pending_ttl_hours": { type: "integer", minimum: 1, maximum: 8760, nullable: false },
+  },
+  requires_restart: false,
+  restart_required_fields: [],
+};
+
 function jsonResponse(data: unknown) {
   return Promise.resolve(new Response(JSON.stringify({ status: "success", data }), {
     headers: { "Content-Type": "application/json" },
@@ -315,6 +383,30 @@ describe("AdminRegistryPage", () => {
       }
       if (url === "/api/web/admin/access/summary") {
         return jsonResponse(accessSummaryPayload);
+      }
+      if (url === "/api/web/admin/registry/policies") {
+        if (init?.method === "PATCH") {
+          return jsonResponse(registryPoliciesPayload);
+        }
+        return jsonResponse(registryPoliciesPayload);
+      }
+      if (url === "/api/web/admin/registry/policies/preview") {
+        return jsonResponse({
+          ...registryPoliciesPayload,
+          dry_run: true,
+          changed_from_defaults: {
+            "registration.department_mode": { default: "allow_pending_request", effective: "required_existing" },
+            "registration.location_mode": { default: "allow_pending_request", effective: "optional" },
+          },
+          effective: {
+            ...registryPoliciesPayload.effective,
+            registration: {
+              ...registryPoliciesPayload.effective.registration,
+              department_mode: "required_existing",
+              location_mode: "optional",
+            },
+          },
+        });
       }
       if (url === "/api/web/admin/registry/bulk/preview") {
         return jsonResponse({
@@ -431,5 +523,46 @@ describe("AdminRegistryPage", () => {
     expect(screen.getByText("Идентичность: anna@example.test / anna")).toBeInTheDocument();
     expect(screen.getByText("Тип привязки: primary_user")).toBeInTheDocument();
     expect(screen.getByText("Блокер: active_primary_user_exists")).toBeInTheDocument();
+  });
+
+  it("exposes department and location modes as first-class registration policy controls", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Политики · P1" }));
+
+    const departmentMode = await screen.findByLabelText(/Режим подразделения/);
+    const locationMode = screen.getByLabelText(/Режим локации/);
+    expect(departmentMode).toHaveValue("allow_pending_request");
+    expect(locationMode).toHaveValue("allow_pending_request");
+    expect(screen.getAllByText("Разрешить pending-заявку").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Только существующие значения").length).toBeGreaterThan(0);
+
+    fireEvent.change(departmentMode, { target: { value: "required_existing" } });
+    fireEvent.change(locationMode, { target: { value: "optional" } });
+    expect(screen.getAllByText("Режим подразделения").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Режим локации").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByText("Server dry-run")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Причина изменения политики"), {
+      target: { value: "Ужесточаем регистрацию по справочникам" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/admin/registry/policies",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"department_mode":"required_existing"'),
+      })
+    ));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/admin/registry/policies",
+      expect.objectContaining({
+        method: "PATCH",
+        body: expect.stringContaining('"location_mode":"optional"'),
+      })
+    );
   });
 });

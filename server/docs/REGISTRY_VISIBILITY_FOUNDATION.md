@@ -179,6 +179,8 @@ Phase 4 must expose and enforce these existing modes:
 - `optional`: picker should use registry objects, but absence can be accepted.
 - `allow_pending_request`: free text is pending quality input and must not silently create duplicate departments or locations when strict mode is required.
 
+The current Phase 4 UI slice exposes `registration.department_mode` and `registration.location_mode` in `/app/admin/registry` -> `Политики · P1` as operator selects over the existing enum values. It uses the existing policy preview/save/reset endpoints and does not add a second policy route.
+
 Approval diff must show existing person/device/binding, claimed department/location, proposed identity, proposed binding type, conflicts and blockers. The first Phase 4 UI slice renders this diff in `/app/admin/registry` -> `Заявки` from the existing `/api/web/admin/registry` payload before admin approve/reject actions; it does not add a second approval route. Approval must update person identity, person primary department/location where applicable, device binding, derived asset/inventory state and account-session state through existing services.
 
 ## UI Contract

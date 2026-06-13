@@ -26,6 +26,8 @@ const FIELD_LABELS: Record<string, string> = {
   "registration.allow_responsible_binding": "Allow responsible binding",
   "registration.max_primary_devices_per_person": "Max primary devices",
   "registration.stale_after_days": "Stale after days",
+  "registration.department_mode": "Режим подразделения",
+  "registration.location_mode": "Режим локации",
   "account_sessions.confirmed_binding_ttl_hours": "Confirmed binding TTL hours",
   "account_sessions.verified_other_account_ttl_hours": "Other account TTL hours",
   "account_sessions.registration_pending_ttl_hours": "Pending registration TTL hours",
@@ -35,6 +37,12 @@ const FIELD_LABELS: Record<string, string> = {
   "account_sessions.allow_other_account_on_shared_or_responsible": "Allow on shared/responsible",
   "ticket_visibility.owner_can_see_historical_tickets": "Owner can see historical tickets",
   "ticket_visibility.other_account_only_own_session_tickets": "Other account only own session tickets",
+};
+
+const REGISTRATION_ENTITY_MODE_LABELS: Record<string, string> = {
+  allow_pending_request: "Разрешить pending-заявку",
+  optional: "Необязательно",
+  required_existing: "Только существующие значения",
 };
 
 function clonePolicies(value: PolicyEffective): PolicyEffective {
@@ -130,7 +138,7 @@ export function RegistryPoliciesTab() {
     return <p className="text-sm text-slate-500">Загружаем политики...</p>;
   }
 
-  const setRegistration = (key: keyof typeof draft.registration, value: boolean | number) => {
+  const setRegistration = (key: keyof typeof draft.registration, value: boolean | number | string) => {
     setDraft({ ...draft, registration: { ...draft.registration, [key]: value } });
     setServerPreview(null);
   };
@@ -172,6 +180,8 @@ export function RegistryPoliciesTab() {
           <CheckRow defaultValue={query.data.defaults.registration.allow_responsible_binding} label={FIELD_LABELS["registration.allow_responsible_binding"]} value={draft.registration.allow_responsible_binding} onChange={(value) => setRegistration("allow_responsible_binding", value)} />
           <NumberRow defaultValue={query.data.defaults.registration.max_primary_devices_per_person} label={FIELD_LABELS["registration.max_primary_devices_per_person"]} rules={validation["registration.max_primary_devices_per_person"]} value={draft.registration.max_primary_devices_per_person} onChange={(value) => setRegistration("max_primary_devices_per_person", value)} />
           <NumberRow defaultValue={query.data.defaults.registration.stale_after_days} label={FIELD_LABELS["registration.stale_after_days"]} rules={validation["registration.stale_after_days"]} value={draft.registration.stale_after_days} onChange={(value) => setRegistration("stale_after_days", value)} />
+          <ModeRow defaultValue={query.data.defaults.registration.department_mode} label={FIELD_LABELS["registration.department_mode"]} rules={validation["registration.department_mode"]} value={draft.registration.department_mode} onChange={(value) => setRegistration("department_mode", value)} />
+          <ModeRow defaultValue={query.data.defaults.registration.location_mode} label={FIELD_LABELS["registration.location_mode"]} rules={validation["registration.location_mode"]} value={draft.registration.location_mode} onChange={(value) => setRegistration("location_mode", value)} />
         </PolicyCard>
         <PolicyCard title="Account Sessions">
           <NullableNumberRow defaultValue={query.data.defaults.account_sessions.confirmed_binding_ttl_hours} label={FIELD_LABELS["account_sessions.confirmed_binding_ttl_hours"]} rules={validation["account_sessions.confirmed_binding_ttl_hours"]} value={draft.account_sessions.confirmed_binding_ttl_hours} onChange={(value) => setAccount("confirmed_binding_ttl_hours", value)} />
@@ -266,6 +276,21 @@ function NullableNumberRow({ defaultValue, label, onChange, rules, value }: { de
       <span className="flex items-center justify-between gap-2"><span>{label}</span><DefaultHint value={defaultValue} /></span>
       <Input className="mt-2" max={rules?.maximum} min={rules?.minimum} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="null = no expiry" type="number" value={value ?? ""} />
       {rules ? <span className="mt-1 block text-xs font-normal text-slate-500">range: {rules.minimum}...{rules.maximum}, nullable</span> : null}
+    </label>
+  );
+}
+
+function ModeRow({ defaultValue, label, onChange, rules, value }: { defaultValue: unknown; label: string; rules?: { values?: string[] }; value: string; onChange: (value: string) => void }) {
+  const values = rules?.values?.length ? rules.values : ["allow_pending_request", "optional", "required_existing"];
+  return (
+    <label className="block text-sm font-medium">
+      <span className="flex items-center justify-between gap-2"><span>{label}</span><DefaultHint value={defaultValue} /></span>
+      <select className="mt-2 h-10 w-full rounded-md border border-border bg-white px-3 text-sm text-slate-900" onChange={(event) => onChange(event.target.value)} value={value}>
+        {values.map((mode) => (
+          <option key={mode} value={mode}>{REGISTRATION_ENTITY_MODE_LABELS[mode] ?? mode}</option>
+        ))}
+      </select>
+      <span className="mt-1 block text-xs font-normal text-slate-500">required_existing запрещает свободный текст и принимает только справочник.</span>
     </label>
   );
 }

@@ -800,6 +800,8 @@ export type AdminRegistryPolicyPayload = {
       allow_responsible_binding: boolean;
       max_primary_devices_per_person: number;
       stale_after_days: number;
+      department_mode: "allow_pending_request" | "optional" | "required_existing";
+      location_mode: "allow_pending_request" | "optional" | "required_existing";
     };
     account_sessions: {
       confirmed_binding_ttl_hours: number | null;
@@ -817,7 +819,7 @@ export type AdminRegistryPolicyPayload = {
   };
   changed_from_defaults: Record<string, { default: unknown; effective: unknown }>;
   warnings: Array<{ field: string; severity: "warning" | "error" | string; message: string }>;
-  validation: Record<string, { type: string; minimum?: number; maximum?: number; nullable?: boolean }>;
+  validation: Record<string, { type: string; minimum?: number; maximum?: number; nullable?: boolean; values?: string[] }>;
   requires_restart: boolean;
   restart_required_fields: string[];
   dry_run?: boolean;
