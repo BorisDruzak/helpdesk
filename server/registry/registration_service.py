@@ -272,6 +272,36 @@ class RegistrationService:
             return location.location_id if location else None
         return None
 
+    async def _apply_claim_profile_to_person(self, claim: DeviceRegistrationClaim) -> RegistryPerson | None:
+        person = await self.registry_repo.get_person(claim.person_id)
+        if person is None:
+            return None
+        profile = claim.profile_snapshot or {}
+        changed = False
+
+        department_id = _clean(profile.get("department_id"), max_length=36)
+        if department_id:
+            department = await self.registry_repo.get_department(department_id)
+            if department is None or str(department.status or "").lower() in {"archived", "merged", "inactive"}:
+                raise RegistrationValidationError("department_id not found")
+            if person.department_id != department.department_id:
+                person.department_id = department.department_id
+                changed = True
+
+        location_id = _clean(profile.get("location_id"), max_length=36)
+        if location_id:
+            location = await self.registry_repo.get_location(location_id)
+            if location is None or str(location.status or "").lower() in {"archived", "merged", "inactive"}:
+                raise RegistrationValidationError("location_id not found")
+            if person.location_id != location.location_id:
+                person.location_id = location.location_id
+                changed = True
+
+        if changed:
+            person.updated_at = datetime.now(timezone.utc)
+            await self.session.flush()
+        return person
+
     async def _mark_claim_resolved_by_admin_binding(
         self,
         claim: DeviceRegistrationClaim,
@@ -1314,6 +1344,9 @@ class RegistrationService:
             rows = await self.repo.list_active_bindings_for_device(claim.device_id)
             existing_for_claim = next((row for row in rows if row.source_claim_id == claim.claim_id), None)
             if existing_for_claim:
+                await self._apply_claim_profile_to_person(claim)
+                await self.sync_asset_from_active_binding(existing_for_claim)
+                await self.sync_inventory_from_active_binding(existing_for_claim, profile=claim.profile_snapshot or {})
                 await self._revoke_registration_pending_sessions_for_claim(
                     claim.claim_id,
                     revoked_by=reviewed_by,
@@ -1340,6 +1373,9 @@ class RegistrationService:
             claim.reviewed_by = reviewed_by
             claim.reviewed_at = now
             claim.updated_at = now
+            await self._apply_claim_profile_to_person(claim)
+            await self.sync_asset_from_active_binding(active_primary)
+            await self.sync_inventory_from_active_binding(active_primary, profile=claim.profile_snapshot or {})
             await self.repo.append_event(
                 event_type="claim_approved_existing_binding",
                 claim_id=claim.claim_id,
@@ -1402,6 +1438,7 @@ class RegistrationService:
             await self.session.flush()
 
         now = datetime.now(timezone.utc)
+        await self._apply_claim_profile_to_person(claim)
         binding = await self.repo.create_binding(
             device_id=claim.device_id,
             asset_id=claim.asset_id,
