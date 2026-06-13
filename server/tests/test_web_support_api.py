@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 
 import pytest
 from aiohttp import web
@@ -1989,6 +1990,131 @@ async def test_web_support_ticket_workspace_aggregates_detail_tools_passport_and
         "solution_applied",
         "verified_and_closed",
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_build_support_detail_payload_projects_requester_account_context(monkeypatch):
+    account_context = {
+        "warning": "ticket_created_from_other_account_on_registered_device",
+        "verification_status": "verified",
+        "verification_method": "admin_approval",
+        "active_device_person_name": "Registered Owner",
+        "active_device_binding_id": "binding-owner",
+        "declared_account": {
+            "full_name": "Temporary User",
+            "login": "temp.user",
+            "email": "temp@example.test",
+            "phone": "+15551234567",
+            "reason": "Shift replacement",
+        },
+    }
+    ticket = SimpleNamespace(
+        ticket_id="ticket-account-context",
+        device_id="device-account-context",
+        custom_fields={},
+        archived_at=None,
+    )
+    request = SimpleNamespace(app={})
+    auth_context = SimpleNamespace(actor_role="support", actor_id="support-test")
+    ticket_data = {
+        "ticket_id": ticket.ticket_id,
+        "ticket_code": "T-000001",
+        "title": "Other account context",
+        "description": "Support detail must expose account session context.",
+        "status": "queued",
+        "status_label": "В очереди",
+        "requester_status": "accepted",
+        "requester_status_label": "Принято",
+        "public_status": "accepted",
+        "public_status_label": "Принято",
+        "next_action_owner": "support",
+        "next_action_due_at": None,
+        "status_reason": None,
+        "requester_display_name": "Temporary User",
+        "device_id": ticket.device_id,
+        "ticket_type": "request",
+        "category_id": None,
+        "service_id": None,
+        "subcategory_id": None,
+        "priority": "P3",
+        "priority_class": "P3",
+        "impact": None,
+        "urgency": None,
+        "importance": None,
+        "first_response_at": None,
+        "first_response_due_at": None,
+        "resolution_due_at": None,
+        "queue_id": None,
+        "queue_code": None,
+        "available_queues": [],
+        "assignee_id": None,
+        "updated_at": None,
+        "created_at": None,
+        "resolution_code": None,
+        "resolution_summary": None,
+        "requester_resolution_summary": None,
+        "evidence_required": False,
+        "evidence_ref": None,
+        "closure_feedback": {},
+        "visibility": {},
+        "requester_visible_fields": [],
+        "support_visible_fields": [],
+        "queue_members": [],
+        "custom_fields": {"requester_account_context": account_context},
+        "requester_registration_status": "other_account_verified",
+        "requester_account_session_id": "session-other",
+        "requester_account_mode": "verified_other_account",
+        "requester_account_warning": "ticket_created_from_other_account_on_registered_device",
+        "requester_account_context": account_context,
+    }
+
+    async def fake_chat_counters(_repo, _ticket_ids):
+        return {}
+
+    async def fake_ticket_payload(*_args, **_kwargs):
+        return ticket_data
+
+    async def fake_observer_summary(_session, ticket_id):
+        return {"summary": {"ticket_id": ticket_id, "trace_count": 0, "active_trace_count": 0, "error_trace_count": 0, "signature_count": 0}}
+
+    async def fake_timeline_payload(*_args, **_kwargs):
+        return support_handlers_module.SupportTicketTimelinePayload(ticket_id=ticket.ticket_id)
+
+    async def fake_snapshot(*_args, **_kwargs):
+        return support_handlers_module.SupportTicketSnapshot(
+            last_event_id=0,
+            notification_unread=0,
+            presence=support_handlers_module.SupportTicketPresence(),
+            device=support_handlers_module.SupportTicketDeviceSnapshot(device_id=ticket.device_id),
+            registry=None,
+        )
+
+    async def fake_actions(*_args, **_kwargs):
+        return support_handlers_module.SupportTicketActions()
+
+    async def fake_approval_summary(*_args, **_kwargs):
+        return None
+
+    async def fake_quality(*_args, **_kwargs):
+        return support_handlers_module.SupportTicketQualityPayload()
+
+    monkeypatch.setattr(support_handlers_module, "_chat_counters_by_ticket_ids", fake_chat_counters)
+    monkeypatch.setattr(support_handlers_module, "_ticket_payload", fake_ticket_payload)
+    monkeypatch.setattr(support_handlers_module, "_safe_support_observer_summary", fake_observer_summary)
+    monkeypatch.setattr(support_handlers_module, "_build_support_timeline_payload", fake_timeline_payload)
+    monkeypatch.setattr(support_handlers_module, "_build_support_snapshot", fake_snapshot)
+    monkeypatch.setattr(support_handlers_module, "_build_support_status_actions", fake_actions)
+    monkeypatch.setattr(support_handlers_module, "build_approval_summary", fake_approval_summary)
+    monkeypatch.setattr(support_handlers_module, "_build_support_quality_payload", fake_quality)
+
+    payload = await support_handlers_module._build_support_detail_payload(request, object(), ticket, object(), auth_context)
+
+    assert payload.ticket.requester_registration_status == "other_account_verified"
+    assert payload.ticket.requester_account_session_id == "session-other"
+    assert payload.ticket.requester_account_mode == "verified_other_account"
+    assert payload.ticket.requester_account_warning == "ticket_created_from_other_account_on_registered_device"
+    assert payload.ticket.requester_account_context == account_context
 
 
 @pytest.mark.asyncio

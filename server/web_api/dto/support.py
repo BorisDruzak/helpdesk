@@ -395,6 +395,11 @@ class SupportTicketDetail(BaseModel):
     next_action_due_at: str | None
     status_reason: str | None
     requester_display_name: str | None
+    requester_registration_status: str | None = None
+    requester_account_session_id: str | None = None
+    requester_account_mode: str | None = None
+    requester_account_context: dict[str, Any] | None = None
+    requester_account_warning: str | None = None
     device_id: str | None
     ticket_type: str | None = None
     category_id: int | None = None

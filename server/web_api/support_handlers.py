@@ -3113,6 +3113,14 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     )
     request_form = _build_support_request_form_payload(ticket_data)
     custom_fields = ticket_data.get("custom_fields") if isinstance(ticket_data.get("custom_fields"), dict) else {}
+    requester_account_context = ticket_data.get("requester_account_context")
+    if not isinstance(requester_account_context, dict):
+        requester_account_context = custom_fields.get("requester_account_context")
+    if not isinstance(requester_account_context, dict):
+        requester_account_context = None
+    requester_account_warning = ticket_data.get("requester_account_warning")
+    if requester_account_warning is None and isinstance(requester_account_context, dict):
+        requester_account_warning = requester_account_context.get("warning")
     approval_summary = await build_approval_summary(session, ticket, requester_safe=False)
     quality = await _build_support_quality_payload(session, ticket.ticket_id)
 
@@ -3132,6 +3140,11 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             next_action_due_at=ticket_data.get("next_action_due_at"),
             status_reason=ticket_data.get("status_reason"),
             requester_display_name=ticket_data.get("requester_display_name"),
+            requester_registration_status=ticket_data.get("requester_registration_status"),
+            requester_account_session_id=ticket_data.get("requester_account_session_id"),
+            requester_account_mode=ticket_data.get("requester_account_mode"),
+            requester_account_context=requester_account_context,
+            requester_account_warning=requester_account_warning,
             device_id=ticket_data.get("device_id"),
             ticket_type=ticket_data.get("ticket_type"),
             category_id=ticket_data.get("category_id"),
