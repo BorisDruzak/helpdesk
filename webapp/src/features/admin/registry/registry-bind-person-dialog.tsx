@@ -10,6 +10,7 @@ type BindMode = "primary_user" | "shared_user" | "responsible" | "temporary_user
 export type BindPersonDialogState = {
   deviceId: string;
   mode: BindMode;
+  personId?: string;
   title: string;
   replaceExisting?: boolean;
 } | null;
@@ -29,7 +30,7 @@ export function RegistryBindPersonDialog({ busy, onClose, onSubmit, people, stat
   const [replaceExisting, setReplaceExisting] = useState(false);
 
   useEffect(() => {
-    setPersonId("");
+    setPersonId(state?.personId ?? "");
     setDeviceId(state?.deviceId ?? "");
     setReason("");
     setReplaceExisting(Boolean(state?.replaceExisting));

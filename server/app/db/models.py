@@ -3104,6 +3104,150 @@ class RegistryPersonIdentity(Base):
     )
 
 
+class RegistryAudienceGroup(Base):
+    """Content/service targeting group; does not grant RBAC permissions."""
+    __tablename__ = "registry_audience_groups"
+
+    audience_group_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    code: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint("code ~ '^[a-z0-9][a-z0-9_-]*$'", name="ck_registry_audience_groups_code_safe"),
+        sa.CheckConstraint(
+            "source IN ('manual', 'department_rule', 'import', 'system', 'future_sync')",
+            name="ck_registry_audience_groups_source",
+        ),
+        sa.CheckConstraint("status IN ('active', 'archived')", name="ck_registry_audience_groups_status"),
+        Index("ix_registry_audience_groups_status", "status"),
+        Index("ix_registry_audience_groups_code", "code"),
+    )
+
+
+class RegistryAudienceGroupMember(Base):
+    """Polymorphic audience-group member used only for targeting/visibility expansion."""
+    __tablename__ = "registry_audience_group_members"
+
+    membership_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    audience_group_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_audience_groups.audience_group_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    member_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    member_id: Mapped[str] = mapped_column(Text, nullable=False)
+    include_children: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    valid_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "member_type IN ('person', 'department', 'department_tree', 'location', 'access_group', 'role', 'service')",
+            name="ck_registry_audience_group_members_type",
+        ),
+        sa.CheckConstraint(
+            "source IN ('manual', 'department_rule', 'import', 'system', 'future_sync')",
+            name="ck_registry_audience_group_members_source",
+        ),
+        UniqueConstraint(
+            "audience_group_id",
+            "member_type",
+            "member_id",
+            "include_children",
+            name="uq_registry_audience_group_members_unique",
+        ),
+        Index("ix_registry_audience_group_members_group", "audience_group_id"),
+        Index("ix_registry_audience_group_members_member", "member_type", "member_id"),
+    )
+
+
+class RegistryPersonDepartmentMembership(Base):
+    """Compatibility-safe multi-department membership; primary person department stays on registry_people."""
+    __tablename__ = "registry_person_department_memberships"
+
+    membership_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    person_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_people.person_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    department_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("registry_departments.department_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    role_in_department: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    valid_from: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    valid_to: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual")
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "source IN ('manual', 'department_rule', 'import', 'system', 'future_sync')",
+            name="ck_registry_person_department_memberships_source",
+        ),
+        UniqueConstraint(
+            "person_id",
+            "department_id",
+            "source",
+            name="uq_registry_person_department_memberships_source",
+        ),
+        Index("ix_registry_person_department_memberships_person", "person_id"),
+        Index("ix_registry_person_department_memberships_department", "department_id"),
+        Index(
+            "uq_registry_person_department_memberships_primary",
+            "person_id",
+            unique=True,
+            postgresql_where=sa.text("is_primary IS TRUE"),
+        ),
+    )
+
+
 class DeviceRegistrationClaim(Base):
     """Self-reported or admin-created claim that a person is related to a device."""
     __tablename__ = "device_registration_claims"

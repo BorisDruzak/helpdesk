@@ -51,6 +51,8 @@ Requester and local agent surfaces only receive published requester-safe knowled
 
 Requester/agent projections must not expose internal body for restricted items, source ticket/passport ids, requester/device ids, raw custom fields, internal graph edges, queue/policy ids, trace ids, operation ids or raw chunks for restricted items.
 
+Registry-scoped audience rules are planned in [REGISTRY_VISIBILITY_FOUNDATION.md](REGISTRY_VISIBILITY_FOUNDATION.md). They refine this coarse visibility model after role/status checks. They must not downgrade support/admin-only content into requester-visible content, and requester/agent/public APIs must not leak denied article titles, summaries, chunks, counts, diagnostics or rule metadata.
+
 ## Search And Suggestions
 
 `KnowledgeSearchService` uses PostgreSQL-compatible filtering and text matching over items, versions, chunks, bindings and active article segments. Ranking prefers exact title/slug matches, service/offering/request-template bindings, segment title/keyword matches, text matches, helpfulness and freshness. Segment matches return the owning article with a segment-derived snippet while preserving the same item ACL projection.

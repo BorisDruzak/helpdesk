@@ -2,12 +2,15 @@
 
 `/app/admin/registry` is the admin workspace for device ownership, people identities, account sessions and lightweight CMDB operations.
 
+Registry visibility, effective identity and audience groups are tracked in [REGISTRY_VISIBILITY_FOUNDATION.md](REGISTRY_VISIBILITY_FOUNDATION.md). That document keeps organization structure, RBAC/access groups and content audiences separate while extending this Management Center; Knowledge audience-rule enforcement remains a later phase.
+
 ## Source Of Truth
 
 - Active device-user relations live in `device_user_bindings`.
 - `registry_assets.assigned_person_id` and `device_inventory_bindings.person_id/source_binding_id/registration_status` are derived state.
 - Binding lifecycle operations must go through `RegistrationService`.
 - UI login to registry-person links are represented only as verified `registry_person_identities(provider='ui_login')`; `ui_users` rows are not duplicated into person records.
+- Departments are organization structure. Access groups are RBAC/queue permissions. Audience groups are content/service targeting objects and must not grant permissions by themselves.
 - Account sessions are revoked through `AccountSessionService` when bindings are revoked or transferred.
 - Location, department, policy, merge and bulk admin actions write `registry_admin_events`.
 - Person and identity admin mutations write `registry_admin_events` (`person_created`, `person_updated`, `identity_added`, `identity_verified`, `identity_deleted`).
@@ -49,6 +52,12 @@
   - `GET|PATCH /api/web/admin/registry/policies`
   - `POST /api/web/admin/registry/policies/preview`
   - `POST /api/web/admin/registry/policies/reset`
+- Audience groups:
+  - `GET|POST /api/web/admin/registry/audience-groups`
+  - `PATCH /api/web/admin/registry/audience-groups/{audience_group_id}`
+  - `POST /api/web/admin/registry/audience-groups/{audience_group_id}/archive`
+  - `GET|PUT /api/web/admin/registry/audience-groups/{audience_group_id}/members`
+  - `POST /api/web/admin/registry/audience-groups/{audience_group_id}/preview-members`
 - Bulk/export/timeline:
   - `POST /api/web/admin/registry/bulk/preview`
   - `POST /api/web/admin/registry/bulk/devices/assign-location`
@@ -66,6 +75,21 @@
   - `POST /api/web/admin/registry/quality/{issue_key}/resolve`
 
 Registry import is CSV-only and intentionally excludes direct binding import. Supported import types are `people`, `locations`, `departments` and `device_inventory_mapping`.
+
+## Visibility Foundation Boundary
+
+The Registry Visibility Foundation extends this management center without changing existing source-of-truth rules:
+
+- effective identity is a read model over verified `ui_login` identities, registry people, primary department/location, active bindings, account sessions and access groups;
+- Phase 1 admin explain/read APIs live under `/api/web/admin/registry/identity/*` and are read-only;
+- agent machine identity remains technical device identity and must not identify the requester without a valid server account session;
+- `registry_audience_groups` may include people, departments, department trees, locations, roles, access groups or services, but they do not grant RBAC permissions;
+- `/app/admin/registry` exposes the first audience-group management UI in the `Аудитории · P1` tab and keeps member save behind preview plus required reason;
+- normal bulk, quality and UI-login linking paths use dialogs with searchable pickers/reason/result reports instead of raw `window.prompt` flows;
+- future Knowledge audience rules refine coarse Knowledge visibility and must never make `support_internal`, `admin_internal` or `security_restricted` content requester-visible;
+- dangerous audience, visibility and bulk operations must follow the same preview/apply/audit pattern already used by Registry transfer, merge, bulk and import flows.
+
+Normal operator UI must prefer names/codes and searchable pickers. Raw ids belong only in `Advanced / служебные поля`.
 
 ## Timeline Contract
 

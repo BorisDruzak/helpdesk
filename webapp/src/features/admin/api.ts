@@ -550,6 +550,64 @@ export type AdminRegistryUiUser = {
   linked_identity_verified: boolean;
 };
 
+export type AdminRegistryAudienceGroup = {
+  audience_group_id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  source: string;
+  status: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string | null;
+  updated_at: string | null;
+  created_by: string | null;
+  updated_by: string | null;
+};
+
+export type AdminRegistryAudienceMemberType =
+  | "person"
+  | "department"
+  | "department_tree"
+  | "location"
+  | "access_group"
+  | "role"
+  | "service";
+
+export type AdminRegistryAudienceGroupMember = {
+  membership_id?: string;
+  audience_group_id?: string;
+  member_type: AdminRegistryAudienceMemberType;
+  member_id: string;
+  include_children?: boolean;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  source?: string;
+  metadata_json?: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type AdminRegistryAudiencePreview = {
+  audience_group_id: string;
+  code: string;
+  member_count: number;
+  person_count: number;
+  people: Array<{
+    person_id: string;
+    display_name: string;
+    full_name: string | null;
+    email: string | null;
+    department_id: string | null;
+    location_id: string | null;
+    status: string;
+  }>;
+  warnings: Array<{
+    code: string;
+    message: string;
+    member?: Record<string, unknown>;
+  }>;
+};
+
 export type AdminRegistrationClaim = {
   claim_id: string;
   device_id: string;
@@ -1798,4 +1856,84 @@ export async function fetchAdminRegistry(): Promise<AdminRegistryPayload> {
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить реестры");
+}
+
+export async function fetchAdminRegistryAudienceGroups(includeArchived = false): Promise<{ groups: AdminRegistryAudienceGroup[] }> {
+  const params = includeArchived ? "?include_archived=true" : "";
+  const response = await fetch(`/api/web/admin/registry/audience-groups${params}`, {
+    credentials: "same-origin",
+  });
+  return readSuccessResponse(response, "Не удалось загрузить аудитории реестра");
+}
+
+export async function createAdminRegistryAudienceGroup(payload: {
+  code: string;
+  name: string;
+  description?: string | null;
+  source?: string;
+  reason: string;
+}): Promise<{ group: AdminRegistryAudienceGroup }> {
+  const response = await fetch("/api/web/admin/registry/audience-groups", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось создать аудиторию");
+}
+
+export async function updateAdminRegistryAudienceGroup(audienceGroupId: string, payload: {
+  code?: string;
+  name?: string;
+  description?: string | null;
+  source?: string;
+  reason: string;
+}): Promise<{ group: AdminRegistryAudienceGroup }> {
+  const response = await fetch(`/api/web/admin/registry/audience-groups/${encodeURIComponent(audienceGroupId)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось обновить аудиторию");
+}
+
+export async function archiveAdminRegistryAudienceGroup(audienceGroupId: string, reason: string): Promise<{ group: AdminRegistryAudienceGroup }> {
+  const response = await fetch(`/api/web/admin/registry/audience-groups/${encodeURIComponent(audienceGroupId)}/archive`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  return readSuccessResponse(response, "Не удалось архивировать аудиторию");
+}
+
+export async function fetchAdminRegistryAudienceGroupMembers(audienceGroupId: string): Promise<{ members: AdminRegistryAudienceGroupMember[] }> {
+  const response = await fetch(`/api/web/admin/registry/audience-groups/${encodeURIComponent(audienceGroupId)}/members`, {
+    credentials: "same-origin",
+  });
+  return readSuccessResponse(response, "Не удалось загрузить участников аудитории");
+}
+
+export async function setAdminRegistryAudienceGroupMembers(audienceGroupId: string, payload: {
+  members: AdminRegistryAudienceGroupMember[];
+  reason: string;
+}): Promise<{ members: AdminRegistryAudienceGroupMember[] }> {
+  const response = await fetch(`/api/web/admin/registry/audience-groups/${encodeURIComponent(audienceGroupId)}/members`, {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось сохранить участников аудитории");
+}
+
+export async function previewAdminRegistryAudienceGroupMembers(audienceGroupId: string, members?: AdminRegistryAudienceGroupMember[]): Promise<{ preview: AdminRegistryAudiencePreview }> {
+  const response = await fetch(`/api/web/admin/registry/audience-groups/${encodeURIComponent(audienceGroupId)}/preview-members`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(members ? { members } : {}),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр аудитории");
 }

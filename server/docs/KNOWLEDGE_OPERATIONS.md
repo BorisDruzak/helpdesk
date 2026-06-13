@@ -2,6 +2,8 @@
 
 P2.2 turns the existing Universal Knowledge Platform into an operational content loop. It does not replace P2/P2.1 spaces, items, versions, chunks, bindings, graph, feedback, ingestion, passport drafts, ACL filtering or `kb_links` compatibility.
 
+Registry-scoped audience visibility is planned in [REGISTRY_VISIBILITY_FOUNDATION.md](REGISTRY_VISIBILITY_FOUNDATION.md). Knowledge Operations remains responsible for article lifecycle, metadata, search, suggestions, retrieval/RAG and safe projection; Registry owns people, departments, locations, identities, account sessions and audience expansion.
+
 ## Content Packs
 
 Baseline packs live in `content_packs/knowledge/*.yaml` and are installed by:
@@ -158,6 +160,21 @@ Phase 14C adds the first-class management editor:
 - Live validation evidence for this editor should create/update taxonomy, property, applicability and quality-model rows, then verify `/app/admin/knowledge`, requester `/app/kb/search`, public-compatible `/api/knowledge/search` and support `/app/knowledge` projections.
 
 Requester/public endpoints (`/api/knowledge/search`, `/api/knowledge/suggest`, `/api/knowledge/ask`, portal article APIs and `/app/help`) must not include this admin metadata bundle, raw property diagnostics, applicability internals or quality model weights.
+
+## Registry Audience Visibility
+
+The Registry Visibility Foundation adds a future audience-rule layer on top of current role/coarse visibility. It must preserve these boundaries:
+
+- current Knowledge visibility levels and lifecycle/status checks still run first;
+- effective identity and audience facts come from Registry, not from browser-supplied person, department, binding or account-mode fields;
+- departments, access groups and audience groups remain separate concepts;
+- audience groups can target content, but do not grant Knowledge management permissions or RBAC permissions;
+- `support_internal`, `admin_internal` and `security_restricted` items must not become requester-visible through audience rules;
+- search, suggestions, portal, support knowledge, graph, vector retrieval and RAG must filter candidates before scoring/rerank/answer generation and again before projection;
+- requester/agent/public APIs must not reveal hidden titles, summaries, snippets, chunks, result counts, diagnostics, rule ids or metadata for denied content;
+- admin explain/debug APIs may show rule reasons only behind admin authorization and with token/content redaction.
+
+The first implementation should add a shared Knowledge access service rather than duplicating audience checks inside each search or portal endpoint.
 
 ## Gap Detection
 

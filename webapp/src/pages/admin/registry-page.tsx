@@ -1,6 +1,6 @@
 import { Download, Plus, RefreshCcw, Search, ShieldCheck, Upload, UserPlus } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -10,6 +10,7 @@ import {
   addAdminRegistrySharedUser,
   adminRegistryExportUrl,
   applyAdminRegistryImport,
+  archiveAdminRegistryAudienceGroup,
   archiveAdminRegistryDepartment,
   archiveAdminRegistryLocation,
   approveAdminAccountLoginRequest,
@@ -21,16 +22,21 @@ import {
   bulkAssignAdminRegistryPeopleDepartment,
   bulkRevokeAdminRegistryAccountSessions,
   bulkRevokeAdminRegistryDeviceAccountSessions,
+  createAdminRegistryAudienceGroup,
   createAdminRegistryDepartment,
   createAdminRegistryLocation,
   createAdminRegistryPerson,
   createAdminRegistryPersonIdentity,
   fetchAdminAccountLoginRequests,
   fetchAdminRegistry,
+  fetchAdminRegistryAudienceGroupMembers,
+  fetchAdminRegistryAudienceGroups,
   linkAdminRegistryUiUserPerson,
   mergeAdminRegistryDepartments,
   mergeAdminRegistryLocations,
   mergeAdminRegistryPeople,
+  previewAdminRegistryAudienceGroupMembers,
+  previewAdminRegistryBulk,
   previewAdminRegistryDepartmentsMerge,
   previewAdminRegistryDeviceOwnerTransfer,
   previewAdminRegistryImport,
@@ -42,24 +48,30 @@ import {
   revokeAdminDeviceUserBinding,
   transferAdminRegistryDeviceOwner,
   updateAdminRegistryQualityIssue,
+  setAdminRegistryAudienceGroupMembers,
   updateAdminRegistryDepartment,
   updateAdminRegistryLocation,
+  updateAdminRegistryAudienceGroup,
   updateAdminRegistryPerson,
   type AdminDeviceAccountSession,
   type AdminDeviceUserBinding,
   type AdminRegistrationClaim,
+  type AdminRegistryAudiencePreview,
   type AdminRegistryBulkResponse,
   type AdminRegistryPayload,
 } from "../../features/admin/api";
 import { RegistryAccountSessionsTab } from "../../features/admin/registry/registry-account-sessions-tab";
+import { RegistryAudienceGroupsTab } from "../../features/admin/registry/registry-audience-groups-tab";
 import { RegistryBindPersonDialog, type BindPersonDialogState } from "../../features/admin/registry/registry-bind-person-dialog";
 import { RegistryBindingsTab } from "../../features/admin/registry/registry-bindings-tab";
+import { RegistryBulkActionDialog, type RegistryBulkDialogState, type RegistryBulkOperation } from "../../features/admin/registry/registry-bulk-action-dialog";
 import { RegistryBulkActions, type RegistryBulkAction } from "../../features/admin/registry/registry-bulk-actions";
 import { RegistryDepartmentsTab } from "../../features/admin/registry/registry-departments-tab";
 import { RegistryDetailDrawer } from "../../features/admin/registry/registry-detail-drawer";
 import { RegistryDevicesTab } from "../../features/admin/registry/registry-devices-tab";
 import { RegistryIdentityDialog, type IdentityDialogState } from "../../features/admin/registry/registry-identity-dialog";
 import { RegistryImportDialog } from "../../features/admin/registry/registry-import-dialog";
+import { RegistryLinkUiUserDialog, type LinkUiUserDialogState } from "../../features/admin/registry/registry-link-ui-user-dialog";
 import { RegistryLocationsTab } from "../../features/admin/registry/registry-locations-tab";
 import { RegistryMergePeopleDialog } from "../../features/admin/registry/registry-merge-people-dialog";
 import { RegistryOverviewTab } from "../../features/admin/registry/registry-overview-tab";
@@ -67,6 +79,7 @@ import { RegistryPeopleTab } from "../../features/admin/registry/registry-people
 import { RegistryPersonEditDialog, type PersonEditDialogState } from "../../features/admin/registry/registry-person-edit-dialog";
 import { RegistryPoliciesTab } from "../../features/admin/registry/registry-policies-tab";
 import { RegistryQualityTab } from "../../features/admin/registry/registry-quality-tab";
+import { RegistryReasonDialog, type RegistryReasonDialogState } from "../../features/admin/registry/registry-reason-dialog";
 import { RegistryRequestsTab } from "../../features/admin/registry/registry-requests-tab";
 import { RegistryTransferDeviceDialog } from "../../features/admin/registry/registry-transfer-device-dialog";
 import { filterRegistryPayload, type RegistrySelection, type RegistryTabKey } from "../../features/admin/registry/registry-utils";
@@ -82,6 +95,7 @@ const tabs: Array<{ key: RegistryTabKey; label: string; p1?: boolean }> = [
   { key: "quality", label: "Качество данных" },
   { key: "locations", label: "Локации", p1: true },
   { key: "departments", label: "Подразделения", p1: true },
+  { key: "audience_groups", label: "Аудитории", p1: true },
   { key: "policies", label: "Политики", p1: true },
 ];
 
@@ -117,6 +131,9 @@ export function AdminRegistryPage() {
   const [transferDialog, setTransferDialog] = useState<{ deviceId: string; hostname?: string | null } | null>(null);
   const [identityDialog, setIdentityDialog] = useState<IdentityDialogState>(null);
   const [personDialog, setPersonDialog] = useState<PersonEditDialogState>(null);
+  const [linkUiUserDialog, setLinkUiUserDialog] = useState<LinkUiUserDialogState>(null);
+  const [reasonDialog, setReasonDialog] = useState<RegistryReasonDialogState>(null);
+  const [bulkDialog, setBulkDialog] = useState<RegistryBulkDialogState>(null);
   const [mergePersonId, setMergePersonId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -124,6 +141,8 @@ export function AdminRegistryPage() {
   const [selectedPersonIds, setSelectedPersonIds] = useState<string[]>([]);
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([]);
   const [bulkResult, setBulkResult] = useState<AdminRegistryBulkResponse | null>(null);
+  const [selectedAudienceGroupId, setSelectedAudienceGroupId] = useState<string | null>(null);
+  const [audiencePreview, setAudiencePreview] = useState<AdminRegistryAudiencePreview | null>(null);
 
   const registryQuery = useQuery({
     queryKey: ["admin-registry"],
@@ -137,10 +156,24 @@ export function AdminRegistryPage() {
     retry: false,
     refetchInterval: 15_000,
   });
+  const audienceGroupsQuery = useQuery({
+    queryKey: ["admin-registry-audience-groups"],
+    queryFn: () => fetchAdminRegistryAudienceGroups(false),
+    retry: false,
+    refetchInterval: 30_000,
+  });
+  const audienceMembersQuery = useQuery({
+    queryKey: ["admin-registry-audience-group-members", selectedAudienceGroupId],
+    queryFn: () => fetchAdminRegistryAudienceGroupMembers(selectedAudienceGroupId ?? ""),
+    enabled: Boolean(selectedAudienceGroupId),
+    retry: false,
+  });
 
   const invalidateRegistry = async () => {
     await queryClient.invalidateQueries({ queryKey: ["admin-registry"] });
     await queryClient.invalidateQueries({ queryKey: ["admin-registry-account-login-requests"] });
+    await queryClient.invalidateQueries({ queryKey: ["admin-registry-audience-groups"] });
+    await queryClient.invalidateQueries({ queryKey: ["admin-registry-audience-group-members"] });
   };
 
   const mutation = useMutation({
@@ -152,6 +185,8 @@ export function AdminRegistryPage() {
       setTransferDialog(null);
       setIdentityDialog(null);
       setPersonDialog(null);
+      setLinkUiUserDialog(null);
+      setReasonDialog(null);
       setMergePersonId(null);
       setImportOpen(false);
       await invalidateRegistry();
@@ -164,6 +199,7 @@ export function AdminRegistryPage() {
     onSuccess: async (result) => {
       setActionError(null);
       setBulkResult(result);
+      setBulkDialog(null);
       await invalidateRegistry();
     },
   });
@@ -183,6 +219,19 @@ export function AdminRegistryPage() {
     [query, registry]
   );
   const pendingLoginRequests = accountLoginRequestsQuery.data?.items ?? registry?.account_login_requests ?? [];
+  const audienceGroups = audienceGroupsQuery.data?.groups ?? [];
+  const audienceMembers = audienceMembersQuery.data?.members ?? [];
+
+  useEffect(() => {
+    if (!selectedAudienceGroupId && audienceGroups.length) {
+      setSelectedAudienceGroupId(audienceGroups[0].audience_group_id);
+    }
+  }, [audienceGroups, selectedAudienceGroupId]);
+
+  useEffect(() => {
+    setAudiencePreview(null);
+  }, [selectedAudienceGroupId]);
+
   const toggleSelected = (id: string, setter: Dispatch<SetStateAction<string[]>>) => {
     setter((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
@@ -204,16 +253,16 @@ export function AdminRegistryPage() {
   const bulkActions: RegistryBulkAction[] = useMemo(() => {
     if (tab === "devices") {
       return [
-        { key: "devices.assign_location", label: "Assign location" },
-        { key: "devices.assign_department", label: "Assign department" },
-        { key: "devices.revoke_account_sessions", label: "Revoke sessions" },
+        { key: "devices.assign_location", label: "Назначить локацию" },
+        { key: "devices.assign_department", label: "Назначить подразделение" },
+        { key: "devices.revoke_account_sessions", label: "Отозвать сессии" },
       ];
     }
     if (tab === "people") {
-      return [{ key: "people.assign_department", label: "Assign department" }];
+      return [{ key: "people.assign_department", label: "Назначить подразделение" }];
     }
     if (tab === "account_sessions") {
-      return [{ key: "account_sessions.revoke", label: "Revoke sessions" }];
+      return [{ key: "account_sessions.revoke", label: "Отозвать сессии" }];
     }
     return [];
   }, [tab]);
@@ -228,51 +277,42 @@ export function AdminRegistryPage() {
   };
 
   const handleBulkAction = (operation: string) => {
-    if (operation === "devices.assign_location") {
-      const locationId = window.prompt("Location ID", "") ?? "";
-      const reason = window.prompt("Reason", "Bulk assign device location") ?? "";
-      if (locationId.trim() && reason.trim()) {
-        bulkMutation.mutate(() => bulkAssignAdminRegistryDeviceLocation({ ids: selectedDeviceIds, location_id: locationId.trim(), reason: reason.trim() }));
-      }
+    const typedOperation = operation as RegistryBulkOperation;
+    const ids =
+      typedOperation.startsWith("devices.") ? selectedDeviceIds :
+      typedOperation.startsWith("people.") ? selectedPersonIds :
+      selectedSessionIds;
+    if (!ids.length) {
       return;
     }
-    if (operation === "devices.assign_department") {
-      const departmentId = window.prompt("Department ID", "") ?? "";
-      const reason = window.prompt("Reason", "Bulk assign device department") ?? "";
-      if (departmentId.trim() && reason.trim()) {
-        bulkMutation.mutate(() => bulkAssignAdminRegistryDeviceDepartment({ ids: selectedDeviceIds, department_id: departmentId.trim(), reason: reason.trim() }));
-      }
-      return;
-    }
-    if (operation === "devices.revoke_account_sessions") {
-      const reason = window.prompt("Reason", "Bulk revoke device account sessions") ?? "";
-      if (reason.trim()) {
-        bulkMutation.mutate(() => bulkRevokeAdminRegistryDeviceAccountSessions(selectedDeviceIds, reason.trim()));
-      }
-      return;
-    }
-    if (operation === "people.assign_department") {
-      const departmentId = window.prompt("Department ID", "") ?? "";
-      const reason = window.prompt("Reason", "Bulk assign people department") ?? "";
-      if (departmentId.trim() && reason.trim()) {
-        bulkMutation.mutate(() => bulkAssignAdminRegistryPeopleDepartment({ ids: selectedPersonIds, department_id: departmentId.trim(), reason: reason.trim() }));
-      }
-      return;
-    }
-    if (operation === "account_sessions.revoke") {
-      const reason = window.prompt("Reason", "Bulk revoke account sessions") ?? "";
-      if (reason.trim()) {
-        bulkMutation.mutate(() => bulkRevokeAdminRegistryAccountSessions(selectedSessionIds, reason.trim()));
-      }
-    }
+    setBulkDialog({ operation: typedOperation, ids });
   };
 
-  const runWithReason = (label: string, fallback: string, action: (reason: string) => Promise<void>) => {
-    const reason = window.prompt(label, fallback) ?? "";
-    if (!reason.trim()) {
-      return;
-    }
-    mutation.mutate(() => action(reason.trim()));
+  const applyBulkAction = async (state: Exclude<RegistryBulkDialogState, null>, payload: { target_id?: string; reason: string }) => {
+    return bulkMutation.mutateAsync(() => {
+      if (state.operation === "devices.assign_location") {
+        return bulkAssignAdminRegistryDeviceLocation({ ids: state.ids, location_id: payload.target_id ?? "", reason: payload.reason });
+      }
+      if (state.operation === "devices.assign_department") {
+        return bulkAssignAdminRegistryDeviceDepartment({ ids: state.ids, department_id: payload.target_id ?? "", reason: payload.reason });
+      }
+      if (state.operation === "devices.revoke_account_sessions") {
+        return bulkRevokeAdminRegistryDeviceAccountSessions(state.ids, payload.reason);
+      }
+      if (state.operation === "people.assign_department") {
+        return bulkAssignAdminRegistryPeopleDepartment({ ids: state.ids, department_id: payload.target_id ?? "", reason: payload.reason });
+      }
+      return bulkRevokeAdminRegistryAccountSessions(state.ids, payload.reason);
+    });
+  };
+
+  const runWithReason = (label: string, fallback: string, action: (reason: string) => Promise<void>, tone: "default" | "danger" = "default") => {
+    setReasonDialog({
+      title: label,
+      defaultReason: fallback,
+      tone,
+      onConfirm: (reason) => mutation.mutate(() => action(reason)),
+    });
   };
 
   const handleFixIssue = (issue: AdminRegistryPayload["data_quality"][number]) => {
@@ -323,25 +363,11 @@ export function AdminRegistryPage() {
   };
 
   const bindPersonToKnownDevice = (person: AdminRegistryPayload["people"][number]) => {
-    const deviceId = window.prompt("Device ID для привязки пользователя", "") ?? "";
-    if (!deviceId.trim()) {
-      return;
-    }
-    setBindDialog({ deviceId: deviceId.trim(), mode: "primary_user", title: `Привязать ${person.display_name} к устройству`, replaceExisting: false });
+    setBindDialog({ deviceId: "", personId: person.person_id, mode: "primary_user", title: `Привязать ${person.display_name} к устройству`, replaceExisting: false });
   };
 
   const linkUiUserToPerson = (person: AdminRegistryPayload["people"][number]) => {
-    const linkedLogins = new Set((registry?.ui_users ?? []).filter((user) => user.linked_person_id).map((user) => user.user_login));
-    const suggested = (registry?.ui_users ?? []).find((user) => !linkedLogins.has(user.user_login))?.user_login ?? "";
-    const userLogin = window.prompt("UI login", suggested) ?? "";
-    if (!userLogin.trim()) {
-      return;
-    }
-    const reason = window.prompt("Reason", "Link UI login to registry person") ?? "";
-    if (!reason.trim()) {
-      return;
-    }
-    mutation.mutate(() => linkAdminRegistryUiUserPerson(userLogin.trim(), { person_id: person.person_id, reason: reason.trim() }));
+    setLinkUiUserDialog({ person });
   };
 
   const exportType =
@@ -499,9 +525,17 @@ export function AdminRegistryPage() {
             <RegistryQualityTab
               issues={visibleRegistry.data_quality}
               onFix={handleFixIssue}
-              onIgnore={(issue, reason) => mutation.mutate(() => updateAdminRegistryQualityIssue({ issue_key: issue.issue_key, action: "ignore", reason }).then(() => undefined))}
+              onIgnore={(issue) => runWithReason(
+                "Причина исключения проблемы качества",
+                "Принято как контролируемое исключение реестра",
+                (reason) => updateAdminRegistryQualityIssue({ issue_key: issue.issue_key, action: "ignore", reason }).then(() => undefined)
+              )}
               onSelect={setSelection}
-              onSnooze={(issue, reason, days) => mutation.mutate(() => updateAdminRegistryQualityIssue({ issue_key: issue.issue_key, action: "snooze", reason, days }).then(() => undefined))}
+              onSnooze={(issue, days) => runWithReason(
+                "Причина откладывания проблемы качества",
+                "Проблема отложена для планового исправления",
+                (reason) => updateAdminRegistryQualityIssue({ issue_key: issue.issue_key, action: "snooze", reason, days }).then(() => undefined)
+              )}
               suggestions={visibleRegistry.suggestions}
             />
           ) : null}
@@ -531,6 +565,27 @@ export function AdminRegistryPage() {
               ))}
             />
           ) : null}
+          {visibleRegistry && tab === "audience_groups" ? (
+            <RegistryAudienceGroupsTab
+              busy={mutation.isPending}
+              groups={audienceGroups}
+              members={audienceMembers}
+              preview={audiencePreview}
+              registry={visibleRegistry}
+              selectedGroupId={selectedAudienceGroupId}
+              onArchive={(group, reason) => mutation.mutate(() => archiveAdminRegistryAudienceGroup(group.audience_group_id, reason).then(() => undefined))}
+              onCreate={(payload) => mutation.mutate(() => createAdminRegistryAudienceGroup(payload).then((result) => {
+                setSelectedAudienceGroupId(result.group.audience_group_id);
+              }))}
+              onPreviewMembers={async (groupId, members) => {
+                const result = await previewAdminRegistryAudienceGroupMembers(groupId, members);
+                setAudiencePreview(result.preview);
+              }}
+              onSaveMembers={(groupId, members, reason) => mutation.mutate(() => setAdminRegistryAudienceGroupMembers(groupId, { members, reason }).then(() => undefined))}
+              onSelectGroup={(groupId) => setSelectedAudienceGroupId(groupId)}
+              onUpdate={(groupId, payload) => mutation.mutate(() => updateAdminRegistryAudienceGroup(groupId, payload).then(() => undefined))}
+            />
+          ) : null}
           {tab === "policies" ? <RegistryPoliciesTab /> : null}
         </CardContent>
       </Card>
@@ -551,6 +606,14 @@ export function AdminRegistryPage() {
         onPreview={(payload) => previewAdminRegistryImport(payload)}
         onApply={(payload) => importMutation.mutateAsync(payload)}
       />
+      <RegistryBulkActionDialog
+        busy={bulkMutation.isPending}
+        registry={registry}
+        state={bulkDialog}
+        onApply={applyBulkAction}
+        onClose={() => setBulkDialog(null)}
+        onPreview={(payload) => previewAdminRegistryBulk(payload)}
+      />
       <RegistryBindPersonDialog
         busy={mutation.isPending}
         people={registry?.people ?? []}
@@ -565,6 +628,18 @@ export function AdminRegistryPage() {
           }
           return bindAdminRegistryDevicePerson(payload);
         })}
+      />
+      <RegistryLinkUiUserDialog
+        busy={mutation.isPending}
+        state={linkUiUserDialog}
+        uiUsers={registry?.ui_users ?? []}
+        onClose={() => setLinkUiUserDialog(null)}
+        onSubmit={(payload) => mutation.mutate(() => linkAdminRegistryUiUserPerson(payload.user_login, { person_id: payload.person_id, reason: payload.reason }))}
+      />
+      <RegistryReasonDialog
+        busy={mutation.isPending}
+        state={reasonDialog}
+        onClose={() => setReasonDialog(null)}
       />
       <RegistryTransferDeviceDialog
         busy={mutation.isPending}

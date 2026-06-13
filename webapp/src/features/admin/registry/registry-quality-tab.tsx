@@ -11,9 +11,9 @@ type Props = {
   issues: AdminRegistryPayload["data_quality"];
   suggestions: AdminRegistryPayload["suggestions"];
   onFix: (issue: QualityIssue) => void;
-  onIgnore: (issue: QualityIssue, reason: string) => void;
+  onIgnore: (issue: QualityIssue) => void;
   onSelect: (selection: RegistrySelection) => void;
-  onSnooze: (issue: QualityIssue, reason: string, days: number) => void;
+  onSnooze: (issue: QualityIssue, days: number) => void;
 };
 
 export function RegistryQualityTab({ issues, onFix, onIgnore, onSelect, onSnooze, suggestions }: Props) {
@@ -37,14 +37,8 @@ export function RegistryQualityTab({ issues, onFix, onIgnore, onSelect, onSnooze
                   else if (issue.device_id) onSelect({ kind: "device", id: issue.device_id });
                 }} size="sm" variant="outline">Open</Button>
                 <Button leadingIcon={<Wrench className="h-4 w-4" />} onClick={() => onFix(issue)} size="sm">Fix</Button>
-                <Button onClick={() => {
-                  const reason = window.prompt("Reason", "Accepted registry exception") ?? "";
-                  if (reason.trim()) onIgnore(issue, reason.trim());
-                }} size="sm" variant="outline">Ignore</Button>
-                <Button onClick={() => {
-                  const reason = window.prompt("Reason", "Snooze registry issue") ?? "";
-                  if (reason.trim()) onSnooze(issue, reason.trim(), 7);
-                }} size="sm" variant="outline">Snooze 7d</Button>
+                <Button onClick={() => onIgnore(issue)} size="sm" variant="outline">Ignore</Button>
+                <Button onClick={() => onSnooze(issue, 7)} size="sm" variant="outline">Snooze 7d</Button>
               </div>
             </div>
           </div>

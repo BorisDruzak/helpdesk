@@ -5,14 +5,16 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser
+from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser
 from auth.middleware import require_auth
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
+from registry.audience_group_service import RegistryAudienceService
 from registry.browser_pairing_service import BrowserPairingService
+from registry.effective_identity_service import EffectiveIdentityService
 from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
@@ -172,6 +174,168 @@ async def handle_web_admin_registry(_request: web.Request) -> web.Response:
             "suggestions": [],
         }
     return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_effective_identity(request: web.Request) -> web.Response:
+    actor_id = str(request.query.get("actor_id") or "").strip()
+    actor_role = str(request.query.get("actor_role") or "user").strip()
+    if not actor_id:
+        return web.json_response(
+            {"status": "error", "error": "actor_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    async with get_session() as session:
+        identity = await EffectiveIdentityService(session).resolve_actor_identity(actor_id, actor_role)
+    return _success({"identity": identity.to_dict()})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_person_audience(request: web.Request) -> web.Response:
+    person_id = str(request.match_info.get("person_id") or "").strip()
+    actor_id = str(request.query.get("actor_id") or "").strip() or None
+    actor_role = str(request.query.get("actor_role") or "user").strip()
+    async with get_session() as session:
+        audience = await EffectiveIdentityService(session).resolve_person_audience(
+            person_id=person_id,
+            actor_id=actor_id,
+            actor_role=actor_role,
+        )
+    return _success({"audience": audience.to_dict()})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_account_session_identity_explain(request: web.Request) -> web.Response:
+    session_id = str(request.match_info.get("session_id") or "").strip()
+    if not session_id:
+        return web.json_response(
+            {"status": "error", "error": "session_id is required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    device_id = str(request.query.get("device_id") or "").strip()
+    session_token = str(
+        request.headers.get("X-Account-Session-Token") or request.query.get("session_token") or ""
+    ).strip() or None
+    async with get_session() as session:
+        if not device_id:
+            row = await session.get(DeviceAccountSession, session_id)
+            if row is None:
+                return web.json_response(
+                    {"status": "error", "error": "account session not found", "error_code": "NOT_FOUND"},
+                    status=404,
+                )
+            device_id = str(row.device_id)
+        identity = await EffectiveIdentityService(session).resolve_account_session_identity(
+            device_id=device_id,
+            session_id=session_id,
+            session_token=session_token,
+        )
+    return _success({"identity": identity.to_dict()})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_audience_groups(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    async with get_session() as session:
+        service = RegistryAudienceService(session)
+        if request.method == "GET":
+            include_archived = str(request.query.get("include_archived") or "").strip().lower() in {"1", "true", "yes"}
+            return _success({"groups": await service.list_groups(include_archived=include_archived)})
+        try:
+            data = await request.json()
+            group = await service.create_group(
+                code=str(data.get("code") or ""),
+                name=str(data.get("name") or ""),
+                description=data.get("description"),
+                source=str(data.get("source") or "manual"),
+                actor_id=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+            return _success({"group": group})
+        except Exception as exc:
+            await session.rollback()
+            return _registry_admin_error(exc)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_audience_group_update(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    audience_group_id = str(request.match_info.get("audience_group_id") or "").strip()
+    async with get_session() as session:
+        try:
+            data = await request.json()
+            group = await RegistryAudienceService(session).update_group(
+                audience_group_id,
+                fields=data,
+                actor_id=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+            return _success({"group": group})
+        except Exception as exc:
+            await session.rollback()
+            return _registry_admin_error(exc)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_audience_group_archive(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    audience_group_id = str(request.match_info.get("audience_group_id") or "").strip()
+    async with get_session() as session:
+        try:
+            data = await request.json() if request.can_read_body else {}
+            group = await RegistryAudienceService(session).archive_group(
+                audience_group_id,
+                actor_id=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+            return _success({"group": group})
+        except Exception as exc:
+            await session.rollback()
+            return _registry_admin_error(exc)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_audience_group_members(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    audience_group_id = str(request.match_info.get("audience_group_id") or "").strip()
+    async with get_session() as session:
+        service = RegistryAudienceService(session)
+        if request.method == "GET":
+            try:
+                return _success({"members": await service.list_members(audience_group_id)})
+            except Exception as exc:
+                return _registry_admin_error(exc)
+        try:
+            data = await request.json()
+            members = await service.set_members(
+                audience_group_id,
+                data.get("members") or [],
+                actor_id=auth_context.actor_id,
+                reason=_text(data.get("reason"), max_length=1000),
+            )
+            await session.commit()
+            return _success({"members": members})
+        except Exception as exc:
+            await session.rollback()
+            return _registry_admin_error(exc)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_audience_group_preview_members(request: web.Request) -> web.Response:
+    audience_group_id = str(request.match_info.get("audience_group_id") or "").strip()
+    async with get_session() as session:
+        try:
+            data = await request.json() if request.can_read_body else {}
+            preview = await RegistryAudienceService(session).preview_members(
+                audience_group_id,
+                members=data.get("members") if isinstance(data.get("members"), list) else None,
+            )
+            return _success({"preview": preview})
+        except Exception as exc:
+            return _registry_admin_error(exc)
 
 
 @require_auth("admin", "support", "user", "agent")
