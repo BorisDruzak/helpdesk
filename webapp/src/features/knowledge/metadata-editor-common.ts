@@ -52,6 +52,26 @@ export const includeModeOptions = [
   { label: "Исключить", value: "exclude" },
 ];
 
+function optionLabel(options: Array<{ label: string; value: string }>, value: string | null | undefined) {
+  return options.find((option) => option.value === value)?.label ?? value ?? "Не задано";
+}
+
+export function termTypeLabel(value: string | null | undefined) {
+  return optionLabel(termTypeOptions, value);
+}
+
+export function visibilityLabel(value: string | null | undefined) {
+  return optionLabel(visibilityOptions, value);
+}
+
+export function statusLabel(value: string | null | undefined) {
+  return optionLabel(statusOptions, value);
+}
+
+export function valueTypeLabel(value: string | null | undefined) {
+  return optionLabel(valueTypeOptions, value);
+}
+
 export function splitLines(value: string) {
   return value
     .split(/\r?\n|,/)

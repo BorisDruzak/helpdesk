@@ -5,7 +5,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { saveKnowledgePropertyDefinition, type KnowledgeMetadataBundle, type KnowledgePropertyDefinition } from "./api";
-import { fieldClass, splitLines, statusOptions, valueTypeOptions } from "./metadata-editor-common";
+import { fieldClass, splitLines, statusLabel, statusOptions, valueTypeLabel, valueTypeOptions } from "./metadata-editor-common";
 
 type PropertyDraft = {
   allowed_values: string;
@@ -121,10 +121,10 @@ export function MetadataPropertyPanel({ metadata, onChanged }: { metadata?: Know
               >
                 <span className="flex items-center justify-between gap-3">
                   <span className="font-medium">{row.title}</span>
-                  <Badge>{row.status}</Badge>
+                  <Badge>{statusLabel(row.status)}</Badge>
                 </span>
                 <span className="mt-1 block text-xs text-slate-500">
-                  {row.code} · {row.value_type} · вес {row.quality_weight ?? 0}
+                  {row.code} · {valueTypeLabel(row.value_type)} · вес {row.quality_weight ?? 0}
                 </span>
               </button>
             ))}

@@ -46,6 +46,18 @@ const metadataBundle = {
       quality_weight: 12,
       status: "active",
     },
+    {
+      property_id: "prop-platforms",
+      space_id: "space-1",
+      code: "platforms",
+      title: "Платформы",
+      value_type: "multi_select",
+      required: false,
+      allowed_values: ["windows", "linux", "mac"],
+      applies_to_item_types: ["article"],
+      quality_weight: 4,
+      status: "active",
+    },
   ],
   applicability_rules: [],
   quality_models: [
@@ -141,16 +153,21 @@ describe("ArticleMetadataPanel", () => {
 
     const taxonomyPanel = screen.getByTestId("article-metadata-taxonomy");
     expect(await within(taxonomyPanel).findByLabelText("Термин VPN")).toBeInTheDocument();
+    expect(taxonomyPanel.textContent ?? "").toContain("Продукт · vpn · Портал заявителя");
+    expect(taxonomyPanel.textContent ?? "").not.toMatch(/\bproduct\b|\brequester\b/);
     fireEvent.click(screen.getByLabelText("Термин VPN"));
 
     fireEvent.click(screen.getByRole("button", { name: "Свойства" }));
     expect(screen.getByText("Не заполнено обязательное свойство: Аудитория")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Свойство Аудитория"), { target: { value: "requester" } });
+    const platformsInput = screen.getByLabelText("Свойство Платформы") as HTMLTextAreaElement;
+    expect(platformsInput.tagName).toBe("TEXTAREA");
+    fireEvent.change(platformsInput, { target: { value: "windows\nlinux" } });
     fireEvent.click(screen.getByRole("button", { name: "Сохранить метаданные статьи" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/web/knowledge/items/item-1/metadata", expect.objectContaining({ method: "PUT" })));
     const metadataCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items/item-1/metadata" && call[1]?.method === "PUT");
     expect(JSON.parse(String(metadataCall?.[1]?.body))).toMatchObject({
-      properties: { audience: "requester" },
+      properties: { audience: "requester", platforms: ["windows", "linux"] },
       taxonomy_term_ids: ["term-vpn"],
     });
 

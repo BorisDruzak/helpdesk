@@ -58,13 +58,16 @@ def test_permission_catalog_has_stable_role_defaults():
     assert "ticket.queue.change" in codes
     assert "ticket.playbook.run" in codes
     assert "admin.access.view" in codes
+    assert "knowledge.metadata.manage" in codes
 
     admin_permissions = get_role_permission_codes("admin")
     support_permissions = get_role_permission_codes("support")
     auditor_permissions = get_role_permission_codes("auditor")
 
     assert "admin.access.view" in admin_permissions
+    assert "knowledge.metadata.manage" in admin_permissions
     assert "workspace.support.view" in support_permissions
+    assert "knowledge.metadata.manage" not in support_permissions
     assert "remote_assist.clipboard" in support_permissions
     assert "remote_assist.file_transfer" in support_permissions
     assert "workspace.admin.view" not in support_permissions

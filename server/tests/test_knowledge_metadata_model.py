@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import KnowledgeQualityModel, KnowledgeSpace
+from app.db.models import AccessGroup, AccessGroupMember, AccessGroupPermission, KnowledgeQualityModel, KnowledgeSpace, UiUser
 
 
 def _unique_code(prefix: str) -> str:
@@ -29,8 +29,27 @@ def _requester_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-user:knowledge-metadata"}
 
 
+async def _grant_support_knowledge_manager(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        group = AccessGroup(
+            code=f"knowledge_manager_{uuid.uuid4().hex[:8]}",
+            name="Knowledge managers",
+            description=None,
+            is_active=True,
+        )
+        session.add(group)
+        await session.flush()
+        session.add(AccessGroupMember(group_id=group.id, actor_id="support-test"))
+        for permission in ("workspace.admin.view", "knowledge.metadata.manage"):
+            session.add(AccessGroupPermission(group_id=group.id, permission_code=permission))
+        await session.commit()
+
+
 @pytest.mark.asyncio
-async def test_knowledge_metadata_model_lifecycle_and_quality_scoring(test_client) -> None:
+async def test_knowledge_metadata_model_lifecycle_and_quality_scoring(test_client, test_engine) -> None:
+    await _grant_support_knowledge_manager(test_engine)
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",
         headers=_admin_headers(),
@@ -193,7 +212,8 @@ async def test_knowledge_metadata_mutation_forbidden_for_requester_and_public_pr
 
 
 @pytest.mark.asyncio
-async def test_support_cannot_create_admin_internal_taxonomy_in_support_visible_space(test_client) -> None:
+async def test_support_cannot_create_admin_internal_taxonomy_in_support_visible_space(test_client, test_engine) -> None:
+    await _grant_support_knowledge_manager(test_engine)
     code = _unique_code("acl-space")
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",
@@ -219,7 +239,8 @@ async def test_support_cannot_create_admin_internal_taxonomy_in_support_visible_
 
 
 @pytest.mark.asyncio
-async def test_support_cannot_escalate_existing_taxonomy_visibility(test_client) -> None:
+async def test_support_cannot_escalate_existing_taxonomy_visibility(test_client, test_engine) -> None:
+    await _grant_support_knowledge_manager(test_engine)
     code = _unique_code("acl-escalate")
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",
@@ -362,7 +383,8 @@ async def test_item_metadata_filters_taxonomy_terms_by_actor_visibility(test_cli
 
 
 @pytest.mark.asyncio
-async def test_support_cannot_assign_hidden_taxonomy_term_to_item_metadata(test_client) -> None:
+async def test_support_cannot_assign_hidden_taxonomy_term_to_item_metadata(test_client, test_engine) -> None:
+    await _grant_support_knowledge_manager(test_engine)
     code = _unique_code("acl-assign")
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",

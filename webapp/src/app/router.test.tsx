@@ -57,6 +57,31 @@ function createSupportSession() {
   };
 }
 
+function createSupportKnowledgeManagerSession() {
+  return {
+    ...createSupportSession(),
+    default_workspace: "admin",
+    available_workspaces: ["admin", "support"],
+    permissions: [
+      ...createSupportSession().permissions,
+      "workspace.admin.view",
+      "knowledge.metadata.manage",
+    ]
+  };
+}
+
+function createSupportAdminWorkspaceOnlySession() {
+  return {
+    ...createSupportSession(),
+    default_workspace: "admin",
+    available_workspaces: ["admin", "support"],
+    permissions: [
+      ...createSupportSession().permissions,
+      "workspace.admin.view",
+    ]
+  };
+}
+
 function createAdminSession() {
   return {
     user_login: "admin1",
@@ -78,6 +103,7 @@ function createAdminSession() {
       "module.tool.run.high_risk",
       "ticket.passport.manage",
       "admin.inventory.view",
+      "knowledge.metadata.manage",
       "admin.registry.view",
       "admin.modules.view",
       "admin.forms.view",
@@ -87,6 +113,35 @@ function createAdminSession() {
       "settings.view",
     ]
   };
+}
+
+function createKnowledgeMetadataPayload() {
+  return {
+    status: "ok",
+    metadata: {
+      spaces: [{ space_id: "space-1", code: "it", title: "IT", visibility: "requester", lifecycle_status: "active" }],
+      taxonomy_terms: [],
+      property_definitions: [],
+      applicability_rules: [],
+      quality_models: [],
+      item_metadata: [],
+      summary: {
+        taxonomy_terms_total: 0,
+        taxonomy_terms_active: 0,
+        property_definitions_total: 0,
+        property_definitions_active: 0,
+        applicability_rules_total: 0,
+        applicability_rules_active: 0,
+        quality_models_total: 0,
+        quality_models_active: 0,
+        item_metadata_total: 0,
+      },
+    },
+  };
+}
+
+function createKnowledgeItemsPayload() {
+  return { status: "ok", items: [] };
 }
 
 function createCommandCenterPayload() {
@@ -345,6 +400,69 @@ describe("appRoutes", () => {
     expect(await screen.findByRole("heading", { name: "Центр администрирования" })).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: /Устройства и агенты/ })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Тикеты/ })).not.toBeInTheDocument();
+  });
+
+  it("opens Knowledge metadata editor for a support knowledge manager group session", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/web/session/me")) {
+        return jsonResponse({
+          status: "success",
+          data: createSupportKnowledgeManagerSession()
+        });
+      }
+
+      if (url.endsWith("/api/web/notifications/unread_count")) {
+        return jsonResponse({ status: "ok", unread_count: 0 });
+      }
+
+      if (url === "/api/web/knowledge/metadata") {
+        return jsonResponse(createKnowledgeMetadataPayload());
+      }
+
+      if (url === "/api/web/knowledge/items") {
+        return jsonResponse(createKnowledgeItemsPayload());
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const { router } = renderApp(["/app/admin/knowledge/metadata"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Метаданные знаний" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/app/admin/knowledge/metadata");
+    expect((await screen.findAllByText("Метаданные знаний")).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole("link", { name: /Инвентарь устройств/ })).not.toBeInTheDocument();
+  });
+
+  it("does not open Knowledge metadata editor for support without knowledge manager permission", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (url.endsWith("/api/web/session/me")) {
+        return jsonResponse({
+          status: "success",
+          data: createSupportAdminWorkspaceOnlySession()
+        });
+      }
+
+      if (url.endsWith("/api/web/notifications/unread_count")) {
+        return jsonResponse({ status: "ok", unread_count: 0 });
+      }
+
+      if (url.endsWith("/api/web/admin/connection-requests")) {
+        return jsonResponse({ status: "success", data: { connection_requests: [] } });
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const { router } = renderApp(["/app/admin/knowledge/metadata"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Центр администрирования" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/app/admin");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/web/knowledge/metadata", expect.anything());
   });
 
   it("opens Capability Studio for admin users", async () => {

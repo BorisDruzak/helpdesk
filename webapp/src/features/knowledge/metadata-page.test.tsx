@@ -161,6 +161,10 @@ describe("KnowledgeMetadataPage", () => {
     expect(await within(taxonomyPanel).findByRole("button", { name: "Термин Доступы" })).toBeInTheDocument();
     expect(await within(taxonomyPanel).findByRole("button", { name: "Термин VPN" })).toBeInTheDocument();
     expect(taxonomyPanel.textContent ?? "").toContain("Связанные статьи: 1");
+    expect(taxonomyPanel.textContent ?? "").toContain("Категория · access · Связанные статьи: 0");
+    expect(taxonomyPanel.textContent ?? "").toContain("Продукт · vpn · Связанные статьи: 1");
+    expect(taxonomyPanel.textContent ?? "").toContain("Активно");
+    expect(taxonomyPanel.textContent ?? "").not.toMatch(/\bcategory\b|\bproduct\b|\bactive\b/);
     fireEvent.change(screen.getByLabelText("Код термина"), { target: { value: "mfa" } });
     fireEvent.change(screen.getByLabelText("Название термина"), { target: { value: "MFA" } });
     fireEvent.change(screen.getByLabelText("Родительский термин"), { target: { value: "term-access" } });
@@ -174,6 +178,8 @@ describe("KnowledgeMetadataPage", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Свойства" }));
+    expect(screen.getByText("audience · Выбор · вес 12")).toBeInTheDocument();
+    expect(document.body.textContent ?? "").not.toMatch(/\bselect\b/);
     fireEvent.change(screen.getByLabelText("Код свойства"), { target: { value: "audience" } });
     fireEvent.change(screen.getByLabelText("Название свойства"), { target: { value: "Аудитория" } });
     fireEvent.change(screen.getByLabelText("Разрешённые значения"), { target: { value: "requester\nsupport" } });

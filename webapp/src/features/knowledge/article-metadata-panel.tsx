@@ -22,6 +22,9 @@ import {
   propertyValueToInput,
   scopeTypeOptions,
   termsForSpace,
+  termTypeLabel,
+  textareaClass,
+  visibilityLabel,
 } from "./metadata-editor-common";
 
 const tabs = [
@@ -162,7 +165,7 @@ export function ArticleMetadataPanel({ canManage, item }: { canManage: boolean; 
                 <span>
                   <span className="block font-medium">Термин {term.title}</span>
                   <span className="text-xs text-slate-500">
-                    {term.term_type} · {term.code} · {term.visibility}
+                    {termTypeLabel(term.term_type)} · {term.code} · {visibilityLabel(term.visibility)}
                   </span>
                 </span>
               </label>
@@ -181,11 +184,18 @@ export function ArticleMetadataPanel({ canManage, item }: { canManage: boolean; 
             {propertyDefinitions.map((definition) => (
               <label key={definition.property_id} className="text-sm font-medium">
                 Свойство {definition.title}
-                {definition.value_type === "select" || definition.value_type === "multi_select" ? (
+                {definition.value_type === "multi_select" ? (
+                  <textarea
+                    className={textareaClass}
+                    disabled={!canManage}
+                    value={propertyValues[definition.code] ?? ""}
+                    onChange={(event) => setPropertyValues({ ...propertyValues, [definition.code]: event.target.value })}
+                    placeholder={(definition.allowed_values ?? []).join("\n")}
+                  />
+                ) : definition.value_type === "select" ? (
                   <select
                     className={fieldClass}
                     disabled={!canManage}
-                    multiple={definition.value_type === "multi_select"}
                     value={propertyValues[definition.code] ?? ""}
                     onChange={(event) => setPropertyValues({ ...propertyValues, [definition.code]: event.target.value })}
                   >

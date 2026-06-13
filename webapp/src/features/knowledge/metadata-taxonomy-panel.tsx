@@ -5,7 +5,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { saveKnowledgeTaxonomyTerm, type KnowledgeMetadataBundle, type KnowledgeTaxonomyTerm } from "./api";
-import { fieldClass, linkedItemCount, statusOptions, termTypeOptions, termsForSpace, visibilityOptions } from "./metadata-editor-common";
+import { fieldClass, linkedItemCount, statusLabel, statusOptions, termTypeLabel, termTypeOptions, termsForSpace, visibilityOptions } from "./metadata-editor-common";
 
 type TaxonomyDraft = {
   code: string;
@@ -115,10 +115,10 @@ export function MetadataTaxonomyPanel({ metadata, onChanged }: { metadata?: Know
               >
                 <span className="flex items-center justify-between gap-3">
                   <span className={term.parent_term_id ? "pl-5" : ""}>{term.title}</span>
-                  <Badge>{term.status}</Badge>
+                  <Badge>{statusLabel(term.status)}</Badge>
                 </span>
                 <span className="mt-1 block text-xs text-slate-500">
-                  {term.term_type} · {term.code} · Связанные статьи: {linkedItemCount(metadata, term.term_id)}
+                  {termTypeLabel(term.term_type)} · {term.code} · Связанные статьи: {linkedItemCount(metadata, term.term_id)}
                 </span>
               </button>
             ))}

@@ -52,7 +52,25 @@ Initial Phase 5 retrieval foundation lives in `server/knowledge/retrieval_servic
 
 Initial Phase 6 Ask foundation lives in `server/knowledge/ask_service.py`, `server/web_api/knowledge_handlers.py` and `webapp/src/pages/kb/ask-page.tsx`. `POST /api/knowledge/ask` is requester-safe and uses requester ACL even in legacy/public-compatible contexts, while `/api/web/knowledge/ask` and `/api/web/knowledge/ask/preview` keep authenticated admin/support/auditor roles. Ask is off by default; `answer_status=ai_disabled`, provider failures and no-evidence states return Russian fallback messages plus retrieval results. Enabled Ask requires `effective_mode=rag_answer`, an `answer` model profile, enabled provider, `answer_allowed` policy, env-backed secret and injected transport. AI calls write redacted `ai_request_audit` rows and emit `knowledge.rag.*` observer events.
 
-Initial Phase 14 metadata foundation lives in `server/knowledge/metadata_service.py`, migrations `118` and `119`, `server/web_api/knowledge_handlers.py` and `webapp/src/features/knowledge/ops-dashboard-panel.tsx`. It adds governed taxonomy terms, typed property definitions, item property/taxonomy assignments, explicit applicability rules and per-space/global quality models. The metadata bundle is available only through protected `/api/web/knowledge/metadata`; it returns all visible management rows plus active/total `summary` counts. Mutations are admin/support only, and taxonomy upsert validates the requested term visibility as well as the parent space visibility. `KnowledgeQualityService` consumes active/default quality model weights for `properties`, `taxonomy` and `applicability` dimensions while preserving legacy quality dimensions. Requester/public Knowledge APIs remain backward-compatible and do not expose admin metadata diagnostics or model weights.
+Initial Phase 14 metadata foundation lives in `server/knowledge/metadata_service.py`, migrations `118` and `119`, `server/web_api/knowledge_handlers.py` and `webapp/src/features/knowledge/ops-dashboard-panel.tsx`. It adds governed taxonomy terms, typed property definitions, item property/taxonomy assignments, explicit applicability rules and per-space/global quality models. The metadata bundle is available only through protected `/api/web/knowledge/metadata`; it returns all visible management rows plus active/total `summary` counts. Metadata mutations require `knowledge.metadata.manage` in addition to the authenticated role boundary; admin receives that permission by default, while support must be explicitly delegated as a knowledge manager. Taxonomy upsert validates the requested term visibility as well as the parent space visibility. `KnowledgeQualityService` consumes active/default quality model weights for `properties`, `taxonomy` and `applicability` dimensions while preserving legacy quality dimensions. Requester/public Knowledge APIs remain backward-compatible and do not expose admin metadata diagnostics or model weights.
+
+## Admin UI Refactor Decision
+
+The admin Knowledge refactor is specified in `docs/superpowers/specs/2026-06-13-knowledge-admin-ui-refactor-design.md`.
+
+The target model is scenario-first, not endpoint/table-first:
+
+- `/app/admin/knowledge` is the Knowledge Operations Center.
+- `/app/admin/knowledge/studio` is the Authoring Workbench.
+- `/app/admin/knowledge/graph` is the Graph Workbench.
+- `/app/admin/knowledge/import` is the Import Wizard.
+- `/app/admin/knowledge/search-settings` is Retrieval Settings.
+- `/app/admin/knowledge/ai` is AI Governance Settings.
+- `/app/admin/knowledge/indexing` is Indexing Operations.
+
+Studio must use TipTap/ProseMirror for the primary article editor. The editor must support inline visual states for manual markup, AI proposals, auto segmentation, diff, validation and stale/remapped segments. A plain textarea is not acceptable as the final authoring surface.
+
+Graph must use React Flow (`@xyflow/react`) for the primary graph canvas. The graph page must be an editor with selectable/editable nodes and edges, searchable node pickers, connection creation, drag layout, saved layout and visible update/refetch evidence after mutations. A hand-rolled read-only SVG/list surface is not acceptable as the final graph editor.
 
 ## Русская Локализация
 

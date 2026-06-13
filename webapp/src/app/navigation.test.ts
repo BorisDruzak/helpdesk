@@ -23,6 +23,7 @@ const fullAdminPermissions = [
   "admin.access.view",
   "admin.forms.view",
   "admin.inventory.view",
+  "knowledge.metadata.manage",
   "admin.modules.view",
   "admin.observer.view",
   "admin.playbooks.view",
@@ -67,6 +68,22 @@ describe("navigation helpers", () => {
     );
     expect(findFirstVisibleDomainItem("knowledge", fullAdminPermissions)?.to).toBe("/app/admin/knowledge");
     expect(findFirstVisibleDomainItem("catalog-intake", [])).toBeNull();
+  });
+
+  it("shows the Knowledge metadata editor only to knowledge managers", () => {
+    const knowledgeWithoutManager = getVisibleNavigationDomains("admin", [
+      "admin.forms.view",
+      "workspace.admin.view",
+    ]).find((domain) => domain.id === "knowledge");
+    const knowledgeManager = getVisibleNavigationDomains("admin", [
+      "knowledge.metadata.manage",
+      "workspace.admin.view",
+    ]).find((domain) => domain.id === "knowledge");
+
+    expect(knowledgeWithoutManager?.items.map((item) => item.to)).not.toContain(
+      "/app/admin/knowledge/metadata",
+    );
+    expect(knowledgeManager?.items.map((item) => item.to)).toEqual(["/app/admin/knowledge/metadata"]);
   });
 
   it("keeps device operations last in the devices domain", () => {

@@ -3381,11 +3381,11 @@ Remote/live verification:
 
 Phase 14C - Knowledge metadata management editor, 2026-06-13:
 
-Status: implemented and live validated on commit `ee6e31e1`, 2026-06-13. Required follow-up after Phase 14 backend metadata foundation and Phase 14B Authoring Studio regression is closed; final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
+Status: implemented and live validated on commit `ee6e31e1`, 2026-06-13; Phase 14C follow-up permission/UI hardening is active on 2026-06-13. Required follow-up after Phase 14 backend metadata foundation and Phase 14B Authoring Studio regression is closed; final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
 
 Scope:
 
-* Add `/app/admin/knowledge/metadata` as a first-class admin/support metadata workbench for governed taxonomy terms, property definitions, applicability rules and quality models.
+* Add `/app/admin/knowledge/metadata` as a first-class metadata workbench for admin and explicitly delegated knowledge-manager users, covering governed taxonomy terms, property definitions, applicability rules and quality models.
 * Keep organization categories/properties as editable governed data. Frontend code must not hardcode business categories; default business taxonomy may exist only as optional seed content.
 * Extend `/app/admin/knowledge/studio` with item-level metadata tabs: `Таксономия`, `Свойства`, `Применимость`, `Качество`.
 * Add optional safe default metadata seed pack/script with Russian-first output, dry-run/apply modes and idempotent behavior without overriding admin changes unless `--force`.
@@ -3421,7 +3421,7 @@ Local verification:
 
 Exit criteria:
 
-* Admin/support can create/edit/archive taxonomy terms and property definitions, replace item applicability rules and create/update quality models without direct API calls.
+* Admin and explicitly delegated knowledge-manager users can create/edit/archive taxonomy terms and property definitions, replace item applicability rules and create/update quality models without direct API calls.
 * Support cannot create, assign or escalate `admin_internal`/`security_restricted` taxonomy terms; auditor can read the visible bundle but cannot mutate.
 * Item metadata assignment validates required properties, allowed values and item type applicability, and filters hidden taxonomy terms in reads.
 * Knowledge Ops active counts update after metadata mutations and still count only active taxonomy/property/model rows.
@@ -3443,6 +3443,70 @@ Remaining Phase 14 work:
 * Phase 14 metadata-model hardening is complete. Phase 14B editor regression and live validation are complete.
 * Phase 14C metadata management editor is complete with local tests, deploy, live mutation evidence, browser evidence and requester/public projection checks.
 * Final Knowledge vNext product signoff still keeps the top-level real-key OpenRouter and dedicated semantic retrieval browser/live gates open.
+
+Phase 14C follow-up permission/UI hardening, 2026-06-13:
+
+Status: local implementation and local verification complete. Remote deploy/browser evidence must be refreshed on the new hardening commit before Phase 14C is treated as final after this review.
+
+Review findings:
+
+* Backend metadata mutation was role-gated for admin/support while the editor route lived only in the admin workspace. The chosen model is explicit delegation: default support remains outside the editor, and support knowledge managers must receive both `workspace.admin.view` and `knowledge.metadata.manage` through access groups.
+* The metadata editor still displayed raw enum values for taxonomy term type/status/visibility and property value type/status in visible lists.
+* The item metadata panel rendered `multi_select` properties as `<select multiple>` while saving a string value, so multi-value saves were incomplete.
+* This repository checkout has no `.github/workflows` directory and the Windows environment has no `gh` CLI, so GitHub Actions status cannot be produced for the current branch. Phase 14C verification uses project local CI/test/build/browser evidence instead of claiming a GitHub Actions gate.
+
+Implementation results:
+
+* Added high-risk permission `knowledge.metadata.manage`; admin receives it through catalog defaults, support does not receive it by default.
+* Protected metadata write APIs now require `knowledge.metadata.manage` in addition to the existing authenticated role boundary. Reads remain available to admin/support/auditor according to the existing visibility model; auditor stays read-only.
+* `/app/admin/knowledge/metadata` and the navigation item now require `knowledge.metadata.manage`; the route can be opened by a support knowledge-manager session only when the session also has admin workspace access.
+* Localized taxonomy/property list badges and enum labels while keeping technical codes visible as secondary identifiers.
+* Replaced item `multi_select` property editing with a newline/comma textarea path that feeds the existing structured value parser.
+* Added backend and frontend regression tests for permission catalog defaults, support denial without manager permission, support knowledge-manager access, raw enum label hiding and multi-select save shape.
+
+Verification:
+
+* `pnpm --dir webapp test -- src/app/navigation.test.ts src/app/router.test.tsx src/features/knowledge/metadata-page.test.tsx src/features/knowledge/article-metadata-panel.test.tsx` -> 24 passed.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_access_control.py::test_permission_catalog_has_stable_role_defaults server/tests/test_knowledge_metadata_editor_api.py -q --tb=short` -> 5 passed.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_metadata_model.py -q --tb=short` -> 11 passed.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_access_control.py server/tests/test_web_session_api.py server/tests/test_knowledge_metadata_model.py server/tests/test_knowledge_metadata_editor_api.py server/tests/test_knowledge_metadata_seed.py -q --tb=short` -> 44 passed, 18 existing aiohttp `NotAppKeyWarning` warnings.
+* `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_api.py::test_knowledge_api_admin_crud_and_requester_safe_suggest server/tests/test_knowledge_acl_hardening.py::test_web_acl_denies_support_restricted_mutation_and_auditor_publish server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_ask.py -q --tb=short` -> 12 passed.
+* `pnpm --dir webapp test -- src/features/knowledge/api.test.ts src/features/knowledge/ops-dashboard-panel.test.tsx src/features/knowledge/metadata-page.test.tsx src/features/knowledge/article-metadata-panel.test.tsx src/pages/admin/knowledge-studio-page.test.tsx src/app/navigation.test.ts src/app/router.test.tsx` -> 54 passed.
+* `pnpm --dir webapp test -- src/pages/kb/search-page.test.tsx src/pages/kb/ask-page.test.tsx src/pages/requester/index.test.tsx src/features/knowledge/support-workspace-page.test.tsx` -> 17 passed.
+* `pnpm --dir webapp build` -> passed.
+* `python -m compileall -q server shared scripts` -> passed.
+* `python scripts/verify_workspace.py` -> passed.
+* `python scripts/docs_inventory.py --check-links` -> passed.
+* `python scripts/check_webapp_cutover.py --json` -> bundle ready and full switch ready for active login/support/admin cutover flags.
+* `git diff --check -- <Phase 14C hardening tracked files>` -> passed.
+* `python scripts/run_ci_suite.py --layer server_pytest_db_knowledge --idle-timeout 0` -> 176 passed, 9 deselected, 2 existing warnings, returncode 0; artifact log is local/untracked under `artifacts/ci/42cd2a591afef323d97f261f1da514ec71e6ade4/logs/server_pytest_db_knowledge.log`.
+* GitHub Actions status remains unavailable in this checkout: `.github/workflows` is absent and `gh` CLI is not installed. This follow-up uses the project local CI layer above as the CI evidence.
+
+---
+
+## Knowledge admin UI refactor design decision, 2026-06-13
+
+Status: design spec recorded; implementation pending.
+
+Design spec:
+
+* `docs/superpowers/specs/2026-06-13-knowledge-admin-ui-refactor-design.md`
+
+Decision:
+
+* Refactor `/app/admin/knowledge` into a Knowledge Operations Center, not an editor or CRUD form.
+* Refactor `/app/admin/knowledge/studio` into a real Authoring Workbench with one primary editor for article text, metadata support, manual markup, AI markup, auto segmentation, visual highlights, diff, validation and publication flow.
+* Refactor `/app/admin/knowledge/graph` into a real Graph Workbench with a canvas-first graph editor, editable nodes/edges, searchable pickers, inspector, saved layout and proof that mutations update the visible graph.
+* Use `TipTap` / `ProseMirror` for Studio. A textarea-based implementation is not acceptable for the final editor because the product requires robust selections, inline decorations, markup states, diff/validation marks and inspector-driven editing.
+* Use React Flow (`@xyflow/react`) for Graph. A hand-rolled SVG/list implementation is not acceptable for the final graph editor because the product requires real canvas interactions, node/edge selection, connection editing, drag layout and visible mutation feedback.
+* Keep `/app/admin/knowledge/import`, `/search-settings`, `/ai` and `/indexing` aligned with the Wizard, Settings and Ops Console archetypes from `webapp/AGENTS.md`.
+
+Implementation notes:
+
+* Add the dependencies deliberately in the implementation phase and document the bundle impact.
+* Isolate TipTap/ProseMirror and React Flow behind Knowledge feature components rather than leaking their APIs into shared app primitives.
+* Preserve existing backend contracts where practical; if an API gap blocks usable pickers or graph/editor state, add the smallest contract extension with tests and docs.
+* Update browser evidence for all seven target routes at 1366x768 and 1920x1080.
 
 ---
 

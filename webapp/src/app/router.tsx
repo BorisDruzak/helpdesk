@@ -58,6 +58,7 @@ import {
   resolveDefaultWorkspacePath,
   type AppWorkspace
 } from "../features/auth/workspace-access";
+import { hasPermission } from "../features/auth/permissions";
 
 function SessionState({
   description,
@@ -178,14 +179,15 @@ function WorkspaceIndexRedirect() {
 }
 
 type WorkspaceAccessGateProps = {
+  permission?: string;
   workspace: AppWorkspace;
   children: ReactNode;
 };
 
-function WorkspaceAccessGate({ workspace, children }: WorkspaceAccessGateProps) {
+function WorkspaceAccessGate({ permission, workspace, children }: WorkspaceAccessGateProps) {
   const { session } = useSession();
 
-  if (hasWorkspaceAccess(session, workspace)) {
+  if (hasWorkspaceAccess(session, workspace) && (!permission || hasPermission(session, permission))) {
     return <>{children}</>;
   }
 
@@ -551,7 +553,7 @@ export const appRoutes: RouteObject[] = [
           {
             path: "admin/knowledge/metadata",
             element: (
-              <WorkspaceAccessGate workspace="admin">
+              <WorkspaceAccessGate workspace="admin" permission="knowledge.metadata.manage">
                 <AdminKnowledgeMetadataPage />
               </WorkspaceAccessGate>
             )

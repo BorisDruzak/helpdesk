@@ -144,15 +144,15 @@ Phase 14 adds governed metadata operations without changing requester/public pro
 APIs:
 
 - `GET /api/web/knowledge/metadata`: admin/support/auditor read bundle.
-- `POST /api/web/knowledge/taxonomy`: admin/support upsert taxonomy term; mutation checks the requested term `visibility` as well as the parent space, so support cannot create or escalate terms to `admin_internal` or `security_restricted`.
-- `POST /api/web/knowledge/properties`: admin/support upsert property definition.
-- `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`: read/update item property values and taxonomy terms. Read responses hide assigned taxonomy terms the actor cannot read, even when the item itself is visible; updates reject hidden/admin-only taxonomy term assignment for support.
-- `GET|POST /api/web/knowledge/items/{item_id_or_slug}/applicability`: read/replace applicability rules.
-- `POST /api/web/knowledge/quality-models`: admin/support upsert quality model.
+- `POST /api/web/knowledge/taxonomy`: upsert taxonomy term; mutation requires `knowledge.metadata.manage` and checks the requested term `visibility` as well as the parent space, so delegated support knowledge managers cannot create or escalate terms to `admin_internal` or `security_restricted`.
+- `POST /api/web/knowledge/properties`: upsert property definition; mutation requires `knowledge.metadata.manage`.
+- `GET|PUT /api/web/knowledge/items/{item_id_or_slug}/metadata`: read/update item property values and taxonomy terms. Read responses hide assigned taxonomy terms the actor cannot read, even when the item itself is visible; updates require `knowledge.metadata.manage` and reject hidden/admin-only taxonomy term assignment for delegated support knowledge managers.
+- `GET|POST /api/web/knowledge/items/{item_id_or_slug}/applicability`: read/replace applicability rules; replacement requires `knowledge.metadata.manage`.
+- `POST /api/web/knowledge/quality-models`: upsert quality model; mutation requires `knowledge.metadata.manage`.
 
 Phase 14C adds the first-class management editor:
 
-- `/app/admin/knowledge/metadata` is the admin/support workbench for taxonomy terms, property definitions, applicability rules and quality models. It uses structured fields, typed selectors where available and Russian-first labels instead of raw JSON as the normal workflow.
+- `/app/admin/knowledge/metadata` is the admin workspace workbench for taxonomy terms, property definitions, applicability rules and quality models. It requires `knowledge.metadata.manage`; support users need an explicit knowledge-manager access-group grant plus admin workspace access before the UI opens. The editor uses structured fields, typed selectors where available and Russian-first labels instead of raw JSON as the normal workflow.
 - `/app/admin/knowledge/studio` includes item-level metadata tabs: `Таксономия`, `Свойства`, `Применимость` and `Качество`. The tabs call the same protected item metadata/applicability APIs and validate required properties, allowed values, item-type applicability and term visibility.
 - Business taxonomy and property definitions are governed data, not frontend code constants. The optional default seed is `content_packs/knowledge/default_metadata.json`; apply it with `python scripts/seed_knowledge_metadata.py --dry-run` or `python scripts/seed_knowledge_metadata.py --apply`. The seed is idempotent, keeps existing admin edits unless `--force` is explicit and rejects requester-visible internal/security-classified defaults.
 - Live validation evidence for this editor should create/update taxonomy, property, applicability and quality-model rows, then verify `/app/admin/knowledge`, requester `/app/kb/search`, public-compatible `/api/knowledge/search` and support `/app/knowledge` projections.

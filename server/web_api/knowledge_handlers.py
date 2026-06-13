@@ -6,6 +6,7 @@ from aiohttp import web
 from loguru import logger
 from sqlalchemy import select
 
+from access_control.service import can
 from app.db import get_session
 from app.db.models import KnowledgeContentPack, KnowledgeGapFinding, KnowledgeIngestionJob, KnowledgeNode, KnowledgeReviewTask, KnowledgeSpace
 from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
@@ -38,6 +39,8 @@ from knowledge.search_service import KnowledgeSearchService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from knowledge.segmentation_service import KnowledgeSegmentationPolicyBlockedError, KnowledgeSegmentationService
 from knowledge.suggestion_service import KnowledgeSuggestionService
+
+KNOWLEDGE_METADATA_MANAGE_PERMISSION = "knowledge.metadata.manage"
 
 
 def _actor(request: web.Request) -> tuple[str | None, str]:
@@ -77,6 +80,22 @@ async def _json_payload(request: web.Request) -> dict:
     if not isinstance(payload, dict):
         raise ValueError("JSON body must be an object")
     return payload
+
+
+def _permission_denied(permission_code: str) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": f"Недостаточно прав: {permission_code}",
+            "error_code": "FORBIDDEN",
+            "required_permission": permission_code,
+        },
+        status=403,
+    )
+
+
+async def _can_manage_knowledge_metadata(session, request: web.Request) -> bool:
+    return await can(session, request["auth_context"], KNOWLEDGE_METADATA_MANAGE_PERMISSION)
 
 
 def _serialize_ingestion_job(row: KnowledgeIngestionJob, space: KnowledgeSpace | None = None, *, include_detail: bool = False) -> dict:
@@ -1454,6 +1473,8 @@ async def handle_web_knowledge_taxonomy(request: web.Request) -> web.Response:
     try:
         payload = await _json_payload(request)
         async with get_session() as session:
+            if not await _can_manage_knowledge_metadata(session, request):
+                return _permission_denied(KNOWLEDGE_METADATA_MANAGE_PERMISSION)
             term = await KnowledgeMetadataService(session).upsert_taxonomy_term(payload, actor_id=actor_id, actor_role=role)
             await session.commit()
         return web.json_response({"status": "ok", "term": term})
@@ -1469,6 +1490,8 @@ async def handle_web_knowledge_properties(request: web.Request) -> web.Response:
     try:
         payload = await _json_payload(request)
         async with get_session() as session:
+            if not await _can_manage_knowledge_metadata(session, request):
+                return _permission_denied(KNOWLEDGE_METADATA_MANAGE_PERMISSION)
             property_definition = await KnowledgeMetadataService(session).upsert_property_definition(payload, actor_id=actor_id, actor_role=role)
             await session.commit()
         return web.json_response({"status": "ok", "property": property_definition})
@@ -1488,6 +1511,8 @@ async def handle_web_knowledge_item_metadata(request: web.Request) -> web.Respon
                 return web.json_response({"status": "ok", "item_metadata": item_metadata})
             if role not in {"admin", "support"}:
                 return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            if not await _can_manage_knowledge_metadata(session, request):
+                return _permission_denied(KNOWLEDGE_METADATA_MANAGE_PERMISSION)
             item_metadata = await service.update_item_metadata(
                 item_ref,
                 await _json_payload(request),
@@ -1512,6 +1537,8 @@ async def handle_web_knowledge_item_applicability(request: web.Request) -> web.R
                 return web.json_response({"status": "ok", "rules": rules})
             if role not in {"admin", "support"}:
                 return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            if not await _can_manage_knowledge_metadata(session, request):
+                return _permission_denied(KNOWLEDGE_METADATA_MANAGE_PERMISSION)
             payload = await _json_payload(request)
             rules_payload = payload.get("rules")
             if not isinstance(rules_payload, list):
@@ -1536,6 +1563,8 @@ async def handle_web_knowledge_quality_models(request: web.Request) -> web.Respo
     try:
         payload = await _json_payload(request)
         async with get_session() as session:
+            if not await _can_manage_knowledge_metadata(session, request):
+                return _permission_denied(KNOWLEDGE_METADATA_MANAGE_PERMISSION)
             quality_model = await KnowledgeMetadataService(session).upsert_quality_model(payload, actor_id=actor_id, actor_role=role)
             await session.commit()
         return web.json_response({"status": "ok", "quality_model": quality_model})

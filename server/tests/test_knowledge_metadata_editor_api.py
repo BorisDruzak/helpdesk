@@ -3,6 +3,9 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.db.models import AccessGroup, AccessGroupMember, AccessGroupPermission, UiUser
 
 
 def _unique_code(prefix: str) -> str:
@@ -17,8 +20,56 @@ def _support_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-support-token"}
 
 
+async def _grant_support_knowledge_manager(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        group = AccessGroup(
+            code=f"knowledge_manager_{uuid.uuid4().hex[:8]}",
+            name="Knowledge managers",
+            description=None,
+            is_active=True,
+        )
+        session.add(group)
+        await session.flush()
+        session.add(AccessGroupMember(group_id=group.id, actor_id="support-test"))
+        for permission in ("workspace.admin.view", "knowledge.metadata.manage"):
+            session.add(AccessGroupPermission(group_id=group.id, permission_code=permission))
+        await session.commit()
+
+
 @pytest.mark.asyncio
-async def test_metadata_editor_requires_required_property_values(test_client) -> None:
+async def test_support_without_knowledge_manager_permission_cannot_mutate_metadata(test_client) -> None:
+    space_code = _unique_code("editor-rbac")
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": space_code, "title": "Editor RBAC", "visibility": "requester", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+    space = (await space_resp.json())["space"]
+
+    denied_resp = await test_client.post(
+        "/api/web/knowledge/taxonomy",
+        headers=_support_headers(),
+        json={
+            "space_id": space["space_id"],
+            "term_type": "tag",
+            "code": "support-denied",
+            "title": "Support denied",
+            "visibility": "requester",
+            "status": "active",
+        },
+    )
+    assert denied_resp.status == 403
+    denied_payload = await denied_resp.json()
+    assert denied_payload["error_code"] == "FORBIDDEN"
+    assert denied_payload["required_permission"] == "knowledge.metadata.manage"
+
+
+@pytest.mark.asyncio
+async def test_metadata_editor_requires_required_property_values(test_client, test_engine) -> None:
+    await _grant_support_knowledge_manager(test_engine)
     space_code = _unique_code("editor-required")
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",
@@ -87,7 +138,8 @@ async def test_metadata_editor_requires_required_property_values(test_client) ->
 
 
 @pytest.mark.asyncio
-async def test_metadata_editor_applicability_replacement_roundtrip(test_client) -> None:
+async def test_metadata_editor_applicability_replacement_roundtrip(test_client, test_engine) -> None:
+    await _grant_support_knowledge_manager(test_engine)
     space_code = _unique_code("editor-app")
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",

@@ -414,7 +414,7 @@ export const appNavigation: AppNavItem[] = [
     workspace: "admin",
     domainId: "knowledge",
     to: "/app/admin/knowledge/metadata",
-    permission: "admin.forms.view",
+    permission: "knowledge.metadata.manage",
     order: 12,
   },
   {

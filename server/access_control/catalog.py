@@ -197,6 +197,14 @@ PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
         risk="high",
     ),
     PermissionDefinition(
+        "knowledge.metadata.manage",
+        "Управлять метаданными знаний",
+        "Создание и изменение терминов таксономии, свойств, применимости статей и моделей качества знаний.",
+        "knowledge",
+        "База знаний",
+        risk="high",
+    ),
+    PermissionDefinition(
         "settings.view",
         "Смотреть настройки",
         "Просмотр очередей, SLA, routing и ticket lifecycle.",
