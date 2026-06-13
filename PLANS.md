@@ -3446,7 +3446,7 @@ Remaining Phase 14 work:
 
 Phase 14C follow-up permission/UI hardening, 2026-06-13:
 
-Status: local implementation and local verification complete. Remote deploy/browser evidence must be refreshed on the new hardening commit before Phase 14C is treated as final after this review.
+Status: implemented, deployed and live validated on commit `a1ec3053`, 2026-06-13. Support-without-permission live denial was attempted but could not be completed through a live support account because the deployed stand rejected the available canary support login/setup path; the same denial is covered by backend tests and the full local Knowledge CI layer.
 
 Review findings:
 
@@ -3481,6 +3481,18 @@ Verification:
 * `git diff --check -- <Phase 14C hardening tracked files>` -> passed.
 * `python scripts/run_ci_suite.py --layer server_pytest_db_knowledge --idle-timeout 0` -> 176 passed, 9 deselected, 2 existing warnings, returncode 0; artifact log is local/untracked under `artifacts/ci/42cd2a591afef323d97f261f1da514ec71e6ade4/logs/server_pytest_db_knowledge.log`.
 * GitHub Actions status remains unavailable in this checkout: `.github/workflows` is absent and `gh` CLI is not installed. This follow-up uses the project local CI layer above as the CI evidence.
+
+Remote/live verification:
+
+* `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --allow-local-dirty --gate quick --skip-ci-check --leave-running --smoke-insecure-tls` deployed commit `a1ec3053`; migrations ran and remote smoke returned `/api/health` HTTP 200 on retry 2.
+* Browser opened `https://192.168.100.17:9443/app/admin/knowledge/metadata` as admin and confirmed the route/navigation item is visible under the new `knowledge.metadata.manage` gate.
+* Live admin UI mutation created persisted taxonomy term `phase14c-hardening-a1ec3053-bn8a13` / `Phase 14C hardening persisted bn8a13`; after reload, the list rendered localized `Категория` and `Активно` labels, not raw `category`/`active`.
+* Browser evidence captured `/app/admin/knowledge/metadata` at 1366x768 and 1920x1080 after data load: persisted term visible, no raw enum line, no mojibake marker, no horizontal overflow and console error count 0.
+* Browser opened requester `/app/kb/search`; forbidden metadata diagnostics (`quality_model`, `taxonomy_terms`, `property_definitions`, `applicability_rules`, `admin_internal`, `security_restricted`, `score_parts`, `knowledge.metadata.manage`) and the created admin term were not visible, with console error count 0.
+* Public-compatible `POST /api/knowledge/search` returned HTTP 200 with top-level keys `ai_used`, `display_message`, `effective_mode`, `results`, `search_mode`, `status`; recursive scan found no forbidden metadata diagnostics and did not expose the created admin term.
+* Live support denial attempt: existing canary support login returned 401; legacy `/api/ui_login` returned 410 and web-session cookie bridge to legacy user-admin setup returned 401, so no live support account was created or mutated. Backend coverage remains `test_support_without_knowledge_manager_permission_cannot_mutate_metadata` plus the full `server_pytest_db_knowledge` layer.
+* Evidence artifacts are local/untracked and must be preserved outside git if needed for audit: `artifacts/knowledge-metadata-hardening-live-20260613-a1ec3053/report.json`, `admin-knowledge-metadata-hardening-loaded-1366.png`, `admin-knowledge-metadata-hardening-loaded-1920.png`, `requester-kb-search-hardening-safe.png`, `public-knowledge-search-safe.json`, `support-without-metadata-manage-denied.safe.json`, and console error JSON files.
+* Post-validation cleanup stopped both remote services: `server` and `control` reported `display_state=stopped`, `active_state=inactive`, `sub_state=dead`.
 
 ---
 
