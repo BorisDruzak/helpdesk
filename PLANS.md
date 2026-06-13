@@ -1,6 +1,6 @@
 ## Active Work: Registry Visibility Foundation — Production Registry, Registration and Knowledge Audience Scopes
 
-Status: active implementation. Phase 0 architecture/docs contract, Phase 1 backend resolver/API slice and Phase 2 backend audience-group slice completed on 2026-06-13. Phase 3 production Registry UI slice is implemented at local commit `3fb13ea8` (`server: add registry visibility foundation`): prompt-free bulk/quality/link dialogs and audience-group management are added, deployed through the quick stand path, and browser evidence is recorded under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/`. The remaining Phase 3 `Группы доступа` decision is resolved in the current local work as a read-only Registry summary/deep link over the canonical `/app/admin/access` RBAC editor; deploy/browser evidence for this addendum is still required before Phase 3 exit. Phase 4+ registration, Knowledge audience-rule enforcement, live-agent signoff and final operability hardening remain open.
+Status: active implementation. Phase 0 architecture/docs contract, Phase 1 backend resolver/API slice and Phase 2 backend audience-group slice completed on 2026-06-13. Phase 3 production Registry UI slice is implemented at local commits `3fb13ea8` (`server: add registry visibility foundation`) and `6204c749` (`webapp: add registry access groups summary`): prompt-free bulk/quality/link dialogs, audience-group management and read-only `Группы доступа · P1` discovery are added, deployed through the quick stand path, and browser evidence is recorded under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/` plus `artifacts/browser_live_validation/registry-access-groups-6204c749-20260613/`. The remaining Phase 3 `Группы доступа` decision is resolved as a read-only Registry summary/deep link over the canonical `/app/admin/access` RBAC editor. Phase 4+ registration, Knowledge audience-rule enforcement, live-agent signoff and final operability hardening remain open.
 
 Branch target:
 
@@ -653,14 +653,17 @@ Phase 3 UI execution, 2026-06-13:
   * quick stand deploy applied migration `120` and uploaded the webapp bundle for browser validation;
   * browser evidence under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/` confirms no horizontal body scroll and no captured console/network errors on the checked Registry paths;
   * checked flows: Registry overview, `Аудитории · P1` empty/create/preview/save/archive, device bulk dialog reason/preview controls, people tab UI-account linking controls.
-* Phase 3 access-groups addendum in current local work:
+* Phase 3 access-groups addendum completed at commit `6204c749`:
   * added `webapp/src/features/admin/registry/registry-access-groups-tab.tsx`;
   * added `/app/admin/registry` tab `Группы доступа · P1` that reads `fetchAccessSummary` / `/api/web/admin/access/summary`;
   * the tab is read-only and links to `/app/admin/access`; it must not create/update permissions, members or queue grants.
+* Phase 3 access-groups addendum verification, 2026-06-13:
+  * `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls` deployed commit `6204c749` to the canonical stand; smoke passed on attempt 2;
+  * browser evidence is under `artifacts/browser_live_validation/registry-access-groups-6204c749-20260613/`;
+  * checked `Группы доступа · P1` at 1366x768 and 1920x1080: read-only summary rendered, `/api/web/admin/access/summary` returned 200, deep link points to `/app/admin/access`, no horizontal body scroll, captured console warnings/errors = 0, captured non-static network failures = 0.
 * Remaining Phase 3 work before exit:
-  * deploy the access-groups addendum and collect one browser screenshot for `Группы доступа · P1` on the canonical stand;
-  * verify console/network status and no horizontal body scroll on that tab;
-  * update this section with the final evidence path and command results.
+  * none for the Registry UI access-groups addendum;
+  * proceed to Phase 4 only after confirming no newer operator expectation changes the canonical RBAC-editor decision.
 
 ---
 
