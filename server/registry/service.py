@@ -314,6 +314,12 @@ class RegistrySnapshotService:
             ).scalars().all()
             for identity in identity_rows:
                 identities_by_person.setdefault(identity.person_id, []).append(identity)
+        ui_login_identity_by_normalized = {
+            identity.normalized_identifier: identity
+            for identities in identities_by_person.values()
+            for identity in identities
+            if identity.provider == "ui_login" and identity.normalized_identifier
+        }
         latest_presence_by_device: dict[str, DevicePresenceSnapshot] = {}
         device_ids = [asset.device_id for asset in assets if asset.device_id]
         if device_ids:
@@ -409,6 +415,21 @@ class RegistrySnapshotService:
                     "description": binding.device_id,
                     "details": binding.device_id,
                 })
+            if binding.status == "active":
+                person = people_by_id.get(binding.person_id)
+                if person is None or not _is_active_person(person):
+                    data_quality.append({
+                        "kind": "binding_inactive_person",
+                        "severity": "danger",
+                        "object_type": "binding",
+                        "object_id": binding.binding_id,
+                        "binding_id": binding.binding_id,
+                        "device_id": binding.device_id,
+                        "person_id": binding.person_id,
+                        "title": "Active binding points to inactive person",
+                        "description": binding.device_id,
+                        "details": binding.person_id,
+                    })
         for asset in assets:
             active_binding = active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or "")
             presence = latest_presence_by_device.get(asset.device_id or "")
@@ -438,6 +459,53 @@ class RegistrySnapshotService:
                     "description": location.display_name,
                     "details": location.display_name,
                 })
+        for person in people:
+            if not _is_active_person(person):
+                continue
+            if person.department_id:
+                department = departments_by_id.get(person.department_id)
+                if department is not None and department.status == "archived":
+                    data_quality.append({
+                        "kind": "person_archived_department",
+                        "severity": "warning",
+                        "object_type": "person",
+                        "object_id": person.person_id,
+                        "person_id": person.person_id,
+                        "department_id": person.department_id,
+                        "title": "Person uses archived department",
+                        "description": person.display_name,
+                        "details": department.name,
+                    })
+            if person.location_id:
+                location = locations_by_id.get(person.location_id)
+                if location is not None and location.status == "archived":
+                    data_quality.append({
+                        "kind": "person_archived_location",
+                        "severity": "warning",
+                        "object_type": "person",
+                        "object_id": person.person_id,
+                        "person_id": person.person_id,
+                        "location_id": person.location_id,
+                        "title": "Person uses archived location",
+                        "description": person.display_name,
+                        "details": location.display_name,
+                    })
+        for user in ui_users:
+            if not user.is_active:
+                continue
+            normalized_login = normalize_identifier("ui_login", user.user_login)
+            if ui_login_identity_by_normalized.get(normalized_login):
+                continue
+            data_quality.append({
+                "kind": "ui_user_unlinked_registry_person",
+                "severity": "warning",
+                "object_type": "ui_user",
+                "object_id": user.user_login,
+                "user_login": user.user_login,
+                "title": "UI user is not linked to Registry person",
+                "description": user.user_login,
+                "details": user.actor_role,
+            })
         people_by_identity_key: dict[tuple[str, str], list[Any]] = {}
         for person_id, identities in identities_by_person.items():
             for identity in identities:
@@ -674,13 +742,6 @@ class RegistrySnapshotService:
                 "source": identity.source,
                 "last_seen_at": identity.last_seen_at.isoformat() if identity.last_seen_at else None,
             }
-
-        ui_login_identity_by_normalized = {
-            identity.normalized_identifier: identity
-            for identities in identities_by_person.values()
-            for identity in identities
-            if identity.provider == "ui_login" and identity.normalized_identifier
-        }
 
         def ui_user_payload(user: UiUser) -> dict[str, Any]:
             normalized_login = normalize_identifier("ui_login", user.user_login)

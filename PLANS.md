@@ -1510,13 +1510,19 @@ Import must be preview/apply with row-level errors, duplicate detection and reas
 
 TDD checkpoints:
 
-RED test for observer event emission.
-RED test for quality issue generation. Done for empty audience group, invalid Knowledge audience-rule target and zero-user requester-visible Knowledge item.
+RED test for observer event emission. Done for Registry admin timeline evidence emitted by quality override and import apply in the Phase 8 live signoff harness.
+RED test for quality issue generation. Done for unlinked active UI user, active person with archived department/location, active binding to inactive person, empty audience group, invalid Knowledge audience-rule target and zero-user requester-visible Knowledge item.
 RED test for audience group export CSV. Done.
 RED test for audience group import preview/apply. Done.
 RED test for knowledge audience rules export. Done.
 RED test for invalid rule quality issue. Done.
-RED webapp test for quality remediation actions.
+RED webapp test for quality remediation actions. Done in `webapp/src/features/admin/registry/registry-quality-tab.test.tsx`.
+
+Phase 8 local implementation note, 2026-06-14:
+
+* `RegistrySnapshotService` now emits `ui_user_unlinked_registry_person`, `person_archived_department`, `person_archived_location` and `binding_inactive_person` in addition to the earlier Phase 8 quality issues.
+* Registry import/export UI types now expose `audience_groups` and `audience_group_members`; the Registry page exports the current audience-groups tab as `type=audience_groups`.
+* `scripts/registry_visibility_phase8_live_signoff.py` seeds controlled invalid Registry/Knowledge data, verifies quality issues, CSV formula escaping, audience group/member import preview/apply, and timeline evidence for `registry_import_applied` plus `quality_issue_snoozed`; it writes a sanitized report under `artifacts/registry-visibility-foundation-YYYYMMDD/`.
 
 Verification:
 

@@ -19,6 +19,8 @@ const importTypes: Array<{ value: AdminRegistryImportType; label: string }> = [
   { value: "people", label: "People" },
   { value: "locations", label: "Locations" },
   { value: "departments", label: "Departments" },
+  { value: "audience_groups", label: "Audience groups" },
+  { value: "audience_group_members", label: "Audience group members" },
   { value: "device_inventory_mapping", label: "Device inventory mapping" },
 ];
 

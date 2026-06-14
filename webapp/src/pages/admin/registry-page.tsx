@@ -378,6 +378,7 @@ export function AdminRegistryPage() {
     tab === "account_sessions" ? "sessions" :
     tab === "locations" ? "locations" :
     tab === "departments" ? "departments" :
+    tab === "audience_groups" ? "audience_groups" :
     tab === "quality" ? "quality" :
     "devices";
 

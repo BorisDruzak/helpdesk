@@ -697,7 +697,13 @@ export type AdminRegistryBulkResponse = {
   results?: Array<Record<string, unknown>>;
 };
 
-export type AdminRegistryImportType = "people" | "locations" | "departments" | "device_inventory_mapping";
+export type AdminRegistryImportType =
+  | "people"
+  | "locations"
+  | "departments"
+  | "device_inventory_mapping"
+  | "audience_groups"
+  | "audience_group_members";
 
 export type AdminRegistryImportPreview = AdminRegistryOperationPreview & {
   import_type: AdminRegistryImportType;
@@ -1534,7 +1540,20 @@ export async function updateAdminRegistryQualityIssue(payload: {
   return readSuccessResponse(response, "Не удалось обновить статус проблемы качества");
 }
 
-export function adminRegistryExportUrl(type: "devices" | "people" | "bindings" | "sessions" | "locations" | "departments" | "quality", format = "csv"): string {
+export function adminRegistryExportUrl(
+  type:
+    | "devices"
+    | "people"
+    | "bindings"
+    | "sessions"
+    | "locations"
+    | "departments"
+    | "quality"
+    | "audience_groups"
+    | "audience_group_members"
+    | "knowledge_audience_rules",
+  format = "csv",
+): string {
   const params = new URLSearchParams({ type, format });
   return `/api/web/admin/registry/export?${params.toString()}`;
 }

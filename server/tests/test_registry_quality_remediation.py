@@ -16,8 +16,12 @@ from app.db.models import (
     RegistryAdminEvent,
     RegistryAsset,
     RegistryAudienceGroup,
+    RegistryDepartment,
+    RegistryLocation,
     RegistryPerson,
     RegistryQualityIssueOverride,
+    DeviceUserBinding,
+    UiUser,
 )
 from registry.registration_service import RegistrationService
 
@@ -274,3 +278,137 @@ async def test_registry_quality_reports_invalid_knowledge_audience_rule(test_cli
     assert invalid_issue["target_id"] == missing_department_id
     assert zero_users_issue["issue_key"] == f"knowledge_audience_zero_users:knowledge_item:{item_id}"
     assert zero_users_issue["severity"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_registry_quality_reports_unlinked_active_ui_user(test_client, test_engine):
+    user_login = f"quality-unlinked-{uuid.uuid4().hex[:8]}@example.test"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(UiUser(user_login=user_login, password_hash="hash", actor_role="user", is_active=True))
+        await session.commit()
+
+    response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert response.status == 200
+    payload = await response.json()
+    issue = next(
+        item for item in payload["data"]["data_quality"]
+        if item["kind"] == "ui_user_unlinked_registry_person" and item["object_id"] == user_login
+    )
+
+    assert issue["issue_key"] == f"ui_user_unlinked_registry_person:ui_user:{user_login}"
+    assert issue["severity"] == "warning"
+    assert issue["user_login"] == user_login
+
+
+@pytest.mark.asyncio
+async def test_registry_quality_reports_person_archived_department_and_location(test_client, test_engine):
+    department_id = str(uuid.uuid4())
+    location_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code=f"quality_archived_dept_{uuid.uuid4().hex[:8]}",
+                name="Quality Archived Department",
+                source="manual",
+                status="archived",
+            )
+        )
+        session.add(
+            RegistryLocation(
+                location_id=location_id,
+                building=f"quality-{uuid.uuid4().hex[:8]}",
+                floor="1",
+                room="101",
+                display_name="Quality Archived Location",
+                source="manual",
+                status="archived",
+            )
+        )
+        session.add(
+            RegistryPerson(
+                person_id=person_id,
+                display_name="Quality Archived Context",
+                department_id=department_id,
+                location_id=location_id,
+                source="manual",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert response.status == 200
+    payload = await response.json()
+    department_issue = next(
+        item for item in payload["data"]["data_quality"]
+        if item["kind"] == "person_archived_department" and item["object_id"] == person_id
+    )
+    location_issue = next(
+        item for item in payload["data"]["data_quality"]
+        if item["kind"] == "person_archived_location" and item["object_id"] == person_id
+    )
+
+    assert department_issue["issue_key"] == f"person_archived_department:person:{person_id}"
+    assert department_issue["department_id"] == department_id
+    assert location_issue["issue_key"] == f"person_archived_location:person:{person_id}"
+    assert location_issue["location_id"] == location_id
+
+
+@pytest.mark.asyncio
+async def test_registry_quality_reports_active_binding_to_inactive_person(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    asset_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    binding_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(_device(device_id, hostname="quality-inactive-binding"))
+        session.add(
+            RegistryAsset(
+                asset_id=asset_id,
+                asset_type="pc",
+                name="quality-inactive-binding",
+                hostname="quality-inactive-binding",
+                device_id=device_id,
+                source="manual",
+                status="active",
+                discovery_payload={},
+            )
+        )
+        session.add(
+            RegistryPerson(
+                person_id=person_id,
+                display_name="Quality Inactive Person",
+                source="manual",
+                status="inactive",
+            )
+        )
+        await session.flush()
+        session.add(
+            DeviceUserBinding(
+                binding_id=binding_id,
+                device_id=device_id,
+                person_id=person_id,
+                relationship_type="primary_user",
+                status="active",
+                source="manual",
+                confidence=1,
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert response.status == 200
+    payload = await response.json()
+    issue = next(
+        item for item in payload["data"]["data_quality"]
+        if item["kind"] == "binding_inactive_person" and item["object_id"] == binding_id
+    )
+
+    assert issue["issue_key"] == f"binding_inactive_person:binding:{binding_id}"
+    assert issue["severity"] == "danger"
+    assert issue["person_id"] == person_id
