@@ -367,7 +367,14 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                 recent_approval = datetime.now(timezone.utc) - approved_at <= timedelta(
                     seconds=APPROVED_HEARTBEAT_GRACE_SECONDS
                 )
-            if latest_request.approved_token or recent_approval:
+            matching_approved_poll = (
+                bool(request_id)
+                and bool(poll_secret)
+                and latest_request.request_id == request_id
+                and bool(latest_request.poll_secret_hash)
+                and latest_request.poll_secret_hash == ConnectionRequestService.hash_poll_secret(poll_secret)
+            )
+            if matching_approved_poll and (latest_request.approved_token or recent_approval):
                 await write_agent_runtime_audit(
                     device_id=device_id,
                     event_type="connection_request_approval_waiting_delivery",

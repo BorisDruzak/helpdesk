@@ -9,7 +9,6 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import config
 from app.db import get_session
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.connection_requests_repo import ConnectionRequestsRepo
@@ -93,8 +92,7 @@ class ConnectionRequestService:
                 token=raw_token,
                 device_id=device_id,
                 expires_at=expires_at,
-                replace_existing=False,
-                max_active_tokens=config.AGENT_TOKEN_MAX_ACTIVE_TOKENS,
+                replace_existing=True,
                 commit=False,
             )
             await session.commit()

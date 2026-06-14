@@ -15,8 +15,9 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import select, text
 import config
-from app.db.models import ConnectionRequest, Device
+from app.db.models import AgentToken, ConnectionRequest, Device
 from app.db import get_session
+from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.connection_requests_repo import ConnectionRequestsRepo, POLICY_ACCEPT_ALL, POLICY_MANUAL
 from app_keys import STATE_APP_KEY, replace_bound_app_value
 from auth.context import AuthContext, AuthType
@@ -24,6 +25,7 @@ from auth.middleware import auth_middleware
 import auth.middleware as auth_middleware_module
 import auth.connection_request_handlers as connection_request_handlers
 from auth.connection_request_service import ConnectionRequestService
+from auth.service import AuthService
 from routes import setup_routes
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
@@ -369,6 +371,55 @@ async def test_connection_request_manual_does_not_block_on_old_token_count(test_
 
 
 @pytest.mark.asyncio
+async def test_connection_request_status_rotates_old_active_tokens(test_client, test_engine):
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+    auth_service = AuthService(test_client.app["state"])
+    old_tokens = [
+        await auth_service.generate_agent_token(device_id=device_id, expires_hours=24),
+        await auth_service.generate_agent_token(device_id=device_id, expires_hours=24),
+    ]
+
+    created = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "rotate-pc"},
+    )
+    assert created.status == 200
+    created_payload = await created.json()
+
+    approved = await test_client.post(
+        f"/api/admin/connection_requests/{device_id}/approve",
+        headers=_admin_headers(),
+        json={},
+    )
+    assert approved.status == 200
+
+    status_response = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
+    status_payload = await status_response.json()
+
+    assert status_response.status == 200
+    assert status_payload["status"] == "approved"
+    assert status_payload["token"]
+
+    async with get_session() as session:
+        rows = (
+            await session.execute(
+                select(AgentToken)
+                .where(AgentToken.device_id == device_id)
+                .order_by(AgentToken.created_at.asc())
+            )
+        ).scalars().all()
+
+    new_token_hash = AuthTokensRepo.hash_token(status_payload["token"])
+    old_token_hashes = {AuthTokensRepo.hash_token(token) for token in old_tokens}
+    active_hashes = {row.token_hash for row in rows if row.revoked_at is None}
+    revoked_hashes = {row.token_hash for row in rows if row.revoked_at is not None}
+
+    assert active_hashes == {new_token_hash}
+    assert old_token_hashes <= revoked_hashes
+
+
+@pytest.mark.asyncio
 async def test_admin_policy_get_patch(test_client):
     """GET and PATCH /api/admin/connection_policy require admin."""
     r = await test_client.get("/api/admin/connection_policy", headers=_admin_headers())
@@ -481,6 +532,53 @@ async def test_manual_heartbeat_after_approval_does_not_create_second_pending(te
     assert status.status == 200
     assert status_payload["status"] == "approved"
     assert status_payload["token"]
+
+
+@pytest.mark.asyncio
+async def test_fresh_manual_request_after_undelivered_approval_gets_new_poll_credentials(test_client, test_engine):
+    """A restarted agent without the original poll secret must not be stranded by an old approval."""
+    await _set_policy(test_engine, "manual")
+    device_id = str(uuid.uuid4())
+
+    initial = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "undelivered-approval-pc"},
+    )
+    assert initial.status == 200
+    initial_payload = await initial.json()
+
+    approved = await test_client.post(
+        f"/api/admin/connection_requests/{device_id}/approve",
+        headers=_admin_headers(),
+        json={},
+    )
+    assert approved.status == 200
+
+    fresh = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "undelivered-approval-pc"},
+    )
+    fresh_payload = await fresh.json()
+
+    assert fresh.status == 200
+    assert fresh_payload["status"] == "pending"
+    assert fresh_payload.get("request_id")
+    assert fresh_payload.get("poll_secret")
+    assert fresh_payload["request_id"] != initial_payload["request_id"]
+
+    async with test_engine.connect() as conn:
+        rows = (
+            await conn.execute(
+                select(ConnectionRequest.status, ConnectionRequest.request_id)
+                .where(ConnectionRequest.device_id == device_id)
+                .order_by(ConnectionRequest.created_at.asc())
+            )
+        ).all()
+
+    assert [(row.status, row.request_id) for row in rows] == [
+        ("approved", initial_payload["request_id"]),
+        ("pending", fresh_payload["request_id"]),
+    ]
 
 
 @pytest.mark.asyncio
