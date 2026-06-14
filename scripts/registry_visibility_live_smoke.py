@@ -495,6 +495,7 @@ class RegistryVisibilityLiveSmoke:
             session_token=session_token,
         )
         self.ids["owner_ticket_id"] = ticket["ticket"]["ticket_id"]
+        await self._assign_ticket_to_support(self.ids["owner_ticket_id"])
         agent_list = self.api.get(
             "/api/tickets",
             token=self._agent_token(),
@@ -547,6 +548,7 @@ class RegistryVisibilityLiveSmoke:
             session_token=session_token,
         )
         self.ids["other_ticket_id"] = other_ticket["ticket"]["ticket_id"]
+        await self._assign_ticket_to_support(self.ids["other_ticket_id"])
         agent_list = self.api.get(
             "/api/tickets",
             token=self._agent_token(),
@@ -675,6 +677,14 @@ class RegistryVisibilityLiveSmoke:
         )
         _require(bool((created.get("ticket") or {}).get("ticket_id")), "agent ticket create did not return ticket_id")
         return created
+
+    async def _assign_ticket_to_support(self, ticket_id: str) -> None:
+        async with get_session() as session:
+            ticket = await session.get(Ticket, ticket_id)
+            _require(ticket is not None, f"ticket {ticket_id} missing before support assignment")
+            ticket.queue_id = int(self.ids["queue_id"])
+            ticket.assignee_id = self.ids["support_login"]
+            await session.commit()
 
     async def _check_service_knowledge_for_session(self, *, session_id: str, session_token: str, expected_slug: str, hidden_slug: str) -> dict[str, Any]:
         async with get_session() as session:
