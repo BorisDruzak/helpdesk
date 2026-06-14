@@ -1,0 +1,9 @@
+﻿{
+    "artifact_kind":  "phase7_pending_agent_token_evidence",
+    "instance":  "phase7-pending-agent-20260614-1ca0a43b",
+    "machine_id":  "c7eff251-7730-4162-ab33-be0dc74e2ba4",
+    "token_length":  64,
+    "token_sha256_prefix":  "1661b0600b36",
+    "raw_token_saved":  false,
+    "generated_at_utc":  "2026-06-14T12:53:25.6408948Z"
+}

@@ -65,7 +65,7 @@ Registry visibility, effective identity and audience groups are tracked in [REGI
   - `POST /api/web/admin/registry/bulk/devices/revoke-account-sessions`
   - `POST /api/web/admin/registry/bulk/people/assign-department`
   - `POST /api/web/admin/registry/bulk/account-sessions/revoke`
-  - `GET /api/web/admin/registry/export?type=devices|people|bindings|sessions|locations|departments|quality&format=csv`
+  - `GET /api/web/admin/registry/export?type=devices|people|bindings|sessions|locations|departments|quality|audience_groups|audience_group_members|knowledge_audience_rules&format=csv`
   - `POST /api/web/admin/registry/import/preview`
   - `POST /api/web/admin/registry/import/apply`
   - `GET /api/web/admin/registry/timeline/{object_type}/{object_id}`
@@ -74,7 +74,7 @@ Registry visibility, effective identity and audience groups are tracked in [REGI
   - `POST /api/web/admin/registry/quality/{issue_key}/snooze`
   - `POST /api/web/admin/registry/quality/{issue_key}/resolve`
 
-Registry import is CSV-only and intentionally excludes direct binding import. Supported import types are `people`, `locations`, `departments` and `device_inventory_mapping`.
+Registry import is CSV-only and intentionally excludes direct binding and account-session import. Supported import types are `people`, `locations`, `departments`, `device_inventory_mapping`, `audience_groups` and `audience_group_members`.
 
 ## Visibility Foundation Boundary
 
@@ -213,6 +213,8 @@ Preview parses and validates the file without mutating state. It returns `previe
 - `locations`: create/update locations and block exact duplicate building/floor/room keys.
 - `departments`: create/update departments and block duplicate department codes.
 - `device_inventory_mapping`: update registry asset location/department and non-binding lifecycle inventory card fields for existing devices. It does not import `device_user_bindings`, `assigned_person_id`, `person_id`, `source_binding_id` or account-session state.
+- `audience_groups`: create/update audience group code, name, description, source and status with duplicate code detection.
+- `audience_group_members`: create/update group members by group code/id, member type, member id and include-children flag. It imports audience targeting membership only; it does not grant RBAC permissions or create Registry people/bindings.
 
 ## Quality Remediation Contract
 
@@ -225,6 +227,8 @@ Preview parses and validates the file without mutating state. It returns `previe
 Every state change requires `reason`, stores actor/time in `registry_quality_issue_overrides`, and writes one of `quality_issue_ignored`, `quality_issue_snoozed` or `quality_issue_resolved` to the registry timeline.
 
 Issues caused by current state disappear from the active list when the root cause is fixed and the registry snapshot is recomputed. For example, binding a primary user resolves `asset_missing_confirmed_user` without requiring a manual `resolve`; adding the missing identity removes `missing_identity`; approving/replacing the conflict removes `registration_conflict`. Overrides remain for explicit admin ignore/snooze/resolve decisions.
+
+Registry Visibility Foundation quality issues also include `audience_group_empty`, `knowledge_audience_rule_invalid_target` and `knowledge_audience_zero_users`. These issues expose ids/counts/reason context only; Knowledge article bodies, hidden content, tokens, cookies and public access codes must not be included in quality payloads or exported CSV.
 
 ## Smoke Checklist
 

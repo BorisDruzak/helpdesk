@@ -7,10 +7,20 @@ from typing import Any
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DevicePresenceSnapshot, RegistryPersonIdentity, RegistryQualityIssueOverride, UiUser
+from app.db.models import (
+    DevicePresenceSnapshot,
+    KnowledgeAudienceRule,
+    KnowledgeItem,
+    KnowledgeSpace,
+    RegistryAudienceGroup,
+    RegistryPersonIdentity,
+    RegistryQualityIssueOverride,
+    UiUser,
+)
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
 from registry.account_session_service import AccountSessionService
+from registry.audience_group_service import RegistryAudienceService
 
 
 def _clean(value: Any) -> str | None:
@@ -87,6 +97,25 @@ def _quality_issue_key(issue: dict[str, Any]) -> str:
     if related and str(related) != object_id:
         parts.append(str(related))
     return ":".join(part.replace(":", "_") for part in parts if part)
+
+
+REQUESTER_VISIBLE_KNOWLEDGE_VISIBILITIES = {"public", "requester", "agent_requester_safe"}
+
+
+def _is_active_person(person: Any) -> bool:
+    return str(getattr(person, "status", "") or "active") not in {"inactive", "merged", "archived"}
+
+
+def _department_tree_ids(department_id: str, children_by_parent: dict[str | None, list[str]]) -> set[str]:
+    pending = [department_id]
+    seen: set[str] = set()
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        pending.extend(children_by_parent.get(current, []))
+    return seen
 
 
 @dataclass(frozen=True)
@@ -190,10 +219,55 @@ class RegistrySnapshotService:
                 )
             ).scalars().all()
         )
+        all_audience_groups = list(
+            (
+                await self.session.execute(
+                    select(RegistryAudienceGroup)
+                    .order_by(RegistryAudienceGroup.code.asc())
+                    .limit(500)
+                )
+            ).scalars().all()
+        )
+        audience_groups = [group for group in all_audience_groups if group.status == "active"]
+        knowledge_rules = list(
+            (
+                await self.session.execute(
+                    select(KnowledgeAudienceRule)
+                    .where(KnowledgeAudienceRule.status == "active")
+                    .order_by(KnowledgeAudienceRule.subject_type.asc(), KnowledgeAudienceRule.subject_id.asc(), KnowledgeAudienceRule.priority.asc())
+                    .limit(1000)
+                )
+            ).scalars().all()
+        )
+        knowledge_items = list(
+            (
+                await self.session.execute(
+                    select(KnowledgeItem)
+                    .where(KnowledgeItem.status == "published")
+                    .order_by(KnowledgeItem.updated_at.desc())
+                    .limit(1000)
+                )
+            ).scalars().all()
+        )
+        knowledge_spaces = list(
+            (
+                await self.session.execute(
+                    select(KnowledgeSpace)
+                    .order_by(KnowledgeSpace.code.asc())
+                    .limit(500)
+                )
+            ).scalars().all()
+        )
 
         people_by_id = {person.person_id: person for person in people}
         locations_by_id = {location.location_id: location for location in locations}
         departments_by_id = {department.department_id: department for department in departments}
+        audience_groups_by_id = {group.audience_group_id: group for group in all_audience_groups}
+        knowledge_items_by_id = {item.item_id: item for item in knowledge_items}
+        knowledge_spaces_by_id = {space.space_id: space for space in knowledge_spaces}
+        department_children_by_parent: dict[str | None, list[str]] = {}
+        for department in departments:
+            department_children_by_parent.setdefault(department.parent_department_id, []).append(department.department_id)
         location_user_counts = {
             location.location_id: sum(1 for person in people if person.location_id == location.location_id)
             for location in locations
@@ -398,6 +472,134 @@ class RegistrySnapshotService:
                     "description": f"{provider}: {normalized}",
                     "details": f"{provider}: {normalized}",
                 })
+
+        audience_service = RegistryAudienceService(self.session)
+        audience_group_previews: dict[str, dict[str, Any]] = {}
+        for group in audience_groups:
+            preview = await audience_service.preview_members(group.audience_group_id)
+            audience_group_previews[group.audience_group_id] = preview
+            if int(preview.get("person_count") or 0) > 0:
+                continue
+            data_quality.append({
+                "kind": "audience_group_empty",
+                "severity": "warning",
+                "object_type": "audience_group",
+                "object_id": group.audience_group_id,
+                "audience_group_id": group.audience_group_id,
+                "title": "Audience group has no effective members",
+                "description": group.code,
+                "details": group.name,
+                "member_count": int(preview.get("member_count") or 0),
+                "person_count": int(preview.get("person_count") or 0),
+                "warning_codes": [str(item.get("code") or "") for item in preview.get("warnings") or [] if isinstance(item, dict)],
+            })
+
+        async def knowledge_rule_target_count(rule: KnowledgeAudienceRule) -> int | None:
+            target_type = str(rule.target_type or "")
+            target_id = str(rule.target_id or "").strip()
+            if not target_id:
+                return 0
+            active_people = [person for person in people if _is_active_person(person)]
+            if target_type == "person":
+                person = people_by_id.get(target_id)
+                return 1 if person is not None and _is_active_person(person) else 0
+            if target_type == "department":
+                department = departments_by_id.get(target_id)
+                if department is None or department.status == "archived":
+                    return 0
+                return sum(1 for person in active_people if person.department_id == target_id)
+            if target_type == "department_tree":
+                department = departments_by_id.get(target_id)
+                if department is None or department.status == "archived":
+                    return 0
+                department_ids = _department_tree_ids(target_id, department_children_by_parent)
+                return sum(1 for person in active_people if person.department_id in department_ids)
+            if target_type == "location":
+                location = locations_by_id.get(target_id)
+                if location is None or location.status == "archived":
+                    return 0
+                return sum(1 for person in active_people if person.location_id == target_id)
+            if target_type == "audience_group":
+                group = audience_groups_by_id.get(target_id)
+                if group is None or group.status != "active":
+                    return 0
+                preview = audience_group_previews.get(target_id)
+                if preview is None:
+                    preview = await audience_service.preview_members(target_id)
+                    audience_group_previews[target_id] = preview
+                return int(preview.get("person_count") or 0)
+            return None
+
+        knowledge_rules_by_item: dict[str, list[KnowledgeAudienceRule]] = {}
+        knowledge_rules_by_space: dict[str, list[KnowledgeAudienceRule]] = {}
+        for rule in knowledge_rules:
+            if rule.subject_type == "item":
+                knowledge_rules_by_item.setdefault(rule.subject_id, []).append(rule)
+            elif rule.subject_type == "space":
+                knowledge_rules_by_space.setdefault(rule.subject_id, []).append(rule)
+
+            target_type = str(rule.target_type or "")
+            target_id = str(rule.target_id or "").strip()
+            invalid_target = False
+            if target_type == "person":
+                person = people_by_id.get(target_id)
+                invalid_target = person is None or not _is_active_person(person)
+            elif target_type in {"department", "department_tree"}:
+                department = departments_by_id.get(target_id)
+                invalid_target = department is None or department.status == "archived"
+            elif target_type == "location":
+                location = locations_by_id.get(target_id)
+                invalid_target = location is None or location.status == "archived"
+            elif target_type == "audience_group":
+                group = audience_groups_by_id.get(target_id)
+                invalid_target = group is None or group.status != "active"
+            if invalid_target:
+                data_quality.append({
+                    "kind": "knowledge_audience_rule_invalid_target",
+                    "severity": "danger",
+                    "object_type": "knowledge_audience_rule",
+                    "object_id": rule.rule_id,
+                    "knowledge_rule_id": rule.rule_id,
+                    "title": "Knowledge audience rule has invalid target",
+                    "description": f"{target_type}: {target_id}",
+                    "details": f"{rule.subject_type}:{rule.subject_id}",
+                    "subject_type": rule.subject_type,
+                    "subject_id": rule.subject_id,
+                    "target_type": target_type,
+                    "target_id": target_id,
+                })
+
+        for item in knowledge_items:
+            if item.visibility not in REQUESTER_VISIBLE_KNOWLEDGE_VISIBILITIES:
+                continue
+            space = knowledge_spaces_by_id.get(item.space_id)
+            if space is not None and space.visibility not in REQUESTER_VISIBLE_KNOWLEDGE_VISIBILITIES:
+                continue
+            rules = [*knowledge_rules_by_space.get(item.space_id, []), *knowledge_rules_by_item.get(item.item_id, [])]
+            if not rules:
+                continue
+            counts: list[int] = []
+            has_unknown_scope = False
+            for rule in rules:
+                count = await knowledge_rule_target_count(rule)
+                if count is None:
+                    has_unknown_scope = True
+                    break
+                counts.append(count)
+            if has_unknown_scope or sum(counts) > 0:
+                continue
+            data_quality.append({
+                "kind": "knowledge_audience_zero_users",
+                "severity": "warning",
+                "object_type": "knowledge_item",
+                "object_id": item.item_id,
+                "knowledge_item_id": item.item_id,
+                "title": "Knowledge item audience resolves to zero users",
+                "description": item.slug,
+                "details": item.title,
+                "space_id": item.space_id,
+                "rule_count": len(rules),
+            })
 
         data_quality = await self._apply_quality_issue_overrides(data_quality)
 

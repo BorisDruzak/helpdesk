@@ -1,0 +1,322 @@
+{
+  "pywinauto_version": "0.6.9",
+  "backend": "uia",
+  "window_title": "Maria Agent v3.1.62; id=agent.main_window; agent_version=3.1.62",
+  "window_kind": "main",
+  "process_id": 14508,
+  "found_control_ids": {
+    "agent.connection.state": [],
+    "agent.connection.detail": [],
+    "agent.account.summary": [],
+    "agent.account.mode": [],
+    "agent.account.person": [],
+    "agent.tickets.list": [],
+    "agent.tickets.count": [],
+    "agent.ticket.active": []
+  },
+  "connection_state": null,
+  "account_exists": null,
+  "account_mode": null,
+  "ticket_count": null,
+  "ticket_matches": [],
+  "tree_excerpt": [
+    {
+      "depth": 0,
+      "automation_id": "QApplication.agent.main_window",
+      "name": "Maria Agent v3.1.62; id=agent.main_window; agent_version=3.1.62",
+      "control_type": "Window",
+      "class_name": "MainWindow",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 1620,
+        "bottom": 936
+      }
+    },
+    {
+      "depth": 1,
+      "automation_id": "QApplication.agent.main_window.AgentRoot",
+      "name": "agent.root; id=agent.root; agent_version=3.1.62",
+      "control_type": "Group",
+      "class_name": "QWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 1620,
+        "bottom": 936
+      }
+    },
+    {
+      "depth": 1,
+      "automation_id": "QApplication.agent.main_window.FramelessResizeHandler",
+      "name": "",
+      "control_type": "Group",
+      "class_name": "FramelessResizeHandler",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 400,
+        "bottom": 126
+      }
+    },
+    {
+      "depth": 2,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "CustomTitleBar",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 1620,
+        "bottom": 136
+      }
+    },
+    {
+      "depth": 2,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent",
+      "name": "",
+      "control_type": "Group",
+      "class_name": "QWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 136,
+        "right": 1620,
+        "bottom": 936
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarIcon",
+      "name": "",
+      "control_type": "Image",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 310,
+        "top": 106,
+        "right": 328,
+        "bottom": 124
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarText",
+      "name": "Maria Agent v3.1.62",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 336,
+        "top": 96,
+        "right": 459,
+        "bottom": 135
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarButton",
+      "name": "–",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1458,
+        "top": 100,
+        "right": 1504,
+        "bottom": 130
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarButton",
+      "name": "□",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1512,
+        "top": 100,
+        "right": 1558,
+        "bottom": 130
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarCloseButton",
+      "name": "×",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1566,
+        "top": 100,
+        "right": 1612,
+        "bottom": 130
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QSplitter",
+      "help_text": "",
+      "rectangle": {
+        "left": 316,
+        "top": 152,
+        "right": 1604,
+        "bottom": 920
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget",
+      "name": "",
+      "control_type": "Pane",
+      "class_name": "QStackedWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 316,
+        "top": 152,
+        "right": 1604,
+        "bottom": 920
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "AccountGateWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 316,
+        "top": 152,
+        "right": 1604,
+        "bottom": 920
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.MainTitle",
+      "name": "Этот ПК зарегистрирован за:",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 349,
+        "top": 185,
+        "right": 1571,
+        "bottom": 222
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.MainSubtitle",
+      "name": "Устройство зарегистрировано. Можно войти как подтвержденный пользователь.",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 349,
+        "top": 238,
+        "right": 1571,
+        "bottom": 257
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.ProfileCard",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 349,
+        "top": 273,
+        "right": 1571,
+        "bottom": 342
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.PrimaryButton",
+      "name": "Войти через браузер",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 349,
+        "top": 358,
+        "right": 531,
+        "bottom": 410
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SecondaryButton",
+      "name": "Войти как Phase 7 IT Owner p7547a33c2",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 547,
+        "top": 362,
+        "right": 825,
+        "bottom": 406
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SecondaryButton",
+      "name": "Войти в другой аккаунт",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 841,
+        "top": 362,
+        "right": 1022,
+        "bottom": 406
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SecondaryButton",
+      "name": "Обновить",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1038,
+        "top": 362,
+        "right": 1131,
+        "bottom": 406
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SecondaryButton",
+      "name": "Настройки",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1147,
+        "top": 362,
+        "right": 1245,
+        "bottom": 406
+      }
+    }
+  ],
+  "screenshot_path": "C:\\Users\\admin-2\\CodexProjects\\pc_client\\artifacts\\browser_live_validation\\phase7-agent-uia-1ca0a43b-20260614\\agent-account-gate-before-login-uia.png (fallback=PrintWindow, primary=error)",
+  "failures": [
+    "expected connected, got None"
+  ]
+}

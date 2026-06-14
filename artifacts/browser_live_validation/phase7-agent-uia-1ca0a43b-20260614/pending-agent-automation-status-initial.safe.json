@@ -1,0 +1,21 @@
+﻿{
+    "window_visible":  true,
+    "window_minimized":  false,
+    "window_active":  true,
+    "sidebar_view":  "account_gate",
+    "content_view":  "unknown",
+    "bridge_connected":  true,
+    "connection_state":  "connected",
+    "connection_detail":  "WS подключён",
+    "tray_available":  true,
+    "has_active_profile":  false,
+    "active_profile_id":  null,
+    "profile_count":  0,
+    "active_ticket_id":  null,
+    "ticket_count":  0,
+    "ticket_ids":  [
+
+                   ],
+    "form_pack_version":  "1.0.16",
+    "status":  "ok"
+}

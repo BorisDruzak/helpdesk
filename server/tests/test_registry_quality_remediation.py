@@ -7,7 +7,18 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, RegistryAdminEvent, RegistryAsset, RegistryPerson, RegistryQualityIssueOverride
+from app.db.models import (
+    Device,
+    KnowledgeAudienceRule,
+    KnowledgeItem,
+    KnowledgeItemVersion,
+    KnowledgeSpace,
+    RegistryAdminEvent,
+    RegistryAsset,
+    RegistryAudienceGroup,
+    RegistryPerson,
+    RegistryQualityIssueOverride,
+)
 from registry.registration_service import RegistrationService
 
 
@@ -178,3 +189,88 @@ async def test_registry_quality_issue_resolves_when_binding_fix_removes_root_cau
     assert after_response.status == 200
     after_payload = await after_response.json()
     assert not any(item.get("issue_key") == issue["issue_key"] for item in after_payload["data"]["data_quality"])
+
+
+@pytest.mark.asyncio
+async def test_registry_quality_reports_empty_audience_group(test_client, test_engine):
+    group_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            RegistryAudienceGroup(
+                audience_group_id=group_id,
+                code="phase8_empty_group",
+                name="Phase 8 Empty Group",
+                source="manual",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert response.status == 200
+    payload = await response.json()
+    issue = next(
+        item for item in payload["data"]["data_quality"]
+        if item["kind"] == "audience_group_empty" and item["object_id"] == group_id
+    )
+
+    assert issue["issue_key"] == f"audience_group_empty:audience_group:{group_id}"
+    assert issue["severity"] == "warning"
+    assert issue["title"] == "Audience group has no effective members"
+
+
+@pytest.mark.asyncio
+async def test_registry_quality_reports_invalid_knowledge_audience_rule(test_client, test_engine):
+    space_id = str(uuid.uuid4())
+    item_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
+    rule_id = str(uuid.uuid4())
+    missing_department_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(KnowledgeSpace(space_id=space_id, code=f"p8_{uuid.uuid4().hex[:8]}", title="Phase 8", visibility="requester", lifecycle_status="active"))
+        await session.flush()
+        session.add(
+            KnowledgeItem(
+                item_id=item_id,
+                space_id=space_id,
+                slug=f"phase8-invalid-rule-{uuid.uuid4().hex[:8]}",
+                item_type="article",
+                title="Phase 8 Invalid Rule",
+                status="published",
+                visibility="requester",
+                current_version_id=version_id,
+            )
+        )
+        session.add(KnowledgeItemVersion(version_id=version_id, item_id=item_id, version_number=1, title="Phase 8 Invalid Rule", body="body"))
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=rule_id,
+                subject_type="item",
+                subject_id=item_id,
+                target_type="department",
+                target_id=missing_department_id,
+                status="active",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert response.status == 200
+    payload = await response.json()
+    invalid_issue = next(
+        item for item in payload["data"]["data_quality"]
+        if item["kind"] == "knowledge_audience_rule_invalid_target" and item["object_id"] == rule_id
+    )
+    zero_users_issue = next(
+        item for item in payload["data"]["data_quality"]
+        if item["kind"] == "knowledge_audience_zero_users" and item["object_id"] == item_id
+    )
+
+    assert invalid_issue["issue_key"] == f"knowledge_audience_rule_invalid_target:knowledge_audience_rule:{rule_id}"
+    assert invalid_issue["severity"] == "danger"
+    assert invalid_issue["target_type"] == "department"
+    assert invalid_issue["target_id"] == missing_department_id
+    assert zero_users_issue["issue_key"] == f"knowledge_audience_zero_users:knowledge_item:{item_id}"
+    assert zero_users_issue["severity"] == "warning"

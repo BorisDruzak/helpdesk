@@ -1,0 +1,832 @@
+{
+  "pywinauto_version": "0.6.9",
+  "backend": "uia",
+  "window_title": "Maria Agent v3.1.62; id=agent.main_window; agent_version=3.1.62",
+  "window_kind": "main",
+  "process_id": 14508,
+  "found_control_ids": {
+    "agent.connection.state": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+        "name": "agent.connection.detail; id=agent.connection.detail; id=agent.connection.state; connection_state=connected; server_state=connected; bridge_connected=true; detail=WS подключён",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 370,
+          "top": 839,
+          "right": 584,
+          "bottom": 856
+        }
+      }
+    ],
+    "agent.connection.detail": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+        "name": "agent.connection.detail; id=agent.connection.detail; id=agent.connection.state; connection_state=connected; server_state=connected; bridge_connected=true; detail=WS подключён",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 370,
+          "top": 839,
+          "right": 584,
+          "bottom": 856
+        }
+      }
+    ],
+    "agent.account.summary": [
+      {
+        "depth": 5,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard",
+        "name": "agent.account.summary; id=agent.account.summary; account_exists=true; account_mode=confirmed_binding; display_name=Phase 7 IT Owner p7547a33c2; login=phase7-owner-p7547a33c2; email=phase7-owner-p7547a33c2@live-smoke.test; person_id=f0a17507-65aa-4f05-bfb4-3f1e04b0ebe7; binding_id=831d3562-96d3-4712-81de-c4e1da7ecb93",
+        "control_type": "Custom",
+        "class_name": "QFrame",
+        "help_text": "",
+        "rectangle": {
+          "left": 333,
+          "top": 712,
+          "right": 595,
+          "bottom": 797
+        }
+      }
+    ],
+    "agent.account.mode": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardMeta",
+        "name": "agent.account.mode; id=agent.account.mode; account_mode=confirmed_binding; account_exists=true",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 408,
+          "top": 766,
+          "right": 562,
+          "bottom": 782
+        }
+      }
+    ],
+    "agent.account.person": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardTitle",
+        "name": "agent.account.person; id=agent.account.person; display_name=Phase 7 IT Owner p7547a33c2",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 408,
+          "top": 745,
+          "right": 562,
+          "bottom": 764
+        }
+      }
+    ],
+    "agent.tickets.list": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.AgentTicketsSemanticState",
+        "name": "agent.tickets.semantic; id=agent.tickets.list; ticket_count=2; active_ticket_id=e7dde2a3-3fd7-4b8f-a0bb-6945134274ea; agent.ticket.card.T-000707=id=agent.ticket.card.T-000707; ticket_id=e7dde2a3-3fd7-4b8f-a0bb-6945134274ea; ticket_code=T-000707; status=queued; title=phase7 real agent UIA 1ca0a43b; agent.ticket.card.T-000705=id=agent.ticket.card.T-000705; ticket_id=71b5ac8e-4934-4afb-a24a-ec388c9ad0ad; ticket_code=T-000705; status=queued; title=phase7 registry visibility p7547a33c2",
+        "control_type": "Text",
+        "class_name": "QLabel",
+        "help_text": "",
+        "rectangle": {
+          "left": 641,
+          "top": 397,
+          "right": 1579,
+          "bottom": 398
+        }
+      },
+      {
+        "depth": 6,
+        "automation_id": "agent.tickets.list; id=agent.tickets.list; ticket_count=2",
+        "name": "agent.tickets.list; id=agent.tickets.list; ticket_count=2",
+        "control_type": "List",
+        "class_name": "QListView",
+        "help_text": "",
+        "rectangle": {
+          "left": 641,
+          "top": 416,
+          "right": 1579,
+          "bottom": 795
+        }
+      }
+    ],
+    "agent.tickets.count": [
+      {
+        "depth": 6,
+        "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChipActive",
+        "name": "agent.tickets.count; id=agent.tickets.count; ticket_count=2; open_count=2; closed_count=0",
+        "control_type": "CheckBox",
+        "class_name": "QPushButton",
+        "help_text": "",
+        "rectangle": {
+          "left": 641,
+          "top": 339,
+          "right": 715,
+          "bottom": 379
+        }
+      }
+    ],
+    "agent.ticket.active": []
+  },
+  "connection_state": "connected",
+  "account_exists": "true",
+  "account_mode": "confirmed_binding",
+  "ticket_count": "2",
+  "ticket_matches": [
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.AgentTicketsSemanticState",
+      "name": "agent.tickets.semantic; id=agent.tickets.list; ticket_count=2; active_ticket_id=e7dde2a3-3fd7-4b8f-a0bb-6945134274ea; agent.ticket.card.T-000707=id=agent.ticket.card.T-000707; ticket_id=e7dde2a3-3fd7-4b8f-a0bb-6945134274ea; ticket_code=T-000707; status=queued; title=phase7 real agent UIA 1ca0a43b; agent.ticket.card.T-000705=id=agent.ticket.card.T-000705; ticket_id=71b5ac8e-4934-4afb-a24a-ec388c9ad0ad; ticket_code=T-000705; status=queued; title=phase7 registry visibility p7547a33c2",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 641,
+        "top": 397,
+        "right": 1579,
+        "bottom": 398
+      }
+    }
+  ],
+  "tree_excerpt": [
+    {
+      "depth": 0,
+      "automation_id": "QApplication.agent.main_window",
+      "name": "Maria Agent v3.1.62; id=agent.main_window; agent_version=3.1.62",
+      "control_type": "Window",
+      "class_name": "MainWindow",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 1620,
+        "bottom": 936
+      }
+    },
+    {
+      "depth": 1,
+      "automation_id": "QApplication.agent.main_window.AgentRoot",
+      "name": "agent.root; id=agent.root; agent_version=3.1.62",
+      "control_type": "Group",
+      "class_name": "QWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 1620,
+        "bottom": 936
+      }
+    },
+    {
+      "depth": 1,
+      "automation_id": "QApplication.agent.main_window.FramelessResizeHandler",
+      "name": "",
+      "control_type": "Group",
+      "class_name": "FramelessResizeHandler",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 400,
+        "bottom": 126
+      }
+    },
+    {
+      "depth": 2,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "CustomTitleBar",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 96,
+        "right": 1620,
+        "bottom": 136
+      }
+    },
+    {
+      "depth": 2,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent",
+      "name": "",
+      "control_type": "Group",
+      "class_name": "QWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 300,
+        "top": 136,
+        "right": 1620,
+        "bottom": 936
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarIcon",
+      "name": "",
+      "control_type": "Image",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 310,
+        "top": 106,
+        "right": 328,
+        "bottom": 124
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarText",
+      "name": "Maria Agent v3.1.62",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 336,
+        "top": 96,
+        "right": 459,
+        "bottom": 135
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarButton",
+      "name": "–",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1458,
+        "top": 100,
+        "right": 1504,
+        "bottom": 130
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarButton",
+      "name": "□",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1512,
+        "top": 100,
+        "right": 1558,
+        "bottom": 130
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.CustomTitleBar.TitleBarCloseButton",
+      "name": "×",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1566,
+        "top": 100,
+        "right": 1612,
+        "bottom": 130
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QSplitter",
+      "help_text": "",
+      "rectangle": {
+        "left": 316,
+        "top": 152,
+        "right": 1604,
+        "bottom": 888
+      }
+    },
+    {
+      "depth": 3,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.SecurityFooter",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 316,
+        "top": 888,
+        "right": 1604,
+        "bottom": 920
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget",
+      "name": "",
+      "control_type": "Pane",
+      "class_name": "QStackedWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 616,
+        "top": 152,
+        "right": 1604,
+        "bottom": 888
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 316,
+        "top": 152,
+        "right": 612,
+        "bottom": 888
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.qt_splithandle_",
+      "name": "",
+      "control_type": "Thumb",
+      "class_name": "QSplitterHandle",
+      "help_text": "",
+      "rectangle": {
+        "left": 612,
+        "top": 152,
+        "right": 616,
+        "bottom": 888
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.SecurityFooter.SecurityFooterIcon",
+      "name": "▣",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 732,
+        "top": 898,
+        "right": 740,
+        "bottom": 917
+      }
+    },
+    {
+      "depth": 4,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.SecurityFooter.SecurityFooterText",
+      "name": "Ваше соединение защищено. Все данные передаются в зашифрованном виде.",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 748,
+        "top": 900,
+        "right": 1188,
+        "bottom": 916
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel",
+      "name": "agent.tickets.panel; id=agent.tickets.panel",
+      "control_type": "Custom",
+      "class_name": "TicketsSidebarWidget",
+      "help_text": "",
+      "rectangle": {
+        "left": 616,
+        "top": 152,
+        "right": 1604,
+        "bottom": 888
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.QLabel",
+      "name": "",
+      "control_type": "Image",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 171,
+        "right": 377,
+        "bottom": 215
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SecondaryButton",
+      "name": "‹",
+      "control_type": "Button",
+      "class_name": "QToolButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 550,
+        "top": 171,
+        "right": 595,
+        "bottom": 218
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarSectionLabel",
+      "name": "Навигация",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 248,
+        "right": 595,
+        "bottom": 264
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarButton",
+      "name": "  Рабочий стол",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 276,
+        "right": 595,
+        "bottom": 328
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarCreateButton",
+      "name": "  Создать обращение",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 340,
+        "right": 595,
+        "bottom": 392
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarButtonActive",
+      "name": "  Обращения",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 404,
+        "right": 595,
+        "bottom": 456
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.SidebarButton",
+      "name": "  Настройки",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 468,
+        "right": 595,
+        "bottom": 520
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard",
+      "name": "agent.account.summary; id=agent.account.summary; account_exists=true; account_mode=confirmed_binding; display_name=Phase 7 IT Owner p7547a33c2; login=phase7-owner-p7547a33c2; email=phase7-owner-p7547a33c2@live-smoke.test; person_id=f0a17507-65aa-4f05-bfb4-3f1e04b0ebe7; binding_id=831d3562-96d3-4712-81de-c4e1da7ecb93",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 712,
+        "right": 595,
+        "bottom": 797
+      }
+    },
+    {
+      "depth": 5,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard",
+      "name": "",
+      "control_type": "Custom",
+      "class_name": "QFrame",
+      "help_text": "",
+      "rectangle": {
+        "left": 333,
+        "top": 809,
+        "right": 595,
+        "bottom": 869
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.MainTitle",
+      "name": "Обращения",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 641,
+        "top": 177,
+        "right": 1579,
+        "bottom": 214
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.MainSubtitle",
+      "name": "Список ваших обращений. Двойной клик открывает чат справа.",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 641,
+        "top": 232,
+        "right": 1579,
+        "bottom": 251
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SearchInput",
+      "name": "",
+      "control_type": "Edit",
+      "class_name": "QLineEdit",
+      "help_text": "",
+      "rectangle": {
+        "left": 641,
+        "top": 269,
+        "right": 1439,
+        "bottom": 321
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SecondaryButton",
+      "name": "Фильтры",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1459,
+        "top": 273,
+        "right": 1579,
+        "bottom": 317
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChipActive",
+      "name": "agent.tickets.count; id=agent.tickets.count; ticket_count=2; open_count=2; closed_count=0",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 641,
+        "top": 339,
+        "right": 715,
+        "bottom": 379
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChip",
+      "name": "agent.tickets.open_count; id=agent.tickets.open_count; open_count=2",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 725,
+        "top": 339,
+        "right": 845,
+        "bottom": 379
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketFilterChip",
+      "name": "agent.tickets.closed_count; id=agent.tickets.closed_count; closed_count=0",
+      "control_type": "CheckBox",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 855,
+        "top": 339,
+        "right": 974,
+        "bottom": 379
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.AgentTicketsSemanticState",
+      "name": "agent.tickets.semantic; id=agent.tickets.list; ticket_count=2; active_ticket_id=e7dde2a3-3fd7-4b8f-a0bb-6945134274ea; agent.ticket.card.T-000707=id=agent.ticket.card.T-000707; ticket_id=e7dde2a3-3fd7-4b8f-a0bb-6945134274ea; ticket_code=T-000707; status=queued; title=phase7 real agent UIA 1ca0a43b; agent.ticket.card.T-000705=id=agent.ticket.card.T-000705; ticket_id=71b5ac8e-4934-4afb-a24a-ec388c9ad0ad; ticket_code=T-000705; status=queued; title=phase7 registry visibility p7547a33c2",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 641,
+        "top": 397,
+        "right": 1579,
+        "bottom": 398
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "agent.tickets.list; id=agent.tickets.list; ticket_count=2",
+      "name": "agent.tickets.list; id=agent.tickets.list; ticket_count=2",
+      "control_type": "List",
+      "class_name": "QListView",
+      "help_text": "",
+      "rectangle": {
+        "left": 641,
+        "top": 416,
+        "right": 1579,
+        "bottom": 795
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.PrimaryButton",
+      "name": "agent.ticket.open; id=agent.ticket.open",
+      "control_type": "Button",
+      "class_name": "QPushButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 1419,
+        "top": 813,
+        "right": 1579,
+        "bottom": 863
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.Avatar",
+      "name": "P7",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 348,
+        "top": 730,
+        "right": 396,
+        "bottom": 778
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardKicker",
+      "name": "Аккаунт",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 408,
+        "top": 727,
+        "right": 562,
+        "bottom": 743
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardTitle",
+      "name": "agent.account.person; id=agent.account.person; display_name=Phase 7 IT Owner p7547a33c2",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 408,
+        "top": 745,
+        "right": 562,
+        "bottom": 764
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardMeta",
+      "name": "agent.account.mode; id=agent.account.mode; account_mode=confirmed_binding; account_exists=true",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 408,
+        "top": 766,
+        "right": 562,
+        "bottom": 782
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.ProfileCard.CardMeta",
+      "name": "›",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 574,
+        "top": 727,
+        "right": 582,
+        "bottom": 782
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.StatusDotOnline",
+      "name": "",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 348,
+        "top": 833,
+        "right": 360,
+        "bottom": 845
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+      "name": "Агент v3.1.62",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 370,
+        "top": 822,
+        "right": 584,
+        "bottom": 839
+      }
+    },
+    {
+      "depth": 6,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.Sidebar.AgentStatusCard.QLabel",
+      "name": "agent.connection.detail; id=agent.connection.detail; id=agent.connection.state; connection_state=connected; server_state=connected; bridge_connected=true; detail=WS подключён",
+      "control_type": "Text",
+      "class_name": "QLabel",
+      "help_text": "",
+      "rectangle": {
+        "left": 370,
+        "top": 839,
+        "right": 584,
+        "bottom": 856
+      }
+    },
+    {
+      "depth": 7,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.SearchInput.QLineEditIconButton",
+      "name": "",
+      "control_type": "Button",
+      "class_name": "QLineEditIconButton",
+      "help_text": "",
+      "rectangle": {
+        "left": 645,
+        "top": 286,
+        "right": 721,
+        "bottom": 350
+      }
+    },
+    {
+      "depth": 7,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketsListView",
+      "name": "phase7 real agent UIA 1ca0a43b",
+      "control_type": "ListItem",
+      "class_name": "",
+      "help_text": "",
+      "rectangle": {
+        "left": 651,
+        "top": 426,
+        "right": 1569,
+        "bottom": 544
+      }
+    },
+    {
+      "depth": 7,
+      "automation_id": "QApplication.agent.main_window.AgentRoot.AgentContent.QSplitter.QStackedWidget.MainPanel.TicketsListView",
+      "name": "phase7 registry visibility p7547a33c2",
+      "control_type": "ListItem",
+      "class_name": "",
+      "help_text": "",
+      "rectangle": {
+        "left": 651,
+        "top": 564,
+        "right": 1569,
+        "bottom": 682
+      }
+    }
+  ],
+  "screenshot_path": "C:\\Users\\admin-2\\CodexProjects\\pc_client\\artifacts\\browser_live_validation\\phase7-agent-uia-1ca0a43b-20260614\\agent-after-owner-ticket-create-uia.png (fallback=PrintWindow, primary=error)",
+  "failures": []
+}

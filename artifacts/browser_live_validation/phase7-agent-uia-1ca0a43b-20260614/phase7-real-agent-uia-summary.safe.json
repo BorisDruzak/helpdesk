@@ -1,0 +1,38 @@
+﻿{
+    "artifact_kind":  "phase7_real_agent_uia_summary",
+    "status":  "passed_with_connection_status_json",
+    "commit_context":  "1ca0a43b docs-only local HEAD; live runtime smoke commit 547a33c2",
+    "browser_support_artifacts":  "artifacts/browser_live_validation/phase7-support-browser-1ca0a43b-20260614/",
+    "owner_confirmed_binding":  {
+                                    "instance":  "phase7-agent-20260614-1ca0a43b",
+                                    "machine_id":  "bf3fb9c9-6c5d-404f-a1f6-0a4496556e61",
+                                    "binding_id":  "831d3562-96d3-4712-81de-c4e1da7ecb93",
+                                    "account_mode":  "confirmed_binding",
+                                    "ticket_id":  "e7dde2a3-3fd7-4b8f-a0bb-6945134274ea",
+                                    "ticket_code":  "T-000707",
+                                    "uia_after_login":  "agent-after-owner-login-uia.json",
+                                    "uia_after_ticket_create":  "agent-after-owner-ticket-create-uia.json",
+                                    "db_check":  "agent-ticket-create-owner-db.safe.json"
+                                },
+    "pending_registration":  {
+                                 "instance":  "phase7-pending-agent-20260614-1ca0a43b",
+                                 "machine_id":  "c7eff251-7730-4162-ab33-be0dc74e2ba4",
+                                 "claim_id":  "7de00945-01ac-4db0-b212-822109c1c619",
+                                 "claim_status":  "pending_user_confirmation",
+                                 "expected_gate_text_found":  [
+                                                                  "Регистрация ожидает подтверждения",
+                                                                  "Подтвердить данные",
+                                                                  "Phase 7 Pending p7547a33c2",
+                                                                  "pending_user_confirmation"
+                                                              ],
+                                 "status_json":  "pending-agent-automation-status-after-refresh.safe.json",
+                                 "uia":  "pending-agent-account-gate-uia-unstrict.json",
+                                 "db_context":  "registration-pending-db-context.safe.json",
+                                 "normal_ticket_blocked_by_http_db_smoke":  "artifacts/registry-visibility-foundation-20260614/registry-visibility-live-smoke-p7547a33c2.json"
+                             },
+    "evidence_notes":  [
+                           "UIA semantic connection fields can be absent on account-gate dumps; connection proof is paired with /ui/automation/status JSON showing connection_state=connected.",
+                           "No raw agent token, account-session token, cookie, auth header, public access code or public access URL was saved."
+                       ],
+    "raw_secret_material_saved":  false
+}

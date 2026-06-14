@@ -7,7 +7,21 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceInventoryBinding, RegistryAdminEvent, RegistryAsset, RegistryDepartment, RegistryLocation, RegistryPerson
+from app.db.models import (
+    Device,
+    DeviceInventoryBinding,
+    KnowledgeAudienceRule,
+    KnowledgeItem,
+    KnowledgeItemVersion,
+    KnowledgeSpace,
+    RegistryAdminEvent,
+    RegistryAsset,
+    RegistryAudienceGroup,
+    RegistryAudienceGroupMember,
+    RegistryDepartment,
+    RegistryLocation,
+    RegistryPerson,
+)
 from registry.admin_operations_service import RegistryAdminOperationsService
 
 
@@ -60,6 +74,163 @@ async def test_registry_export_devices_and_people_csv(test_engine):
     assert device_id in devices_csv
     assert "person_id,full_name,display_name" in people_csv
     assert "Export User" in people_csv
+
+
+@pytest.mark.asyncio
+async def test_registry_export_audience_groups_and_members_csv(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    group_id = str(uuid.uuid4())
+    member_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(
+            RegistryAudienceGroup(
+                audience_group_id=group_id,
+                code="phase8_export",
+                name="Phase 8 Export",
+                description="CSV export",
+                source="manual",
+                status="active",
+            )
+        )
+        session.add(
+            RegistryAudienceGroupMember(
+                membership_id=str(uuid.uuid4()),
+                audience_group_id=group_id,
+                member_type="person",
+                member_id=member_id,
+                include_children=False,
+                source="manual",
+            )
+        )
+        await session.flush()
+
+        groups_csv = await RegistryAdminOperationsService(session).export_csv("audience_groups")
+        members_csv = await RegistryAdminOperationsService(session).export_csv("audience_group_members")
+        await session.commit()
+
+    assert "audience_group_id,code,name,description,source,status,created_at,updated_at" in groups_csv
+    assert "phase8_export" in groups_csv
+    assert "group_code,member_type,member_id,include_children,source" in members_csv
+    assert member_id in members_csv
+
+
+@pytest.mark.asyncio
+async def test_registry_export_knowledge_audience_rules_csv(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    space_id = str(uuid.uuid4())
+    item_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
+    rule_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(KnowledgeSpace(space_id=space_id, code=f"p8_{uuid.uuid4().hex[:8]}", title="Phase 8", visibility="requester", lifecycle_status="active"))
+        await session.flush()
+        session.add(
+            KnowledgeItem(
+                item_id=item_id,
+                space_id=space_id,
+                slug=f"phase8-export-rule-{uuid.uuid4().hex[:8]}",
+                item_type="article",
+                title="Phase 8 Export Rule",
+                status="published",
+                visibility="requester",
+                current_version_id=version_id,
+            )
+        )
+        session.add(KnowledgeItemVersion(version_id=version_id, item_id=item_id, version_number=1, title="Phase 8 Export Rule", body="body"))
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=rule_id,
+                subject_type="item",
+                subject_id=item_id,
+                target_type="department_tree",
+                target_id="finance",
+                include_children=True,
+                priority=20,
+                status="active",
+                reason="phase8 export",
+            )
+        )
+        await session.flush()
+
+        rules_csv = await RegistryAdminOperationsService(session).export_csv("knowledge_audience_rules")
+        await session.commit()
+
+    assert "rule_id,subject_type,subject_id,subject_slug,subject_title,target_type,target_id,include_children,priority,status,reason,created_at,updated_at" in rules_csv
+    assert rule_id in rules_csv
+    assert "phase8 export" in rules_csv
+
+
+@pytest.mark.asyncio
+async def test_registry_audience_group_import_preview_apply_and_member_import(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    groups_csv = "code,name,description,status\nphase8_import,Phase 8 Import,Imported audience,active\n"
+    duplicate_groups_csv = (
+        "code,name,description,status\n"
+        "phase8_dup,Duplicate A,,active\n"
+        "phase8_dup,Duplicate B,,active\n"
+        ",Missing Code,,active\n"
+    )
+
+    async with session_maker() as session:
+        service = RegistryAdminOperationsService(session)
+        duplicate_preview = await service.preview_import_csv("audience_groups", duplicate_groups_csv)
+        assert duplicate_preview["counts"]["duplicates"] == 2
+        assert duplicate_preview["counts"]["errors"] == 1
+
+        groups_preview = await service.preview_import_csv("audience_groups", groups_csv)
+        assert groups_preview["counts"]["creates"] == 1
+        groups_applied = await service.apply_import_csv(
+            "audience_groups",
+            groups_csv,
+            preview_id=groups_preview["preview_id"],
+            actor_id="admin",
+            reason="audience group import",
+        )
+        await session.flush()
+        group = (
+            await session.execute(select(RegistryAudienceGroup).where(RegistryAudienceGroup.code == "phase8_import"))
+        ).scalar_one()
+
+        members_csv = f"group_code,member_type,member_id,include_children,source\nphase8_import,role,support,false,manual\nunknown_group,role,user,false,manual\n"
+        members_preview = await service.preview_import_csv("audience_group_members", members_csv)
+        assert members_preview["counts"]["creates"] == 1
+        assert members_preview["counts"]["errors"] == 1
+        assert members_preview["row_errors"][0]["field"] == "group_code"
+
+        clean_members_csv = "group_code,member_type,member_id,include_children,source\nphase8_import,role,support,false,manual\n"
+        clean_members_preview = await service.preview_import_csv("audience_group_members", clean_members_csv)
+        members_applied = await service.apply_import_csv(
+            "audience_group_members",
+            clean_members_csv,
+            preview_id=clean_members_preview["preview_id"],
+            actor_id="admin",
+            reason="audience member import",
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        member = (
+            await session.execute(
+                select(RegistryAudienceGroupMember).where(
+                    RegistryAudienceGroupMember.audience_group_id == group.audience_group_id,
+                    RegistryAudienceGroupMember.member_type == "role",
+                    RegistryAudienceGroupMember.member_id == "support",
+                )
+            )
+        ).scalar_one()
+        events = (
+            await session.execute(
+                select(RegistryAdminEvent).where(
+                    RegistryAdminEvent.event_type == "registry_import_applied",
+                    RegistryAdminEvent.payload["import_type"].astext.in_(["audience_groups", "audience_group_members"]),
+                )
+            )
+        ).scalars().all()
+
+    assert groups_applied["counts"]["creates"] == 1
+    assert members_applied["counts"]["creates"] == 1
+    assert member.audience_group_id == group.audience_group_id
+    assert {event.payload["import_type"] for event in events} == {"audience_groups", "audience_group_members"}
 
 
 @pytest.mark.asyncio

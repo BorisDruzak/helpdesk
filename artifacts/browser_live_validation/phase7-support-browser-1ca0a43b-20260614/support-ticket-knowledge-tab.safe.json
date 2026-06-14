@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-06-14T12:40:53.968Z",
+  "url": "https://192.168.100.17:9443/app/tickets/a9c61438-663e-4f34-919c-1d12a0b26724",
+  "ticket_id": "a9c61438-663e-4f34-919c-1d12a0b26724",
+  "ticket_code": "T-000706",
+  "run_id": "p7547a33c2",
+  "surface": "real_browser_support_ticket_knowledge_tab",
+  "checks": {
+    "financeSlugVisible": true,
+    "hiddenItSlugVisible": false,
+    "location": "https://192.168.100.17:9443/app/tickets/a9c61438-663e-4f34-919c-1d12a0b26724",
+    "publicSlugVisible": true,
+    "scopedTail": "Знания\nПаспорт\n\nСвязанные знания\n\nphase7 registry visibility p7547a33c2 Finance scoped\nphase7-finance-p7547a33c2\nphase7 registry visibility p7547a33c2 public visible\nphase7-public-p7547a33c2\nphase7 registry visibility p7547a33c2 support internal runbook\nphase7-internal-p7547a33c2",
+    "warningVisible": false
+  },
+  "console_warnings_errors": [],
+  "raw_headers_or_tokens_saved": false
+}

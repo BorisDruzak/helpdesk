@@ -1,0 +1,15 @@
+﻿{
+    "artifact_kind":  "phase7_real_agent_gui_ticket_create",
+    "marker":  "phase7 real agent UIA 1ca0a43b",
+    "status":  "ok",
+    "action":  "ticket.create",
+    "action_id":  "d2bc08da-0dd3-48a2-a3c8-d430c4438964",
+    "ticket_id":  "e7dde2a3-3fd7-4b8f-a0bb-6945134274ea",
+    "ticket_code":  null,
+    "ticket_title":  "phase7 real agent UIA 1ca0a43b",
+    "requester_account_mode":  "confirmed_binding",
+    "requester_account_session_id":  "5cba66ab-8ce2-4e5a-b2ea-d4a7975fef6f",
+    "requester_device_id":  null,
+    "raw_public_access_code_saved":  false,
+    "raw_public_access_url_saved":  false
+}

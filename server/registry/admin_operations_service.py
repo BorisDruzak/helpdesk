@@ -21,8 +21,12 @@ from app.db.models import (
     DeviceRegistrationClaim,
     DeviceRegistrationEvent,
     DeviceUserBinding,
+    KnowledgeAudienceRule,
+    KnowledgeItem,
     RegistryAdminEvent,
     RegistryAsset,
+    RegistryAudienceGroup,
+    RegistryAudienceGroupMember,
     RegistryDepartment,
     RegistryLocation,
     RegistryPerson,
@@ -38,7 +42,10 @@ from registry.policy_service import RegistryPolicyService, build_registry_policy
 BULK_LIMIT = 200
 IMPORT_LIMIT = 1000
 IMPORT_TEXT_LIMIT = 2 * 1024 * 1024
-REGISTRY_IMPORT_TYPES = {"people", "locations", "departments", "device_inventory_mapping"}
+REGISTRY_IMPORT_TYPES = {"people", "locations", "departments", "device_inventory_mapping", "audience_groups", "audience_group_members"}
+AUDIENCE_MEMBER_TYPES = {"person", "department", "department_tree", "location", "access_group", "role", "service"}
+AUDIENCE_SOURCES = {"manual", "department_rule", "import", "system", "future_sync"}
+AUDIENCE_STATUSES = {"active", "archived"}
 
 
 def _new_id() -> str:
@@ -75,6 +82,21 @@ def _location_display(building: str, floor: str | None, room: str | None, displa
 def _department_code(value: Any) -> str | None:
     text = _text(value, max_length=100)
     return text.upper() if text else None
+
+
+def _audience_code(value: Any) -> str | None:
+    text = _text(value, max_length=120)
+    if not text:
+        return None
+    code = re.sub(r"[^a-z0-9_-]+", "_", text.lower()).strip("_")
+    if not code or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", code):
+        return None
+    return code[:120]
+
+
+def _bool_csv(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "y", "on", "да"}
 
 
 def _json_notes(metadata: dict[str, Any] | None) -> str | None:
@@ -1682,6 +1704,10 @@ class RegistryAdminOperationsService:
             payload = await self._preview_import_departments(rows)
         elif import_type == "device_inventory_mapping":
             payload = await self._preview_import_device_inventory_mapping(rows)
+        elif import_type == "audience_groups":
+            payload = await self._preview_import_audience_groups(rows)
+        elif import_type == "audience_group_members":
+            payload = await self._preview_import_audience_group_members(rows)
         else:
             raise ValueError("unsupported registry import type")
         blockers = payload["row_errors"] + payload["duplicate_keys"]
@@ -1720,6 +1746,10 @@ class RegistryAdminOperationsService:
             await self._apply_import_departments(preview["changes"])
         elif import_type == "device_inventory_mapping":
             await self._apply_import_device_inventory_mapping(preview["changes"], actor_id=actor_id)
+        elif import_type == "audience_groups":
+            await self._apply_import_audience_groups(preview["changes"], actor_id=actor_id)
+        elif import_type == "audience_group_members":
+            await self._apply_import_audience_group_members(preview["changes"], actor_id=actor_id)
         else:
             raise ValueError("unsupported registry import type")
         await self.append_event(
@@ -1765,6 +1795,8 @@ class RegistryAdminOperationsService:
             "device_inventory": "device_inventory_mapping",
             "inventory_mapping": "device_inventory_mapping",
             "devices_inventory_mapping": "device_inventory_mapping",
+            "audience_members": "audience_group_members",
+            "audience_group_member": "audience_group_members",
         }
         value = aliases.get(value, value)
         if value not in REGISTRY_IMPORT_TYPES:
@@ -2074,6 +2106,208 @@ class RegistryAdminOperationsService:
                     setattr(department, field, value)
                 department.updated_at = _now()
 
+    async def _preview_import_audience_groups(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
+        import_type = "audience_groups"
+        codes = [_audience_code(row.get("code")) for _, row in rows]
+        code_counts = Counter(code for code in codes if code)
+        existing_groups = (await self.session.execute(select(RegistryAudienceGroup))).scalars().all()
+        existing_by_code = {group.code: group for group in existing_groups if group.code}
+        changes: list[dict[str, Any]] = []
+        row_errors: list[dict[str, Any]] = []
+        duplicate_keys: list[dict[str, Any]] = []
+        for row_number, row in rows:
+            group_id = _text(row.get("audience_group_id"), max_length=36)
+            existing = await self.session.get(RegistryAudienceGroup, group_id) if group_id else None
+            if group_id and existing is None:
+                row_errors.append(self._row_error(row_number, "audience_group_id", "audience_group_id not found"))
+                continue
+            raw_code = _text(row.get("code"), max_length=120)
+            code = _audience_code(raw_code)
+            name = _text(row.get("name"), max_length=300)
+            source = _text(row.get("source"), max_length=40) or (existing.source if existing else "import")
+            status = _text(row.get("status"), max_length=30) or (existing.status if existing else "active")
+            errors: list[dict[str, Any]] = []
+            if not code:
+                errors.append(self._row_error(row_number, "code", "valid code is required"))
+            if not name:
+                errors.append(self._row_error(row_number, "name", "name is required"))
+            if source not in AUDIENCE_SOURCES:
+                errors.append(self._row_error(row_number, "source", "invalid source"))
+            if status not in AUDIENCE_STATUSES:
+                errors.append(self._row_error(row_number, "status", "invalid status"))
+            if errors:
+                row_errors.extend(errors)
+                continue
+            if code and code_counts[code] > 1:
+                duplicate_keys.append(self._duplicate_key(row_number, "code", code, "audience group code appears more than once in this file"))
+                continue
+            duplicate = existing_by_code.get(code or "")
+            if duplicate is not None and (existing is None or duplicate.audience_group_id != existing.audience_group_id):
+                duplicate_keys.append(self._duplicate_key(row_number, "code", code or "", "audience group code already exists"))
+                continue
+            after = {
+                "code": code,
+                "name": name,
+                "description": _text(row.get("description"), max_length=1000),
+                "source": source,
+                "status": status,
+            }
+            before = self._audience_group_snapshot(existing) if existing else None
+            if before == after:
+                changes.append({"row": row_number, "kind": "audience_group", "action": "skip", "object_id": group_id, "after": after})
+            else:
+                changes.append({"row": row_number, "kind": "audience_group", "action": "update" if existing else "create", "object_id": group_id, "before": before, "after": after})
+        return self._import_preview_payload(import_type, rows, changes, row_errors, duplicate_keys)
+
+    @staticmethod
+    def _audience_group_snapshot(group: RegistryAudienceGroup | None) -> dict[str, Any] | None:
+        if group is None:
+            return None
+        return {
+            "code": group.code,
+            "name": group.name,
+            "description": group.description,
+            "source": group.source,
+            "status": group.status,
+        }
+
+    async def _apply_import_audience_groups(self, changes: list[dict[str, Any]], *, actor_id: str | None = None) -> None:
+        for change in changes:
+            after = change["after"]
+            if change["action"] == "create":
+                self.session.add(
+                    RegistryAudienceGroup(
+                        audience_group_id=_new_id(),
+                        code=after["code"],
+                        name=after["name"],
+                        description=after.get("description"),
+                        source=after.get("source") or "import",
+                        status=after.get("status") or "active",
+                        created_by=actor_id,
+                        updated_by=actor_id,
+                    )
+                )
+            elif change["action"] == "update":
+                group = await self.session.get(RegistryAudienceGroup, change["object_id"])
+                if group is None:
+                    raise ValueError("audience group disappeared before apply")
+                for field, value in after.items():
+                    setattr(group, field, value)
+                group.updated_by = actor_id
+                group.updated_at = _now()
+
+    async def _preview_import_audience_group_members(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
+        import_type = "audience_group_members"
+        groups = (await self.session.execute(select(RegistryAudienceGroup))).scalars().all()
+        groups_by_code = {group.code: group for group in groups if group.code}
+        groups_by_id = {group.audience_group_id: group for group in groups}
+        existing_members = (await self.session.execute(select(RegistryAudienceGroupMember))).scalars().all()
+        existing_by_key = {
+            (member.audience_group_id, member.member_type, member.member_id, bool(member.include_children)): member
+            for member in existing_members
+        }
+        normalized_keys: list[tuple[str, str, str, bool] | None] = []
+        for _, row in rows:
+            group = self._resolve_import_audience_group(row, groups_by_id=groups_by_id, groups_by_code=groups_by_code)
+            member_type = str(row.get("member_type") or "").strip().lower()
+            member_id = _text(row.get("member_id"), max_length=300)
+            include_children = _bool_csv(row.get("include_children")) or member_type == "department_tree"
+            normalized_keys.append((group.audience_group_id, member_type, member_id, include_children) if group and member_id else None)
+        key_counts = Counter(key for key in normalized_keys if key)
+        changes: list[dict[str, Any]] = []
+        row_errors: list[dict[str, Any]] = []
+        duplicate_keys: list[dict[str, Any]] = []
+        for row_number, row in rows:
+            group = self._resolve_import_audience_group(row, groups_by_id=groups_by_id, groups_by_code=groups_by_code)
+            member_type = str(row.get("member_type") or "").strip().lower()
+            member_id = _text(row.get("member_id"), max_length=300)
+            include_children = _bool_csv(row.get("include_children")) or member_type == "department_tree"
+            source = _text(row.get("source"), max_length=40) or "import"
+            errors: list[dict[str, Any]] = []
+            if group is None:
+                errors.append(self._row_error(row_number, "group_code", "audience group not found"))
+            if member_type not in AUDIENCE_MEMBER_TYPES:
+                errors.append(self._row_error(row_number, "member_type", "unsupported member_type"))
+            if not member_id:
+                errors.append(self._row_error(row_number, "member_id", "member_id is required"))
+            if source not in AUDIENCE_SOURCES:
+                errors.append(self._row_error(row_number, "source", "invalid source"))
+            if errors:
+                row_errors.extend(errors)
+                continue
+            assert group is not None
+            key = (group.audience_group_id, member_type, member_id, include_children)
+            if key_counts[key] > 1:
+                duplicate_keys.append(self._duplicate_key(row_number, "membership", "|".join(str(part) for part in key), "audience group member appears more than once in this file"))
+                continue
+            existing = existing_by_key.get(key)
+            after = {
+                "audience_group_id": group.audience_group_id,
+                "member_type": member_type,
+                "member_id": member_id,
+                "include_children": include_children,
+                "source": source,
+                "metadata_json": {},
+            }
+            before = self._audience_member_snapshot(existing) if existing else None
+            if before == after:
+                changes.append({"row": row_number, "kind": "audience_group_member", "action": "skip", "object_id": existing.membership_id if existing else None, "after": after})
+            else:
+                changes.append({"row": row_number, "kind": "audience_group_member", "action": "update" if existing else "create", "object_id": existing.membership_id if existing else None, "before": before, "after": after})
+        return self._import_preview_payload(import_type, rows, changes, row_errors, duplicate_keys)
+
+    @staticmethod
+    def _resolve_import_audience_group(
+        row: dict[str, str],
+        *,
+        groups_by_id: dict[str, RegistryAudienceGroup],
+        groups_by_code: dict[str, RegistryAudienceGroup],
+    ) -> RegistryAudienceGroup | None:
+        group_id = _text(row.get("audience_group_id"), max_length=36)
+        if group_id:
+            return groups_by_id.get(group_id)
+        code = _audience_code(row.get("group_code") or row.get("code"))
+        return groups_by_code.get(code or "")
+
+    @staticmethod
+    def _audience_member_snapshot(member: RegistryAudienceGroupMember | None) -> dict[str, Any] | None:
+        if member is None:
+            return None
+        return {
+            "audience_group_id": member.audience_group_id,
+            "member_type": member.member_type,
+            "member_id": member.member_id,
+            "include_children": bool(member.include_children),
+            "source": member.source,
+            "metadata_json": member.metadata_json or {},
+        }
+
+    async def _apply_import_audience_group_members(self, changes: list[dict[str, Any]], *, actor_id: str | None = None) -> None:
+        for change in changes:
+            after = change["after"]
+            if change["action"] == "create":
+                self.session.add(
+                    RegistryAudienceGroupMember(
+                        membership_id=_new_id(),
+                        audience_group_id=after["audience_group_id"],
+                        member_type=after["member_type"],
+                        member_id=after["member_id"],
+                        include_children=bool(after.get("include_children")),
+                        source=after.get("source") or "import",
+                        metadata_json=after.get("metadata_json") or {},
+                        created_by=actor_id,
+                        updated_by=actor_id,
+                    )
+                )
+            elif change["action"] == "update":
+                member = await self.session.get(RegistryAudienceGroupMember, change["object_id"])
+                if member is None:
+                    raise ValueError("audience group member disappeared before apply")
+                for field, value in after.items():
+                    setattr(member, field, value)
+                member.updated_by = actor_id
+                member.updated_at = _now()
+
     async def _preview_import_device_inventory_mapping(self, rows: list[tuple[int, dict[str, str]]]) -> dict[str, Any]:
         import_type = "device_inventory_mapping"
         device_keys = [self._device_import_key(row) for _, row in rows]
@@ -2197,6 +2431,127 @@ class RegistryAdminOperationsService:
         elif export_type == "departments":
             rows = await self.list_departments()
             columns = ["department_id", "code", "name", "manager_person_id", "support_queue", "users_count", "devices_count", "status", "updated_at"]
+        elif export_type == "audience_groups":
+            groups = (
+                await self.session.execute(
+                    select(RegistryAudienceGroup).order_by(RegistryAudienceGroup.code.asc(), RegistryAudienceGroup.created_at.asc())
+                )
+            ).scalars().all()
+            rows = [
+                {
+                    "audience_group_id": group.audience_group_id,
+                    "code": group.code,
+                    "name": group.name,
+                    "description": group.description,
+                    "source": group.source,
+                    "status": group.status,
+                    "created_at": group.created_at,
+                    "updated_at": group.updated_at,
+                }
+                for group in groups
+            ]
+            columns = ["audience_group_id", "code", "name", "description", "source", "status", "created_at", "updated_at"]
+        elif export_type == "audience_group_members":
+            groups = (
+                await self.session.execute(
+                    select(RegistryAudienceGroup.audience_group_id, RegistryAudienceGroup.code)
+                )
+            ).all()
+            group_codes = {audience_group_id: code for audience_group_id, code in groups}
+            members = (
+                await self.session.execute(
+                    select(RegistryAudienceGroupMember).order_by(
+                        RegistryAudienceGroupMember.audience_group_id.asc(),
+                        RegistryAudienceGroupMember.member_type.asc(),
+                        RegistryAudienceGroupMember.member_id.asc(),
+                    )
+                )
+            ).scalars().all()
+            rows = [
+                {
+                    "group_code": group_codes.get(member.audience_group_id),
+                    "member_type": member.member_type,
+                    "member_id": member.member_id,
+                    "include_children": bool(member.include_children),
+                    "source": member.source,
+                    "audience_group_id": member.audience_group_id,
+                    "membership_id": member.membership_id,
+                    "valid_from": member.valid_from,
+                    "valid_to": member.valid_to,
+                    "created_at": member.created_at,
+                    "updated_at": member.updated_at,
+                }
+                for member in members
+            ]
+            columns = [
+                "group_code",
+                "member_type",
+                "member_id",
+                "include_children",
+                "source",
+                "audience_group_id",
+                "membership_id",
+                "valid_from",
+                "valid_to",
+                "created_at",
+                "updated_at",
+            ]
+        elif export_type == "knowledge_audience_rules":
+            items = (
+                await self.session.execute(
+                    select(KnowledgeItem.item_id, KnowledgeItem.slug, KnowledgeItem.title)
+                )
+            ).all()
+            item_meta = {
+                item_id: {"subject_slug": slug, "subject_title": title}
+                for item_id, slug, title in items
+            }
+            rules = (
+                await self.session.execute(
+                    select(KnowledgeAudienceRule).order_by(
+                        KnowledgeAudienceRule.subject_type.asc(),
+                        KnowledgeAudienceRule.subject_id.asc(),
+                        KnowledgeAudienceRule.priority.asc(),
+                        KnowledgeAudienceRule.created_at.asc(),
+                        KnowledgeAudienceRule.rule_id.asc(),
+                    )
+                )
+            ).scalars().all()
+            rows = []
+            for rule in rules:
+                subject_meta = item_meta.get(rule.subject_id, {}) if rule.subject_type == "item" else {}
+                rows.append(
+                    {
+                        "rule_id": rule.rule_id,
+                        "subject_type": rule.subject_type,
+                        "subject_id": rule.subject_id,
+                        "subject_slug": subject_meta.get("subject_slug"),
+                        "subject_title": subject_meta.get("subject_title"),
+                        "target_type": rule.target_type,
+                        "target_id": rule.target_id,
+                        "include_children": bool(rule.include_children),
+                        "priority": rule.priority,
+                        "status": rule.status,
+                        "reason": rule.reason,
+                        "created_at": rule.created_at,
+                        "updated_at": rule.updated_at,
+                    }
+                )
+            columns = [
+                "rule_id",
+                "subject_type",
+                "subject_id",
+                "subject_slug",
+                "subject_title",
+                "target_type",
+                "target_id",
+                "include_children",
+                "priority",
+                "status",
+                "reason",
+                "created_at",
+                "updated_at",
+            ]
         else:
             from registry.service import RegistrySnapshotService
 
