@@ -1,0 +1,106 @@
+{
+  "base_url": "https://192.168.100.17:9443",
+  "checks": {},
+  "commit": "547a33c2730b2cd4bee6edb8d3fbf45a99dd2af8",
+  "created": {
+    "finance_slug": "phase7-finance-p7547a33c2",
+    "internal_slug": "phase7-internal-p7547a33c2",
+    "it_slug": "phase7-it-p7547a33c2",
+    "other_ticket_id": "a9c61438-663e-4f34-919c-1d12a0b26724",
+    "owner_ticket_id": "71b5ac8e-4934-4afb-a24a-ec388c9ad0ad",
+    "public_slug": "phase7-public-p7547a33c2"
+  },
+  "evidence": {
+    "browser_support_ui": {
+      "status": "not_collected"
+    },
+    "http_db_smoke": {
+      "status": "passed"
+    },
+    "real_agent_gui": {
+      "required_for_phase7_exit": true,
+      "status": "not_collected"
+    }
+  },
+  "generated_at": "2026-06-14T11:51:36.894294+00:00",
+  "limitations": [
+    "This HTTP/DB smoke does not replace real-agent UIA/browser evidence required by Phase 7 exit criteria."
+  ],
+  "marker": "phase7 registry visibility p7547a33c2",
+  "phase": "phase7_registry_visibility",
+  "run_id": "p7547a33c2",
+  "scenarios": {
+    "registered_owner": {
+      "account_mode": "confirmed_binding",
+      "service_knowledge": {
+        "ask_slugs": [
+          "phase7-it-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ],
+        "person_id": "f0a17507-65aa-4f05-bfb4-3f1e04b0ebe7",
+        "search_slugs": [
+          "phase7-it-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ],
+        "status": "passed",
+        "suggest_slugs": [
+          "phase7-it-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ]
+      },
+      "status": "passed",
+      "support_suggestions": {
+        "article_ids": [
+          "phase7-internal-p7547a33c2",
+          "phase7-it-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ],
+        "status": "passed"
+      },
+      "ticket_id": "71b5ac8e-4934-4afb-a24a-ec388c9ad0ad"
+    },
+    "registration_pending": {
+      "claim_id": "7de00945-01ac-4db0-b212-822109c1c619",
+      "normal_ticket_blocked": true,
+      "status": "passed"
+    },
+    "revoked_session": {
+      "account_session_id": "ace30b58-9f42-4614-a43e-194b4b719d30",
+      "status": "passed",
+      "ticket_list_denied": true,
+      "validation_denied": true
+    },
+    "verified_other_account": {
+      "account_mode": "verified_other_account",
+      "owner_ticket_hidden": true,
+      "service_knowledge": {
+        "ask_slugs": [
+          "phase7-finance-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ],
+        "person_id": "053159e5-f6b6-49d6-84eb-e44ba4709cae",
+        "search_slugs": [
+          "phase7-finance-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ],
+        "status": "passed",
+        "suggest_slugs": [
+          "phase7-finance-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ]
+      },
+      "status": "passed",
+      "support_suggestions": {
+        "article_ids": [
+          "phase7-finance-p7547a33c2",
+          "phase7-internal-p7547a33c2",
+          "phase7-public-p7547a33c2"
+        ],
+        "status": "passed"
+      },
+      "ticket_id": "a9c61438-663e-4f34-919c-1d12a0b26724",
+      "warning_stored": true
+    }
+  },
+  "status": "passed"
+}
