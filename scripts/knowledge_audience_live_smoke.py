@@ -32,6 +32,10 @@ from app.db.models import (
 from app.repos.knowledge_repo import KnowledgeRepo
 from auth.service import AuthService
 from config import DATABASE_URL
+from knowledge.ask_service import KnowledgeAskService
+from knowledge.search_service import KnowledgeSearchService
+from knowledge.suggestion_service import KnowledgeSuggestionService
+from registry.effective_identity_service import EffectiveIdentityService
 
 
 class SmokeFailure(RuntimeError):
@@ -351,16 +355,16 @@ class KnowledgeAudienceLiveSmoke:
         )
         return await repo.publish_item(item["item_id"], version["version_id"], actor_id=actor_id, actor_role="admin")
 
-    def run_checks(self) -> dict[str, Any]:
+    async def run_checks(self) -> dict[str, Any]:
         it_payload = {"query": f"{self.marker} IT visible", "limit": 10, "surface": "live_phase5"}
         finance_payload = {"query": f"{self.marker} Finance scoped", "limit": 10, "surface": "live_phase5"}
-        self.report["checks"]["requester_it_search"] = self._check_public_search("it", it_payload)
-        self.report["checks"]["requester_finance_search"] = self._check_public_search("finance", finance_payload)
-        self.report["checks"]["requester_it_hidden_search"] = self._check_hidden_public_search("it", finance_payload)
-        self.report["checks"]["requester_it_suggest"] = self._check_public_suggest("it", it_payload)
-        self.report["checks"]["requester_it_hidden_suggest"] = self._check_hidden_public_suggest("it", finance_payload)
-        self.report["checks"]["requester_it_ask"] = self._check_public_ask("it", it_payload)
-        self.report["checks"]["requester_it_hidden_ask"] = self._check_hidden_public_ask("it", finance_payload)
+        self.report["checks"]["service_requester_it_search"] = await self._check_service_search("it", it_payload)
+        self.report["checks"]["service_requester_finance_search"] = await self._check_service_search("finance", finance_payload)
+        self.report["checks"]["service_requester_it_hidden_search"] = await self._check_hidden_service_search("it", finance_payload)
+        self.report["checks"]["service_requester_it_suggest"] = await self._check_service_suggest("it", it_payload)
+        self.report["checks"]["service_requester_it_hidden_suggest"] = await self._check_hidden_service_suggest("it", finance_payload)
+        self.report["checks"]["service_requester_it_ask"] = await self._check_service_ask("it", it_payload)
+        self.report["checks"]["service_requester_it_hidden_ask"] = await self._check_hidden_service_ask("it", finance_payload)
         self.report["checks"]["support_ticket_suggestions"] = self._check_support_ticket_suggestions()
         self.report["checks"]["admin_explain_denied"] = self._check_admin_explain_denied()
         self.report["status"] = "passed"
@@ -372,31 +376,60 @@ class KnowledgeAudienceLiveSmoke:
         _require(f"{self.marker} Finance scoped" not in text, "finance title leaked into requester-scoped payload")
         _require("finance hidden body" not in text, "finance body leaked into requester-scoped payload")
 
-    def _check_public_search(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.api.post("/api/knowledge/search", token=self.tokens[token_key], payload=payload)
-        _require(response.get("status") == "ok", f"search returned status={response.get('status')}")
-        slugs = {str(item.get("slug") or "") for item in response.get("results") or [] if isinstance(item, dict)}
+    async def _requester_audience(self, session, token_key: str):
+        actor_id = f"phase5-{token_key}-{self.run_id}"
+        return await EffectiveIdentityService(session).resolve_person_audience(
+            person_id=None,
+            actor_id=actor_id,
+            actor_role="requester",
+        )
+
+    async def _check_service_search(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        async with get_session() as session:
+            audience = await self._requester_audience(session, token_key)
+            results = await KnowledgeSearchService(session).search(
+                query=payload.get("query"),
+                actor_role="requester",
+                limit=10,
+                surface=str(payload.get("surface") or "live_phase5"),
+                effective_audience=audience,
+            )
+            await session.commit()
+        slugs = {str(item.get("slug") or "") for item in results if isinstance(item, dict)}
         if token_key == "it":
             _require(self.ids["it_slug"] in slugs, "IT requester does not see IT article")
             _require(self.ids["finance_slug"] not in slugs, "IT requester sees finance article")
             _require(self.ids["internal_slug"] not in slugs, "IT requester sees support internal runbook")
-            self._assert_payload_excludes_finance(response)
+            self._assert_payload_excludes_finance({"results": results})
         else:
             _require(self.ids["finance_slug"] in slugs, "finance requester does not see finance article")
             _require(self.ids["it_slug"] not in slugs, "finance requester sees IT article")
         return {"status": "passed", "slugs": sorted(slugs)}
 
-    def _check_hidden_public_search(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.api.post("/api/knowledge/search", token=self.tokens[token_key], payload=payload)
-        _require(response.get("status") == "ok", f"hidden search returned status={response.get('status')}")
-        slugs = {str(item.get("slug") or "") for item in response.get("results") or [] if isinstance(item, dict)}
+    async def _check_hidden_service_search(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        async with get_session() as session:
+            audience = await self._requester_audience(session, token_key)
+            results = await KnowledgeSearchService(session).search(
+                query=payload.get("query"),
+                actor_role="requester",
+                limit=10,
+                surface=str(payload.get("surface") or "live_phase5"),
+                effective_audience=audience,
+            )
+            await session.commit()
+        slugs = {str(item.get("slug") or "") for item in results if isinstance(item, dict)}
         _require(self.ids["finance_slug"] not in slugs, "hidden search returned finance article")
-        self._assert_payload_excludes_finance(response)
+        self._assert_payload_excludes_finance({"results": results})
         return {"status": "passed", "slugs": sorted(slugs)}
 
-    def _check_public_suggest(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.api.post("/api/knowledge/suggest", token=self.tokens[token_key], payload=payload)
-        _require(response.get("status") == "ok", f"suggest returned status={response.get('status')}")
+    async def _check_service_suggest(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        async with get_session() as session:
+            audience = await self._requester_audience(session, token_key)
+            response = await KnowledgeSuggestionService(session).suggest(
+                payload,
+                actor_role="requester",
+                effective_audience=audience,
+            )
         slugs = {str(item.get("slug") or "") for item in response.get("suggestions") or [] if isinstance(item, dict)}
         _require(self.ids["it_slug"] in slugs, "IT requester suggest missing IT article")
         _require(self.ids["finance_slug"] not in slugs, "IT requester suggest sees finance article")
@@ -404,17 +437,27 @@ class KnowledgeAudienceLiveSmoke:
         self._assert_payload_excludes_finance(response)
         return {"status": "passed", "slugs": sorted(slugs)}
 
-    def _check_hidden_public_suggest(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.api.post("/api/knowledge/suggest", token=self.tokens[token_key], payload=payload)
-        _require(response.get("status") == "ok", f"hidden suggest returned status={response.get('status')}")
+    async def _check_hidden_service_suggest(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        async with get_session() as session:
+            audience = await self._requester_audience(session, token_key)
+            response = await KnowledgeSuggestionService(session).suggest(
+                payload,
+                actor_role="requester",
+                effective_audience=audience,
+            )
         slugs = {str(item.get("slug") or "") for item in response.get("suggestions") or [] if isinstance(item, dict)}
         _require(self.ids["finance_slug"] not in slugs, "hidden suggest returned finance article")
         self._assert_payload_excludes_finance(response)
         return {"status": "passed", "slugs": sorted(slugs)}
 
-    def _check_public_ask(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.api.post("/api/knowledge/ask", token=self.tokens[token_key], payload=payload)
-        _require(response.get("status") == "ok", f"ask returned status={response.get('status')}")
+    async def _check_service_ask(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        async with get_session() as session:
+            audience = await self._requester_audience(session, token_key)
+            response = await KnowledgeAskService(session).ask(
+                query=payload.get("query"),
+                actor_role="requester",
+                effective_audience=audience,
+            )
         slugs = {
             str(((item.get("item") or {}) if isinstance(item, dict) else {}).get("slug") or "")
             for item in response.get("retrieval_results") or []
@@ -426,9 +469,14 @@ class KnowledgeAudienceLiveSmoke:
         self._assert_payload_excludes_finance(response)
         return {"status": "passed", "slugs": sorted(slugs)}
 
-    def _check_hidden_public_ask(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
-        response = self.api.post("/api/knowledge/ask", token=self.tokens[token_key], payload=payload)
-        _require(response.get("status") == "ok", f"hidden ask returned status={response.get('status')}")
+    async def _check_hidden_service_ask(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        async with get_session() as session:
+            audience = await self._requester_audience(session, token_key)
+            response = await KnowledgeAskService(session).ask(
+                query=payload.get("query"),
+                actor_role="requester",
+                effective_audience=audience,
+            )
         slugs = {
             str(((item.get("item") or {}) if isinstance(item, dict) else {}).get("slug") or "")
             for item in response.get("retrieval_results") or []
@@ -477,7 +525,7 @@ async def async_main(args: argparse.Namespace) -> int:
     smoke = KnowledgeAudienceLiveSmoke(base_url=args.base_url, run_id=args.run_id, insecure_tls=args.insecure_tls)
     try:
         await smoke.setup()
-        report = smoke.run_checks()
+        report = await smoke.run_checks()
         if args.output:
             write_report(report, Path(args.output))
         print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
