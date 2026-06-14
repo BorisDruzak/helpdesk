@@ -153,6 +153,46 @@ async def test_public_search_applies_registry_audience_rules_before_projection(t
 
 
 @pytest.mark.asyncio
+async def test_public_suggestions_apply_registry_audience_rules_before_projection(test_client, test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _seed_requester_identity(session, login="requester-knowledge", department_code="it")
+        finance = await _seed_requester_identity(session, login="finance-knowledge", department_code="finance")
+        await _seed_requester_article(session, slug="it-suggest-audience-visible", title="Suggest marker IT visible")
+        hidden = await _seed_requester_article(
+            session,
+            slug="finance-suggest-audience-hidden",
+            title="Suggest marker Finance hidden",
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id="rule-suggest-finance-hidden",
+                subject_type="item",
+                subject_id=hidden["item_id"],
+                target_type="department",
+                target_id=finance["department_id"],
+                effect="allow",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/knowledge/suggest",
+        headers=_requester_headers(),
+        json={"query": "suggest marker", "limit": 10, "surface": "requester_portal"},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    slugs = {item["slug"] for item in payload["suggestions"]}
+    assert "it-suggest-audience-visible" in slugs
+    assert "finance-suggest-audience-hidden" not in slugs
+    assert "Finance hidden" not in str(payload)
+    assert _forbidden_paths(payload) == []
+
+
+@pytest.mark.asyncio
 async def test_knowledge_ai_proposals_graph_review_lifecycle_and_observer_audit(test_client, test_engine) -> None:
     create_resp = await test_client.post(
         "/api/web/knowledge/ai/proposals",

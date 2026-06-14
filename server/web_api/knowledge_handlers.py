@@ -270,10 +270,19 @@ async def handle_web_knowledge_editor_history(request: web.Request) -> web.Respo
 
 async def handle_knowledge_suggest(request: web.Request) -> web.Response:
     try:
-        _actor_id, actor_role = _actor(request)
+        actor_id, actor_role = _actor(request)
         payload = await _json_payload(request)
         async with get_session() as session:
-            result = await KnowledgeSuggestionService(session).suggest(payload, actor_role=actor_role)
+            effective_audience = await EffectiveIdentityService(session).resolve_person_audience(
+                person_id=None,
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+            result = await KnowledgeSuggestionService(session).suggest(
+                payload,
+                actor_role=actor_role,
+                effective_audience=effective_audience,
+            )
         return web.json_response({"status": "ok", **result})
     except ValueError as exc:
         return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)

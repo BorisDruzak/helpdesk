@@ -12,7 +12,13 @@ class KnowledgeSuggestionService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def suggest(self, context: dict[str, Any], *, actor_role: str) -> dict[str, Any]:
+    async def suggest(
+        self,
+        context: dict[str, Any],
+        *,
+        actor_role: str,
+        effective_audience: Any | None = None,
+    ) -> dict[str, Any]:
         rollout = await KnowledgeOperationsService(self.session).rollout_decision(context, actor_role=actor_role)
         if rollout.get("enabled") is False:
             return {"suggestions": [], "known_errors": [], "workarounds": [], "rollout": rollout}
@@ -29,6 +35,7 @@ class KnowledgeSuggestionService:
             offering_code=context.get("offering_code"),
             request_template_key=context.get("request_template_key"),
             limit=max_suggestions,
+            effective_audience=effective_audience,
         )
         if not results and (context.get("service_code") or context.get("offering_code") or context.get("request_template_key")):
             results = await KnowledgeSearchService(self.session).search(
@@ -38,6 +45,7 @@ class KnowledgeSuggestionService:
                 offering_code=context.get("offering_code"),
                 request_template_key=context.get("request_template_key"),
                 limit=max_suggestions,
+                effective_audience=effective_audience,
             )
         suggestions: list[dict[str, Any]] = []
         for result in results:
