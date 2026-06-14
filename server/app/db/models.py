@@ -1062,6 +1062,50 @@ class KnowledgeBinding(Base):
     )
 
 
+class KnowledgeAudienceRule(Base):
+    """Audience targeting rule that refines Knowledge space/item visibility."""
+
+    __tablename__ = "knowledge_audience_rules"
+
+    rule_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    subject_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    target_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    target_id: Mapped[str] = mapped_column(Text, nullable=False)
+    effect: Mapped[str] = mapped_column(String(20), nullable=False, server_default="allow")
+    include_children: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa.text("false"))
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default="100")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="active")
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    created_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        sa.CheckConstraint("subject_type IN ('space', 'item')", name="ck_knowledge_audience_rules_subject_type"),
+        sa.CheckConstraint(
+            "target_type IN ('person', 'department', 'department_tree', 'location', 'access_group', 'audience_group', 'role', 'service')",
+            name="ck_knowledge_audience_rules_target_type",
+        ),
+        sa.CheckConstraint("effect IN ('allow')", name="ck_knowledge_audience_rules_effect"),
+        sa.CheckConstraint("status IN ('active', 'disabled', 'archived')", name="ck_knowledge_audience_rules_status"),
+        Index("ix_knowledge_audience_rules_subject", "subject_type", "subject_id", "status", "priority"),
+        Index("ix_knowledge_audience_rules_target", "target_type", "target_id", "status"),
+        Index("ix_knowledge_audience_rules_status", "status"),
+    )
+
+
 class KnowledgeTaxonomyTerm(Base):
     """Governed taxonomy term attached to a knowledge space."""
 

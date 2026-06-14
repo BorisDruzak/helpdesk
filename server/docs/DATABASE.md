@@ -52,6 +52,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 **Knowledge metadata model (migrations 118-119):** `knowledge_taxonomy_terms`, `knowledge_property_definitions`, `knowledge_item_properties`, `knowledge_item_taxonomy_terms`, `knowledge_applicability_rules`, and `knowledge_quality_models` store governed taxonomy, typed item properties, item-to-term assignments, explicit applicability include/exclude rules and per-space/global quality scoring models. Migration `119` adds partial unique indexes for global quality model codes, the active default global model and one active default model per space. The schema is additive and does not replace `knowledge_bindings`, `knowledge_items.tags` or `metadata_json`; requester/public APIs must not expose the admin metadata bundle or raw quality model weights.
 
+**Knowledge audience rules (migration 121):** `knowledge_audience_rules` stores additive Registry Visibility Foundation allow rules for Knowledge spaces/items. Rules target person, department, department_tree, location, access_group, audience_group, role or service and use `status=active|disabled|archived` instead of hard deletes. `server/knowledge/access_service.py` evaluates these rules after lifecycle/coarse visibility checks, and requester-facing paths must keep denied rule ids and hidden article metadata out of projections.
+
 **Knowledge embeddings/indexing (migration 113):** `knowledge_chunk_embeddings` and `knowledge_index_jobs` store optional embedding state and observable indexing jobs. The local/test schema stores vectors as JSONB so pgvector is not required for normal development checks; provider-backed vector search can later migrate storage behind capability detection. Index jobs are AI-off safe: disabled vector settings or AI policy blocks create `disabled` embedding rows, provider/key/transport failures create redacted `failed` rows, and web APIs never return `embedding_vector`.
 
 **Quality Loop (migrations 088-089):** `ticket_feedback`, `ticket_reopen_events`, `ticket_quality_reviews`, `ticket_quality_review_comments`, `continuous_improvement_actions`, `service_quality_snapshots`, and `quality_policies`. These tables implement structured CSAT, mandatory reopen reason taxonomy, internal QA review queues, continuous improvement actions and aggregate service/offering quality analytics. Migration `089` adds the partial unique index `uq_ticket_feedback_latest_per_ticket` so only one `is_latest=true` feedback row can exist per ticket. Analytics snapshots intentionally avoid requester PII and are recomputed by the quality snapshot scheduler plus the manual recompute API. See [QUALITY_LOOP.md](QUALITY_LOOP.md).
@@ -221,7 +223,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 | `artifacts_repo.py` | artifacts |
 | `job_events_repo.py` | job_events |
 | `agent_builds_repo.py` | agent_builds |
-| `knowledge_repo.py` | knowledge_spaces, knowledge_items, knowledge_item_versions, knowledge_chunks, knowledge_bindings |
+| `knowledge_repo.py` / `knowledge.access_service` | knowledge_spaces, knowledge_items, knowledge_item_versions, knowledge_chunks, knowledge_bindings, knowledge_audience_rules |
 | `knowledge.metadata_service` | knowledge_taxonomy_terms, knowledge_property_definitions, knowledge_item_properties, knowledge_item_taxonomy_terms, knowledge_applicability_rules, knowledge_quality_models |
 | `knowledge.content_pack_service` | knowledge_content_packs, knowledge_content_pack_items |
 | `knowledge.review_task_service` | knowledge_review_tasks, knowledge_review_comments |
@@ -282,6 +284,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 - `087_knowledge_rollout_policy_hardening.py` — rollout policy scope, suggestion gating, known-error hiding, safe labels, bypass and API-unavailable behavior.
 - `111_knowledge_search_settings.py` — Knowledge vNext search settings table for AI-off keyword/full-text/hybrid mode controls.
 - `117_knowledge_ai_proposals.py` — governed Knowledge AI proposal queue with review status, safe payload, applied refs and Observer audit integration.
+- `121_knowledge_audience_rules.py` — Registry Visibility Foundation Knowledge audience rules table with subject/target/status indexes.
 - `088_quality_loop.py` — structured ticket feedback, reopen events, QA reviews, improvement actions, service quality snapshots and quality policies.
 - `089_quality_loop_production_hardening.py` — latest feedback partial unique index and quality snapshot scheduler metadata.
 - `090_problem_management_rca.py` — problem candidates, problem records, ticket links, versioned RCA, known-error/workaround links, affected objects, detection rules and problem activity events.

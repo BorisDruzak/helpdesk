@@ -25,6 +25,7 @@ async def test_knowledge_platform_tables_exist_after_migration(test_engine) -> N
         "knowledge_quality_snapshots",
         "knowledge_gap_findings",
         "knowledge_search_events",
+        "knowledge_audience_rules",
         "ticket_knowledge_links",
     }
     async with test_engine.connect() as conn:

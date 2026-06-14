@@ -25,6 +25,7 @@ P2 adds a universal company knowledge layer and uses it for helpdesk self-servic
 - `knowledge_search_events`: privacy-preserving search analytics with query hash and redacted query text for zero-result and ticket-after-search analysis.
 - `knowledge_segmentation_profiles` / `knowledge_article_segments` / `knowledge_segmentation_jobs`: Knowledge vNext article markup foundation. Manual and auto segments are tied to an immutable item version by offsets plus content hash, carry title/summary/keywords/boost/visibility flags, and can be used by AI-off search before vector/RAG features are enabled.
 - `knowledge_taxonomy_terms`, `knowledge_property_definitions`, `knowledge_item_properties`, `knowledge_item_taxonomy_terms`, `knowledge_applicability_rules` and `knowledge_quality_models`: Phase 14 governed metadata model. Taxonomy and typed properties are scoped to a knowledge space; item metadata stores validated property values and taxonomy assignments; applicability rules state explicit include/exclude scope separate from search bindings; quality models add persisted weights and thresholds used by the explainable quality summary. Migration `119` DB-enforces global quality model code uniqueness plus one active default global/per-space model. Phase 14C exposes these rows through `/app/admin/knowledge/metadata` and the Studio item metadata tabs; organization categories/properties remain editable governed data, not frontend constants.
+- `knowledge_audience_rules`: Phase 5 Registry Visibility Foundation audience rules for Knowledge spaces/items. Migration `121` adds the additive table and `server/knowledge/access_service.py` evaluates it after status/coarse visibility checks.
 - `ticket_knowledge_links`: normalized future link table. Existing `ticket_kb_links` and `/api/tickets/{id}/kb_links` remain compatible.
 
 ## Item Types
@@ -51,7 +52,7 @@ Requester and local agent surfaces only receive published requester-safe knowled
 
 Requester/agent projections must not expose internal body for restricted items, source ticket/passport ids, requester/device ids, raw custom fields, internal graph edges, queue/policy ids, trace ids, operation ids or raw chunks for restricted items.
 
-Registry-scoped audience rules are planned in [REGISTRY_VISIBILITY_FOUNDATION.md](REGISTRY_VISIBILITY_FOUNDATION.md). They refine this coarse visibility model after role/status checks. They must not downgrade support/admin-only content into requester-visible content, and requester/agent/public APIs must not leak denied article titles, summaries, chunks, counts, diagnostics or rule metadata.
+Registry-scoped audience rules are tracked in [REGISTRY_VISIBILITY_FOUNDATION.md](REGISTRY_VISIBILITY_FOUNDATION.md). The first Phase 5 backend slice adds `knowledge_audience_rules` and a shared `KnowledgeAccessService`; requester search can opt into the new `effective_audience` hook, while the remaining read/suggest/portal/support/vector/RAG paths still need wiring before Phase 5 exit. Audience rules refine this coarse visibility model after role/status checks. They must not downgrade support/admin-only content into requester-visible content, and requester/agent/public APIs must not leak denied article titles, summaries, chunks, counts, diagnostics or rule metadata.
 
 ## Search And Suggestions
 

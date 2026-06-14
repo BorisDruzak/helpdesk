@@ -1,6 +1,6 @@
 # Registry Visibility Foundation
 
-Status: active foundation contract. Phase 0 recorded the architecture, Phase 1 added the effective identity/audience read model, Phase 2 added Registry audience-group backend APIs, and the first Phase 3 UI slice added prompt-free Registry dialogs plus an audience-group editor. Knowledge audience-rule enforcement remains planned.
+Status: active foundation contract. Phase 0 recorded the architecture, Phase 1 added the effective identity/audience read model, Phase 2 added Registry audience-group backend APIs, the first Phase 3 UI slice added prompt-free Registry dialogs plus an audience-group editor, and Phase 5 has started the Knowledge audience-rule backend slice with the read-only access decision service plus schema/model foundation.
 
 The foundation connects Registry identity, account sessions, audience groups and Knowledge visibility. It extends the current Registry Management Center and Knowledge Platform; it does not replace either one.
 
@@ -25,7 +25,7 @@ The foundation connects Registry identity, account sessions, audience groups and
 | `person` | Human registry record. | `registry_people` |
 | `identity` | Verified alias that links a person to a login/email/windows account or other identifier. | `registry_person_identities` |
 | `account_session` | Server-issued requester identity for local agent GUI actions. | `device_account_sessions` through `AccountSessionService` |
-| `knowledge_audience_rule` | Rule that refines who can view a Knowledge space or item after coarse visibility/status checks pass. | Planned `knowledge_audience_rules` |
+| `knowledge_audience_rule` | Rule that refines who can view a Knowledge space or item after coarse visibility/status checks pass. | `knowledge_audience_rules` |
 
 ## Current Sources
 
@@ -105,7 +105,7 @@ Phase 2 implemented tables:
 - `registry_audience_group_members`
 - `registry_person_department_memberships` (compatibility-safe optional multi-department membership; backfilled from `registry_people.department_id`)
 
-Phase 5 planned table:
+Phase 5 implemented first backend table:
 
 - `knowledge_audience_rules`
 
@@ -147,7 +147,7 @@ Phase 5 Knowledge visibility APIs:
 - `POST /api/web/admin/knowledge/audience-rules/preview`
 - `GET /api/web/admin/knowledge/access/explain?actor_id=&item_id=`
 
-These APIs are planned. Do not add client calls until the matching backend route, tests and CODEMAP entries exist.
+These APIs are still planned. Do not add client calls until the matching backend route, tests and CODEMAP entries exist. The current Phase 5 backend slice only adds migration `121`, `KnowledgeAudienceRule`, `server/knowledge/access_service.py`, and an optional `KnowledgeSearchService.search(..., effective_audience=...)` hook.
 
 ## Knowledge Access Decision Order
 

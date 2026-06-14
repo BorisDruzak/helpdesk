@@ -718,6 +718,7 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
                 knowledge_search_events,
                 knowledge_gap_findings,
                 knowledge_quality_snapshots,
+                knowledge_audience_rules,
                 knowledge_review_comments,
                 knowledge_review_tasks,
                 knowledge_content_pack_items,
