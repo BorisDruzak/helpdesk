@@ -1,0 +1,204 @@
+- complementary:
+  - link "pc_client HelpDesk workspace":
+    - /url: /app/admin
+    - generic: PC
+    - paragraph: pc_client
+    - paragraph: Admin workspace
+  - navigation "Навигация администрирования":
+    - link "Центр администрирования":
+      - /url: /app/admin
+      - generic: Центр администрирования
+      - generic: Карта доменов администрирования
+    - button "Устройства и агенты":
+      - generic: Устройства и агенты
+    - button "Каталог и заявки":
+      - generic: Каталог и заявки
+    - button "База знаний":
+      - generic: База знаний
+    - button "Автоматизация":
+      - generic: Автоматизация
+    - button "Управление сервисом":
+      - generic: Управление сервисом
+    - button "Интеграция ИИ":
+      - generic: Интеграция ИИ
+    - button "Система" [expanded]:
+      - generic: Система
+    - link "Реестры":
+      - /url: /app/admin/registry
+      - generic: Реестры
+      - generic: Люди, здания, кабинеты и сервисы
+    - link "Доступ":
+      - /url: /app/admin/access
+      - generic: Доступ
+      - generic: Роли, permissions и видимость
+    - link "Настройки":
+      - /url: /app/admin/settings
+      - generic: Настройки
+      - generic: Уведомления и политики
+  - button "Развернуть меню":
+    - generic: Развернуть меню
+- banner:
+  - combobox "Рабочая зона":
+    - option "Requester"
+    - option "Поддержка"
+    - option "Администрирование" [selected]
+  - searchbox "Поиск по разделам администрирования"
+  - generic: Ctrl K
+  - button "Уведомления":
+    - generic: 99+
+  - paragraph: admin
+  - paragraph: Администратор
+  - button "Выйти":
+    - text: Выйти
+- main:
+  - 'navigation "Раздел: Система"':
+    - link "Реестры":
+      - /url: /app/admin/registry
+    - link "Доступ":
+      - /url: /app/admin/access
+    - link "Настройки":
+      - /url: /app/admin/settings
+  - paragraph: Admin workspace
+  - heading "Registry Management Center" [level=1]
+  - paragraph: Device-user bindings, account sessions, registration claims, people identities and data-quality actions in one operator workspace.
+  - button "Пользователь":
+    - text: Пользователь
+  - button "Привязать устройство":
+    - text: Привязать устройство
+  - button "Проверка качества":
+    - text: Проверка качества
+  - button "Экспорт":
+    - text: Экспорт
+  - button "Импорт" [active]:
+    - text: Импорт
+  - button "Обновить":
+    - text: Обновить
+  - heading "Операционный реестр" [level=2]
+  - searchbox "ФИО, login, email, phone, device_id, hostname, cabinet, binding_id, session_id": phase8-6004e541-20260614190013
+  - generic: Ctrl K
+  - button "Обзор"
+  - button "Устройства"
+  - button "Пользователи"
+  - button "Привязки"
+  - button "Заявки"
+  - button "Аккаунт-сессии"
+  - button "Качество данных"
+  - button "Локации · P1"
+  - button "Подразделения · P1"
+  - button "Группы доступа · P1"
+  - button "Аудитории · P1"
+  - button "Политики · P1"
+  - paragraph: Data-quality issues
+  - generic: asset_missing_location
+  - paragraph: PC without location
+  - paragraph: phase8-binding-phase8-6004e541-20260614190013
+  - button "Open"
+  - button "Fix":
+    - text: Fix
+  - button "Ignore"
+  - button "Snooze 7d"
+  - generic: person_archived_department
+  - paragraph: Person uses archived department
+  - paragraph: Phase 8 Archived Context phase8-6004e541-20260614190013
+  - button "Open"
+  - button "Fix":
+    - text: Fix
+  - button "Ignore"
+  - button "Snooze 7d"
+  - generic: person_archived_location
+  - paragraph: Person uses archived location
+  - paragraph: Phase 8 Archived Context phase8-6004e541-20260614190013
+  - button "Open"
+  - button "Fix":
+    - text: Fix
+  - button "Ignore"
+  - button "Snooze 7d"
+  - generic: ui_user_unlinked_registry_person
+  - paragraph: UI user is not linked to Registry person
+  - paragraph: phase8-unlinked-phase8-6004e541-20260614190013@live-smoke.test
+  - button "Open" [disabled]
+  - button "Fix":
+    - text: Fix
+  - button "Ignore"
+  - button "Snooze 7d"
+  - generic: audience_group_empty
+  - paragraph: Audience group has no effective members
+  - paragraph: phase8_import_phase8-6004e541-20260614190013
+  - button "Open" [disabled]
+  - button "Fix":
+    - text: Fix
+  - button "Ignore"
+  - button "Snooze 7d"
+  - generic: knowledge_audience_zero_users
+  - paragraph: Knowledge item audience resolves to zero users
+  - paragraph: phase8-zero-users-phase8-6004e541-20260614190013
+  - button "Open" [disabled]
+  - button "Fix":
+    - text: Fix
+  - button "Ignore"
+  - button "Snooze 7d"
+  - paragraph: Suggestions
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: phase8-binding-phase8-6004e541-20260614190013 -> Phase 8 Inactive Binding Person phase8-6004e541-20260614190013
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> Full Live Requester
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> Phase 7 IT Owner p7547a33c2
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: phase7-owner_device_id-p763b96779 -> Phase 7 IT Owner p763b96779
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: phase7-owner_device_id-p755e0a22b -> Phase 7 IT Owner p755e0a22b
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: phase7-owner_device_id-p7cf25b3f5 -> Phase 7 IT Owner p7cf25b3f5
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: phase7-owner_device_id-p7f185bf72 -> Phase 7 IT Owner p7f185bf72
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: phase7-owner_device_id-p7ec746702 -> Phase 7 IT Owner p7ec746702
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> Phase 4 Live User phase4-agent-20260614-4ca9a116
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: rsmoke-phase4-preflight-20260614-ba41cce8-remote-1 -> Registry Smoke Transfer
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: rsmoke-phase4-preflight-20260614-ba41cce8-remote-merge -> Registry Smoke MergeMaster
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> Remote Assist Live ra-approve-live-20260610-181839-d0cd8694
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: codex-stage2b-kb-live -> Codex Stage2B Knowledge Requester
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> requester-user-20260608-093700
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> Live Check Clean Requester
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> P1 Clean User
+  - generic: 95%
+  - paragraph: PC and user link exists
+  - paragraph: ADMIN-2 -> P2 Account B
+  - heading "Registry CSV import" [level=2]
+  - combobox:
+    - option "People"
+    - option "Locations"
+    - option "Departments"
+    - option "Audience groups"
+    - option "Audience group members" [selected]
+    - option "Device inventory mapping"
+  - textbox "Reason for apply"
+  - textbox "Paste CSV with a header row. Bindings import is intentionally not supported here."
+  - button "Cancel"
+  - button "Preview" [disabled]
+  - button "Apply import" [disabled]

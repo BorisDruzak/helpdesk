@@ -1,0 +1,95 @@
+{
+  "base_url": "https://192.168.100.17:9443",
+  "checks": {
+    "export": {
+      "audience_group_members_sample": [
+        "group_code,member_type,member_id,include_children,source,audience_group_id,membership_id,valid_from,valid_to,created_at,updated_at",
+        "phase8_empty_phase8-6004e541-20260614190013,department,903866ac-b025-4de6-90a0-88fa918ebe9e,False,manual,b4c1375a-faee-477b-a3a4-29ce8d8323d8,3515a2d0-d678-42fc-8b76-19cb66e16295,,,2026-06-14T14:00:23.619693+00:00,2026-06-14T14:00:23.619695+00:00"
+      ],
+      "audience_groups_sample": [
+        "audience_group_id,code,name,description,source,status,created_at,updated_at",
+        "f4d2bb88-f973-4a69-9f9d-3b3a9b0535bb,codex_phase3_3fb13ea8,Codex Phase 3 Registry,Browser signoff test audience for Registry Visibility Foundation Phase 3,manual,archived,2026-06-13T16:57:12.448922+00:00,2026-06-13T16:58:16.886971+00:00",
+        "b4c1375a-faee-477b-a3a4-29ce8d8323d8,phase8_empty_phase8-6004e541-20260614190013,'=Phase 8 Formula Group phase8-6004e541-20260614190013,'+Phase 8 Formula Description phase8-6004e541-20260614190013,manual,active,2026-06-14T14:00:23.604817+00:00,2026-06-14T14:00:23.604820+00:00"
+      ],
+      "knowledge_audience_rules_sample": [
+        "rule_id,subject_type,subject_id,subject_slug,subject_title,target_type,target_id,include_children,priority,status,reason,created_at,updated_at",
+        "6c0c6fe4-3d9d-415e-bbf7-126c8263f3cb,item,021f293a-a31b-4704-899f-6d9dfe38452e,phase5-finance-20260614095401,phase5 knowledge audience 20260614095401 Finance scoped,department,822d2c23-267d-4a09-adef-d2fed5d2b5ad,False,100,active,,2026-06-14T09:54:01.703465+00:00,2026-06-14T09:54:01.703466+00:00",
+        "3bff0ae8-4d6a-4958-b02b-bddf7b17a9d3,item,f270cc46-d529-4b7c-9d22-c50a0e34e132,phase8-zero-users-phase8-6004e541-20260614190013,Phase 8 Zero Users phase8-6004e541-20260614190013,department,83511895-44a1-4f99-99ce-e618d3c16372,False,100,active,phase8 registry operability live signoff phase8-6004e541-20260614190013,2026-06-14T14:00:23.623723+00:00,2026-06-14T14:00:23.623725+00:00"
+      ],
+      "status": "passed"
+    },
+    "import_preview_apply": {
+      "audience_group_members": {
+        "operation_id": "fa2fa174-36cb-48c3-ae84-6bfae9d8ff4b",
+        "preview_id": "e824e9b828807bcc732c75d72c704954b64927207a4091a2507fbf2214d3e24f",
+        "summary": {
+          "failed": 0,
+          "success": 1,
+          "warnings": 0
+        }
+      },
+      "audience_groups": {
+        "imported_group_id": "8cd56e92-0b2a-46d5-8843-8d8acba1ab4f",
+        "operation_id": "4478d785-fdec-4ee2-a1df-be98b24ae9fc",
+        "preview_id": "4191a9df4f26e97a17979f005177d06103158bb8369c5939b5aef7fdf28471be",
+        "summary": {
+          "failed": 0,
+          "success": 1,
+          "warnings": 0
+        }
+      },
+      "duplicate_preview_detected": true,
+      "status": "passed"
+    },
+    "quality_before": {
+      "audience_group_warnings": [
+        "unknown_department"
+      ],
+      "expected_issue_keys": {
+        "audience_group_empty": "audience_group_empty:audience_group:b4c1375a-faee-477b-a3a4-29ce8d8323d8",
+        "binding_inactive_person": "binding_inactive_person:binding:d1d3d6be-1f3e-4c5e-8c31-9f7456121c28",
+        "knowledge_audience_rule_invalid_target": "knowledge_audience_rule_invalid_target:knowledge_audience_rule:3bff0ae8-4d6a-4958-b02b-bddf7b17a9d3",
+        "knowledge_audience_zero_users": "knowledge_audience_zero_users:knowledge_item:f270cc46-d529-4b7c-9d22-c50a0e34e132",
+        "person_archived_department": "person_archived_department:person:4ee6cd40-f5be-4c86-bd94-27a29f55c2e0",
+        "person_archived_location": "person_archived_location:person:4ee6cd40-f5be-4c86-bd94-27a29f55c2e0",
+        "ui_user_unlinked_registry_person": "ui_user_unlinked_registry_person:ui_user:phase8-unlinked-phase8-6004e541-20260614190013@live-smoke.test"
+      },
+      "issue_count": 115,
+      "status": "passed"
+    },
+    "quality_override": {
+      "hidden_after_snooze": true,
+      "snoozed_issue_key": "audience_group_empty:audience_group:b4c1375a-faee-477b-a3a4-29ce8d8323d8",
+      "status": "passed"
+    },
+    "timeline_events": {
+      "events": [
+        "registry_import_applied",
+        "registry_import_applied",
+        "quality_issue_snoozed"
+      ],
+      "status": "passed"
+    }
+  },
+  "commit": "6004e541167f08a7c00c0c0a3e68a73d061096a2",
+  "created": {
+    "audience_group_id": "b4c1375a-faee-477b-a3a4-29ce8d8323d8",
+    "binding_id": "d1d3d6be-1f3e-4c5e-8c31-9f7456121c28",
+    "knowledge_item_id": "f270cc46-d529-4b7c-9d22-c50a0e34e132",
+    "knowledge_rule_id": "3bff0ae8-4d6a-4958-b02b-bddf7b17a9d3",
+    "person_id": "4ee6cd40-f5be-4c86-bd94-27a29f55c2e0",
+    "ui_user_login": "phase8-unlinked-phase8-6004e541-20260614190013@live-smoke.test"
+  },
+  "evidence": {
+    "browser_quality_tab": {
+      "note": "Collect with browser workflow after this API/DB signoff run.",
+      "required": true,
+      "status": "not_collected"
+    }
+  },
+  "generated_at": "2026-06-14T14:00:23.331988+00:00",
+  "marker": "phase8 registry operability phase8-6004e541-20260614190013",
+  "phase": "phase8_registry_operability",
+  "run_id": "phase8-6004e541-20260614190013",
+  "status": "passed"
+}

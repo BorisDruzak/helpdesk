@@ -1,0 +1,520 @@
+{
+  "phase": "phase8_registry_operability_browser",
+  "status": "passed",
+  "base_url": "https://192.168.100.17:9443",
+  "url": "https://192.168.100.17:9443/app/admin/registry",
+  "commit": "6004e541167f08a7c00c0c0a3e68a73d061096a2",
+  "run_id": "phase8-6004e541-20260614190013",
+  "filter": "phase8-6004e541-20260614190013",
+  "checks": {
+    "quality_tab_visible": true,
+    "quality_filter_contains_phase8_rows": true,
+    "quality_actions_visible": true,
+    "ui_user_open_disabled": true,
+    "import_audience_groups_option": true,
+    "import_audience_group_members_option": true,
+    "import_direct_bindings_absent": true,
+    "import_audience_group_members_selected": true
+  },
+  "visible_quality_kinds": {
+    "binding_inactive_person": false,
+    "person_archived_department": true,
+    "person_archived_location": true,
+    "ui_user_unlinked_registry_person": true,
+    "knowledge_audience_rule_invalid_target": false,
+    "knowledge_audience_zero_users": true
+  },
+  "screenshot": "C:/Users/admin-2/CodexProjects/pc_client/artifacts/browser_live_validation/phase8-registry-operability-6004e541-20260614-190013/registry-quality-import-filtered.png",
+  "live_api_db_report": "C:/Users/admin-2/CodexProjects/pc_client/artifacts/registry-visibility-foundation-20260614/registry-visibility-phase8-live-signoff-phase8-6004e541-20260614190013.json",
+  "console_warnings_errors": [
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.319Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.320Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    },
+    {
+      "level": "warn",
+      "message": "[webapp-realtime] websocket bridge reported an error",
+      "timestamp": "2026-06-14T14:01:08.321Z",
+      "url": "https://192.168.100.17:9443/assets/client-CnG5BObM.js"
+    }
+  ],
+  "import_selected_screenshot": "C:/Users/admin-2/CodexProjects/pc_client/artifacts/browser_live_validation/phase8-registry-operability-6004e541-20260614-190013/registry-import-audience-members-selected.png",
+  "import_selected_dom": "C:/Users/admin-2/CodexProjects/pc_client/artifacts/browser_live_validation/phase8-registry-operability-6004e541-20260614-190013/registry-import-audience-members-selected.dom.txt",
+  "console_summary": {
+    "errors": 0,
+    "warnings": 80,
+    "warning_messages": [
+      "[webapp-realtime] websocket bridge reported an error"
+    ]
+  }
+}
