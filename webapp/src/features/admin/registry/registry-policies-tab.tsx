@@ -19,24 +19,24 @@ type PolicyEffective = AdminRegistryPolicyPayload["effective"];
 const AUTO_APPROVE_WARNING = "Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.";
 
 const FIELD_LABELS: Record<string, string> = {
-  "registration.require_user_confirmation": "Require user confirmation",
-  "registration.require_admin_confirmation": "Require admin confirmation",
-  "registration.auto_approve_first_binding": "Auto approve first binding",
-  "registration.allow_shared_devices": "Allow shared devices",
-  "registration.allow_responsible_binding": "Allow responsible binding",
-  "registration.max_primary_devices_per_person": "Max primary devices",
-  "registration.stale_after_days": "Stale after days",
+  "registration.require_user_confirmation": "Требовать подтверждение пользователя",
+  "registration.require_admin_confirmation": "Требовать подтверждение администратора",
+  "registration.auto_approve_first_binding": "Автоподтверждать первую привязку",
+  "registration.allow_shared_devices": "Разрешить совместные устройства",
+  "registration.allow_responsible_binding": "Разрешить ответственного",
+  "registration.max_primary_devices_per_person": "Максимум основных устройств",
+  "registration.stale_after_days": "Считать устаревшей через, дней",
   "registration.department_mode": "Режим подразделения",
   "registration.location_mode": "Режим локации",
-  "account_sessions.confirmed_binding_ttl_hours": "Confirmed binding TTL hours",
-  "account_sessions.verified_other_account_ttl_hours": "Other account TTL hours",
-  "account_sessions.registration_pending_ttl_hours": "Pending registration TTL hours",
-  "account_sessions.allow_other_account_login": "Allow other account login",
-  "account_sessions.other_account_requires_reason": "Other account requires reason",
-  "account_sessions.other_account_requires_admin_approval": "Other account requires admin approval",
-  "account_sessions.allow_other_account_on_shared_or_responsible": "Allow on shared/responsible",
-  "ticket_visibility.owner_can_see_historical_tickets": "Owner can see historical tickets",
-  "ticket_visibility.other_account_only_own_session_tickets": "Other account only own session tickets",
+  "account_sessions.confirmed_binding_ttl_hours": "TTL подтвержденной привязки, часов",
+  "account_sessions.verified_other_account_ttl_hours": "TTL другого аккаунта, часов",
+  "account_sessions.registration_pending_ttl_hours": "TTL ожидания регистрации, часов",
+  "account_sessions.allow_other_account_login": "Разрешить вход в другой аккаунт",
+  "account_sessions.other_account_requires_reason": "Причина для другого аккаунта обязательна",
+  "account_sessions.other_account_requires_admin_approval": "Другой аккаунт требует одобрения администратора",
+  "account_sessions.allow_other_account_on_shared_or_responsible": "Разрешить для совместных и ответственных привязок",
+  "ticket_visibility.owner_can_see_historical_tickets": "Владелец видит исторические тикеты",
+  "ticket_visibility.other_account_only_own_session_tickets": "Другой аккаунт видит только свои тикеты",
 };
 
 const REGISTRATION_ENTITY_MODE_LABELS: Record<string, string> = {
@@ -55,9 +55,9 @@ function valueAtPath(source: Record<string, Record<string, unknown>>, path: stri
 }
 
 function formatValue(value: unknown): string {
-  if (value === null) return "null";
-  if (value === true) return "true";
-  if (value === false) return "false";
+  if (value === null) return "не задано";
+  if (value === true) return "включено";
+  if (value === false) return "выключено";
   return String(value ?? "");
 }
 
@@ -172,7 +172,7 @@ export function RegistryPoliciesTab() {
         </div>
       ) : null}
       <div className="grid gap-4 xl:grid-cols-3">
-        <PolicyCard title="Registration">
+        <PolicyCard title="Регистрация">
           <CheckRow defaultValue={query.data.defaults.registration.require_user_confirmation} label={FIELD_LABELS["registration.require_user_confirmation"]} value={draft.registration.require_user_confirmation} onChange={(value) => setRegistration("require_user_confirmation", value)} />
           <CheckRow defaultValue={query.data.defaults.registration.require_admin_confirmation} label={FIELD_LABELS["registration.require_admin_confirmation"]} value={draft.registration.require_admin_confirmation} onChange={(value) => setRegistration("require_admin_confirmation", value)} />
           <CheckRow defaultValue={query.data.defaults.registration.auto_approve_first_binding} label={FIELD_LABELS["registration.auto_approve_first_binding"]} value={draft.registration.auto_approve_first_binding} onChange={(value) => setRegistration("auto_approve_first_binding", value)} warning />
@@ -183,7 +183,7 @@ export function RegistryPoliciesTab() {
           <ModeRow defaultValue={query.data.defaults.registration.department_mode} label={FIELD_LABELS["registration.department_mode"]} rules={validation["registration.department_mode"]} value={draft.registration.department_mode} onChange={(value) => setRegistration("department_mode", value)} />
           <ModeRow defaultValue={query.data.defaults.registration.location_mode} label={FIELD_LABELS["registration.location_mode"]} rules={validation["registration.location_mode"]} value={draft.registration.location_mode} onChange={(value) => setRegistration("location_mode", value)} />
         </PolicyCard>
-        <PolicyCard title="Account Sessions">
+        <PolicyCard title="Аккаунт-сессии">
           <NullableNumberRow defaultValue={query.data.defaults.account_sessions.confirmed_binding_ttl_hours} label={FIELD_LABELS["account_sessions.confirmed_binding_ttl_hours"]} rules={validation["account_sessions.confirmed_binding_ttl_hours"]} value={draft.account_sessions.confirmed_binding_ttl_hours} onChange={(value) => setAccount("confirmed_binding_ttl_hours", value)} />
           <NumberRow defaultValue={query.data.defaults.account_sessions.verified_other_account_ttl_hours} label={FIELD_LABELS["account_sessions.verified_other_account_ttl_hours"]} rules={validation["account_sessions.verified_other_account_ttl_hours"]} value={draft.account_sessions.verified_other_account_ttl_hours} onChange={(value) => setAccount("verified_other_account_ttl_hours", value)} />
           <NumberRow defaultValue={query.data.defaults.account_sessions.registration_pending_ttl_hours} label={FIELD_LABELS["account_sessions.registration_pending_ttl_hours"]} rules={validation["account_sessions.registration_pending_ttl_hours"]} value={draft.account_sessions.registration_pending_ttl_hours} onChange={(value) => setAccount("registration_pending_ttl_hours", value)} />
@@ -192,17 +192,17 @@ export function RegistryPoliciesTab() {
           <CheckRow defaultValue={query.data.defaults.account_sessions.other_account_requires_admin_approval} label={FIELD_LABELS["account_sessions.other_account_requires_admin_approval"]} value={draft.account_sessions.other_account_requires_admin_approval} onChange={(value) => setAccount("other_account_requires_admin_approval", value)} />
           <CheckRow defaultValue={query.data.defaults.account_sessions.allow_other_account_on_shared_or_responsible} label={FIELD_LABELS["account_sessions.allow_other_account_on_shared_or_responsible"]} value={draft.account_sessions.allow_other_account_on_shared_or_responsible} onChange={(value) => setAccount("allow_other_account_on_shared_or_responsible", value)} />
         </PolicyCard>
-        <PolicyCard title="Ticket Visibility">
+        <PolicyCard title="Видимость тикетов">
           <CheckRow defaultValue={query.data.defaults.ticket_visibility.owner_can_see_historical_tickets} label={FIELD_LABELS["ticket_visibility.owner_can_see_historical_tickets"]} value={draft.ticket_visibility.owner_can_see_historical_tickets} onChange={(value) => setTicket("owner_can_see_historical_tickets", value)} />
           <CheckRow defaultValue={query.data.defaults.ticket_visibility.other_account_only_own_session_tickets} label={FIELD_LABELS["ticket_visibility.other_account_only_own_session_tickets"]} value={draft.ticket_visibility.other_account_only_own_session_tickets} onChange={(value) => setTicket("other_account_only_own_session_tickets", value)} />
         </PolicyCard>
       </div>
       <Card>
-        <CardHeader><CardTitle>Effective preview</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Предпросмотр итоговых политик</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge tone={requiresRestart ? "warning" : "success"}>{requiresRestart ? "Requires restart" : "No restart required"}</Badge>
-            {serverPreview?.dry_run ? <Badge tone="neutral">Server dry-run</Badge> : <Badge tone="neutral">Local preview</Badge>}
+            <Badge tone={requiresRestart ? "warning" : "success"}>{requiresRestart ? "Нужен перезапуск" : "Перезапуск не нужен"}</Badge>
+            {serverPreview?.dry_run ? <Badge tone="neutral">Серверная проверка</Badge> : <Badge tone="neutral">Локальный расчет</Badge>}
             {restartFields.length ? <span className="text-slate-600">{restartFields.join(", ")}</span> : null}
           </div>
           {Object.keys(changed).length ? (
@@ -210,13 +210,13 @@ export function RegistryPoliciesTab() {
               {Object.entries(changed).map(([path, change]) => (
                 <div className="rounded-md border border-border px-3 py-2 text-sm" key={path}>
                   <p className="font-semibold text-slate-900">{FIELD_LABELS[path] ?? path}</p>
-                  <p className="mt-1 text-slate-600">default: {formatValue(change.default)}</p>
-                  <p className="text-slate-600">effective: {formatValue(change.effective)}</p>
+                  <p className="mt-1 text-slate-600">по умолчанию: {formatValue(change.default)}</p>
+                  <p className="text-slate-600">текущее: {formatValue(change.effective)}</p>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Текущий draft совпадает с default values.</p>
+            <p className="text-sm text-slate-500">Текущий черновик совпадает со значениями по умолчанию.</p>
           )}
         </CardContent>
       </Card>
@@ -224,9 +224,9 @@ export function RegistryPoliciesTab() {
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
           <Input placeholder="Причина изменения политики" value={reason} onChange={(event) => setReason(event.target.value)} />
           <div className="flex flex-wrap gap-2">
-            <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} variant="outline">Preview</Button>
+            <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} title="Проверить черновик политик на сервере без сохранения" variant="outline">Предпросмотр</Button>
             <Button leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => query.data && setDraft(clonePolicies(query.data.effective))} variant="outline">Отменить</Button>
-            <Button disabled={!reason.trim() || resetMutation.isPending} leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => resetMutation.mutate()} variant="outline">Default values</Button>
+            <Button disabled={!reason.trim() || resetMutation.isPending} leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => resetMutation.mutate()} title="Сбросить политики к значениям по умолчанию; нужна причина" variant="outline">По умолчанию</Button>
             <Button disabled={!reason.trim() || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()}>Сохранить</Button>
           </div>
         </CardContent>
@@ -245,14 +245,14 @@ function PolicyCard({ children, title }: { children: ReactNode; title: string })
 }
 
 function DefaultHint({ value }: { value: unknown }) {
-  return <span className="text-xs font-normal text-slate-500">default: {formatValue(value)}</span>;
+  return <span className="text-xs font-normal text-slate-500">по умолчанию: {formatValue(value)}</span>;
 }
 
 function CheckRow({ defaultValue, label, onChange, value, warning }: { defaultValue: unknown; label: string; value: boolean; onChange: (value: boolean) => void; warning?: boolean }) {
   return (
     <label className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm">
       <span className="flex flex-col gap-1">
-        <span className="flex items-center gap-2">{label}{warning ? <Badge tone="warning">warning</Badge> : null}</span>
+        <span className="flex items-center gap-2">{label}{warning ? <Badge tone="warning">внимание</Badge> : null}</span>
         <DefaultHint value={defaultValue} />
       </span>
       <input checked={value} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
@@ -265,7 +265,7 @@ function NumberRow({ defaultValue, label, onChange, rules, value }: { defaultVal
     <label className="block text-sm font-medium">
       <span className="flex items-center justify-between gap-2"><span>{label}</span><DefaultHint value={defaultValue} /></span>
       <Input className="mt-2" max={rules?.maximum} min={rules?.minimum ?? 1} onChange={(event) => onChange(Number(event.target.value || rules?.minimum || 1))} type="number" value={value} />
-      {rules ? <span className="mt-1 block text-xs font-normal text-slate-500">range: {rules.minimum}...{rules.maximum}</span> : null}
+      {rules ? <span className="mt-1 block text-xs font-normal text-slate-500">диапазон: {rules.minimum}...{rules.maximum}</span> : null}
     </label>
   );
 }
@@ -274,8 +274,8 @@ function NullableNumberRow({ defaultValue, label, onChange, rules, value }: { de
   return (
     <label className="block text-sm font-medium">
       <span className="flex items-center justify-between gap-2"><span>{label}</span><DefaultHint value={defaultValue} /></span>
-      <Input className="mt-2" max={rules?.maximum} min={rules?.minimum} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="null = no expiry" type="number" value={value ?? ""} />
-      {rules ? <span className="mt-1 block text-xs font-normal text-slate-500">range: {rules.minimum}...{rules.maximum}, nullable</span> : null}
+      <Input className="mt-2" max={rules?.maximum} min={rules?.minimum} onChange={(event) => onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="пусто = без срока" type="number" value={value ?? ""} />
+      {rules ? <span className="mt-1 block text-xs font-normal text-slate-500">диапазон: {rules.minimum}...{rules.maximum}, можно оставить пустым</span> : null}
     </label>
   );
 }
@@ -290,7 +290,7 @@ function ModeRow({ defaultValue, label, onChange, rules, value }: { defaultValue
           <option key={mode} value={mode}>{REGISTRATION_ENTITY_MODE_LABELS[mode] ?? mode}</option>
         ))}
       </select>
-      <span className="mt-1 block text-xs font-normal text-slate-500">required_existing запрещает свободный текст и принимает только справочник.</span>
+      <span className="mt-1 block text-xs font-normal text-slate-500">Режим «только существующие значения» запрещает свободный текст и принимает только записи справочника.</span>
     </label>
   );
 }

@@ -3,7 +3,7 @@ import { Edit3, Fingerprint, GitMerge, Link2, UserCheck, UserRoundPlus } from "l
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import type { AdminRegistryPayload } from "../api";
-import { formatDateTime, statusTone, type RegistrySelection } from "./registry-utils";
+import { formatDateTime, registryStatusLabel, statusTone, type RegistrySelection } from "./registry-utils";
 
 type PersonRow = AdminRegistryPayload["people"][number];
 
@@ -42,15 +42,15 @@ export function RegistryPeopleTab({
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <div className={`${peopleGridClass} bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500`}>
-        <input aria-label="Select visible people" checked={allVisibleSelected} disabled={!visibleIds.length} onChange={() => onToggleVisibleSelection(visibleIds)} type="checkbox" />
-        <span>ФИО</span><span>Display</span><span>Login</span><span>UI account</span><span>Email</span><span>Phone</span><span>Department</span><span>Location</span><span>Status</span><span>Primary</span><span>Shared</span><span>Tickets</span><span>Sessions</span><span>Last seen</span><span>Actions</span>
+        <input aria-label="Выбрать всех видимых пользователей" checked={allVisibleSelected} disabled={!visibleIds.length} onChange={() => onToggleVisibleSelection(visibleIds)} title="Выбрать или снять выбор со всех людей в текущем фильтре" type="checkbox" />
+        <span>ФИО</span><span>Отображаемое имя</span><span>Логин</span><span>UI-аккаунт</span><span>Почта</span><span>Телефон</span><span>Подразделение</span><span>Локация</span><span>Статус</span><span>Основные ПК</span><span>Совместные ПК</span><span>Тикеты</span><span>Сессии</span><span>Последняя активность</span><span>Действия</span>
       </div>
       {people.length ? people.map((person) => {
         const linkedUiUsers = uiUsers.filter((user) => user.linked_person_id === person.person_id);
         return (
           <div className={`${peopleGridClass} border-t border-border px-4 py-3 text-sm`} key={person.person_id}>
             <input
-              aria-label={`Select person ${person.display_name ?? person.full_name ?? person.person_id}`}
+              aria-label={`Выбрать пользователя ${person.display_name ?? person.full_name ?? person.person_id}`}
               checked={selectedIds.includes(person.person_id)}
               onChange={() => onToggleSelection(person.person_id)}
               type="checkbox"
@@ -58,24 +58,24 @@ export function RegistryPeopleTab({
             <button className="text-left font-semibold text-slate-950" onClick={() => onSelect({ kind: "person", id: person.person_id })} type="button">{person.full_name ?? person.display_name}</button>
             <span className="text-slate-700">{person.display_name}</span>
             <span className="text-slate-700">{person.login ?? "Нет"}</span>
-            <span className="break-all text-slate-700">{linkedUiUsers.length ? linkedUiUsers.map((user) => user.user_login).join(", ") : "None"}</span>
+            <span className="break-all text-slate-700">{linkedUiUsers.length ? linkedUiUsers.map((user) => user.user_login).join(", ") : "Нет"}</span>
             <span className="break-all text-slate-700">{person.email ?? "Нет"}</span>
             <span className="text-slate-700">{person.phone ?? "Нет"}</span>
             <span className="text-slate-700">{person.department_name ?? "Нет"}</span>
             <span className="text-slate-700">{person.location_name ?? "Нет"}</span>
-            <Badge tone={statusTone(person.status)}>{person.status}</Badge>
+            <Badge tone={statusTone(person.status)}>{registryStatusLabel(person.status)}</Badge>
             <span>{person.primary_device_count ?? 0}</span>
             <span>{person.shared_device_count ?? 0}</span>
             <span>{person.active_ticket_count ?? 0}</span>
             <span>{person.active_session_count ?? 0}</span>
             <span>{formatDateTime(person.last_seen_at)}</span>
             <div className="flex flex-wrap gap-2">
-              <Button leadingIcon={<UserCheck className="h-4 w-4" />} onClick={() => onSelect({ kind: "person", id: person.person_id })} size="sm" variant="outline">Карточка</Button>
-              <Button leadingIcon={<Edit3 className="h-4 w-4" />} onClick={() => onEdit(person)} size="sm" variant="ghost">Edit</Button>
-              <Button leadingIcon={<Fingerprint className="h-4 w-4" />} onClick={() => onAddIdentity(person)} size="sm" variant="ghost">Identity</Button>
-              <Button leadingIcon={<UserRoundPlus className="h-4 w-4" />} onClick={() => onLinkUiUser(person)} size="sm" variant="ghost">UI login</Button>
-              <Button leadingIcon={<GitMerge className="h-4 w-4" />} onClick={() => onMerge(person)} size="sm" variant="ghost">Merge</Button>
-              <Button leadingIcon={<Link2 className="h-4 w-4" />} onClick={() => onBindToDevice(person)} size="sm" variant="ghost">К устройству</Button>
+              <Button leadingIcon={<UserCheck className="h-4 w-4" />} onClick={() => onSelect({ kind: "person", id: person.person_id })} size="sm" title="Открыть карточку пользователя и историю изменений" variant="outline">Карточка</Button>
+              <Button leadingIcon={<Edit3 className="h-4 w-4" />} onClick={() => onEdit(person)} size="sm" title="Изменить ФИО, контакты и статус пользователя" variant="ghost">Править</Button>
+              <Button leadingIcon={<Fingerprint className="h-4 w-4" />} onClick={() => onAddIdentity(person)} size="sm" title="Добавить идентичность: Windows-логин, UI-аккаунт, почту или телефон" variant="ghost">Идентичность</Button>
+              <Button leadingIcon={<UserRoundPlus className="h-4 w-4" />} onClick={() => onLinkUiUser(person)} size="sm" title="Связать UI-аккаунт входа с этой карточкой человека" variant="ghost">UI-аккаунт</Button>
+              <Button leadingIcon={<GitMerge className="h-4 w-4" />} onClick={() => onMerge(person)} size="sm" title="Объединить дубль пользователя через предпросмотр" variant="ghost">Слияние</Button>
+              <Button leadingIcon={<Link2 className="h-4 w-4" />} onClick={() => onBindToDevice(person)} size="sm" title="Назначить пользователя основным владельцем устройства" variant="ghost">К устройству</Button>
             </div>
           </div>
         );

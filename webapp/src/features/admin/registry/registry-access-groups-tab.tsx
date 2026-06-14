@@ -23,13 +23,13 @@ function AccessGroupCard({ group }: { group: AccessGroupItem }) {
           <h3 className="font-semibold text-slate-950">{group.name}</h3>
           <p className="mt-1 font-mono text-xs text-slate-500">{group.code}</p>
         </div>
-        <Badge tone={group.is_active ? "success" : "neutral"}>{group.is_active ? "active" : "disabled"}</Badge>
+        <Badge tone={group.is_active ? "success" : "neutral"}>{group.is_active ? "Активна" : "Отключена"}</Badge>
       </div>
       {group.description ? <p className="mt-3 text-sm text-slate-600">{group.description}</p> : null}
       <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
-        <span className="rounded-pill bg-slate-100 px-3 py-1">{group.permissions.length} permissions</span>
-        <span className="rounded-pill bg-slate-100 px-3 py-1">{group.members.length} members</span>
-        <span className="rounded-pill bg-slate-100 px-3 py-1">{group.queue_grants.length} queues</span>
+        <span className="rounded-pill bg-slate-100 px-3 py-1">Права: {group.permissions.length}</span>
+        <span className="rounded-pill bg-slate-100 px-3 py-1">Участники: {group.members.length}</span>
+        <span className="rounded-pill bg-slate-100 px-3 py-1">Очереди: {group.queue_grants.length}</span>
       </div>
     </article>
   );
@@ -54,11 +54,12 @@ export function RegistryAccessGroupsTab() {
             <div>
               <CardTitle>Группы доступа</CardTitle>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">
-                Registry показывает RBAC-группы как контекст effective identity и аудитории. Редактирование permissions, members и queue grants остаётся в каноническом Access Control.
+                Реестр показывает RBAC-группы как контекст эффективной идентичности и аудиторий. Права, участники и доступ к очередям редактируются в каноническом разделе контроля доступа.
               </p>
             </div>
             <Link
               className="inline-flex h-9 items-center justify-center gap-2 rounded-pill border border-border bg-white px-3 text-sm font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+              title="Открыть раздел, где редактируются RBAC-группы, права и очереди"
               to="/app/admin/access"
             >
               <ExternalLink className="h-4 w-4" />
@@ -67,7 +68,7 @@ export function RegistryAccessGroupsTab() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {summaryQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем сводку RBAC...</p> : null}
+          {summaryQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем сводку групп доступа...</p> : null}
           {summaryQuery.isError ? (
             <p className="text-sm text-rose-600">
               {summaryQuery.error instanceof Error ? summaryQuery.error.message : "Не удалось загрузить группы доступа."}
@@ -78,14 +79,14 @@ export function RegistryAccessGroupsTab() {
               <div className="grid gap-3 md:grid-cols-4">
                 <AccessMetric label="Всего групп" value={accessGroups.length} />
                 <AccessMetric label="Активные" value={activeGroups} />
-                <AccessMetric label="UI users" value={summary.users.length} />
+                <AccessMetric label="UI-пользователи" value={summary.users.length} />
                 <AccessMetric label="Очереди" value={summary.queues.length} />
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 <div className="flex items-start gap-2">
                   <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
                   <p>
-                    Access groups grant permissions and queue access. Audience groups may use them as targeting facts, but must not grant RBAC permissions.
+                    Группы доступа выдают права и доступ к очередям. Аудитории могут использовать их как факты таргетинга, но не должны выдавать RBAC-права.
                   </p>
                 </div>
               </div>

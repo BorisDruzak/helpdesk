@@ -57,13 +57,16 @@ export function RegistryTransferDeviceDialog({ busy, onClose, onPreview, onSubmi
             </select>
           </label>
           <label className="block text-sm font-medium text-slate-700">
-            Что сделать со старой primary-привязкой
+            Что сделать со старой основной привязкой
             <select className="field-base mt-2 h-11 w-full px-3 text-sm" onChange={(event) => { setOldBindingAction(event.target.value as typeof oldBindingAction); setPreview(null); }} value={oldBindingAction}>
-              <option value="transferred">Пометить как transferred</option>
+              <option value="transferred">Пометить как переданную</option>
               <option value="revoked">Отозвать</option>
-              <option value="keep_as_shared">Оставить как shared</option>
+              <option value="keep_as_shared">Оставить как совместного пользователя</option>
             </select>
           </label>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-600">
+            Сначала постройте предпросмотр: он покажет, какие привязки и сессии изменятся после передачи устройства.
+          </p>
           <label className="block text-sm font-medium text-slate-700">
             Причина
             <Input className="mt-2" onChange={(event) => setReason(event.target.value)} value={reason} />

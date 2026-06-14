@@ -56,6 +56,201 @@ export function statusTone(value: string | null | undefined): "brand" | "danger"
   return "neutral";
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  active: "Активно",
+  admin_confirmed: "Подтверждено администратором",
+  approved: "Одобрено",
+  conflict: "Конфликт",
+  disabled: "Отключено",
+  expired: "Истекло",
+  inactive: "Неактивно",
+  pending: "Ожидает",
+  pending_admin_review: "На проверке администратора",
+  pending_user_confirmation: "Ждет подтверждения пользователя",
+  pending_verification: "Ждет проверки",
+  rejected: "Отклонено",
+  revoked: "Отозвано",
+  self_reported: "Заявлено пользователем",
+  stale: "Устарело",
+  superseded: "Заменено",
+  transferred: "Передано",
+  unregistered: "Не зарегистрировано",
+  user_confirmed: "Подтверждено пользователем",
+  verified: "Проверено",
+};
+
+const RELATIONSHIP_LABELS: Record<string, string> = {
+  primary_user: "Основной пользователь",
+  shared_user: "Совместный пользователь",
+  responsible: "Ответственный",
+  temporary_user: "Временный пользователь",
+};
+
+const ACCOUNT_MODE_LABELS: Record<string, string> = {
+  confirmed_binding: "Подтвержденная привязка",
+  other_account: "Другой аккаунт",
+  registration_pending: "Ожидание регистрации",
+  verified_other_account: "Проверенный другой аккаунт",
+};
+
+const VERIFICATION_METHOD_LABELS: Record<string, string> = {
+  admin: "Администратор",
+  admin_review: "Проверка администратором",
+  agent_profile: "Профиль агента",
+  confirmed_binding: "Подтвержденная привязка",
+  registration_claim: "Заявка регистрации",
+  user_confirmed: "Подтверждение пользователя",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  account: "Аккаунт",
+  ad: "Active Directory",
+  admin: "Администратор",
+  agent: "Агент",
+  email: "Email",
+  import: "Импорт",
+  manual: "Вручную",
+  phone: "Телефон",
+  registry_admin: "Администратор реестра",
+  registration: "Регистрация",
+  registration_claim: "Заявка регистрации",
+  sync: "Синхронизация",
+  ui_login: "UI-аккаунт",
+  windows_login: "Windows-логин",
+};
+
+const ACTOR_ROLE_LABELS: Record<string, string> = {
+  admin: "Администратор",
+  agent: "Агент",
+  auditor: "Аудитор",
+  support: "Поддержка",
+  system: "Система",
+  user: "Пользователь",
+};
+
+export function registryStatusLabel(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Не указано";
+  }
+  return STATUS_LABELS[normalized] ?? normalized.replaceAll("_", " ");
+}
+
+export function relationshipTypeLabel(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Не указано";
+  }
+  return RELATIONSHIP_LABELS[normalized] ?? normalized.replaceAll("_", " ");
+}
+
+export function accountModeLabel(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Не указано";
+  }
+  return ACCOUNT_MODE_LABELS[normalized] ?? normalized.replaceAll("_", " ");
+}
+
+export function verificationMethodLabel(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Не указано";
+  }
+  return VERIFICATION_METHOD_LABELS[normalized] ?? normalized.replaceAll("_", " ");
+}
+
+export function registrySourceLabel(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Не указано";
+  }
+  return SOURCE_LABELS[normalized] ?? normalized.replaceAll("_", " ");
+}
+
+export function actorRoleLabel(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) {
+    return "Не указано";
+  }
+  return ACTOR_ROLE_LABELS[normalized] ?? normalized.replaceAll("_", " ");
+}
+
+const QUALITY_ISSUE_LABELS: Record<string, string> = {
+  asset_missing_location: "ПК без локации",
+  asset_missing_confirmed_user: "ПК без подтвержденного пользователя",
+  registration_pending_confirmation: "Регистрация ожидает подтверждения",
+  registration_conflict: "Конфликт регистрации",
+  binding_stale: "Привязка регистрации устарела",
+  binding_inactive_person: "Активная привязка ведет к неактивному пользователю",
+  presence_user_mismatch: "Пользователь ОС отличается от активной привязки",
+  location_pending_confirmation: "Локация ожидает подтверждения",
+  person_archived_department: "Пользователь привязан к архивному подразделению",
+  person_archived_location: "Пользователь привязан к архивной локации",
+  ui_user_unlinked_registry_person: "UI-пользователь не связан с персоной реестра",
+  missing_identity: "У персоны нет идентификатора",
+  duplicate_person: "Возможные дубликаты персон",
+  audience_group_empty: "Аудиторная группа без участников",
+  knowledge_audience_rule_invalid_target: "Правило видимости Knowledge с недействительной целью",
+  knowledge_audience_zero_users: "Статья Knowledge доступна нулю пользователей",
+};
+
+const QUALITY_SUGGESTION_LABELS: Record<string, string> = {
+  hostname_person_link: "Найдена связь ПК и пользователя",
+};
+
+function issueObjectLabel(issue: AdminRegistryPayload["data_quality"][number]): string {
+  const extra = issue as Record<string, unknown>;
+  const details = typeof extra.details === "string" ? extra.details : undefined;
+  const value = issue.description ?? details ?? issue.device_id ?? issue.person_id ?? issue.binding_id ?? issue.claim_id ?? issue.object_id;
+  if (!value) {
+    return "Связанный объект не указан";
+  }
+  if (issue.device_id) {
+    return `Устройство: ${value}`;
+  }
+  if (issue.person_id) {
+    return `Пользователь: ${value}`;
+  }
+  if (issue.binding_id) {
+    return `Привязка: ${value}`;
+  }
+  if (issue.claim_id) {
+    return `Заявка: ${value}`;
+  }
+  if (issue.object_type === "ui_user") {
+    return `UI-аккаунт: ${value}`;
+  }
+  if (issue.object_type === "audience_group") {
+    return `Аудиторная группа: ${value}`;
+  }
+  if (issue.object_type === "knowledge_audience_rule") {
+    return `Правило: ${value}`;
+  }
+  if (issue.object_type === "knowledge_item") {
+    return `Материал: ${value}`;
+  }
+  return String(value);
+}
+
+export function qualityIssueTitle(issue: AdminRegistryPayload["data_quality"][number]): string {
+  return QUALITY_ISSUE_LABELS[String(issue.kind ?? "").trim()] ?? issue.kind.replaceAll("_", " ");
+}
+
+export function qualityIssueDescription(issue: AdminRegistryPayload["data_quality"][number]): string {
+  return issueObjectLabel(issue);
+}
+
+export function qualitySuggestionTitle(suggestion: AdminRegistryPayload["suggestions"][number]): string {
+  return QUALITY_SUGGESTION_LABELS[String(suggestion.kind ?? "").trim()] ?? suggestion.kind.replaceAll("_", " ");
+}
+
+export function qualitySuggestionDescription(suggestion: AdminRegistryPayload["suggestions"][number]): string {
+  const extra = suggestion as Record<string, unknown>;
+  const details = typeof extra.details === "string" ? extra.details : undefined;
+  return String(suggestion.description ?? details ?? suggestion.object_id ?? "Связанный объект не указан");
+}
+
 export function filterRegistryPayload(value: AdminRegistryPayload, query: string): AdminRegistryPayload {
   const normalized = query.trim().toLowerCase();
   if (!normalized) {

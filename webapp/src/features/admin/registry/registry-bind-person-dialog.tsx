@@ -48,9 +48,12 @@ export function RegistryBindPersonDialog({ busy, onClose, onSubmit, people, stat
         </CardHeader>
         <CardContent className="space-y-4">
           <label className="block text-sm font-medium text-slate-700">
-            Device ID
+            ID устройства
             <Input className="mt-2" disabled={Boolean(state.deviceId)} onChange={(event) => setDeviceId(event.target.value)} value={deviceId} />
           </label>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-600">
+            Для основного пользователя и ответственного можно заменить текущую активную привязку этого типа. Каждое изменение сохраняется в аудите с причиной.
+          </p>
           <label className="block text-sm font-medium text-slate-700">
             Пользователь
             <select

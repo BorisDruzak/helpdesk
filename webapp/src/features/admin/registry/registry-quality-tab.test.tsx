@@ -33,16 +33,16 @@ describe("RegistryQualityTab", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    fireEvent.click(screen.getByRole("button", { name: "Открыть" }));
     expect(onSelect).toHaveBeenCalledWith({ kind: "binding", id: "binding-1" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Fix" }));
+    fireEvent.click(screen.getByRole("button", { name: "Исправить" }));
     expect(onFix).toHaveBeenCalledWith(issue);
 
-    fireEvent.click(screen.getByRole("button", { name: "Ignore" }));
+    fireEvent.click(screen.getByRole("button", { name: "Игнорировать" }));
     expect(onIgnore).toHaveBeenCalledWith(issue);
 
-    fireEvent.click(screen.getByRole("button", { name: "Snooze 7d" }));
+    fireEvent.click(screen.getByRole("button", { name: "Отложить на 7 дней" }));
     expect(onSnooze).toHaveBeenCalledWith(issue, 7);
   });
 
@@ -72,8 +72,8 @@ describe("RegistryQualityTab", () => {
       />
     );
 
-    expect(screen.getByRole("button", { name: "Open" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Fix" }));
+    expect(screen.getByRole("button", { name: "Открыть" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Исправить" }));
 
     expect(onFix).toHaveBeenCalledWith(issue);
     expect(onSelect).not.toHaveBeenCalled();

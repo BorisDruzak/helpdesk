@@ -4,6 +4,22 @@ type Props = {
   preview: AdminRegistryOperationPreview | null;
 };
 
+const COUNT_LABELS: Record<string, string> = {
+  changes: "изменений",
+  failed: "ошибок",
+  requested: "запрошено",
+  successful: "успешно",
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  archive: "архивировать",
+  create: "создать",
+  delete: "удалить",
+  merge: "объединить",
+  revoke: "отозвать",
+  update: "обновить",
+};
+
 export function RegistryOperationPreview({ preview }: Props) {
   if (!preview) {
     return null;
@@ -18,7 +34,7 @@ export function RegistryOperationPreview({ preview }: Props) {
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           {counts.map(([key, value]) => (
             <div className="rounded-md bg-white/70 px-2 py-1" key={key}>
-              <span className="text-xs uppercase text-amber-700">{key}</span>
+              <span className="text-xs uppercase text-amber-700">{COUNT_LABELS[key] ?? key}</span>
               <span className="ml-2 font-semibold">{value}</span>
             </div>
           ))}
@@ -30,14 +46,14 @@ export function RegistryOperationPreview({ preview }: Props) {
             <li className="rounded-md bg-white/70 px-2 py-1" key={`${change.kind}-${change.action}-${change.object_id ?? index}`}>
               <span className="font-medium">{change.kind}</span>
               <span className="mx-1 text-amber-700">·</span>
-              <span>{change.action}</span>
+              <span>{ACTION_LABELS[change.action] ?? change.action}</span>
               {change.object_id ? <span className="ml-1 text-amber-700">{change.object_id}</span> : null}
             </li>
           ))}
           {changes.length > 12 ? <li className="px-2 text-xs text-amber-700">Еще изменений: {changes.length - 12}</li> : null}
         </ul>
       ) : null}
-      {warnings.length ? <p className="mt-2 text-xs text-amber-800">Warnings: {warnings.join(", ")}</p> : null}
+      {warnings.length ? <p className="mt-2 text-xs text-amber-800">Предупреждения: {warnings.join(", ")}</p> : null}
     </div>
   );
 }

@@ -62,7 +62,7 @@ export function RegistryLinkUiUserDialog({ busy, onClose, onSubmit, state, uiUse
             <Input
               className="mt-2"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="login, email или роль"
+              placeholder="логин, почта или роль"
               value={query}
             />
           </label>

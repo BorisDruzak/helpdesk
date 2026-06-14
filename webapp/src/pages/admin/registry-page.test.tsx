@@ -449,7 +449,7 @@ describe("AdminRegistryPage", () => {
     renderRegistry();
 
     fireEvent.click(await screen.findByRole("button", { name: "Устройства" }));
-    fireEvent.click(await screen.findByLabelText("Select device PC-01"));
+    fireEvent.click(await screen.findByLabelText("Выбрать устройство PC-01"));
     fireEvent.click(screen.getByRole("button", { name: "Назначить подразделение" }));
 
     expect(screen.getByRole("heading", { name: "Массовая операция" })).toBeInTheDocument();
@@ -498,9 +498,9 @@ describe("AdminRegistryPage", () => {
 
     expect(await screen.findByText("Support L1")).toBeInTheDocument();
     expect(screen.getByText("Первая линия поддержки")).toBeInTheDocument();
-    expect(screen.getByText("1 permissions")).toBeInTheDocument();
-    expect(screen.getByText("1 members")).toBeInTheDocument();
-    expect(screen.getByText("1 queues")).toBeInTheDocument();
+    expect(screen.getByText("Права: 1")).toBeInTheDocument();
+    expect(screen.getByText("Участники: 1")).toBeInTheDocument();
+    expect(screen.getByText("Очереди: 1")).toBeInTheDocument();
     expect(screen.getByText("Тестовая сводка RBAC")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Открыть RBAC-редактор" })).toHaveAttribute("href", "/app/admin/access");
     expect(fetchMock).not.toHaveBeenCalledWith(
@@ -516,12 +516,12 @@ describe("AdminRegistryPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Заявки" }));
 
     expect(await screen.findByText("Дифф подтверждения")).toBeInTheDocument();
-    expect(screen.getByText("Текущая привязка: Иван Петров · primary_user")).toBeInTheDocument();
+    expect(screen.getByText("Текущая привязка: Иван Петров · Основной пользователь")).toBeInTheDocument();
     expect(screen.getByText("Заявлено: Анна Смирнова")).toBeInTheDocument();
     expect(screen.getByText("Подразделение: ИТ")).toBeInTheDocument();
     expect(screen.getByText("Локация: Кабинет 101")).toBeInTheDocument();
     expect(screen.getByText("Идентичность: anna@example.test / anna")).toBeInTheDocument();
-    expect(screen.getByText("Тип привязки: primary_user")).toBeInTheDocument();
+    expect(screen.getByText("Тип привязки: Основной пользователь")).toBeInTheDocument();
     expect(screen.getByText("Блокер: active_primary_user_exists")).toBeInTheDocument();
   });
 
@@ -542,8 +542,8 @@ describe("AdminRegistryPage", () => {
     expect(screen.getAllByText("Режим подразделения").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Режим локации").length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
-    expect(await screen.findByText("Server dry-run")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Предпросмотр" }));
+    expect(await screen.findByText("Серверная проверка")).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("Причина изменения политики"), {
       target: { value: "Ужесточаем регистрацию по справочникам" },

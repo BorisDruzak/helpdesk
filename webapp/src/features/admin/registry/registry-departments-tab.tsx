@@ -6,7 +6,7 @@ import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import type { AdminRegistryOperationPreview, AdminRegistryPayload } from "../api";
-import { formatDateTime, statusTone } from "./registry-utils";
+import { formatDateTime, registryStatusLabel, statusTone } from "./registry-utils";
 import { RegistryOperationPreview } from "./registry-operation-preview";
 
 type DepartmentRow = AdminRegistryPayload["departments"][number];
@@ -43,7 +43,7 @@ export function RegistryDepartmentsTab({ departments, onArchive, onMerge, onMerg
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
         <div className="grid min-w-[1020px] grid-cols-[110px_220px_160px_150px_100px_100px_120px_160px_180px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
-          <span>Code</span><span>Name</span><span>Manager</span><span>Queue</span><span>Users</span><span>Devices</span><span>Status</span><span>Updated</span><span>Actions</span>
+          <span>Код</span><span>Название</span><span>Руководитель</span><span>Очередь</span><span>Люди</span><span>Устройства</span><span>Статус</span><span>Обновлено</span><span>Действия</span>
         </div>
         {departments.length ? departments.map((department) => (
           <div className="grid min-w-[1020px] grid-cols-[110px_220px_160px_150px_100px_100px_120px_160px_180px] gap-3 border-t border-border px-4 py-3 text-sm" key={department.id}>
@@ -53,11 +53,11 @@ export function RegistryDepartmentsTab({ departments, onArchive, onMerge, onMerg
             <span>{department.support_queue ?? "Нет"}</span>
             <span>{department.users_count ?? 0}</span>
             <span>{department.devices_count ?? 0}</span>
-            <Badge tone={statusTone(department.status)}>{department.status}</Badge>
+            <Badge tone={statusTone(department.status)}>{registryStatusLabel(department.status)}</Badge>
             <span>{formatDateTime(department.updated_at)}</span>
             <div className="flex flex-wrap gap-2">
-              <Button leadingIcon={<Edit3 className="h-4 w-4" />} onClick={() => setEditing(department)} size="sm" variant="outline">Edit</Button>
-              <Button leadingIcon={<Archive className="h-4 w-4" />} onClick={() => onArchive(department)} size="sm" variant="ghost">Archive</Button>
+              <Button leadingIcon={<Edit3 className="h-4 w-4" />} onClick={() => setEditing(department)} size="sm" title="Изменить параметры подразделения" variant="outline">Править</Button>
+              <Button leadingIcon={<Archive className="h-4 w-4" />} onClick={() => onArchive(department)} size="sm" title="Архивировать подразделение с обязательной причиной" variant="ghost">Архив</Button>
             </div>
           </div>
         )) : <p className="border-t border-border px-4 py-6 text-sm text-slate-500">Подразделения не найдены.</p>}
@@ -97,16 +97,16 @@ function DepartmentDialog({ department, onClose, onSave, open }: {
         <CardHeader><CardTitle>{department ? "Редактировать подразделение" : "Создать подразделение"}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-medium">Code<Input className="mt-2" value={code} onChange={(event) => setCode(event.target.value)} /></label>
-            <label className="block text-sm font-medium">Name<Input className="mt-2" value={name} onChange={(event) => setName(event.target.value)} /></label>
+            <label className="block text-sm font-medium">Код<Input className="mt-2" value={code} onChange={(event) => setCode(event.target.value)} /></label>
+            <label className="block text-sm font-medium">Название<Input className="mt-2" value={name} onChange={(event) => setName(event.target.value)} /></label>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm font-medium">Manager person ID<Input className="mt-2" value={manager} onChange={(event) => setManager(event.target.value)} /></label>
-            <label className="block text-sm font-medium">Support queue<Input className="mt-2" value={queue} onChange={(event) => setQueue(event.target.value)} /></label>
+            <label className="block text-sm font-medium">ID руководителя<Input className="mt-2" value={manager} onChange={(event) => setManager(event.target.value)} /></label>
+            <label className="block text-sm font-medium">Очередь поддержки<Input className="mt-2" value={queue} onChange={(event) => setQueue(event.target.value)} /></label>
           </div>
-          <label className="block text-sm font-medium">Status<Input className="mt-2" value={status} onChange={(event) => setStatus(event.target.value)} /></label>
-          <label className="block text-sm font-medium">Notes<Input className="mt-2" value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
-          <label className="block text-sm font-medium">Reason<Input className="mt-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
+          <label className="block text-sm font-medium">Статус<Input className="mt-2" value={status} onChange={(event) => setStatus(event.target.value)} /></label>
+          <label className="block text-sm font-medium">Заметки<Input className="mt-2" value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
+          <label className="block text-sm font-medium">Причина<Input className="mt-2" value={reason} onChange={(event) => setReason(event.target.value)} /></label>
           <div className="flex justify-end gap-2">
             <Button onClick={onClose} variant="ghost">Отмена</Button>
             <Button disabled={!name.trim() || !reason.trim()} onClick={() => onSave({ departmentId: department?.department_id ?? department?.id, code, name, manager_person_id: manager, support_queue: queue, status, notes, reason })}>Сохранить</Button>
@@ -145,11 +145,11 @@ function DepartmentMergeDialog({ departments, onClose, onMerge, onPreview, open 
         <CardHeader><CardTitle>Объединить подразделения</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <select className="field-base h-11 w-full px-3" value={masterId} onChange={(event) => { setMasterId(event.target.value); setPreview(null); }}>
-            <option value="">Master</option>
+            <option value="">Основная запись</option>
             {departments.map((item) => <option key={item.id} value={item.department_id ?? item.id}>{item.code ? `${item.code} - ${item.name}` : item.name}</option>)}
           </select>
           <select className="field-base h-11 w-full px-3" value={duplicateId} onChange={(event) => { setDuplicateId(event.target.value); setPreview(null); }}>
-            <option value="">Duplicate</option>
+            <option value="">Дубликат</option>
             {departments.map((item) => <option key={item.id} value={item.department_id ?? item.id}>{item.code ? `${item.code} - ${item.name}` : item.name}</option>)}
           </select>
           <Input placeholder="Причина" value={reason} onChange={(event) => setReason(event.target.value)} />

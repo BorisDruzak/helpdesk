@@ -5,7 +5,7 @@ import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import type { AdminRegistryOperationPreview, AdminRegistryPayload } from "../api";
-import { formatDateTime, statusTone } from "./registry-utils";
+import { formatDateTime, registryStatusLabel, statusTone } from "./registry-utils";
 import { Badge } from "../../../components/ui/badge";
 import { RegistryOperationPreview } from "./registry-operation-preview";
 
@@ -44,7 +44,7 @@ export function RegistryLocationsTab({ locations, onArchive, onMerge, onMergePre
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
         <div className="grid min-w-[980px] grid-cols-[220px_140px_90px_120px_100px_100px_120px_160px_180px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
-          <span>Название</span><span>Здание</span><span>Этаж</span><span>Кабинет</span><span>Users</span><span>Devices</span><span>Status</span><span>Updated</span><span>Actions</span>
+          <span>Название</span><span>Здание</span><span>Этаж</span><span>Кабинет</span><span>Люди</span><span>Устройства</span><span>Статус</span><span>Обновлено</span><span>Действия</span>
         </div>
         {locations.length ? locations.map((location) => (
           <div className="grid min-w-[980px] grid-cols-[220px_140px_90px_120px_100px_100px_120px_160px_180px] gap-3 border-t border-border px-4 py-3 text-sm" key={location.id}>
@@ -54,11 +54,11 @@ export function RegistryLocationsTab({ locations, onArchive, onMerge, onMergePre
             <span>{location.room ?? "Нет"}</span>
             <span>{location.users_count ?? 0}</span>
             <span>{location.devices_count ?? 0}</span>
-            <Badge tone={statusTone(location.status)}>{location.status}</Badge>
+            <Badge tone={statusTone(location.status)}>{registryStatusLabel(location.status)}</Badge>
             <span>{formatDateTime(location.updated_at)}</span>
             <div className="flex flex-wrap gap-2">
-              <Button leadingIcon={<Edit3 className="h-4 w-4" />} onClick={() => setEditing(location)} size="sm" variant="outline">Edit</Button>
-              <Button leadingIcon={<Archive className="h-4 w-4" />} onClick={() => onArchive(location)} size="sm" variant="ghost">Archive</Button>
+              <Button leadingIcon={<Edit3 className="h-4 w-4" />} onClick={() => setEditing(location)} size="sm" title="Изменить параметры локации" variant="outline">Править</Button>
+              <Button leadingIcon={<Archive className="h-4 w-4" />} onClick={() => onArchive(location)} size="sm" title="Архивировать локацию с обязательной причиной" variant="ghost">Архив</Button>
             </div>
           </div>
         )) : (
@@ -148,11 +148,11 @@ function LocationMergeDialog({ locations, onClose, onMerge, onPreview, open }: {
         <CardHeader><CardTitle>Объединить локации</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <select className="field-base h-11 w-full px-3" value={masterId} onChange={(event) => { setMasterId(event.target.value); setPreview(null); }}>
-            <option value="">Master</option>
+            <option value="">Основная запись</option>
             {locations.map((item) => <option key={item.id} value={item.location_id ?? item.id}>{item.display_name}</option>)}
           </select>
           <select className="field-base h-11 w-full px-3" value={duplicateId} onChange={(event) => { setDuplicateId(event.target.value); setPreview(null); }}>
-            <option value="">Duplicate</option>
+            <option value="">Дубликат</option>
             {locations.map((item) => <option key={item.id} value={item.location_id ?? item.id}>{item.display_name}</option>)}
           </select>
           <Input placeholder="Причина" value={reason} onChange={(event) => setReason(event.target.value)} />

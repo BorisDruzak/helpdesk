@@ -86,19 +86,19 @@ import { RegistryTransferDeviceDialog } from "../../features/admin/registry/regi
 import { filterRegistryPayload, type RegistrySelection, type RegistryTabKey } from "../../features/admin/registry/registry-utils";
 import { cn } from "../../shared/ui/cn";
 
-const tabs: Array<{ key: RegistryTabKey; label: string; p1?: boolean }> = [
-  { key: "overview", label: "Обзор" },
-  { key: "devices", label: "Устройства" },
-  { key: "people", label: "Пользователи" },
-  { key: "bindings", label: "Привязки" },
-  { key: "requests", label: "Заявки" },
-  { key: "account_sessions", label: "Аккаунт-сессии" },
-  { key: "quality", label: "Качество данных" },
-  { key: "locations", label: "Локации", p1: true },
-  { key: "departments", label: "Подразделения", p1: true },
-  { key: "access_groups", label: "Группы доступа", p1: true },
-  { key: "audience_groups", label: "Аудитории", p1: true },
-  { key: "policies", label: "Политики", p1: true },
+const tabs: Array<{ key: RegistryTabKey; label: string; description: string; p1?: boolean }> = [
+  { key: "overview", label: "Обзор", description: "Сводка по устройствам, людям, заявкам и проблемам качества. Начинайте отсюда, если не ясно, где исправлять данные." },
+  { key: "devices", label: "Устройства", description: "Работа с ПК и агентами: открыть карточку, привязать владельца, передать устройство, добавить совместного пользователя или отозвать сессии." },
+  { key: "people", label: "Пользователи", description: "Карточки людей, UI-аккаунты, идентичности и операции слияния. Технические идентификаторы оставлены только для точной диагностики." },
+  { key: "bindings", label: "Привязки", description: "Активные и исторические связи устройство-пользователь. Фильтры показывают тип связи или состояние." },
+  { key: "requests", label: "Заявки", description: "Заявки регистрации и входа в другой аккаунт. Перед подтверждением проверяйте дифф: устройство, текущая привязка, заявленные ФИО, подразделение и локация." },
+  { key: "account_sessions", label: "Аккаунт-сессии", description: "Серверные сессии пользователей на устройствах. Отзыв сессии прекращает выбранный контекст аккаунта на агенте." },
+  { key: "quality", label: "Качество данных", description: "Действительные проблемы качества и подсказки по исправлению. Игнорирование и отсрочка требуют причины для аудита." },
+  { key: "locations", label: "Локации", description: "Справочник зданий, этажей и кабинетов. Архивация и слияние требуют причины и предварительного просмотра.", p1: true },
+  { key: "departments", label: "Подразделения", description: "Организационная структура для людей, устройств и правил видимости. Слияние подразделений выполняйте только после предпросмотра.", p1: true },
+  { key: "access_groups", label: "Группы доступа", description: "Только сводка RBAC-групп. Права и очереди редактируются в отдельном RBAC-редакторе.", p1: true },
+  { key: "audience_groups", label: "Аудитории", description: "Группы таргетинга для базы знаний и сервисов. Аудитории не выдают права доступа, а только участвуют в правилах видимости.", p1: true },
+  { key: "policies", label: "Политики", description: "Правила регистрации, аккаунт-сессий и видимости тикетов. Перед сохранением используйте предпросмотр.", p1: true },
 ];
 
 function PlaceholderTab({ title }: { title: string }) {
@@ -109,7 +109,7 @@ function PlaceholderTab({ title }: { title: string }) {
       </CardHeader>
       <CardContent>
         <p className="rounded-lg border border-dashed border-border px-4 py-8 text-sm text-slate-500">
-          P1: базовое чтение уже доступно в payload; CRUD, merge duplicates и policy editor будут добавлены отдельным безопасным проходом.
+          P1: базовое чтение уже доступно в данных страницы; редактирование, слияние дублей и редактор политик добавляются отдельными безопасными проходами.
         </p>
       </CardContent>
     </Card>
@@ -197,7 +197,7 @@ export function AdminRegistryPage() {
 
   const bulkMutation = useMutation({
     mutationFn: async (operation: () => Promise<AdminRegistryBulkResponse>) => operation(),
-    onError: (error) => setActionError(registryActionErrorMessage(error, "Bulk action failed")),
+    onError: (error) => setActionError(registryActionErrorMessage(error, "Не удалось выполнить массовую операцию")),
     onSuccess: async (result) => {
       setActionError(null);
       setBulkResult(result);
@@ -208,7 +208,7 @@ export function AdminRegistryPage() {
 
   const importMutation = useMutation({
     mutationFn: applyAdminRegistryImport,
-    onError: (error) => setActionError(registryActionErrorMessage(error, "Import apply failed")),
+    onError: (error) => setActionError(registryActionErrorMessage(error, "Не удалось применить импорт")),
     onSuccess: async () => {
       setActionError(null);
       await invalidateRegistry();
@@ -331,7 +331,7 @@ export function AdminRegistryPage() {
       const binding = registry?.active_bindings.find((item) => item.binding_id === issue.binding_id)
         ?? registry?.bindings?.find((item) => item.binding_id === issue.binding_id);
       if (binding) {
-        runWithReason("Причина отзыва stale-привязки", "Устаревшая привязка", (reason) => revokeAdminDeviceUserBinding(binding.binding_id, reason));
+        runWithReason("Причина отзыва устаревшей привязки", "Устаревшая привязка", (reason) => revokeAdminDeviceUserBinding(binding.binding_id, reason));
       }
       return;
     }
@@ -359,7 +359,7 @@ export function AdminRegistryPage() {
     if (!sessions.length) {
       return;
     }
-    runWithReason("Причина отзыва account sessions", "Администратор отозвал сессии устройства", async (reason) => {
+    runWithReason("Причина отзыва аккаунт-сессий", "Администратор отозвал сессии устройства", async (reason) => {
       await Promise.all(sessions.map((session) => revokeAdminDeviceAccountSession(session.session_id, reason)));
     });
   };
@@ -381,35 +381,36 @@ export function AdminRegistryPage() {
     tab === "audience_groups" ? "audience_groups" :
     tab === "quality" ? "quality" :
     "devices";
+  const activeTab = tabs.find((item) => item.key === tab) ?? tabs[0];
 
   return (
     <section className="space-y-6">
       <PageHeading
         actions={
           <>
-            <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setPersonDialog({})} size="sm" variant="outline">
+            <Button leadingIcon={<Plus className="h-4 w-4" />} onClick={() => setPersonDialog({})} size="sm" title="Создать карточку пользователя в реестре" variant="outline">
               Пользователь
             </Button>
-            <Button leadingIcon={<UserPlus className="h-4 w-4" />} onClick={() => setBindDialog({ deviceId: "", mode: "primary_user", title: "Привязать устройство", replaceExisting: false })} size="sm" variant="outline">
+            <Button leadingIcon={<UserPlus className="h-4 w-4" />} onClick={() => setBindDialog({ deviceId: "", mode: "primary_user", title: "Привязать устройство", replaceExisting: false })} size="sm" title="Привязать устройство к основному пользователю" variant="outline">
               Привязать устройство
             </Button>
-            <Button leadingIcon={<ShieldCheck className="h-4 w-4" />} onClick={() => setTab("quality")} size="sm" variant="outline">
+            <Button leadingIcon={<ShieldCheck className="h-4 w-4" />} onClick={() => setTab("quality")} size="sm" title="Открыть проблемы качества и рекомендации по исправлению" variant="outline">
               Проверка качества
             </Button>
-            <Button leadingIcon={<Download className="h-4 w-4" />} onClick={() => { window.location.href = adminRegistryExportUrl(exportType); }} size="sm" variant="ghost">
+            <Button leadingIcon={<Download className="h-4 w-4" />} onClick={() => { window.location.href = adminRegistryExportUrl(exportType); }} size="sm" title={`Экспортировать текущий раздел: ${activeTab.label}`} variant="ghost">
               Экспорт
             </Button>
-            <Button leadingIcon={<Upload className="h-4 w-4" />} onClick={() => setImportOpen(true)} size="sm" variant="ghost">
+            <Button leadingIcon={<Upload className="h-4 w-4" />} onClick={() => setImportOpen(true)} size="sm" title="Открыть безопасный CSV-импорт с предпросмотром" variant="ghost">
               Импорт
             </Button>
-            <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => void registryQuery.refetch()} size="sm">
+            <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => void registryQuery.refetch()} size="sm" title="Обновить данные реестра с сервера">
               Обновить
             </Button>
           </>
         }
-        description="Device-user bindings, account sessions, registration claims, people identities and data-quality actions in one operator workspace."
-        eyebrow="Admin workspace"
-        title="Registry Management Center"
+        description="Единое рабочее место администратора для устройств, пользователей, привязок, аккаунт-сессий, заявок регистрации, аудиторий и качества данных."
+        eyebrow="Администрирование"
+        title="Центр управления реестром"
       />
 
       <Card>
@@ -420,7 +421,7 @@ export function AdminRegistryPage() {
               <Search className="h-4 w-4 text-slate-400" />
               <SearchField
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="ФИО, login, email, phone, device_id, hostname, cabinet, binding_id, session_id"
+                placeholder="ФИО, логин, почта, телефон, ID устройства, имя ПК, кабинет, ID привязки или сессии"
                 value={query}
               />
             </div>
@@ -434,16 +435,20 @@ export function AdminRegistryPage() {
                 )}
                 key={item.key}
                 onClick={() => setTab(item.key)}
+                title={item.description}
                 type="button"
               >
                 {item.label}{item.p1 ? " · P1" : ""}
               </button>
             ))}
           </div>
+          <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-600">
+            {activeTab.description}
+          </p>
         </CardHeader>
         <CardContent className="space-y-4">
           {actionError ? <p className="text-sm text-rose-600">{actionError}</p> : null}
-          {registryQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем Registry Management Center...</p> : null}
+          {registryQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем центр управления реестром...</p> : null}
           {registryQuery.isError ? (
             <p className="text-sm text-rose-600">
               {registryQuery.error instanceof Error ? registryQuery.error.message : "Не удалось загрузить реестры."}
@@ -467,7 +472,7 @@ export function AdminRegistryPage() {
               onResponsible={(deviceId) => setBindDialog({ deviceId, mode: "responsible", title: "Назначить ответственного", replaceExisting: true })}
               onRevokeSessions={revokeAllDeviceSessions}
               onSelect={setSelection}
-              onShared={(deviceId) => setBindDialog({ deviceId, mode: "shared_user", title: "Добавить shared user", replaceExisting: false })}
+              onShared={(deviceId) => setBindDialog({ deviceId, mode: "shared_user", title: "Добавить совместного пользователя", replaceExisting: false })}
               onToggleSelection={(deviceId) => toggleSelected(deviceId, setSelectedDeviceIds)}
               onToggleVisibleSelection={(deviceIds) => toggleVisibleSelected(deviceIds, setSelectedDeviceIds)}
               onTransfer={(device) => device.device_id && setTransferDialog({ deviceId: device.device_id, hostname: device.hostname })}
@@ -518,7 +523,7 @@ export function AdminRegistryPage() {
           {visibleRegistry && tab === "account_sessions" ? (
             <RegistryAccountSessionsTab
               sessions={visibleRegistry.account_sessions ?? []}
-              onRevoke={(session: AdminDeviceAccountSession) => runWithReason("Причина отзыва account session", "Отозвано администратором", (reason) => revokeAdminDeviceAccountSession(session.session_id, reason))}
+              onRevoke={(session: AdminDeviceAccountSession) => runWithReason("Причина отзыва аккаунт-сессии", "Отозвано администратором", (reason) => revokeAdminDeviceAccountSession(session.session_id, reason))}
               onSelect={setSelection}
               onToggleSelection={(sessionId) => toggleSelected(sessionId, setSelectedSessionIds)}
               onToggleVisibleSelection={(sessionIds) => toggleVisibleSelected(sessionIds, setSelectedSessionIds)}

@@ -4,6 +4,7 @@ import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import type { AdminRegistryPayload } from "../api";
+import { registryStatusLabel } from "./registry-utils";
 
 export type PersonEditDialogState = {
   person?: AdminRegistryPayload["people"][number];
@@ -42,17 +43,17 @@ export function RegistryPersonEditDialog({ busy, onClose, onSubmit, state }: Pro
           <CardTitle>{state.person ? "Редактировать пользователя" : "Создать пользователя"}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <label className="block text-sm font-medium text-slate-700">Display name<Input className="mt-2" onChange={(event) => setDisplayName(event.target.value)} value={displayName} /></label>
+          <label className="block text-sm font-medium text-slate-700">Отображаемое имя<Input className="mt-2" onChange={(event) => setDisplayName(event.target.value)} value={displayName} /></label>
           <label className="block text-sm font-medium text-slate-700">ФИО<Input className="mt-2" onChange={(event) => setFullName(event.target.value)} value={fullName} /></label>
-          <label className="block text-sm font-medium text-slate-700">Email<Input className="mt-2" onChange={(event) => setEmail(event.target.value)} value={email} /></label>
-          <label className="block text-sm font-medium text-slate-700">Phone<Input className="mt-2" onChange={(event) => setPhone(event.target.value)} value={phone} /></label>
+          <label className="block text-sm font-medium text-slate-700">Почта<Input className="mt-2" onChange={(event) => setEmail(event.target.value)} value={email} /></label>
+          <label className="block text-sm font-medium text-slate-700">Телефон<Input className="mt-2" onChange={(event) => setPhone(event.target.value)} value={phone} /></label>
           <label className="block text-sm font-medium text-slate-700">
-            Status
+            Статус
             <select className="field-base mt-2 h-11 w-full px-3 text-sm" onChange={(event) => setStatus(event.target.value)} value={status}>
-              <option value="active">active</option>
-              <option value="self_reported">self_reported</option>
-              <option value="inactive">inactive</option>
-              <option value="disabled">disabled</option>
+              <option value="active">{registryStatusLabel("active")}</option>
+              <option value="self_reported">{registryStatusLabel("self_reported")}</option>
+              <option value="inactive">{registryStatusLabel("inactive")}</option>
+              <option value="disabled">{registryStatusLabel("disabled")}</option>
             </select>
           </label>
           <div className="flex justify-end gap-2">

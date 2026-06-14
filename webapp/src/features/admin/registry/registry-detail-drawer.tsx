@@ -5,7 +5,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { fetchAdminRegistryTimeline, type AdminRegistryPayload, type AdminRegistryTimelineItem } from "../api";
-import { formatDateTime, statusTone, type RegistrySelection } from "./registry-utils";
+import { actorRoleLabel, accountModeLabel, formatDateTime, registrySourceLabel, registryStatusLabel, relationshipTypeLabel, statusTone, type RegistrySelection } from "./registry-utils";
 
 type Props = {
   registry: AdminRegistryPayload | null;
@@ -25,41 +25,41 @@ function Field({ label, value }: { label: string; value: string | number | null 
 const EVENT_LABELS: Record<string, string> = {
   person_created: "Пользователь создан",
   person_updated: "Пользователь обновлен",
-  identity_added: "Identity добавлен",
-  identity_verified: "Identity подтвержден",
-  identity_deleted: "Identity удален",
+  identity_added: "Идентичность добавлена",
+  identity_verified: "Идентичность подтверждена",
+  identity_deleted: "Идентичность удалена",
   binding_created: "Привязка создана",
   admin_binding_created: "Привязка создана администратором",
   binding_activated: "Привязка активирована",
   binding_revoked: "Привязка отозвана",
   binding_transferred: "Привязка передана",
-  shared_user_added: "Добавлен shared user",
+  shared_user_added: "Добавлен совместный пользователь",
   responsible_assigned: "Назначен ответственный",
   location_merged: "Локации объединены",
   department_merged: "Подразделения объединены",
   people_merged: "Пользователи объединены",
   person_merged: "Пользователи объединены",
-  bulk_action_applied: "Bulk action выполнен",
+  bulk_action_applied: "Массовая операция выполнена",
   policy_changed: "Политика изменена",
   registry_policy_updated: "Политика реестра изменена",
-  confirmed_binding_session_created: "Account session создана",
-  account_session_revoked: "Account session отозвана",
-  account_session_revoked_due_to_binding_change: "Session отозвана из-за привязки",
+  confirmed_binding_session_created: "Аккаунт-сессия создана",
+  account_session_revoked: "Аккаунт-сессия отозвана",
+  account_session_revoked_due_to_binding_change: "Сессия отозвана из-за изменения привязки",
 };
 
 const RELATED_LABELS: Record<string, string> = {
   object_type: "Тип объекта",
-  object_id: "Object ID",
-  device_id: "Device",
-  person_id: "Person",
-  binding_id: "Binding",
-  claim_id: "Claim",
-  session_id: "Session",
-  request_id: "Request",
-  ticket_id: "Ticket",
-  identity_id: "Identity",
-  location_id: "Location",
-  department_id: "Department",
+  object_id: "ID объекта",
+  device_id: "Устройство",
+  person_id: "Пользователь",
+  binding_id: "Привязка",
+  claim_id: "Заявка",
+  session_id: "Сессия",
+  request_id: "Запрос",
+  ticket_id: "Тикет",
+  identity_id: "Идентичность",
+  location_id: "Локация",
+  department_id: "Подразделение",
 };
 
 function timelineTypeLabel(event: AdminRegistryTimelineItem) {
@@ -68,10 +68,7 @@ function timelineTypeLabel(event: AdminRegistryTimelineItem) {
 }
 
 function sourceLabel(source: string | null | undefined) {
-  if (source === "registry_admin") return "admin";
-  if (source === "registration") return "registration";
-  if (source === "account") return "account";
-  return source ?? "timeline";
+  return registrySourceLabel(source ?? "timeline");
 }
 
 function compactValue(value: unknown): string {
@@ -102,7 +99,7 @@ function TimelineEvent({ event }: { event: AdminRegistryTimelineItem }) {
       <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
         <div>
           <span className="font-semibold text-slate-500">Кто: </span>
-          <span>{event.actor_role ?? "system"}{event.actor_id ? ` / ${event.actor_id}` : ""}</span>
+          <span>{actorRoleLabel(event.actor_role ?? "system")}{event.actor_id ? ` / ${event.actor_id}` : ""}</span>
         </div>
         <div>
           <span className="font-semibold text-slate-500">Почему: </span>
@@ -115,7 +112,7 @@ function TimelineEvent({ event }: { event: AdminRegistryTimelineItem }) {
           <div className="mt-2 space-y-1">
             {changes.slice(0, 6).map((change, index) => (
               <div className="grid gap-1 text-xs text-slate-700 sm:grid-cols-[120px_1fr]" key={`${event.event_id}-change-${index}`}>
-                <span className="font-medium text-slate-600">{compactValue(change.field ?? change.action ?? change.kind ?? "change")}</span>
+                <span className="font-medium text-slate-600">{compactValue(change.field ?? change.action ?? change.kind ?? "изменение")}</span>
                 <span className="break-words">
                   {compactValue(change.before)} → {compactValue(change.after)}
                 </span>
@@ -159,7 +156,7 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
     <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-xl overflow-y-auto border-l border-border bg-white p-4 shadow-2xl">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase text-slate-400">Registry detail</p>
+          <p className="text-xs font-semibold uppercase text-slate-400">Детали реестра</p>
           <h2 className="text-xl font-semibold text-slate-950">
             {device?.hostname ?? person?.display_name ?? binding?.binding_id ?? session?.session_id ?? claim?.claim_id ?? "Объект"}
           </h2>
@@ -176,14 +173,14 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Device ID" value={device.device_id} />
-              <Field label="Hostname" value={device.hostname} />
+              <Field label="ID устройства" value={device.device_id} />
+              <Field label="Имя ПК" value={device.hostname} />
               <Field label="OS" value={device.os} />
-              <Field label="Agent" value={device.agent_version} />
+              <Field label="Агент" value={device.agent_version} />
               <Field label="Зарегистрирован" value={device.active_person_name ?? device.owner_name} />
-              <Field label="Presence" value={device.latest_presence_user ?? device.current_os_user} />
-              <Field label="Последний handshake" value={formatDateTime(device.last_seen_at)} />
-              <Field label="Account sessions" value={device.active_sessions_count ?? 0} />
+              <Field label="Текущий пользователь ОС" value={device.latest_presence_user ?? device.current_os_user} />
+              <Field label="Последняя связь с агентом" value={formatDateTime(device.last_seen_at)} />
+              <Field label="Аккаунт-сессии" value={device.active_sessions_count ?? 0} />
             </div>
             <section>
               <p className="mb-2 text-sm font-semibold text-slate-950">Активные привязки</p>
@@ -192,7 +189,7 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
                   <div className="rounded-lg border border-border px-3 py-2 text-sm" key={item.binding_id}>
                     <div className="flex items-center justify-between gap-3">
                       <span className="font-medium text-slate-800">{item.person_name ?? item.person_id}</span>
-                      <Badge tone={statusTone(item.relationship_type)}>{item.relationship_type}</Badge>
+                      <Badge tone={statusTone(item.relationship_type)}>{relationshipTypeLabel(item.relationship_type)}</Badge>
                     </div>
                     <p className="mt-1 break-all text-xs text-slate-500">{item.binding_id}</p>
                   </div>
@@ -211,26 +208,26 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
           <CardContent className="space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="ФИО" value={person.full_name} />
-              <Field label="Display name" value={person.display_name} />
-              <Field label="Login" value={person.login} />
-              <Field label="Email" value={person.email} />
-              <Field label="Phone" value={person.phone} />
-              <Field label="Статус" value={person.status} />
-              <Field label="Primary devices" value={person.primary_device_count ?? 0} />
-              <Field label="Active sessions" value={person.active_session_count ?? 0} />
+              <Field label="Отображаемое имя" value={person.display_name} />
+              <Field label="Логин" value={person.login} />
+              <Field label="Почта" value={person.email} />
+              <Field label="Телефон" value={person.phone} />
+              <Field label="Статус" value={registryStatusLabel(person.status)} />
+              <Field label="Основные устройства" value={person.primary_device_count ?? 0} />
+              <Field label="Активные сессии" value={person.active_session_count ?? 0} />
             </div>
             <section>
-              <p className="mb-2 text-sm font-semibold text-slate-950">Identities</p>
+              <p className="mb-2 text-sm font-semibold text-slate-950">Идентичности</p>
               <div className="space-y-2">
                 {(person.identities ?? []).length ? person.identities?.map((identity) => (
                   <div className="rounded-lg border border-border px-3 py-2 text-sm" key={identity.identity_id}>
                     <div className="flex items-center justify-between gap-3">
                       <span className="font-medium text-slate-800">{identity.provider}</span>
-                      <Badge tone={identity.verified ? "success" : "warning"}>{identity.verified ? "verified" : "unverified"}</Badge>
+                      <Badge tone={identity.verified ? "success" : "warning"}>{identity.verified ? "Подтверждена" : "Не подтверждена"}</Badge>
                     </div>
                     <p className="mt-1 break-all text-xs text-slate-500">{identity.identifier}</p>
                   </div>
-                )) : <p className="text-sm text-slate-500">Identity пока нет.</p>}
+                )) : <p className="text-sm text-slate-500">Идентичностей пока нет.</p>}
               </div>
             </section>
           </CardContent>
@@ -243,15 +240,15 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
             <CardTitle>Карточка привязки</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <Field label="Binding ID" value={binding.binding_id} />
-            <Field label="Device" value={binding.hostname ?? binding.device_id} />
-            <Field label="User" value={binding.person_name ?? binding.person_id} />
-            <Field label="Type" value={binding.relationship_type} />
-            <Field label="Status" value={binding.status} />
-            <Field label="Source" value={binding.source} />
-            <Field label="Confirmed by" value={binding.confirmed_by_admin} />
-            <Field label="Confirmed at" value={formatDateTime(binding.confirmed_at)} />
-            <Field label="Active sessions" value={binding.active_sessions_count ?? 0} />
+            <Field label="ID привязки" value={binding.binding_id} />
+            <Field label="Устройство" value={binding.hostname ?? binding.device_id} />
+            <Field label="Пользователь" value={binding.person_name ?? binding.person_id} />
+            <Field label="Тип" value={relationshipTypeLabel(binding.relationship_type)} />
+            <Field label="Статус" value={registryStatusLabel(binding.status)} />
+            <Field label="Источник" value={registrySourceLabel(binding.source)} />
+            <Field label="Подтвердил" value={binding.confirmed_by_admin} />
+            <Field label="Подтверждена" value={formatDateTime(binding.confirmed_at)} />
+            <Field label="Активные сессии" value={binding.active_sessions_count ?? 0} />
           </CardContent>
         </Card>
       ) : null}
@@ -259,17 +256,17 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
       {session ? (
         <Card>
           <CardHeader>
-            <CardTitle>Account session</CardTitle>
+            <CardTitle>Аккаунт-сессия</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <Field label="Session ID" value={session.session_id} />
-            <Field label="Device" value={session.device_id} />
-            <Field label="Account" value={session.display_name ?? session.login} />
-            <Field label="Mode" value={session.account_mode} />
-            <Field label="Status" value={session.verification_status} />
-            <Field label="Base binding" value={session.base_binding_id} />
-            <Field label="Created" value={formatDateTime(session.created_at)} />
-            <Field label="Revoked" value={formatDateTime(session.revoked_at)} />
+            <Field label="ID сессии" value={session.session_id} />
+            <Field label="Устройство" value={session.device_id} />
+            <Field label="Аккаунт" value={session.display_name ?? session.login} />
+            <Field label="Режим" value={accountModeLabel(session.account_mode)} />
+            <Field label="Статус" value={registryStatusLabel(session.verification_status)} />
+            <Field label="Базовая привязка" value={session.base_binding_id} />
+            <Field label="Создана" value={formatDateTime(session.created_at)} />
+            <Field label="Отозвана" value={formatDateTime(session.revoked_at)} />
           </CardContent>
         </Card>
       ) : null}
@@ -280,18 +277,18 @@ export function RegistryDetailDrawer({ registry, selection, onClose }: Props) {
             <CardTitle>Заявка регистрации</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <Field label="Claim ID" value={claim.claim_id} />
-            <Field label="Device" value={claim.device_id} />
-            <Field label="Person" value={claim.person_name ?? claim.person_id} />
-            <Field label="Status" value={claim.status} />
-            <Field label="Type" value={claim.relationship_type} />
-            <Field label="Conflict" value={claim.conflict_reason} />
+            <Field label="ID заявки" value={claim.claim_id} />
+            <Field label="Устройство" value={claim.device_id} />
+            <Field label="Пользователь" value={claim.person_name ?? claim.person_id} />
+            <Field label="Статус" value={registryStatusLabel(claim.status)} />
+            <Field label="Тип" value={relationshipTypeLabel(claim.relationship_type)} />
+            <Field label="Конфликт" value={claim.conflict_reason} />
           </CardContent>
         </Card>
       ) : null}
       <Card className="mt-4">
         <CardHeader>
-          <CardTitle>Timeline</CardTitle>
+          <CardTitle>История</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           {timelineQuery.isLoading ? <p className="text-sm text-slate-500">Загружаем историю...</p> : null}

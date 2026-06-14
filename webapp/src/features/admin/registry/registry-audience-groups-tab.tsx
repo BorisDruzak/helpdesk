@@ -12,7 +12,7 @@ import type {
   AdminRegistryAudiencePreview,
   AdminRegistryPayload,
 } from "../api";
-import { statusTone } from "./registry-utils";
+import { actorRoleLabel, registryStatusLabel, statusTone } from "./registry-utils";
 
 type Props = {
   busy?: boolean;
@@ -152,7 +152,7 @@ export function RegistryAudienceGroupsTab({
     if (memberType === "role") {
       return ["user", "support", "admin", "auditor"]
         .filter((role) => !normalized || role.includes(normalized))
-        .map((role) => ({ id: role, label: role }));
+        .map((role) => ({ id: role, label: actorRoleLabel(role) }));
     }
     if (memberType === "service") {
       return registry.services
@@ -209,7 +209,7 @@ export function RegistryAudienceGroupsTab({
             >
               <span className="font-semibold text-slate-950">{group.name}</span>
               <span className="mt-1 block text-xs text-slate-500">{group.code}</span>
-              <Badge className="mt-2" tone={statusTone(group.status)}>{group.status}</Badge>
+              <Badge className="mt-2" tone={statusTone(group.status)}>{registryStatusLabel(group.status)}</Badge>
             </button>
           )) : <p className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-slate-500">Аудитории ещё не созданы.</p>}
         </div>
@@ -275,6 +275,9 @@ export function RegistryAudienceGroupsTab({
               <CardTitle>Состав аудитории</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-600">
+                Добавьте участников, затем выполните предпросмотр состава. Сохранение станет доступно только после расчета людей, которые попадут в аудиторию.
+              </p>
               <div className="grid gap-3 lg:grid-cols-[190px_minmax(180px,1fr)_minmax(220px,1fr)_auto]">
                 <label className="block text-sm font-medium text-slate-700">
                   Тип участника

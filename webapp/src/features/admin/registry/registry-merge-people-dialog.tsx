@@ -28,6 +28,15 @@ type Props = {
 
 const fields = ["full_name", "display_name", "email", "phone", "department_id", "location_id"] as const;
 
+const fieldLabels: Record<(typeof fields)[number], string> = {
+  full_name: "ФИО",
+  display_name: "Отображаемое имя",
+  email: "Почта",
+  phone: "Телефон",
+  department_id: "Подразделение",
+  location_id: "Локация",
+};
+
 export function RegistryMergePeopleDialog({ initialDuplicateId, onClose, onPreview, onSubmit, open, people }: Props) {
   const [masterId, setMasterId] = useState("");
   const [duplicateId, setDuplicateId] = useState(initialDuplicateId ?? "");
@@ -55,27 +64,27 @@ export function RegistryMergePeopleDialog({ initialDuplicateId, onClose, onPrevi
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <select className="field-base h-11 w-full px-3" value={masterId} onChange={(event) => { setMasterId(event.target.value); setPreview(null); }}>
-              <option value="">Master user</option>
+              <option value="">Основная карточка</option>
               {people.map((person) => <option key={person.person_id} value={person.person_id}>{person.display_name}</option>)}
             </select>
             <select className="field-base h-11 w-full px-3" value={duplicateId} onChange={(event) => { setDuplicateId(event.target.value); setPreview(null); }}>
-              <option value="">Duplicate user</option>
+              <option value="">Дубликат</option>
               {people.map((person) => <option key={person.person_id} value={person.person_id}>{person.display_name}</option>)}
             </select>
           </div>
           {master && duplicate ? (
             <div className="overflow-x-auto rounded-lg border border-border">
               <div className="grid min-w-[720px] grid-cols-[160px_220px_220px_120px] bg-slate-50 px-3 py-2 text-xs font-semibold uppercase text-slate-500">
-                <span>Field</span><span>Master</span><span>Duplicate</span><span>Winner</span>
+                <span>Поле</span><span>Основная карточка</span><span>Дубликат</span><span>Оставить</span>
               </div>
               {fields.map((field) => (
                 <div className="grid min-w-[720px] grid-cols-[160px_220px_220px_120px] border-t border-border px-3 py-2 text-sm" key={field}>
-                  <span>{field}</span>
+                  <span title={field}>{fieldLabels[field]}</span>
                   <span>{String(master[field] ?? "Нет")}</span>
                   <span>{String(duplicate[field] ?? "Нет")}</span>
                   <select className="field-base h-9 px-2 text-sm" value={strategy[field] ?? "master"} onChange={(event) => { setStrategy({ ...strategy, [field]: event.target.value as "master" | "duplicate" }); setPreview(null); }}>
-                    <option value="master">master</option>
-                    <option value="duplicate">duplicate</option>
+                    <option value="master">основную</option>
+                    <option value="duplicate">дубликат</option>
                   </select>
                 </div>
               ))}

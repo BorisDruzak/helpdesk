@@ -61,24 +61,24 @@ export function RegistryBulkActions({ actions, busy, onAction, onClearResult, on
     <div className="rounded-lg border border-border bg-slate-50 px-3 py-3">
       {selectedCount ? (
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-slate-800">Selected: {selectedCount}</span>
+          <span className="text-sm font-semibold text-slate-800">Выбрано: {selectedCount}</span>
           {actions.map((action) => (
             <Button disabled={busy} key={action.key} onClick={() => onAction(action.key)} size="sm" variant="outline">
               {action.label}
             </Button>
           ))}
-          <Button leadingIcon={<X className="h-4 w-4" />} onClick={onClearSelection} size="sm" variant="ghost">Clear</Button>
+          <Button leadingIcon={<X className="h-4 w-4" />} onClick={onClearSelection} size="sm" title="Очистить текущий выбор" variant="ghost">Снять выбор</Button>
         </div>
       ) : null}
       {result ? (
         <div className="mt-3 rounded-md border border-slate-200 bg-white p-3">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-sm font-semibold text-slate-900">Bulk result</span>
-            <span className="text-sm text-slate-600">selected: {result.summary.selected}</span>
-            <span className="text-sm text-emerald-700">success: {result.summary.success}</span>
-            <span className="text-sm text-rose-700">failed: {result.summary.failed}</span>
+            <span className="text-sm font-semibold text-slate-900">Результат массовой операции</span>
+            <span className="text-sm text-slate-600">выбрано: {result.summary.selected}</span>
+            <span className="text-sm text-emerald-700">успешно: {result.summary.success}</span>
+            <span className="text-sm text-rose-700">ошибки: {result.summary.failed}</span>
             <Button disabled={!failedItems.length} leadingIcon={<Eye className="h-4 w-4" />} onClick={() => setShowFailed((value) => !value)} size="sm" variant="outline">
-              {showFailed ? "Hide failed" : "Show failed"}
+              {showFailed ? "Скрыть ошибки" : "Показать ошибки"}
             </Button>
             <Button
               disabled={!failedItems.length}
@@ -87,10 +87,10 @@ export function RegistryBulkActions({ actions, busy, onAction, onClearResult, on
               size="sm"
               variant="outline"
             >
-              Copy errors
+              Скопировать ошибки
             </Button>
-            <Button leadingIcon={<Download className="h-4 w-4" />} onClick={() => downloadResult(result)} size="sm" variant="outline">Export result</Button>
-            <Button leadingIcon={<X className="h-4 w-4" />} onClick={onClearResult} size="sm" variant="ghost">Dismiss</Button>
+            <Button leadingIcon={<Download className="h-4 w-4" />} onClick={() => downloadResult(result)} size="sm" title="Скачать CSV-отчет по операции" variant="outline">Экспорт результата</Button>
+            <Button leadingIcon={<X className="h-4 w-4" />} onClick={onClearResult} size="sm" variant="ghost">Закрыть</Button>
           </div>
           {showFailed && failedItems.length ? (
             <ul className="mt-3 max-h-40 space-y-1 overflow-auto text-sm text-rose-800">

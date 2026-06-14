@@ -5,7 +5,7 @@ import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { StatTile } from "../../../components/ui/stat-tile";
 import type { AdminRegistryPayload } from "../api";
-import { statusTone, type RegistrySelection } from "./registry-utils";
+import { qualityIssueDescription, qualityIssueTitle, relationshipTypeLabel, registryStatusLabel, statusTone, type RegistrySelection } from "./registry-utils";
 
 type Props = {
   registry: AdminRegistryPayload;
@@ -19,14 +19,14 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
     ...registry.registration_claims.filter((claim) => ["pending_user_confirmation", "pending_admin_review", "conflict", "user_confirmed", "self_reported"].includes(claim.status)).slice(0, 6).map((claim) => ({
       id: claim.claim_id,
       title: claim.person_name ?? claim.device_id,
-      description: `${claim.status} · ${claim.relationship_type}`,
+      description: `${registryStatusLabel(claim.status)} · ${relationshipTypeLabel(claim.relationship_type)}`,
       tone: statusTone(claim.status),
       open: () => onSelect({ kind: "claim", id: claim.claim_id }),
     })),
     ...registry.data_quality.slice(0, 8).map((issue) => ({
       id: `${issue.kind}-${issue.object_id}`,
-      title: issue.title,
-      description: issue.description,
+      title: qualityIssueTitle(issue),
+      description: qualityIssueDescription(issue),
       tone: issue.severity,
       open: () => onFixIssue(issue),
     })),
@@ -35,16 +35,16 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        <StatTile label="Устройств всего" value={String(summary.devices_total ?? summary.assets)} helper="PC assets in registry" />
+        <StatTile label="Устройств всего" value={String(summary.devices_total ?? summary.assets)} helper="ПК в реестре" />
         <StatTile label="Зарегистрировано" value={String(summary.devices_registered ?? summary.active_bindings)} helper="Есть активная связь" />
         <StatTile label="Без пользователя" value={String(summary.devices_unregistered ?? summary.unregistered_devices)} helper="Требуют действия" />
-        <StatTile label="Pending claims" value={String(summary.claims_pending ?? summary.registrations_pending)} helper="Регистрация устройства" />
-        <StatTile label="Account sessions" value={String(summary.sessions_active ?? 0)} helper="Активные requester sessions" />
+        <StatTile label="Ожидают подтверждения" value={String(summary.claims_pending ?? summary.registrations_pending)} helper="Заявки регистрации" />
+        <StatTile label="Аккаунт-сессии" value={String(summary.sessions_active ?? 0)} helper="Активные сессии пользователей" />
         <StatTile label="Конфликты" value={String(summary.claims_conflict ?? summary.registrations_conflicts)} helper="Нужна ручная проверка" />
-        <StatTile label="Active bindings" value={String(summary.bindings_active ?? summary.active_bindings)} helper="Primary/shared/responsible" />
-        <StatTile label="Shared devices" value={String(summary.shared_devices ?? 0)} helper="Общие рабочие места" />
-        <StatTile label="Other-account" value={String(summary.other_account_requests ?? 0)} helper="Заявки на вход" />
-        <StatTile label="Качество данных" value={String(summary.quality_issues ?? summary.data_quality_issues)} helper="Actionable issues" />
+        <StatTile label="Активные привязки" value={String(summary.bindings_active ?? summary.active_bindings)} helper="Основные, совместные и ответственные" />
+        <StatTile label="Совместные устройства" value={String(summary.shared_devices ?? 0)} helper="Общие рабочие места" />
+        <StatTile label="Другой аккаунт" value={String(summary.other_account_requests ?? 0)} helper="Заявки на вход" />
+        <StatTile label="Качество данных" value={String(summary.quality_issues ?? summary.data_quality_issues)} helper="Проблемы для обработки" />
       </div>
 
       <Card>
@@ -63,7 +63,7 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{item.description}</p>
               </div>
-              <Button leadingIcon={<ArrowUpRight className="h-4 w-4" />} onClick={item.open} size="sm" variant="outline">
+              <Button leadingIcon={<ArrowUpRight className="h-4 w-4" />} onClick={item.open} size="sm" title="Открыть связанную запись реестра" variant="outline">
                 Открыть
               </Button>
             </div>
