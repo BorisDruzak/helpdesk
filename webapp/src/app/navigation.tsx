@@ -407,6 +407,17 @@ export const appNavigation: AppNavItem[] = [
     order: 10,
   },
   {
+    label: "Разделы базы знаний",
+    description: "Политика разделов, видимость, импорт, публикация и RAG",
+    icon: FolderKanban,
+    section: "admin",
+    workspace: "admin",
+    domainId: "knowledge",
+    to: "/app/admin/knowledge/sections",
+    permission: "admin.forms.view",
+    order: 11,
+  },
+  {
     label: "Метаданные знаний",
     description: "Таксономия, свойства, применимость и качество",
     icon: Layers3,

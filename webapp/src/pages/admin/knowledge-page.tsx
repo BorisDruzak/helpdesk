@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { Bot, DatabaseZap, GitBranch, PenTool, Search, UploadCloud } from "lucide-react";
+import { Bot, DatabaseZap, FolderKanban, GitBranch, PenTool, Search, UploadCloud } from "lucide-react";
 
 import { PageHeading } from "../../components/ui/page-heading";
 import { KnowledgeOpsDashboardPanel } from "../../features/knowledge/ops-dashboard-panel";
 
 const workbenchLinks = [
+  { href: "/app/admin/knowledge/sections", icon: FolderKanban, label: "Разделы", text: "Настроить политику раздела, аудиторию, импорт, публикацию и RAG." },
   { href: "/app/admin/knowledge/studio", icon: PenTool, label: "Студия", text: "Редактировать статью, версию, разметку и публикацию." },
   { href: "/app/admin/knowledge/import", icon: UploadCloud, label: "Импорт", text: "Создать review draft из текста, файла, URL или git." },
   { href: "/app/admin/knowledge/graph", icon: GitBranch, label: "Граф", text: "Построить связи и сохранить layout графа." },

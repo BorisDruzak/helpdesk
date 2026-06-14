@@ -32,6 +32,7 @@ import {
 } from "./api";
 
 const domainTabs = [
+  { active: false, href: "/app/admin/knowledge/sections", label: "Разделы" },
   { active: true, href: "/app/admin/knowledge/studio", label: "Содержание" },
   { active: false, href: "/app/admin/knowledge/import", label: "Импорт" },
   { active: false, href: "/app/admin/knowledge/graph", label: "Граф" },

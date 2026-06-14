@@ -117,6 +117,7 @@ describe("navigation helpers", () => {
     const knowledgeDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
       (domain) => domain.id === "knowledge",
     );
+    const sectionsItem = getActiveNavItem("/app/admin/knowledge/sections", fullAdminPermissions);
     const metadataItem = getActiveNavItem("/app/admin/knowledge/metadata", fullAdminPermissions);
     const studioItem = getActiveNavItem("/app/admin/knowledge/studio", fullAdminPermissions);
     const graphItem = getActiveNavItem("/app/admin/knowledge/graph", fullAdminPermissions);
@@ -125,6 +126,7 @@ describe("navigation helpers", () => {
     const aiItem = getActiveNavItem("/app/admin/knowledge/ai", fullAdminPermissions);
     const searchItem = getActiveNavItem("/app/admin/knowledge/search-settings", fullAdminPermissions);
 
+    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/sections");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/metadata");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/studio");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/graph");
@@ -132,6 +134,8 @@ describe("navigation helpers", () => {
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/indexing");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/ai");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/search-settings");
+    expect(sectionsItem?.to).toBe("/app/admin/knowledge/sections");
+    expect(sectionsItem?.label).toBe("Разделы базы знаний");
     expect(metadataItem?.to).toBe("/app/admin/knowledge/metadata");
     expect(metadataItem?.label).toBe("Метаданные знаний");
     expect(studioItem?.to).toBe("/app/admin/knowledge/studio");
@@ -150,6 +154,9 @@ describe("navigation helpers", () => {
     const requesterDomains = getVisibleNavigationDomains("requester", ["workspace.requester.view"]);
     expect(requesterDomains.flatMap((domain) => domain.items).map((item) => item.to)).not.toContain(
       "/app/admin/knowledge/metadata",
+    );
+    expect(requesterDomains.flatMap((domain) => domain.items).map((item) => item.to)).not.toContain(
+      "/app/admin/knowledge/sections",
     );
   });
 

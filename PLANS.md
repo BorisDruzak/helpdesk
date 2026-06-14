@@ -1,1648 +1,812 @@
-## Active Work: Registry Visibility Foundation — Production Registry, Registration and Knowledge Audience Scopes
+## Active Work: Knowledge Platform Refactor — Production Authoring, Sections, Visibility and Help Desk Integration
 
-Current status, 2026-06-14: Phases 0-3 and Phase 4 Scenario A/B/C evidence are recorded; the Scenario C support-warning blocker was fixed and browser-verified at `7bc7d1c5`. Phase 5 Knowledge audience-rule enforcement is closed on the backend/live anti-leak slice: `knowledge_audience_rules`, `KnowledgeAccessService`, `KnowledgeAudienceRulesService`, admin-only audience-rule/explain APIs, HTTP search/suggestion/article-detail, portal home/space/tag/action, Ask/RAG/vector retrieval effective-audience enforcement, and support ticket knowledge-suggestions requester-audience enforcement are implemented; live anti-leak evidence is recorded through `scripts/knowledge_audience_live_smoke.py` with report `artifacts/browser_live_validation/phase5-knowledge-audience-20260614145845/live-smoke-report.json`. Phase 6 authoring UI is implemented, committed at `8d29b879`, quick-deployed to `https://192.168.100.17:9443/admin`, and browser/live-smoke verified under `artifacts/browser_live_validation/phase6-knowledge-visibility-8d29b879-20260614-153908/`. Phase 7 is closed for the planned exit bar: HTTP/DB live evidence passed at `547a33c2` with report `artifacts/registry-visibility-foundation-20260614/registry-visibility-live-smoke-p7547a33c2.json`; browser support-warning and requester-Knowledge tab evidence is under `artifacts/browser_live_validation/phase7-support-browser-1ca0a43b-20260614/`; real local-agent GUI/UIA owner and pending-registration evidence is under `artifacts/browser_live_validation/phase7-agent-uia-1ca0a43b-20260614/`. Phase 8 operability is closed for the planned exit bar at `6004e541`: generated Registry quality issues cover unlinked active UI users, archived department/location person links, active bindings to inactive people, empty audience groups, invalid Knowledge audience-rule targets and requester-visible Knowledge scoped to zero resolvable users; safe CSV export/import covers audience groups and members, export covers Knowledge audience rules, and direct binding/account-session import remains unsupported. Remote API/DB signoff passed with `artifacts/registry-visibility-foundation-20260614/registry-visibility-phase8-live-signoff-phase8-6004e541-20260614190013.json`; browser signoff is under `artifacts/browser_live_validation/phase8-registry-operability-6004e541-20260614-190013/`. Remaining work is only an explicit future full release gate or broader observer/metrics requirements beyond the Registry admin timeline and generated quality surface. This line supersedes older detailed status paragraphs below when they conflict.
+Status, 2026-06-15: Registry Visibility Foundation is ready enough to start Knowledge Platform refactor. Registry now separates departments, locations, access groups, audience groups, roles, people, identities and account sessions. Knowledge visibility has backend foundation through `knowledge_audience_rules`, `KnowledgeAccessService`, `KnowledgeAudienceRulesService`, admin preview/explain APIs, and effective-audience enforcement in search/suggest/Ask/RAG/retrieval paths. The next work is not another card-level UI pass. The next work is a product refactor of Knowledge authoring: simplify article creation, introduce Knowledge Sections as policy containers, connect articles to Registry audiences and Help Desk context, and hide internal mechanics such as review, manual segmentation and version plumbing from the normal editor.
 
-Access control workspace refactor, 2026-06-14: `/app/admin/access` is being converted from a catalog/form surface into a Russian-first task workspace for RBAC operations. The implemented local slice splits the UI into overview, users, groups, queues, roles, permission catalog and audit tabs; user detail explains effective access and sources; group editing uses searchable permission/member/queue controls with dirty-state tracking, diff preview and high-risk confirmation before saving; queues show direct-member counts plus access-group grants from the existing summary API; audit reads only the real `/api/web/admin/access/audit` endpoint. Current API limitations remain explicit in the UI and follow-up backlog: no display name/email/last-activity fields in the summary, no per-permission source attribution beyond role/group derivation, no effective user list per queue, no built-in export report, no rollback endpoint and limited audit diff richness.
+Execution checkpoint, 2026-06-15: K0 registry preflight was closed by commit `baa0fe8e` before this Knowledge refactor slice. K1 initial slice is now in implementation: `/app/admin/knowledge/sections` is the product route for `Разделы базы знаний`; it reuses existing `GET|POST /api/web/knowledge/spaces` for section policy and existing `subject_type=space` audience-rule APIs for default section audience preview/save. Remaining K1 gaps after this slice: article counts, portal/support exposure flags if they become separate backend fields, allowed material types, and a richer audience summary.
 
-Post-review maintenance completed, 2026-06-14 at `18fa6d76`: active Registry audience groups are resolved into `EffectiveIdentity`/`EffectiveAudience` as `{audience_group_id, code}`, Knowledge audience-rule `department` remains exact-current-department targeting while `department_tree` matches the department path, admin preview supports `subject_type=space`, and stale contradictory plan/docs wording was moved to historical context. Follow-up contract clarification, 2026-06-14: for `registry_audience_group_members`, `member_type=department` plus `include_children=true` is an intentional compatibility alias for `member_type=department_tree`; with `include_children=false` it remains direct/current department only. Live smoke evidence is recorded at `artifacts/browser_live_validation/phase5-knowledge-audience-postreview-18fa6d76-20260614151253/live-smoke-report.json`: the audience-group-targeted article is visible to the IT member with the expected effective audience group and hidden from the Finance non-member. The canonical remote server/control services were stopped after the live check.
+### Problem Statement
 
-Registry admin UI localization/help maintenance, 2026-06-14: `/app/admin/registry` has been brought to a Russian-first operator surface across tabs, table headers, dialogs, detail drawer, bulk/import/quality/policy controls, request approval diff and access/audience summaries. The pass adds tab-level helper text, native action tooltips and centralized label helpers for statuses, binding relationships, account-session modes, verification methods, event sources and actor roles while leaving technical enum/API/table names available only as diagnostic fallbacks. Local verification includes the focused Registry vitest suite, `pnpm --dir webapp exec tsc --noEmit`, `pnpm --dir webapp build`, `python scripts/verify_workspace.py` and `git diff --check`. Commit `17674dea` was quick-deployed to `https://192.168.100.17:9443`; canonical browser evidence is under `artifacts/browser_live_validation/registry-localization-17674dea-20260614-165326/` and shows required Russian text present, old English operator labels absent, 5/5 checked tooltips present, no horizontal body scroll, console errors 0 and page errors 0.
+The current Knowledge Studio still exposes too much internal platform machinery to the user:
 
-Registry audience contract follow-up, 2026-06-14: `/app/admin/registry` audience-group member editing must expose `access_group` as a selectable member type backed by `/api/web/admin/access/summary`, because backend audience expansion and tests already treat RBAC groups as targeting facts. Knowledge audience rules remain allow-only for the current phase: `effect=allow` is the only persisted effect, no deny/exclude precedence is implemented, and support/admin/security/auditor keep the documented `privileged_actor_override` after coarse visibility. Future AI-chat surfaces must choose an explicit policy such as `ai_respects_audience_for_privileged_roles` before reusing privileged support/admin audience behavior. Registry data-quality UI must continue surfacing `audience_group_empty`, `knowledge_audience_rule_invalid_target` and `knowledge_audience_zero_users` as actionable tasks.
+- review workflow is visible even though it does not match current admin/support workflow;
+- version creation and publishing are separate visible actions;
+- manual segmentation appears like a required part of article creation;
+- metadata, taxonomy, applicability, quality and visibility controls are mixed with authoring;
+- article visibility is technically powerful but not yet shaped into a simple product-level control;
+- articles are not yet presented as first-class help desk assets connected to services, request templates, tickets and support suggestions;
+- “space” is still a technical term; the intended product concept is “Раздел базы знаний”.
 
-Historical status snapshot, superseded by the current status above. Phase 0 architecture/docs contract, Phase 1 backend resolver/API slice and Phase 2 backend audience-group slice completed on 2026-06-13. Phase 3 production Registry UI slice is implemented at local commits `3fb13ea8` (`server: add registry visibility foundation`) and `6204c749` (`webapp: add registry access groups summary`): prompt-free bulk/quality/link dialogs, audience-group management and read-only `Группы доступа · P1` discovery are added, deployed through the quick stand path, and browser evidence is recorded under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/` plus `artifacts/browser_live_validation/registry-access-groups-6204c749-20260613/`. The remaining Phase 3 `Группы доступа` decision is resolved as a read-only Registry summary/deep link over the canonical `/app/admin/access` RBAC editor. At that snapshot Phase 4 registration hardening was still in progress: the admin approval diff UI slice is implemented at local/remote commit `4b61b225` (`webapp: show registry registration approval diff`), quick-deployed to the canonical stand and browser evidence is recorded under `artifacts/browser_live_validation/registry-approval-diff-4b61b225-20260613/`; the registration policy mode UI slice is implemented at local/remote commit `a8f8e81d` (`webapp: expose registry policy modes`), quick-deployed to the canonical stand and browser evidence is recorded under `artifacts/browser_live_validation/registry-policy-modes-a8f8e81d-20260613/`; the backend enforcement/approval side-effect slice now has explicit `server/tests/test_registry_registration_policy.py` coverage and applies strict approved department/location ids to verified existing people before derived asset/inventory sync; the strict browser-registration payload/cookie-bridge slice is implemented and quick-deployed at `d8207ff3` / `e15918fa`. Phase 4 strict Scenario A live evidence was captured on 2026-06-14 under `artifacts/browser_live_validation/phase4-agent-20260614-4ca9a116/`; Scenario B has negative strict API/DB and browser-pending evidence under `artifacts/browser_live_validation/phase4-invalid-20260614-4ca9a11/`, plus post-fix canonical stand safe-visible-error and no-side-effect evidence under `artifacts/browser_live_validation/phase4-invalid-20260614-b675d99/`. Scenario C other-account safety had DB/requester/revocation evidence under `artifacts/browser_live_validation/phase4-other-20260614-7910996c/`; the then-open support warning blocker was later fixed and browser-verified at `7bc7d1c5` as recorded above. Phase 5+ and final operability work are closed for the planned exit bar as recorded in the current status.
+The goal is to make Knowledge authoring production-grade:
 
-Branch target:
+> A support/admin user writes a useful article, selects where it belongs, chooses who can see it, links it to help desk context, and clicks one primary action: “Сохранить статью”.
 
-Historical status update, 2026-06-14: Scenario C other-account safety now has DB/requester/revocation/support-warning evidence under `artifacts/browser_live_validation/phase4-other-20260614-7910996c/`; the support detail/workspace projection blocker was fixed, quick-deployed and browser-verified at `7bc7d1c5` (`server: project account context in support detail`). The later current status above supersedes this checkpoint's then-open Phase 5+/operability wording.
-
-Status update, 2026-06-14 Phase 5 backend slice: added the first read-only `KnowledgeAccessService` decision contract, additive migration `121`/ORM model for `knowledge_audience_rules`, no-DB anti-leak decision tests, and an optional `effective_audience` hook in `KnowledgeSearchService` so requester search can filter audience-scoped candidates before projection. Verification now passes for `python scripts\verify_workspace.py`, no-DB ACL/contract pytest, shared-test-DB `test_knowledge_search.py`/`test_knowledge_migration.py`, `python -m compileall -q server shared scripts`, and `git diff --check`. Fresh ephemeral DB migration pytest on Windows is still too slow for the interactive timeout and is not treated as full DB/API gate evidence. Later Phase 5 slices added admin APIs plus search/suggestion/article-detail enforcement; remaining open paths are summarized in the current status line.
-
-Status update, 2026-06-14 Phase 5 admin API slice: added `server/knowledge/audience_rules_service.py`, admin-only `GET/PUT /api/web/admin/knowledge/audience-rules`, `POST /api/web/admin/knowledge/audience-rules/preview`, and `GET /api/web/admin/knowledge/access/explain`. The slice covers replace/list/preview/explain for item rules, keeps support blocked from admin routes, and routes explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. Post-review cleanup extends preview to both `subject_type=item` and `subject_type=space`; later slices added search/suggestion/article-detail enforcement.
-
-Status update, 2026-06-14 Phase 5 search API enforcement slice: `/api/knowledge/search` and `/api/web/knowledge/search` now resolve Registry effective audience from the authenticated actor and pass it into `KnowledgeSearchService.search(..., effective_audience=...)`, so item audience rules are applied before HTTP search projection. Coverage includes `test_public_search_applies_registry_audience_rules_before_projection`, `test_knowledge_search_applies_audience_rules_before_projection`, and the existing access-service anti-leak tests. Later slices added suggestion and article-detail enforcement.
-
-Status update, 2026-06-14 Phase 5 suggestion API enforcement slice: `/api/knowledge/suggest` now resolves Registry effective audience and passes it through `KnowledgeSuggestionService` into `KnowledgeSearchService`, so audience-scoped suggestions are filtered before projection. Coverage includes `test_public_suggestions_apply_registry_audience_rules_before_projection`. Later slices added article-detail, portal list/action, Ask/RAG/vector retrieval, support knowledge and live evidence; Phase 6 UI remains open.
-
-Status update, 2026-06-14 Phase 5 article-detail enforcement slice: `/api/knowledge/articles/{slug}` now resolves Registry effective audience and `KnowledgePortalService.article_detail()` denies audience-scoped requester articles before body/segment projection. Coverage includes `test_knowledge_article_detail_applies_audience_rules_before_body_projection`. Later slices added portal home/collections/action, support knowledge, Ask/RAG and live evidence; Phase 6 UI remains open.
-
-Status update, 2026-06-14 Phase 5 portal list enforcement slice: `/api/knowledge/portal/home`, `/api/knowledge/portal/spaces/{space_code}` and `/api/knowledge/portal/tags/{tag}` now resolve Registry effective audience in requester context and filter audience-scoped items through `KnowledgeAccessService` before article summaries, featured/popular/recent lists or collection payloads are projected. Coverage includes `test_knowledge_portal_home_applies_audience_rules_before_article_projection` and `test_knowledge_portal_collections_apply_audience_rules_before_article_projection`; `server/tests/test_knowledge_portal.py` passes locally. Later slices added portal action, support knowledge, Ask/RAG/vector retrieval and live evidence; Phase 6 UI remains open.
-
-Status update, 2026-06-14 Phase 5 portal action enforcement slice: requester portal article feedback, correction-request and bookmark add/remove now resolve requester effective audience before loading article context, so audience-scoped articles return 404 and do not create `knowledge_feedback_events`, `knowledge_correction_requests` or `knowledge_user_bookmarks`. Coverage includes `test_knowledge_portal_actions_apply_audience_rules_before_writes`; `server/tests/test_knowledge_portal.py` passes locally. Later slices added support knowledge, Ask/RAG/vector retrieval and live evidence; Phase 6 UI remains open.
-
-Status update, 2026-06-14 Phase 5 Ask/RAG/vector retrieval enforcement slice: `/api/knowledge/ask`, `/api/web/knowledge/ask`, `/api/web/knowledge/ask/preview`, `/api/web/knowledge/retrieve` and `/api/web/knowledge/search/preview` now resolve Registry effective audience and pass it into `KnowledgeRetrievalService.retrieve(..., effective_audience=...)`. Retrieval filters keyword, segment and vector candidates through `KnowledgeAccessService` before ordering, rerank, citations and answer prompt construction, so denied audience-scoped articles do not leak through Ask fallback results or RAG evidence. Coverage includes `test_public_knowledge_ask_applies_audience_rules_before_vector_retrieval_projection`; `server/tests/test_knowledge_ask.py` passes locally. Later slices closed support knowledge and live anti-leak evidence; Phase 6 UI remains open.
-
-Status update, 2026-06-14 Phase 5 support ticket knowledge-suggestions enforcement slice: `/api/web/support/tickets/{ticket_id}/knowledge-suggestions` and the aggregate `/workspace` payload now resolve the ticket requester audience and merge P2 suggestions by boundary: requester-safe articles come from requester-audience-filtered `KnowledgeSuggestionService`, while `support_internal` runbooks still come from the support context. This prevents audience-scoped requester-safe articles for another department from appearing in support ticket suggestions or payload text while preserving operator-only runbooks. Coverage includes `test_web_support_ticket_knowledge_suggestions_apply_requester_audience_rules`.
-
-Status update, 2026-06-14 Phase 5 live anti-leak evidence: quick-deployed the branch to the canonical stand, added/deployed `scripts/knowledge_audience_live_smoke.py`, and captured sanitized report `artifacts/browser_live_validation/phase5-knowledge-audience-20260614145845/live-smoke-report.json` for run `20260614095854`. The run seeded IT/Finance departments, requester-safe scoped articles and a `support_internal` runbook, then verified service-level requester search/suggest/Ask, live HTTPS support ticket suggestions and admin explain denial. It proved the IT requester sees the IT-scoped item, Finance-scoped requester-safe content stays absent from IT requester search/suggestions/Ask and support ticket suggestions, and admin explain returns `allowed=false` / `reason_code=audience_rule_not_matched` for the denied cross-department article. Public-compatible `/api/knowledge/search|suggest` stays auth-whitelisted/anonymous for bearer UI tokens, so requester effective-audience proof is service-level while support/admin proof is live HTTP. Phase 5 backend/live evidence is closed; Phase 6 authoring UI remains next.
-
-Status update, 2026-06-14 Phase 6 authoring UI slice: `/app/admin/knowledge/studio` metadata now embeds `ArticleVisibilityPanel` / `article-visibility-model` for the selected article. It loads item audience rules, Registry people/departments/locations/services, Registry audience groups and access groups; lets admins add role/person/department/department_tree/location/access_group/audience_group/service allow rules without raw JSON; estimates visible Registry people; warns on broad, empty and internal-only visibility; calls preview/explain APIs; and saves `PUT /api/web/admin/knowledge/audience-rules` with a reason. Local verification passes: `pnpm --dir webapp exec vitest run src/pages/admin/knowledge-studio-page.test.tsx src/features/knowledge/article-visibility-panel.test.tsx --reporter=dot`, `pnpm --dir webapp exec tsc --noEmit --pretty false`, `pnpm --dir webapp build`, `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_audience_rules.py -q --tb=short`, `python scripts/verify_workspace.py` and `git diff --check`. Commit `8d29b879` was pushed and quick-deployed with `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --smoke-insecure-tls --leave-running`; remote smoke passed. Browser evidence on `https://192.168.100.17:9443/admin` is stored under `artifacts/browser_live_validation/phase6-knowledge-visibility-8d29b879-20260614-153908/`: 1366x768 and 1920x1080 screenshots, panel DOM snapshots, department-tree picker add evidence, save success, save/reopen persisted-rule evidence, no-horizontal-scroll/layout state, empty console warning/error log and passed remote `scripts/knowledge_audience_live_smoke.py` report `live-smoke-report-p6ui8d29b879.json`. Phase 6 is closed; Phase 7 live agent/requester/support signoff is next.
-
-Status update, 2026-06-14 Phase 7 smoke-harness slice: added `scripts/registry_visibility_live_smoke.py` plus `scripts/test_registry_visibility_live_smoke.py`. The script seeds deterministic live data, creates confirmed-binding, verified-other-account, registration-pending and revoked-session account-session checks, verifies requester scoped Knowledge search/suggest/Ask at service level through `EffectiveIdentityService.resolve_account_session_identity()`, verifies live support ticket knowledge suggestions over HTTPS, checks owner-ticket isolation for verified other-account sessions, stores a sanitized report under `artifacts/registry-visibility-foundation-YYYYMMDD/`, and explicitly marks `real_agent_gui.status=not_collected` so this helper cannot be mistaken for final real-agent signoff. Local verification passes: `python -m pytest scripts/test_registry_visibility_live_smoke.py -q --tb=short`, `python -m compileall -q scripts\registry_visibility_live_smoke.py`, `python scripts/verify_workspace.py`, and `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_account_session_service.py server/tests/test_ticket_account_access.py server/tests/test_ticket_registration_enrichment.py server/tests/test_knowledge_audience_rules.py -q --tb=short` (33 passed). Follow-up fixes at `55e0a22b`, `63b96779` and `547a33c2` made the live support-query seed deterministic and blocked normal ticket create for `registration_pending` sessions. The canonical Phase 7 HTTP/DB live smoke passed on `https://192.168.100.17:9443` for commit `547a33c2` with report `artifacts/registry-visibility-foundation-20260614/registry-visibility-live-smoke-p7547a33c2.json`; real browser support-warning evidence and real local-agent UIA evidence remain open.
-
-Status update, 2026-06-14 Phase 7 browser/UIA signoff: browser support evidence is stored under `artifacts/browser_live_validation/phase7-support-browser-1ca0a43b-20260614/`. `support-ticket-context-warning.safe.json` / `.png` prove the support ticket context warning is visible for ticket `T-000706`, the hidden IT slug is absent, and captured console warning/error entries are empty. `support-ticket-knowledge-tab.safe.json` / `.png` prove support Knowledge suggestions expose the Finance/public requester-safe articles, preserve the support-internal runbook boundary, and do not expose the hidden IT requester article. Raw CDP network capture was skipped because the Browser runtime was resolving a paused document response; the same API/data boundaries are covered by the canonical HTTP/DB live smoke plus DOM/screenshot evidence. Real local-agent GUI/UIA evidence is stored under `artifacts/browser_live_validation/phase7-agent-uia-1ca0a43b-20260614/`: the owner instance `phase7-agent-20260614-1ca0a43b` connected as `bf3fb9c9-6c5d-404f-a1f6-0a4496556e61`, refreshed account-state, selected binding `831d3562-96d3-4712-81de-c4e1da7ecb93` as `confirmed_binding`, and created GUI ticket `T-000707` / `e7dde2a3-3fd7-4b8f-a0bb-6945134274ea` with DB-confirmed requester account-session fields. The pending instance `phase7-pending-agent-20260614-1ca0a43b` connected as `c7eff251-7730-4162-ab33-be0dc74e2ba4`; `pending-agent-account-gate-uia-unstrict.json` shows `Регистрация ожидает подтверждения`, `Подтвердить данные`, `Phase 7 Pending p7547a33c2` and `pending_user_confirmation`, while status JSON shows the workspace stays at `account_gate` with no active profile/tickets. `phase7-real-agent-uia-summary.safe.json` ties owner, pending and browser evidence together. Artifact scans found only safe flags/hash prefixes/IDs and did not find raw agent tokens, account-session tokens, cookies, auth headers, public access codes or public access URLs.
-
-Status update, 2026-06-14 Phase 8 operability signoff: `RegistrySnapshotService` now emits generated quality issues for active audience groups with zero effective members, active Knowledge audience rules that reference missing/archived Registry people/departments/locations/audience groups, requester-visible published Knowledge items whose active item/space audience rules resolve to zero known Registry users, unlinked active UI users, active people attached to archived department/location rows, and active bindings to inactive people. `RegistryAdminOperationsService` now supports safe CSV export for `audience_groups`, `audience_group_members` and `knowledge_audience_rules`, plus preview/apply CSV import for `audience_groups` and `audience_group_members`; direct device binding and account-session imports remain unsupported. Focused local verification passed with `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registry_quality_remediation.py server/tests/test_registry_import_export.py server/tests/test_registry_audience_groups.py -q --tb=short` (20 passed), `python -m pytest scripts/test_registry_visibility_phase8_live_signoff.py scripts/test_registry_visibility_live_smoke.py -q --tb=short` (10 passed), and `pnpm --dir webapp exec vitest run src/features/admin/registry/registry-quality-tab.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` (8 passed). Commit `6004e541` was quick-deployed to the canonical stand and smoke-verified. Remote API/DB live signoff passed with `scripts/registry_visibility_phase8_live_signoff.py` on the Linux host; report: `artifacts/registry-visibility-foundation-20260614/registry-visibility-phase8-live-signoff-phase8-6004e541-20260614190013.json`. Browser evidence under `artifacts/browser_live_validation/phase8-registry-operability-6004e541-20260614-190013/` proves the filtered Registry quality tab shows current Phase 8 rows with Fix/Ignore/Snooze actions, unlinked UI user has disabled Open but active remediation, and the import dialog exposes `Audience groups` / `Audience group members` while keeping direct binding/account-session import absent. Browser console had 0 errors and repeated `[webapp-realtime] websocket bridge reported an error` warnings; the page and checked controls remained usable.
-
-* Work on a new branch, for example `codex/registry-visibility-foundation`.
-* Keep all changes incremental, tested, documented and backward-compatible with the existing Registry Management Center, registration, account-session and Knowledge Platform contracts.
-* This is not an MVP. Build a production-grade but not over-engineered foundation for the functionality that already exists and the near-term planned functionality: user web cabinet, agent registration, requester-safe knowledge, support/admin knowledge, RAG ACL filtering and future AD/SSO sync.
-
-Goal:
-
-* Turn `/app/admin/registry` into the central production registry for people, departments, locations, device ownership, UI-user links, account sessions, access groups and knowledge audiences.
-* Keep departments and groups as separate concepts:
-  * Departments = organizational structure.
-  * Access groups = permissions/RBAC and support work access.
-  * Audience groups = content visibility, knowledge targeting, service visibility and future notifications.
-* Add an effective identity/audience layer that can answer:
-  * Who is this actor?
-  * Which registry person is linked to this actor/session?
-  * Which department/location/groups/audiences apply?
-  * Why can or cannot this actor see a knowledge item?
-* Add production knowledge visibility rules for spaces/items using registry departments, department trees, access groups, audience groups, roles, locations, services and explicit people.
-* Harden registration so department/location selection can be controlled by policy and verified from the registry instead of producing free-text data drift.
-* Add live verification with a real connected agent/account-session flow, not only unit tests.
-
-Non-negotiable principles:
-
-* Do not collapse departments into groups.
-* Do not replace the existing Registry Management Center. Extend it.
-* Do not duplicate `ui_users` into `registry_people`. UI login links must remain represented through verified `registry_person_identities(provider='ui_login')`.
-* `device_user_bindings` remains the authoritative device-person binding source.
-* `registry_assets.assigned_person_id` and `device_inventory_bindings.person_id/source_binding_id/registration_status` remain derived/synchronized state.
-* Knowledge visibility must be ACL-first:
-  * role/visibility/status checks before search result projection;
-  * audience rules before semantic/vector/RAG output;
-  * no hidden article title/summary/chunk leakage in search, suggestions, Ask/RAG or diagnostics.
-* AI/RAG must consume only already-authorized knowledge candidates.
-* Admin/support broad access must be explicit and auditable, not accidental.
-* Every dangerous registry operation must have preview/dry-run and audit.
-* Every permission/visibility decision must have an explain/debug path for admin troubleshooting.
-* All new user-facing UI text must be Russian-first.
-* Technical enum/API/table names can remain English.
-* No raw secrets, tokens, account-session tokens or personal data dumps in logs, screenshots or committed artifacts.
-
-Current baseline context:
-
-* `/app/admin/registry` already contains tabs for overview, devices, people, bindings, requests, account sessions, quality, locations, departments and policies.
-* Registry already has people, departments, locations, assets, device-user bindings, registration claims, person identities and account sessions.
-* Access groups already exist separately for RBAC/permissions/queues.
-* Knowledge spaces/items already have coarse `visibility`, but there is no production audience-scope layer for department/group/person/service-based article visibility.
-* Registration policies already include `department_mode` and `location_mode`, but the current Registry Policies UI does not expose these fields as first-class production controls.
-* Some Registry bulk UI paths still use `window.prompt` with raw IDs. These must become production dialogs with pickers, preview and result reports.
-* Browser pairing and account sessions already define the critical identity boundary:
-  * device identity is not requester identity;
-  * confirmed binding session = registered user on device;
-  * verified other-account session = temporary approved requester identity;
-  * registration_pending session must not open normal ticket workspace before approval.
-
-Production target model:
-
-* Registry identity:
-  * `UiUser.user_login`
-  * `registry_person_identities(provider='ui_login')`
-  * `registry_people.person_id`
-  * `registry_people.department_id`
-  * `registry_people.location_id`
-  * `device_user_bindings`
-  * `device_account_sessions`
-* Organization:
-  * `registry_departments`
-  * `registry_locations`
-  * optional person department memberships for future multi-department cases, while preserving current `registry_people.department_id` as primary/default.
-* Access:
-  * `access_groups`
-  * `access_group_members`
-  * `access_group_permissions`
-  * `access_group_queue_members`
-* Audience:
-  * new `registry_audience_groups`
-  * new `registry_audience_group_members`
-  * new `knowledge_audience_rules`
-* Visibility:
-  * coarse `knowledge_items.visibility` still applies;
-  * new audience rules refine who can see requester-safe/public/internal content;
-  * support/admin access must still respect status/lifecycle/policy rules.
-
-Out of scope for this work:
-
-* Do not implement full AD/LDAP synchronization yet.
-* Do not implement a generic enterprise ABAC engine.
-* Do not rewrite the whole Knowledge Platform.
-* Do not replace existing Access Control pages unless needed for linking/explaining registry identity.
-* Do not add AI-specific behavior except ensuring RAG/search uses the new authorization boundary.
-* Do not implement complex negative/deny rules unless the schema supports them safely and tests cover precedence. Prefer allow-only in the first applied UI if deny behavior is not fully proven.
-
-Change classification and ownership zones:
-
-* Treat this as a cross-cutting contract change, not a local Registry UI cleanup.
-* Primary ownership zones from `docs/ARCHITECTURE_BOUNDARIES.md`:
-  * Registry / inventory / CMDB;
-  * Auth, sessions and device identity;
-  * Typed web boundary;
-  * React webapp UI;
-  * Knowledge Platform;
-  * Agent runtime / GUI account-session flow;
-  * DB schema and repo contract;
-  * Observer instrumentation contract.
-* Any implementation phase that changes route payloads, identity semantics, DB schema, search/RAG authorization, account-session validation or browser-visible admin/requester behavior must update producer, consumer, tests and docs in the same checkpoint.
-* Do not run parallel edits against `server/routes.py`, migrations, CODEMAP, auth/account-session code or Knowledge ACL/search code from separate tasks unless the contract branch is merged first.
-
-Existing entrypoints to reuse before adding new abstractions:
-
-* Registry/account-session backend:
-  * `server/registry/account_state_service.py`
-  * `server/registry/account_session_service.py`
-  * `server/registry/registration_service.py`
-  * `server/registry/registration_form_service.py`
-  * `server/registry/policy_service.py`
-  * `server/web_api/registry_handlers.py`
-  * `server/app/repos/registry_repo.py`
-  * `server/routes.py`
-* Registry/admin webapp:
-  * `webapp/src/pages/admin/registry-page.tsx`
-  * `webapp/src/features/admin/registry/*`
-  * `webapp/src/features/admin/registry/registry-policies-tab.tsx`
-  * `webapp/src/features/admin/registry/registry-quality-tab.tsx`
-* Access-control boundary:
-  * `server/access_control/*`
-  * `server/web_api/access_handlers.py`
-  * existing `access_groups`, `access_group_members`, `access_group_permissions` and queue membership repos/routes.
-* Knowledge authorization/search:
-  * `server/knowledge/contracts.py`
-  * `server/knowledge/visibility.py`
-  * `server/knowledge/search_service.py`
-  * `server/knowledge/retrieval_service.py`
-  * `server/knowledge/portal_service.py`
-  * `server/knowledge/metadata_service.py`
-  * `server/web_api/knowledge_handlers.py`
-  * `server/app/repos/knowledge_repo.py`
-* Agent/requester boundary:
-  * `pc_agent/core/account_session.py`
-  * `pc_agent/ui_gui/account_gate.py`
-  * `pc_agent/ui_gui/main_window.py`
-  * `pc_agent/ui_gui/server_api.py`
-  * `pc_agent/ui_gui/chat_panel.py`
-  * `server/tickets/account_access_service.py`
-  * `server/tickets/create_flow.py`
-  * `server/web_api/requester_handlers.py`
-* Canonical docs to keep aligned:
-  * `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`
-  * `server/docs/REGISTRY_MANAGEMENT_CENTER.md`
-  * `server/docs/REGISTRY_VISIBILITY_FOUNDATION.md`
-  * `server/docs/KNOWLEDGE_PLATFORM.md`
-  * `server/docs/KNOWLEDGE_OPERATIONS.md`
-  * `server/docs/SECURITY_AND_AUTH.md`
-  * `server/docs/DATABASE.md`
-  * `server/docs/CODEMAP.md`
-  * `pc_agent/docs/CODEMAP.md`
-  * `docs/QUICK_LOOKUP.md`
-
-Implementation efficiency rules:
-
-* Start each phase with `python scripts/build_context_pack.py --topic "registry visibility foundation <phase>"` and one focused `python scripts/search_context_index.py "<route symbol contract>" --profile contract` query.
-* Prefer extending existing Registry services and repos over adding a parallel identity or membership store.
-* Effective identity must be a read model/resolver over verified sources. It must not mutate account sessions, registration claims, bindings or people.
-* Add the audience-group schema and expansion service before wiring Knowledge audience rules. Knowledge phases should depend on stable audience expansion tests, not duplicate expansion logic.
-* Keep `registry_people.department_id` as the compatibility primary department even if `registry_person_department_memberships` is added.
-* Use archive/status columns for audience groups and rules; avoid hard deletes for admin-managed visibility objects.
-* Route additions must be reflected in backend handler tests, TS API clients/types and CODEMAP/QUICK_LOOKUP when they become canonical.
-* UI pickers must consume names/codes from APIs and show raw UUIDs only under `Advanced / служебные поля`.
-* Existing `window.prompt` usage is a regression target. Registry production flows should use dialogs/drawers with preview, reason and result reports.
-* Knowledge ACL enforcement must be placed at candidate selection and final projection. Do not rely only on UI filtering or post-search masking.
-* Search, suggestions, portal, support knowledge, agent suggestion APIs and RAG/vector retrieval must all share the same access service or a thin wrapper over it.
-* Any live script or browser evidence must redact account-session token, machine token, pairing token/code, cookies, raw auth headers and hidden article content.
-* Treat `/app/admin/access` as the canonical RBAC/access-group editor until the plan explicitly says otherwise. If Phase 3 adds a Registry `Группы доступа` surface, prefer a read-only summary/deep link over a second mutation UI unless operator workflow, tests and docs justify duplication.
-* For docs-only plan/context updates, run docs/navigation verification instead of deploy. Do not run release scripts just to update `PLANS.md`.
-
-Phase dependency gates:
-
-* Phase 0 must finish before behavior changes: the architecture contract and docs list are the handoff anchor.
-* Phase 1 must finish before Phase 5/6/7. Knowledge visibility cannot safely consume actor/session context until effective identity is test-covered.
-* Phase 2 must finish before audience rules are enforced in Knowledge. Do not let Knowledge implement its own private audience expansion.
-* Phase 3 can proceed after the relevant backend APIs exist, but UI dialogs must not fake successful preview/apply without server dry-run support.
-* Phase 4 live agent registration checks must pass before Phase 7 signoff; unit tests alone are insufficient for account gate/session transitions.
-* Phase 5 must prove anti-leak behavior before Phase 6 exposes authoring controls to operators.
-* Phase 8 is final operability hardening; do not treat observer/quality/import-export as cosmetic if earlier phases introduce data drift or hidden ACL failures.
-
-Current context from intake, 2026-06-13:
-
-* `python scripts/build_context_pack.py --topic "registry visibility foundation registration knowledge audience scopes"` classified the work as `Feature / Cross-cutting` and matched `knowledge_platform`, `web_platform` and `registry_objects`.
-* `python scripts/build_context_index.py --force` rebuilt the local retrieval index after stale warnings: 21,216 items, 837 routes, 16,813 symbols and 2,048 tests.
-* Relevant existing route anchors include:
-  * `GET /api/registry/agent/registration-form`
-  * `GET /api/registry/agent/registration-status`
-  * `POST /api/registry/agent/account-sessions/registration-pending`
-  * `POST /api/web/registry/browser-pairings/{pairing_id}/registration/confirm`
-  * `POST /api/web/admin/registry/ui-users/{user_login}/link-person`
-  * `POST /api/knowledge/search`
-  * `POST /api/knowledge/suggest`
-  * `POST /api/knowledge/feedback`
-  * `GET|POST /api/web/knowledge/*`
-* Existing policy code already validates `registration.department_mode` and `registration.location_mode` values in `server/registry/policy_service.py`; Phase 4 should expose/enforce the existing contract rather than invent new mode names.
-* Existing Knowledge visibility levels are `public`, `requester`, `agent_requester_safe`, `support_internal`, `admin_internal`, `security_restricted` and `auditor_read`. Audience rules refine these levels; they must not make internal/support-only content requester-visible.
-* Existing tests already cover important anchors such as account sessions, registration, Knowledge visibility/search, vector ACL-before-similarity and RAG ACL evaluation. Reuse and extend them before creating broad new suites.
-
-Current handoff context, 2026-06-13:
-
-* Current local branch at this intake is `codex/helpdesk-process-model`. Before starting the next implementation step, run `git status -sb` and verify the branch contains `3fb13ea8`; do not assume the local branch, GitHub `origin` and deployed stand are aligned without checking.
-* Phase 3 live/browser evidence for commit `3fb13ea8` is under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/`.
-* Browser evidence covers `/app/admin/registry` overview at 1366 and 1920 widths, `Аудитории · P1` create/preview/save/archive, member preview counts, device bulk dialog with reason/preview controls, and people/UI-account linking controls. The temporary test audience code `codex_phase3_3fb13ea8` was archived during cleanup.
-* Access groups already have a production surface at `/app/admin/access` backed by `webapp/src/features/access-control/api.ts`, `webapp/src/pages/admin/access-page.tsx` and `/api/web/admin/access/*` in `server/web_api/access_handlers.py`.
-* Access groups are RBAC/queue-permission facts. Registry effective identity and audience expansion may read them as targeting facts, but Registry audience groups must not grant or mutate access-group permissions.
-* The Phase 3 `Группы доступа` expectation is to keep `/app/admin/access` as canonical editor and expose only a read-only Registry summary/deep link. If this changes later, tests must prove the UI reuses existing Access Control APIs and does not create a competing permissions model.
-* Current workspace contains unrelated tracked changes in `.codex/config.toml`, `pc_agent/ui_gui/tickets_list_model.py` and `scripts/live_agent_uia_state_probe.py`, plus many untracked artifacts. Stage only files that belong to the active task.
-* If the remote stack is still running from browser validation and no further live checks are planned, stop it through `python scripts/manage_remote_stack.py stop server` and `python scripts/manage_remote_stack.py stop control`.
-
-Plan context refresh, 2026-06-14:
-
-* `python scripts/build_context_pack.py --topic "registry visibility foundation phase 4 strict registration scenario b scenario c knowledge audience"` classified the remaining work as Registry / Assets with `registry_objects`, `knowledge_platform` and `web_platform` context. Keep the next implementation step scoped to one open scenario or one Knowledge ACL slice; do not mix live registration evidence with Knowledge schema/API changes in the same checkpoint unless the user explicitly asks for a combined release gate.
-* `python scripts/build_context_index.py --force` rebuilt the local context index after `PLANS.md` changed: 21,432 items, 1,523 chunks, 847 routes, 16,977 symbols and 2,061 tests. If later context search reports `PLANS.md` stale again, rebuild before using search output as a handoff source.
-* Current high-signal route/doc anchors for the next work are `POST /api/web/registry/browser-pairings/{pairing_id}/registration/confirm`, `POST /api/registry/agent/account-login-requests`, `GET|POST /api/web/admin/registry/account-login-requests/*`, `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`, `server/docs/REGISTRY_VISIBILITY_FOUNDATION.md` and `docs/LIVE_TESTING_DEBUG_RULES.md`.
-* For docs-only plan/context edits, verification should stay local (`python scripts/verify_workspace.py`, `git diff --check`) and should not deploy, start agents or leave remote services running. For any subsequent live scenario, use project runtime/deploy scripts only and record final service state.
-* Latest docs-only context refresh for this PLANS.md update used `python scripts/build_context_pack.py --topic "PLANS Phase 4 Scenario B device registration strict registry ids safe Russian error live validation"` and `python scripts/search_context_index.py "Phase 4 Scenario B device registration strict registry ids safe Russian error account session live validation" --profile debug`. The useful anchors stayed concentrated in Phase 4 registration, `docs/LIVE_TESTING_DEBUG_RULES.md`, `server/registry/registration_service.py`, `server/registry/browser_pairing_service.py`, `server/auth/middleware.py`, `webapp/src/pages/device-pairing/api.ts`, `webapp/src/pages/device-pairing/index.tsx` and `webapp/src/pages/device-pairing/device-pairing-page.test.tsx`.
-* The context index was rebuilt again after stale warnings from current plan/webapp edits: 21,438 items, 1,523 chunks, 847 routes, 16,983 symbols and 2,061 tests. Treat future stale-index warnings as a stop-and-rebuild signal before relying on search output for handoff decisions.
-* Current workspace hygiene for the next handoff: this docs-only update should stage only `PLANS.md`. The Scenario B UI/error-mapping files are already part of the `b675d99` checkpoint; `.codex/config.toml`, `pc_agent/ui_gui/tickets_list_model.py` and `scripts/live_agent_uia_state_probe.py` remain unrelated dirty tracked files and must not be staged or reverted as part of this plan-context update.
-* Latest Scenario C context refresh for this PLANS.md update used `python scripts/build_context_pack.py --topic "Phase 4 Scenario C verified other-account session safety live validation account gate PLANS context"` and `python scripts/search_context_index.py "Scenario C verified_other_account account-login-requests requester_account_warning owner ticket visibility account session live validation" --profile debug`. The useful anchors are `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`, `docs/LIVE_TESTING_DEBUG_RULES.md`, `server/registry/account_session_service.py`, `server/tickets/account_access_service.py`, `pc_agent/ui_gui/account_gate.py`, `pc_agent/ui_gui/main_window.py`, `pc_agent/ui_gui/server_api.py`, `webapp/src/pages/tickets/list-page.tsx`, and the focused tests named in the Scenario C handoff below.
-* Auth/runtime efficiency note for the next live agent: `scripts/manage_local_agent.py start --issue-token` still issues through `/api/login`, while the hardened stand keeps manual token issue admin-only. Prefer the project-approved connection request flow or a short-lived remote `AuthService.generate_agent_token(..., replace_existing=True)` helper that never prints the raw token; store only hash prefix/length in safe artifacts and delete any temp secret file immediately after the isolated agent starts.
-* Latest plan-efficiency refresh for the current handoff used `python scripts/build_context_pack.py --topic "PLANS Phase 4 Scenario C other-account handoff knowledge audience efficiency conditions"` and `python scripts/search_context_index.py "Scenario C verified_other_account requester_account_warning registration claim binding mutation account session handoff" --profile debug`. The search confirmed that Scenario C context should stay centered on `server/docs/REGISTRATION_ACCOUNT_SESSIONS.md`, `AccountSessionService`, `TicketAccountAccessService`, `test_verified_other_account_session_marks_ticket_without_registration_claim`, `test_verified_other_account_can_only_view_own_session_ticket`, and `test_revoked_base_binding_invalidates_verified_other_account_session`.
-* At this refresh, the in-progress Scenario C run marker was `phase4-other-20260614-7910996c` on commit `7910996c`. Remote `control` and `server` plus the named local GUI agent were still running from the interrupted live run. Before continuing or cleaning up, verify actual state with `python scripts/manage_remote_stack.py status all`, `python scripts/manage_local_agent.py status phase4-other-20260614-7910996c`, and the agent `/ui/automation/status`; do not assume the session/token state survived a pause or restart.
-* Artifact safety note: `artifacts/browser_live_validation/phase4-other-20260614-7910996c/ticket_b_create.safe.json` was produced by the live agent ticket driver and proves ticket B creation, but it also contains a raw public access code and declared-account contact fields. Treat it as unsafe evidence until replaced or summarized by a redacted artifact; do not commit or share it as-is, and do not use "safe" in future artifact names unless token/code/contact redaction has been verified.
-* Latest implementation context refresh for the Scenario C support warning blocker used `python scripts/build_context_pack.py --topic "Phase 4 Scenario C support ticket account warning projection blocker"`, `python scripts/search_context_index.py "SupportTicketDetail requester_account_warning _build_support_detail_payload support workspace" --profile debug`, and `python scripts/build_context_index.py --force` after stale-index warnings. The useful anchors are `server/app/api/serializers.py` as the existing source of requester account-session fields, `server/web_api/dto/support.py::SupportTicketDetail`, `server/web_api/support_handlers.py::_build_support_detail_payload`, `server/tests/test_web_support_api.py`, and the already-green frontend mapper path in `webapp/src/features/queues/support-workspace-mappers.ts` plus `support-workspace-mappers.test.ts`.
-* Efficiency condition for continuing this blocker: do not rerun the full DB-backed Scenario C tests until the support detail projection is fixed and local no-DB coverage passes. The DB-backed Windows pytest attempts for ticket-account tests can hang without assertion output; use `test_build_support_detail_payload_projects_requester_account_context` for the API projection contract, then deploy and verify the real support page/API fields against ticket `T-000694` or a fresh ticket B.
+The system should handle versions, chunks, indexing, RAG eligibility, visibility checks and publication mechanics.
 
 ---
 
-## Phase 0 — Architecture audit and contracts
+## 0. Preflight / Known Unfinished Registry Tasks
 
-Goal:
+### 0.1. Expose `access_group` in audience-group member UI
 
-* Record the production contract before code changes.
-* Map the current registry, registration, access-control and knowledge visibility boundaries.
-* Identify exact files/services/routes that must change.
+Current backend/types support audience group members of type:
 
-Tasks:
+- `person`
+- `department`
+- `department_tree`
+- `location`
+- `access_group`
+- `role`
+- `service`
 
-* Review current code and document:
-  * `/app/admin/registry`
-  * `server/web_api/registry_handlers.py`
-  * `server/registry/*`
-  * `server/web_api/access_handlers.py`
-  * `server/access_control/*`
-  * Knowledge search/view/suggestion/RAG paths.
-* Add/update docs:
-  * `server/docs/REGISTRY_MANAGEMENT_CENTER.md`
-  * `server/docs/REGISTRY_VISIBILITY_FOUNDATION.md`
-  * `server/docs/KNOWLEDGE_OPERATIONS.md`
-  * `server/docs/CODEMAP.md`
-  * `docs/QUICK_LOOKUP.md`
-* Define canonical terms:
-  * `department`
-  * `access_group`
-  * `audience_group`
-  * `queue`
-  * `role`
-  * `person`
-  * `identity`
-  * `account_session`
-  * `knowledge_audience_rule`
-* Add an architecture note explaining why department != group.
+But the Registry audience group UI member type dropdown currently omits `access_group` even though the label exists. Add `access_group` to the selectable member type list and load options from `/api/web/admin/access/summary`.
 
-Verification:
+Acceptance:
 
-* `git diff --check`
-* `python -m compileall -q server shared scripts`
-* Verify docs contain no mojibake.
-* Verify docs clearly say departments are organizational structure, not RBAC groups.
-* Verify no runtime behavior changed in Phase 0.
+- `/app/admin/registry` → `Аудитории` allows adding `Группа доступа` as audience member.
+- Member preview resolves people from access group membership.
+- Existing warning text remains clear: access groups grant RBAC permissions, while audiences only target content.
+- Add/adjust vitest coverage for selecting `Группа доступа`.
+- Keep raw group ids hidden except in advanced/debug text.
 
-Exit criteria:
+### 0.2. Keep Registry quality issues visible
 
-* Architecture contract is recorded.
-* Tables/services/routes planned before implementation.
-* Live-check expectations are documented.
-* No code behavior changed.
+Registry quality must continue surfacing:
 
-Phase 0 execution, 2026-06-13:
+- `audience_group_empty`
+- `knowledge_audience_rule_invalid_target`
+- `knowledge_audience_zero_users`
 
-* Added `server/docs/REGISTRY_VISIBILITY_FOUNDATION.md` as the canonical architecture contract for Registry identity, audience groups, account sessions and Knowledge visibility before runtime implementation.
-* Updated `server/docs/REGISTRY_MANAGEMENT_CENTER.md` to link the new foundation and explicitly separate departments, access groups and future audience groups.
-* Updated `server/docs/KNOWLEDGE_PLATFORM.md` and `server/docs/KNOWLEDGE_OPERATIONS.md` so future Registry audience rules refine coarse Knowledge visibility without leaking support/admin-only content.
-* Updated `server/docs/CODEMAP.md` and `docs/QUICK_LOOKUP.md` with the new routing/context anchor and implementation entrypoints.
-* Behavior changed: none. No runtime routes, migrations, services or UI behavior were added in Phase 0.
-* Phase 0 verification target: `git diff --check`; `python -m compileall -q server shared scripts`; `python scripts/docs_inventory.py --check-links`; `python scripts/verify_workspace.py`; mojibake scan for changed docs.
+These are not blockers for starting Knowledge refactor, but they are safety checks that must remain visible in `/app/admin/registry` → `Качество данных`.
+
+### 0.3. Document current access limitations
+
+Current `knowledge_audience_rules` are allow-only. There is no deny/exclude precedence yet.
+
+Current privileged roles:
+
+- `support`
+- `admin`
+- `security`
+- `auditor`
+
+may pass audience rules through privileged override after coarse visibility. Keep this behavior for support/admin workspaces, but document a future AI policy decision:
+
+`ai_respects_audience_for_privileged_roles`.
+
+This is not required for the current Knowledge Studio simplification.
 
 ---
 
-## Phase 1 — Effective identity and audience resolver
+## 1. Product Model Decisions
 
-Goal:
+### 1.1. Rename “Space” to “Раздел базы знаний”
 
-* Add a single backend service that resolves actor/session identity into effective registry identity and audience context.
-* All future visibility decisions must use this resolver.
+User-facing term:
 
-Backend service:
+- Old: `Пространство`
+- New: `Раздел базы знаний`
 
-Add:
+Internal API/database names can stay `KnowledgeSpace`, `space_id`, `space_code`.
 
-* `server/registry/effective_identity_service.py`
-* `server/registry/audience_contracts.py`
+Meaning:
 
-Required methods:
+A Knowledge Section is a policy container. It is not merely a folder.
 
-```python
-resolve_actor_identity(actor_id: str, actor_role: str) -> EffectiveIdentity
-resolve_account_session_identity(device_id: str, session_id: str, session_token: str | None) -> EffectiveIdentity
-resolve_person_audience(person_id: str | None, actor_id: str | None, actor_role: str) -> EffectiveAudience
-explain_identity(actor_id: str, actor_role: str) -> dict
-```
+A section defines:
 
-Effective identity payload:
+- display name and description;
+- default visibility;
+- default audience rules;
+- allowed article types;
+- whether publication is allowed;
+- whether ingestion/import is allowed;
+- whether RAG/AI usage is allowed;
+- whether requester portal exposure is allowed;
+- default review/refresh policy if review is enabled later;
+- default category/taxonomy scope;
+- default help desk binding behavior.
 
-```json
-{
-  "actor_id": "ivanov",
-  "actor_role": "user",
-  "person_id": "...",
-  "person_name": "Иванов Иван Иванович",
-  "ui_login": "ivanov",
-  "department_id": "...",
-  "department_path": ["root", "finance"],
-  "location_id": "...",
-  "access_groups": ["support_l1"],
-  "audience_groups": ["finance_staff", "edo_users"],
-  "account_session": {
-    "session_id": "...",
-    "account_mode": "confirmed_binding",
-    "device_id": "...",
-    "binding_id": "..."
-  },
-  "warnings": []
-}
-```
+Example sections:
 
-Rules:
+- `Самообслуживание сотрудников`
+- `IT Support`
+- `Известные ошибки`
+- `Глоссарий`
+- `Регламенты организации`
+- `Информационная безопасность`
+- `Администрирование систем`
 
-* Admin/support actor identity may resolve without registry person, but explain output must show that registry person is missing.
-* User-facing requester flows should prefer linked registry person; unlinked user must be visible in Registry quality issues.
-* Agent machine identity alone must not resolve as requester person.
-* Account session identity must validate through AccountSessionService; never trust client-supplied person/binding fields.
+### 1.2. Separate four concepts
 
-Admin API:
+Do not mix these concepts in UI or backend naming:
 
-Add:
+1. **Раздел базы знаний**
+   - Where the article lives.
+   - Defines defaults and policy.
 
-GET /api/web/admin/registry/identity/effective?actor_id=...
-GET /api/web/admin/registry/identity/person/{person_id}/audience
-GET /api/web/admin/registry/identity/session/{session_id}/explain
+2. **Тип материала**
+   - What kind of content it is.
+   - Defines template/structure.
 
-TDD checkpoints:
+3. **Кому доступна статья**
+   - Coarse visibility plus Registry audience rules.
 
-RED test: linked ui_login resolves to RegistryPerson.
-RED test: unlinked ui_user returns no person_id plus warning.
-RED test: confirmed binding account session resolves person/device/binding.
-RED test: verified other-account session resolves declared person/session but does not change device owner.
-RED test: agent machine token alone does not resolve requester identity.
-RED test: access group membership is included from existing access-control repo.
-RED test: department tree/path is returned.
-RED test: explain output is deterministic and contains no raw tokens.
+4. **Где показывать статью**
+   - Portal, support workspace, agent, AI/RAG, request form suggestions.
 
-Verification:
+### 1.3. Keep coarse visibility as safety boundary
 
-python -m pytest server/tests/test_registry_effective_identity_service.py
-python -m pytest server/tests/test_registration_account_sessions.py
-python -m compileall -q server shared scripts
-git diff --check
+Coarse visibility remains a hard safety boundary:
 
-Live checks:
+- `requester`
+- `agent_requester_safe`
+- `support_internal`
+- `admin_internal`
+- `security_restricted`
+- `auditor_read`
 
-Start server.
-Login as admin in web UI.
-Open a new temporary debug/admin identity view or call API.
-Check:
-admin user resolves with role and access groups;
-test requester with linked UI login resolves to person;
-unlinked UI user appears as unresolved;
-real agent account session resolves only after account login.
-Save evidence:
-API JSON with tokens redacted;
-screenshot of admin identity/explain view if UI exists.
+Audience rules can narrow or allow within this boundary, but must not turn `support_internal` into requester-visible content.
 
-Exit criteria:
+UI labels:
 
-Effective identity resolver is the only new identity source used by later phases.
-Existing registration/account-session tests still pass.
-No requester identity is inferred from agent machine token.
+- `requester` → `Видна заявителю`
+- `agent_requester_safe` → `Видна заявителю и агенту`
+- `support_internal` → `Только поддержке`
+- `admin_internal` → `Только администраторам`
+- `security_restricted` → `Ограничено безопасностью`
+- `auditor_read` → `Только аудиторам`
 
-Phase 1 execution, 2026-06-13:
-
-* Added `server/registry/audience_contracts.py` with side-effect-free `EffectiveIdentity` and `EffectiveAudience` read-model contracts.
-* Added `server/registry/effective_identity_service.py` to resolve UI actors, verified `ui_login` / email identities, registry people, department paths, locations, existing access groups and server-validated account sessions.
-* Added admin-only read/explain APIs:
-  * `GET /api/web/admin/registry/identity/effective?actor_id=...&actor_role=...`
-  * `GET /api/web/admin/registry/identity/person/{person_id}/audience`
-  * `GET /api/web/admin/registry/identity/session/{session_id}/explain`
-* Added `server/tests/test_registry_effective_identity_service.py` covering linked UI login, unlinked UI user warnings, agent machine-token non-requester behavior, confirmed binding account sessions, verified other-account sessions without owner leakage, department path/access group facts and token redaction.
-* Verified with focused DB tests through the project test DB tunnel at `127.0.0.1:55432/pc_support_test`; this is not a full release gate.
-* Phase 1 does not add audience-group tables, Knowledge audience filtering or UI management. Those remain Phase 2+ work.
+Normal article editor should show only the safe common choices. Advanced choices can remain hidden for admin/security cases.
 
 ---
 
-## Phase 2 — Audience groups and registry membership model
+## 2. Knowledge Sections Constructor
 
-Goal:
+Create or refactor a dedicated page:
 
-Add production audience groups for content visibility and future notifications/service targeting.
-Keep them separate from access groups.
+`/app/admin/knowledge/sections`
 
-Backend schema:
+Purpose:
 
-Add migration:
+A production editor for Knowledge Sections / “Разделы базы знаний”.
 
-registry_audience_groups
-audience_group_id
-code
-name
-description
-source: manual, department_rule, import, system, future_sync
-status: active, archived
-metadata_json
-created_at, updated_at, created_by, updated_by
-registry_audience_group_members
-membership_id
-audience_group_id
-member_type: person, department, department_tree, location, access_group, role, service
-member_id
-include_children
-valid_from
-valid_to
-source
-metadata_json
-timestamps/audit fields
+### 2.1. Section list
 
-Optional but recommended compatibility-safe schema:
+Show:
 
-registry_person_department_memberships
-membership_id
-person_id
-department_id
-is_primary
-role_in_department
-valid_from
-valid_to
-source
-metadata_json
+- name;
+- code;
+- status;
+- default visibility;
+- RAG enabled/disabled;
+- portal enabled/disabled;
+- article count;
+- audience summary;
+- warnings.
 
-Rules:
+### 2.2. Section editor
 
-Preserve registry_people.department_id as primary department for compatibility.
-Backfill registry_person_department_memberships from registry_people.department_id if this table is added.
-Do not remove or repurpose existing access groups.
-Audience group membership can include access group as source, but audience group does not grant permissions.
+Fields:
 
-Backend API:
+- Название раздела
+- Код
+- Описание
+- Статус: active / draft / archived
+- Видимость по умолчанию
+- Разрешённые типы материалов
+- Разрешить публикацию
+- Разрешить импорт
+- Разрешить использование в RAG / AI
+- Показывать в портале заявителя
+- Показывать в рабочем месте поддержки
+- Default category/taxonomy scope, if available
+- Default article length recommendation
+- Default audience
 
-Add:
+### 2.3. Section audience
 
-GET /api/web/admin/registry/audience-groups
-POST /api/web/admin/registry/audience-groups
-PATCH /api/web/admin/registry/audience-groups/{audience_group_id}
-POST /api/web/admin/registry/audience-groups/{audience_group_id}/archive
-GET /api/web/admin/registry/audience-groups/{audience_group_id}/members
-PUT /api/web/admin/registry/audience-groups/{audience_group_id}/members
-POST /api/web/admin/registry/audience-groups/{audience_group_id}/preview-members
+Embed simplified visibility/audience controls at section level.
 
-Preview requirements:
+Modes:
 
-Preview must expand department_tree, access_group, role, location and person members into effective person counts.
-Preview must not mutate state.
-Preview must show warnings:
-empty group;
-archived department/location;
-unknown referenced object;
-group includes broad role such as user.
+- Всем в рамках видимости
+- Только выбранным подразделениям
+- Только выбранным аудиториям
+- Только выбранным локациям
+- Только выбранным сервисам
+- Расширенные правила
 
-Audit:
+Rules are saved as `knowledge_audience_rules` with `subject_type=space`.
 
-Every create/update/archive/member change writes registry_admin_events.
-Timeline drawer must show audience-group events where relevant.
+### 2.4. Section policy inheritance
 
-TDD checkpoints:
+Define and document behavior:
 
-RED migration test for new tables and constraints.
-RED test for audience group CRUD.
-RED test for membership expansion.
-RED test for department_tree expansion.
-RED test for access_group membership expansion.
-RED test that audience group does not grant RBAC permissions.
-RED test for audit events.
-RED test for archived group exclusion.
+- Article inherits section audience if the article has no item-level rules.
+- Article can narrow or override using item-level rules.
+- Item-level rules and section-level rules are both evaluated by `KnowledgeAccessService`.
+- UI should explain this in plain Russian:
+  “Статьи наследуют правила раздела. Можно задать отдельные правила для конкретной статьи.”
 
-Verification:
+### 2.5. Acceptance
 
-python -m pytest server/tests/test_registry_audience_groups.py
-python -m pytest server/tests/test_registry_effective_identity_service.py
-python -m compileall -q server shared scripts
-git diff --check
-
-Live checks:
-
-Create test departments:
-ИТО
-Бухгалтерия
-Бухгалтерия / Расчётная группа
-Create test people and link at least one UI user.
-Create audience groups:
-all_staff
-finance_staff
-it_staff
-edo_users
-Add members:
-department_tree=Бухгалтерия
-person=<specific person>
-access_group=<existing support group>
-Run preview and verify expanded counts.
-Save browser evidence:
-audience group list;
-member editor;
-preview with expanded people;
-audit/timeline event.
-
-Exit criteria:
-
-Audience groups exist and are usable without changing RBAC semantics.
-Membership expansion is deterministic and test-covered.
-Registry audit records changes.
-
-Phase 2 backend execution, 2026-06-13:
-
-* Added migration `120` in `server/app/db/migrations/versions/20260613_120_registry_audience_groups.py`.
-* Added SQLAlchemy models for `registry_audience_groups`, `registry_audience_group_members` and compatibility-safe `registry_person_department_memberships`.
-* Added `server/registry/audience_group_service.py` for admin CRUD, member replacement, archive, deterministic preview expansion and warnings for empty groups, unknown objects, archived departments/locations and broad roles.
-* Added admin-only APIs under `/api/web/admin/registry/audience-groups*`.
-* Added `server/tests/test_registry_audience_groups.py` covering CRUD, expansion, department tree, access-group-as-audience, no RBAC grant from audience membership, audit events and archived exclusion.
-* Updated test DB cleanup to truncate the new audience tables.
-* Phase 2 backend does not add the production UI editor; `/app/admin/registry` audience-group management remains Phase 3.
+- Admin can create/edit/archive a section without raw JSON.
+- Admin can set default audience for a section.
+- Admin can preview who will see articles in the section.
+- Section editor does not expose raw ids by default.
+- Existing `KnowledgeSpace` backend can be reused unless a small API extension is needed.
 
 ---
 
-## Phase 3 — Production Registry UI for people, departments, groups and bulk actions
+## 3. Simplify Knowledge Studio
 
-Goal:
+Route:
 
-Make /app/admin/registry usable as production registry UI, not only a technical table/workbench.
-Remove raw-ID prompt flows from main operator paths.
+`/app/admin/knowledge/studio`
 
-UI changes:
+Current Studio must be simplified into a real article editor.
 
-Add or improve Registry tabs:
-Пользователи
-UI аккаунты
-Подразделения
-Локации
-Группы доступа
-Аудитории
-Политики
-Качество данных
-Add clear person detail drawer:
-ФИО
-linked UI login
-identities
-department
-location
-access groups
-audience groups
-devices
-account sessions
-tickets count
-knowledge visibility debug entry point
-Add unlinked UI users view:
-linked/unlinked status;
-actor role;
-active/locked state;
-link to existing person;
-create person from UI user;
-identity collision handling;
-audit reason.
-Replace window.prompt bulk actions with dialogs:
-device assign department;
-device assign location;
-people assign department;
-revoke sessions;
-audience group member changes.
-Bulk dialogs must use searchable pickers, preview, reason and normalized apply report.
+### 3.1. Main principle
 
-UX rules:
+Default Studio UI must not show:
 
-Raw IDs may be visible only in Advanced / служебные поля.
-Primary operator flow must use names, codes and searchable selectors.
-Destructive/dangerous actions require reason.
-Apply button disabled until preview succeeds where preview is available.
-Result report must show selected/success/failed counts and copyable failed rows.
-All visible product text must be Russian.
+- review workflow;
+- manual version selection;
+- manual segmentation;
+- raw audience rules;
+- advanced metadata tabs;
+- AI/debug blocks;
+- raw ids.
 
-TDD checkpoints:
+Default Studio UI must show:
 
-RED webapp test for no window.prompt in registry bulk actions.
-RED webapp test for department/location searchable picker.
-RED webapp test for unlinked UI users.
-RED webapp test for link UI user to person.
-RED webapp test for audience group editor.
-RED webapp test for Russian labels and no mojibake.
-RED webapp test for preview-before-apply behavior.
+- article list;
+- article editor;
+- basic settings;
+- visibility/audience;
+- help desk binding;
+- one primary action: `Сохранить статью`.
 
-Verification:
+### 3.2. Remove review workflow from default UI
 
-pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot
-pnpm --dir webapp exec vitest run src/features/admin/registry/*.test.tsx --reporter=dot
-pnpm --dir webapp exec tsc --noEmit --pretty false
-pnpm --dir webapp build
-git diff --check
+Hide from normal UI:
 
-Live checks:
+- `Отправить на ревью`
+- `Одобрить`
+- `Запросить правки`
+- `Добавить комментарий`
+- `Комментарий ревью`
+- reviewer checklist
 
-Start webapp/server.
-Open /app/admin/registry.
-Browser widths:
-1366x768
-1920x1080
-Verify:
-no horizontal body scroll;
-main actions visible without hidden technical prompts;
-people tab shows linked/unlinked UI users;
-department picker works in bulk assign;
-audience groups can be created/edited;
-preview appears before dangerous apply;
-action result report is visible;
-console errors/warnings = 0.
-Save evidence under:
-artifacts/registry-visibility-foundation-YYYYMMDD/registry-overview-1366x768.png
-registry-people-linked-ui-1366x768.png
-registry-bulk-preview-1366x768.png
-registry-audience-groups-1366x768.png
-registry-console.json
-registry-network.json
+Backend review code can remain.
 
-Exit criteria:
+Publishing must not fail due to missing reviewer in simplified mode.
 
-Registry UI can be operated without copying raw UUIDs for normal tasks.
-UI-user/person linking is production-usable.
-Audience groups are manageable in UI.
-Bulk actions have preview/result reports.
+Required backend/product decision:
 
-Phase 3 UI execution, 2026-06-13:
+- Add config/policy: `KNOWLEDGE_REVIEW_REQUIRED=false`, or
+- Auto-fill `reviewer_actor_id` with current actor or `servicedesk` when empty.
 
-* Added typed frontend API methods for `registry_audience_groups` CRUD, member replacement and member preview under `webapp/src/features/admin/api.ts`.
-* Added `/app/admin/registry` tab `Аудитории · P1` backed by the Phase 2 `/api/web/admin/registry/audience-groups*` routes. The first slice supports group create/update/archive, member editor, department-tree/person/department/location/role/service member selection, required reason, preview-before-save and preview counts/warnings.
-* Replaced the known `window.prompt` operator paths in `webapp/src/pages/admin/registry-page.tsx` and `webapp/src/features/admin/registry/registry-quality-tab.tsx` with dialogs:
-  * bulk device/person/session actions use `RegistryBulkActionDialog` with searchable department/location pickers, reason, server preview and normalized apply report;
-  * UI-user linking uses `RegistryLinkUiUserDialog` with an unlinked-account picker and reason;
-  * quality ignore/snooze/resolve and other reason-only actions use `RegistryReasonDialog`;
-  * bind-person-to-known-device preselects the person in `RegistryBindPersonDialog` instead of asking for a raw device id through prompt.
-* Added `webapp/src/pages/admin/registry-page.test.tsx` to guard no `window.prompt`, searchable bulk picker preview/apply behavior and the audience-group editor path.
-* Current local verification for this slice:
-  * `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot`
-  * `pnpm --dir webapp exec tsc --noEmit --pretty false`
-  * `rg -n "window\.prompt|prompt\(" webapp\src\pages\admin\registry-page.tsx webapp\src\features\admin\registry`
-* Phase 3 verification and evidence completed after the initial local slice:
-  * focused Registry vitest suite, registry backend pytest, docs drift/link checks, webapp typecheck, webapp build, `python scripts/verify_workspace.py` and `git diff --check` passed before commit `3fb13ea8`;
-  * quick stand deploy applied migration `120` and uploaded the webapp bundle for browser validation;
-  * browser evidence under `artifacts/browser_live_validation/registry-phase3-3fb13ea8-20260613/` confirms no horizontal body scroll and no captured console/network errors on the checked Registry paths;
-  * checked flows: Registry overview, `Аудитории · P1` empty/create/preview/save/archive, device bulk dialog reason/preview controls, people tab UI-account linking controls.
-* Phase 3 access-groups addendum completed at commit `6204c749`:
-  * added `webapp/src/features/admin/registry/registry-access-groups-tab.tsx`;
-  * added `/app/admin/registry` tab `Группы доступа · P1` that reads `fetchAccessSummary` / `/api/web/admin/access/summary`;
-  * the tab is read-only and links to `/app/admin/access`; it must not create/update permissions, members or queue grants.
-* Phase 3 access-groups addendum verification, 2026-06-13:
-  * `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls` deployed commit `6204c749` to the canonical stand; smoke passed on attempt 2;
-  * browser evidence is under `artifacts/browser_live_validation/registry-access-groups-6204c749-20260613/`;
-  * checked `Группы доступа · P1` at 1366x768 and 1920x1080: read-only summary rendered, `/api/web/admin/access/summary` returned 200, deep link points to `/app/admin/access`, no horizontal body scroll, captured console warnings/errors = 0, captured non-static network failures = 0.
-* Remaining Phase 3 work before exit:
-  * none for the Registry UI access-groups addendum;
-  * proceed to Phase 4 only after confirming no newer operator expectation changes the canonical RBAC-editor decision.
+Acceptance:
+
+- User can save/publish a normal article without manually assigning reviewer.
+- Review UI is not visible in default Studio.
+- Review-related code is not deleted unless required; it can remain as future/advanced governance.
+
+### 3.3. One save action
+
+Replace visible “Создать версию” + “Опубликовать версию” workflow with one button:
+
+`Сохранить статью`
+
+Behavior:
+
+1. If new article: create item draft.
+2. Create new version from current form.
+3. Publish new version as current.
+4. Refresh item list and selected item.
+5. Show success:
+   “Статья сохранена и опубликована. Текущая версия: vN.”
+
+Keep version history in a drawer:
+
+- `История версий`
+- current version marked clearly;
+- old versions can be previewed;
+- restore/rollback only inside the drawer with confirmation.
+
+### 3.4. Article editor fields
+
+Default form:
+
+- Заголовок
+- Краткое описание
+- Раздел базы знаний
+- Тип материала
+- Кому доступна статья
+- Аудитория
+- Где показывать статью
+- Связанные услуги / формы обращения
+- Теги
+- Текст статьи
+
+### 3.5. Explain important fields in the UI
+
+For `Раздел базы знаний`:
+
+“Раздел определяет, где хранится статья и какие политики применяются по умолчанию: видимость, аудитория, RAG, импорт и допустимые типы материалов.”
+
+For `Тип материала`:
+
+“Тип определяет шаблон и смысл статьи. Для обычной инструкции выбирайте ‘Инструкция / статья’.”
+
+For `Кому доступна статья`:
+
+“Это базовый уровень доступа. Он ограничивает, кто вообще может получить статью: заявитель, агент, поддержка, администратор.”
+
+For `Аудитория`:
+
+“Аудитория уточняет доступ внутри выбранной видимости: подразделения, группы, локации, сервисы или отдельные сотрудники.”
+
+For `Где показывать статью`:
+
+“Определяет, в каких сценариях система будет предлагать статью: портал заявителя, форма обращения, карточка тикета, агент, AI/RAG.”
+
+### 3.6. Default article types
+
+Normal UI:
+
+- Инструкция / статья
+- FAQ
+- Известная ошибка
+- Обходное решение
+- Термин
+
+Advanced types hidden:
+
+- policy
+- document
+- troubleshooting_tree
+- service_description
+- external_source
+- resolution_draft
+
+### 3.7. Segmentation policy
+
+Default:
+
+- manual segmentation hidden;
+- chunks are created automatically by backend from version body;
+- optional auto-segmentation hidden under advanced.
+
+Display simple status:
+
+“Поисковые фрагменты создаются автоматически по заголовкам и тексту статьи.”
+
+Advanced section:
+
+- Поисковые фрагменты
+- Авторазметка
+- Ручная разметка
+- Сегменты версии
+
+Acceptance:
+
+- The default article flow does not require creating segments.
+- Manual boost/full-text/embedding checkboxes are not visible by default.
+- Advanced segmentation still available for long documents and RAG tuning.
 
 ---
 
-## Phase 4 — Registration policy hardening and agent/browser registration flow
+## 4. Article Visibility and Audience UX
 
-Goal:
+### 4.1. Default visibility modes
 
-Make registration collect clean registry data.
-Ensure department/location policies are visible, configurable and enforced.
-Verify with a real connected agent and account-session flow.
+In article editor, show simple options:
 
-Policy UI:
+1. `Всем в выбранной видимости`
+2. `Только выбранным подразделениям`
+3. `Только выбранным аудиториям`
+4. `Только выбранным сервисам`
+5. `Расширенные правила`
 
-Expose in /app/admin/registry policies tab:
+Internally these save `knowledge_audience_rules`.
 
-registration.department_mode
-allow_pending_request
-optional
-required_existing
-registration.location_mode
-allow_pending_request
-optional
-required_existing
+### 4.2. Human-friendly audience rules
 
-Russian labels:
+The UI must avoid “target_type / target_id”.
 
-Подразделение при регистрации
-Локация при регистрации
-Разрешить свободный ввод с последующей проверкой
-Необязательно, но выбирать из реестра
-Обязательно выбрать из реестра
+Use labels:
 
-Backend enforcement:
+- Подразделение
+- Подразделение и дочерние
+- Аудитория
+- Группа доступа
+- Локация
+- Сервис
+- Сотрудник
+- Роль
 
-If department_mode=required_existing, registration claim must contain valid department_id.
-If location_mode=required_existing, registration claim must contain valid location_id.
-Free-text department, building, floor, room must be treated as pending data-quality input, not silently creating duplicates when policy requires existing registry objects.
-Admin approval must show a diff:
-existing person/device/binding;
-claimed department/location;
-proposed person identity;
-proposed binding type;
-conflicts/blockers.
-Approval must update:
-person identity;
-person primary department/location where applicable;
-device binding;
-asset/inventory derived fields;
-registration/account-session state.
+The advanced/debug view may show technical ids.
 
-Agent/browser live flow:
+### 4.3. Preview
 
-Agent creates browser pairing for registration/login.
-Browser registration confirms as web-authenticated user where applicable.
-Agent polls pairing result and account state.
-Pending registration session must not open normal ticket workspace.
-After admin approval, agent must show confirmed account login/confirmed binding state.
-Ticket create/list must use valid account session.
+Every visibility editor must show:
 
-TDD checkpoints:
+- estimated people count;
+- examples of matched people;
+- warnings:
+  - no rules means broad visibility;
+  - rules resolve to zero people;
+  - internal article cannot become requester-visible through audience;
+  - invalid/archived target.
 
-RED backend test for department_mode=required_existing.
-RED backend test for location_mode=required_existing.
-RED backend test that free text is not accepted as valid existing department/location in required mode.
-RED backend test approval updates person department/location and binding.
-RED backend test pending registration session invalidates after approval/reject.
-RED webapp test for policy UI fields.
-RED webapp test for approval diff.
-RED agent/API test for account gate behavior if existing pc_agent test patterns support it.
+### 4.4. Explain access
 
-Phase 4 execution, 2026-06-13:
+Keep admin-only explain:
 
-* First implemented slice: `/app/admin/registry` -> `Заявки` now shows a compact approval diff for every registration claim before admin actions.
-* Diff source stays read-only from the existing `/api/web/admin/registry` payload; no new route or mutation contract was added.
-* The diff shows existing device/binding context, claimed person, claimed department/location labels, proposed identity, proposed binding type and conflict/blocker reason.
-* Guard test: `webapp/src/pages/admin/registry-page.test.tsx` / `shows an approval diff for registration claims before admin actions`.
-* Second implemented local slice: `/app/admin/registry` -> `Политики · P1` now exposes first-class `Режим подразделения` and `Режим локации` select controls backed by the existing policy enum values `allow_pending_request`, `optional` and `required_existing`.
-* Policy-control source stays on the existing Registry policy endpoints; no backend route or validation contract was added. Saving sends the selected modes through the existing `PATCH /api/web/admin/registry/policies` reason-gated path, and preview uses the existing dry-run endpoint.
-* Guard test: `webapp/src/pages/admin/registry-page.test.tsx` / `exposes department and location modes as first-class registration policy controls`.
-* Local verification so far:
-  * RED: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` failed on missing `Дифф подтверждения`.
-  * GREEN: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` passed 5 tests.
-  * Focused: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx src/features/admin/registry/registry-requests-tab.test.ts --reporter=dot` passed 8 tests.
-  * `pnpm --dir webapp exec tsc --noEmit --pretty false` passed.
-  * `python scripts/docs_drift_check.py`, `python scripts/docs_inventory.py --check-links`, `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py scripts/test_docs_drift_check.py -q`, `pnpm --dir webapp build` and `python scripts/verify_workspace.py` passed after `scripts/navigation_catalog.py` was updated with Phase 4 routing context.
-  * Quick stand deploy: `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls` deployed commit `4b61b225`; `/api/health` smoke returned 200 on the second retry.
-  * Browser evidence on `https://192.168.100.17:9443/admin` -> `/app/admin/registry` -> `Заявки`: 22 live diff blocks found at 1920x1080 and 1366x768, no body horizontal scroll, console warnings/errors 0, non-static network requests 200. Screenshots and console/network JSON are under `artifacts/browser_live_validation/registry-approval-diff-4b61b225-20260613/`.
-  * RED: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` failed on missing `Режим подразделения`.
-  * GREEN after policy controls: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` passed 6 tests.
-  * Focused after policy controls: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx src/features/admin/registry/registry-requests-tab.test.ts --reporter=dot` passed 9 tests.
-  * `pnpm --dir webapp exec tsc --noEmit --pretty false` passed after adding the policy enum fields to `AdminRegistryPolicyPayload`.
-  * Backend anchor after policy controls: `python -m pytest server/tests/test_registry_policies_admin.py::test_registry_policy_api_reads_defaults_and_rejects_invalid_values -q` passed in 396.68s.
-  * Docs/navigation after policy controls: `python scripts/docs_drift_check.py`, `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py scripts/test_docs_drift_check.py -q`, `python scripts/docs_inventory.py --check-links`, `pnpm --dir webapp build`, `python scripts/verify_workspace.py` and `git diff --check` passed before commit `a8f8e81d`.
-  * Quick stand deploy after policy controls: `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls` deployed commit `a8f8e81d`; `/api/health` smoke returned 200 on the second retry.
-  * Browser evidence on `https://192.168.100.17:9443/admin` -> `/app/admin/registry` -> `Политики · P1`: `Режим подразделения` and `Режим локации` controls rendered with `allow_pending_request`, `optional` and `required_existing` options; preview changed form values to `department_mode=required_existing` and `location_mode=optional`; visible `Server dry-run` confirmed the existing preview endpoint without saving. 1920x1080 and 1366x900 checks had no body horizontal scroll and console warnings/errors = 0. CDP network capture was unavailable for this Browser tab, so the preview backend hit is corroborated by the remote server log entry for `/api/web/admin/registry/policies/preview`; screenshots, snapshot and console JSON are under `artifacts/browser_live_validation/registry-policy-modes-a8f8e81d-20260613/`.
-  * Backend enforcement/approval side-effect slice: added `server/tests/test_registry_registration_policy.py`; RED showed approval left `approved["person"]["department_id"]` as `None` for a verified existing person submitting strict registry ids, then `RegistrationService.approve_claim()` was updated to apply validated claim `department_id` / `location_id` to the person before binding payload and derived asset/inventory sync.
-  * Backend verification after this slice: `python -m pytest server/tests/test_registry_registration_policy.py -q` passed 2 tests; `python -m pytest server/tests/test_device_registration_service.py::test_admin_approve_claim_creates_active_binding_and_updates_asset_inventory server/tests/test_device_registration_service.py::test_strict_registration_policy_uses_existing_department_location_pickers server/tests/test_account_session_service.py::test_registration_pending_session_is_revoked_when_claim_is_approved -q` passed 3 tests.
-* Remaining Phase 4 work:
-  * run the real connected agent registration scenarios before Phase 4 exit.
-
-Phase 4 live-agent handoff context, 2026-06-14:
-
-* `scripts/registry_workflow_smoke.py` is useful preflight/support evidence for Registry Management Center invariants: it drives admin/agent HTTP APIs, issues short-lived admin/agent tokens through `AuthService`, and verifies DB-side person/binding/account-session/ticket-access invariants. It does not replace the Phase 4 exit requirement because it does not prove the real Windows agent GUI, WebSocket runtime, browser pairing pages or UIA-visible account gate transitions.
-* Canonical live stand/browser target remains `https://192.168.100.17:9443/admin`. Browser-visible evidence must use the real admin/requester/support UI paths (`/app/admin/registry`, `/app/device/login`, `/app/device/register`, `/app/device/pair` where applicable), not only direct HTTP/DB checks.
-* Use a named isolated Windows agent instance for the live run, for example `phase4-reg-<run_id>`, through `python scripts/manage_local_agent.py ...`; do not reuse a real user's daily agent state or manually patch the Linux/SMB mirrors.
-* Use one clean run marker across every object and artifact, for example `phase4-agent-YYYYMMDD-<short_sha>` in reason strings, test department/location/person names, ticket title/description and evidence filenames. DB/API/browser checks must filter by that marker rather than old rows.
-* Record policy state before changing `registration.department_mode` / `registration.location_mode`, set both to `required_existing` for Scenario A/B, and restore or explicitly record the final policy state at cleanup. Do not leave strict test policy active silently on a shared stand.
-* Treat `scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls` as an optional preflight for registry side effects before the real agent run. A green smoke can shorten diagnosis, but Phase 4 is still blocked until the real agent/browser/UIA evidence is captured.
-* Required Phase 4 pass evidence follows `docs/LIVE_TESTING_DEBUG_RULES.md` no-single-signal rule:
-  * transport/API: registration form policy fields, browser-pairing create/poll/confirm responses, account-state and account-session validate responses;
-  * server DB: `device_registration_claims`, `device_user_bindings`, `device_account_sessions`, derived inventory/asset rows and created ticket requester fields;
-  * agent local state: UIA account gate / account page / ticket create state from `scripts/live_agent_uia_state_probe.py` or a tighter UIA probe if needed;
-  * browser/UI: admin pending claim, approval diff, support ticket requester context and any requester/device pairing page used in the scenario;
-  * logs/action trace: server and agent logs around the run marker, with auth/account-session validation errors classified instead of ignored.
-* Sanitization is a hard condition: evidence may contain safe ids, token lengths, safe prefixes or hashes, but must not contain raw account-session tokens, machine tokens, cookies, auth headers, private keys, browser-pairing tokens or manual pairing codes after the one-time create/entry moment.
-* Stop rather than substituting evidence if the real agent is not connected through WebSocket, the account gate is not UIA-readable, or a browser-visible step cannot be confirmed in the browser. Record the blocker and layer (`agent`, `UIA`, `browser`, `API`, `DB`, `test contamination`) in this plan before patching or rerunning.
-* Cleanup expectations: revoke/expire test account sessions when possible, leave test registry objects identifiable by run marker, stop the isolated local agent and stop remote services unless the user explicitly asks to leave them running.
-* Suggested execution order for the next Phase 4 run:
-  1. `git status -sb`, capture current commit SHA and run `python scripts/verify_workspace.py`.
-  2. Deploy/sync only through project scripts if the stand is not already on the target commit; start remote services through project runtime scripts and stop them at the end.
-  3. Create the run marker and test CMDB objects/users, then optionally run `python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls`.
-  4. Start the isolated agent, verify connection/account gate via UIA, and collect pre-registration account-state evidence.
-  5. Execute Scenario A and Scenario B with strict department/location policies, then Scenario C on a confirmed binding.
-  6. Capture browser, API, DB, UIA and log evidence under `artifacts/browser_live_validation/registry-phase4-agent-<short_sha>-YYYYMMDD/` or a sibling run-specific folder.
-  7. Restore policy/cleanup, stop services, update this Phase 4 block with exact commands, artifact paths and remaining limitations.
-
-Phase 4 partial live/preflight execution, 2026-06-14:
-
-* Refreshed routing state before the live attempt: `python scripts/build_context_index.py --force` rebuilt 21,424 items, 847 routes, 16,970 symbols and 2,060 tests; `python scripts/verify_workspace.py` passed before deploying.
-* Quick-deployed committed SHA `ba41cce8aebe7a5bfe9681f3fe5f8cdbb4484250` to `https://192.168.100.17:9443` with `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-base-url https://192.168.100.17:9443 --smoke-insecure-tls`; remote `/api/health` smoke returned 200 on attempt 2. Full CI/full gate was not requested.
-* Local Windows `python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls --run-id phase4-preflight-20260614-ba41cce8` failed before HTTP assertions because local `DATABASE_URL` resolves to `127.0.0.1:5432/pc_client`; artifact: `artifacts/browser_live_validation/registry-phase4-agent-ba41cce8-20260614/registry_workflow_smoke.json`. This is environment placement evidence only, not a product failure.
-* The same smoke was rerun on the Linux stand from `/var/chat_bot/pc_client` with run id `phase4-preflight-20260614-ba41cce8-remote` and passed scenarios A-F. Sanitized JSON artifact: `artifacts/browser_live_validation/registry-phase4-agent-ba41cce8-20260614/registry_workflow_smoke_remote.json`.
-* Started isolated local Windows agent instance `phase4-reg-ba41cce8` with machine/device id `ee6a14a7-365b-5a82-a3ff-299b2e588819`, source GUI mode and UI port `8874`; raw agent token was issued through remote `AuthService` and was not printed or written to artifacts. The agent connected to `wss://192.168.100.17:9443/ws`, received `handshake_ack`, handled `list_tools`, and UI bridge status reported `sidebar_view=account_gate`, `connection_state=connected`, `connection_detail="WS подключён"`.
-* Real UIA evidence captured the agent account gate: `AccountGateWidget` was visible with Russian registration copy and the `Зарегистрировать через браузер`, `Регистрация`, `Обновить`, `Настройки` buttons. Artifacts: `agent_account_gate_uia.json`, `agent_account_gate_uia_raw.json`, `agent_account_gate_uia_depth12.json`, `agent_account_gate_uia.png`, `agent_ui_automation_status.json`.
-* `scripts/live_agent_uia_state_probe.py --expect-connected` is too strict for the pre-login account-gate entry mode because the connection controls live in the hidden footer/sidebar; the UIA tree did not expose `agent.connection.*` while `/ui/automation/status` did show connected. Treat this as a UIA evidence limitation for Phase 4, not as Scenario A pass.
-* Triggered the actual GUI browser-registration action through UIA Invoke on the `Зарегистрировать через браузер` button; artifact: `agent_browser_register_click.json`. Coordinate-based `click_input()` failed with Windows `SetCursorPos`, but UIA Invoke succeeded.
-* Server-side safe DB evidence after the UIA action showed a pending registration browser pairing for the isolated device: `pairing_id=b2c86c5f-b225-4022-9239-cd55735fbf51`, `purpose=registration`, `status=pending`, `created_at=2026-06-13T19:36:55.610848+00:00`; artifact: `browser_pairing_after_uia_click.json`. No pairing token, manual code, token hash, account-session token or machine token was saved.
-* Captured post-click UIA screenshot/status/log tail artifacts: `agent_account_gate_after_register_click_uia.json`, `agent_account_gate_after_register_click_uia.png`, `agent_ui_automation_status_after_register_click.json`, `agent_logs_tail_after_register_click.txt`.
-* Cleanup: local instance `phase4-reg-ba41cce8` was stopped; remote `server` and `control` were stopped and confirmed inactive. Registration policy was not changed in this partial run, so no policy restore was needed.
-* This does not close Phase 4. Still required for Phase 4 exit: rerun Scenario A with `registration.department_mode=required_existing` and `registration.location_mode=required_existing`; complete browser confirmation on the device registration page with a test UI user; verify pending claim/diff/approval in `/app/admin/registry`; verify agent leaves pending and creates a ticket with requester account-session fields; run Scenario B invalid strict department/location; run Scenario C other-account boundary; collect browser/API/DB/UIA/log evidence for the same clean run marker.
-
-Phase 4 continuation audit, 2026-06-14:
-
-* Current code inspection shows a planning risk for the next strict-policy live run: `/app/device/register` calls `confirmDevicePairing(pairing_id, "registration")` with an empty JSON body; `handle_web_registry_browser_pairing_registration_confirm()` ignores request body; `BrowserPairingService.confirm_registration_pairing_for_web_user()` builds the claim profile only from the web actor id via `_profile_from_actor()` and therefore cannot submit `department_id` / `location_id`.
-* Because `RegistrationService.submit_agent_profile_claim()` raises `RegistrationValidationError("department_id is required")` and `RegistrationValidationError("location_id is required")` when `registration.department_mode` / `registration.location_mode` are `required_existing` and no registry ids are present, the current browser-registration confirmation path is not enough to satisfy "strict policy + browser confirmation" in one run unless code changes add a picker/payload path or the scenario is split.
-* Efficient next options before the next live run:
-  * preferred product fix: extend the device registration page/API so registration browser confirmation can submit existing `department_id` / `location_id` under strict policy, with server tests, webapp tests and browser evidence;
-  * validation split if no product change is intended yet: keep strict `required_existing` for Scenario B and agent-form policy validation, but run browser-pairing confirmation with policy relaxed/restored explicitly and record that it is not a strict-policy pass.
-* Focused DB-backed pytest attempts for `server/tests/test_registration_api.py::test_registration_pairing_approval_surfaces_confirmed_binding_to_agent` timed out locally after 180s without producing assertion output. Treat this as a local test-environment/slow DB limitation for this audit, not as pass/fail evidence. Re-run with the standard project test DB setup before using it as a gate.
-
-Phase 4 strict browser-registration payload slice, 2026-06-14:
-
-* Implemented the preferred product fix for the strict-policy browser confirmation path: `/app/device/register` now loads `/api/registry/options`, renders department/location pickers when options exist, and sends selected `department_id` / `location_id` in the `/api/web/registry/browser-pairings/{pairing_id}/registration/confirm` JSON body.
-* Backend confirmation now accepts only optional `department_id` / `location_id` from the browser payload and delegates validation to `RegistrationService`, preserving the existing rule that browser users cannot override person, binding, account-session or token fields.
-* Added regression anchors:
-  * `server/tests/test_registration_api.py::test_registration_pairing_confirmation_accepts_required_registry_ids`
-  * `server/tests/test_web_session_api.py::test_web_session_cookie_auth_bridges_react_workbench_paths[/api/registry/options]`
-  * `webapp/src/pages/device-pairing/device-pairing-page.test.tsx` coverage for selected department/location ids in the registration confirm POST body.
-* Live browser check on `https://192.168.100.17:9443/app/device/register?pairing_id=...` initially exposed a missing auth bridge: the page could fetch `/api/web/registry/browser-pairings/{pairing_id}` only for a `user` web session, but the new `/api/registry/options` request did not accept the same web-session cookie and collapsed to the generic authentication-required state. `server/auth/middleware.py` now includes the narrow `/api/registry/options` cookie bridge so the page can load registry picker options without broadening cookie auth to all agent registry endpoints.
-* This removes the previously documented need to relax strict policy for browser pairing, but Phase 4 still requires a real live rerun with strict policies, browser confirmation, admin approval diff, agent account-state transition and ticket requester account-session fields.
-
-Phase 4 next live-run context and efficiency conditions, 2026-06-14:
-
-* Treat the `Phase 4 continuation audit` concern about missing browser department/location payload as resolved by commits `d8207ff3` and `e15918fa`. Do not choose the earlier "validation split" path unless a fresh regression proves the picker/payload path is broken.
-* Baseline for the next strict live run is the deployed `e15918fa` behavior: `/app/device/register` must load `/api/registry/options` with the same web-session cookie as the pairing details request, render department/location selects, and send only `department_id` / `location_id` in `registration/confirm`.
-* A strict Scenario A pass requires the same run marker to tie together all layers: browser selected ids, registration claim profile ids, admin approval diff labels, approved person department/location ids, active binding, account-state/account-session response, agent UIA state and ticket requester fields. A browser-only fake pairing or DB-seeded pairing is useful partial evidence, but it cannot close the connected-agent requirement.
-* Before changing policies, snapshot the current `registration.department_mode` and `registration.location_mode`; set both to `required_existing` only for the run; restore them or explicitly record the final shared-stand state during cleanup.
-* If the device registration page shows `Требуется аутентификация` after the user web session is established, classify it first as a web-session cookie bridge or auth-prefix regression. Do not patch policy or registration validation until `/api/web/registry/browser-pairings/{pairing_id}` and `/api/registry/options` are compared under the same browser session.
-* Scenario B should not depend on free-text UI input once the strict picker is present. Use a controlled browser/API tamper with an invalid existing-id value, then verify safe Russian user-visible error text, no approved person/binding side effect, no active account session and no raw token/pairing-code leakage in evidence.
-* Scenario C should start from a confirmed binding created in the same run when feasible. If an older binding is reused, record why, the source binding id, and the extra contamination checks that prove old history did not affect ticket visibility or ownership assertions.
-* Minimum evidence files for the next run folder: browser DOM/screenshot for registration confirm and admin diff, UIA account-gate/account-page dumps before and after approval, sanitized API/DB JSON for claim/binding/session/ticket fields, server log excerpts around the run marker and local agent log excerpts around account-state/ticket create. Redact or hash all raw tokens, cookies, auth headers, pairing tokens and manual codes.
-
-Phase 4 strict Scenario A live evidence, 2026-06-14:
-
-* Run marker: `phase4-agent-20260614-4ca9a116`; deployed commit: `4ca9a1168fc2a2ea6f9b86ce2f3c34e550176bc6`; canonical stand: `https://192.168.100.17:9443`; isolated Windows GUI agent: `phase4-agent-20260614-4ca9a116`; machine/device id: `efad5e17-14a3-4378-b8a4-d09fb63f3d69`.
-* Setup artifacts live under `artifacts/browser_live_validation/phase4-agent-20260614-4ca9a116/`. Test CMDB objects used `department_id=989e865a-03a0-456c-9474-4a8711bffb07`, `location_id=6f74fc1f-dc26-487b-ab44-a9da04af9b39`, and person `cb64f08c-365a-4467-990a-abf84a3ff7f1`. Policy snapshot/restore artifacts show `registration.department_mode` and `registration.location_mode` were set to `required_existing` for the run and restored to `allow_pending_request` during cleanup.
-* Real agent connection/account-gate evidence: `/ui/automation/status` reported `sidebar_view=account_gate`, `connection_state=connected`, `connection_detail="WS подключён"` before registration; UIA dumps showed the account gate and the browser-registration button. The isolated agent later reached `sidebar_view=tickets`, `account_exists=true`, `account_mode=confirmed_binding`, `display_name=Phase 4 Live User phase4-agent-20260614-4ca9a116`, and `binding_id=f0920fc4-587b-47c5-b7a9-6689ee0a7299`.
-* Browser registration evidence: after UIA invoked `Зарегистрировать через браузер`, `/app/device/register?pairing_id=64cb1f59-de7a-4ce7-add5-361cdaeb628d` rendered strict department/location pickers for the same authenticated user. Browser DOM evidence showed `Статус confirmed` and `pending_admin_review`; DB evidence showed the claim profile carried only the selected registry ids (`department_id=989e865a-03a0-456c-9474-4a8711bffb07`, `location_id=6f74fc1f-dc26-487b-ab44-a9da04af9b39`).
-* Admin approval diff evidence: `/app/admin/registry` -> `Заявки` showed the same pending claim with `Устройство: ADMIN-2`, `Текущая привязка: нет активной привязки`, `Заявлено: phase4_user_4ca9a116`, the Phase 4 department/location labels, identity and `primary_user`; browser UI approval changed the row to `approved` and disabled completion actions.
-* DB side effects after approval: claim `ed974a53-75d0-41f8-b396-af7b8f9a2989` became `approved` with `reviewed_by=p4admina116`; active binding `f0920fc4-587b-47c5-b7a9-6689ee0a7299` was created; `registry_assets.assigned_person_id`, `registry_assets.department_id`, `registry_assets.location_id`, and `device_inventory_bindings.source_binding_id/registration_status` were synchronized.
-* Account-session/ticket evidence: agent refresh/login created verified `device_account_sessions.session_id=2b3da255-d6b4-4eeb-9327-2261ca9192f0` with `account_mode=confirmed_binding`, `verification_status=verified`, `verification_method=device_binding`. `scripts/agent_test_driver.py create-ticket ...` created ticket `6dbb8d18-18c0-41d2-af6e-abe9e482488b` / `T-000693`; sanitized DB evidence shows `requester_person_id=cb64f08c-365a-4467-990a-abf84a3ff7f1`, `requester_binding_id=f0920fc4-587b-47c5-b7a9-6689ee0a7299`, `requester_account_session_id=2b3da255-d6b4-4eeb-9327-2261ca9192f0`, `requester_registration_status=admin_confirmed`, and `requester_account_mode=confirmed_binding`.
-* Support UI evidence: `browser_support_ticket_requester_context_snapshot.txt` shows ticket `T-000693` in the support queue with requester `Phase 4 Live User phase4-agent-20260614-4ca9a116`; the ticket context panel shows `Заявитель`, the same department and location labels, and the requester email.
-* Efficiency notes for the next live run: pairing TTL is short enough that browser confirmation should happen immediately after the UIA click, or the GUI should be refreshed afterward; in this run the agent pairing poll timed out before browser confirmation, but the account-state refresh still surfaced `pending_admin_review` and later the approved confirmed-binding account. `device_browser_pairings.consumed_at` stayed `null`, so rerun a narrower timing check if the pairing-consumption event itself is required as exit evidence. Browser screenshot capture timed out in the Browser plugin; use DOM snapshots plus UIA/OS screenshots unless Browser screenshot reliability is fixed. Browser text entry through `fill`/`type` hit the virtual clipboard limitation; use simple ASCII fixture logins with `press`, or use a verified cookie/token setup that does not print raw secrets.
-* Cleanup: raw tokens, cookies, pairing token/code and account-session token were not saved; the ticket create artifact was sanitized after initially returning a public access code. The local agent was stopped, remote `server` and `control` were stopped, and shared registration policy was restored. This evidence closes the strict Scenario A account-session/ticket path, but not all of Phase 4 because Scenario B and Scenario C remain open.
-
-Phase 4 Scenario B/C execution addendum, 2026-06-14:
-
-* Scenario B should be a negative strict-policy proof, not another successful registration. Use a fresh marker such as `phase4-invalid-YYYYMMDD-<short_sha>`, keep `registration.department_mode=required_existing` and `registration.location_mode=required_existing`, and prove that the browser page still loads the strict pickers before the invalid submission is tampered. Because the production UI no longer offers free-text input in strict mode, the invalid value should be injected through a controlled browser/API request against the same authenticated web session and pairing id, then corroborated with browser-visible Russian error text if the UI renders the server response.
-* Scenario B pass conditions: HTTP/API returns a validation failure for invalid or missing registry ids; `device_registration_claims` has no approved/new side-effect row for the invalid marker or pairing; no active `device_user_bindings`, `device_account_sessions`, `registry_assets.assigned_person_id`, `device_inventory_bindings.source_binding_id` or ticket requester fields are created/changed for the invalid device; evidence contains no raw cookies, auth headers, pairing token/code, machine token or account-session token. If a claim row is intentionally created as rejected/failed, record the exact terminal status and prove it cannot be approved later.
-* Scenario B should run before Scenario C unless there is a strong reason to reuse the confirmed-binding state. It is cheaper, has smaller cleanup surface and validates the strict browser/API boundary before testing the more stateful other-account flow.
-* Scenario C should use a confirmed owner from the same clean run when feasible; otherwise record the reused binding id, original run marker and a contamination check that lists owner tickets before the other-account session is created. The other-account request must come from the agent/account gate path and end as `verified_other_account`; it must not create a registration claim, must not mutate the active device binding and must not change the registered owner's primary person/department/location.
-* Scenario C pass conditions: the approved other-account session has `account_mode=verified_other_account`; the created ticket stores `requester_account_session_id`, `requester_account_mode=verified_other_account`, `requester_account_warning=ticket_created_from_other_account_on_registered_device` and `custom_fields.requester_account_context`; the other-account session cannot list or open the registered owner's historical tickets; the support UI shows the Russian warning `Обращение создано с другого аккаунта на зарегистрированном устройстве.`; revoking the base binding or session invalidates subsequent agent requester actions.
-* For both scenarios, use the no-single-signal rule from `docs/LIVE_TESTING_DEBUG_RULES.md`: browser DOM/screenshot for UI-visible results, UIA dumps for the local agent, sanitized API/DB JSON for side effects, and server/agent log excerpts filtered by the run marker. A direct HTTP/DB helper can support evidence, but it cannot replace the canonical browser or real-agent path where the scenario is UI-visible.
-
-Phase 4 Scenario B partial live evidence and next conditions, 2026-06-14:
-
-* Run marker: `phase4-invalid-20260614-4ca9a11`; remote stand commit for code-under-test: `4ca9a11` (local later commits in this branch were docs/context only); canonical stand: `https://192.168.100.17:9443`; isolated Windows GUI agent: `phase4-invalid-20260614-4ca9a11`; machine/device id: `11111111-2222-4333-8444-4ca9a110000b`.
-* Evidence folder: `artifacts/browser_live_validation/phase4-invalid-20260614-4ca9a11/`. Raw UI tokens, cookies, auth headers, pairing token/code, machine token and account-session token were not saved; token evidence is only hash/length in `browser_runtime_token.safe.json` and `setup_policy_user.safe.json`.
-* Setup and cleanup evidence: `setup_policy_user.safe.json` shows `registration.department_mode` and `registration.location_mode` were changed from `allow_pending_request` to `required_existing` for the run, with active fixture department `8354f5af-e597-4717-9805-e3b38b26ab4a` and location `da0977c0-0ff9-45ab-a35c-1ed6615df1e0`; `policy_restore.safe.json` shows both policy modes were restored to `allow_pending_request`.
-* Real-agent evidence: `/ui/automation/status` showed `sidebar_view=account_gate`, `bridge_connected=true`, `connection_state=connected`, and `connection_detail="WS подключён"` before browser registration. Use `wss://192.168.100.17:9443/ws`; an attempted `/ws_agent` URL produced 404 handshakes and wastes time.
-* UIA efficiency note: the account-gate primary action is reliably found by automation id suffix `PrimaryButton`; do not depend on Russian button text in ad-hoc UIA scripts unless the shell has been UTF-8 bootstrapped. The first failed artifact (`agent_browser_register_click.safe.json`) contains mojibake labels; `agent_browser_register_click_retry.safe.json` shows the successful `Зарегистрировать через браузер` click and created pairing `945ce1f1-5a3b-4405-9f36-4bb9eec9e67e`.
-* Browser/API negative proof: cookie-auth state-changing POSTs require browser-equivalent `Origin` and `Referer`; without them the invalid confirm returned `403` / `CSRF_ORIGIN_REQUIRED` (`api_invalid_confirm_response.safe.json`). With those headers, posting invalid `department_id=00000000-0000-4000-8000-000000000bad` and valid `location_id=da0977c0-0ff9-45ab-a35c-1ed6615df1e0` returned `404` / `NOT_FOUND` with `department_id not found` (`api_invalid_confirm_with_origin_response.safe.json`).
-* Browser-visible state after the invalid API attempt: the Browser plugin page initially stayed on `Проверяем web-сессию`; wait for the auth guard to finish before judging the page. After about five seconds, `browser_register_pending_after_invalid_iab_wait5.safe.json` and `.png` show `/app/device/register?pairing_id=945ce1f1-5a3b-4405-9f36-4bb9eec9e67e` still rendering `Статус pending`, two strict `<select>` controls and one enabled confirmation button, including the Phase 4 fixture department/location options.
-* Browser tooling constraints from this run: bundled primary-runtime Node has `playwright` without `playwright-core`; Python Playwright is not installed; `npx --package playwright` did not make `require("playwright")` available. Browser plugin CDP `Fetch` interception hit `Raw CDP is unavailable while Browser Use is resolving a paused document response`; for cookie setup, `Network.setCookie` must use `url` and must not include `domain`.
-* DB side-effect proof: `db_after_invalid_confirm.safe.json` shows the pairing had no `claim_id`, `binding_id`, `confirmed_person_id` or `resulting_account_session_id`; `device_registration_claims=0`, `device_user_bindings=0`, `device_account_sessions=0`; the asset remained `unverified` with `assigned_person_id=null` and `active_binding_id=null`. The final DB snapshot was taken after pairing TTL elapsed, but the invalid API response itself was captured before expiry; do not use the final negative `seconds_until_expiry` as evidence that the invalid request was an expiry rejection.
-* Local UX fix after this evidence: `webapp/src/pages/device-pairing/api.ts` maps technical `department_id` / `location_id` validation failures to safe Russian requester text before throwing `DevicePairingApiError`; `webapp/src/pages/device-pairing/device-pairing-page.test.tsx` has a focused regression for `NOT_FOUND` / `department_id not found` and asserts the raw English string is not rendered.
-* Pre-fix conclusion after `4ca9a11`: backend/API validation and DB no-side-effects were proven, but the requester page still needed a post-fix canonical stand rerun because the deployed UI could render raw `department_id not found`.
-* Canonical post-fix rerun evidence: `b675d998` (`webapp: map registration id errors safely`) was quick-deployed with run marker `phase4-invalid-20260614-b675d99`; evidence folder is `artifacts/browser_live_validation/phase4-invalid-20260614-b675d99/`; browser URL was `/app/device/register?pairing_id=f2ddde28-b28e-4d2b-a9bb-6c88c7676f0f`; device id was `11111111-2222-4333-8444-b675d990000b`.
-* Deployed-bundle guardrail for the rerun: `deployed_device_pairing_chunk.safe.json` shows the lazy device-pairing bundle `/assets/device-pairing-CVdL8Uc7.js` was available on the stand and did not contain raw `department_id not found`. Its `has_safe_*_ru=false` flags are a detector false negative caused by narrow static string matching/minification; do not use those flags as the decisive UI evidence. The decisive evidence is the Browser page artifact below.
-* Browser-visible mapped-error proof: generic CDP `Fetch.enable` failed because Browser Use reserves paused Document responses; the working harness used resourceType-specific Fetch interception for `registration/confirm`, selected the strict department/location options, then tampered only `department_id` to `00000000-0000-4000-8000-000000000bad`. `browser_register_after_tampered_confirm_iab_retry.safe.json` has `paused_event_count=1`, `safe_error_visible=true`, and `raw_error_visible=false`; the paired `.png` screenshot captures the same requester page after the failed confirm.
-* DB/no-side-effect proof and cleanup: `db_after_tampered_confirm_and_policy_restore.safe.json` shows the pairing stayed `pending` with no `claim_id`, `binding_id`, `confirmed_person_id` or `resulting_account_session_id`; `device_registration_claims=0`, `device_user_bindings=0`, `device_account_sessions=0`, `tickets_for_device=0`, `tickets_with_requester_context=0`, no asset/inventory assignment, and only one `browser_pairing_created` account event. The helper restored `registration.department_mode` and `registration.location_mode` from `required_existing` back to `allow_pending_request`.
-* Evidence hygiene: raw UI tokens, cookies, auth headers, pairing token/code, machine token and account-session token were not saved; safe setup evidence stores only token hash prefixes/lengths. If rerunning through Browser, remember that secret JSON written by PowerShell may carry a BOM and must be read with `utf-8-sig`; remove temp secret files immediately after cookie setup.
-* Scenario B status after `b675d99`: the post-fix requester-visible safe Russian error layer and DB no-side-effect layer are closed for the canonical stand. Rerun Scenario B only if the exit bar is tightened to require the same-run pairing to be created by the real Windows GUI agent action instead of the seeded browser-pairing setup; in that case reuse the `b675d99` harness constraints and keep the rerun narrow.
-* Scenario C may proceed only after recording that Scenario B is accepted at the `b675d99` evidence level or explicitly noting the stricter real-agent-pairing caveat above. If Scenario C proceeds first, add contamination checks so later Knowledge/Phase 7 work does not treat other-account coverage as a substitute for negative strict registration coverage.
-
-Phase 4 Scenario C live-run handoff, 2026-06-14:
-
-* Current next gap: Scenario C is the next Phase 4 live gate after accepting Scenario B at the `b675d99` evidence level. Keep the next checkpoint limited to other-account safety; do not start Phase 5 Knowledge ACL work until Scenario C either passes or is explicitly recorded as blocked with evidence.
-* Preferred setup is a same-run confirmed owner. If that is too expensive, reuse the Scenario A confirmed owner only with a contamination baseline: `run_marker=phase4-agent-20260614-4ca9a116`, `device_id=efad5e17-14a3-4378-b8a4-d09fb63f3d69`, `person_id=cb64f08c-365a-4467-990a-abf84a3ff7f1`, `binding_id=f0920fc4-587b-47c5-b7a9-6689ee0a7299`, owner ticket `T-000693` / `6dbb8d18-18c0-41d2-af6e-abe9e482488b`, department `989e865a-03a0-456c-9474-4a8711bffb07`, location `6f74fc1f-dc26-487b-ab44-a9da04af9b39`.
-* First artifact for a reuse run must be `pre_other_account_baseline.safe.json`: active binding id/status/type, registered owner person/department/location, owner historical ticket list before the other-account request, existing claims/sessions for the device, and an explicit note that owner ticket `T-000693` is expected contamination used only for denial checks.
-* The request path must be the real agent account gate: UIA opens `Войти в другой аккаунт`, fills `full_name`, `login`, optional `phone`/`email`, and required `reason`, then submits. The product endpoints behind this are `POST /api/registry/agent/account-login-requests`, admin `GET|POST /api/web/admin/registry/account-login-requests/*`, and agent `GET /api/registry/agent/account-login-requests/{request_id}`. `/ui/automation/run` or direct HTTP can support evidence, but cannot replace UIA proof that the local GUI reached pending, check-status and approved other-account states.
-* Approval/pickup evidence must prove one-time token semantics safely: first agent poll after admin approval returns a `verified_other_account` session and token; subsequent poll must not expose another raw token. Artifacts may store session id, status, mode, token hash prefix/length and token-present booleans, never the token itself.
-* Ticket B must be created through an agent requester path that carries the selected account session. DB evidence must show `requester_account_session_id`, `requester_account_mode=verified_other_account`, `requester_account_warning=ticket_created_from_other_account_on_registered_device`, and `custom_fields.requester_account_context.declared_account` plus active registered owner/binding context.
-* Boundary proof must include both positive and negative requester checks: the other-account session can list/open ticket B, cannot list/open owner ticket `T-000693`, and cannot use only the agent machine token as requester identity. Support/admin visibility remains a separate staff route and is not a substitute for requester-session denial.
-* Mutation proof must compare before/after snapshots: no new registration claim for the Scenario C marker, active `device_user_bindings` unchanged, registered owner `registry_people.department_id/location_id` unchanged, `registry_assets.assigned_person_id` and `device_inventory_bindings.source_binding_id` still point to the original owner binding.
-* Support UI proof must use the canonical browser target and ticket detail/workspace: `/app/tickets` or the direct ticket route on `https://192.168.100.17:9443/admin`. The visible Russian warning must be `Обращение создано с другого аккаунта на зарегистрированном устройстве.` and the requester context must show declared name/login/phone/reason plus active registered owner/binding.
-* Revocation proof can revoke only the new other-account session instead of the base binding to keep the reused owner device stable. After revoke, agent/requester list/detail/create actions with that session must fail with an account-session invalid/revoked error, and the agent UI must return to or show the account gate/session-invalid state. If the base binding is revoked instead, record and restore/replace the owner baseline explicitly because it invalidates the reused Scenario A state.
-* Minimum artifact set for the run folder: `run_id.txt`, `pre_other_account_baseline.safe.json`, `agent_account_gate_before_other_uia.*`, `agent_other_account_request_submitted.safe.json`, `admin_account_login_request_before_approve.*`, `admin_account_login_request_approved.safe.json`, `agent_other_account_after_check_uia.*`, `ticket_b_create.safe.json`, `db_after_ticket_b.safe.json`, `requester_visibility_owner_ticket_denied.safe.json`, `support_ticket_b_warning.*`, `session_revoke_and_denial.safe.json`, `cleanup_status.safe.json`, and filtered server/agent logs by run marker.
-* Focused verification before broad gates: `python -m pytest server/tests/test_account_session_service.py::test_other_account_login_request_approval_creates_verified_session`, `python -m pytest server/tests/test_account_session_service.py::test_revoked_base_binding_invalidates_verified_other_account_session`, `python -m pytest server/tests/test_ticket_account_access.py::test_verified_other_account_can_only_view_own_session_ticket`, `python -m pytest server/tests/test_ticket_registration_enrichment.py::test_verified_other_account_session_marks_ticket_without_registration_claim`, `python -m pytest server/tests/test_registry_effective_identity_service.py::test_verified_other_account_does_not_use_registered_owner_as_requester_identity`, `python -m pytest server/tests/test_registration_api.py::test_other_account_login_request_and_admin_approval_endpoints`, and `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts --reporter=dot`. If the pytest bundle hangs, rerun one target at a time and record timeout as a test-environment blocker, not as a pass.
-
-Phase 4 Scenario C interrupted-run context, 2026-06-14:
-
-* Run marker `phase4-other-20260614-7910996c` has a useful partial evidence chain, but it is not a Scenario C pass yet. Existing artifacts prove the reused Scenario A owner baseline (`pre_other_account_baseline.safe.json`), real UIA entry through the local account gate, admin approval of a `verified_other_account` session with warning code, agent pickup into `sidebar_view=tickets`, and ticket B creation as `T-000694` / `f3a93df4-e82d-4fb7-a5c2-44aaf0b38c0a`.
-* Resume checklist for this exact run: first inspect the current local agent and remote server state; if the named agent still holds the verified session, continue with DB after-ticket verification, requester positive/negative ticket visibility, support-browser warning proof, session revoke proof and cleanup. If the agent was stopped or the session token is no longer available, recreate the other-account request/session instead of trying to reconstruct requester access from DB rows.
-* Do not mark Scenario C complete from ticket B creation alone. The missing gates remain: sanitized `db_after_ticket_b.safe.json`, no new registration claim, unchanged binding/person/asset/inventory, other-account can list/open only ticket B, other-account cannot list/open owner ticket `T-000693`, agent machine token alone is denied as requester identity, support UI shows the Russian warning, revoking only the new other-account session blocks subsequent agent/requester actions, and final runtime cleanup is recorded.
-* Current artifact hygiene blocker: replace or redact `ticket_b_create.safe.json` before any commit/push or handoff bundle because it contains a raw public access code and declared-account contact fields. Future command output should project only ticket id/code, account-session id/mode, warning code, redacted contact booleans and hash/length evidence for secrets.
-* Current log hygiene blocker: remote status/journal tails can include `declared_account` fields inside ticket listing filters. Until server-side log redaction is fixed or proven safe, save only filtered/redacted server logs for Scenario C; do not attach raw `manage_remote_stack status all` output or broad journal tails to artifacts.
-* Local server pytest caveat from this run: `server/tests/test_ticket_account_access.py::test_verified_other_account_can_only_view_own_session_ticket` collected successfully but timed out without per-test output in the Windows environment. Treat that as an unresolved local test-environment blocker; rerun with an explicit watchdog or isolated DB setup before using it as pass/fail evidence.
-
-Phase 4 Scenario C continuation result, 2026-06-14:
-
-* Continued run marker `phase4-other-20260614-7910996c` after deploying committed state `8c06b8c4` to the canonical stand through `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls`; smoke passed on the second attempt. The named local GUI agent restarted with `sidebar_view=account_gate`, `bridge_connected=true`, `connection_state=connected`, preserved the verified other-account session in local account state before revoke, and listed only ticket B (`agent_after_restart_status.safe.json`).
-* DB/mutation proof is now captured in `db_after_ticket_b.safe.json`: ticket B is `T-000694` / `f3a93df4-e82d-4fb7-a5c2-44aaf0b38c0a`, `requester_account_session_id=27941830-3b28-4984-9cf4-015d08c11f99`, `requester_account_mode=verified_other_account`, `requester_account_warning=ticket_created_from_other_account_on_registered_device`, requester account context is present, no new registration claim was created for the other-account marker, the active owner binding/person/department/location stayed unchanged, and asset/inventory assignment still points to the original Scenario A owner binding.
-* Requester boundary proof is now captured in `requester_visibility_checks.safe.json`: the verified other-account session listed/opened only ticket B, could not open owner ticket `T-000693` (`ACCOUNT_ACCESS_DENIED`), and machine-token-only list/detail calls were denied with `ACCOUNT_SESSION_REQUIRED`. Note the requester API responses for ticket B still omit account-context projection fields; use DB evidence for stored ticket fields and support API evidence below for the UI blocker.
-* Revocation proof is now captured in `session_revoke_and_denial.safe.json`: admin revoked only the new other-account session `27941830-3b28-4984-9cf4-015d08c11f99`; after revoke, validate, requester list, ticket B detail, owner ticket detail and `/api/tickets/create/preview` all returned `403 ACCOUNT_SESSION_REVOKED`. The local `account_session.json` was already removed after revoke, so the denial probe used the revoked session id without a raw session token. `agent_after_session_revoke_status.safe.json` shows the GUI back in `account_gate`, `has_active_profile=false`, `ticket_count=0`.
-* Support-browser warning proof was blocked by a product/API projection gap, not by missing browser setup. `support_ticket_b_missing_warning.safe.json` and `support_ticket_b_missing_warning.png` show `/app/tickets/f3a93df4-e82d-4fb7-a5c2-44aaf0b38c0a` rendered ticket `T-000694` with the other-account marker, but the expected warning text was absent. Same-browser fetches of `/api/web/support/tickets/{ticket_id}` and `/api/web/support/tickets/{ticket_id}/workspace` returned HTTP 200 for `T-000694` but `requester_account_warning`, `requester_account_mode`, `requester_account_session_id` and `requester_account_context` were all null/empty.
-* Projection gap confirmed locally: `_ticket_payload(...)` and `server/app/api/serializers.py` already expose `requester_registration_status`, `requester_account_session_id`, `requester_account_mode`, `requester_account_context` and `requester_account_warning`, but `SupportTicketDetail(...)` previously did not carry those fields through `server/web_api/support_handlers.py::_build_support_detail_payload`. The focused no-DB regression `server/tests/test_web_support_api.py::test_build_support_detail_payload_projects_requester_account_context` now protects that contract without invoking the flaky Windows DB harness.
-* Support detail projection fix was deployed at commit `7bc7d1c5` through `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls`; `python scripts/verify_workspace.py`, local webapp build and remote smoke passed, with smoke green on attempt 2/10. Browser-session API projection proof is in `support_ticket_b_warning_after_fix.safe.json`: both `/api/web/support/tickets/{ticket_id}` and `/api/web/support/tickets/{ticket_id}/workspace` returned HTTP 200 for `T-000694` with `requester_account_mode=verified_other_account`, warning code `ticket_created_from_other_account_on_registered_device`, present account-session id and requester account-context keys.
-* Support UI warning proof passed after a browser reload of `/app/tickets/f3a93df4-e82d-4fb7-a5c2-44aaf0b38c0a`: `support_ticket_b_warning_after_fix.safe.json` records `ticket_code_visible=true` and `warning_visible=true`, and `support_ticket_b_warning_after_fix.png` is a cropped warning-only screenshot. This closes the Scenario C operator-facing warning acceptance gate for ticket `T-000694`; do not use the older `support_ticket_b_missing_warning.*` artifacts as current status.
-* Focused verification note: `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts --reporter=dot` passed locally and proves the frontend mapper renders the warning when the API supplies the fields. `python -m pytest server/tests/test_ticket_registration_enrichment.py::test_verified_other_account_session_marks_ticket_without_registration_claim -q` timed out on Windows after 124 seconds with no assertion output, matching the earlier `test_ticket_account_access.py` hang pattern; rerun affected server tests with an explicit watchdog or known-good isolated DB setup before interpreting them as product failures.
-* Artifact hygiene is corrected for ticket creation evidence: the misleading `ticket_b_create.safe.json` file was renamed to `ticket_b_create.unsafe.json`, and `ticket_b_create_redacted.safe.json` now carries only the safe ticket id/code, account-mode/warning booleans/key list and explicit redaction metadata. Do not commit/share the `.unsafe.json` source; use the redacted summary for handoff.
-* Runtime cleanup after the browser proof: `python scripts/manage_remote_stack.py stop server`, `python scripts/manage_remote_stack.py stop control` and final `python scripts/manage_remote_stack.py status all` reported remote control/server/agent stopped; `python scripts/manage_local_agent.py status phase4-other-20260614-7910996c` reported the named local GUI agent stopped.
-
-Verification:
-
-python -m pytest server/tests/test_registry_registration_policy.py
-python -m pytest server/tests/test_registration_api.py
-python -m pytest server/tests/test_browser_pairing_service.py
-python -m pytest server/tests/test_registry_people_admin.py
-pnpm --dir webapp exec vitest run src/features/admin/registry/registry-policies-tab.test.tsx --reporter=dot
-pnpm --dir webapp exec vitest run src/features/admin/registry/registry-requests-tab.test.tsx --reporter=dot
-python -m compileall -q server shared scripts pc_agent
-pnpm --dir webapp build
-git diff --check
-
-Live checks with real agent:
-
-Prerequisites:
-
-Server running on the live/dev stand.
-One Windows agent connected through WebSocket.
-Optional second ALT Linux agent if available.
-Admin web session available.
-At least one test UI user available.
-Test departments and locations created in Registry.
-
-Scenario A — clean new device registration:
-
-Set:
-department_mode=required_existing
-location_mode=required_existing
-Start agent on an unregistered or test-reset device.
-Open agent account gate.
-Start registration through browser pairing.
-Select existing department and location.
-Submit registration.
-Confirm in admin /app/admin/registry that claim is pending.
-Open claim diff.
-Approve claim.
-Agent polls and leaves pending state.
-Login/select confirmed binding account session.
-Create a test ticket from agent.
-Verify ticket stores:
-requester_person_id
-requester_binding_id
-requester_account_session_id
-requester_registration_status
-Verify support UI sees requester context.
-
-Scenario B — blocked bad registration:
-
-Keep department_mode=required_existing.
-Try submitting free-text or invalid department.
-Verify backend returns validation error.
-Verify no person/binding is created.
-Verify user-visible error is Russian and safe.
-Verify observer/quality event if implemented.
-
-Scenario C — other-account session safety:
-
-Device has confirmed owner and owner historical ticket A.
-Record a pre-run baseline for owner binding/person/department/location, owner ticket list, existing claims and existing account sessions.
-Request another account from the real agent account gate with declared name/login/phone/reason.
-Admin approves the other-account request.
-Agent checks/polls the request and receives a `verified_other_account` session token once.
-Login/select the verified other-account session in the agent.
-Create ticket B through an agent requester path carrying the selected account session.
-Verify:
-device binding did not change;
-no registration claim was created for the other-account flow;
-registered owner person/department/location did not change;
-ticket B stores `requester_account_session_id`, `requester_account_mode=verified_other_account`, `requester_account_warning=ticket_created_from_other_account_on_registered_device` and `custom_fields.requester_account_context`;
-other-account session can list/open ticket B;
-owner historical ticket A is not visible/openable to other-account session;
-support UI shows `Обращение создано с другого аккаунта на зарегистрированном устройстве.`;
-revoking the other-account session or base binding invalidates subsequent agent requester actions.
-
-Evidence:
-
-Save screenshots:
-agent account gate before registration;
-browser pairing page;
-admin pending registration claim;
-approval diff;
-agent confirmed account state;
-created ticket in support UI.
-Save sanitized API/evidence JSON:
-no raw account-session token;
-no machine token;
-no pairing token/code after create response.
-Record exact commands and environment in PLANS.md.
-
-Exit criteria:
-
-Required-existing department/location policy works.
-Agent registration live scenario passes.
-Pending session cannot access normal workspace.
-Approval updates registry and account-session state.
-Other-account login does not transfer ownership.
+- choose test user/login;
+- show “видит / не видит”;
+- show reason code;
+- do not expose hidden content to denied users.
 
 ---
 
-## Phase 5 — Knowledge audience rules and ACL enforcement
+## 5. Help Desk Context Binding
 
-Goal:
+The Knowledge Platform must connect articles to help desk flows.
 
-Add production knowledge visibility rules using Registry effective identity and audience groups.
-Ensure search, article view, suggestions and future RAG use the same authorization boundary.
+### 5.1. Rename “bindings” in UI
 
-Backend schema:
+User-facing label:
 
-Add migration:
+`Где показывать статью`
 
-knowledge_audience_rules
-rule_id
-subject_type: space, item
-subject_id
-effect: allow, optional deny
-target_type: role, person, department, department_tree, location, access_group, audience_group, service
-target_id
-priority
-status: active, disabled
-reason
-metadata_json
-created_at, updated_at, created_by, updated_by
+or
 
-Optional audit table if no existing knowledge access audit can be reused:
+`Связь с обращениями`
 
-knowledge_access_decisions
-decision_id
-actor_id
-actor_role
-person_id
-item_id
-space_id
-decision: allowed, denied
-reason_code
-explain_json
-created_at
+Do not expose “binding_id” or raw binding model in the default UI.
 
-Backend service:
+### 5.2. Binding fields
 
-Add:
+Support these context links:
 
-server/knowledge/access_service.py
-server/knowledge/audience_rules_service.py
+- service_code
+- offering_code
+- request_template_key
+- ticket_type
+- reporting_category
+- device_class
+- os_family
+- symptom_code
+- error_code
+- queue_code
+- priority / weight
 
-Required methods:
+Start with the most valuable:
 
-can_view_space(actor_context, space) -> AccessDecision
-can_view_item(actor_context, item) -> AccessDecision
-filter_visible_items(actor_context, items) -> list
-explain_knowledge_access(actor_context, item_id) -> dict
+- Service
+- Offering
+- Request template
+- Ticket type
+- OS family / device class if available
 
-Decision order:
+### 5.3. Surfaces
 
-Actor role/authenticated state.
-Space lifecycle/status.
-Item status/current version.
-Coarse visibility.
-Audience rules from space.
-Audience rules from item.
-Explicit support/admin policy override only if intended.
-Return decision + explain.
+For each article or binding, define where it can be suggested:
 
-Rules:
+- requester portal before submit;
+- requester portal after submit;
+- support ticket workspace;
+- support command center;
+- agent;
+- AI/RAG.
 
-Published requester-safe items can still be hidden by audience rules if scoped.
-Support/internal items must not become requester-visible through audience rules.
-Admin can inspect rules, but normal requester APIs must not leak hidden item metadata.
-Search result counts must not reveal hidden records unless admin diagnostics endpoint is used.
-RAG/vector/hybrid search must receive only authorized candidate item/chunk IDs.
+This can be stored either in binding metadata or article metadata initially, but must be represented consistently in UI.
 
-APIs:
+### 5.4. Acceptance
 
-Add admin APIs:
-
-GET /api/web/admin/knowledge/audience-rules?subject_type=&subject_id=
-PUT /api/web/admin/knowledge/audience-rules
-POST /api/web/admin/knowledge/audience-rules/preview
-GET /api/web/admin/knowledge/access/explain?actor_id=&item_id=
-
-Add requester/support enforcement to existing knowledge endpoints:
-
-article list
-article detail
-search
-suggestions
-Ask/RAG candidate retrieval
-ticket knowledge suggestions
-public help/deflection where relevant
-
-TDD checkpoints:
-
-RED test: requester sees article with matching department rule.
-RED test: requester does not see article from another department.
-RED test: requester cannot infer hidden article through search count/title/summary.
-RED test: support_internal item not exposed to requester even if audience rule matches.
-RED test: admin explain returns matched rule.
-RED test: access group target works.
-RED test: audience group target works.
-RED test: department_tree target includes child departments.
-RED test: item rule can narrow/extend space rule according to documented precedence.
-RED test: RAG/search candidate selection filters unauthorized items before semantic ranking.
-RED test: chunks inherit item authorization and do not leak hidden text.
-
-Verification:
-
-python -m pytest server/tests/test_knowledge_audience_rules.py
-python -m pytest server/tests/test_knowledge_access_service.py
-python -m pytest server/tests/test_knowledge_search_acl.py
-python -m pytest server/tests/test_knowledge_rag_acl.py
-Existing focused knowledge tests.
-python -m compileall -q server shared scripts
-git diff --check
-
-Live checks:
-
-Create two departments:
-ИТО
-Бухгалтерия
-Create/link two users:
-user A in ИТО
-user B in Бухгалтерия
-Create knowledge items:
-Публичная инструкция
-Инструкция для ИТО
-Инструкция для бухгалтерии
-Support internal runbook
-Add rules:
-item visible to department_tree=ИТО
-item visible to department_tree=Бухгалтерия
-item visible to audience_group=finance_staff
-Login as user A:
-sees public + ИТО item;
-does not see бухгалтерия item;
-does not see support internal runbook.
-Login as user B:
-sees public + бухгалтерия item;
-does not see ИТО item.
-Login as support:
-sees requester-safe items where support is allowed;
-sees support_internal runbook in support/admin context.
-Run search for title terms of hidden article:
-no result;
-no hidden metadata in network response.
-Run admin explain:
-allowed case shows matched rule;
-denied case shows no matching rule or blocked coarse visibility.
-Save evidence:
-requester search screenshots;
-article detail screenshots;
-network JSON with hidden fields absent;
-admin explain screenshot/JSON.
-
-Phase 5 implementation efficiency addendum, 2026-06-14:
-
-* Start with a read-only `KnowledgeAccessService`/decision contract and tests before adding authoring UI. The first slice should centralize the decision order from `server/docs/REGISTRY_VISIBILITY_FOUNDATION.md`: actor/session context, space lifecycle, item status/current version, coarse visibility, space audience rules, item audience rules, documented support/admin override, then safe final projection.
-* Do not implement private visibility filters inside each endpoint. Wire search, portal/article reads, suggestions, support knowledge, graph/vector retrieval, RAG candidate selection and diagnostics through the same access service or a thin wrapper that returns both `allowed` and `reason_code`.
-* Candidate selection and final projection both need tests. A passing Phase 5 slice must prove hidden content is absent from returned item ids, titles, summaries, snippets, chunks, result counts and diagnostics for requester/agent/public roles. Admin explain can show rule ids/reasons only through admin-only routes.
-* Reuse Phase 1/2 Registry services for effective identity and audience expansion. Do not duplicate department-tree, access-group-as-audience or audience-group expansion inside Knowledge. A Knowledge rule targeting `access_group` is a targeting fact only; it must not grant RBAC permissions.
-* Use small seed fixtures with explicit marker names: two departments, one parent/child department-tree case, one access group, one audience group, two linked UI users and at least one unlinked/anonymous actor. Each negative test should assert both denial and absence of leaked article metadata.
-* Preferred implementation order: migration/model/repo contract; audience rule CRUD/preview service; read-only access decision service; enforce item/detail/search; enforce suggestions/portal/support knowledge; enforce vector/RAG candidate paths; add admin explain. Keep Phase 6 authoring selector blocked until Phase 5 anti-leak tests are green.
-* Minimal focused tests before broad Knowledge suites: audience rule validation/precedence, requester allowed/denied by department and department_tree, support/internal coarse visibility not widened by matching audience rule, access-group and audience-group targets, unlinked actor behavior, search-count/title/summary/chunk anti-leak, vector/RAG candidate filtering and admin explain authorization/redaction.
-
-Exit criteria:
-
-Knowledge visibility rules enforce real access control.
-Search/suggestions/RAG candidates do not leak hidden content.
-Explain endpoint makes decisions debuggable.
+- Article can be linked to a service/offering/request template from Studio.
+- Requester ticket creation can use requester-safe articles filtered by effective requester audience.
+- Support ticket suggestions can use requester-safe articles by requester audience and support_internal runbooks by support context.
+- No hidden article title/snippet leaks into denied suggestions.
 
 ---
 
-## Phase 6 — Knowledge authoring UI visibility selector
+## 6. Search / RAG / AI Readiness
 
-Goal:
+### 6.1. Current enforcement must stay
 
-Let admins/authors configure article and space visibility without raw JSON.
-Provide preview/explain before publishing or changing scoped articles.
+All candidate paths must continue applying effective audience before projection:
 
-UI changes:
+- keyword search;
+- segment search;
+- vector search;
+- suggestions;
+- Ask/RAG;
+- retrieval;
+- portal home/collections/article detail;
+- support ticket suggestions.
 
-In /app/admin/knowledge/studio metadata/visibility step:
+### 6.2. Article properties required for RAG
 
-Add Область видимости panel.
-Show current coarse visibility.
-Show audience rules:
-role
-person
-department
-department tree
-location
-access group
-audience group
-service
-Add searchable pickers from Registry.
-Add preview button:
-estimated visible people count;
-matched departments/groups;
-warnings for broad/narrow rules;
-blocked states.
-Add test access field:
-choose user/person;
-show Можно видеть / Скрыто;
-show explanation.
+The simplified article model must preserve:
 
-In /app/admin/knowledge or dedicated route:
+- title;
+- summary;
+- body;
+- section;
+- type;
+- coarse visibility;
+- audience rules;
+- current published version;
+- chunks;
+- source/freshness fields;
+- service/request-template binding;
+- related articles / graph links later.
 
-Add visibility audit/debug view:
-articles with no audience rules;
-requester-visible articles scoped to nobody;
-broad rules such as all users;
-support_internal with requester-facing rules that are ignored/blocked.
+### 6.3. RAG eligibility
 
-Russian UI labels:
+Add clear setting at section and/or article level:
 
-Область видимости
-Кто увидит статью
-Подразделение
-Подразделение и дочерние
-Группа доступа
-Аудитория
-Проверить доступ
-Причина решения
-Эта статья не будет видна выбранному пользователю
+- `Использовать в AI/RAG`
 
-TDD checkpoints:
+Default from section.
 
-RED webapp test for visibility selector.
-RED webapp test for department tree picker.
-RED webapp test for audience group picker.
-RED webapp test for access preview.
-RED webapp test for support_internal cannot be made requester-visible accidentally.
-RED webapp test for Russian labels/no mojibake.
-RED webapp test for saved rules round-trip.
+Options:
 
-Verification:
+- Allowed
+- Disabled
+- Admin/support only
+- Requester-safe only
 
-pnpm --dir webapp exec vitest run src/features/knowledge/article-visibility-panel.test.tsx --reporter=dot
-pnpm --dir webapp exec vitest run src/pages/admin/knowledge-studio-page.test.tsx --reporter=dot
-pnpm --dir webapp exec tsc --noEmit --pretty false
-pnpm --dir webapp build
-git diff --check
-
-Live checks:
-
-Open /app/admin/knowledge/studio.
-Select or create article.
-Open metadata/visibility step.
-Add department-tree rule.
-Preview visible audience.
-Test access for user from matching department.
-Test access for user from different department.
-Save rules.
-Reopen article and verify rules persisted.
-Publish article if publishing flow is safe.
-Verify requester portal/search reflects the rule.
-Browser evidence:
-Studio visibility panel 1366x768 and 1920x1080;
-preview modal/drawer;
-test access allowed/denied;
-requester visible/hidden result.
-
-Exit criteria:
-
-Admin can configure scoped article visibility without raw JSON.
-Preview and test-access explain are available.
-Rules persist and affect real requester search/view.
+This should not replace visibility. It is a second gate: content can be visible to a user but still excluded from AI answers if policy requires.
 
 ---
 
-## Phase 7 — Agent/requester/support end-to-end visibility signoff
+## 7. Knowledge Operations Center Adjustments
 
-Goal:
+Route:
 
-Verify that registry identity, registration, account sessions and knowledge visibility work end-to-end with the actual agent flow.
+`/app/admin/knowledge`
 
-Live script:
+This should be an operations dashboard, not a CRUD/editor page.
 
-Add or update:
+Show:
 
-scripts/registry_visibility_live_smoke.py
+- health summary;
+- low quality articles;
+- empty/broken audience rules;
+- sections with zero articles;
+- requester-visible articles with zero effective users;
+- indexing errors;
+- zero-result searches;
+- help desk gaps;
+- articles without service/request template binding.
 
-Required capabilities:
+Remove or hide:
 
-Create deterministic test departments/locations/people/audience groups.
-Create or identify test UI users.
-Create knowledge spaces/items and audience rules.
-Use admin APIs for setup and cleanup where safe.
-Use real HTTP APIs for requester/support/admin checks.
-Use agent endpoints/account-session validation where possible.
-Never print raw tokens.
-Emit sanitized JSON report under artifacts/registry-visibility-foundation-YYYYMMDD/.
-
-Phase 7 efficiency context:
-
-* Reuse the Phase 4 live-agent harness, run-marker discipline, isolated agent instance and evidence matrix instead of creating a parallel validation flow for account sessions.
-* `scripts/registry_visibility_live_smoke.py` may automate setup, requester/support/admin HTTP checks and sanitized report generation, but it must not claim real-agent proof unless it either drives the actual connected agent flow or links to same-run UIA/browser evidence from the real agent.
-* Phase 7 should consume Phase 4 registration/account-session evidence as the identity baseline, then add Knowledge visibility assertions on top: visible scoped article, hidden foreign scoped article, support ticket requester context, revoked-session denial and absence of hidden article metadata in network/API payloads.
-* If Phase 4 live evidence is stale relative to the Phase 7 commit, rerun the Phase 4 Scenario A/C account-session portions before signing off Knowledge visibility.
-* Do not use the interrupted `phase4-other-20260614-7910996c` run as a Phase 7 identity baseline until Scenario C has sanitized ticket-B evidence, requester positive/negative visibility proof, support-browser warning proof, session revocation proof and cleanup status. Its current value is a resume anchor, not final live-agent signoff.
-
-Agent live matrix:
-
-Scenario 1 — registered owner sees department knowledge:
-
-Device has confirmed primary binding to person A.
-Person A belongs to ИТО.
-Agent starts account gate.
-User logs in/selects confirmed account session.
-Agent/user opens knowledge/search/suggestions.
-ИТО article appears.
-Бухгалтерия article does not appear.
-Create ticket from agent.
-Support ticket detail shows correct requester registry context.
-
-Scenario 2 — verified other-account sees only own scoped context:
-
-Device owner is person A.
-Other user/person B requests other-account session.
-Admin approves.
-Agent receives verified other-account session.
-Knowledge visibility is based on person B/session identity, not device owner A.
-Owner A historical tickets remain hidden.
-Ticket created from B stores other-account warning.
-
-Scenario 3 — pending registration has no normal workspace:
-
-Device has no confirmed binding.
-User submits registration.
-Agent receives registration_pending session/state.
-Knowledge/ticket normal workspace remains blocked.
-Admin approves.
-Agent can login/select confirmed binding.
-Knowledge visibility starts working from approved person.
-
-Scenario 4 — revoked session/binding loses access:
-
-User has valid account session.
-Admin revokes account session or binding.
-Agent detects invalid session.
-Knowledge/ticket actions are blocked.
-Browser/API access with old session fails.
-
-Verification commands:
-
-python scripts/registry_visibility_live_smoke.py --base-url <stand-url> --insecure-tls
-python scripts/registry_workflow_smoke.py --base-url <stand-url> --insecure-tls
-Focused pytest/vitest from previous phases.
-python scripts/verify_workspace.py if available and still valid.
-
-Evidence requirements:
-
-Save screenshots:
-agent account gate;
-agent confirmed account state;
-registration pending state;
-admin registry person/device/claim;
-knowledge search visible case;
-knowledge search hidden case;
-support ticket requester context.
-Save sanitized network/console logs:
-no raw tokens;
-no hidden article metadata;
-no browser console errors.
-Update PLANS.md with:
-exact date/time;
-stand URL;
-commit SHA;
-commands run;
-tests passed;
-evidence file paths;
-known limitations.
-
-Exit criteria:
-
-Real agent live checks pass for registered owner and pending registration.
-Other-account ownership boundary is preserved.
-Knowledge visibility follows account-session/person identity, not machine token.
-Revoked sessions lose access.
-Evidence is recorded.
-
-Phase 7 exit note, 2026-06-14:
-
-* Closed by the combined evidence chain above: HTTP/DB live smoke (`547a33c2`), browser support signoff (`phase7-support-browser-1ca0a43b-20260614`) and real local-agent GUI/UIA signoff (`phase7-agent-uia-1ca0a43b-20260614`).
-* Registered-owner GUI proof includes `confirmed_binding` login, UIA account/ticket state and DB-confirmed ticket `T-000707` with requester account-session fields.
-* Pending-registration GUI proof includes connected pending-device account gate UIA with pending claim text and no normal ticket workspace; the normal ticket block remains covered by `registration_pending.normal_ticket_blocked=true` in the HTTP/DB smoke report.
-* Treat raw CDP network capture as skipped for this checkpoint because Browser runtime held a paused document response; do not reopen Phase 7 for that alone unless the exit bar is explicitly tightened to require CDP-level network dumps.
+- raw content pack JSON;
+- article creation form;
+- publish forms;
+- large policy editors.
 
 ---
 
-## Phase 8 — Observer, quality issues, import/export and final product signoff
+## 8. Knowledge Import
 
-Goal:
+Route:
 
-Make Registry Visibility Foundation operable in production.
-Surface broken identity/visibility data as quality issues.
-Add import/export where needed without unsafe direct binding imports.
+`/app/admin/knowledge/import`
 
-Observer events:
+Keep import as wizard:
 
-Emit observer events/metrics where existing observer patterns allow:
+1. Source
+2. Preview
+3. Create article draft
+4. Open in Studio
 
-registry.identity.unlinked_ui_user
-registry.identity.identity_collision
-registry.audience.empty_group
-registry.audience.member_resolution_failed
-knowledge.visibility.rule_invalid
-knowledge.visibility.denied_unexpected
-knowledge.visibility.hidden_result_filtered
-registration.policy.blocked_missing_department
-registration.policy.blocked_missing_location
+Important:
 
-Quality issues:
-
-Add generated data-quality issues:
-
-UI user without linked RegistryPerson.
-RegistryPerson without verified identity.
-Person with archived department/location.
-Audience group with zero effective members.
-Knowledge item requester-visible but scoped to zero users.
-Knowledge item has invalid/deleted department/group/location rule.
-Device has active binding to inactive person.
-Pending registration claim expired or blocked by missing required registry fields.
-
-Import/export:
-
-Extend existing registry import/export safely:
-
-Export:
-people with department/location/audience summary;
-departments;
-locations;
-audience groups;
-audience group members;
-knowledge audience rules.
-Import:
-audience groups;
-audience group members;
-optional person department memberships if implemented.
-Do not import direct device bindings.
-Do not import account sessions.
-Import must be preview/apply with row-level errors, duplicate detection and reason.
-
-TDD checkpoints:
-
-RED test for observer event emission. Done for Registry admin timeline evidence emitted by quality override and import apply in the Phase 8 live signoff harness.
-RED test for quality issue generation. Done for unlinked active UI user, active person with archived department/location, active binding to inactive person, empty audience group, invalid Knowledge audience-rule target and zero-user requester-visible Knowledge item.
-RED test for audience group export CSV. Done.
-RED test for audience group import preview/apply. Done.
-RED test for knowledge audience rules export. Done.
-RED test for invalid rule quality issue. Done.
-RED webapp test for quality remediation actions. Done in `webapp/src/features/admin/registry/registry-quality-tab.test.tsx`.
-
-Phase 8 local implementation note, 2026-06-14:
-
-* `RegistrySnapshotService` now emits `ui_user_unlinked_registry_person`, `person_archived_department`, `person_archived_location` and `binding_inactive_person` in addition to the earlier Phase 8 quality issues.
-* Registry import/export UI types now expose `audience_groups` and `audience_group_members`; the Registry page exports the current audience-groups tab as `type=audience_groups`.
-* `scripts/registry_visibility_phase8_live_signoff.py` seeds controlled invalid Registry/Knowledge data, verifies quality issues, CSV formula escaping, audience group/member import preview/apply, and timeline evidence for `registry_import_applied` plus `quality_issue_snoozed`; it writes a sanitized report under `artifacts/registry-visibility-foundation-YYYYMMDD/`.
-
-Phase 8 live signoff note, 2026-06-14:
-
-* `6004e541` was quick-deployed through `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --smoke-insecure-tls --leave-running`; remote `/api/health` smoke passed.
-* Remote Linux API/DB signoff passed with `scripts/registry_visibility_phase8_live_signoff.py --base-url https://192.168.100.17:9443 --insecure-tls --run-id phase8-6004e541-20260614190013`; report: `artifacts/registry-visibility-foundation-20260614/registry-visibility-phase8-live-signoff-phase8-6004e541-20260614190013.json`.
-* Browser evidence on `https://192.168.100.17:9443/app/admin/registry` is under `artifacts/browser_live_validation/phase8-registry-operability-6004e541-20260614-190013/`. The filtered quality tab shows Phase 8 rows and remediation actions; `ui_user_unlinked_registry_person` keeps `Open` disabled but `Fix`/`Ignore`/`Snooze 7d` available; the import dialog exposes `Audience groups` and `Audience group members` and does not expose direct binding/account-session import.
-* Browser console evidence had 0 errors and repeated `[webapp-realtime] websocket bridge reported an error` warnings; no checked Registry quality/import control was blocked by those warnings.
-
-Verification:
-
-PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registry_quality_remediation.py server/tests/test_registry_import_export.py server/tests/test_registry_audience_groups.py -q --tb=short
-python -m pytest scripts/test_registry_visibility_phase8_live_signoff.py scripts/test_registry_visibility_live_smoke.py -q --tb=short
-pnpm --dir webapp exec vitest run src/features/admin/registry/registry-quality-tab.test.tsx --reporter=dot
-python -m compileall -q server shared scripts
-pnpm --dir webapp build
-python scripts/verify_workspace.py
-git diff --check
-
-Live checks:
-
-Create invalid states intentionally on test data:
-unlinked UI user;
-audience group with missing department;
-knowledge rule referencing archived department;
-requester-visible item scoped to zero users.
-Open /app/admin/registry quality tab.
-Verify quality issues appear.
-Fix issues through UI where remediation exists.
-Open observer/admin tech surfaces and verify events/metrics if available.
-Export/import audience groups through UI/API.
-Confirm CSV formula injection escaping remains safe for exported reports.
-Save evidence:
-quality tab before/after;
-observer events;
-import preview;
-import apply report;
-exported CSV sample with sensitive data reviewed.
-
-Exit criteria:
-
-Production operators can find and fix broken registry/visibility data.
-Observer shows meaningful visibility/identity failures.
-Import/export does not bypass registration/binding safety.
-Final live signoff is recorded in PLANS.md.
+- Imported document should default to draft/internal until reviewed.
+- Long imported documents may use auto-segmentation.
+- Import should select section, visibility and audience.
+- AI enrichment stays policy-gated.
 
 ---
 
-## Final signoff checklist
+## 9. Registry Follow-ups Required by Knowledge
 
-Backend:
+### 9.1. Audience group member type `access_group`
 
-Effective identity resolver implemented.
-Audience groups implemented.
-Knowledge audience rules implemented.
-Registration department/location policy enforced.
-Knowledge search/view/suggestions/RAG candidates are ACL-first.
-Explain/debug endpoints implemented.
-Observer/quality issues implemented.
-Import/export safe.
+Add to UI member types and tests.
 
-Frontend:
+### 9.2. Registry quality surface
 
-/app/admin/registry production UI has no raw-ID prompt workflows in normal paths.
-UI users can be linked to RegistryPerson.
-Audience groups can be managed.
-Registry policies expose department/location modes.
-Knowledge Studio has visibility selector and test-access explain.
-Requester/support/admin visible text is Russian-first.
-No mojibake.
+Confirm `/app/admin/registry` quality tab shows:
 
-Agent/live:
+- empty audience groups;
+- invalid knowledge audience rule targets;
+- requester-visible knowledge scoped to zero users.
 
-Real agent registration pending flow verified.
-Real confirmed binding account-session flow verified.
-Real other-account flow verified.
-Revoked session/binding access loss verified.
-Knowledge visibility follows account session/person identity.
-Hidden article metadata does not leak through agent/requester search or suggestions.
+### 9.3. Registry option pickers
 
-Security:
+Knowledge UI needs reliable pickers for:
 
-No requester identity inferred from agent machine token.
-No hidden KB content in search/RAG/network payloads.
-No raw account-session tokens in logs/screenshots.
-Admin explain endpoints are admin-only.
-Dangerous operations require reason and audit.
+- departments;
+- locations;
+- people;
+- audience groups;
+- access groups;
+- services.
 
-## Required final commands
+Use existing Registry/Admin APIs where possible.
 
-python -m compileall -q server shared scripts pc_agent
-python -m pytest server/tests/test_registry_effective_identity_service.py
-python -m pytest server/tests/test_registry_audience_groups.py
-python -m pytest server/tests/test_registry_registration_policy.py
-python -m pytest server/tests/test_knowledge_audience_rules.py
-python -m pytest server/tests/test_knowledge_access_service.py
-python -m pytest server/tests/test_knowledge_search_acl.py
-python -m pytest server/tests/test_registry_visibility_quality.py
-pnpm --dir webapp exec tsc --noEmit --pretty false
-pnpm --dir webapp test -- --reporter=dot
-pnpm --dir webapp build
-git diff --check
+---
 
-## Required final live commands
+## 10. Tests
 
-python scripts/registry_workflow_smoke.py --base-url <stand-url> --insecure-tls
-python scripts/registry_visibility_live_smoke.py --base-url <stand-url> --insecure-tls
+### 10.1. Backend tests
 
-## Final exit criteria
+Add/keep coverage for:
 
-All focused tests pass.
-Webapp build passes.
-Live agent checks are recorded with evidence.
-PLANS.md, REGISTRY_MANAGEMENT_CENTER.md, REGISTRY_VISIBILITY_FOUNDATION.md, KNOWLEDGE_OPERATIONS.md, CODEMAP.md and QUICK_LOOKUP.md are updated.
-No unresolved security blockers.
-Any remaining follow-up is explicitly documented as non-blocking with reason.
+- audience-scoped requester article visible to matching department;
+- denied department cannot see title/snippet/body/result count;
+- audience group rule works;
+- space-level rule works;
+- item-level rule works;
+- service-context rule works;
+- privileged actor behavior documented;
+- support suggestions do not leak requester-scoped articles for other departments;
+- Ask/RAG/vector retrieval filters before citations/prompt construction;
+- simplified save article creates version and publishes current version;
+- review disabled/autofill mode allows saving without manual reviewer.
+
+### 10.2. Frontend tests
+
+Add/keep coverage for:
+
+- Registry audience groups can add person/department/department_tree/location/role/service/access_group.
+- Knowledge Studio default UI has no review buttons.
+- Knowledge Studio has one primary `Сохранить статью` button.
+- Article save calls create item/version/publish flow or new unified endpoint.
+- Manual segmentation hidden by default.
+- Advanced section can reveal segmentation.
+- Visibility selector can choose department/audience/service.
+- Visibility selector warns on zero audience.
+- Section constructor can save default visibility/audience/RAG settings.
+- No horizontal scroll at 1366x768.
+
+### 10.3. Live validation
+
+Capture browser evidence for:
+
+- `/app/admin/registry` → `Аудитории`: create audience, add members, preview.
+- `/app/admin/registry` → `Качество данных`: audience/knowledge visibility issues visible.
+- `/app/admin/knowledge/sections`: create/edit section, set default audience.
+- `/app/admin/knowledge/studio`: create article, set section, set visibility/audience, save article.
+- Requester portal search: matching user sees article.
+- Non-matching user does not see article or title/snippet.
+- Support ticket suggestions: requester-safe scoped articles filtered by requester; support_internal runbooks still visible to support.
+
+---
+
+## 11. Implementation Order
+
+### Phase K0 — Registry preflight
+
+- Done in commit `baa0fe8e`: added `access_group` selector to Registry audience group members.
+- Done in commit `baa0fe8e`: verified Registry quality issues for audience/knowledge visibility.
+- Done in commit `baa0fe8e`: recorded browser evidence for the registry audience/quality slice.
+
+Exit bar:
+
+- focused tests pass;
+- browser evidence for audience group member preview;
+- no raw prompt regression.
+
+### Phase K1 — Knowledge Section Constructor
+
+- Done, initial slice: add `/app/admin/knowledge/sections` and navigation entry.
+- Done, initial slice: use “Раздел базы знаний” / “Разделы базы знаний” in the new user-facing section constructor while keeping internal `KnowledgeSpace` API names.
+- Done, initial slice: build section list/editor for title, code, description, status, default visibility, RAG/import/publication flags.
+- Done, initial slice: add default audience editor for sections with preview/save via `subject_type=space`.
+- Done, initial slice: reuse existing backend APIs; no schema migration required.
+- Remaining: article count, portal/support exposure flags as explicit product controls, allowed material types, richer section audience summary and final live browser evidence for create/edit/default-audience.
+
+Exit bar:
+
+- admin can configure section policy without raw JSON;
+- section-level audience preview works;
+- docs updated.
+
+### Phase K2 — Simplified Knowledge Studio
+
+- Remove review from default UI.
+- Replace create-version/publish-version with one `Сохранить статью`.
+- Hide manual segmentation and advanced metadata by default.
+- Add basic settings explanations.
+- Add section/type/visibility/audience/helpdesk binding in a single editor.
+- Add version history drawer.
+
+Exit bar:
+
+- a support/admin user can create and publish a basic article in one flow;
+- no review actions visible;
+- no manual version selection required;
+- no segmentation required;
+- primary action visible above fold.
+
+### Phase K3 — Help Desk binding
+
+- Add “Где показывать статью” / “Связь с обращениями”.
+- Link article to service/offering/request template.
+- Ensure suggestions use service/request-template context plus audience filtering.
+- Add UI preview: “где статья будет предложена”.
+
+Exit bar:
+
+- article appears in relevant request/support contexts;
+- denied audience does not see requester-safe content.
+
+### Phase K4 — RAG readiness
+
+- Add section/article AI/RAG eligibility.
+- Ensure retrieval respects visibility + audience + RAG eligibility.
+- Add trace/explain for why article was included/excluded.
+- Keep citations safe.
+
+Exit bar:
+
+- Ask/RAG never uses denied content;
+- admin explain can show rule reason;
+- requester response never leaks hidden metadata.
+
+### Phase K5 — Operations polish
+
+- Update `/app/admin/knowledge` as Knowledge Operations Center.
+- Add actionable queues:
+  - no audience users;
+  - missing help desk binding;
+  - stale article;
+  - indexing failed;
+  - low quality;
+  - zero-result searches.
+- Keep Studio focused on authoring.
+
+Exit bar:
+
+- operations page shows what needs attention;
+- authoring page stays simple.
+
+---
+
+## 12. Non-goals For This Refactor
+
+Do not implement now:
+
+- full deny/exclude rule precedence;
+- full AD/LDAP sync;
+- full document management system;
+- complex approval/CAB-like review workflow;
+- manual segment tuning as default;
+- AI rewriting/generation as default;
+- public internet publishing.
+
+These can remain future capabilities.
+
+---
+
+## 13. Product Acceptance Definition
+
+The refactor is successful when:
+
+1. A support/admin user can create a useful article without understanding versions, chunks, segments or review.
+2. A section admin can define default policies for a Knowledge Section.
+3. Article visibility can target departments, audience groups, services and people through Registry.
+4. Requester/support/AI search uses the same backend access decision path.
+5. Hidden articles do not leak titles, snippets, result counts, citations or body text.
+6. Help Desk forms/tickets can receive contextually relevant articles.
+7. Manual segmentation and advanced metadata exist only as advanced tools.
+8. Registry remains the source of truth for people, departments, groups and audiences.

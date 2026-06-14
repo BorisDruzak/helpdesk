@@ -148,6 +148,10 @@ export const AdminKnowledgeStudioPage = lazy(() =>
   import("../../pages/admin/knowledge-studio-page").then((module) => ({ default: module.AdminKnowledgeStudioPage })),
 );
 
+export const AdminKnowledgeSectionsPage = lazy(() =>
+  import("../../pages/admin/knowledge-sections-page").then((module) => ({ default: module.AdminKnowledgeSectionsPage })),
+);
+
 export const AdminKnowledgeMetadataPage = lazy(() =>
   import("../../pages/admin/knowledge-metadata-page").then((module) => ({ default: module.AdminKnowledgeMetadataPage })),
 );

@@ -11,6 +11,7 @@ Knowledge vNext расширяет существующую Knowledge Platform, 
 - `/app/knowledge` — support knowledge workspace.
 - `/app/knowledge/articles/:id` — support view для article/runbook/known error.
 - `/app/admin/knowledge` — Knowledge Ops dashboard.
+- `/app/admin/knowledge/sections` — конструктор разделов базы знаний поверх `KnowledgeSpace` policy.
 - `/app/admin/knowledge/studio` — article authoring studio.
 - `/app/admin/knowledge/graph` — visual graph editor.
 - `/app/admin/knowledge/ai` — управление AI providers, model profiles, policies и health.
@@ -61,6 +62,7 @@ The admin Knowledge refactor is specified in `docs/superpowers/specs/2026-06-13-
 The target model is scenario-first, not endpoint/table-first:
 
 - `/app/admin/knowledge` is the Knowledge Operations Center.
+- `/app/admin/knowledge/sections` is the Knowledge Section Constructor for section policy, default visibility, import/publication/RAG flags and section-level audience rules.
 - `/app/admin/knowledge/studio` is the Authoring Workbench.
 - `/app/admin/knowledge/graph` is the Graph Workbench.
 - `/app/admin/knowledge/import` is the Import Wizard.
@@ -69,6 +71,8 @@ The target model is scenario-first, not endpoint/table-first:
 - `/app/admin/knowledge/indexing` is Indexing Operations.
 
 Studio must use TipTap/ProseMirror for the primary article editor. The editor must support inline visual states for manual markup, AI proposals, auto segmentation, diff, validation and stale/remapped segments. A plain textarea is not acceptable as the final authoring surface.
+
+Sections are the product-facing name for existing `KnowledgeSpace` rows. Internal API and database names can remain `space`, but visible UI should say `Раздел базы знаний`. The section constructor currently reuses `GET|POST /api/web/knowledge/spaces` and `subject_type=space` audience rules; future backend extensions should preserve this contract or migrate it explicitly.
 
 Graph must use React Flow (`@xyflow/react`) for the primary graph canvas. The graph page must be an editor with selectable/editable nodes and edges, searchable node pickers, connection creation, drag layout, saved layout and visible update/refetch evidence after mutations. A hand-rolled read-only SVG/list surface is not acceptable as the final graph editor.
 

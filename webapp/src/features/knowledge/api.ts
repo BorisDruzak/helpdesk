@@ -10,6 +10,8 @@ export type KnowledgeSpace = {
   allow_publication?: boolean;
   allow_ingestion?: boolean;
   allow_rag?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 export type KnowledgeItemVersion = {
