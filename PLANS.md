@@ -732,7 +732,7 @@ Exit bar:
 - Done, initial local slice: hide manual segmentation and advanced metadata by default; manual/auto segment controls remain behind advanced tools.
 - Done, initial local slice: add Russian field explanations for section, material type, coarse visibility, audience and display surfaces.
 - Done, initial local slice: keep rollback/version selection inside `История версий` drawer with explicit confirmation.
-- Remaining: live browser evidence for creating/editing/saving an article through the simplified Studio.
+- Done, final live browser evidence for creating/editing/saving an article through the simplified Studio: `artifacts/browser_live_validation/knowledge-studio-k2-10a7a5ef-simplified-save-1781475681396/summary.json`.
 
 Exit bar:
 
