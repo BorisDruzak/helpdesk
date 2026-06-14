@@ -83,7 +83,7 @@ class TicketAccountAccessService:
     async def can_create_ticket(self, *, device_id: str, account_session: dict[str, Any]) -> bool:
         return str(account_session.get("device_id") or "") == str(device_id) and str(
             account_session.get("account_mode") or ""
-        ) in {"confirmed_binding", "verified_other_account", "registration_pending"}
+        ) in {"confirmed_binding", "verified_other_account"}
 
     async def can_view_ticket(self, *, ticket: Ticket, account_session: dict[str, Any]) -> bool:
         return self._ticket_allowed(ticket, account_session)

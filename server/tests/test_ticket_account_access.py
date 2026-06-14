@@ -164,6 +164,45 @@ async def test_agent_create_preview_accepts_valid_account_session(test_client, t
 
 
 @pytest.mark.asyncio
+async def test_agent_create_rejects_registration_pending_session(test_client, test_engine):
+    await _ensure_fallback_queue(test_engine)
+    await _ensure_default_sla_policy(test_engine)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending-create@example.test",
+            display_name="Pending Create",
+            profile={"full_name": "Pending Create", "email": "pending-create@example.test"},
+        )
+        account = await AccountSessionService(session).create_registration_pending_session(
+            device_id=device_id,
+            claim_id=claim["registration"]["claim_id"],
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/tickets/create",
+        headers=_agent_headers(device_id),
+        json={
+            "title": "Pending registration create attempt",
+            "description": "Pending registration cannot open the normal ticket workspace.",
+            "user_display_name": "Pending Create",
+            "requester_account": {
+                "session_id": account["session"]["session_id"],
+                "session_token": account["session_token"],
+            },
+        },
+    )
+
+    assert response.status == 403, await response.text()
+    payload = await response.json()
+    assert payload["error_code"] == "ACCOUNT_ACCESS_DENIED"
+
+
+@pytest.mark.asyncio
 async def test_confirmed_owner_policy_sees_historical_owner_ticket_not_other_account_ticket(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
