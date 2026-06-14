@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import scripts.registry_visibility_live_smoke as smoke
 
@@ -47,3 +48,9 @@ def test_default_output_path_uses_registry_visibility_foundation_folder() -> Non
     assert output.as_posix().endswith(
         "artifacts/registry-visibility-foundation-20260614/registry-visibility-live-smoke-phase7-test.json"
     )
+
+
+def test_person_id_from_effective_identity_uses_nested_person_contract() -> None:
+    identity = SimpleNamespace(person={"person_id": "person-1"})
+
+    assert smoke.person_id_from_effective_identity(identity) == "person-1"

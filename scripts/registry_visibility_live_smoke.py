@@ -151,6 +151,20 @@ def build_initial_report(*, run_id: str, base_url: str, commit: str | None) -> d
     }
 
 
+def person_id_from_effective_identity(identity: Any) -> str | None:
+    person = getattr(identity, "person", None)
+    if isinstance(person, dict):
+        value = str(person.get("person_id") or "").strip()
+        return value or None
+    if isinstance(identity, dict):
+        person = identity.get("person")
+        if isinstance(person, dict):
+            value = str(person.get("person_id") or "").strip()
+            return value or None
+    value = str(getattr(identity, "person_id", "") or "").strip()
+    return value or None
+
+
 class ApiClient:
     def __init__(self, *, base_url: str, token: str, insecure_tls: bool) -> None:
         self.base_url = base_url.rstrip("/")
@@ -664,12 +678,18 @@ class RegistryVisibilityLiveSmoke:
 
     async def _check_service_knowledge_for_session(self, *, session_id: str, session_token: str, expected_slug: str, hidden_slug: str) -> dict[str, Any]:
         async with get_session() as session:
-            audience = await EffectiveIdentityService(session).resolve_account_session_identity(
+            identity = await EffectiveIdentityService(session).resolve_account_session_identity(
                 device_id=self.ids["owner_device_id"],
                 session_id=session_id,
                 session_token=session_token,
             )
-            _require(audience.person_id is not None, "account session did not resolve to requester person")
+            person_id = person_id_from_effective_identity(identity)
+            _require(person_id is not None, "account session did not resolve to requester person")
+            audience = await EffectiveIdentityService(session).resolve_person_audience(
+                person_id=person_id,
+                actor_id=identity.actor_id,
+                actor_role="requester",
+            )
             search_results = await KnowledgeSearchService(session).search(
                 query=str(self.report["marker"]),
                 actor_role="requester",
