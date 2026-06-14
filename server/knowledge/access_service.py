@@ -112,20 +112,50 @@ def _audience_person_id(audience: Any) -> str | None:
     return text or None
 
 
-def _audience_department_values(audience: Any) -> set[str]:
-    path = audience.get("department_path") if isinstance(audience, dict) else getattr(audience, "department_path", [])
+def _department_item_values(item: Any) -> set[str]:
+    if isinstance(item, dict):
+        candidates = (
+            item.get("department_id"),
+            item.get("id"),
+            item.get("code"),
+            item.get("department_code"),
+        )
+    else:
+        candidates = (item,)
+    return {_normalize_token(value) for value in candidates if _normalize_token(value)}
+
+
+def _audience_current_department_values(audience: Any) -> set[str]:
+    path = audience.get("department_path") if isinstance(audience, dict) else getattr(
+        audience, "department_path", []
+    )
+    if path:
+        return _department_item_values(list(path)[-1])
+    values: set[str] = set()
+    if isinstance(audience, dict):
+        candidates = (
+            audience.get("department_id"),
+            audience.get("department_code"),
+            (audience.get("person") or {}).get("department_id")
+            if isinstance(audience.get("person"), dict)
+            else None,
+        )
+    else:
+        candidates = (
+            getattr(audience, "department_id", None),
+            getattr(audience, "department_code", None),
+        )
+    values.update(_normalize_token(value) for value in candidates if _normalize_token(value))
+    return values
+
+
+def _audience_department_path_values(audience: Any) -> set[str]:
+    path = audience.get("department_path") if isinstance(audience, dict) else getattr(
+        audience, "department_path", []
+    )
     values: set[str] = set()
     for item in path or []:
-        if isinstance(item, dict):
-            candidates = (
-                item.get("department_id"),
-                item.get("id"),
-                item.get("code"),
-                item.get("department_code"),
-            )
-        else:
-            candidates = (item,)
-        values.update(_normalize_token(value) for value in candidates if _normalize_token(value))
+        values.update(_department_item_values(item))
     return values
 
 
@@ -147,7 +177,29 @@ def _audience_location_values(audience: Any) -> set[str]:
 
 def _audience_list_values(audience: Any, field_name: str) -> set[str]:
     values = audience.get(field_name) if isinstance(audience, dict) else getattr(audience, field_name, [])
-    return {_normalize_token(value) for value in values or [] if _normalize_token(value)}
+    result: set[str] = set()
+    for value in values or []:
+        if isinstance(value, dict):
+            if field_name == "audience_groups":
+                candidates = (
+                    value.get("audience_group_id"),
+                    value.get("id"),
+                    value.get("code"),
+                    value.get("audience_group_code"),
+                )
+            elif field_name == "access_groups":
+                candidates = (
+                    value.get("access_group_id"),
+                    value.get("id"),
+                    value.get("code"),
+                    value.get("access_group_code"),
+                )
+            else:
+                candidates = tuple(value.values())
+        else:
+            candidates = (value,)
+        result.update(_normalize_token(item) for item in candidates if _normalize_token(item))
+    return result
 
 
 def _subject_rules(
@@ -188,8 +240,10 @@ def _rule_matches(
         return target_id == _normalize_token(_audience_role(audience))
     if target_type == "person":
         return target_id == _normalize_token(_audience_person_id(audience))
-    if target_type in {"department", "department_tree"}:
-        return target_id in _audience_department_values(audience)
+    if target_type == "department":
+        return target_id in _audience_current_department_values(audience)
+    if target_type == "department_tree":
+        return target_id in _audience_department_path_values(audience)
     if target_type == "location":
         return target_id in _audience_location_values(audience)
     if target_type == "access_group":

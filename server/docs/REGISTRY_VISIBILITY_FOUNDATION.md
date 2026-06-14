@@ -83,19 +83,20 @@ Rules:
 
 ### Effective Audience
 
-Phase 1 implemented contracts: `server/registry/audience_contracts.py`. Audience-group expansion remains a later registry-layer service.
+Phase 1 implemented contracts: `server/registry/audience_contracts.py`. The resolver now expands active Registry audience groups for a resolved person and returns each group as `{audience_group_id, code}`.
 
 Effective audience should include:
 
 - person id;
-- primary department and department tree ancestors/children when requested;
+- current primary department from `registry_people.department_id`;
+- department tree path for explicit `department_tree` targeting;
 - location;
 - access groups as targeting facts only;
-- audience groups;
+- active audience groups resolved from person, department/tree, location, access group or role membership;
 - role;
 - service/offering targeting facts when a Knowledge request includes service context.
 
-Audience expansion must be deterministic and side-effect-free. Preview endpoints may count expanded people and warnings, but must not mutate state.
+Audience expansion must be deterministic and side-effect-free. Knowledge rules treat `target_type=department` as an exact current-department match; subtree/path matching is explicit through `target_type=department_tree`. Preview endpoints may count expanded people and warnings, but must not mutate state.
 
 ## Planned Schema
 
@@ -147,7 +148,7 @@ Phase 5 Knowledge visibility admin APIs:
 - `POST /api/web/admin/knowledge/audience-rules/preview`
 - `GET /api/web/admin/knowledge/access/explain?actor_id=&item_id=`
 
-The first admin API slice is implemented in `server/knowledge/audience_rules_service.py` and `server/web_api/knowledge_handlers.py`. These routes are admin-only, replace/list item or space rule rows through `knowledge_audience_rules`, preview item access with transient or persisted rules, and expose admin explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. `POST /api/web/admin/knowledge/audience-rules/preview` currently supports `subject_type=item`; Phase 5 is not complete until normal requester/support/search/suggest/portal/vector/RAG read paths enforce the same service and have anti-leak coverage. Phase 6 consumes these APIs from `/app/admin/knowledge/studio` through a Russian-first `Область видимости` selector instead of raw JSON; this UI must remain an authoring/debug client and cannot become the access-control boundary.
+The first admin API slice is implemented in `server/knowledge/audience_rules_service.py` and `server/web_api/knowledge_handlers.py`. These routes are admin-only, replace/list item or space rule rows through `knowledge_audience_rules`, preview item access or space-level access with transient or persisted rules, and expose admin explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. `POST /api/web/admin/knowledge/audience-rules/preview` supports `subject_type=item` and `subject_type=space`; space preview returns `item: null` and evaluates only the space-level audience rules through the same coarse visibility/status guard. Phase 6 consumes these APIs from `/app/admin/knowledge/studio` through a Russian-first `Область видимости` selector instead of raw JSON; this UI must remain an authoring/debug client and cannot become the access-control boundary.
 
 ## Knowledge Access Decision Order
 

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     DeviceAccountSession,
+    RegistryAudienceGroup,
+    RegistryAudienceGroupMember,
     RegistryDepartment,
     RegistryLocation,
     RegistryPerson,
@@ -206,16 +209,29 @@ class EffectiveIdentityService:
             )
 
         access_groups = await self._actor_group_codes(str(actor_id or "").strip()) if actor_id else []
+        department_path = await self._department_path(getattr(person, "department_id", None))
+        location = await self._location_payload(getattr(person, "location_id", None))
+        audience_groups = await self._audience_groups_for_person(
+            person=person,
+            department_path=department_path,
+            location=location,
+            access_groups=access_groups,
+            actor_role=role,
+        )
         return EffectiveAudience(
             person_id=getattr(person, "person_id", None),
             actor_id=str(actor_id or "").strip() or None,
             actor_role=role,
-            department_path=await self._department_path(getattr(person, "department_id", None)),
-            location=await self._location_payload(getattr(person, "location_id", None)),
+            department_path=department_path,
+            location=location,
             access_groups=access_groups,
-            audience_groups=[],
+            audience_groups=audience_groups,
             warnings=warnings,
-            sources={"person": "registry_people", "access_groups": access_groups},
+            sources={
+                "person": "registry_people",
+                "access_groups": access_groups,
+                "audience_groups": audience_groups,
+            },
         )
 
     async def explain_identity(self, actor_id: str, actor_role: str) -> dict[str, Any]:
@@ -230,6 +246,8 @@ class EffectiveIdentityService:
                 "registry_departments",
                 "registry_locations",
                 "access_group_members",
+                "registry_audience_groups",
+                "registry_audience_group_members",
             ],
             "warnings": payload.get("warnings") or [],
         }
@@ -246,18 +264,27 @@ class EffectiveIdentityService:
         sources: dict[str, Any],
         account_session: dict[str, Any] | None = None,
     ) -> EffectiveIdentity:
+        department_path = await self._department_path(getattr(person, "department_id", None))
+        location = await self._location_payload(getattr(person, "location_id", None))
+        audience_groups = await self._audience_groups_for_person(
+            person=person,
+            department_path=department_path,
+            location=location,
+            access_groups=access_groups,
+            actor_role=actor_role,
+        )
         return EffectiveIdentity(
             actor_id=actor_id,
             actor_role=_normalize_role(actor_role),
             identity_source=identity_source,
             person=self._person_payload(person),
-            department_path=await self._department_path(getattr(person, "department_id", None)),
-            location=await self._location_payload(getattr(person, "location_id", None)),
+            department_path=department_path,
+            location=location,
             access_groups=access_groups,
-            audience_groups=[],
+            audience_groups=audience_groups,
             account_session=account_session,
             warnings=warnings,
-            sources=sources,
+            sources={**sources, "audience_groups": audience_groups},
         )
 
     async def _load_ui_user(self, actor_id: str) -> UiUser | None:
@@ -340,6 +367,89 @@ class EffectiveIdentityService:
             "status": location.status,
         }
 
+    async def _audience_groups_for_person(
+        self,
+        *,
+        person: RegistryPerson | None,
+        department_path: list[dict[str, Any]],
+        location: dict[str, Any] | None,
+        access_groups: list[str],
+        actor_role: str,
+    ) -> list[dict[str, str]]:
+        if person is None:
+            return []
+        now = datetime.now(timezone.utc)
+        rows = (
+            await self.session.execute(
+                select(RegistryAudienceGroup, RegistryAudienceGroupMember)
+                .join(
+                    RegistryAudienceGroupMember,
+                    RegistryAudienceGroupMember.audience_group_id == RegistryAudienceGroup.audience_group_id,
+                )
+                .where(
+                    RegistryAudienceGroup.status == "active",
+                    or_(
+                        RegistryAudienceGroupMember.valid_from.is_(None),
+                        RegistryAudienceGroupMember.valid_from <= now,
+                    ),
+                    or_(
+                        RegistryAudienceGroupMember.valid_to.is_(None),
+                        RegistryAudienceGroupMember.valid_to > now,
+                    ),
+                )
+                .order_by(
+                    RegistryAudienceGroup.code.asc(),
+                    RegistryAudienceGroup.audience_group_id.asc(),
+                    RegistryAudienceGroupMember.member_type.asc(),
+                    RegistryAudienceGroupMember.member_id.asc(),
+                )
+            )
+        ).all()
+
+        person_id = _normalize_token(getattr(person, "person_id", None))
+        current_department_id = _normalize_token(getattr(person, "department_id", None))
+        department_path_ids = {
+            _normalize_token(item.get("department_id"))
+            for item in department_path
+            if isinstance(item, dict) and _normalize_token(item.get("department_id"))
+        }
+        raw_location_id = _normalize_token(getattr(person, "location_id", None))
+        location_active = isinstance(location, dict) and str(location.get("status") or "active") == "active"
+        location_id = raw_location_id if location_active else ""
+        access_group_codes = {_normalize_token(code) for code in access_groups if _normalize_token(code)}
+        role = _normalize_token(_normalize_role(actor_role))
+
+        matched: dict[str, dict[str, str]] = {}
+        for group, member in rows:
+            member_type = str(member.member_type or "").strip().lower()
+            member_id = _normalize_token(member.member_id)
+            if not member_id:
+                continue
+            if member_type == "person":
+                is_match = member_id == person_id
+            elif member_type == "department":
+                is_match = (
+                    member_id in department_path_ids
+                    if bool(member.include_children)
+                    else member_id == current_department_id
+                )
+            elif member_type == "department_tree":
+                is_match = member_id in department_path_ids
+            elif member_type == "location":
+                is_match = bool(location_id) and member_id == location_id
+            elif member_type == "access_group":
+                is_match = member_id in access_group_codes
+            elif member_type == "role":
+                is_match = member_id == role
+            else:
+                is_match = False
+            if is_match:
+                matched[str(group.audience_group_id)] = {
+                    "audience_group_id": str(group.audience_group_id),
+                    "code": str(group.code),
+                }
+        return [matched[key] for key in sorted(matched, key=lambda item: (matched[item]["code"], item))]
+
     @staticmethod
     def _person_payload(person: RegistryPerson | None) -> dict[str, Any] | None:
         if person is None:
@@ -365,3 +475,7 @@ class EffectiveIdentityService:
             "verified": bool(identity.verified),
             "source": identity.source,
         }
+
+
+def _normalize_token(value: Any) -> str:
+    return str(value or "").strip().lower()

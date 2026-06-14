@@ -5,7 +5,14 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import RegistryDepartment, RegistryPerson, RegistryPersonIdentity, UiUser
+from app.db.models import (
+    RegistryAudienceGroup,
+    RegistryAudienceGroupMember,
+    RegistryDepartment,
+    RegistryPerson,
+    RegistryPersonIdentity,
+    UiUser,
+)
 from app.repos.knowledge_repo import KnowledgeRepo
 
 
@@ -49,7 +56,7 @@ async def _seed_actor(session, *, login: str, department_code: str) -> dict[str,
 
 async def _seed_published_item(session) -> dict[str, str]:
     repo = KnowledgeRepo(session)
-    await repo.upsert_space(
+    space = await repo.upsert_space(
         {
             "code": "audience-api",
             "title": "Audience API",
@@ -77,7 +84,7 @@ async def _seed_published_item(session) -> dict[str, str]:
         actor_id="support",
     )
     await repo.publish_item(item["item_id"], version["version_id"], actor_id="admin")
-    return {"item_id": item["item_id"]}
+    return {"item_id": item["item_id"], "space_id": space["space_id"]}
 
 
 @pytest.mark.asyncio
@@ -167,6 +174,161 @@ async def test_admin_can_replace_list_preview_and_explain_knowledge_audience_rul
     assert explain["decision"]["allowed"] is True
     assert explain["decision"]["matched_rule_ids"] == [rules[0]["rule_id"]]
     assert explain["item"]["item_id"] == item["item_id"]
+
+
+@pytest.mark.asyncio
+async def test_admin_preview_matches_registry_audience_group_rule(test_client, test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        member_actor = await _seed_actor(session, login="knowledge-group-member@example.test", department_code="it")
+        await _seed_actor(session, login="knowledge-group-outsider@example.test", department_code="finance")
+        item = await _seed_published_item(session)
+        group = RegistryAudienceGroup(
+            audience_group_id=str(uuid.uuid4()),
+            code="knowledge_it_members",
+            name="Knowledge IT Members",
+            status="active",
+            source="manual",
+        )
+        session.add(group)
+        await session.flush()
+        session.add(
+            RegistryAudienceGroupMember(
+                audience_group_id=group.audience_group_id,
+                member_type="person",
+                member_id=member_actor["person_id"],
+                source="manual",
+            )
+        )
+        await session.commit()
+
+    put_response = await test_client.put(
+        "/api/web/admin/knowledge/audience-rules",
+        headers=ADMIN_HEADERS,
+        json={
+            "subject_type": "item",
+            "subject_id": item["item_id"],
+            "rules": [
+                {
+                    "target_type": "audience_group",
+                    "target_id": group.audience_group_id,
+                    "priority": 10,
+                    "reason": "IT audience group only",
+                }
+            ],
+            "reason": "scope item to registry audience group",
+        },
+    )
+    assert put_response.status == 200
+    rules = (await put_response.json())["data"]["rules"]
+
+    allowed_preview_response = await test_client.post(
+        "/api/web/admin/knowledge/audience-rules/preview",
+        headers=ADMIN_HEADERS,
+        json={
+            "subject_type": "item",
+            "subject_id": item["item_id"],
+            "actor_id": "knowledge-group-member@example.test",
+            "actor_role": "user",
+        },
+    )
+    assert allowed_preview_response.status == 200
+    allowed_preview = (await allowed_preview_response.json())["data"]["preview"]
+    assert allowed_preview["audience"]["audience_groups"] == [
+        {"audience_group_id": group.audience_group_id, "code": "knowledge_it_members"}
+    ]
+    assert allowed_preview["decision"]["allowed"] is True
+    assert allowed_preview["decision"]["matched_rule_ids"] == [rules[0]["rule_id"]]
+
+    denied_preview_response = await test_client.post(
+        "/api/web/admin/knowledge/audience-rules/preview",
+        headers=ADMIN_HEADERS,
+        json={
+            "subject_type": "item",
+            "subject_id": item["item_id"],
+            "actor_id": "knowledge-group-outsider@example.test",
+            "actor_role": "user",
+        },
+    )
+    assert denied_preview_response.status == 200
+    denied_preview = (await denied_preview_response.json())["data"]["preview"]
+    assert denied_preview["audience"]["audience_groups"] == []
+    assert denied_preview["decision"]["allowed"] is False
+    assert denied_preview["decision"]["reason_code"] == "audience_rule_not_matched"
+    assert rules[0]["rule_id"] not in str(denied_preview["safe_payload"])
+
+
+@pytest.mark.asyncio
+async def test_admin_can_preview_space_audience_rules(test_client, test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        it_actor = await _seed_actor(session, login="knowledge-space-it@example.test", department_code="it-space")
+        await _seed_actor(session, login="knowledge-space-finance@example.test", department_code="finance-space")
+        repo = KnowledgeRepo(session)
+        space = await repo.upsert_space(
+            {
+                "code": "audience-space-preview",
+                "title": "Audience Space Preview",
+                "visibility": "requester",
+                "lifecycle_status": "active",
+            },
+            actor_id="admin",
+        )
+        await session.commit()
+
+    put_response = await test_client.put(
+        "/api/web/admin/knowledge/audience-rules",
+        headers=ADMIN_HEADERS,
+        json={
+            "subject_type": "space",
+            "subject_id": space["space_id"],
+            "rules": [
+                {
+                    "target_type": "department",
+                    "target_id": it_actor["department_id"],
+                    "priority": 10,
+                    "reason": "IT space audience",
+                }
+            ],
+            "reason": "scope space to IT",
+        },
+    )
+    assert put_response.status == 200
+    rules = (await put_response.json())["data"]["rules"]
+
+    allowed_preview_response = await test_client.post(
+        "/api/web/admin/knowledge/audience-rules/preview",
+        headers=ADMIN_HEADERS,
+        json={
+            "subject_type": "space",
+            "subject_id": space["space_id"],
+            "actor_id": "knowledge-space-it@example.test",
+            "actor_role": "user",
+        },
+    )
+    assert allowed_preview_response.status == 200
+    allowed_preview = (await allowed_preview_response.json())["data"]["preview"]
+    assert allowed_preview["subject"] == {"subject_type": "space", "subject_id": space["space_id"]}
+    assert allowed_preview["item"] is None
+    assert allowed_preview["space"]["space_id"] == space["space_id"]
+    assert allowed_preview["decision"]["allowed"] is True
+    assert allowed_preview["decision"]["matched_rule_ids"] == [rules[0]["rule_id"]]
+
+    denied_preview_response = await test_client.post(
+        "/api/web/admin/knowledge/audience-rules/preview",
+        headers=ADMIN_HEADERS,
+        json={
+            "subject_type": "space",
+            "subject_id": space["space_id"],
+            "actor_id": "knowledge-space-finance@example.test",
+            "actor_role": "user",
+        },
+    )
+    assert denied_preview_response.status == 200
+    denied_preview = (await denied_preview_response.json())["data"]["preview"]
+    assert denied_preview["decision"]["allowed"] is False
+    assert denied_preview["decision"]["reason_code"] == "audience_rule_not_matched"
+    assert rules[0]["rule_id"] not in str(denied_preview["safe_payload"])
 
 
 @pytest.mark.asyncio

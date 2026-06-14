@@ -77,6 +77,16 @@ def _space_payload(row: KnowledgeSpace | None) -> dict[str, Any] | None:
     }
 
 
+def _space_preview_item_payload(space: KnowledgeSpace) -> dict[str, Any]:
+    return {
+        "item_id": f"__space_preview__:{space.space_id}",
+        "space_id": space.space_id,
+        "status": "published",
+        "visibility": space.visibility,
+        "current_version_id": f"__space_preview_version__:{space.space_id}",
+    }
+
+
 class KnowledgeAudienceRulesService:
     """Admin service for Knowledge audience-rule authoring and explain."""
 
@@ -177,37 +187,59 @@ class KnowledgeAudienceRulesService:
         service_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         clean_subject_type = _clean_subject_type(subject_type)
-        if clean_subject_type != "item":
-            raise ValueError("preview currently requires subject_type=item")
-        item, space = await self._load_item_and_space(str(subject_id or "").strip())
         audience = await EffectiveIdentityService(self.session).resolve_person_audience(
             person_id=None,
             actor_id=actor_id,
             actor_role=actor_role,
         )
-        if rules is None:
-            rule_payloads = await self._rules_for_item(item)
+        if clean_subject_type == "item":
+            item, space = await self._load_item_and_space(str(subject_id or "").strip())
+            if rules is None:
+                rule_payloads = await self._rules_for_item(item)
+            else:
+                rule_payloads = [
+                    self._normalize_rule_payload(
+                        payload,
+                        subject_type=clean_subject_type,
+                        subject_id=item.item_id,
+                        default_priority=(index + 1) * 10,
+                    )
+                    for index, payload in enumerate(rules)
+                ]
+            item_payload = _item_payload(item)
+            space_payload = _space_payload(space)
+            subject_payload = {"subject_type": clean_subject_type, "subject_id": item.item_id}
+            response_item: dict[str, Any] | None = item_payload
         else:
-            rule_payloads = [
-                self._normalize_rule_payload(
-                    payload,
-                    subject_type=clean_subject_type,
-                    subject_id=item.item_id,
-                    default_priority=(index + 1) * 10,
-                )
-                for index, payload in enumerate(rules)
-            ]
+            space = await self._load_space(str(subject_id or "").strip())
+            if rules is None:
+                rule_payloads = await self._rules_for_space(space)
+            else:
+                rule_payloads = [
+                    self._normalize_rule_payload(
+                        payload,
+                        subject_type=clean_subject_type,
+                        subject_id=space.space_id,
+                        default_priority=(index + 1) * 10,
+                    )
+                    for index, payload in enumerate(rules)
+                ]
+            item_payload = _space_preview_item_payload(space)
+            space_payload = _space_payload(space)
+            subject_payload = {"subject_type": clean_subject_type, "subject_id": space.space_id}
+            response_item = None
+
         decision = KnowledgeAccessService.evaluate_item_access(
-            item=_item_payload(item),
-            space=_space_payload(space),
+            item=item_payload,
+            space=space_payload,
             audience=audience,
             rules=rule_payloads,
             service_context=service_context,
         )
         return {
-            "subject": {"subject_type": clean_subject_type, "subject_id": item.item_id},
-            "item": _item_payload(item),
-            "space": _space_payload(space),
+            "subject": subject_payload,
+            "item": response_item,
+            "space": space_payload,
             "audience": audience.to_dict(),
             "decision": _decision_payload(decision),
             "safe_payload": decision.safe_denial_payload(),
@@ -270,6 +302,24 @@ class KnowledgeAudienceRulesService:
         ).scalars().all()
         return [self.serialize_rule(row) for row in rows]
 
+    async def _rules_for_space(self, space: KnowledgeSpace) -> list[dict[str, Any]]:
+        rows = (
+            await self.session.execute(
+                select(KnowledgeAudienceRule)
+                .where(
+                    KnowledgeAudienceRule.status == "active",
+                    KnowledgeAudienceRule.subject_type == "space",
+                    KnowledgeAudienceRule.subject_id == space.space_id,
+                )
+                .order_by(
+                    KnowledgeAudienceRule.priority.asc(),
+                    KnowledgeAudienceRule.created_at.asc(),
+                    KnowledgeAudienceRule.rule_id.asc(),
+                )
+            )
+        ).scalars().all()
+        return [self.serialize_rule(row) for row in rows]
+
     async def _load_item_and_space(self, item_ref: str) -> tuple[KnowledgeItem, KnowledgeSpace | None]:
         if not item_ref:
             raise ValueError("item_id is required")
@@ -285,12 +335,25 @@ class KnowledgeAudienceRulesService:
         space = await self.session.get(KnowledgeSpace, row.space_id) if row.space_id else None
         return row, space
 
+    async def _load_space(self, space_ref: str) -> KnowledgeSpace:
+        if not space_ref:
+            raise ValueError("space_id is required")
+        row = (
+            await self.session.execute(
+                select(KnowledgeSpace)
+                .where(or_(KnowledgeSpace.space_id == space_ref, KnowledgeSpace.code == space_ref))
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise ValueError("knowledge space was not found")
+        return row
+
     async def _ensure_subject_exists(self, subject_type: str, subject_id: str) -> None:
         if subject_type == "item":
             await self._load_item_and_space(subject_id)
             return
-        if await self.session.get(KnowledgeSpace, subject_id) is None:
-            raise ValueError("knowledge space was not found")
+        await self._load_space(subject_id)
 
     def _normalize_rule_payload(
         self,
@@ -321,7 +384,7 @@ class KnowledgeAudienceRulesService:
             "target_type": target_type,
             "target_id": target_id,
             "effect": "allow",
-            "include_children": bool(payload.get("include_children")),
+            "include_children": bool(payload.get("include_children")) or target_type == "department_tree",
             "priority": priority,
             "status": _clean_status(payload.get("status")),
             "reason": _clean_text(payload.get("reason") or default_reason, max_length=1000),

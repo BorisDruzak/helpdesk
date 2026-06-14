@@ -12,6 +12,8 @@ from app.db.models import (
     AccessGroupMember,
     Device,
     RegistryDepartment,
+    RegistryAudienceGroup,
+    RegistryAudienceGroupMember,
     RegistryPerson,
     RegistryPersonIdentity,
     UiUser,
@@ -97,6 +99,20 @@ async def test_linked_ui_login_resolves_registry_person_department_path_and_acce
             status="active",
         )
         group = AccessGroup(code="requester_sensitive", name="Requester Sensitive", is_active=True)
+        audience_group = RegistryAudienceGroup(
+            audience_group_id=str(uuid.uuid4()),
+            code="identity_readers",
+            name="Identity Readers",
+            status="active",
+            source="manual",
+        )
+        archived_audience_group = RegistryAudienceGroup(
+            audience_group_id=str(uuid.uuid4()),
+            code="archived_identity_readers",
+            name="Archived Identity Readers",
+            status="archived",
+            source="manual",
+        )
         session.add_all(
             [
                 root,
@@ -112,12 +128,38 @@ async def test_linked_ui_login_resolves_registry_person_department_path_and_acce
                 ),
                 UiUser(user_login=actor_id, password_hash="test", actor_role="user", is_active=True),
                 group,
+                audience_group,
+                archived_audience_group,
             ]
         )
         await session.flush()
-        session.add(AccessGroupMember(group_id=group.id, actor_id=actor_id))
+        session.add_all(
+            [
+                AccessGroupMember(group_id=group.id, actor_id=actor_id),
+                RegistryAudienceGroupMember(
+                    audience_group_id=audience_group.audience_group_id,
+                    member_type="person",
+                    member_id=person.person_id,
+                    source="manual",
+                ),
+                RegistryAudienceGroupMember(
+                    audience_group_id=archived_audience_group.audience_group_id,
+                    member_type="person",
+                    member_id=person.person_id,
+                    source="manual",
+                ),
+            ]
+        )
 
-        payload = (await EffectiveIdentityService(session).resolve_actor_identity(actor_id, "user")).to_dict()
+        service = EffectiveIdentityService(session)
+        payload = (await service.resolve_actor_identity(actor_id, "user")).to_dict()
+        audience_payload = (
+            await service.resolve_person_audience(
+                person_id=person.person_id,
+                actor_id=actor_id,
+                actor_role="user",
+            )
+        ).to_dict()
 
     assert payload["actor_id"] == actor_id
     assert payload["actor_role"] == "user"
@@ -125,7 +167,12 @@ async def test_linked_ui_login_resolves_registry_person_department_path_and_acce
     assert payload["person"]["display_name"] == "Requester Identity"
     assert [item["code"] for item in payload["department_path"]] == ["root", "finance"]
     assert payload["access_groups"] == ["requester_sensitive"]
-    assert payload["audience_groups"] == []
+    assert payload["audience_groups"] == [
+        {"audience_group_id": audience_group.audience_group_id, "code": "identity_readers"}
+    ]
+    assert audience_payload["audience_groups"] == [
+        {"audience_group_id": audience_group.audience_group_id, "code": "identity_readers"}
+    ]
     assert payload["warnings"] == []
 
 

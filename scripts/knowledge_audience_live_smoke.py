@@ -21,6 +21,8 @@ for path in (str(REPO_ROOT), str(SERVER_ROOT)):
 from app.db import get_session, init_db, shutdown_db
 from app.db.models import (
     KnowledgeAudienceRule,
+    RegistryAudienceGroup,
+    RegistryAudienceGroupMember,
     RegistryDepartment,
     RegistryPerson,
     RegistryPersonIdentity,
@@ -265,6 +267,15 @@ class KnowledgeAudienceLiveSmoke:
                 visibility="requester",
                 actor_id=admin_login,
             )
+            audience_group_item = await self._published_item(
+                repo,
+                space_code=space_code,
+                slug=f"phase5-audience-group-{suffix}",
+                title=f"{self.marker} audience group visible",
+                body=f"{self.marker} audience group body",
+                visibility="requester",
+                actor_id=admin_login,
+            )
             internal = await self._published_item(
                 repo,
                 space_code=space_code,
@@ -275,8 +286,23 @@ class KnowledgeAudienceLiveSmoke:
                 item_type="runbook",
                 actor_id=admin_login,
             )
+            audience_group = RegistryAudienceGroup(
+                audience_group_id=str(uuid.uuid4()),
+                code=f"phase5_ag_{suffix}",
+                name=f"Phase 5 Audience Group {suffix}",
+                status="active",
+                source="manual",
+            )
+            session.add(audience_group)
+            await session.flush()
             session.add_all(
                 [
+                    RegistryAudienceGroupMember(
+                        audience_group_id=audience_group.audience_group_id,
+                        member_type="person",
+                        member_id=it_person.person_id,
+                        source="manual",
+                    ),
                     KnowledgeAudienceRule(
                         rule_id=str(uuid.uuid4()),
                         subject_type="item",
@@ -292,6 +318,15 @@ class KnowledgeAudienceLiveSmoke:
                         subject_id=finance_item["item_id"],
                         target_type="department",
                         target_id=finance_department.department_id,
+                        effect="allow",
+                        status="active",
+                    ),
+                    KnowledgeAudienceRule(
+                        rule_id=str(uuid.uuid4()),
+                        subject_type="item",
+                        subject_id=audience_group_item["item_id"],
+                        target_type="audience_group",
+                        target_id=audience_group.audience_group_id,
                         effect="allow",
                         status="active",
                     ),
@@ -315,6 +350,9 @@ class KnowledgeAudienceLiveSmoke:
                 "public_slug": public["slug"],
                 "it_slug": it_item["slug"],
                 "finance_slug": finance_item["slug"],
+                "audience_group_slug": audience_group_item["slug"],
+                "audience_group_id": audience_group.audience_group_id,
+                "audience_group_item_id": audience_group_item["item_id"],
                 "internal_slug": internal["slug"],
                 "finance_item_id": finance_item["item_id"],
                 "ticket_id": ticket.ticket_id,
@@ -361,6 +399,12 @@ class KnowledgeAudienceLiveSmoke:
         self.report["checks"]["service_requester_it_search"] = await self._check_service_search("it", it_payload)
         self.report["checks"]["service_requester_finance_search"] = await self._check_service_search("finance", finance_payload)
         self.report["checks"]["service_requester_it_hidden_search"] = await self._check_hidden_service_search("it", finance_payload)
+        self.report["checks"]["service_requester_it_audience_group_search"] = (
+            await self._check_audience_group_service_search("it")
+        )
+        self.report["checks"]["service_requester_finance_audience_group_hidden_search"] = (
+            await self._check_audience_group_service_search("finance")
+        )
         self.report["checks"]["service_requester_it_suggest"] = await self._check_service_suggest("it", it_payload)
         self.report["checks"]["service_requester_it_hidden_suggest"] = await self._check_hidden_service_suggest("it", finance_payload)
         self.report["checks"]["service_requester_it_ask"] = await self._check_service_ask("it", it_payload)
@@ -375,6 +419,12 @@ class KnowledgeAudienceLiveSmoke:
         _require(self.ids["finance_slug"] not in text, "finance slug leaked into requester-scoped payload")
         _require(f"{self.marker} Finance scoped" not in text, "finance title leaked into requester-scoped payload")
         _require("finance hidden body" not in text, "finance body leaked into requester-scoped payload")
+
+    def _assert_payload_excludes_audience_group_article(self, payload: dict[str, Any]) -> None:
+        text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        _require(self.ids["audience_group_slug"] not in text, "audience-group slug leaked to non-member")
+        _require(f"{self.marker} audience group visible" not in text, "audience-group title leaked to non-member")
+        _require("audience group body" not in text, "audience-group body leaked to non-member")
 
     async def _requester_audience(self, session, token_key: str):
         actor_id = f"phase5-{token_key}-{self.run_id}"
@@ -421,6 +471,40 @@ class KnowledgeAudienceLiveSmoke:
         _require(self.ids["finance_slug"] not in slugs, "hidden search returned finance article")
         self._assert_payload_excludes_finance({"results": results})
         return {"status": "passed", "slugs": sorted(slugs)}
+
+    async def _check_audience_group_service_search(self, token_key: str) -> dict[str, Any]:
+        async with get_session() as session:
+            audience = await self._requester_audience(session, token_key)
+            results = await KnowledgeSearchService(session).search(
+                query=f"{self.marker} audience group visible",
+                actor_role="requester",
+                limit=10,
+                surface="live_phase5",
+                effective_audience=audience,
+            )
+            await session.commit()
+        slugs = {str(item.get("slug") or "") for item in results if isinstance(item, dict)}
+        audience_groups = (audience.to_dict()).get("audience_groups") or []
+        if token_key == "it":
+            _require(self.ids["audience_group_slug"] in slugs, "audience-group member cannot see scoped article")
+            _require(
+                any(
+                    isinstance(item, dict) and item.get("audience_group_id") == self.ids["audience_group_id"]
+                    for item in audience_groups
+                ),
+                "audience-group member effective audience does not include the registry audience group",
+            )
+        else:
+            _require(self.ids["audience_group_slug"] not in slugs, "audience-group non-member sees scoped article")
+            _require(
+                not any(
+                    isinstance(item, dict) and item.get("audience_group_id") == self.ids["audience_group_id"]
+                    for item in audience_groups
+                ),
+                "audience-group non-member effective audience includes the registry audience group",
+            )
+            self._assert_payload_excludes_audience_group_article({"results": results})
+        return {"status": "passed", "slugs": sorted(slugs), "audience_groups": audience_groups}
 
     async def _check_service_suggest(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
         async with get_session() as session:

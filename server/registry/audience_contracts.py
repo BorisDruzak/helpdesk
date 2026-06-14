@@ -16,7 +16,7 @@ class EffectiveIdentity:
     department_path: list[dict[str, Any]] = field(default_factory=list)
     location: dict[str, Any] | None = None
     access_groups: list[str] = field(default_factory=list)
-    audience_groups: list[str] = field(default_factory=list)
+    audience_groups: list[Any] = field(default_factory=list)
     account_session: dict[str, Any] | None = None
     warnings: list[WarningItem] = field(default_factory=list)
     sources: dict[str, Any] = field(default_factory=dict)
@@ -45,7 +45,7 @@ class EffectiveAudience:
     department_path: list[dict[str, Any]] = field(default_factory=list)
     location: dict[str, Any] | None = None
     access_groups: list[str] = field(default_factory=list)
-    audience_groups: list[str] = field(default_factory=list)
+    audience_groups: list[Any] = field(default_factory=list)
     warnings: list[WarningItem] = field(default_factory=list)
     sources: dict[str, Any] = field(default_factory=dict)
 
