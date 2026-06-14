@@ -92,6 +92,7 @@ from tickets.knowledge_provider import build_knowledge_suggestions
 from knowledge.suggestion_service import KnowledgeSuggestionService
 from knowledge.passport_draft_service import KnowledgePassportDraftService
 from knowledge.attempts import sanitize_knowledge_attempts
+from registry.effective_identity_service import EffectiveIdentityService
 from inventory.service import DeviceInventoryService, binding_to_dict
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
@@ -191,6 +192,9 @@ from web_api.dto.support import (
     SupportToolPreset,
 )
 from config import AGENT_BUILTIN_MODULES, ALLOW_REMOTE_CODE
+
+
+REQUESTER_SAFE_KNOWLEDGE_VISIBILITIES = {"public", "requester", "agent_requester_safe"}
 
 
 SCOPE_OPTIONS = [
@@ -3359,6 +3363,50 @@ async def _safe_support_observer_summary(session, ticket_id: str) -> dict[str, A
         }
 
 
+async def _resolve_ticket_requester_knowledge_audience(session, ticket: Ticket):
+    person_id = str(getattr(ticket, "requester_person_id", "") or "").strip() or None
+    actor_id = str(getattr(ticket, "requester_id", "") or "").strip() or None
+    return await EffectiveIdentityService(session).resolve_person_audience(
+        person_id=person_id,
+        actor_id=actor_id,
+        actor_role="requester",
+    )
+
+
+def _knowledge_suggestion_key(item: dict[str, Any]) -> str:
+    return str(item.get("slug") or item.get("item_id") or "").strip()
+
+
+def _is_requester_safe_knowledge_suggestion(item: dict[str, Any]) -> bool:
+    return str(item.get("visibility") or "").strip() in REQUESTER_SAFE_KNOWLEDGE_VISIBILITIES
+
+
+def _merge_ticket_knowledge_suggestions(
+    *,
+    requester_suggestions: list[Any],
+    support_suggestions: list[Any],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add(item: Any) -> None:
+        if not isinstance(item, dict):
+            return
+        key = _knowledge_suggestion_key(item)
+        if not key or key in seen or not item.get("title"):
+            return
+        seen.add(key)
+        merged.append(item)
+
+    for item in requester_suggestions:
+        if isinstance(item, dict) and _is_requester_safe_knowledge_suggestion(item):
+            add(item)
+    for item in support_suggestions:
+        if isinstance(item, dict) and not _is_requester_safe_knowledge_suggestion(item):
+            add(item)
+    return merged
+
+
 async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) -> SupportTicketKnowledgeSuggestionsPayload:
     ticket_id = str(getattr(ticket, "ticket_id", "") or "")
     kb_links = await TicketEventsRepo(session).list_kb_links(ticket_id)
@@ -3376,16 +3424,28 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
         if attempt.get("surface") == "requester_portal"
     ]
     request_template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}
-    p2_suggestions = await KnowledgeSuggestionService(session).suggest(
-        {
-            "service_code": getattr(ticket, "service_code", None),
-            "offering_code": getattr(ticket, "offering_code", None),
-            "request_template_key": request_template.get("key") or request_template.get("template_code"),
-            "ticket_type": getattr(ticket, "ticket_type", None),
-            "query": f"{getattr(ticket, 'title', '')} {getattr(ticket, 'description', '')}".strip(),
-            "surface": "support_workspace",
-        },
+    suggestion_context = {
+        "service_code": getattr(ticket, "service_code", None),
+        "offering_code": getattr(ticket, "offering_code", None),
+        "request_template_key": request_template.get("key") or request_template.get("template_code"),
+        "ticket_type": getattr(ticket, "ticket_type", None),
+        "query": f"{getattr(ticket, 'title', '')} {getattr(ticket, 'description', '')}".strip(),
+        "surface": "support_workspace",
+    }
+    suggestion_service = KnowledgeSuggestionService(session)
+    requester_audience = await _resolve_ticket_requester_knowledge_audience(session, ticket)
+    support_p2_suggestions = await suggestion_service.suggest(
+        suggestion_context,
         actor_role="support",
+    )
+    requester_p2_suggestions = await suggestion_service.suggest(
+        suggestion_context,
+        actor_role="requester",
+        effective_audience=requester_audience,
+    )
+    p2_items = _merge_ticket_knowledge_suggestions(
+        requester_suggestions=requester_p2_suggestions.get("suggestions", []),
+        support_suggestions=support_p2_suggestions.get("suggestions", []),
     )
     p2_articles = [
         SupportKnowledgeArticle(
@@ -3393,8 +3453,7 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
             title=str(item.get("title") or item.get("slug") or ""),
             url=f"/app/knowledge?item={item.get('slug') or item.get('item_id')}",
         )
-        for item in p2_suggestions.get("suggestions", [])
-        if isinstance(item, dict) and (item.get("slug") or item.get("item_id")) and item.get("title")
+        for item in p2_items
     ]
     return SupportTicketKnowledgeSuggestionsPayload(
         ticket_id=ticket_id,

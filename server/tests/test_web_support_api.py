@@ -16,6 +16,7 @@ from app.db.models import (
     Artifact,
     Device,
     DeviceOutbox,
+    KnowledgeAudienceRule,
     Operation,
     Playbook,
     PlaybookStep,
@@ -36,6 +37,7 @@ from app.db.models import (
     UserConsentRequest,
 )
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
+from app.repos.knowledge_repo import KnowledgeRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
 from registry.registration_service import RegistrationService
@@ -2366,6 +2368,170 @@ async def test_web_support_ticket_knowledge_suggestions_uses_catalog_search_with
     assert data["diagnostics"]["article_matches"]["KB-HTTP-502"]["source_type"] == "catalog"
     assert data["diagnostics"]["article_matches"]["KB-HTTP-502"]["score"] >= 80
     assert "502" in data["diagnostics"]["article_matches"]["KB-HTTP-502"]["match_reasons"]
+
+
+@pytest.mark.asyncio
+async def test_web_support_ticket_knowledge_suggestions_apply_requester_audience_rules(
+    test_client,
+    test_engine,
+):
+    suffix = uuid.uuid4().hex[:8]
+    marker = f"support audience marker {suffix}"
+    visible_slug = f"it-support-knowledge-visible-{suffix}"
+    hidden_slug = f"finance-support-knowledge-scoped-{suffix}"
+    internal_slug = f"support-internal-runbook-{suffix}"
+    hidden_title = f"{marker} Finance scoped"
+    hidden_body = f"{marker} finance body"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(
+            session,
+            code=f"knowledge_audience_{suffix}",
+            name="Knowledge audience queue",
+            members=["support-test"],
+        )
+        it_department = RegistryDepartment(
+            department_id=str(uuid.uuid4()),
+            code=f"it-support-knowledge-{suffix}",
+            name="IT Support Knowledge",
+            status="active",
+            source="manual",
+        )
+        finance_department = RegistryDepartment(
+            department_id=str(uuid.uuid4()),
+            code=f"finance-support-knowledge-{suffix}",
+            name="Finance Support Knowledge",
+            status="active",
+            source="manual",
+        )
+        requester = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="IT Support Knowledge Requester",
+            department_id=it_department.department_id,
+            source="manual",
+            status="active",
+        )
+        session.add_all([it_department, finance_department, requester])
+        await session.flush()
+
+        repo = KnowledgeRepo(session)
+        await repo.upsert_space(
+            {
+                "code": f"support-knowledge-audience-{suffix}",
+                "title": "Support Knowledge Audience",
+                "visibility": "requester",
+                "lifecycle_status": "active",
+            },
+            actor_id="admin",
+        )
+
+        visible = await repo.create_item_draft(
+            {
+                "space_code": f"support-knowledge-audience-{suffix}",
+                "slug": visible_slug,
+                "item_type": "article",
+                "title": f"{marker} IT visible",
+                "summary": f"{marker} IT visible",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="admin",
+            actor_role="admin",
+        )
+        visible_version = await repo.create_version(
+            visible["item_id"],
+            {"title": f"{marker} IT visible", "body_format": "markdown", "body": f"{marker} visible body"},
+            actor_id="admin",
+            actor_role="admin",
+        )
+        await repo.publish_item(visible["item_id"], visible_version["version_id"], actor_id="admin", actor_role="admin")
+
+        hidden = await repo.create_item_draft(
+            {
+                "space_code": f"support-knowledge-audience-{suffix}",
+                "slug": hidden_slug,
+                "item_type": "article",
+                "title": hidden_title,
+                "summary": hidden_title,
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="admin",
+            actor_role="admin",
+        )
+        hidden_version = await repo.create_version(
+            hidden["item_id"],
+            {"title": hidden_title, "body_format": "markdown", "body": hidden_body},
+            actor_id="admin",
+            actor_role="admin",
+        )
+        await repo.publish_item(hidden["item_id"], hidden_version["version_id"], actor_id="admin", actor_role="admin")
+
+        internal = await repo.create_item_draft(
+            {
+                "space_code": f"support-knowledge-audience-{suffix}",
+                "slug": internal_slug,
+                "item_type": "runbook",
+                "title": f"{marker} support internal runbook",
+                "summary": f"{marker} support internal runbook",
+                "visibility": "support_internal",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="admin",
+            actor_role="admin",
+        )
+        internal_version = await repo.create_version(
+            internal["item_id"],
+            {"title": f"{marker} support internal runbook", "body_format": "markdown", "body": f"{marker} internal body"},
+            actor_id="admin",
+            actor_role="admin",
+        )
+        await repo.publish_item(internal["item_id"], internal_version["version_id"], actor_id="admin", actor_role="admin")
+
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=f"rule-support-ticket-finance-{suffix}",
+                subject_type="item",
+                subject_id=hidden["item_id"],
+                target_type="department",
+                target_id=finance_department.department_id,
+                effect="allow",
+                status="active",
+            )
+        )
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="device-knowledge-audience",
+            title=marker,
+            description="",
+            status="in_progress",
+            requester_id="requester-knowledge-audience",
+            requester_person_id=requester.person_id,
+            queue_id=queue.id,
+            assignee_id="support-test",
+            priority="P2",
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/support/tickets/{ticket_id}/knowledge-suggestions",
+        headers=_support_headers(),
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    article_ids = {article["id"] for article in payload["data"]["articles"]}
+    assert visible_slug in article_ids
+    assert internal_slug in article_ids
+    assert hidden_slug not in article_ids
+    assert hidden_title not in str(payload)
+    assert hidden_body not in str(payload)
 
 
 @pytest.mark.asyncio
