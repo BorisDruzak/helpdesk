@@ -134,6 +134,9 @@ describe("navigation helpers", () => {
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/indexing");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/ai");
     expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/search-settings");
+    expect(knowledgeDomain?.items.find((item) => item.to === "/app/admin/knowledge")?.description).toBe(
+      "Разделы, статьи, версии, ACL и deflection",
+    );
     expect(sectionsItem?.to).toBe("/app/admin/knowledge/sections");
     expect(sectionsItem?.label).toBe("Разделы базы знаний");
     expect(metadataItem?.to).toBe("/app/admin/knowledge/metadata");

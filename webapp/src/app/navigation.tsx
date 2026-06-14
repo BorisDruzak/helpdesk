@@ -397,7 +397,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "База знаний",
-    description: "Пространства, статьи, версии, ACL и deflection",
+    description: "Разделы, статьи, версии, ACL и deflection",
     icon: BookOpen,
     section: "admin",
     workspace: "admin",
