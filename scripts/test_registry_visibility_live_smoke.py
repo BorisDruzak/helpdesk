@@ -50,6 +50,13 @@ def test_default_output_path_uses_registry_visibility_foundation_folder() -> Non
     )
 
 
+def test_support_ticket_search_payload_keeps_marker_searchable() -> None:
+    payload = smoke.support_ticket_search_payload("phase7 registry visibility marker")
+
+    support_query = f"{payload['title']} {payload['description']}".strip()
+    assert support_query == "phase7 registry visibility marker"
+
+
 def test_person_id_from_effective_identity_uses_nested_person_contract() -> None:
     identity = SimpleNamespace(person={"person_id": "person-1"})
 

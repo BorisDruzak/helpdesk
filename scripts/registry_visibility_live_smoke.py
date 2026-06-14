@@ -120,6 +120,11 @@ def default_output_path(*, run_id: str, today: str | None = None) -> Path:
     return REPO_ROOT / "artifacts" / f"registry-visibility-foundation-{day}" / f"registry-visibility-live-smoke-{run_id}.json"
 
 
+def support_ticket_search_payload(marker: str) -> dict[str, str]:
+    # Support suggestions search title+description as one substring.
+    return {"title": str(marker), "description": ""}
+
+
 def build_initial_report(*, run_id: str, base_url: str, commit: str | None) -> dict[str, Any]:
     return {
         "phase": "phase7_registry_visibility",
@@ -488,9 +493,10 @@ class RegistryVisibilityLiveSmoke:
             token=self._agent_token(),
         )
         _require(validation.get("valid") is True, "confirmed owner account session did not validate")
+        ticket_payload = support_ticket_search_payload(str(self.report["marker"]))
         ticket = self._create_agent_ticket(
-            title=f"{self.report['marker']} owner ticket",
-            description=f"{self.report['marker']} owner ticket needs IT knowledge",
+            title=ticket_payload["title"],
+            description=ticket_payload["description"],
             session_id=session_id,
             session_token=session_token,
         )
@@ -541,9 +547,10 @@ class RegistryVisibilityLiveSmoke:
         session_token = pickup.get("session_token")
         _require(session.get("account_mode") == "verified_other_account", "approved request did not create verified_other_account session")
         _require(bool(session_token), "approved other-account session token was not returned on pickup")
+        ticket_payload = support_ticket_search_payload(str(self.report["marker"]))
         other_ticket = self._create_agent_ticket(
-            title=f"{self.report['marker']} other-account ticket",
-            description=f"{self.report['marker']} other-account ticket needs Finance knowledge",
+            title=ticket_payload["title"],
+            description=ticket_payload["description"],
             session_id=session_id,
             session_token=session_token,
         )
