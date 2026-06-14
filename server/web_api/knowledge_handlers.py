@@ -1146,18 +1146,31 @@ async def handle_knowledge_article_detail(request: web.Request) -> web.Response:
         return web.json_response({"status": "error", "error": "internal_error"}, status=500)
 
 
-async def _portal_article_event_context(session, slug: str) -> tuple[dict, dict]:
-    payload = await KnowledgePortalService(session).article_detail(slug, actor_role="requester")
+async def _portal_article_event_context(
+    session,
+    slug: str,
+    *,
+    effective_audience,
+) -> tuple[dict, dict]:
+    payload = await KnowledgePortalService(session).article_detail(
+        slug,
+        actor_role="requester",
+        effective_audience=effective_audience,
+    )
     return payload["article"], payload["version"]
 
 
 async def handle_knowledge_article_feedback(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
-    actor_id, _actor_role = _actor(request)
     try:
         payload = await _json_payload(request)
         async with get_session() as session:
-            article, version = await _portal_article_event_context(session, slug)
+            actor_id, effective_audience = await _portal_requester_audience(session, request)
+            article, version = await _portal_article_event_context(
+                session,
+                slug,
+                effective_audience=effective_audience,
+            )
             event = await KnowledgeFeedbackService(session).record_event(
                 {
                     "item_id": article.get("item_id"),
@@ -1179,12 +1192,16 @@ async def handle_knowledge_article_feedback(request: web.Request) -> web.Respons
 
 async def handle_knowledge_article_correction_request(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
-    actor_id, _actor_role = _actor(request)
     try:
         payload = await _json_payload(request)
         comment = str(payload.get("comment") or "").strip()[:2000]
         async with get_session() as session:
-            article, version = await _portal_article_event_context(session, slug)
+            actor_id, effective_audience = await _portal_requester_audience(session, request)
+            article, version = await _portal_article_event_context(
+                session,
+                slug,
+                effective_audience=effective_audience,
+            )
             event = await KnowledgeFeedbackService(session).record_event(
                 {
                     "item_id": article.get("item_id"),
@@ -1218,12 +1235,16 @@ async def handle_knowledge_article_correction_request(request: web.Request) -> w
 
 async def handle_knowledge_article_bookmark(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
-    actor_id, _actor_role = _actor(request)
     try:
         payload = await _json_payload(request) if request.method != "DELETE" else {}
         bookmarked = request.method != "DELETE"
         async with get_session() as session:
-            article, version = await _portal_article_event_context(session, slug)
+            actor_id, effective_audience = await _portal_requester_audience(session, request)
+            article, version = await _portal_article_event_context(
+                session,
+                slug,
+                effective_audience=effective_audience,
+            )
             event = await KnowledgeFeedbackService(session).record_event(
                 {
                     "item_id": article.get("item_id"),

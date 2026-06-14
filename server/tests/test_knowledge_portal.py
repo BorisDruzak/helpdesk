@@ -365,6 +365,91 @@ async def test_knowledge_portal_collections_apply_audience_rules_before_article_
 
 
 @pytest.mark.asyncio
+async def test_knowledge_portal_actions_apply_audience_rules_before_writes(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    requester_login = f"portal-action-requester-{suffix}"
+    hidden_item = await _published_item(
+        test_client,
+        space_code=f"portal-action-audience-{suffix}",
+        slug=f"portal-action-finance-hidden-{suffix}",
+        title="Portal Finance action hidden article",
+        body="Finance-only portal action body must not leak.",
+        visibility="requester",
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _seed_requester_identity(session, login=requester_login, department_code=f"it-{suffix}")
+        finance = await _seed_requester_identity(
+            session,
+            login=f"portal-action-finance-{suffix}",
+            department_code=f"finance-{suffix}",
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=f"rule-portal-act-fin-{suffix}",
+                subject_type="item",
+                subject_id=hidden_item["item_id"],
+                target_type="department",
+                target_id=finance["department_id"],
+                effect="allow",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    auth_headers = {"Authorization": f"Bearer test-ui-user:{requester_login}"}
+    responses = [
+        await test_client.post(
+            f"/api/knowledge/articles/{hidden_item['slug']}/feedback",
+            headers=auth_headers,
+            json={"helpful": True, "session_id": "hidden-action-session"},
+        ),
+        await test_client.post(
+            f"/api/knowledge/articles/{hidden_item['slug']}/correction-request",
+            headers=auth_headers,
+            json={"comment": "Hidden correction must not be written", "session_id": "hidden-action-session"},
+        ),
+        await test_client.post(
+            f"/api/knowledge/articles/{hidden_item['slug']}/bookmark",
+            headers=auth_headers,
+            json={"session_id": "hidden-action-session"},
+        ),
+        await test_client.delete(f"/api/knowledge/articles/{hidden_item['slug']}/bookmark", headers=auth_headers),
+    ]
+
+    payloads = [await response.json() for response in responses]
+    assert [response.status for response in responses] == [404, 404, 404, 404]
+    for payload in payloads:
+        assert payload["error"] == "not_found"
+        payload_text = str(payload)
+        assert "Portal Finance action hidden article" not in payload_text
+        assert "Finance-only portal action body" not in payload_text
+
+    async with test_engine.connect() as conn:
+        feedback_count = (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM knowledge_feedback_events WHERE item_id = :item_id"),
+                {"item_id": hidden_item["item_id"]},
+            )
+        ).scalar_one()
+        correction_count = (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM knowledge_correction_requests WHERE item_id = :item_id"),
+                {"item_id": hidden_item["item_id"]},
+            )
+        ).scalar_one()
+        bookmark_count = (
+            await conn.execute(
+                text("SELECT COUNT(*) FROM knowledge_user_bookmarks WHERE item_id = :item_id"),
+                {"item_id": hidden_item["item_id"]},
+            )
+        ).scalar_one()
+    assert feedback_count == 0
+    assert correction_count == 0
+    assert bookmark_count == 0
+
+
+@pytest.mark.asyncio
 async def test_knowledge_portal_service_sanitizes_direct_article_reads(test_engine) -> None:
     from knowledge.portal_service import KnowledgePortalService
 

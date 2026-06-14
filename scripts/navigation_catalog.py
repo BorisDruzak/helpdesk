@@ -1357,6 +1357,7 @@ TOPICS: tuple[Topic, ...] = (
             "test_knowledge_article_detail_applies_audience_rules_before_body_projection",
             "test_knowledge_portal_home_applies_audience_rules_before_article_projection",
             "test_knowledge_portal_collections_apply_audience_rules_before_article_projection",
+            "test_knowledge_portal_actions_apply_audience_rules_before_writes",
             "/api/web/admin/knowledge/audience-rules",
             "/api/web/admin/knowledge/audience-rules/preview",
             "/api/web/admin/knowledge/access/explain",
