@@ -192,7 +192,7 @@ export function ArticleHelpDeskBindingPanel({ item, visibility }: ArticleHelpDes
         </span>
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+      <div className="mt-4 grid gap-3">
         <label className="text-sm font-medium">
           Сервис
           <select className={fieldClass} disabled={!item} value={draft.service_code} onChange={(event) => changeService(event.currentTarget.value)}>
@@ -227,10 +227,10 @@ export function ArticleHelpDeskBindingPanel({ item, visibility }: ArticleHelpDes
         </label>
       </div>
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+      <div className="mt-3 grid gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-900">Где статья будет предложена</p>
-          <div className="mt-2 grid gap-2 md:grid-cols-2">
+          <div className="mt-2 grid gap-2">
             {surfaceOptions.map((option) => (
               <label key={option.value} className="flex gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
                 <input checked={draft.surfaces.includes(option.value)} disabled={!item} onChange={() => toggleSurface(option.value)} type="checkbox" />
