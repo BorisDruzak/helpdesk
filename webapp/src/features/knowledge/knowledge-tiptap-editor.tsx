@@ -26,6 +26,7 @@ type KnowledgeTipTapEditorProps = {
   onInsertBlock: (block: string) => void;
   onInsertTemplate: (sections: string[]) => void;
   onSelectionChange?: (selection: { from: number; text: string; to: number }) => void;
+  showAdvancedMarkup?: boolean;
   templates: KnowledgeTemplateOption[];
   value: string;
 };
@@ -156,6 +157,7 @@ export function KnowledgeTipTapEditor({
   onInsertBlock,
   onInsertTemplate,
   onSelectionChange,
+  showAdvancedMarkup = false,
   templates,
   value,
 }: KnowledgeTipTapEditorProps) {
@@ -278,28 +280,32 @@ export function KnowledgeTipTapEditor({
         <Button disabled={isDisabled || !editor} onClick={() => editor?.chain().focus().toggleCodeBlock().run()} size="icon" title="Кодовый блок" variant="outline">
           <Code2 className="h-4 w-4" />
         </Button>
-        {visualMarks.map((mark) => (
-          <Button
-            aria-label={`Выделить как ${mark.label}`}
-            disabled={isDisabled || !editor}
-            key={mark.label}
-            onClick={() => applyHighlight(mark.color)}
-            size="icon"
-            title={mark.label}
-            variant="outline"
-          >
-            <Highlighter className="h-4 w-4" />
-          </Button>
-        ))}
+        {showAdvancedMarkup
+          ? visualMarks.map((mark) => (
+              <Button
+                aria-label={`Выделить как ${mark.label}`}
+                disabled={isDisabled || !editor}
+                key={mark.label}
+                onClick={() => applyHighlight(mark.color)}
+                size="icon"
+                title={mark.label}
+                variant="outline"
+              >
+                <Highlighter className="h-4 w-4" />
+              </Button>
+            ))
+          : null}
       </div>
 
-      <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700 sm:grid-cols-4">
-        {visualMarks.map((mark) => (
-          <span className={`rounded-md px-2 py-1 ${mark.className}`} key={mark.label}>
-            {mark.label}
-          </span>
-        ))}
-      </div>
+      {showAdvancedMarkup ? (
+        <div className="grid gap-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700 sm:grid-cols-4">
+          {visualMarks.map((mark) => (
+            <span className={`rounded-md px-2 py-1 ${mark.className}`} key={mark.label}>
+              {mark.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         <Button disabled={isDisabled} onClick={() => onInsertBlock("> [!NOTE]\n> Важное уточнение для читателя.")} size="sm" variant="outline">

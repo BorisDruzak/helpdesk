@@ -11,6 +11,7 @@ type EditorTextStepProps = {
   onInsertTemplate: (sections: string[]) => void;
   onSelectionChange: (selection: EditorSelectionSnapshot) => void;
   selectedItem: KnowledgeItem | null;
+  showAdvancedMarkup?: boolean;
   templates: KnowledgeTemplate[];
 };
 
@@ -22,6 +23,7 @@ export function EditorTextStep({
   onInsertTemplate,
   onSelectionChange,
   selectedItem,
+  showAdvancedMarkup = false,
   templates,
 }: EditorTextStepProps) {
   return (
@@ -52,6 +54,7 @@ export function EditorTextStep({
           onInsertBlock={onInsertBlock}
           onInsertTemplate={onInsertTemplate}
           onSelectionChange={onSelectionChange}
+          showAdvancedMarkup={showAdvancedMarkup}
           templates={templates}
           value={draft.body}
         />

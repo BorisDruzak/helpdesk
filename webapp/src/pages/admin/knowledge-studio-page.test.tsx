@@ -533,10 +533,15 @@ describe("AdminKnowledgeStudioPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Студия знаний" })).toBeInTheDocument();
     expect(await screen.findByTestId("knowledge-tiptap-editor")).toBeInTheDocument();
-    expect(screen.getByText("Ручная разметка")).toBeInTheDocument();
-    expect(screen.getByText("AI-предложение")).toBeInTheDocument();
-    expect(screen.getByText("Автосегмент")).toBeInTheDocument();
-    expect(screen.getByText("Изменённый текст")).toBeInTheDocument();
+    expect(screen.queryByText("Ручная разметка")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI-предложение")).not.toBeInTheDocument();
+    expect(screen.queryByText("Автосегмент")).not.toBeInTheDocument();
+    expect(screen.queryByText("Изменённый текст")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Показать advanced" }));
+    expect(screen.getAllByText("Ручная разметка").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("AI-предложение").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Автосегмент").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Изменённый текст").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByLabelText("Markdown")).not.toBeInTheDocument();
   });
 
@@ -590,6 +595,9 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.queryByText("Сегменты версии")).not.toBeInTheDocument();
     expect(screen.queryByText("Полнотекстовый поиск")).not.toBeInTheDocument();
     expect(screen.queryByText("Эмбеддинги")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ручная разметка")).not.toBeInTheDocument();
+    expect(screen.queryByText("Автосегмент")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI-предложение")).not.toBeInTheDocument();
     expect(screen.getByText("Поисковые фрагменты создаются автоматически по заголовкам и тексту статьи.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "3. Проверка" }));

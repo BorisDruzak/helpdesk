@@ -155,6 +155,7 @@ export function UnifiedArticleEditor({
             onInsertTemplate={onInsertTemplate}
             onSelectionChange={onSelectionChange}
             selectedItem={selectedItem}
+            showAdvancedMarkup={advancedToolsOpen}
             templates={templates}
           />
         ) : null}
