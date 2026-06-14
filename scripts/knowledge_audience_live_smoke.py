@@ -352,11 +352,15 @@ class KnowledgeAudienceLiveSmoke:
         return await repo.publish_item(item["item_id"], version["version_id"], actor_id=actor_id, actor_role="admin")
 
     def run_checks(self) -> dict[str, Any]:
-        query_payload = {"query": self.marker, "limit": 10, "surface": "live_phase5"}
-        self.report["checks"]["requester_it_search"] = self._check_public_search("it", query_payload)
-        self.report["checks"]["requester_finance_search"] = self._check_public_search("finance", query_payload)
-        self.report["checks"]["requester_it_suggest"] = self._check_public_suggest("it", query_payload)
-        self.report["checks"]["requester_it_ask"] = self._check_public_ask("it", query_payload)
+        it_payload = {"query": f"{self.marker} IT visible", "limit": 10, "surface": "live_phase5"}
+        finance_payload = {"query": f"{self.marker} Finance scoped", "limit": 10, "surface": "live_phase5"}
+        self.report["checks"]["requester_it_search"] = self._check_public_search("it", it_payload)
+        self.report["checks"]["requester_finance_search"] = self._check_public_search("finance", finance_payload)
+        self.report["checks"]["requester_it_hidden_search"] = self._check_hidden_public_search("it", finance_payload)
+        self.report["checks"]["requester_it_suggest"] = self._check_public_suggest("it", it_payload)
+        self.report["checks"]["requester_it_hidden_suggest"] = self._check_hidden_public_suggest("it", finance_payload)
+        self.report["checks"]["requester_it_ask"] = self._check_public_ask("it", it_payload)
+        self.report["checks"]["requester_it_hidden_ask"] = self._check_hidden_public_ask("it", finance_payload)
         self.report["checks"]["support_ticket_suggestions"] = self._check_support_ticket_suggestions()
         self.report["checks"]["admin_explain_denied"] = self._check_admin_explain_denied()
         self.report["status"] = "passed"
@@ -373,7 +377,6 @@ class KnowledgeAudienceLiveSmoke:
         _require(response.get("status") == "ok", f"search returned status={response.get('status')}")
         slugs = {str(item.get("slug") or "") for item in response.get("results") or [] if isinstance(item, dict)}
         if token_key == "it":
-            _require(self.ids["public_slug"] in slugs, "IT requester does not see public article")
             _require(self.ids["it_slug"] in slugs, "IT requester does not see IT article")
             _require(self.ids["finance_slug"] not in slugs, "IT requester sees finance article")
             _require(self.ids["internal_slug"] not in slugs, "IT requester sees support internal runbook")
@@ -383,6 +386,14 @@ class KnowledgeAudienceLiveSmoke:
             _require(self.ids["it_slug"] not in slugs, "finance requester sees IT article")
         return {"status": "passed", "slugs": sorted(slugs)}
 
+    def _check_hidden_public_search(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.api.post("/api/knowledge/search", token=self.tokens[token_key], payload=payload)
+        _require(response.get("status") == "ok", f"hidden search returned status={response.get('status')}")
+        slugs = {str(item.get("slug") or "") for item in response.get("results") or [] if isinstance(item, dict)}
+        _require(self.ids["finance_slug"] not in slugs, "hidden search returned finance article")
+        self._assert_payload_excludes_finance(response)
+        return {"status": "passed", "slugs": sorted(slugs)}
+
     def _check_public_suggest(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
         response = self.api.post("/api/knowledge/suggest", token=self.tokens[token_key], payload=payload)
         _require(response.get("status") == "ok", f"suggest returned status={response.get('status')}")
@@ -390,6 +401,14 @@ class KnowledgeAudienceLiveSmoke:
         _require(self.ids["it_slug"] in slugs, "IT requester suggest missing IT article")
         _require(self.ids["finance_slug"] not in slugs, "IT requester suggest sees finance article")
         _require(self.ids["internal_slug"] not in slugs, "IT requester suggest sees support internal runbook")
+        self._assert_payload_excludes_finance(response)
+        return {"status": "passed", "slugs": sorted(slugs)}
+
+    def _check_hidden_public_suggest(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.api.post("/api/knowledge/suggest", token=self.tokens[token_key], payload=payload)
+        _require(response.get("status") == "ok", f"hidden suggest returned status={response.get('status')}")
+        slugs = {str(item.get("slug") or "") for item in response.get("suggestions") or [] if isinstance(item, dict)}
+        _require(self.ids["finance_slug"] not in slugs, "hidden suggest returned finance article")
         self._assert_payload_excludes_finance(response)
         return {"status": "passed", "slugs": sorted(slugs)}
 
@@ -404,6 +423,18 @@ class KnowledgeAudienceLiveSmoke:
         _require(self.ids["it_slug"] in slugs, "IT requester ask missing IT article")
         _require(self.ids["finance_slug"] not in slugs, "IT requester ask sees finance article")
         _require(self.ids["internal_slug"] not in slugs, "IT requester ask sees support internal runbook")
+        self._assert_payload_excludes_finance(response)
+        return {"status": "passed", "slugs": sorted(slugs)}
+
+    def _check_hidden_public_ask(self, token_key: str, payload: dict[str, Any]) -> dict[str, Any]:
+        response = self.api.post("/api/knowledge/ask", token=self.tokens[token_key], payload=payload)
+        _require(response.get("status") == "ok", f"hidden ask returned status={response.get('status')}")
+        slugs = {
+            str(((item.get("item") or {}) if isinstance(item, dict) else {}).get("slug") or "")
+            for item in response.get("retrieval_results") or []
+            if isinstance(item, dict)
+        }
+        _require(self.ids["finance_slug"] not in slugs, "hidden ask returned finance article")
         self._assert_payload_excludes_finance(response)
         return {"status": "passed", "slugs": sorted(slugs)}
 
