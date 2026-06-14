@@ -3,10 +3,12 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import bindparam, text
+from sqlalchemy import and_, bindparam, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models import KnowledgeAudienceRule, KnowledgeSpace
 from app.repos.knowledge_repo import KnowledgeRepo
+from knowledge.access_service import KnowledgeAccessService
 from knowledge.contracts import actor_visible_visibilities
 
 
@@ -141,12 +143,20 @@ class KnowledgePortalService:
             "popular_articles": popular,
         }
 
-    async def article_detail(self, slug: str, *, actor_role: str = "requester") -> dict[str, Any]:
+    async def article_detail(
+        self,
+        slug: str,
+        *,
+        actor_role: str = "requester",
+        effective_audience: Any | None = None,
+    ) -> dict[str, Any]:
         role = _portal_role(actor_role)
         item = await self.repo.get_item(slug, actor_role=role)
         version = item.get("current_version")
         if not isinstance(version, dict) or not version.get("body"):
             raise ValueError("knowledge article not found")
+        if effective_audience is not None:
+            await self._ensure_audience_can_view_item(item, effective_audience=effective_audience)
         safe_article = _safe_article_summary(item)
         safe_version = _safe_version(version)
         return {
@@ -356,6 +366,70 @@ class KnowledgePortalService:
             )
         ).all()
         return [_serialize_segment(row) for row in rows]
+
+    async def _ensure_audience_can_view_item(self, item: dict[str, Any], *, effective_audience: Any) -> None:
+        item_id = str(item.get("item_id") or "")
+        space_id = str(item.get("space_id") or "")
+        space = await self.session.get(KnowledgeSpace, space_id) if space_id else None
+        rules = (
+            await self.session.execute(
+                select(KnowledgeAudienceRule)
+                .where(
+                    KnowledgeAudienceRule.status == "active",
+                    or_(
+                        and_(
+                            KnowledgeAudienceRule.subject_type == "item",
+                            KnowledgeAudienceRule.subject_id == item_id,
+                        ),
+                        and_(
+                            KnowledgeAudienceRule.subject_type == "space",
+                            KnowledgeAudienceRule.subject_id == space_id,
+                        ),
+                    ),
+                )
+                .order_by(
+                    KnowledgeAudienceRule.priority.asc(),
+                    KnowledgeAudienceRule.created_at.asc(),
+                    KnowledgeAudienceRule.rule_id.asc(),
+                )
+            )
+        ).scalars().all()
+        current_version = item.get("current_version") if isinstance(item.get("current_version"), dict) else {}
+        decision = KnowledgeAccessService.evaluate_item_access(
+            item={
+                "item_id": item_id,
+                "space_id": space_id,
+                "status": item.get("status"),
+                "visibility": item.get("visibility"),
+                "current_version_id": item.get("current_version_id") or current_version.get("version_id"),
+            },
+            space=(
+                {
+                    "space_id": space.space_id,
+                    "lifecycle_status": space.lifecycle_status,
+                    "visibility": space.visibility,
+                }
+                if space is not None
+                else None
+            ),
+            audience=effective_audience,
+            rules=[
+                {
+                    "rule_id": row.rule_id,
+                    "subject_type": row.subject_type,
+                    "subject_id": row.subject_id,
+                    "target_type": row.target_type,
+                    "target_id": row.target_id,
+                    "effect": row.effect,
+                    "include_children": row.include_children,
+                    "priority": row.priority,
+                    "status": row.status,
+                }
+                for row in rules
+            ],
+        )
+        if not decision.allowed:
+            raise ValueError("knowledge article not found")
 
     async def _portal_signal_scores(self, item_ids: list[str]) -> dict[str, float]:
         ids = [item_id for item_id in item_ids if item_id]

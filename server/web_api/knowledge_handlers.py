@@ -1107,11 +1107,20 @@ async def handle_knowledge_portal_home(request: web.Request) -> web.Response:
 
 async def handle_knowledge_article_detail(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
-    actor_id, _actor_role = _actor(request)
+    actor_id, actor_role = _actor(request)
     try:
         async with get_session() as session:
             service = KnowledgePortalService(session)
-            payload = await service.article_detail(slug, actor_role="requester")
+            effective_audience = await EffectiveIdentityService(session).resolve_person_audience(
+                person_id=None,
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+            payload = await service.article_detail(
+                slug,
+                actor_role="requester",
+                effective_audience=effective_audience,
+            )
             await service.record_article_view(
                 payload["article"],
                 payload["version"],

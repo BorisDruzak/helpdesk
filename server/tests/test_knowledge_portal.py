@@ -4,7 +4,9 @@ import uuid
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.models import KnowledgeAudienceRule, RegistryDepartment, RegistryPerson, RegistryPersonIdentity, UiUser
 from app.repos.knowledge_repo import KnowledgeRepo
 
 
@@ -57,6 +59,41 @@ async def _published_item(
     )
     assert publish_resp.status == 200
     return (await publish_resp.json())["item"]
+
+
+async def _seed_requester_identity(session, *, login: str, department_code: str) -> dict[str, str]:
+    department = RegistryDepartment(
+        department_id=str(uuid.uuid4()),
+        code=department_code,
+        name=department_code.upper(),
+        status="active",
+        source="manual",
+    )
+    person = RegistryPerson(
+        person_id=str(uuid.uuid4()),
+        display_name=f"{department_code.upper()} Portal User",
+        email=login,
+        department_id=department.department_id,
+        source="manual",
+        status="active",
+    )
+    session.add_all(
+        [
+            department,
+            person,
+            UiUser(user_login=login, password_hash="test", actor_role="user", is_active=True),
+            RegistryPersonIdentity(
+                person_id=person.person_id,
+                provider="ui_login",
+                identifier=login,
+                normalized_identifier=login,
+                verified=True,
+                source="admin_manual",
+            ),
+        ]
+    )
+    await session.flush()
+    return {"department_id": department.department_id, "person_id": person.person_id}
 
 
 @pytest.mark.asyncio
@@ -169,9 +206,47 @@ async def test_knowledge_article_detail_hides_support_internal_articles(test_cli
 
 
 @pytest.mark.asyncio
-async def test_knowledge_portal_service_sanitizes_direct_article_reads(test_engine) -> None:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+async def test_knowledge_article_detail_applies_audience_rules_before_body_projection(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    item = await _published_item(
+        test_client,
+        space_code=f"article-audience-{suffix}",
+        slug=f"article-audience-hidden-{suffix}",
+        title="Portal Finance hidden article",
+        body="Finance-only portal body must not leak.",
+        visibility="requester",
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _seed_requester_identity(session, login="portal-requester", department_code="it")
+        finance = await _seed_requester_identity(session, login="portal-finance", department_code="finance")
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=f"rule-portal-finance-hidden-{suffix}",
+                subject_type="item",
+                subject_id=item["item_id"],
+                target_type="department",
+                target_id=finance["department_id"],
+                effect="allow",
+                status="active",
+            )
+        )
+        await session.commit()
 
+    resp = await test_client.get(
+        f"/api/knowledge/articles/{item['slug']}",
+        headers={"Authorization": "Bearer test-ui-user:portal-requester"},
+    )
+
+    assert resp.status == 404
+    payload = await resp.json()
+    assert payload["error"] == "not_found"
+    assert "Finance hidden article" not in str(payload)
+    assert "Finance-only portal body" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_knowledge_portal_service_sanitizes_direct_article_reads(test_engine) -> None:
     from knowledge.portal_service import KnowledgePortalService
 
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
