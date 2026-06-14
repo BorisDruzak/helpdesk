@@ -394,4 +394,19 @@ describe("AdminKnowledgeSectionsPage", () => {
       }),
     });
   });
+
+  it("shows per-list audience summaries without exposing raw target ids", async () => {
+    const fetchMock = setupFetch();
+    renderPage();
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/knowledge/audience-rules?subject_type=space", { credentials: "same-origin" }),
+    );
+    expect(await screen.findByText("Аудитория: 1 человек")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText("Подразделение: ИТ").length).toBeGreaterThanOrEqual(1));
+    expect(screen.getByText("Аудитория: без уточнения")).toBeInTheDocument();
+
+    const visibleText = document.body.textContent ?? "";
+    expect(visibleText).not.toContain("dep-it");
+  });
 });

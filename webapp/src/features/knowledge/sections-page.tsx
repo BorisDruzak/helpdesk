@@ -7,12 +7,14 @@ import { Button } from "../../components/ui/button";
 import { PageHeading } from "../../components/ui/page-heading";
 import {
   fetchKnowledgeAudienceRules,
+  fetchKnowledgeAudienceRulesBySubjectType,
   fetchKnowledgeItems,
   fetchKnowledgeSpaces,
   previewKnowledgeAudienceRules,
   replaceKnowledgeAudienceRules,
   saveKnowledgeSpace,
   type KnowledgeAudiencePreview,
+  type KnowledgeAudienceRule,
   type KnowledgeAudienceRuleInput,
   type KnowledgeAudienceRuleTargetType,
   type KnowledgeItem,
@@ -46,6 +48,9 @@ type SectionDraft = {
   title: string;
   visibility: string;
 };
+
+type VisibilityLookups = Awaited<ReturnType<typeof fetchVisibilityLookups>>;
+type BadgeTone = "neutral" | "brand" | "success" | "warning" | "danger" | "info";
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900";
 const checkboxClass = "mt-1 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500";
@@ -178,6 +183,14 @@ function pluralArticles(count: number) {
   return `${count} статей`;
 }
 
+function pluralAudienceRules(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} правило`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} правила`;
+  return `${count} правил`;
+}
+
 function flagTone(enabled: boolean) {
   return enabled ? "success" : "neutral";
 }
@@ -216,6 +229,74 @@ function articleCountsBySpace(items: KnowledgeItem[]) {
   return counts;
 }
 
+function audienceRulesBySpace(rules: KnowledgeAudienceRule[]) {
+  const bySpace = new Map<string, KnowledgeAudienceRule[]>();
+  for (const rule of rules) {
+    if (rule.subject_type !== "space" || !rule.subject_id) {
+      continue;
+    }
+    bySpace.set(rule.subject_id, [...(bySpace.get(rule.subject_id) ?? []), rule]);
+  }
+  return bySpace;
+}
+
+function safeAudienceRuleLabel(rule: KnowledgeAudienceRule, lookups: VisibilityLookups | undefined) {
+  const typeLabel = targetTypeOptions.find((option) => option.value === rule.target_type)?.label ?? "Правило аудитории";
+  if (!lookups) {
+    return typeLabel;
+  }
+  const draft = ruleToDraft(rule);
+  const label = ruleLabel(draft, lookups);
+  const targetId = String(rule.target_id ?? "");
+  if (targetId && label.includes(targetId)) {
+    return typeLabel;
+  }
+  return label;
+}
+
+function compactAudienceLabels(labels: string[]) {
+  const uniqueLabels = Array.from(new Set(labels.filter(Boolean)));
+  if (!uniqueLabels.length) {
+    return "Правила настроены";
+  }
+  if (uniqueLabels.length <= 2) {
+    return uniqueLabels.join(", ");
+  }
+  return `${uniqueLabels.slice(0, 2).join(", ")} + еще ${uniqueLabels.length - 2}`;
+}
+
+function sectionAudienceSummary(
+  space: KnowledgeSpace,
+  rules: KnowledgeAudienceRule[] | undefined,
+  lookups: VisibilityLookups | undefined,
+  isLoading: boolean,
+): { badge: string; detail: string; title: string; tone: BadgeTone } {
+  if (isLoading && !rules) {
+    return { badge: "Аудитория загружается", detail: "", title: "Загрузка правил аудитории раздела", tone: "neutral" };
+  }
+  const activeRules = (rules ?? []).filter((rule) => (rule.status ?? "active") === "active");
+  if (!activeRules.length) {
+    const requesterSafe = requesterPortalCompatible(space.visibility);
+    return {
+      badge: requesterSafe ? "Аудитория: вся выбранная видимость" : "Аудитория: без уточнения",
+      detail: requesterSafe ? "Правил нет, работает базовая видимость раздела" : "Доступ определяется внутренней видимостью раздела",
+      title: "Для раздела не настроены дополнительные правила Registry-аудитории",
+      tone: requesterSafe ? "warning" : "neutral",
+    };
+  }
+  const draftRules = activeRules.map(ruleToDraft);
+  const estimate = lookups ? estimateAudience(draftRules, lookups) : null;
+  const labels = activeRules.map((rule) => safeAudienceRuleLabel(rule, lookups));
+  const badge =
+    estimate && estimate.count > 0 ? `Аудитория: ${pluralPeople(estimate.count)}` : `Аудитория: ${pluralAudienceRules(activeRules.length)}`;
+  return {
+    badge,
+    detail: compactAudienceLabels(labels),
+    title: labels.join(", "),
+    tone: estimate && estimate.count === 0 ? "danger" : "brand",
+  };
+}
+
 function normalizeCode(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
 }
@@ -224,6 +305,14 @@ export function KnowledgeSectionsPage() {
   const queryClient = useQueryClient();
   const spacesQuery = useQuery({ queryKey: ["knowledge-spaces"], queryFn: fetchKnowledgeSpaces });
   const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
+  const spaceAudienceRulesQuery = useQuery({
+    queryKey: ["knowledge-audience-rules", "space"],
+    queryFn: () => fetchKnowledgeAudienceRulesBySubjectType("space"),
+  });
+  const visibilityLookupsQuery = useQuery({
+    queryKey: ["knowledge-visibility-lookups"],
+    queryFn: fetchVisibilityLookups,
+  });
   const spaces = spacesQuery.data ?? [];
   const items = itemsQuery.data ?? [];
   const [search, setSearch] = useState("");
@@ -262,6 +351,7 @@ export function KnowledgeSectionsPage() {
   }, [search, spaces]);
 
   const itemCounts = useMemo(() => articleCountsBySpace(items), [items]);
+  const audienceRules = useMemo(() => audienceRulesBySpace(spaceAudienceRulesQuery.data ?? []), [spaceAudienceRulesQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -359,6 +449,12 @@ export function KnowledgeSectionsPage() {
               const articleCount = itemCounts.get(space.space_id) ?? 0;
               const portalEnabled = sectionPortalEnabled(space);
               const supportEnabled = sectionSupportEnabled(space);
+              const audienceSummary = sectionAudienceSummary(
+                space,
+                audienceRules.get(space.space_id),
+                visibilityLookupsQuery.data,
+                spaceAudienceRulesQuery.isLoading || visibilityLookupsQuery.isLoading,
+              );
               return (
                 <button
                   aria-pressed={active}
@@ -387,7 +483,15 @@ export function KnowledgeSectionsPage() {
                     <Badge tone={flagTone(space.allow_rag ?? true)}>{space.allow_rag ?? true ? "Используется в AI/RAG" : "AI/RAG выключен"}</Badge>
                     <Badge tone={flagTone(space.allow_ingestion ?? true)}>{space.allow_ingestion ?? true ? "Импорт разрешен" : "Импорт закрыт"}</Badge>
                     <Badge tone={flagTone(space.allow_publication ?? true)}>{space.allow_publication ?? true ? "Публикация разрешена" : "Публикация закрыта"}</Badge>
+                    <Badge tone={audienceSummary.tone} title={audienceSummary.title}>
+                      {audienceSummary.badge}
+                    </Badge>
                   </span>
+                  {audienceSummary.detail ? (
+                    <span className="mt-2 block text-xs leading-5 text-slate-600" title={audienceSummary.title}>
+                      {audienceSummary.detail}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -711,6 +815,7 @@ function SectionAudiencePanel({ canManage, coarseVisibility, space }: SectionAud
     onSuccess: (rules) => {
       setDraftRules(rules.map(ruleToDraft));
       queryClient.setQueryData(["knowledge-audience-rules", "space", subjectId], rules);
+      queryClient.invalidateQueries({ queryKey: ["knowledge-audience-rules", "space"] });
       setSaveMessage("Аудитория раздела сохранена");
     },
   });

@@ -2,7 +2,7 @@
 
 Status, 2026-06-15: Registry Visibility Foundation is ready enough to start Knowledge Platform refactor. Registry now separates departments, locations, access groups, audience groups, roles, people, identities and account sessions. Knowledge visibility has backend foundation through `knowledge_audience_rules`, `KnowledgeAccessService`, `KnowledgeAudienceRulesService`, admin preview/explain APIs, and effective-audience enforcement in search/suggest/Ask/RAG/retrieval paths. The next work is not another card-level UI pass. The next work is a product refactor of Knowledge authoring: simplify article creation, introduce Knowledge Sections as policy containers, connect articles to Registry audiences and Help Desk context, and hide internal mechanics such as review, manual segmentation and version plumbing from the normal editor.
 
-Execution checkpoint, 2026-06-15: K0 registry preflight was closed by commit `baa0fe8e` before this Knowledge refactor slice. K1 initial slice is now in implementation: `/app/admin/knowledge/sections` is the product route for `Разделы базы знаний`; it reuses existing `GET|POST /api/web/knowledge/spaces` for section policy and existing `subject_type=space` audience-rule APIs for default section audience preview/save. K1 follow-up now adds article counts from existing knowledge items, allowed material types, portal/support exposure flags and article length recommendation without a schema migration by using existing `KnowledgeSpace.allowed_item_types` and `KnowledgeSpace.metadata`. Remaining K1 gaps after this slice: richer per-list audience summary and final live browser evidence for create/edit/default-audience.
+Execution checkpoint, 2026-06-15: K0 registry preflight was closed by commit `baa0fe8e` before this Knowledge refactor slice. K1 initial slice is now in implementation: `/app/admin/knowledge/sections` is the product route for `Разделы базы знаний`; it reuses existing `GET|POST /api/web/knowledge/spaces` for section policy and existing `subject_type=space` audience-rule APIs for default section audience preview/save. K1 follow-up now adds article counts from existing knowledge items, allowed material types, portal/support exposure flags and article length recommendation without a schema migration by using existing `KnowledgeSpace.allowed_item_types` and `KnowledgeSpace.metadata`. K1 also shows per-list audience summaries from `subject_type=space` rules without exposing raw target ids. Remaining K1 gap: final live browser evidence for create/edit/default-audience.
 
 ### Problem Statement
 
@@ -715,7 +715,8 @@ Exit bar:
 - Done, initial slice: reuse existing backend APIs; no schema migration required.
 - Done, follow-up slice: show section article counts, allowed material type controls, requester-portal/support-workspace exposure controls and article length recommendation; save them through existing `KnowledgeSpace.allowed_item_types` and `KnowledgeSpace.metadata`.
 - Done, follow-up slice: explain policy inheritance in the section audience panel: “Статьи наследуют правила раздела. Можно задать отдельные правила для конкретной статьи.”
-- Remaining: richer per-list audience summary and final live browser evidence for create/edit/default-audience.
+- Done, follow-up slice: show per-list audience summaries from `subject_type=space` rules, including estimated matched people when Registry lookups resolve, while hiding raw target ids in the normal list.
+- Remaining: final live browser evidence for create/edit/default-audience.
 
 Exit bar:
 

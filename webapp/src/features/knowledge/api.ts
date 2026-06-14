@@ -1026,6 +1026,16 @@ export async function fetchKnowledgeAudienceRules(subjectType: "item" | "space",
   return payload.data?.rules ?? payload.rules ?? [];
 }
 
+export async function fetchKnowledgeAudienceRulesBySubjectType(subjectType: "item" | "space"): Promise<KnowledgeAudienceRule[]> {
+  const params = new URLSearchParams({ subject_type: subjectType });
+  const response = await fetch(`/api/web/admin/knowledge/audience-rules?${params.toString()}`, { credentials: "same-origin" });
+  const payload = await readJson<{ data?: { rules?: KnowledgeAudienceRule[] }; rules?: KnowledgeAudienceRule[] }>(
+    response,
+    "Не удалось загрузить правила видимости знаний",
+  );
+  return payload.data?.rules ?? payload.rules ?? [];
+}
+
 export async function replaceKnowledgeAudienceRules(payload: {
   subject_type: "item" | "space";
   subject_id: string;
