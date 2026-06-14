@@ -77,6 +77,22 @@ export type AccessEffectivePayload = {
   sources: Record<string, string | string[]>;
 };
 
+export type AccessAuditItem = {
+  id: number;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  actor_id: string;
+  actor_role: string;
+  before_json: Record<string, unknown> | null;
+  after_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type AccessAuditPayload = {
+  items: AccessAuditItem[];
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -146,7 +162,14 @@ export async function fetchEffectiveAccess(user: {
   const response = await fetch(`/api/web/admin/access/effective?${searchParams.toString()}`, {
     credentials: "same-origin",
   });
-  return readSuccessResponse(response, "Не удалось рассчитать effective access");
+  return readSuccessResponse(response, "Не удалось рассчитать итоговый доступ");
+}
+
+export async function fetchAccessAudit(): Promise<AccessAuditPayload> {
+  const response = await fetch("/api/web/admin/access/audit", {
+    credentials: "same-origin",
+  });
+  return readSuccessResponse(response, "Не удалось загрузить журнал RBAC");
 }
 
 async function sendJson<T>(url: string, method: string, body: unknown, fallbackMessage: string): Promise<T> {
@@ -185,7 +208,7 @@ export async function saveAccessGroupPermissions(groupId: number, permissions: s
     `/api/web/admin/access/groups/${groupId}/permissions`,
     "PUT",
     { permissions },
-    "Не удалось сохранить permissions группы",
+    "Не удалось сохранить права группы",
   );
 }
 

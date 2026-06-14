@@ -1,15 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AdminAccessPage } from "./access-page";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
-    status,
     headers: {
       "Content-Type": "application/json",
     },
+    status,
   });
 }
 
@@ -17,8 +17,8 @@ function renderAccessPage() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
-        retry: false,
         refetchOnWindowFocus: false,
+        retry: false,
       },
     },
   });
@@ -30,169 +30,328 @@ function renderAccessPage() {
   );
 }
 
+const catalogPayload = {
+  version: "rbac-test",
+  roles: [
+    {
+      code: "admin",
+      label: "Администратор",
+      permissions: ["workspace.admin.view", "workspace.support.view", "admin.access.view", "admin.forms.publish"],
+    },
+    {
+      code: "support",
+      label: "Поддержка",
+      permissions: ["workspace.support.view", "ticket.queue.view", "ticket.status.change"],
+    },
+    {
+      code: "auditor",
+      label: "Аудитор",
+      permissions: ["ticket.queue.view"],
+    },
+    {
+      code: "user",
+      label: "Пользователь",
+      permissions: ["workspace.requester.view"],
+    },
+    {
+      code: "agent",
+      label: "Агент",
+      permissions: [],
+    },
+    {
+      code: "system",
+      label: "Система",
+      permissions: [],
+    },
+  ],
+  groups: [
+    {
+      code: "workspaces",
+      label: "Рабочие области",
+      permissions: [
+        {
+          code: "workspace.admin.view",
+          description: "Доступ к административной рабочей области.",
+          label: "Открывать администрирование",
+          risk: "normal",
+        },
+        {
+          code: "workspace.support.view",
+          description: "Доступ к рабочей области поддержки.",
+          label: "Открывать поддержку",
+          risk: "normal",
+        },
+      ],
+    },
+    {
+      code: "tickets",
+      label: "Тикеты",
+      permissions: [
+        {
+          code: "ticket.queue.view",
+          description: "Просмотр очереди заявок.",
+          label: "Видеть очередь тикетов",
+          risk: "normal",
+        },
+        {
+          code: "ticket.status.change",
+          description: "Запуск разрешенных переходов статуса.",
+          label: "Менять статус тикета",
+          risk: "normal",
+        },
+      ],
+    },
+    {
+      code: "automation",
+      label: "Автоматизация",
+      permissions: [
+        {
+          code: "admin.forms.publish",
+          description: "Публикация каталога форм заявок.",
+          label: "Публиковать формы",
+          risk: "high",
+        },
+      ],
+    },
+  ],
+};
+
+const summaryPayload = {
+  access_groups: [
+    {
+      code: "support_l2",
+      description: "Вторая линия поддержки",
+      group_id: 10,
+      is_active: true,
+      members: ["support1"],
+      name: "Support L2",
+      permissions: ["workspace.support.view"],
+      queue_grants: [
+        {
+          queue_code: "helpdesk",
+          queue_id: 7,
+          queue_name: "Helpdesk L1",
+          role_in_queue: "lead",
+        },
+      ],
+    },
+    {
+      code: "empty_group",
+      description: "Нет участников",
+      group_id: 11,
+      is_active: true,
+      members: [],
+      name: "Пустая группа",
+      permissions: [],
+      queue_grants: [],
+    },
+  ],
+  notes: ["Access groups are enabled; effective access is role defaults + group grants + direct queue membership."],
+  queues: [
+    {
+      is_active: true,
+      members_count: 1,
+      queue_code: "helpdesk",
+      queue_id: 7,
+      queue_name: "Helpdesk L1",
+    },
+    {
+      is_active: false,
+      members_count: 0,
+      queue_code: "archive",
+      queue_id: 8,
+      queue_name: "Archive",
+    },
+  ],
+  users: [
+    {
+      actor_role: "admin",
+      groups: [],
+      is_active: true,
+      queue_count: 0,
+      role_label: "Администратор",
+      user_login: "admin1",
+    },
+    {
+      actor_role: "support",
+      groups: ["support_l2"],
+      is_active: true,
+      queue_count: 1,
+      role_label: "Поддержка",
+      user_login: "support1",
+    },
+    {
+      actor_role: "support",
+      groups: ["support_l2"],
+      is_active: false,
+      queue_count: 1,
+      role_label: "Поддержка",
+      user_login: "disabled1",
+    },
+  ],
+  version: "rbac-test",
+};
+
+const effectivePayloads: Record<string, unknown> = {
+  admin1: {
+    actor_id: "admin1",
+    actor_role: "admin",
+    groups: [],
+    permissions: ["workspace.admin.view", "workspace.support.view", "admin.access.view", "admin.forms.publish"],
+    queues: [],
+    role_label: "Администратор",
+    sources: { groups: [], queues: [], role: "admin" },
+    workspaces: ["admin", "support"],
+  },
+  disabled1: {
+    actor_id: "disabled1",
+    actor_role: "support",
+    groups: ["support_l2"],
+    permissions: ["workspace.support.view", "ticket.queue.view", "ticket.status.change"],
+    queues: [
+      {
+        queue_code: "helpdesk",
+        queue_id: 7,
+        queue_name: "Helpdesk L1",
+        role_in_queue: "lead",
+      },
+    ],
+    role_label: "Поддержка",
+    sources: { groups: ["support_l2"], queues: ["helpdesk"], role: "support" },
+    workspaces: ["support"],
+  },
+  support1: {
+    actor_id: "support1",
+    actor_role: "support",
+    groups: ["support_l2"],
+    permissions: ["workspace.support.view", "ticket.queue.view", "ticket.status.change"],
+    queues: [
+      {
+        queue_code: "helpdesk",
+        queue_id: 7,
+        queue_name: "Helpdesk L1",
+        role_in_queue: "lead",
+      },
+    ],
+    role_label: "Поддержка",
+    sources: { groups: ["support_l2"], queues: ["helpdesk"], role: "support" },
+    workspaces: ["support"],
+  },
+};
+
+function installAccessFetchMock() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url === "/api/web/admin/access/catalog") {
+      return jsonResponse({ data: catalogPayload, status: "success" });
+    }
+
+    if (url === "/api/web/admin/access/summary") {
+      return jsonResponse({ data: summaryPayload, status: "success" });
+    }
+
+    if (url.startsWith("/api/web/admin/access/effective")) {
+      const parsed = new URL(url, "https://pc-client.local");
+      const actorId = parsed.searchParams.get("actor_id") ?? "admin1";
+      return jsonResponse({ data: effectivePayloads[actorId], status: "success" });
+    }
+
+    if (url === "/api/web/admin/access/audit") {
+      return jsonResponse({
+        data: {
+          items: [
+            {
+              action: "permissions_updated",
+              actor_id: "admin1",
+              actor_role: "admin",
+              after_json: { permissions: ["workspace.support.view"] },
+              before_json: { permissions: [] },
+              created_at: "2026-06-14T10:00:00",
+              entity_id: "10",
+              entity_type: "access_group",
+              id: 1,
+            },
+          ],
+        },
+        status: "success",
+      });
+    }
+
+    if (url === "/api/web/admin/access/groups/10/permissions" && init?.method === "PUT") {
+      return jsonResponse({
+        data: {
+          ...summaryPayload.access_groups[0],
+          permissions: ["admin.forms.publish", "workspace.support.view"],
+        },
+        status: "success",
+      });
+    }
+
+    if (url === "/api/web/admin/access/groups/10/members" && init?.method === "PUT") {
+      return jsonResponse({
+        data: summaryPayload.access_groups[0],
+        status: "success",
+      });
+    }
+
+    if (url === "/api/web/admin/access/groups/10/queues" && init?.method === "PUT") {
+      return jsonResponse({
+        data: summaryPayload.access_groups[0],
+        status: "success",
+      });
+    }
+
+    return jsonResponse({ error: `Unhandled ${url}`, status: "error" }, 500);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe("AdminAccessPage", () => {
-  it("renders RBAC catalog, users, queues and effective access without JSON editing", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
+  it("renders a Russian task-oriented workspace with internal navigation and overview audit cards", async () => {
+    installAccessFetchMock();
 
-      if (url === "/api/web/admin/access/catalog") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            version: "rbac-test",
-            roles: [
-              {
-                code: "admin",
-                label: "Администратор",
-                permissions: ["workspace.admin.view", "workspace.support.view", "admin.access.view"],
-              },
-              {
-                code: "support",
-                label: "Поддержка",
-                permissions: ["workspace.support.view", "ticket.queue.view", "ticket.status.change"],
-              },
-            ],
-            groups: [
-              {
-                code: "workspaces",
-                label: "Рабочие области",
-                permissions: [
-                  {
-                    code: "workspace.admin.view",
-                    label: "Видеть admin workspace",
-                    description: "Доступ к административной рабочей области.",
-                    risk: "normal",
-                  },
-                  {
-                    code: "workspace.support.view",
-                    label: "Видеть support workspace",
-                    description: "Доступ к операторской рабочей области.",
-                    risk: "normal",
-                  },
-                ],
-              },
-              {
-                code: "tickets",
-                label: "Тикеты",
-                permissions: [
-                  {
-                    code: "ticket.status.change",
-                    label: "Менять статус тикета",
-                    description: "Разрешённые FSM-переходы.",
-                    risk: "normal",
-                  },
-                ],
-              },
-            ],
-          },
-        });
-      }
+    renderAccessPage();
 
-      if (url === "/api/web/admin/access/summary") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            version: "rbac-test",
-            users: [
-              {
-                user_login: "admin1",
-                actor_role: "admin",
-                role_label: "Администратор",
-                is_active: true,
-                groups: [],
-                queue_count: 0,
-              },
-              {
-                user_login: "support1",
-                actor_role: "support",
-                role_label: "Поддержка",
-                is_active: true,
-                groups: [],
-                queue_count: 2,
-              },
-            ],
-            queues: [
-              {
-                queue_id: 1,
-                queue_code: "helpdesk",
-                queue_name: "Helpdesk L1",
-                is_active: true,
-                members_count: 2,
-              },
-            ],
-            access_groups: [],
-            notes: ["Access groups are planned as the next RBAC slice."],
-          },
-        });
-      }
+    expect(await screen.findByRole("heading", { name: "Контроль доступа" })).toBeInTheDocument();
+    expect(screen.getByText("Базовая роль + группы доступа + прямое членство в очередях = итоговый доступ")).toBeInTheDocument();
+    expect(screen.getByText("rbac-test")).toBeInTheDocument();
+    expect(screen.getByText("Отключённые пользователи с доступом")).toBeInTheDocument();
+    expect(screen.getByText("Группы без участников")).toBeInTheDocument();
+    expect(screen.getByText("Очереди без участников")).toBeInTheDocument();
 
-      if (url === "/api/web/admin/access/effective?actor_id=admin1&actor_role=admin") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            actor_id: "admin1",
-            actor_role: "admin",
-            role_label: "Администратор",
-            permissions: ["workspace.admin.view", "workspace.support.view", "admin.access.view"],
-            workspaces: ["admin", "support"],
-            groups: [],
-            queues: [],
-            sources: {
-              role: "admin",
-              groups: [],
-              queues: [],
-            },
-          },
-        });
-      }
+    for (const tab of ["Обзор", "Пользователи", "Группы", "Очереди", "Роли", "Каталог прав", "Аудит"]) {
+      expect(screen.getByRole("button", { name: new RegExp(tab) })).toBeInTheDocument();
+    }
 
-      if (url === "/api/web/admin/access/effective?actor_id=support1&actor_role=support") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            actor_id: "support1",
-            actor_role: "support",
-            role_label: "Поддержка",
-            permissions: ["workspace.support.view", "ticket.queue.view", "ticket.status.change"],
-            workspaces: ["support"],
-            groups: [],
-            queues: [
-              {
-                queue_id: 1,
-                queue_code: "helpdesk",
-                queue_name: "Helpdesk L1",
-                role_in_queue: "primary",
-              },
-            ],
-            sources: {
-              role: "support",
-              groups: [],
-              queues: ["helpdesk"],
-            },
-          },
-        });
-      }
+    fireEvent.click(screen.getByRole("button", { name: /Пользователи/ }));
+    expect(await screen.findByRole("heading", { name: "Пользователи" })).toBeInTheDocument();
 
-      return jsonResponse({ status: "error", error: `Unhandled ${url}` }, 500);
-    });
-    vi.stubGlobal("fetch", fetchMock);
+    fireEvent.click(screen.getByRole("button", { name: /Роли/ }));
+    expect(await screen.findByRole("heading", { name: "Матрица ролей" })).toBeInTheDocument();
 
-    const { container } = renderAccessPage();
+    fireEvent.click(screen.getByRole("button", { name: /Аудит/ }));
+    expect(await screen.findByRole("heading", { name: "Аудит и журнал изменений" })).toBeInTheDocument();
+  });
 
-    expect(await screen.findByRole("heading", { name: "Access Control" })).toBeInTheDocument();
-    expect(await screen.findByText("rbac-test")).toBeInTheDocument();
-    expect(await screen.findByText("Администратор")).toBeInTheDocument();
-    expect(await screen.findByText("Поддержка")).toBeInTheDocument();
-    expect(await screen.findByText("Helpdesk L1")).toBeInTheDocument();
-    expect(await screen.findByText("Менять статус тикета")).toBeInTheDocument();
-    expect((await screen.findAllByText("admin.access.view")).length).toBeGreaterThan(0);
+  it("searches users, opens effective access and shows permission source with technical codes second", async () => {
+    const fetchMock = installAccessFetchMock();
 
-    fireEvent.click(screen.getByRole("button", { name: /support1/ }));
+    renderAccessPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Пользователи/ }));
+    fireEvent.change(screen.getByPlaceholderText("Логин, имя, email или роль"), { target: { value: "support1" } });
+
+    expect(screen.getAllByText("support1").length).toBeGreaterThan(0);
+    expect(screen.queryByText("admin1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Открыть доступ support1/ }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -201,204 +360,133 @@ describe("AdminAccessPage", () => {
       );
     });
 
-    expect((await screen.findAllByText("workspace.support.view")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("primary")).toBeInTheDocument();
-    expect(container.querySelector("textarea")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Эффективный доступ" })).toBeInTheDocument();
+    expect(screen.getByText("Почему есть доступ")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "Роль: Поддержка")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "Группа: support_l2")).toBeInTheDocument();
+    expect(screen.getByText("Открывать поддержку")).toBeInTheDocument();
+    expect(screen.getByText("workspace.support.view")).toBeInTheDocument();
+    expect(screen.getByText("Источник: роль + группа")).toBeInTheDocument();
   });
 
-  it("creates access groups and saves grants through controlled inputs", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
+  it("groups permissions, tracks pending group edits, previews diff and requires high-risk confirmation before save", async () => {
+    const fetchMock = installAccessFetchMock();
 
-      if (url === "/api/web/admin/access/catalog") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            version: "rbac-test",
-            roles: [],
-            groups: [
-              {
-                code: "automation",
-                label: "Автоматизация",
-                permissions: [
-                  {
-                    code: "admin.forms.publish",
-                    label: "Публиковать формы",
-                    description: "Сохранение каталога форм.",
-                    risk: "high",
-                  },
-                ],
-              },
-            ],
-          },
-        });
-      }
+    renderAccessPage();
 
-      if (url === "/api/web/admin/access/summary") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            version: "rbac-test",
-            users: [
-              {
-                user_login: "support1",
-                actor_role: "support",
-                role_label: "Поддержка",
-                is_active: true,
-                groups: [],
-                queue_count: 0,
-              },
-            ],
-            queues: [
-              {
-                queue_id: 7,
-                queue_code: "helpdesk",
-                queue_name: "Helpdesk L1",
-                is_active: true,
-                members_count: 1,
-              },
-            ],
-            access_groups: [],
-            notes: [],
-          },
-        });
-      }
-
-      if (url === "/api/web/admin/access/effective?actor_id=support1&actor_role=support") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            actor_id: "support1",
-            actor_role: "support",
-            role_label: "Поддержка",
-            permissions: ["workspace.support.view"],
-            workspaces: ["support"],
-            groups: [],
-            queues: [],
-            sources: { role: "support", groups: [], queues: [] },
-          },
-        });
-      }
-
-      if (url === "/api/web/admin/access/groups" && init?.method === "POST") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            group_id: 10,
-            code: "support_l2",
-            name: "Support L2",
-            description: "Second line",
-            is_active: true,
-            permissions: [],
-            members: [],
-            queue_grants: [],
-          },
-        });
-      }
-
-      if (url === "/api/web/admin/access/groups/10/permissions" && init?.method === "PUT") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            group_id: 10,
-            code: "support_l2",
-            name: "Support L2",
-            description: "Second line",
-            is_active: true,
-            permissions: ["admin.forms.publish"],
-            members: [],
-            queue_grants: [],
-          },
-        });
-      }
-
-      if (url === "/api/web/admin/access/groups/10/members" && init?.method === "PUT") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            group_id: 10,
-            code: "support_l2",
-            name: "Support L2",
-            description: "Second line",
-            is_active: true,
-            permissions: ["admin.forms.publish"],
-            members: ["support1"],
-            queue_grants: [],
-          },
-        });
-      }
-
-      if (url === "/api/web/admin/access/groups/10/queues" && init?.method === "PUT") {
-        return jsonResponse({
-          status: "success",
-          data: {
-            group_id: 10,
-            code: "support_l2",
-            name: "Support L2",
-            description: "Second line",
-            is_active: true,
-            permissions: ["admin.forms.publish"],
-            members: ["support1"],
-            queue_grants: [
-              {
-                queue_id: 7,
-                queue_code: "helpdesk",
-                queue_name: "Helpdesk L1",
-                role_in_queue: "lead",
-              },
-            ],
-          },
-        });
-      }
-
-      return jsonResponse({ status: "error", error: `Unhandled ${url}` }, 500);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const { container } = renderAccessPage();
-
-    expect(await screen.findByRole("heading", { name: "Access Control" })).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText("Код группы"), { target: { value: "support_l2" } });
-    fireEvent.change(screen.getByLabelText("Название группы"), { target: { value: "Support L2" } });
-    fireEvent.change(screen.getByLabelText("Описание группы"), { target: { value: "Second line" } });
-    fireEvent.click(screen.getByRole("button", { name: "Создать группу" }));
-
-    expect((await screen.findAllByText("support_l2")).length).toBeGreaterThan(0);
+    fireEvent.click(await screen.findByRole("button", { name: /Группы/ }));
+    expect(await screen.findByRole("heading", { name: "Группы доступа" })).toBeInTheDocument();
+    expect(screen.getByText("Автоматизация")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText(/Публиковать формы/));
-    fireEvent.click(screen.getByLabelText(/support1/));
-    fireEvent.click(screen.getAllByLabelText(/Helpdesk L1/)[0]);
-    fireEvent.change(screen.getByLabelText(/Роль в очереди Helpdesk L1/), { target: { value: "lead" } });
+    expect(screen.getByText("Есть несохранённые изменения")).toBeInTheDocument();
+    expect(screen.getByText("admin.forms.publish")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить permissions" }));
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить участников" }));
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить очереди" }));
+    fireEvent.click(screen.getByRole("button", { name: "Отменить" }));
+    expect(screen.queryByText("Есть несохранённые изменения")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/Публиковать формы/)).not.toBeChecked();
+
+    fireEvent.click(screen.getByLabelText(/Публиковать формы/));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить изменения" }));
+
+    expect(await screen.findByRole("dialog", { name: "Проверка изменений" })).toBeInTheDocument();
+    expect(screen.getByText("Будет добавлено")).toBeInTheDocument();
+    expect(screen.getByText("Требуется подтверждение риска")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Применить изменения" })).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText("Подтверждаю добавление высокорисковых прав"));
+    fireEvent.click(screen.getByRole("button", { name: "Применить изменения" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/admin/access/groups/10/permissions",
         expect.objectContaining({
+          body: JSON.stringify({ permissions: ["admin.forms.publish", "workspace.support.view"] }),
           method: "PUT",
-          body: JSON.stringify({ permissions: ["admin.forms.publish"] }),
-        }),
-      );
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/admin/access/groups/10/members",
-        expect.objectContaining({
-          method: "PUT",
-          body: JSON.stringify({ actor_ids: ["support1"] }),
-        }),
-      );
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/admin/access/groups/10/queues",
-        expect.objectContaining({
-          method: "PUT",
-          body: JSON.stringify({ queues: [{ queue_id: 7, role_in_queue: "lead" }] }),
         }),
       );
     });
+    expect(await screen.findByText("Изменения сохранены")).toBeInTheDocument();
+  });
 
+  it("answers queue access, searches permission catalog, and renders audit data without fake records", async () => {
+    installAccessFetchMock();
+
+    renderAccessPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Очереди/ }));
+    expect(await screen.findByRole("heading", { name: "Очереди" })).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Поиск очереди"), { target: { value: "helpdesk" } });
+    fireEvent.click(screen.getByRole("button", { name: /Открыть очередь Helpdesk L1/ }));
+    expect(screen.getByText("Кто может попасть в очередь")).toBeInTheDocument();
+    expect(screen.getByText("Support L2")).toBeInTheDocument();
+    expect(screen.getByText("Из API доступно только количество прямых участников, без списка логинов.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Каталог прав/ }));
+    expect(await screen.findByRole("heading", { name: "Каталог прав" })).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Поиск права или кода"), { target: { value: "forms" } });
+    expect(screen.getByText("Публиковать формы")).toBeInTheDocument();
+    expect(screen.queryByText("Видеть очередь тикетов")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Аудит/ }));
+    expect(await screen.findByText("permissions_updated")).toBeInTheDocument();
+    expect(screen.getByText("access_group 10")).toBeInTheDocument();
+  });
+
+  it("renders loading, empty and error states for the RBAC workspace", async () => {
+    let resolveCatalog: (value: Response) => void = () => undefined;
+    const catalogPromise = new Promise<Response>((resolve) => {
+      resolveCatalog = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/web/admin/access/catalog") {
+        return catalogPromise;
+      }
+      if (url === "/api/web/admin/access/summary") {
+        return jsonResponse({
+          data: { ...summaryPayload, access_groups: [], queues: [], users: [] },
+          status: "success",
+        });
+      }
+      if (url === "/api/web/admin/access/audit") {
+        return jsonResponse({ data: { items: [] }, status: "success" });
+      }
+      return jsonResponse({ error: `Unhandled ${url}`, status: "error" }, 500);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { unmount } = renderAccessPage();
+    expect(screen.getByText("Загружаем RBAC")).toBeInTheDocument();
+    resolveCatalog(jsonResponse({ data: catalogPayload, status: "success" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Пользователи/ }));
+    expect(await screen.findByText("Пользователей нет")).toBeInTheDocument();
+    unmount();
+
+    vi.unstubAllGlobals();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/web/admin/access/catalog") {
+          return jsonResponse({ error: "catalog unavailable", status: "error" }, 500);
+        }
+        return jsonResponse({ data: summaryPayload, status: "success" });
+      }),
+    );
+
+    renderAccessPage();
+    expect(await screen.findByText("RBAC недоступен")).toBeInTheDocument();
+    expect(screen.getByText("catalog unavailable")).toBeInTheDocument();
+  });
+
+  it("does not expose raw JSON editing in the access-control workspace", async () => {
+    installAccessFetchMock();
+
+    const { container } = renderAccessPage();
+
+    expect(await screen.findByRole("heading", { name: "Контроль доступа" })).toBeInTheDocument();
     expect(container.querySelector("textarea")).not.toBeInTheDocument();
+    expect(within(document.body).queryByText("raw JSON")).not.toBeInTheDocument();
   });
 });
