@@ -122,7 +122,12 @@ def default_output_path(*, run_id: str, today: str | None = None) -> Path:
 
 def support_ticket_search_payload(marker: str) -> dict[str, str]:
     # Support suggestions search title+description as one substring.
-    return {"title": str(marker), "description": ""}
+    return {"title": str(marker), "description": "support suggestions"}
+
+
+def support_ticket_search_text(marker: str) -> str:
+    payload = support_ticket_search_payload(marker)
+    return f"{payload['title']} {payload['description']}".strip()
 
 
 def build_initial_report(*, run_id: str, base_url: str, commit: str | None) -> dict[str, Any]:
@@ -422,6 +427,7 @@ class RegistryVisibilityLiveSmoke:
         *,
         item_type: str = "article",
     ) -> dict[str, Any]:
+        support_search_text = support_ticket_search_text(str(self.report["marker"]))
         title = f"{self.report['marker']} {title_label}"
         item = await repo.create_item_draft(
             {
@@ -429,7 +435,7 @@ class RegistryVisibilityLiveSmoke:
                 "slug": f"phase7-{label}-{self.run_id}",
                 "item_type": item_type,
                 "title": title,
-                "summary": title,
+                "summary": f"{support_search_text} {title_label}",
                 "visibility": visibility,
                 "owner_actor_id": self.ids["admin_login"],
                 "reviewer_actor_id": self.ids["admin_login"],
@@ -439,7 +445,7 @@ class RegistryVisibilityLiveSmoke:
         )
         version = await repo.create_version(
             item["item_id"],
-            {"title": title, "body_format": "markdown", "body": f"{self.report['marker']} {body_label}"},
+            {"title": title, "body_format": "markdown", "body": f"{support_search_text} {body_label}"},
             actor_id=self.ids["admin_login"],
             actor_role="admin",
         )
