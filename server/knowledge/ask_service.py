@@ -57,6 +57,7 @@ class KnowledgeAskService:
         session_id: str | None = None,
         limit: int | None = None,
         query_vector: list[float] | None = None,
+        effective_audience: Any | None = None,
     ) -> dict[str, Any]:
         query_text = str(query or "").strip()
         settings = await KnowledgeSearchSettingsService(self.session).get_settings()
@@ -67,6 +68,7 @@ class KnowledgeAskService:
             session_id=session_id,
             limit=limit,
             query_vector=query_vector,
+            effective_audience=effective_audience,
         )
         retrieval_results = list(retrieval.get("results") or [])
         citations = self._collect_citations(retrieval_results)

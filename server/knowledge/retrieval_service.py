@@ -6,13 +6,14 @@ from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ai.contracts import AIModelProfile, AIProviderConfig
 from ai.openrouter_client import OpenRouterClient
-from app.db.models import KnowledgeItem, KnowledgeItemVersion
+from app.db.models import KnowledgeAudienceRule, KnowledgeItem, KnowledgeItemVersion, KnowledgeSpace
 from app.repos.knowledge_repo import serialize_item
+from knowledge.access_service import KnowledgeAccessService
 from knowledge.contracts import actor_visible_visibilities, sanitize_requester_knowledge_projection
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
@@ -60,6 +61,7 @@ class KnowledgeRetrievalService:
         session_id: str | None = None,
         limit: int | None = None,
         query_vector: list[float] | None = None,
+        effective_audience: Any | None = None,
     ) -> dict[str, Any]:
         settings = await KnowledgeSearchSettingsService(self.session).get_settings()
         effective_mode = str(settings.get("effective_mode") or "keyword_only")
@@ -111,6 +113,15 @@ class KnowledgeRetrievalService:
             else:
                 vector_fallback = "query_vector_missing"
 
+        await self._filter_candidates_by_audience(
+            candidates,
+            effective_audience=effective_audience,
+            service_context={
+                "service_code": service_code,
+                "offering_code": offering_code,
+                "request_template_key": request_template_key,
+            },
+        )
         ordered = sorted(candidates.values(), key=lambda item: (-float(item["score"]), str(item["item"].get("title") or "")))
         results = ordered[:max_results]
         rerank_used = False
@@ -475,6 +486,103 @@ class KnowledgeRetrievalService:
                     "snippet": _snippet(row.get("chunk_text") or version.body, query, max_length=snippet_length),
                 }
             )
+
+    async def _filter_candidates_by_audience(
+        self,
+        candidates: dict[str, dict[str, Any]],
+        *,
+        effective_audience: Any | None,
+        service_context: dict[str, Any],
+    ) -> None:
+        if effective_audience is None or not candidates:
+            return
+        rows = (
+            await self.session.execute(
+                select(KnowledgeItem).where(KnowledgeItem.item_id.in_(sorted(candidates)))
+            )
+        ).scalars().all()
+        access_context = await self._audience_access_context(
+            rows=rows,
+            effective_audience=effective_audience,
+        )
+        allowed_ids: set[str] = set()
+        for item in rows:
+            if self._item_allowed_by_audience(
+                item,
+                effective_audience=effective_audience,
+                access_context=access_context,
+                service_context=service_context,
+            ):
+                allowed_ids.add(item.item_id)
+        for item_id in list(candidates):
+            if item_id not in allowed_ids:
+                candidates.pop(item_id, None)
+
+    async def _audience_access_context(
+        self,
+        *,
+        rows: list[KnowledgeItem],
+        effective_audience: Any | None,
+    ) -> dict[str, Any]:
+        if effective_audience is None:
+            return {"spaces_by_item": {}, "rules": []}
+        items = {row.item_id: row for row in rows if row is not None}
+        if not items:
+            return {"spaces_by_item": {}, "rules": []}
+        space_ids = sorted({str(item.space_id) for item in items.values() if item.space_id})
+        item_ids = sorted(items)
+        spaces = (
+            await self.session.execute(
+                select(KnowledgeSpace).where(KnowledgeSpace.space_id.in_(space_ids))
+            )
+        ).scalars().all()
+        spaces_by_id = {space.space_id: _space_payload(space) for space in spaces}
+        rules = (
+            await self.session.execute(
+                select(KnowledgeAudienceRule)
+                .where(
+                    KnowledgeAudienceRule.status == "active",
+                    or_(
+                        and_(
+                            KnowledgeAudienceRule.subject_type == "item",
+                            KnowledgeAudienceRule.subject_id.in_(item_ids),
+                        ),
+                        and_(
+                            KnowledgeAudienceRule.subject_type == "space",
+                            KnowledgeAudienceRule.subject_id.in_(space_ids),
+                        ),
+                    ),
+                )
+                .order_by(KnowledgeAudienceRule.priority.asc(), KnowledgeAudienceRule.created_at.asc(), KnowledgeAudienceRule.rule_id.asc())
+            )
+        ).scalars().all()
+        return {
+            "spaces_by_item": {
+                item_id: spaces_by_id.get(str(item.space_id))
+                for item_id, item in items.items()
+            },
+            "rules": [_rule_payload(rule) for rule in rules],
+        }
+
+    def _item_allowed_by_audience(
+        self,
+        item: KnowledgeItem,
+        *,
+        effective_audience: Any | None,
+        access_context: dict[str, Any],
+        service_context: dict[str, Any],
+    ) -> bool:
+        if effective_audience is None:
+            return True
+        decision = KnowledgeAccessService.evaluate_item_access(
+            item=_item_payload(item),
+            space=(access_context.get("spaces_by_item") or {}).get(item.item_id),
+            audience=effective_audience,
+            rules=list(access_context.get("rules") or []),
+            service_context=service_context,
+        )
+        return decision.allowed
+
     async def _record_observer_event(self, event_type: str, *, actor_role: str, details: dict[str, Any]) -> None:
         await self.session.execute(
             text(
@@ -558,3 +666,35 @@ def _resolve_secret_ref(secret_ref: str | None) -> str | None:
     if value.startswith("env:"):
         return os.getenv(value[4:])
     return None
+
+
+def _item_payload(row: KnowledgeItem) -> dict[str, Any]:
+    return {
+        "item_id": row.item_id,
+        "space_id": row.space_id,
+        "status": row.status,
+        "visibility": row.visibility,
+        "current_version_id": row.current_version_id,
+    }
+
+
+def _space_payload(row: KnowledgeSpace) -> dict[str, Any]:
+    return {
+        "space_id": row.space_id,
+        "lifecycle_status": row.lifecycle_status,
+        "visibility": row.visibility,
+    }
+
+
+def _rule_payload(row: KnowledgeAudienceRule) -> dict[str, Any]:
+    return {
+        "rule_id": row.rule_id,
+        "subject_type": row.subject_type,
+        "subject_id": row.subject_id,
+        "target_type": row.target_type,
+        "target_id": row.target_id,
+        "effect": row.effect,
+        "include_children": row.include_children,
+        "priority": row.priority,
+        "status": row.status,
+    }

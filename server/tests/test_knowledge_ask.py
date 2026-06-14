@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -7,6 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai.provider_registry import AIProviderRegistry
+from app.db.models import KnowledgeAudienceRule, RegistryDepartment, RegistryPerson, RegistryPersonIdentity, UiUser
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.ask_service import KnowledgeAskService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
@@ -14,6 +16,41 @@ from knowledge.search_settings_service import KnowledgeSearchSettingsService
 
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 SUPPORT_HEADERS = {"Authorization": "Bearer test-ui-support-token"}
+
+
+async def _seed_requester_identity(session: AsyncSession, *, login: str, department_code: str) -> dict[str, str]:
+    department = RegistryDepartment(
+        department_id=str(uuid.uuid4()),
+        code=department_code,
+        name=department_code.upper(),
+        status="active",
+        source="manual",
+    )
+    person = RegistryPerson(
+        person_id=str(uuid.uuid4()),
+        display_name=f"{department_code.upper()} Ask Requester",
+        email=login,
+        department_id=department.department_id,
+        source="manual",
+        status="active",
+    )
+    session.add_all(
+        [
+            department,
+            person,
+            UiUser(user_login=login, password_hash="test", actor_role="user", is_active=True),
+            RegistryPersonIdentity(
+                person_id=person.person_id,
+                provider="ui_login",
+                identifier=login,
+                normalized_identifier=login,
+                verified=True,
+                source="admin_manual",
+            ),
+        ]
+    )
+    await session.flush()
+    return {"department_id": department.department_id, "person_id": person.person_id}
 
 
 async def _published_item(
@@ -62,6 +99,68 @@ async def _enable_rag(session: AsyncSession) -> None:
             "max_results": 5,
         },
         actor_id="admin",
+    )
+
+
+async def _enable_vector_retrieval(session: AsyncSession) -> None:
+    await KnowledgeSearchSettingsService(session).upsert_settings(
+        {
+            "search_mode": "hybrid_vector",
+            "keyword_enabled": False,
+            "full_text_enabled": False,
+            "vector_enabled": True,
+            "rerank_enabled": False,
+            "rag_answer_enabled": False,
+            "max_results": 5,
+        },
+        actor_id="admin",
+    )
+
+
+async def _insert_first_chunk_embedding(session: AsyncSession, *, item_id: str, vector: list[float]) -> None:
+    row = (
+        await session.execute(
+            text(
+                """
+                SELECT i.current_version_id AS version_id, c.chunk_id, c.content_hash, c.visibility
+                FROM knowledge_items i
+                JOIN knowledge_chunks c ON c.item_id = i.item_id AND c.version_id = i.current_version_id
+                WHERE i.item_id = :item_id
+                ORDER BY c.chunk_index
+                LIMIT 1
+                """
+            ),
+            {"item_id": item_id},
+        )
+    ).mappings().one()
+    await session.execute(
+        text(
+            """
+            INSERT INTO knowledge_chunk_embeddings (
+                embedding_id, chunk_id, item_id, version_id, embedding_model,
+                embedding_dimensions, embedding_vector, content_hash,
+                embedding_input_hash, visibility, status, indexed_at,
+                metadata_json, created_at, updated_at
+            )
+            VALUES (
+                :embedding_id, :chunk_id, :item_id, :version_id, 'test-vector-model',
+                :embedding_dimensions, CAST(:embedding_vector AS jsonb), :content_hash,
+                :embedding_input_hash, :visibility, 'indexed', CURRENT_TIMESTAMP,
+                '{}'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            """
+        ),
+        {
+            "embedding_id": str(uuid.uuid4()),
+            "chunk_id": row["chunk_id"],
+            "item_id": item_id,
+            "version_id": row["version_id"],
+            "embedding_dimensions": len(vector),
+            "embedding_vector": json.dumps(vector),
+            "content_hash": row["content_hash"],
+            "embedding_input_hash": f"test-input-{item_id}",
+            "visibility": row["visibility"],
+        },
     )
 
 
@@ -173,6 +272,57 @@ async def test_public_knowledge_ask_endpoint_keeps_requester_safe_fallback(test_
     assert payload["display_message"] == "AI-ответы отключены. Ниже показаны результаты поиска по базе знаний."
     assert payload["retrieval_results"][0]["item"]["slug"] == "ask-api-vpn"
     assert "score_parts" not in payload["retrieval_results"][0]
+
+
+@pytest.mark.asyncio
+async def test_public_knowledge_ask_applies_audience_rules_before_vector_retrieval_projection(test_client, test_engine) -> None:
+    requester_login = "ask-audience-it"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _seed_requester_identity(session, login=requester_login, department_code="it")
+        finance = await _seed_requester_identity(session, login="ask-audience-finance", department_code="finance")
+        visible = await _published_item(
+            session,
+            slug="it-ask-vector-visible",
+            title="Ask vector audience visible",
+            body="Ask vector marker visible body.",
+        )
+        hidden = await _published_item(
+            session,
+            slug="finance-ask-vector-scoped",
+            title="Ask vector audience Finance scoped",
+            body="Ask vector marker finance body.",
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id="rule-ask-vector-finance-hidden",
+                subject_type="item",
+                subject_id=hidden["item_id"],
+                target_type="department",
+                target_id=finance["department_id"],
+                effect="allow",
+                status="active",
+            )
+        )
+        await _insert_first_chunk_embedding(session, item_id=visible["item_id"], vector=[0.4, 0.6])
+        await _insert_first_chunk_embedding(session, item_id=hidden["item_id"], vector=[0.99, 0.01])
+        await _enable_vector_retrieval(session)
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/knowledge/ask",
+        headers={"Authorization": f"Bearer test-ui-user:{requester_login}"},
+        json={"query": "semantic-only-ask-vector", "query_vector": [1.0, 0.0], "surface": "requester_portal"},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    slugs = {result["item"]["slug"] for result in payload["retrieval_results"]}
+    assert "it-ask-vector-visible" in slugs
+    assert "finance-ask-vector-scoped" not in slugs
+    assert "Finance scoped" not in str(payload)
+    assert "finance body" not in str(payload)
 
 
 @pytest.mark.asyncio

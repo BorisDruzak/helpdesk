@@ -361,10 +361,15 @@ async def handle_web_knowledge_search(request: web.Request) -> web.Response:
 
 async def _handle_knowledge_ask_response(request: web.Request, *, force_role: str | None = None) -> web.Response:
     try:
-        _actor_id, actor_role = _actor(request)
+        actor_id, actor_role = _actor(request)
         role = force_role or actor_role
         payload = await _json_payload(request)
         async with get_session() as session:
+            effective_audience = await EffectiveIdentityService(session).resolve_person_audience(
+                person_id=None,
+                actor_id=actor_id,
+                actor_role=role,
+            )
             result = await KnowledgeAskService(session, transport=_get_ask_transport(request)).ask(
                 query=payload.get("query"),
                 actor_role=role,
@@ -372,6 +377,7 @@ async def _handle_knowledge_ask_response(request: web.Request, *, force_role: st
                 session_id=payload.get("session_id"),
                 limit=payload.get("limit"),
                 query_vector=_safe_query_vector(payload.get("query_vector")),
+                effective_audience=effective_audience,
             )
             await session.commit()
         return web.json_response({"status": "ok", **result})
@@ -401,10 +407,15 @@ async def handle_web_knowledge_ask_preview(request: web.Request) -> web.Response
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_retrieve(request: web.Request) -> web.Response:
-    _actor_id, role = _actor(request)
+    actor_id, role = _actor(request)
     try:
         payload = await _json_payload(request)
         async with get_session() as session:
+            effective_audience = await EffectiveIdentityService(session).resolve_person_audience(
+                person_id=None,
+                actor_id=actor_id,
+                actor_role=role,
+            )
             result = await KnowledgeRetrievalService(session, transport=_get_retrieval_transport(request)).retrieve(
                 query=payload.get("query"),
                 actor_role=role,
@@ -415,6 +426,7 @@ async def handle_web_knowledge_retrieve(request: web.Request) -> web.Response:
                 session_id=payload.get("session_id"),
                 limit=payload.get("limit"),
                 query_vector=_safe_query_vector(payload.get("query_vector")),
+                effective_audience=effective_audience,
             )
             await session.commit()
         return web.json_response({"status": "ok", **result, "display_message": "Retrieval выполнен"})
