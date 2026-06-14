@@ -1,6 +1,6 @@
 # Registry Visibility Foundation
 
-Status: active foundation contract. Phase 0 recorded the architecture, Phase 1 added the effective identity/audience read model, Phase 2 added Registry audience-group backend APIs, the first Phase 3 UI slice added prompt-free Registry dialogs plus an audience-group editor, and Phase 5 has started the Knowledge audience-rule backend slice with the read-only access decision service plus schema/model foundation.
+Status: active foundation contract. Phase 0 recorded the architecture, Phase 1 added the effective identity/audience read model, Phase 2 added Registry audience-group backend APIs, Phase 3 added prompt-free Registry dialogs plus an audience-group editor, Phase 4 hardened registration/account-session flows, Phase 5 closed the backend Knowledge audience-rule enforcement slice, Phase 6 added the Knowledge Studio visibility selector, and Phase 7 is adding live signoff harness/evidence.
 
 The foundation connects Registry identity, account sessions, audience groups and Knowledge visibility. It extends the current Registry Management Center and Knowledge Platform; it does not replace either one.
 
@@ -238,6 +238,8 @@ Phase-level implementation must include focused tests for:
 - Knowledge requester allowed/denied decisions;
 - no hidden article title/summary/chunk leakage in search, suggestions, portal, graph, vector/RAG and diagnostics;
 - admin explain route authorization and redaction.
+
+`scripts/registry_visibility_live_smoke.py` is the Phase 7 repeatable HTTP/DB smoke for confirmed binding, verified other-account, registration-pending, revoked-session, support suggestions and account-session Knowledge audience checks. Its sanitized report is useful evidence, but it explicitly does not replace the final real-agent UIA/browser requirement.
 
 Live evidence must cover a real agent account gate, registration pending, confirmed binding, verified other account, revoked session/binding and requester/support/admin Knowledge visibility.
 
