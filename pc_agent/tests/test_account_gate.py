@@ -171,6 +171,16 @@ def test_main_window_builds_absolute_browser_pairing_url():
     )
 
 
+def test_main_window_browser_pairing_url_uses_https_stand_origin_for_legacy_api_url():
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="http://192.168.100.17:8666/api"))
+
+    assert (
+        window._browser_pairing_url("/app/device/login?pairing_id=pair-1")
+        == "https://192.168.100.17:9443/app/device/login?pairing_id=pair-1"
+    )
+
+
 @pytest.mark.asyncio
 async def test_main_window_browser_login_pairing_polls_and_saves_session(monkeypatch):
     opened_urls: list[str] = []

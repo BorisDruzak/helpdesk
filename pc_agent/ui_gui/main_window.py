@@ -8,6 +8,7 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import Set, Optional, Dict, Any
+from urllib.parse import urlsplit, urlunsplit
 import aiohttp
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout,
@@ -39,6 +40,35 @@ from pc_agent.core.account_session import (
 from pc_agent.core.user_profile import UserProfileManager
 from pc_agent.remote_assist.runtime_host import create_remote_assist_thread
 from pc_agent.version import AGENT_VERSION
+
+
+_LOCAL_BROWSER_HOSTS = {"localhost", "127.0.0.1", "::1"}
+_LEGACY_HTTP_SERVER_PORT = 8666
+_PILOT_HTTPS_PROXY_PORT = 9443
+
+
+def _browser_netloc(hostname: str, port: int | None) -> str:
+    host = str(hostname or "").strip()
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    return f"{host}:{port}" if port else host
+
+
+def _normalize_browser_handoff_origin(url: str) -> str:
+    parsed = urlsplit(str(url or "").strip())
+    if parsed.scheme == "http" and parsed.port == _LEGACY_HTTP_SERVER_PORT:
+        hostname = parsed.hostname or ""
+        if hostname and hostname.lower() not in _LOCAL_BROWSER_HOSTS:
+            return urlunsplit(
+                (
+                    "https",
+                    _browser_netloc(hostname, _PILOT_HTTPS_PROXY_PORT),
+                    parsed.path,
+                    parsed.query,
+                    parsed.fragment,
+                )
+            )
+    return url
 
 
 def gui_soft_shadows_enabled() -> bool:
@@ -1506,10 +1536,11 @@ class MainWindow(QMainWindow):
     def _browser_pairing_url(self, browser_url: str) -> str:
         browser_url = str(browser_url or "").strip()
         if browser_url.startswith(("http://", "https://")):
-            return browser_url
+            return _normalize_browser_handoff_origin(browser_url)
         base_url = str(getattr(self.chat_panel.ticket_client, "base_url", "") or "").rstrip("/")
         if base_url.endswith("/api"):
             base_url = base_url[:-4]
+        base_url = _normalize_browser_handoff_origin(base_url)
         if browser_url.startswith("/"):
             return f"{base_url}{browser_url}" if base_url else browser_url
         return browser_url
