@@ -1,0 +1,10 @@
+{
+  "noHorizontalScroll": true,
+  "panelTextHasNoMojibake": true,
+  "panelVisible": true,
+  "saveVisibleInViewport": true,
+  "viewport": {
+    "height": 1080,
+    "width": 1920
+  }
+}

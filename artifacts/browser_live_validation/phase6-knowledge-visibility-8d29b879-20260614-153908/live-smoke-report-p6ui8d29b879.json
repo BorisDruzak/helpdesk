@@ -1,0 +1,66 @@
+{
+  "base_url": "https://192.168.100.17:9443",
+  "checks": {
+    "admin_explain_denied": {
+      "allowed": false,
+      "reason_code": "audience_rule_not_matched",
+      "status": "passed"
+    },
+    "service_requester_finance_search": {
+      "slugs": [
+        "phase5-finance-p6ui8d29b879"
+      ],
+      "status": "passed"
+    },
+    "service_requester_it_ask": {
+      "slugs": [
+        "phase5-it-p6ui8d29b879"
+      ],
+      "status": "passed"
+    },
+    "service_requester_it_hidden_ask": {
+      "slugs": [],
+      "status": "passed"
+    },
+    "service_requester_it_hidden_search": {
+      "slugs": [],
+      "status": "passed"
+    },
+    "service_requester_it_hidden_suggest": {
+      "slugs": [],
+      "status": "passed"
+    },
+    "service_requester_it_search": {
+      "slugs": [
+        "phase5-it-p6ui8d29b879"
+      ],
+      "status": "passed"
+    },
+    "service_requester_it_suggest": {
+      "slugs": [
+        "phase5-it-p6ui8d29b879"
+      ],
+      "status": "passed"
+    },
+    "support_ticket_suggestions": {
+      "article_ids": [
+        "phase5-it-p6ui8d29b879",
+        "phase5-public-p6ui8d29b879",
+        "phase5-support-internal-p6ui8d29b879"
+      ],
+      "status": "passed"
+    }
+  },
+  "commit": null,
+  "created": {
+    "finance_slug": "phase5-finance-p6ui8d29b879",
+    "internal_slug": "phase5-support-internal-p6ui8d29b879",
+    "it_slug": "phase5-it-p6ui8d29b879",
+    "public_slug": "phase5-public-p6ui8d29b879",
+    "ticket_code": "T-000698",
+    "ticket_id": "92372268-507a-4f11-a633-c0039c4dba68"
+  },
+  "marker": "phase5 knowledge audience p6ui8d29b879",
+  "run_id": "p6ui8d29b879",
+  "status": "passed"
+}

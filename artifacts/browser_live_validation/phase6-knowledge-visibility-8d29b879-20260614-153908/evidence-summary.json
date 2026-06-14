@@ -1,0 +1,26 @@
+﻿{
+    "status":  "passed",
+    "commit":  "8d29b879517a3f4c408d420314eb9878666c16a1",
+    "base_url":  "https://192.168.100.17:9443/admin",
+    "route":  "/app/admin/knowledge/studio",
+    "evidence_dir":  "artifacts\\browser_live_validation\\phase6-knowledge-visibility-8d29b879-20260614-153908",
+    "checks":  [
+                   "1366x768 Studio visibility panel rendered",
+                   "department_tree picker add control rendered and estimated audience",
+                   "save success for persisted item audience rule",
+                   "reopen loaded persisted rule and reason",
+                   "1920x1080 layout no horizontal scroll and save action visible",
+                   "console warnings/errors empty",
+                   "remote live anti-leak smoke passed after UI save"
+               ],
+    "key_files":  [
+                      "studio-1366-metadata.png",
+                      "studio-1366-it-after-add-department-tree.png",
+                      "studio-1366-it-save-success.png",
+                      "studio-1366-it-reopen.png",
+                      "studio-1920-it-reopen.png",
+                      "studio-layout-state.json",
+                      "studio-console-warnings-errors.json",
+                      "live-smoke-report-p6ui8d29b879.json"
+                  ]
+}
