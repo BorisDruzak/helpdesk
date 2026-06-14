@@ -96,7 +96,7 @@ Effective audience should include:
 - role;
 - service/offering targeting facts when a Knowledge request includes service context.
 
-Audience expansion must be deterministic and side-effect-free. Knowledge rules treat `target_type=department` as an exact current-department match; subtree/path matching is explicit through `target_type=department_tree`. Preview endpoints may count expanded people and warnings, but must not mutate state.
+Audience expansion must be deterministic and side-effect-free. For `registry_audience_group_members`, `member_type=department` with `include_children=false` matches only the person's current primary department; `member_type=department` with `include_children=true` is an intentional compatibility alias for `member_type=department_tree` and matches the department path/subtree. Knowledge rules keep a stricter contract: `target_type=department` is an exact current-department match, and subtree/path matching is explicit through `target_type=department_tree`. Preview endpoints may count expanded people and warnings, but must not mutate state.
 
 ## Planned Schema
 

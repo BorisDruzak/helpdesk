@@ -177,6 +177,110 @@ async def test_linked_ui_login_resolves_registry_person_department_path_and_acce
 
 
 @pytest.mark.asyncio
+async def test_audience_group_department_include_children_matches_department_tree_contract(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    actor_id = "department-tree-alias@example.test"
+
+    async with session_maker() as session:
+        parent = RegistryDepartment(
+            department_id=str(uuid.uuid4()),
+            code="contract-parent",
+            name="Contract Parent",
+            status="active",
+            source="manual",
+        )
+        child = RegistryDepartment(
+            department_id=str(uuid.uuid4()),
+            code="contract-child",
+            name="Contract Child",
+            parent_department_id=parent.department_id,
+            status="active",
+            source="manual",
+        )
+        person = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Department Child Member",
+            email=actor_id,
+            department_id=child.department_id,
+            source="manual",
+            status="active",
+        )
+        department_alias_group = RegistryAudienceGroup(
+            audience_group_id=str(uuid.uuid4()),
+            code="department_include_children_alias",
+            name="Department Include Children Alias",
+            status="active",
+            source="manual",
+        )
+        department_exact_group = RegistryAudienceGroup(
+            audience_group_id=str(uuid.uuid4()),
+            code="department_exact_parent",
+            name="Department Exact Parent",
+            status="active",
+            source="manual",
+        )
+        department_tree_group = RegistryAudienceGroup(
+            audience_group_id=str(uuid.uuid4()),
+            code="department_tree_parent",
+            name="Department Tree Parent",
+            status="active",
+            source="manual",
+        )
+        session.add_all(
+            [
+                parent,
+                child,
+                person,
+                UiUser(user_login=actor_id, password_hash="test", actor_role="user", is_active=True),
+                RegistryPersonIdentity(
+                    person_id=person.person_id,
+                    provider="ui_login",
+                    identifier=actor_id,
+                    normalized_identifier=actor_id.lower(),
+                    verified=True,
+                    source="admin_manual",
+                ),
+                department_alias_group,
+                department_exact_group,
+                department_tree_group,
+            ]
+        )
+        await session.flush()
+        session.add_all(
+            [
+                RegistryAudienceGroupMember(
+                    audience_group_id=department_alias_group.audience_group_id,
+                    member_type="department",
+                    member_id=parent.department_id,
+                    include_children=True,
+                    source="manual",
+                ),
+                RegistryAudienceGroupMember(
+                    audience_group_id=department_exact_group.audience_group_id,
+                    member_type="department",
+                    member_id=parent.department_id,
+                    include_children=False,
+                    source="manual",
+                ),
+                RegistryAudienceGroupMember(
+                    audience_group_id=department_tree_group.audience_group_id,
+                    member_type="department_tree",
+                    member_id=parent.department_id,
+                    source="manual",
+                ),
+            ]
+        )
+
+        payload = (await EffectiveIdentityService(session).resolve_actor_identity(actor_id, "user")).to_dict()
+
+    assert [item["code"] for item in payload["department_path"]] == ["contract-parent", "contract-child"]
+    assert [item["code"] for item in payload["audience_groups"]] == [
+        "department_include_children_alias",
+        "department_tree_parent",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_unlinked_ui_user_returns_quality_warning_without_person(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     actor_id = "unlinked.identity@example.test"

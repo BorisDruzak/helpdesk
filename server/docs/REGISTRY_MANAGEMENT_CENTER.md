@@ -214,7 +214,7 @@ Preview parses and validates the file without mutating state. It returns `previe
 - `departments`: create/update departments and block duplicate department codes.
 - `device_inventory_mapping`: update registry asset location/department and non-binding lifecycle inventory card fields for existing devices. It does not import `device_user_bindings`, `assigned_person_id`, `person_id`, `source_binding_id` or account-session state.
 - `audience_groups`: create/update audience group code, name, description, source and status with duplicate code detection.
-- `audience_group_members`: create/update group members by group code/id, member type, member id and include-children flag. It imports audience targeting membership only; it does not grant RBAC permissions or create Registry people/bindings.
+- `audience_group_members`: create/update group members by group code/id, member type, member id and include-children flag. For `member_type=department`, `include_children=true` intentionally imports the same subtree/path targeting contract as `member_type=department_tree`; with `include_children=false` it targets only the direct primary department. It imports audience targeting membership only; it does not grant RBAC permissions or create Registry people/bindings.
 
 ## Quality Remediation Contract
 

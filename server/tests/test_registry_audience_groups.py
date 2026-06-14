@@ -204,6 +204,52 @@ async def test_audience_group_preview_reports_empty_unknown_archived_and_broad_r
 
 
 @pytest.mark.asyncio
+async def test_audience_group_department_include_children_preview_matches_department_tree_contract(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        seeded = await _seed_audience_people(session)
+
+    create_response = await test_client.post(
+        "/api/web/admin/registry/audience-groups",
+        headers=ADMIN_HEADERS,
+        json={"code": "department_alias_preview", "name": "Department Alias Preview"},
+    )
+    assert create_response.status == 200
+    group = (await create_response.json())["data"]["group"]
+
+    members_response = await test_client.put(
+        f"/api/web/admin/registry/audience-groups/{group['audience_group_id']}/members",
+        headers=ADMIN_HEADERS,
+        json={
+            "members": [
+                {
+                    "member_type": "department",
+                    "member_id": seeded["finance_department_id"],
+                    "include_children": True,
+                }
+            ],
+        },
+    )
+    assert members_response.status == 200
+    members = (await members_response.json())["data"]["members"]
+    assert [(item["member_type"], item["include_children"]) for item in members] == [("department", True)]
+
+    preview_response = await test_client.post(
+        f"/api/web/admin/registry/audience-groups/{group['audience_group_id']}/preview-members",
+        headers=ADMIN_HEADERS,
+        json={},
+    )
+    assert preview_response.status == 200
+    preview = (await preview_response.json())["data"]["preview"]
+    assert preview["person_count"] == 2
+    assert {item["person_id"] for item in preview["people"]} == {
+        seeded["finance_person_id"],
+        seeded["payroll_person_id"],
+    }
+    assert preview["warnings"] == []
+
+
+@pytest.mark.asyncio
 async def test_audience_group_archive_excludes_default_list_and_does_not_grant_rbac(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     actor_id = "audience-only@example.test"
