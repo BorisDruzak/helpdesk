@@ -1,0 +1,85 @@
+{
+  "base_url": "https://192.168.100.17:9443",
+  "checks": {
+    "admin_explain_denied": {
+      "allowed": false,
+      "reason_code": "audience_rule_not_matched",
+      "status": "passed"
+    },
+    "service_requester_finance_audience_group_hidden_search": {
+      "audience_groups": [],
+      "slugs": [],
+      "status": "passed"
+    },
+    "service_requester_finance_search": {
+      "slugs": [
+        "phase5-finance-20260614151254"
+      ],
+      "status": "passed"
+    },
+    "service_requester_it_ask": {
+      "slugs": [
+        "phase5-it-20260614151254"
+      ],
+      "status": "passed"
+    },
+    "service_requester_it_audience_group_search": {
+      "audience_groups": [
+        {
+          "audience_group_id": "f8981673-3c27-4bae-ae7f-295360457c1c",
+          "code": "phase5_ag_20260614151254"
+        }
+      ],
+      "slugs": [
+        "phase5-audience-group-20260614151254"
+      ],
+      "status": "passed"
+    },
+    "service_requester_it_hidden_ask": {
+      "slugs": [],
+      "status": "passed"
+    },
+    "service_requester_it_hidden_search": {
+      "slugs": [],
+      "status": "passed"
+    },
+    "service_requester_it_hidden_suggest": {
+      "slugs": [],
+      "status": "passed"
+    },
+    "service_requester_it_search": {
+      "slugs": [
+        "phase5-it-20260614151254"
+      ],
+      "status": "passed"
+    },
+    "service_requester_it_suggest": {
+      "slugs": [
+        "phase5-it-20260614151254"
+      ],
+      "status": "passed"
+    },
+    "support_ticket_suggestions": {
+      "article_ids": [
+        "phase5-audience-group-20260614151254",
+        "phase5-it-20260614151254",
+        "phase5-public-20260614151254",
+        "phase5-support-internal-20260614151254"
+      ],
+      "status": "passed"
+    }
+  },
+  "commit": null,
+  "created": {
+    "audience_group_slug": "phase5-audience-group-20260614151254",
+    "finance_slug": "phase5-finance-20260614151254",
+    "internal_slug": "phase5-support-internal-20260614151254",
+    "it_slug": "phase5-it-20260614151254",
+    "public_slug": "phase5-public-20260614151254",
+    "ticket_code": "T-000708",
+    "ticket_id": "c0e6c603-ee34-4ee5-aa40-9020adc8c9d2"
+  },
+  "marker": "phase5 knowledge audience 20260614151254",
+  "run_id": "20260614151254",
+  "status": "passed"
+}
