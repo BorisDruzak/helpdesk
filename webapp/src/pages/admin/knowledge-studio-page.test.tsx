@@ -378,6 +378,47 @@ function setupFetch() {
     if (url === "/api/web/knowledge/items/item-2/applicability" && !init?.method) {
       return jsonResponse({ status: "ok", rules: [] });
     }
+    if (url === "/api/service-catalog/current" && !init?.method) {
+      return jsonResponse({
+        catalog_version: "test",
+        services: [
+          {
+            service_code: "network",
+            title: "Сеть и VPN",
+            offerings: [
+              {
+                offering_code: "vpn_issue",
+                full_code: "network.vpn_issue",
+                title: "VPN не подключается",
+                request_template_key: "network",
+              },
+            ],
+          },
+          {
+            service_code: "workplace",
+            title: "Рабочее место",
+            offerings: [],
+          },
+        ],
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1/bindings" && !init?.method) {
+      return jsonResponse({ status: "ok", bindings: [] });
+    }
+    if (url === "/api/web/knowledge/items/item-2/bindings" && !init?.method) {
+      return jsonResponse({ status: "ok", bindings: [] });
+    }
+    if (url === "/api/web/knowledge/items/item-1/bindings" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({
+        status: "ok",
+        binding: {
+          binding_id: "binding-created",
+          item_id: "item-1",
+          ...body,
+        },
+      });
+    }
     if (url.startsWith("/api/web/admin/knowledge/audience-rules?") && !init?.method) {
       return jsonResponse({
         status: "success",
@@ -546,7 +587,7 @@ describe("AdminKnowledgeStudioPage", () => {
   });
 
   it("loads a simplified article editor with one save action and no review or manual segmentation in the default UI", async () => {
-    setupFetch();
+    const fetchMock = setupFetch();
     renderStudio();
 
     expect(await screen.findByRole("heading", { name: "Студия знаний" })).toBeInTheDocument();
@@ -575,6 +616,32 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByText(/Это базовый уровень доступа/)).toBeInTheDocument();
     expect(screen.getByText("Где показывать статью")).toBeInTheDocument();
     expect(screen.getByText(/Определяет, в каких сценариях система будет предлагать статью/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Связь с обращениями" })).toBeInTheDocument();
+    expect(screen.getByText("Связанные услуги / формы обращения")).toBeInTheDocument();
+    expect(screen.getByText("Где статья будет предложена")).toBeInTheDocument();
+    expect(screen.getByLabelText("Сервис")).toHaveValue("");
+    await screen.findByRole("option", { name: /Сеть и VPN/ });
+    fireEvent.change(screen.getByLabelText("Сервис"), { target: { value: "network" } });
+    await screen.findByRole("option", { name: /VPN не подключается/ });
+    fireEvent.change(screen.getByLabelText("Услуга"), { target: { value: "network.vpn_issue" } });
+    await waitFor(() => expect(screen.getByLabelText("Шаблон обращения")).toHaveValue("network"));
+    expect(screen.getAllByText("Форма обращения до отправки").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Карточка тикета поддержки").length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить связь с обращениями" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/items/item-1/bindings",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const bindingCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items/item-1/bindings" && call[1]?.method === "POST");
+    expect(JSON.parse(String(bindingCall?.[1]?.body))).toMatchObject({
+      service_code: "network",
+      offering_code: "network.vpn_issue",
+      request_template_key: "network",
+      metadata: { surfaces: expect.arrayContaining(["requester_pre_submit", "support_ticket_workspace"]) },
+    });
+    expect(document.body.textContent ?? "").not.toContain("binding-created");
     const visibilityPanel = await screen.findByTestId("article-visibility-panel");
     expect(within(visibilityPanel).getByRole("heading", { name: "Аудитория" })).toBeInTheDocument();
     expect(within(visibilityPanel).getByText(/Аудитория уточняет доступ внутри выбранной видимости/)).toBeInTheDocument();

@@ -48,6 +48,31 @@ export type KnowledgeItem = {
   updated_at?: string | null;
 };
 
+export type KnowledgeItemBinding = {
+  binding_id?: string | null;
+  item_id: string;
+  service_code?: string | null;
+  offering_code?: string | null;
+  request_template_key?: string | null;
+  ticket_type?: string | null;
+  reporting_category?: string | null;
+  device_class?: string | null;
+  os_family?: string | null;
+  symptom_code?: string | null;
+  error_code?: string | null;
+  priority?: string | null;
+  queue_code?: string | null;
+  weight?: number | null;
+  created_at?: string | null;
+  created_by?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type KnowledgeItemBindingInput = Omit<
+  Partial<KnowledgeItemBinding>,
+  "binding_id" | "created_at" | "created_by" | "item_id"
+>;
+
 export type KnowledgeAudienceRuleTargetType =
   | "person"
   | "department"
@@ -413,6 +438,8 @@ export type KnowledgeMetadataBundle = {
 
 export type KnowledgeServiceCatalogOption = {
   label: string;
+  offering_code?: string | null;
+  request_template_key?: string | null;
   service_code?: string | null;
   type: "service" | "offering";
   value: string;
@@ -1013,6 +1040,22 @@ export async function createKnowledgeItem(payload: Record<string, unknown>) {
   return readJson<{ item: KnowledgeItem }>(response, "Не удалось создать черновик знания");
 }
 
+export async function fetchKnowledgeItemBindings(itemIdOrSlug: string): Promise<KnowledgeItemBinding[]> {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/bindings`, { credentials: "same-origin" });
+  const payload = await readJson<{ bindings: KnowledgeItemBinding[] }>(response, "Не удалось загрузить связи статьи с обращениями");
+  return payload.bindings ?? [];
+}
+
+export async function addKnowledgeItemBinding(itemIdOrSlug: string, payload: KnowledgeItemBindingInput) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/bindings`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ binding: KnowledgeItemBinding }>(response, "Не удалось сохранить связь статьи с обращениями");
+}
+
 export async function fetchKnowledgeAudienceRules(subjectType: "item" | "space", subjectId: string): Promise<KnowledgeAudienceRule[]> {
   const params = new URLSearchParams({
     subject_type: subjectType,
@@ -1337,7 +1380,12 @@ export async function fetchKnowledgeServiceCatalogOptions(): Promise<KnowledgeSe
     services?: Array<{
       service_code: string;
       title?: string | null;
-      offerings?: Array<{ full_code?: string | null; offering_code?: string | null; title?: string | null }>;
+      offerings?: Array<{
+        full_code?: string | null;
+        offering_code?: string | null;
+        request_template_key?: string | null;
+        title?: string | null;
+      }>;
     }>;
   }>(response, "Не удалось загрузить каталог услуг");
   return (payload.services ?? []).flatMap((service) => [
@@ -1348,12 +1396,17 @@ export async function fetchKnowledgeServiceCatalogOptions(): Promise<KnowledgeSe
       value: service.service_code,
     },
     ...(service.offerings ?? [])
-      .map((offering) => ({
-        label: offering.title ? `${offering.title} · ${offering.full_code ?? offering.offering_code ?? ""}` : offering.full_code ?? offering.offering_code ?? "",
-        service_code: service.service_code,
-        type: "offering" as const,
-        value: offering.full_code ?? offering.offering_code ?? "",
-      }))
+      .map((offering) => {
+        const value = offering.full_code ?? offering.offering_code ?? "";
+        return {
+          label: offering.title ? `${offering.title} · ${value}` : value,
+          offering_code: offering.offering_code ?? value,
+          request_template_key: offering.request_template_key ?? null,
+          service_code: service.service_code,
+          type: "offering" as const,
+          value,
+        };
+      })
       .filter((option) => option.value),
   ]);
 }

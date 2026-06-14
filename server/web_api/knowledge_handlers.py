@@ -199,6 +199,29 @@ async def handle_web_knowledge_item_detail(request: web.Request) -> web.Response
 
 
 @require_auth("admin", "support", "auditor")
+async def handle_web_knowledge_item_bindings(request: web.Request) -> web.Response:
+    actor_id, role = _actor(request)
+    item_id = str(request.match_info.get("item_id_or_slug") or "")
+    try:
+        async with get_session() as session:
+            repo = KnowledgeRepo(session)
+            if request.method == "GET":
+                await repo.get_item(item_id, actor_role=role)
+                bindings = await repo.list_bindings(item_id)
+                return web.json_response({"status": "ok", "bindings": bindings})
+            if role not in {"admin", "support"}:
+                return web.json_response({"status": "error", "error": "forbidden"}, status=403)
+            payload = await _json_payload(request)
+            binding = await repo.add_binding(item_id, payload, actor_id=actor_id, actor_role=role)
+            await session.commit()
+            return web.json_response({"status": "ok", "binding": binding})
+    except KnowledgeValidationError as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "not_found", "details": str(exc)}, status=404)
+
+
+@require_auth("admin", "support", "auditor")
 async def handle_web_knowledge_item_versions(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
     item_id = str(request.match_info.get("item_id_or_slug") or "")

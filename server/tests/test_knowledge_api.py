@@ -397,6 +397,65 @@ async def test_knowledge_api_admin_crud_and_requester_safe_suggest(test_client) 
 
 
 @pytest.mark.asyncio
+async def test_knowledge_api_adds_helpdesk_binding_to_existing_article(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "binding-api", "title": "Binding API", "visibility": "requester", "lifecycle_status": "active"},
+    )
+    assert space_resp.status == 200
+
+    item_resp = await test_client.post(
+        "/api/web/knowledge/items",
+        headers=_admin_headers(),
+        json={
+            "space_code": "binding-api",
+            "slug": "binding-api-article",
+            "item_type": "article",
+            "title": "Binding API article",
+            "summary": "Draft before binding",
+            "visibility": "requester",
+            "owner_actor_id": "owner",
+            "reviewer_actor_id": "reviewer",
+        },
+    )
+    assert item_resp.status == 200
+    item = (await item_resp.json())["item"]
+
+    binding_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/bindings",
+        headers=_admin_headers(),
+        json={
+            "service_code": "network",
+            "offering_code": "network.vpn_issue",
+            "request_template_key": "network",
+            "ticket_type": "incident",
+            "metadata": {"surfaces": ["requester_pre_submit", "support_ticket_workspace"]},
+        },
+    )
+    assert binding_resp.status == 200, await binding_resp.text()
+    payload = await binding_resp.json()
+    assert payload["binding"]["service_code"] == "network"
+    assert payload["binding"]["offering_code"] == "network.vpn_issue"
+    assert payload["binding"]["request_template_key"] == "network"
+    assert payload["binding"]["metadata"]["surfaces"] == ["requester_pre_submit", "support_ticket_workspace"]
+
+    list_resp = await test_client.get(
+        f"/api/web/knowledge/items/{item['item_id']}/bindings",
+        headers=_admin_headers(),
+    )
+    assert list_resp.status == 200
+    list_payload = await list_resp.json()
+    assert [binding["request_template_key"] for binding in list_payload["bindings"]] == ["network"]
+
+    requester_list_resp = await test_client.get(
+        f"/api/web/knowledge/items/{item['item_id']}/bindings",
+        headers=_requester_headers(),
+    )
+    assert requester_list_resp.status in {401, 403}
+
+
+@pytest.mark.asyncio
 async def test_knowledge_authoring_studio_records_editor_history(test_client) -> None:
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",

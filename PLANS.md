@@ -2,7 +2,7 @@
 
 Status, 2026-06-15: Registry Visibility Foundation is ready enough to start Knowledge Platform refactor. Registry now separates departments, locations, access groups, audience groups, roles, people, identities and account sessions. Knowledge visibility has backend foundation through `knowledge_audience_rules`, `KnowledgeAccessService`, `KnowledgeAudienceRulesService`, admin preview/explain APIs, and effective-audience enforcement in search/suggest/Ask/RAG/retrieval paths. The next work is not another card-level UI pass. The next work is a product refactor of Knowledge authoring: simplify article creation, introduce Knowledge Sections as policy containers, connect articles to Registry audiences and Help Desk context, and hide internal mechanics such as review, manual segmentation and version plumbing from the normal editor.
 
-Execution checkpoint, 2026-06-15: K0 registry preflight was closed by commit `baa0fe8e` before this Knowledge refactor slice. K1 is closed locally and on the live stand: `/app/admin/knowledge/sections` is the product route for `Разделы базы знаний`; it reuses existing `GET|POST /api/web/knowledge/spaces` for section policy and existing `subject_type=space` audience-rule APIs for default section audience preview/save, stores article counts/allowed types/exposure flags/length recommendation without a schema migration, and shows per-list audience summaries without raw target ids. K2 initial local slice is now implemented: `/app/admin/knowledge/studio` hides default review/version/segmentation mechanics, exposes one primary `Сохранить статью` action, creates a version and publishes it in one flow, keeps rollback inside `История версий`, adds Russian field explanations and uses backend reviewer autofill when `KNOWLEDGE_REVIEW_REQUIRED` is false. Remaining K2 gap: live browser evidence for create/edit/save article on the stand.
+Execution checkpoint, 2026-06-15: K0 registry preflight was closed by commit `baa0fe8e` before this Knowledge refactor slice. K1 is closed locally and on the live stand: `/app/admin/knowledge/sections` is the product route for `Разделы базы знаний`; it reuses existing `GET|POST /api/web/knowledge/spaces` for section policy and existing `subject_type=space` audience-rule APIs for default section audience preview/save, stores article counts/allowed types/exposure flags/length recommendation without a schema migration, and shows per-list audience summaries without raw target ids. K2 is closed locally and on the live stand: `/app/admin/knowledge/studio` hides default review/version/segmentation mechanics, exposes one primary `Сохранить статью` action, creates a version and publishes it in one flow, keeps rollback inside `История версий`, adds Russian field explanations and uses backend reviewer autofill when `KNOWLEDGE_REVIEW_REQUIRED` is false; live evidence is recorded in `artifacts/browser_live_validation/knowledge-studio-k2-10a7a5ef-simplified-save-1781475681396/summary.json`. K3 local slice is implemented: Studio settings now includes `Связь с обращениями`, `GET|POST /api/web/knowledge/items/{item_id_or_slug}/bindings` links an existing article to service/offering/request-template context, and suggestion tests prove service/offering/template context is applied before audience projection. Remaining K3 gap: deploy current commit and collect browser/live evidence for the binding UI on the stand.
 
 ### Problem Statement
 
@@ -744,15 +744,16 @@ Exit bar:
 
 ### Phase K3 — Help Desk binding
 
-- Add “Где показывать статью” / “Связь с обращениями”.
-- Link article to service/offering/request template.
-- Ensure suggestions use service/request-template context plus audience filtering.
-- Add UI preview: “где статья будет предложена”.
+- Done, local slice: add “Где показывать статью” / “Связь с обращениями” to the Studio settings step.
+- Done, local slice: link an existing article to service/offering/request template through `GET|POST /api/web/knowledge/items/{item_id_or_slug}/bindings`.
+- Done, local contract: suggestions use service/offering/request-template context before audience filtering/projection (`test_knowledge_suggestions_use_binding_context_before_audience_projection`).
+- Done, local slice: add UI preview “где статья будет предложена” and store selected display surfaces in binding metadata.
+- Pending: collect browser/live evidence on `https://192.168.100.17:9443/admin` after deploy.
 
 Exit bar:
 
-- article appears in relevant request/support contexts;
-- denied audience does not see requester-safe content.
+- Pending live evidence: article appears in relevant request/support contexts.
+- Done, automated: denied audience does not see requester-safe content.
 
 ### Phase K4 — RAG readiness
 

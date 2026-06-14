@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import { ArticleHelpDeskBindingPanel } from "../article-helpdesk-binding-panel";
 import { ArticleMetadataPanel } from "../article-metadata-panel";
 import { ArticleVisibilityPanel } from "../article-visibility-panel";
 import type { KnowledgeItem, KnowledgeSpace } from "../api";
@@ -85,6 +86,8 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">AI/RAG по политике раздела</span>
         </div>
       </section>
+
+      <ArticleHelpDeskBindingPanel item={selectedItem} visibility={draft.visibility} />
 
       <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <summary className="cursor-pointer text-sm font-semibold text-slate-800">Advanced / служебные поля</summary>

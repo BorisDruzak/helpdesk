@@ -3,9 +3,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.models import KnowledgeAudienceRule
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.operations_service import KnowledgeOperationsService
 from knowledge.suggestion_service import KnowledgeSuggestionService
+from registry.audience_contracts import EffectiveAudience
 
 
 @pytest.mark.asyncio
@@ -51,6 +53,131 @@ async def test_knowledge_suggestions_return_requester_safe_bound_items(test_engi
     assert suggestions["suggestions"][0]["slug"] == "vpn-reconnect"
     assert suggestions["suggestions"][0]["reason"]
     assert "source_ticket_id" not in suggestions["suggestions"][0]
+
+
+@pytest.mark.asyncio
+async def test_knowledge_suggestions_use_binding_context_before_audience_projection(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = KnowledgeRepo(session)
+        await repo.upsert_space({"code": "service-context", "title": "Service Context", "visibility": "requester", "lifecycle_status": "active"}, actor_id="admin")
+        visible = await repo.create_item_draft(
+            {
+                "space_code": "service-context",
+                "slug": "it-context-visible",
+                "item_type": "article",
+                "title": "IT onboarding visible",
+                "summary": "Visible through Service Catalog context",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        visible_version = await repo.create_version(
+            visible["item_id"],
+            {"title": "IT onboarding visible", "body_format": "markdown", "body": "Visible body."},
+            actor_id="support",
+        )
+        await repo.add_binding(
+            visible["item_id"],
+            {"service_code": "network", "offering_code": "network.vpn_issue", "request_template_key": "network"},
+            actor_id="support",
+        )
+        await repo.publish_item(visible["item_id"], visible_version["version_id"], actor_id="admin")
+
+        hidden = await repo.create_item_draft(
+            {
+                "space_code": "service-context",
+                "slug": "finance-context-hidden",
+                "item_type": "article",
+                "title": "Finance hidden context article",
+                "summary": "Hidden finance context",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        hidden_version = await repo.create_version(
+            hidden["item_id"],
+            {"title": "Finance hidden context article", "body_format": "markdown", "body": "Hidden finance body."},
+            actor_id="support",
+        )
+        await repo.add_binding(
+            hidden["item_id"],
+            {"service_code": "network", "offering_code": "network.vpn_issue", "request_template_key": "network"},
+            actor_id="support",
+        )
+        await repo.publish_item(hidden["item_id"], hidden_version["version_id"], actor_id="admin")
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id="rule-finance-context-hidden",
+                subject_type="item",
+                subject_id=hidden["item_id"],
+                target_type="department",
+                target_id="finance",
+                effect="allow",
+                status="active",
+            )
+        )
+
+        internal = await repo.create_item_draft(
+            {
+                "space_code": "service-context",
+                "slug": "support-context-runbook",
+                "item_type": "runbook",
+                "title": "Support context runbook",
+                "summary": "Internal support context",
+                "visibility": "support_internal",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        internal_version = await repo.create_version(
+            internal["item_id"],
+            {"title": "Support context runbook", "body_format": "markdown", "body": "Internal runbook body."},
+            actor_id="support",
+        )
+        await repo.add_binding(
+            internal["item_id"],
+            {"service_code": "network", "offering_code": "network.vpn_issue", "request_template_key": "network"},
+            actor_id="support",
+        )
+        await repo.publish_item(internal["item_id"], internal_version["version_id"], actor_id="admin")
+        await session.commit()
+
+    context = {
+        "service_code": "network",
+        "offering_code": "network.vpn_issue",
+        "request_template_key": "network",
+        "query": "text that does not match article content",
+        "surface": "requester_portal",
+    }
+    requester_audience = EffectiveAudience(
+        person_id="person-it",
+        actor_id="it@example.test",
+        actor_role="requester",
+        department_path=[{"department_id": "it", "code": "it"}],
+    )
+    async with session_maker() as session:
+        requester_result = await KnowledgeSuggestionService(session).suggest(
+            context,
+            actor_role="requester",
+            effective_audience=requester_audience,
+        )
+        support_result = await KnowledgeSuggestionService(session).suggest(
+            {**context, "surface": "support_workspace"},
+            actor_role="support",
+        )
+
+    requester_slugs = {item["slug"] for item in requester_result["suggestions"]}
+    assert "it-context-visible" in requester_slugs
+    assert "finance-context-hidden" not in requester_slugs
+    assert "Finance hidden context article" not in str(requester_result)
+    assert "Hidden finance body" not in str(requester_result)
+    assert "support-context-runbook" in {item["slug"] for item in support_result["suggestions"]}
 
 
 @pytest.mark.asyncio
