@@ -26,7 +26,7 @@ Knowledge vNext расширяет существующую Knowledge Platform, 
 - Knowledge Search владеет keyword/full-text search, optional vector search, hybrid retrieval, rerank и explainable scoring.
 - Knowledge AI владеет provider registry, model profiles, policies, audit, OpenRouter integration и optional tasks: embeddings, rewrite, classify, markup, rerank, answer.
 - Knowledge Portal владеет requester-facing reading, search, Ask и feedback.
-- Knowledge Authoring владеет article editing, manual markup, templates, version diff, comments и review.
+- Knowledge Authoring владеет simplified article editing, templates, version diff/history and default save-to-publish flow. Manual markup, comments and review remain compatibility/advanced governance surfaces, not the normal authoring path.
 - Knowledge Graph владеет graph node/edge editing, saved layout и AI proposals.
 - Knowledge Ops владеет quality, gaps, review, rollout, indexing, provider health, governed metadata model и Observer v2 visibility.
 - Helpdesk Adapter владеет ticket suggestions, deflection, ticket links, passport-to-draft и support runbook integration.
@@ -45,7 +45,7 @@ Initial Phase 1 foundation lives in `server/ai/`, `server/web_api/knowledge_ai_h
 
 Initial Phase 2 search foundation lives in `server/knowledge/search_settings_service.py`, `server/knowledge/search_service.py`, `server/web_api/knowledge_handlers.py` and `webapp/src/features/knowledge/search-settings-page.tsx`. Migration `111` adds global `knowledge_search_settings` with AI/vector/rerank/rewrite/RAG switches disabled by default. `GET|POST /api/web/knowledge/search-settings` is admin-configurable with Russian `display_message` responses, `POST /api/web/knowledge/search` gives authenticated web consumers the same ACL-filtered baseline search, and public `POST /api/knowledge/search` remains backward-compatible while exposing `search_mode`, `effective_mode` and `ai_used`. React `/app/admin/knowledge/search-settings` shows Russian controls for mode, AI-off toggles, weights and limits. The first implementation deliberately runs without AI providers, embeddings or vector indexes.
 
-Initial Phase 3 segmentation foundation lives in `server/knowledge/segmentation_service.py`, `server/web_api/knowledge_handlers.py`, `webapp/src/features/knowledge/article-segmentation-panel.tsx` and `/app/admin/knowledge/studio`. Migration `112` adds article segments, segmentation profiles and segmentation jobs. Manual/auto segments improve AI-off search, revalidation remaps segment offsets across immutable versions, AI proposals remain draft until approve/reject, and segment index sync writes active retrieval segments into `knowledge_chunks`.
+Initial Phase 3 segmentation foundation lives in `server/knowledge/segmentation_service.py`, `server/web_api/knowledge_handlers.py`, `webapp/src/features/knowledge/article-segmentation-panel.tsx` and `/app/admin/knowledge/studio`. Migration `112` adds article segments, segmentation profiles and segmentation jobs. Manual/auto segments improve AI-off search, revalidation remaps segment offsets across immutable versions, AI proposals remain draft until approve/reject, and segment index sync writes active retrieval segments into `knowledge_chunks`. In the simplified Studio, manual segmentation is hidden by default; the normal authoring path states that searchable fragments are created automatically from headings and article text, while manual/auto tuning is opened only through advanced tools.
 
 Initial Phase 4 indexing foundation lives in `server/knowledge/embedding_service.py`, `server/knowledge/vector_search_service.py`, migration `113`, `server/web_api/knowledge_handlers.py` and `webapp/src/features/knowledge/indexing-page.tsx`. `knowledge_chunk_embeddings` and `knowledge_index_jobs` store optional embedding state and observable jobs without requiring pgvector in local/test DB. `/app/admin/knowledge/indexing` exposes Russian status, disabled/failure counters, jobs and item reindex. Web APIs never return raw vectors; vector-disabled settings, AI policy blocks and provider failures fall back safely and emit Observer-visible audit rows. Indexing orchestration now supports item, segment, space and bounded full-run scopes through dedicated reindex endpoints plus generic `POST /api/web/knowledge/indexing/jobs`. Vector retrieval has an ACL-first JSONB cosine fallback for `vector_enabled` searches with a supplied numeric `query_vector`; pgvector acceleration and rerank remain later hybrid retrieval work.
 
@@ -63,14 +63,14 @@ The target model is scenario-first, not endpoint/table-first:
 
 - `/app/admin/knowledge` is the Knowledge Operations Center.
 - `/app/admin/knowledge/sections` is the Knowledge Section Constructor for section policy, default visibility, import/publication/RAG flags and section-level audience rules.
-- `/app/admin/knowledge/studio` is the Authoring Workbench.
+- `/app/admin/knowledge/studio` is the simplified article editor and default authoring surface.
 - `/app/admin/knowledge/graph` is the Graph Workbench.
 - `/app/admin/knowledge/import` is the Import Wizard.
 - `/app/admin/knowledge/search-settings` is Retrieval Settings.
 - `/app/admin/knowledge/ai` is AI Governance Settings.
 - `/app/admin/knowledge/indexing` is Indexing Operations.
 
-Studio must use TipTap/ProseMirror for the primary article editor. The editor must support inline visual states for manual markup, AI proposals, auto segmentation, diff, validation and stale/remapped segments. A plain textarea is not acceptable as the final authoring surface.
+Studio must use TipTap/ProseMirror for the primary article editor. The default screen must expose one primary `Сохранить статью` action and hide review workflow, manual version selection, manual segmentation and advanced metadata. TipTap can still show inline visual states for markup/diff/validation, but manual markup, auto segmentation and stale/remapped segment tuning belong under advanced tools. A plain textarea is not acceptable as the final authoring surface.
 
 Sections are the product-facing name for existing `KnowledgeSpace` rows. Internal API and database names can remain `space`, but visible UI should say `Раздел базы знаний`. The section constructor currently reuses `GET|POST /api/web/knowledge/spaces`, `GET /api/web/knowledge/items` for article counts and `GET /api/web/admin/knowledge/audience-rules?subject_type=space` plus selected-section preview/save for audience rules; allowed material types are stored in `KnowledgeSpace.allowed_item_types`, while requester portal/support workspace exposure and article length recommendation are product flags in `KnowledgeSpace.metadata`. Future backend extensions should preserve this contract or migrate it explicitly.
 

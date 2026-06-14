@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { ArticleMetadataPanel } from "../article-metadata-panel";
 import { ArticleVisibilityPanel } from "../article-visibility-panel";
 import type { KnowledgeItem, KnowledgeSpace } from "../api";
@@ -11,51 +13,81 @@ type EditorMetadataStepProps = {
 };
 
 export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces }: EditorMetadataStepProps) {
+  const [showAdvancedMetadata, setShowAdvancedMetadata] = useState(false);
+
   return (
     <div className="space-y-4">
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div>
-          <h3 className="text-base font-semibold text-slate-950">Куда попадёт статья</h3>
-          <p className="mt-1 text-sm text-slate-500">Задайте пространство, тип материала и аудиторию до настройки таксономии и свойств.</p>
+          <h3 className="text-base font-semibold text-slate-950">Основные настройки статьи</h3>
+          <p className="mt-1 text-sm text-slate-500">Задайте раздел, тип материала и базовый доступ перед сохранением статьи.</p>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          <label className="text-sm font-medium">
-            Пространство статьи
-            <select className={fieldClass} value={draft.space_code} onChange={(event) => onDraftChange({ space_code: event.target.value })}>
-              {spaces.map((space) => (
-                <option key={space.space_id} value={space.code}>
-                  {space.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium">
-            Тип материала
-            <select className={fieldClass} value={draft.item_type} onChange={(event) => onDraftChange({ item_type: event.target.value })}>
-              {itemTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm font-medium">
-            Кому видна статья
-            <select className={fieldClass} value={draft.visibility} onChange={(event) => onDraftChange({ visibility: event.target.value })}>
-              {visibilityOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div>
+            <label className="text-sm font-medium">
+              Раздел базы знаний
+              <select className={fieldClass} value={draft.space_code} onChange={(event) => onDraftChange({ space_code: event.target.value })}>
+                {spaces.map((space) => (
+                  <option key={space.space_id} value={space.code}>
+                    {space.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Раздел определяет, где хранится статья и какие политики применяются по умолчанию: видимость, аудитория, RAG, импорт и допустимые типы материалов.
+            </p>
+          </div>
+          <div>
+            <label className="text-sm font-medium">
+              Тип материала
+              <select className={fieldClass} value={draft.item_type} onChange={(event) => onDraftChange({ item_type: event.target.value })}>
+                {itemTypeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Тип определяет шаблон и смысл статьи. Для обычной инструкции выбирайте «Инструкция / статья».
+            </p>
+          </div>
+          <div>
+            <label className="text-sm font-medium">
+              Кому доступна статья
+              <select className={fieldClass} value={draft.visibility} onChange={(event) => onDraftChange({ visibility: event.target.value })}>
+                {visibilityOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Это базовый уровень доступа. Он ограничивает, кто вообще может получить статью: заявитель, агент, поддержка, администратор.
+            </p>
+          </div>
         </div>
       </section>
 
       <ArticleVisibilityPanel canManage={Boolean(selectedItem)} coarseVisibility={draft.visibility} item={selectedItem} />
 
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <h3 className="text-base font-semibold text-slate-950">Где показывать статью</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Определяет, в каких сценариях система будет предлагать статью: портал заявителя, форма обращения, карточка тикета, агент, AI/RAG.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-700">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Портал заявителя</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Форма обращения</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Карточка тикета</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">AI/RAG по политике раздела</span>
+        </div>
+      </section>
+
       <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <summary className="cursor-pointer text-sm font-semibold text-slate-800">Advanced / служебные поля статьи</summary>
+        <summary className="cursor-pointer text-sm font-semibold text-slate-800">Advanced / служебные поля</summary>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           <label className="text-sm font-medium">
             Адрес статьи
@@ -69,13 +101,24 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
             Владелец
             <input className={fieldClass} value={draft.owner_actor_id} onChange={(event) => onDraftChange({ owner_actor_id: event.target.value })} />
           </label>
-          <label className="text-sm font-medium">
-            Ревьюер
-            <input className={fieldClass} value={draft.reviewer_actor_id} onChange={(event) => onDraftChange({ reviewer_actor_id: event.target.value })} />
-          </label>
         </div>
       </details>
-      <ArticleMetadataPanel embedded item={selectedItem} canManage={Boolean(selectedItem)} />
+      <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-slate-950">Расширенные метаданные</h3>
+            <p className="mt-1 text-sm text-slate-500">Таксономия, свойства, применимость и качество доступны для тонкой настройки.</p>
+          </div>
+          <button
+            className="rounded-pill border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+            onClick={() => setShowAdvancedMetadata((current) => !current)}
+            type="button"
+          >
+            {showAdvancedMetadata ? "Скрыть advanced" : "Показать advanced"}
+          </button>
+        </div>
+        {showAdvancedMetadata ? <div className="mt-4"><ArticleMetadataPanel embedded item={selectedItem} canManage={Boolean(selectedItem)} /></div> : null}
+      </section>
     </div>
   );
 }

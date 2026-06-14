@@ -32,12 +32,8 @@ export function EditorTextStep({
           <input className={fieldClass} value={draft.title} onChange={(event) => onDraftChange({ title: event.target.value })} />
         </label>
         <label className="text-sm font-medium">
-          Краткое описание версии
+          Краткое описание
           <input className={fieldClass} value={draft.summary} onChange={(event) => onDraftChange({ summary: event.target.value })} />
-        </label>
-        <label className="text-sm font-medium">
-          Описание изменения
-          <input className={fieldClass} value={draft.change_summary} onChange={(event) => onDraftChange({ change_summary: event.target.value })} />
         </label>
       </div>
 
@@ -47,7 +43,7 @@ export function EditorTextStep({
           {editorSelection.text ? (
             <Badge tone="info">Выделено {editorSelection.text.length} симв.</Badge>
           ) : (
-            <Badge tone="neutral">Выделение доступно для разметки</Badge>
+            <Badge tone="neutral">Автофрагменты</Badge>
           )}
         </div>
         <KnowledgeTipTapEditor

@@ -152,7 +152,7 @@ export function ArticleVisibilityPanel({ canManage = true, coarseVisibility, ite
   if (!item) {
     return (
       <section className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid="article-visibility-panel">
-        <h3 className="text-base font-semibold text-slate-950">Область видимости</h3>
+        <h3 className="text-base font-semibold text-slate-950">Аудитория</h3>
         <p className="mt-1 text-sm text-slate-500">Выберите статью, чтобы настроить аудиторию без raw JSON.</p>
       </section>
     );
@@ -162,8 +162,10 @@ export function ArticleVisibilityPanel({ canManage = true, coarseVisibility, ite
     <section className="rounded-lg border border-slate-200 bg-white p-4" data-testid="article-visibility-panel">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-slate-950">Область видимости</h3>
-          <p className="mt-1 text-sm text-slate-500">Кто увидит статью после публикации: грубая видимость плюс правила аудитории из Registry.</p>
+          <h3 className="text-base font-semibold text-slate-950">Аудитория</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Аудитория уточняет доступ внутри выбранной видимости: подразделения, группы, локации, сервисы или отдельные сотрудники.
+          </p>
         </div>
         <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
           {visibilityLabels[coarseVisibility] ?? coarseVisibility}

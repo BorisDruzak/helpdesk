@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.repos.knowledge_repo import KnowledgeRepo
+from knowledge.contracts import KnowledgePublicationBlockedError
 
 
 @pytest.mark.asyncio
@@ -71,7 +72,7 @@ async def test_knowledge_repo_creates_space_item_version_publish_and_bindings(te
 
 
 @pytest.mark.asyncio
-async def test_knowledge_repo_does_not_publish_without_version_or_reviewer(test_engine) -> None:
+async def test_knowledge_repo_requires_version_but_not_manual_reviewer(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         repo = KnowledgeRepo(session)
@@ -86,9 +87,27 @@ async def test_knowledge_repo_does_not_publish_without_version_or_reviewer(test_
                 "item_type": "runbook",
                 "title": "Internal runbook",
                 "visibility": "support_internal",
+                "owner_actor_id": "support-owner",
+            },
+            actor_id="support-test",
+        )
+        version = await repo.create_version(
+            item["item_id"],
+            {
+                "title": "Internal runbook",
+                "summary": "Operational steps",
+                "body_format": "markdown",
+                "body": "## Steps\n\nRun the documented support procedure.",
             },
             actor_id="support-test",
         )
 
-        with pytest.raises(ValueError, match="reviewer"):
+        with pytest.raises(KnowledgePublicationBlockedError) as exc:
             await repo.publish_item(item["item_id"], None, actor_id="support-test")
+        assert {blocker["code"] for blocker in exc.value.blockers} == {"missing_version"}
+
+        published = await repo.publish_item(item["item_id"], version["version_id"], actor_id="support-test")
+        await session.commit()
+
+    assert published["status"] == "published"
+    assert published["reviewer_actor_id"] == "support-test"

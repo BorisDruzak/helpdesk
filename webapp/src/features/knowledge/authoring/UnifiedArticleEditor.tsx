@@ -6,7 +6,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import type { KnowledgeEditorHistory, KnowledgeItem, KnowledgeItemVersion, KnowledgeSpace, KnowledgeTemplate, KnowledgeVersionDiffCacheEntry } from "../api";
 import { EditorHistoryStep } from "./EditorHistoryStep";
 import { EditorMetadataStep } from "./EditorMetadataStep";
-import { EditorPublishStep } from "./EditorPublishStep";
 import { EditorSegmentsStep } from "./EditorSegmentsStep";
 import { EditorTextStep } from "./EditorTextStep";
 import { EditorValidationStep } from "./EditorValidationStep";
@@ -28,9 +27,7 @@ type UnifiedArticleEditorProps = {
   draft: EditorDraft;
   editorHistory?: KnowledgeEditorHistory;
   editorSelection: EditorSelectionSnapshot;
-  isCreatingVersion: boolean;
   latestDiffCache: KnowledgeVersionDiffCacheEntry | null;
-  onCreateVersion: () => void;
   onDraftChange: (patch: Partial<EditorDraft>) => void;
   onInsertBlock: (block: string) => void;
   onInsertTemplate: (sections: string[]) => void;
@@ -48,9 +45,7 @@ export function UnifiedArticleEditor({
   draft,
   editorHistory,
   editorSelection,
-  isCreatingVersion,
   latestDiffCache,
-  onCreateVersion,
   onDraftChange,
   onInsertBlock,
   onInsertTemplate,
@@ -62,6 +57,7 @@ export function UnifiedArticleEditor({
   validationChecks,
 }: UnifiedArticleEditorProps) {
   const [activeView, setActiveView] = useEditorView();
+  const [advancedToolsOpen, setAdvancedToolsOpen] = useState(false);
 
   const selectedStatus = statusLabel(selectedItem?.status);
   const currentSpace = spaces.find((space) => space.code === draft.space_code || space.space_id === selectedItem?.space_id);
@@ -71,8 +67,8 @@ export function UnifiedArticleEditor({
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle>Единый редактор статьи</CardTitle>
-            <CardDescription>Одна рабочая область: текст, метаданные, разметка, preview, diff и публикационный pipeline.</CardDescription>
+            <CardTitle>Редактор статьи</CardTitle>
+            <CardDescription>Одна рабочая область для текста, основных настроек, предпросмотра и проверки перед сохранением.</CardDescription>
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge tone="warning">{selectedStatus}</Badge>
               <Badge tone="neutral">{visibilityLabel(draft.visibility)}</Badge>
@@ -80,21 +76,16 @@ export function UnifiedArticleEditor({
               {currentSpace ? <Badge tone="info">{currentSpace.title}</Badge> : null}
             </div>
           </div>
-          <div className="flex max-w-xs flex-col items-end gap-1 text-right">
-            <Button disabled={!selectedItem || isCreatingVersion} onClick={onCreateVersion}>
-              Создать версию
-            </Button>
-            <p className="text-xs leading-5 text-slate-500">
-              Фиксирует текущий текст и метаданные как новую версию статьи.
-            </p>
+          <div className="max-w-xs text-right text-xs leading-5 text-slate-500">
+            Версии, фрагменты поиска и публикация создаются автоматически при сохранении статьи.
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="grid gap-2 lg:grid-cols-5" aria-label="Шаги редактора статьи">
+        <div className="grid gap-2 lg:grid-cols-3" aria-label="Шаги редактора статьи">
           {editorSteps.map((step, index) => {
-            const active = activeView === step.value || (activeView === "preview" && step.value === "text") || (activeView === "history" && step.value === "publish");
+            const active = activeView === step.value || (activeView === "preview" && step.value === "text");
             return (
               <button
                 className={`rounded-pill border px-4 py-2 text-left text-sm font-semibold transition-colors ${
@@ -110,6 +101,10 @@ export function UnifiedArticleEditor({
           })}
         </div>
 
+        <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          Поисковые фрагменты создаются автоматически по заголовкам и тексту статьи.
+        </p>
+
         <div className="flex flex-wrap gap-2" aria-label="Быстрые вкладки редактора">
           {editorQuickViews.map((view) => (
             <button
@@ -124,6 +119,32 @@ export function UnifiedArticleEditor({
             </button>
           ))}
         </div>
+
+        <section className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Расширенные инструменты</p>
+              <p className="mt-1 text-xs leading-5 text-slate-500">Для длинных документов и точной настройки поиска.</p>
+            </div>
+            <button
+              className="rounded-pill border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+              onClick={() => setAdvancedToolsOpen((current) => !current)}
+              type="button"
+            >
+              {advancedToolsOpen ? "Скрыть advanced" : "Показать advanced"}
+            </button>
+          </div>
+          {advancedToolsOpen ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button onClick={() => setActiveView("segments")} size="sm" variant={activeView === "segments" ? "primary" : "outline"}>
+                Поисковые фрагменты
+              </Button>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">Авторазметка</span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">Ручная разметка</span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600">Сегменты версии</span>
+            </div>
+          ) : null}
+        </section>
 
         {activeView === "text" ? (
           <EditorTextStep
@@ -160,10 +181,6 @@ export function UnifiedArticleEditor({
 
         {activeView === "validation" ? (
           <EditorValidationStep activeSegmentsCount={activeSegmentsCount} currentDiff={currentDiff} validationChecks={validationChecks} />
-        ) : null}
-
-        {activeView === "publish" ? (
-          <EditorPublishStep selectedItem={selectedItem} selectedVersion={selectedVersion} validationChecks={validationChecks} />
         ) : null}
 
         {activeView === "history" ? (

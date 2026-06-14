@@ -28,7 +28,6 @@ import {
   fetchKnowledgeSpaces,
   fetchKnowledgeTemplates,
   publishKnowledgeItem,
-  submitKnowledgeReviewAction,
 } from "./api";
 
 const domainTabs = [
@@ -66,8 +65,7 @@ export function KnowledgeAuthoringStudioPage() {
   const [draft, setDraft] = useState<EditorDraft>(() => draftFrom(null, null, []));
   const [newDraft, setNewDraft] = useState<NewItemDraft>(() => emptyNewDraft());
   const [newDraftOpen, setNewDraftOpen] = useState(false);
-  const [publishNote, setPublishNote] = useState("");
-  const [reviewNote, setReviewNote] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
   const [editorSelection, setEditorSelection] = useState<EditorSelectionSnapshot>({ from: 0, text: "", to: 0 });
 
   const spacesQuery = useQuery({ queryKey: ["knowledge-spaces"], queryFn: fetchKnowledgeSpaces });
@@ -144,8 +142,7 @@ export function KnowledgeAuthoringStudioPage() {
     setSelectedItemId(selectedItem.item_id);
     setSelectedVersionId(defaultVersion?.version_id ?? "");
     setDraft(draftFrom(selectedItem, defaultVersion, spaces));
-    setPublishNote("");
-    setReviewNote("");
+    setSaveMessage("");
     setEditorSelection({ from: 0, text: "", to: 0 });
   }, [latestVersion?.version_id, selectedItem?.current_version_id, selectedItem?.item_id, spacesKey]);
 
@@ -174,21 +171,27 @@ export function KnowledgeAuthoringStudioPage() {
       setNewDraftOpen(false);
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", result.item.item_id] });
-      queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
     },
   });
 
-  const createVersionMutation = useMutation({
-    mutationFn: () =>
-      createKnowledgeVersion(selectedItem?.item_id ?? "", {
+  const saveArticleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedItem?.item_id) {
+        throw new Error("Выберите статью перед сохранением");
+      }
+      const versionResult = await createKnowledgeVersion(selectedItem.item_id, {
         body: draft.body,
         body_format: draft.body_format,
-        change_summary: draft.change_summary,
+        change_summary: draft.change_summary.trim() || "Сохранено из упрощённой Studio",
         summary: draft.summary,
         title: draft.title,
-      }),
+      });
+      const publishResult = await publishKnowledgeItem(selectedItem.item_id, versionResult.version.version_id);
+      return { item: publishResult.item, version: versionResult.version };
+    },
     onSuccess: (result) => {
       setSelectedVersionId(result.version.version_id);
+      setSaveMessage(`Статья сохранена и опубликована. Текущая версия: v${result.version.version_number}.`);
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-item-versions", selectedItem?.item_id] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", selectedItem?.item_id] });
@@ -196,36 +199,19 @@ export function KnowledgeAuthoringStudioPage() {
     },
   });
 
-  const publishMutation = useMutation({
+  const rollbackMutation = useMutation({
     mutationFn: () =>
-      publishKnowledgeItem(selectedItem?.item_id ?? "", selectedVersionId || selectedVersion?.version_id || "", {
-        review_note: publishNote.trim() || null,
-      }),
+      publishKnowledgeItem(selectedItem?.item_id ?? "", selectedVersionId || selectedVersion?.version_id || ""),
     onSuccess: () => {
+      setSaveMessage("");
       queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-item-versions", selectedItem?.item_id] });
       queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", selectedItem?.item_id] });
     },
   });
 
-  const reviewActionMutation = useMutation({
-    mutationFn: (action: string) =>
-      submitKnowledgeReviewAction(selectedItem?.item_id ?? "", {
-        action,
-        note: reviewNote.trim() || null,
-      }),
-    onSuccess: (_result, action) => {
-      if (action === "archive" || action === "retire") {
-        setSelectedItemId("");
-      }
-      queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
-      queryClient.invalidateQueries({ queryKey: ["knowledge-editor-history", selectedItem?.item_id] });
-      queryClient.invalidateQueries({ queryKey: ["knowledge-review-queue"] });
-      queryClient.invalidateQueries({ queryKey: ["knowledge-quality"] });
-    },
-  });
-
   function updateDraft(patch: Partial<EditorDraft>) {
+    setSaveMessage("");
     setDraft((current) => ({ ...current, ...patch }));
   }
 
@@ -251,7 +237,7 @@ export function KnowledgeAuthoringStudioPage() {
         <PageHeading
           eyebrow="Редактор базы знаний"
           title="Студия знаний"
-          description="Единый редактор статьи для текста, метаданных, разметки, проверки и публикации."
+          description="Напишите статью, выберите раздел, аудиторию и места показа, затем сохраните её одним действием."
         />
         <nav className="flex flex-wrap gap-2" aria-label="Разделы базы знаний">
           {domainTabs.map((tab) => (
@@ -269,8 +255,8 @@ export function KnowledgeAuthoringStudioPage() {
       </div>
 
       <div className="flex items-center gap-2 text-sm text-slate-500">
-        <Badge tone="brand">Workbench/Studio</Badge>
-        <span>Первый экран: единый authoring workbench без нижней ленты карточек.</span>
+        <Badge tone="brand">Студия</Badge>
+        <span>Первый экран: список статей, редактор и одно основное сохранение.</span>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)_340px] 2xl:grid-cols-[320px_minmax(0,1fr)_360px]">
@@ -293,9 +279,7 @@ export function KnowledgeAuthoringStudioPage() {
             draft={draft}
             editorHistory={editorHistory}
             editorSelection={editorSelection}
-            isCreatingVersion={createVersionMutation.isPending}
             latestDiffCache={latestDiffCache}
-            onCreateVersion={() => createVersionMutation.mutate()}
             onDraftChange={updateDraft}
             onInsertBlock={insertMarkdownBlock}
             onInsertTemplate={insertTemplate}
@@ -313,17 +297,12 @@ export function KnowledgeAuthoringStudioPage() {
           currentDiff={currentDiff}
           draftVisibility={draft.visibility}
           editorHistory={editorHistory}
-          isPublishing={publishMutation.isPending}
-          isReviewing={reviewActionMutation.isPending}
+          isPublishing={saveArticleMutation.isPending || rollbackMutation.isPending}
           latestDiffCache={latestDiffCache}
-          onPublish={() => publishMutation.mutate()}
-          onPublishNoteChange={setPublishNote}
-          onReviewAction={(action) => reviewActionMutation.mutate(action)}
-          onReviewNoteChange={setReviewNote}
-          onRollback={() => publishMutation.mutate()}
+          onPublish={() => saveArticleMutation.mutate()}
+          onRollback={() => rollbackMutation.mutate()}
           onSelectVersion={selectVersion}
-          publishNote={publishNote}
-          reviewNote={reviewNote}
+          saveMessage={saveMessage}
           selectedItem={selectedItem ?? null}
           selectedVersion={selectedVersion ?? null}
           selectedVersionId={selectedVersionId}
@@ -333,7 +312,7 @@ export function KnowledgeAuthoringStudioPage() {
       </div>
 
       <p className="text-sm text-slate-500">
-        Важно: metadata, review, diff, history и segments доступны как шаги редактора и inspector, а не отдельные карточки под страницей.
+        Важно: версии, публикация и поисковые фрагменты создаются автоматически при сохранении; advanced-инструменты не мешают обычному сценарию.
       </p>
 
       <NewDraftDrawer

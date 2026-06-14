@@ -2,7 +2,7 @@
 
 Status, 2026-06-15: Registry Visibility Foundation is ready enough to start Knowledge Platform refactor. Registry now separates departments, locations, access groups, audience groups, roles, people, identities and account sessions. Knowledge visibility has backend foundation through `knowledge_audience_rules`, `KnowledgeAccessService`, `KnowledgeAudienceRulesService`, admin preview/explain APIs, and effective-audience enforcement in search/suggest/Ask/RAG/retrieval paths. The next work is not another card-level UI pass. The next work is a product refactor of Knowledge authoring: simplify article creation, introduce Knowledge Sections as policy containers, connect articles to Registry audiences and Help Desk context, and hide internal mechanics such as review, manual segmentation and version plumbing from the normal editor.
 
-Execution checkpoint, 2026-06-15: K0 registry preflight was closed by commit `baa0fe8e` before this Knowledge refactor slice. K1 initial slice is now in implementation: `/app/admin/knowledge/sections` is the product route for `Разделы базы знаний`; it reuses existing `GET|POST /api/web/knowledge/spaces` for section policy and existing `subject_type=space` audience-rule APIs for default section audience preview/save. K1 follow-up now adds article counts from existing knowledge items, allowed material types, portal/support exposure flags and article length recommendation without a schema migration by using existing `KnowledgeSpace.allowed_item_types` and `KnowledgeSpace.metadata`. K1 also shows per-list audience summaries from `subject_type=space` rules without exposing raw target ids. Remaining K1 gap: final live browser evidence for create/edit/default-audience.
+Execution checkpoint, 2026-06-15: K0 registry preflight was closed by commit `baa0fe8e` before this Knowledge refactor slice. K1 is closed locally and on the live stand: `/app/admin/knowledge/sections` is the product route for `Разделы базы знаний`; it reuses existing `GET|POST /api/web/knowledge/spaces` for section policy and existing `subject_type=space` audience-rule APIs for default section audience preview/save, stores article counts/allowed types/exposure flags/length recommendation without a schema migration, and shows per-list audience summaries without raw target ids. K2 initial local slice is now implemented: `/app/admin/knowledge/studio` hides default review/version/segmentation mechanics, exposes one primary `Сохранить статью` action, creates a version and publishes it in one flow, keeps rollback inside `История версий`, adds Russian field explanations and uses backend reviewer autofill when `KNOWLEDGE_REVIEW_REQUIRED` is false. Remaining K2 gap: live browser evidence for create/edit/save article on the stand.
 
 ### Problem Statement
 
@@ -716,7 +716,7 @@ Exit bar:
 - Done, follow-up slice: show section article counts, allowed material type controls, requester-portal/support-workspace exposure controls and article length recommendation; save them through existing `KnowledgeSpace.allowed_item_types` and `KnowledgeSpace.metadata`.
 - Done, follow-up slice: explain policy inheritance in the section audience panel: “Статьи наследуют правила раздела. Можно задать отдельные правила для конкретной статьи.”
 - Done, follow-up slice: show per-list audience summaries from `subject_type=space` rules, including estimated matched people when Registry lookups resolve, while hiding raw target ids in the normal list.
-- Remaining: final live browser evidence for create/edit/default-audience.
+- Done, final live browser evidence for create/edit/default-audience: `artifacts/browser_live_validation/knowledge-sections-k1-9127b545-audience-summary-1781470964426/summary.json`.
 
 Exit bar:
 
@@ -726,12 +726,13 @@ Exit bar:
 
 ### Phase K2 — Simplified Knowledge Studio
 
-- Remove review from default UI.
-- Replace create-version/publish-version with one `Сохранить статью`.
-- Hide manual segmentation and advanced metadata by default.
-- Add basic settings explanations.
-- Add section/type/visibility/audience/helpdesk binding in a single editor.
-- Add version history drawer.
+- Done, initial local slice: remove review actions, reviewer checklist and review comments from default Studio UI.
+- Done, initial local slice: replace visible create-version/publish-version actions with one `Сохранить статью` button that creates a new version and publishes that exact version.
+- Done, initial local slice: backend publication no longer fails a normal item only because reviewer is empty when `KNOWLEDGE_REVIEW_REQUIRED=false`; missing reviewer is autofilled from current actor or `servicedesk`.
+- Done, initial local slice: hide manual segmentation and advanced metadata by default; manual/auto segment controls remain behind advanced tools.
+- Done, initial local slice: add Russian field explanations for section, material type, coarse visibility, audience and display surfaces.
+- Done, initial local slice: keep rollback/version selection inside `История версий` drawer with explicit confirmation.
+- Remaining: live browser evidence for creating/editing/saving an article through the simplified Studio.
 
 Exit bar:
 

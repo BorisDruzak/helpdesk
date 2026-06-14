@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
+import os
 import re
 from typing import Any
 import uuid
@@ -56,6 +57,15 @@ def _list(value: Any) -> list[Any]:
 
 def _dict(value: Any) -> dict[str, Any]:
     return deepcopy(value) if isinstance(value, dict) else {}
+
+
+def _knowledge_review_required() -> bool:
+    raw = str(os.getenv("KNOWLEDGE_REVIEW_REQUIRED", "false") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _default_reviewer_actor_id(actor_id: str | None) -> str:
+    return _text(actor_id) or "servicedesk"
 
 
 def _validate_choice(value: str, choices: tuple[str, ...], field_name: str) -> str:
@@ -443,6 +453,8 @@ class KnowledgeRepo:
         ).scalar_one_or_none()
         if version is None:
             raise ValueError("knowledge version not found")
+        if not _knowledge_review_required() and not item.reviewer_actor_id:
+            item.reviewer_actor_id = _default_reviewer_actor_id(actor_id)
         blockers = self._publish_blockers(
             item,
             version,
@@ -488,7 +500,8 @@ class KnowledgeRepo:
                     "suggested_fix": "Create or select a knowledge version before publishing.",
                 }
             )
-        if not item.reviewer_actor_id:
+            return blockers
+        if _knowledge_review_required() and not item.reviewer_actor_id:
             blockers.append(
                 {
                     "severity": "error",

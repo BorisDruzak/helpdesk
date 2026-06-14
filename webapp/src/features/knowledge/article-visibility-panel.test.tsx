@@ -319,7 +319,7 @@ describe("ArticleVisibilityPanel", () => {
     renderPanel();
 
     const panel = await screen.findByTestId("article-visibility-panel");
-    expect(within(panel).getByRole("heading", { name: "Область видимости" })).toBeInTheDocument();
+    expect(within(panel).getByRole("heading", { name: "Аудитория" })).toBeInTheDocument();
     expect(within(panel).getByText("Портал заявителя")).toBeInTheDocument();
     await waitFor(() => expect(within(panel).getAllByText("Подразделение: ИТ").length).toBeGreaterThanOrEqual(1));
     expect(within(panel).getByText("Оценка аудитории: 1 человек")).toBeInTheDocument();
@@ -379,7 +379,7 @@ describe("ArticleVisibilityPanel", () => {
     const panel = await screen.findByTestId("article-visibility-panel");
     expect(await within(panel).findByText("Внутренний материал не станет видимым заявителям из-за правил аудитории.")).toBeInTheDocument();
     const visibleText = panel.textContent ?? "";
-    expect(visibleText).toContain("Кто увидит статью");
+    expect(visibleText).toContain("Аудитория уточняет доступ внутри выбранной видимости");
     expect(visibleText).not.toMatch(/\uFFFD|\u0420\u045A|\u0420\u045E|\u0420\u040F|\u0421\u045A|\u0421\u201A|\u0421\u2039|\u0421\u0453|\u0421\u2020|\u0421\u2021|\u0421\u02DC/);
   });
 });

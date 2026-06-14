@@ -540,14 +540,16 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.queryByLabelText("Markdown")).not.toBeInTheDocument();
   });
 
-  it("loads a dedicated product authoring workspace with metadata, editor, preview and publish checklist", async () => {
+  it("loads a simplified article editor with one save action and no review or manual segmentation in the default UI", async () => {
     setupFetch();
     renderStudio();
 
     expect(await screen.findByRole("heading", { name: "Студия знаний" })).toBeInTheDocument();
     expect(screen.getByText("Черновики и статьи")).toBeInTheDocument();
-    expect(screen.getByText("Единый редактор статьи")).toBeInTheDocument();
-    expect(screen.getByText("Инспектор и публикация")).toBeInTheDocument();
+    expect(screen.getByText("Редактор статьи")).toBeInTheDocument();
+    expect(screen.getByText("Сохранение статьи")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Сохранить статью" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "История версий" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /VPN access/ })).toBeInTheDocument();
     const editor = await loadedEditorContent();
     expect(screen.getByLabelText("Заголовок")).toHaveValue("VPN access");
@@ -555,35 +557,42 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.queryByText("Живой предпросмотр")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByText("Живой предпросмотр")).toBeInTheDocument();
-    expect(screen.getByText("Проверка публикации")).toBeInTheDocument();
-    expect(within(screen.getByRole("group", { name: "Проверка публикации" })).getByLabelText("Текст статьи заполнен")).toBeChecked();
-    expect(within(screen.getByRole("group", { name: "Проверка публикации" })).getByLabelText(/Есть сегменты поиска/)).toBeChecked();
+    expect(screen.getByText("Готовность к сохранению")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "Готовность к сохранению" })).getByLabelText("Текст статьи заполнен")).toBeChecked();
 
-    fireEvent.click(screen.getByRole("button", { name: "2. Метаданные" }));
-    expect(screen.getByText("Куда попадёт статья")).toBeInTheDocument();
-    expect(screen.getByLabelText("Пространство статьи")).toHaveValue("it-self-service");
+    fireEvent.click(screen.getByRole("button", { name: "2. Настройки" }));
+    expect(screen.getByText("Основные настройки статьи")).toBeInTheDocument();
+    expect(screen.getByLabelText("Раздел базы знаний")).toHaveValue("it-self-service");
+    expect(screen.getByText(/Раздел определяет, где хранится статья/)).toBeInTheDocument();
     expect(screen.getByLabelText("Тип материала")).toHaveValue("article");
-    expect(screen.getByLabelText("Кому видна статья")).toHaveValue("requester");
+    expect(screen.getByText(/Тип определяет шаблон и смысл статьи/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Кому доступна статья")).toHaveValue("requester");
+    expect(screen.getByText(/Это базовый уровень доступа/)).toBeInTheDocument();
+    expect(screen.getByText("Где показывать статью")).toBeInTheDocument();
+    expect(screen.getByText(/Определяет, в каких сценариях система будет предлагать статью/)).toBeInTheDocument();
     const visibilityPanel = await screen.findByTestId("article-visibility-panel");
-    expect(within(visibilityPanel).getByRole("heading", { name: "Область видимости" })).toBeInTheDocument();
-    expect(within(visibilityPanel).getByText(/Кто увидит статью/)).toBeInTheDocument();
-    expect(screen.getByText("Advanced / служебные поля статьи")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Advanced / служебные поля статьи"));
+    expect(within(visibilityPanel).getByRole("heading", { name: "Аудитория" })).toBeInTheDocument();
+    expect(within(visibilityPanel).getByText(/Аудитория уточняет доступ внутри выбранной видимости/)).toBeInTheDocument();
+    expect(screen.getByText("Advanced / служебные поля")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Advanced / служебные поля"));
     expect(screen.getByLabelText("Адрес статьи")).toHaveValue("vpn-access");
     expect(screen.getByLabelText("Владелец")).toHaveValue("owner");
-    expect(screen.getByLabelText("Ревьюер")).toHaveValue("reviewer");
     expect(screen.getByLabelText("Теги")).toHaveValue("vpn, remote");
-    expect(screen.getByText("Метаданные статьи")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Таксономия" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Свойства" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Применимость" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Качество" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "3. Разметка" }));
-    expect(await screen.findByText("Создать сегмент из выделения редактора")).toBeInTheDocument();
-    expect(screen.getByText("Сегменты версии")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Создать версию" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Опубликовать версию" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Отправить на ревью" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Одобрить" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Добавить комментарий" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Комментарий ревью")).not.toBeInTheDocument();
+    expect(screen.queryByText("Назначен ревьюер")).not.toBeInTheDocument();
+    expect(screen.queryByText("Создать сегмент из выделения редактора")).not.toBeInTheDocument();
+    expect(screen.queryByText("Сегменты версии")).not.toBeInTheDocument();
+    expect(screen.queryByText("Полнотекстовый поиск")).not.toBeInTheDocument();
+    expect(screen.queryByText("Эмбеддинги")).not.toBeInTheDocument();
+    expect(screen.getByText("Поисковые фрагменты создаются автоматически по заголовкам и тексту статьи.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "4. Проверка" }));
+    fireEvent.click(screen.getByRole("button", { name: "3. Проверка" }));
     expect(screen.getByText("Computed checklist")).toBeInTheDocument();
     expect(screen.getByText("Diff текущего draft")).toBeInTheDocument();
 
@@ -591,11 +600,10 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(await screen.findByText("История редактора")).toBeInTheDocument();
     expect(screen.getByText("version_created")).toBeInTheDocument();
     expect(screen.getByText("Publish from Studio")).toBeInTheDocument();
-    expect(screen.getByText("Кэш различий: +2 / -1")).toBeInTheDocument();
+    expect(screen.getAllByText("Кэш различий: +2 / -1").length).toBeGreaterThanOrEqual(1);
 
     const visibleText = document.body.textContent ?? "";
     expect(visibleText).toContain("Редактор базы знаний");
-    expect(visibleText).toContain("единый authoring workbench");
     expect(visibleText).not.toContain("Основные поля статьи");
     expect(visibleText).not.toContain("Ревью и жизненный цикл");
     expect(visibleText).not.toContain("AI-инструменты отключены");
@@ -622,7 +630,7 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(within(explorer).getByText("Прокрутите список, чтобы увидеть все 14 материалов.")).toBeInTheDocument();
   });
 
-  it("inserts a template, creates a version and publishes with checklist payload", async () => {
+  it("inserts a template and saves the article through one create-version plus publish flow", async () => {
     const fetchMock = setupFetch();
     renderStudio();
 
@@ -634,14 +642,11 @@ describe("AdminKnowledgeStudioPage", () => {
     await waitFor(() => expect(editor.textContent ?? "").toContain("Симптом"));
     expect(editor.textContent ?? "").toContain("Решение");
 
-    fireEvent.change(screen.getByLabelText("Краткое описание версии"), {
+    fireEvent.change(screen.getByLabelText("Краткое описание"), {
       target: { value: "Updated requester-safe body" },
     });
-    fireEvent.change(screen.getByLabelText("Описание изменения"), {
-      target: { value: "Добавлен requester-safe раздел решения" },
-    });
 
-    fireEvent.click(screen.getByRole("button", { name: "Создать версию" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить статью" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/knowledge/items/item-1/versions",
@@ -654,19 +659,13 @@ describe("AdminKnowledgeStudioPage", () => {
       summary: "Updated requester-safe body",
       body_format: "markdown",
       body: expect.stringContaining("## Симптом"),
-      change_summary: "Добавлен requester-safe раздел решения",
+      change_summary: "Сохранено из упрощённой Studio",
     });
 
-    const checklist = screen.getByRole("group", { name: "Проверка публикации" });
+    const checklist = screen.getByRole("group", { name: "Готовность к сохранению" });
     expect(within(checklist).getByLabelText("Текст статьи заполнен")).toBeChecked();
     expect(within(checklist).getByLabelText("Есть краткое описание")).toBeChecked();
     expect(within(checklist).getByLabelText(/Безопасная видимость выбрана/)).toBeChecked();
-    expect(within(checklist).getByLabelText("Назначен ревьюер")).toBeChecked();
-    expect(within(checklist).getByLabelText(/Есть сегменты поиска/)).toBeChecked();
-    fireEvent.change(screen.getByLabelText("Комментарий к публикации"), {
-      target: { value: "Готово к порталу" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Опубликовать версию" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -677,11 +676,12 @@ describe("AdminKnowledgeStudioPage", () => {
     const publishCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items/item-1/publish" && call[1]?.method === "POST");
     expect(JSON.parse(String(publishCall?.[1]?.body))).toMatchObject({
       version_id: "ver-2",
-      review_note: "Готово к порталу",
     });
+    expect(JSON.parse(String(publishCall?.[1]?.body))).not.toHaveProperty("review_note");
+    expect(await screen.findByText("Статья сохранена и опубликована. Текущая версия: v2.")).toBeInTheDocument();
   });
 
-  it("creates a new draft, runs review lifecycle actions and rolls back to a selected version", async () => {
+  it("creates a new draft without reviewer fields and keeps rollback inside version history", async () => {
     const fetchMock = setupFetch();
     renderStudio();
 
@@ -690,6 +690,7 @@ describe("AdminKnowledgeStudioPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Новый черновик" }));
     expect(screen.getByRole("dialog", { name: "Новый черновик" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Ревьюер нового черновика")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Новый заголовок"), { target: { value: "Wi-Fi reconnect" } });
     fireEvent.change(screen.getByLabelText("Новый slug"), { target: { value: "wifi-reconnect" } });
     fireEvent.change(screen.getByLabelText("Краткое описание нового черновика"), { target: { value: "How to reconnect corporate Wi-Fi" } });
@@ -710,31 +711,13 @@ describe("AdminKnowledgeStudioPage", () => {
       visibility: "requester",
       item_type: "article",
     });
+    expect(JSON.parse(String(draftCall?.[1]?.body))).toMatchObject({ reviewer_actor_id: null });
 
-    fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
-      target: { value: "Материал готов к проверке" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Отправить на ревью" }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/knowledge/items/item-1/review-action",
-        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
-      ),
-    );
-    const submitReviewCall = fetchMock.mock.calls.find(
-      (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "submit_review",
-    );
-    expect(JSON.parse(String(submitReviewCall?.[1]?.body))).toMatchObject({
-      action: "submit_review",
-      note: "Материал готов к проверке",
-    });
-
-    fireEvent.change(screen.getByLabelText("Версия для сравнения"), { target: { value: "ver-old" } });
-    fireEvent.change(screen.getByLabelText("Комментарий к публикации"), {
-      target: { value: "Откат к стабильной версии" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Откатить к выбранной версии" }));
+    fireEvent.click(screen.getByRole("button", { name: "История версий" }));
+    const historyDrawer = await screen.findByRole("dialog", { name: "История версий" });
+    fireEvent.click(within(historyDrawer).getByRole("button", { name: /v0: VPN access old/ }));
+    fireEvent.click(within(historyDrawer).getByLabelText("Подтвердить восстановление выбранной версии"));
+    fireEvent.click(within(historyDrawer).getByRole("button", { name: "Восстановить выбранную версию" }));
 
     await waitFor(() => {
       const rollbackCall = fetchMock.mock.calls.find(
@@ -742,46 +725,7 @@ describe("AdminKnowledgeStudioPage", () => {
       );
       expect(rollbackCall).toBeDefined();
     });
-
-    fireEvent.click(screen.getByRole("button", { name: "Архивировать / заменить" }));
-    await waitFor(() => {
-      const archiveCall = fetchMock.mock.calls.find(
-        (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "archive",
-      );
-      expect(archiveCall).toBeDefined();
-    });
-  });
-
-  it("runs review comment and approve actions", async () => {
-    const fetchMock = setupFetch();
-    renderStudio();
-
-    await screen.findByRole("heading", { name: "Студия знаний" });
-    await loadedEditorContent();
-
-    fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
-      target: { value: "Reviewer comment" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Добавить комментарий" }));
-    await waitFor(() => {
-      const commentCall = fetchMock.mock.calls.find(
-        (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "comment",
-      );
-      expect(commentCall).toBeDefined();
-      expect(JSON.parse(String(commentCall?.[1]?.body))).toMatchObject({ action: "comment", note: "Reviewer comment" });
-    });
-
-    fireEvent.change(screen.getByLabelText("Комментарий ревью"), {
-      target: { value: "Approved by reviewer" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Одобрить" }));
-    await waitFor(() => {
-      const approveCall = fetchMock.mock.calls.find(
-        (call) => call[0] === "/api/web/knowledge/items/item-1/review-action" && JSON.parse(String(call[1]?.body)).action === "approve",
-      );
-      expect(approveCall).toBeDefined();
-      expect(JSON.parse(String(approveCall?.[1]?.body))).toMatchObject({ action: "approve", note: "Approved by reviewer" });
-    });
+    expect(fetchMock.mock.calls.some((call) => call[0] === "/api/web/knowledge/items/item-1/review-action")).toBe(false);
   });
 
   it("inserts structured markdown blocks", async () => {

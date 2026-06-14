@@ -53,7 +53,7 @@ export function NewDraftDrawer({ draft, isCreating, isOpen, onChange, onClose, o
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm font-medium">
-              Пространство нового черновика
+              Раздел базы знаний
               <select className={fieldClass} value={draft.space_code} onChange={(event) => onChange({ ...draft, space_code: event.target.value })}>
                 {spaces.map((space) => (
                   <option key={space.space_id} value={space.code}>
@@ -63,7 +63,7 @@ export function NewDraftDrawer({ draft, isCreating, isOpen, onChange, onClose, o
               </select>
             </label>
             <label className="text-sm font-medium">
-              Тип нового черновика
+              Тип материала
               <select className={fieldClass} value={draft.item_type} onChange={(event) => onChange({ ...draft, item_type: event.target.value })}>
                 {itemTypeOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -75,7 +75,7 @@ export function NewDraftDrawer({ draft, isCreating, isOpen, onChange, onClose, o
           </div>
 
           <label className="text-sm font-medium">
-            Видимость нового черновика
+            Кому доступна статья
             <select className={fieldClass} value={draft.visibility} onChange={(event) => onChange({ ...draft, visibility: event.target.value })}>
               {visibilityOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -91,10 +91,6 @@ export function NewDraftDrawer({ draft, isCreating, isOpen, onChange, onClose, o
               <label className="text-sm font-medium">
                 Владелец нового черновика
                 <input className={fieldClass} value={draft.owner_actor_id} onChange={(event) => onChange({ ...draft, owner_actor_id: event.target.value })} />
-              </label>
-              <label className="text-sm font-medium">
-                Ревьюер нового черновика
-                <input className={fieldClass} value={draft.reviewer_actor_id} onChange={(event) => onChange({ ...draft, reviewer_actor_id: event.target.value })} />
               </label>
               <label className="text-sm font-medium sm:col-span-2">
                 Теги нового черновика

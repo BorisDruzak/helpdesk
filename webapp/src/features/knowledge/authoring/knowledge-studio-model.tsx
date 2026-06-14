@@ -6,11 +6,11 @@ export const fieldClass = "mt-1 w-full rounded-md border border-slate-200 bg-whi
 export const textareaClass = `${fieldClass} min-h-24 resize-y`;
 
 export const itemTypeOptions = [
-  { label: "Статья", value: "article" },
+  { label: "Инструкция / статья", value: "article" },
   { label: "FAQ", value: "faq" },
-  { label: "Пошаговая инструкция", value: "runbook" },
   { label: "Известная ошибка", value: "known_error" },
   { label: "Обходное решение", value: "workaround" },
+  { label: "Термин", value: "glossary_term" },
 ];
 
 export const visibilityOptions = [
@@ -23,24 +23,20 @@ export const visibilityOptions = [
 export const statusFilterOptions = [
   { label: "Все", value: "all" },
   { label: "Черновики", value: "draft" },
-  { label: "На ревью", value: "in_review" },
   { label: "Опубликованные", value: "published" },
   { label: "Архив", value: "archived" },
 ];
 
 export const editorSteps = [
   { label: "Текст", value: "text" },
-  { label: "Метаданные", value: "metadata" },
-  { label: "Разметка", value: "segments" },
+  { label: "Настройки", value: "metadata" },
   { label: "Проверка", value: "validation" },
-  { label: "Публикация", value: "publish" },
 ];
 
 export const editorQuickViews = [
   { label: "Редактор", value: "text" },
   { label: "Preview", value: "preview" },
   { label: "Diff", value: "validation" },
-  { label: "Сегменты", value: "segments" },
   { label: "История", value: "history" },
 ];
 
@@ -198,6 +194,7 @@ export function diffSummary(originalBody: string, draftBody: string) {
 }
 
 export function validationChecksFor(draft: EditorDraft, activeSegmentsCount: number): ValidationCheck[] {
+  void activeSegmentsCount;
   return [
     {
       key: "body",
@@ -216,15 +213,9 @@ export function validationChecksFor(draft: EditorDraft, activeSegmentsCount: num
       detail: visibilityLabel(draft.visibility),
     },
     {
-      key: "reviewer",
-      label: "Назначен ревьюер",
-      ok: Boolean(draft.reviewer_actor_id.trim()),
-    },
-    {
-      key: "segments",
-      label: "Есть сегменты поиска",
-      ok: activeSegmentsCount > 0,
-      detail: activeSegmentsCount ? `${activeSegmentsCount} сегм.` : "нет сегментов",
+      key: "section",
+      label: "Раздел базы знаний выбран",
+      ok: Boolean(draft.space_code),
     },
   ];
 }
