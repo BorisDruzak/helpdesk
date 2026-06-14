@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/button";
 import { PageHeading } from "../../components/ui/page-heading";
 import {
   fetchKnowledgeAudienceRules,
+  fetchKnowledgeItems,
   fetchKnowledgeSpaces,
   previewKnowledgeAudienceRules,
   replaceKnowledgeAudienceRules,
@@ -14,6 +15,7 @@ import {
   type KnowledgeAudiencePreview,
   type KnowledgeAudienceRuleInput,
   type KnowledgeAudienceRuleTargetType,
+  type KnowledgeItem,
   type KnowledgeSpace,
 } from "./api";
 import {
@@ -33,9 +35,14 @@ type SectionDraft = {
   allow_ingestion: boolean;
   allow_publication: boolean;
   allow_rag: boolean;
+  allowed_item_types: string[];
   code: string;
   description: string;
+  article_length_recommendation: string;
   lifecycle_status: string;
+  metadata: Record<string, unknown>;
+  show_in_requester_portal: boolean;
+  show_in_support_workspace: boolean;
   title: string;
   visibility: string;
 };
@@ -59,6 +66,23 @@ const visibilityOptions = [
   "auditor_read",
 ];
 
+const materialTypeOptions = [
+  { description: "Обычная статья для портала и поддержки.", label: "Статья", value: "article" },
+  { description: "Короткие вопросы и ответы.", label: "FAQ", value: "faq" },
+  { description: "Пошаговая инструкция для поддержки.", label: "Пошаговая инструкция", value: "runbook" },
+  { description: "Известная ошибка или массовый инцидент.", label: "Известная ошибка", value: "known_error" },
+  { description: "Временное решение до исправления.", label: "Обходное решение", value: "workaround" },
+  { description: "Описание услуги или сервиса.", label: "Описание услуги", value: "service_description" },
+];
+
+const defaultAllowedMaterialTypes = ["article", "faq", "runbook"];
+
+const lengthRecommendationOptions = [
+  { label: "Короткая: до 2 экранов", value: "short" },
+  { label: "Стандартная: 3-5 экранов", value: "standard" },
+  { label: "Подробная: runbook или регламент", value: "detailed" },
+];
+
 const domainTabs = [
   { active: true, href: "/app/admin/knowledge/sections", label: "Разделы" },
   { active: false, href: "/app/admin/knowledge/studio", label: "Содержание" },
@@ -74,27 +98,63 @@ function emptyDraft(): SectionDraft {
     allow_ingestion: true,
     allow_publication: true,
     allow_rag: true,
+    allowed_item_types: defaultAllowedMaterialTypes,
     code: "",
     description: "",
+    article_length_recommendation: "standard",
     lifecycle_status: "draft",
+    metadata: {},
+    show_in_requester_portal: true,
+    show_in_support_workspace: true,
     title: "",
     visibility: "requester",
   };
+}
+
+function objectMetadata(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
+function metadataBoolean(metadata: Record<string, unknown>, key: string, fallback: boolean) {
+  const value = metadata[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string, fallback: string) {
+  const value = metadata[key];
+  return typeof value === "string" && value ? value : fallback;
+}
+
+function requesterPortalCompatible(visibility: string) {
+  return ["public", "requester", "agent_requester_safe"].includes(visibility);
 }
 
 function draftFromSpace(space: KnowledgeSpace | null | undefined): SectionDraft {
   if (!space) {
     return emptyDraft();
   }
+  const visibility = space.visibility ?? "requester";
+  const metadata = objectMetadata(space.metadata);
+  const allowedTypes = Array.isArray(space.allowed_item_types)
+    ? materialTypeOptions.map((option) => option.value).filter((value) => space.allowed_item_types?.includes(value))
+    : [];
   return {
     allow_ingestion: space.allow_ingestion ?? true,
     allow_publication: space.allow_publication ?? true,
     allow_rag: space.allow_rag ?? true,
+    allowed_item_types: allowedTypes.length ? allowedTypes : defaultAllowedMaterialTypes,
     code: space.code ?? "",
     description: space.description ?? "",
+    article_length_recommendation: metadataString(metadata, "article_length_recommendation", "standard"),
     lifecycle_status: space.lifecycle_status ?? "draft",
+    metadata,
+    show_in_requester_portal: metadataBoolean(metadata, "show_in_requester_portal", requesterPortalCompatible(visibility)),
+    show_in_support_workspace: metadataBoolean(metadata, "show_in_support_workspace", true),
     title: space.title ?? "",
-    visibility: space.visibility ?? "requester",
+    visibility,
   };
 }
 
@@ -110,8 +170,50 @@ function pluralSections(count: number) {
   return `${count} разделов`;
 }
 
+function pluralArticles(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} статья`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} статьи`;
+  return `${count} статей`;
+}
+
 function flagTone(enabled: boolean) {
   return enabled ? "success" : "neutral";
+}
+
+function sectionPortalEnabled(space: KnowledgeSpace) {
+  return requesterPortalCompatible(space.visibility) && metadataBoolean(objectMetadata(space.metadata), "show_in_requester_portal", requesterPortalCompatible(space.visibility));
+}
+
+function sectionSupportEnabled(space: KnowledgeSpace) {
+  return metadataBoolean(objectMetadata(space.metadata), "show_in_support_workspace", true);
+}
+
+function materialTypeLabels(values: string[]) {
+  const selected = values.length ? values : defaultAllowedMaterialTypes;
+  return materialTypeOptions.filter((option) => selected.includes(option.value)).map((option) => option.label);
+}
+
+function toggleMaterialType(values: string[], value: string, checked: boolean) {
+  const next = new Set(values);
+  if (checked) {
+    next.add(value);
+  } else {
+    next.delete(value);
+  }
+  return materialTypeOptions.map((option) => option.value).filter((optionValue) => next.has(optionValue));
+}
+
+function articleCountsBySpace(items: KnowledgeItem[]) {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    if (!item.space_id || item.status === "archived") {
+      continue;
+    }
+    counts.set(item.space_id, (counts.get(item.space_id) ?? 0) + 1);
+  }
+  return counts;
 }
 
 function normalizeCode(value: string) {
@@ -121,7 +223,9 @@ function normalizeCode(value: string) {
 export function KnowledgeSectionsPage() {
   const queryClient = useQueryClient();
   const spacesQuery = useQuery({ queryKey: ["knowledge-spaces"], queryFn: fetchKnowledgeSpaces });
+  const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
   const spaces = spacesQuery.data ?? [];
+  const items = itemsQuery.data ?? [];
   const [search, setSearch] = useState("");
   const [selectedSpaceId, setSelectedSpaceId] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -131,7 +235,7 @@ export function KnowledgeSectionsPage() {
   const spacesKey = spaces.map((space) => `${space.space_id}:${space.code}:${space.updated_at ?? ""}`).join("|");
   const selectedSpace = spaces.find((space) => space.space_id === selectedSpaceId) ?? spaces[0] ?? null;
   const selectedSignature = selectedSpace
-    ? `${selectedSpace.space_id}:${selectedSpace.code}:${selectedSpace.title}:${selectedSpace.visibility}:${selectedSpace.lifecycle_status}:${selectedSpace.allow_publication}:${selectedSpace.allow_ingestion}:${selectedSpace.allow_rag}`
+    ? `${selectedSpace.space_id}:${selectedSpace.code}:${selectedSpace.title}:${selectedSpace.visibility}:${selectedSpace.lifecycle_status}:${selectedSpace.allow_publication}:${selectedSpace.allow_ingestion}:${selectedSpace.allow_rag}:${JSON.stringify(selectedSpace.allowed_item_types ?? [])}:${JSON.stringify(selectedSpace.metadata ?? {})}`
     : "";
 
   useEffect(() => {
@@ -157,24 +261,36 @@ export function KnowledgeSectionsPage() {
     );
   }, [search, spaces]);
 
+  const itemCounts = useMemo(() => articleCountsBySpace(items), [items]);
+
   const saveMutation = useMutation({
-    mutationFn: () =>
-      saveKnowledgeSpace({
+    mutationFn: () => {
+      const metadata = {
+        ...draft.metadata,
+        article_length_recommendation: draft.article_length_recommendation,
+        show_in_requester_portal: requesterPortalCompatible(draft.visibility) && draft.show_in_requester_portal,
+        show_in_support_workspace: draft.show_in_support_workspace,
+      };
+      return saveKnowledgeSpace({
         allow_ingestion: draft.allow_ingestion,
         allow_publication: draft.allow_publication,
         allow_rag: draft.allow_rag,
+        allowed_item_types: draft.allowed_item_types,
         code: normalizeCode(draft.code),
         description: draft.description.trim() || null,
         lifecycle_status: draft.lifecycle_status,
+        metadata,
         title: draft.title.trim(),
         visibility: draft.visibility,
-      }),
+      });
+    },
     onSuccess: (result) => {
       setIsCreating(false);
       setSelectedSpaceId(result.space.space_id);
       setDraft(draftFromSpace(result.space));
       setSaveMessage("Раздел сохранен");
       queryClient.invalidateQueries({ queryKey: ["knowledge-spaces"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
     },
   });
 
@@ -240,6 +356,9 @@ export function KnowledgeSectionsPage() {
             {spacesQuery.isLoading ? <p className="text-sm text-slate-500">Загрузка разделов...</p> : null}
             {filteredSpaces.map((space) => {
               const active = !isCreating && selectedSpace?.space_id === space.space_id;
+              const articleCount = itemCounts.get(space.space_id) ?? 0;
+              const portalEnabled = sectionPortalEnabled(space);
+              const supportEnabled = sectionSupportEnabled(space);
               return (
                 <button
                   aria-pressed={active}
@@ -262,6 +381,9 @@ export function KnowledgeSectionsPage() {
                   </span>
                   <span className="mt-3 flex flex-wrap gap-2">
                     <Badge tone="brand">{visibilityLabels[space.visibility] ?? space.visibility}</Badge>
+                    <Badge tone={articleCount > 0 ? "brand" : "neutral"}>{itemsQuery.isLoading ? "Статьи загружаются" : pluralArticles(articleCount)}</Badge>
+                    <Badge tone={flagTone(portalEnabled)}>{portalEnabled ? "Портал включен" : "Портал скрыт"}</Badge>
+                    <Badge tone={flagTone(supportEnabled)}>{supportEnabled ? "Поддержка включена" : "Поддержка скрыта"}</Badge>
                     <Badge tone={flagTone(space.allow_rag ?? true)}>{space.allow_rag ?? true ? "Используется в AI/RAG" : "AI/RAG выключен"}</Badge>
                     <Badge tone={flagTone(space.allow_ingestion ?? true)}>{space.allow_ingestion ?? true ? "Импорт разрешен" : "Импорт закрыт"}</Badge>
                     <Badge tone={flagTone(space.allow_publication ?? true)}>{space.allow_publication ?? true ? "Публикация разрешена" : "Публикация закрыта"}</Badge>
@@ -313,7 +435,14 @@ export function KnowledgeSectionsPage() {
                 Видимость по умолчанию
                 <select
                   className={fieldClass}
-                  onChange={(event) => setDraft((current) => ({ ...current, visibility: event.target.value }))}
+                  onChange={(event) => {
+                    const visibility = event.target.value;
+                    setDraft((current) => ({
+                      ...current,
+                      show_in_requester_portal: requesterPortalCompatible(visibility) ? current.show_in_requester_portal : false,
+                      visibility,
+                    }));
+                  }}
                   title="Грубая область видимости для новых статей раздела"
                   value={draft.visibility}
                 >
@@ -349,6 +478,43 @@ export function KnowledgeSectionsPage() {
                   value={draft.description}
                 />
               </label>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <fieldset className="rounded-md border border-slate-200 bg-slate-50 p-3">
+                <legend className="px-1 text-sm font-semibold text-slate-900">Разрешенные типы материалов</legend>
+                <p className="mt-1 text-xs text-slate-500">Авторы видят только эти типы при создании материалов в разделе.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {materialTypeOptions.map((option) => (
+                    <label className="flex items-start gap-2 rounded-md bg-white px-3 py-2 text-sm" key={option.value}>
+                      <input
+                        checked={draft.allowed_item_types.includes(option.value)}
+                        className={checkboxClass}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            allowed_item_types: toggleMaterialType(current.allowed_item_types, option.value, event.target.checked),
+                          }))
+                        }
+                        title={`Разрешить тип материала: ${option.label}`}
+                        type="checkbox"
+                      />
+                      <span>
+                        <span className="block font-medium text-slate-900">{option.label}</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">{option.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <aside className="rounded-md border border-slate-200 bg-white p-3 text-sm">
+                <p className="font-semibold text-slate-950">Сводка политики</p>
+                <p className="mt-2 text-slate-600">{materialTypeLabels(draft.allowed_item_types).join(", ") || "Типы материалов не выбраны"}</p>
+                <p className="mt-2 text-xs text-slate-500">
+                  Грубая видимость остается границей безопасности: внутренний раздел не станет заявительским только из-за флага портала.
+                </p>
+              </aside>
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
@@ -390,6 +556,51 @@ export function KnowledgeSectionsPage() {
                   <span className="block font-semibold text-slate-900">Разрешить публикацию</span>
                   <span className="mt-1 block text-xs text-slate-500">Авторы могут переводить статьи раздела в published.</span>
                 </span>
+              </label>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              <label className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
+                <input
+                  checked={draft.show_in_requester_portal}
+                  className={checkboxClass}
+                  disabled={!requesterPortalCompatible(draft.visibility)}
+                  onChange={(event) => setDraft((current) => ({ ...current, show_in_requester_portal: event.target.checked }))}
+                  title="Разрешает показывать материалы раздела в портале заявителя, если видимость это допускает"
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block font-semibold text-slate-900">Показывать в портале заявителя</span>
+                  <span className="mt-1 block text-xs text-slate-500">Не расширяет внутреннюю видимость до заявителей.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
+                <input
+                  checked={draft.show_in_support_workspace}
+                  className={checkboxClass}
+                  onChange={(event) => setDraft((current) => ({ ...current, show_in_support_workspace: event.target.checked }))}
+                  title="Разрешает показывать материалы раздела в рабочем месте поддержки"
+                  type="checkbox"
+                />
+                <span>
+                  <span className="block font-semibold text-slate-900">Показывать в рабочем месте поддержки</span>
+                  <span className="mt-1 block text-xs text-slate-500">Используется для support search и подсказок по тикетам.</span>
+                </span>
+              </label>
+              <label className="text-sm font-medium text-slate-700">
+                Рекомендация по объему статьи
+                <select
+                  className={fieldClass}
+                  onChange={(event) => setDraft((current) => ({ ...current, article_length_recommendation: event.target.value }))}
+                  title="Подсказка авторам о рекомендуемом объеме материала в разделе"
+                  value={draft.article_length_recommendation}
+                >
+                  {lengthRecommendationOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -534,6 +745,9 @@ function SectionAudiencePanel({ canManage, coarseVisibility, space }: SectionAud
           <h2 className="text-base font-semibold text-slate-950">Аудитория раздела</h2>
           <p className="mt-1 text-sm text-slate-500">
             Правила раздела становятся контрактом видимости для статей и RAG-выдачи внутри выбранного раздела.
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
+            Статьи наследуют правила раздела. Можно задать отдельные правила для конкретной статьи.
           </p>
         </div>
         <Badge tone="brand">{space ? visibilityLabels[coarseVisibility] ?? coarseVisibility : "Сначала сохраните раздел"}</Badge>

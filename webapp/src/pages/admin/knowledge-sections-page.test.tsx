@@ -24,9 +24,16 @@ const spacesPayload = {
       lifecycle_status: "active",
       owner_actor_id: "owner",
       default_reviewer_actor_id: "reviewer",
+      allowed_item_types: ["article", "faq", "runbook"],
       allow_publication: true,
       allow_ingestion: true,
       allow_rag: true,
+      metadata: {
+        owner_note: "preserve",
+        show_in_requester_portal: true,
+        show_in_support_workspace: false,
+        article_length_recommendation: "short",
+      },
     },
     {
       space_id: "space-internal",
@@ -37,9 +44,51 @@ const spacesPayload = {
       lifecycle_status: "draft",
       owner_actor_id: null,
       default_reviewer_actor_id: null,
+      allowed_item_types: ["runbook", "known_error"],
       allow_publication: false,
       allow_ingestion: true,
       allow_rag: false,
+      metadata: {
+        show_in_requester_portal: false,
+        show_in_support_workspace: true,
+        article_length_recommendation: "detailed",
+      },
+    },
+  ],
+};
+
+const itemsPayload = {
+  status: "ok",
+  items: [
+    {
+      item_id: "item-1",
+      space_id: "space-it",
+      slug: "vpn-guide",
+      item_type: "article",
+      type: "article",
+      title: "VPN guide",
+      status: "published",
+      visibility: "requester",
+    },
+    {
+      item_id: "item-2",
+      space_id: "space-it",
+      slug: "vpn-faq",
+      item_type: "faq",
+      type: "faq",
+      title: "VPN FAQ",
+      status: "published",
+      visibility: "requester",
+    },
+    {
+      item_id: "item-3",
+      space_id: "space-internal",
+      slug: "incident-runbook",
+      item_type: "runbook",
+      type: "runbook",
+      title: "Incident runbook",
+      status: "draft",
+      visibility: "support_internal",
     },
   ],
 };
@@ -96,6 +145,9 @@ function setupFetch() {
 
     if (url === "/api/web/knowledge/spaces" && !init?.method) {
       return jsonResponse(spacesPayload);
+    }
+    if (url === "/api/web/knowledge/items" && !init?.method) {
+      return jsonResponse(itemsPayload);
     }
     if (url === "/api/web/knowledge/spaces" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
@@ -303,5 +355,43 @@ describe("AdminKnowledgeSectionsPage", () => {
       allow_publication: true,
     });
     expect(await within(editor).findByText("Раздел сохранен")).toBeInTheDocument();
+  });
+
+  it("shows article counts and saves allowed material types plus exposure metadata", async () => {
+    const fetchMock = setupFetch();
+    renderPage();
+
+    expect(await screen.findByText("2 статьи")).toBeInTheDocument();
+    expect(await screen.findByText("1 статья")).toBeInTheDocument();
+
+    const editor = await screen.findByTestId("section-policy-editor");
+    expect(within(editor).getByText("Разрешенные типы материалов")).toBeInTheDocument();
+    expect(within(editor).getByRole("checkbox", { name: /Статья/ })).toBeChecked();
+    expect(within(editor).getByRole("checkbox", { name: /FAQ/ })).toBeChecked();
+    expect(within(editor).getByRole("checkbox", { name: /Показывать в портале заявителя/ })).toBeChecked();
+    expect(within(editor).getByRole("checkbox", { name: /Показывать в рабочем месте поддержки/ })).not.toBeChecked();
+
+    fireEvent.click(within(editor).getByRole("checkbox", { name: /FAQ/ }));
+    fireEvent.click(within(editor).getByRole("checkbox", { name: /Показывать в рабочем месте поддержки/ }));
+    fireEvent.change(within(editor).getByLabelText("Рекомендация по объему статьи"), { target: { value: "detailed" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Сохранить раздел" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/spaces",
+        expect.objectContaining({ method: "POST", credentials: "same-origin" }),
+      ),
+    );
+    const saveCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/spaces" && call[1]?.method === "POST");
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toMatchObject({
+      code: "it-self-service",
+      allowed_item_types: ["article", "runbook"],
+      metadata: expect.objectContaining({
+        owner_note: "preserve",
+        show_in_requester_portal: true,
+        show_in_support_workspace: true,
+        article_length_recommendation: "detailed",
+      }),
+    });
   });
 });

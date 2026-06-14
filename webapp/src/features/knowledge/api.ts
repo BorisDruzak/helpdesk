@@ -7,9 +7,12 @@ export type KnowledgeSpace = {
   lifecycle_status: string;
   owner_actor_id?: string | null;
   default_reviewer_actor_id?: string | null;
+  default_review_period_days?: number | null;
+  allowed_item_types?: string[];
   allow_publication?: boolean;
   allow_ingestion?: boolean;
   allow_rag?: boolean;
+  metadata?: Record<string, unknown>;
   created_at?: string | null;
   updated_at?: string | null;
 };
