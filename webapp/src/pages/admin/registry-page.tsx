@@ -60,6 +60,7 @@ import {
   type AdminRegistryBulkResponse,
   type AdminRegistryPayload,
 } from "../../features/admin/api";
+import { fetchAccessSummary } from "../../features/access-control/api";
 import { RegistryAccountSessionsTab } from "../../features/admin/registry/registry-account-sessions-tab";
 import { RegistryAccessGroupsTab } from "../../features/admin/registry/registry-access-groups-tab";
 import { RegistryAudienceGroupsTab } from "../../features/admin/registry/registry-audience-groups-tab";
@@ -168,6 +169,12 @@ export function AdminRegistryPage() {
     queryKey: ["admin-registry-audience-group-members", selectedAudienceGroupId],
     queryFn: () => fetchAdminRegistryAudienceGroupMembers(selectedAudienceGroupId ?? ""),
     enabled: Boolean(selectedAudienceGroupId),
+    retry: false,
+  });
+  const accessSummaryQuery = useQuery({
+    queryKey: ["admin-access-summary"],
+    queryFn: fetchAccessSummary,
+    enabled: tab === "audience_groups",
     retry: false,
   });
 
@@ -577,6 +584,7 @@ export function AdminRegistryPage() {
           {tab === "access_groups" ? <RegistryAccessGroupsTab /> : null}
           {visibleRegistry && tab === "audience_groups" ? (
             <RegistryAudienceGroupsTab
+              accessGroups={accessSummaryQuery.data?.access_groups ?? []}
               busy={mutation.isPending}
               groups={audienceGroups}
               members={audienceMembers}

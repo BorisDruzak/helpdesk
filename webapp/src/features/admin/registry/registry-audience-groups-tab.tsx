@@ -5,6 +5,7 @@ import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
+import type { AccessGroupItem } from "../../access-control/api";
 import type {
   AdminRegistryAudienceGroup,
   AdminRegistryAudienceGroupMember,
@@ -15,6 +16,7 @@ import type {
 import { actorRoleLabel, registryStatusLabel, statusTone } from "./registry-utils";
 
 type Props = {
+  accessGroups: AccessGroupItem[];
   busy?: boolean;
   groups: AdminRegistryAudienceGroup[];
   members: AdminRegistryAudienceGroupMember[];
@@ -44,6 +46,7 @@ const memberTypes: AdminRegistryAudienceMemberType[] = [
   "department_tree",
   "department",
   "location",
+  "access_group",
   "role",
   "service",
 ];
@@ -64,6 +67,14 @@ function memberLabel(member: AdminRegistryAudienceGroupMember, registry: AdminRe
   return member.member_id;
 }
 
+function memberLabelWithAccessGroups(member: AdminRegistryAudienceGroupMember, registry: AdminRegistryPayload, accessGroups: AccessGroupItem[]): string {
+  if (member.member_type === "access_group") {
+    const group = accessGroups.find((item) => item.code === member.member_id || String(item.group_id) === member.member_id);
+    return group ? `${group.name} · ${group.code}` : member.member_id;
+  }
+  return memberLabel(member, registry);
+}
+
 function normalizeMembers(members: AdminRegistryAudienceGroupMember[]): AdminRegistryAudienceGroupMember[] {
   const byKey = new Map<string, AdminRegistryAudienceGroupMember>();
   for (const member of members) {
@@ -82,6 +93,7 @@ function normalizeMembers(members: AdminRegistryAudienceGroupMember[]): AdminReg
 }
 
 export function RegistryAudienceGroupsTab({
+  accessGroups,
   busy,
   groups,
   members,
@@ -149,6 +161,12 @@ export function RegistryAudienceGroupsTab({
         .filter((location) => !normalized || `${location.display_name} ${location.building ?? ""} ${location.room ?? ""}`.toLowerCase().includes(normalized))
         .map((location) => ({ id: location.location_id ?? location.id, label: location.display_name }));
     }
+    if (memberType === "access_group") {
+      return accessGroups
+        .filter((group) => group.is_active !== false)
+        .filter((group) => !normalized || `${group.code} ${group.name} ${group.description ?? ""}`.toLowerCase().includes(normalized))
+        .map((group) => ({ id: group.code, label: `${group.code} · ${group.name}` }));
+    }
     if (memberType === "role") {
       return ["user", "support", "admin", "auditor"]
         .filter((role) => !normalized || role.includes(normalized))
@@ -160,7 +178,7 @@ export function RegistryAudienceGroupsTab({
         .map((service) => ({ id: service.code ?? service.id, label: `${service.code ? `${service.code} · ` : ""}${service.name}` }));
     }
     return [];
-  }, [memberQuery, memberType, registry.departments, registry.locations, registry.people, registry.services]);
+  }, [accessGroups, memberQuery, memberType, registry.departments, registry.locations, registry.people, registry.services]);
 
   const resetCreate = () => {
     setCreating(false);
@@ -319,7 +337,7 @@ export function RegistryAudienceGroupsTab({
                   {memberDraft.map((member) => (
                     <div className="grid grid-cols-[160px_minmax(0,1fr)_auto] gap-3 border-t border-border px-3 py-2 text-sm first:border-t-0" key={`${member.member_type}:${member.member_id}:${member.include_children ? "tree" : "direct"}`}>
                       <span className="font-medium text-slate-700">{memberTypeLabels[member.member_type]}</span>
-                      <span className="text-slate-900">{memberLabel(member, registry)}</span>
+                      <span className="text-slate-900">{memberLabelWithAccessGroups(member, registry, accessGroups)}</span>
                       <Button
                         leadingIcon={<Trash2 className="h-4 w-4" />}
                         onClick={() => setMemberDraft((current) => current.filter((item) => item !== member))}

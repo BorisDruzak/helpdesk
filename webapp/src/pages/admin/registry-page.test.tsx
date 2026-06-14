@@ -491,6 +491,38 @@ describe("AdminRegistryPage", () => {
     ));
   });
 
+  it("allows adding access groups as audience members", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Аудитории/ }));
+    expect(await screen.findByText("ИТ сотрудники")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Тип участника"), { target: { value: "access_group" } });
+    expect(screen.getByRole("option", { name: "Группа доступа" })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "support_l1 · Support L1" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Участник"), { target: { value: "support_l1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Добавить участника" }));
+    fireEvent.change(screen.getByLabelText("Причина изменения аудитории"), { target: { value: "Добавляем RBAC-группу как факт таргетинга" } });
+    fireEvent.click(screen.getByRole("button", { name: "Предпросмотр состава" }));
+    expect(await screen.findByText("Людей в аудитории: 1")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить участников" }));
+
+    const saveCall = await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) => url === "/api/web/admin/registry/audience-groups/aud-1/members" && init?.method === "PUT");
+      expect(call).toBeTruthy();
+      return call;
+    });
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toMatchObject({
+      members: [
+        expect.objectContaining({
+          member_type: "access_group",
+          member_id: "support_l1",
+          include_children: false,
+        }),
+      ],
+    });
+  });
+
   it("shows access groups as a registry summary with a link to the canonical RBAC editor", async () => {
     renderRegistry();
 

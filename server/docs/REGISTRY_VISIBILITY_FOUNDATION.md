@@ -150,6 +150,8 @@ Phase 5 Knowledge visibility admin APIs:
 
 The first admin API slice is implemented in `server/knowledge/audience_rules_service.py` and `server/web_api/knowledge_handlers.py`. These routes are admin-only, replace/list item or space rule rows through `knowledge_audience_rules`, preview item access or space-level access with transient or persisted rules, and expose admin explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. `POST /api/web/admin/knowledge/audience-rules/preview` supports `subject_type=item` and `subject_type=space`; space preview returns `item: null` and evaluates only the space-level audience rules through the same coarse visibility/status guard. Phase 6 consumes these APIs from `/app/admin/knowledge/studio` through a Russian-first `Область видимости` selector instead of raw JSON; this UI must remain an authoring/debug client and cannot become the access-control boundary.
 
+Current Knowledge audience rules are allow-only by contract. Migration `121` constrains `knowledge_audience_rules.effect` to `allow`, `KnowledgeAudienceRulesService` writes only `effect=allow`, and `KnowledgeAccessService` ignores any non-allow rule shape. This means the active model is "no rules = coarse visibility applies; one or more active rules = requester/agent/public access requires at least one matching allow rule". Exclusion rules such as "everyone except department X" are not implemented and require an explicit future schema, precedence and anti-leak test pass before use.
+
 ## Knowledge Access Decision Order
 
 Every Knowledge read/search/suggestion/RAG path must apply the same order:
@@ -166,6 +168,8 @@ Every Knowledge read/search/suggestion/RAG path must apply the same order:
 Candidate selection and final projection both matter. Search, portal, suggestions, support knowledge, graph, vector search, RAG candidate selection and diagnostics must not rely on frontend filtering or post-search masking only.
 
 Requester/agent/public responses must not reveal hidden titles, summaries, snippets, chunks, result counts, diagnostics or metadata for denied content. Admin explain endpoints may show rule ids and reasons, but must stay admin-only.
+
+`support`, `admin`, `security` and `auditor` are privileged roles for audience rules only after lifecycle/status and coarse Knowledge visibility pass. They receive `reason_code=privileged_actor_override` instead of matching each audience rule. This is the intended admin/support workspace behavior. Future AI-chat or assistant surfaces that run under privileged roles must choose an explicit policy, for example `ai_respects_audience_for_privileged_roles`, before reusing privileged support/admin access for generated answers.
 
 ## Registration Policy Boundary
 
@@ -206,7 +210,7 @@ The current Registry UI slice also adds:
 - `webapp/src/features/admin/registry/registry-bulk-action-dialog.tsx` for bulk device/person/session actions with preview/reason/result reporting;
 - `webapp/src/features/admin/registry/registry-link-ui-user-dialog.tsx` for verified UI-login to RegistryPerson linking without raw id prompts;
 - `webapp/src/features/admin/registry/registry-reason-dialog.tsx` for reason-only quality and admin actions;
-- `webapp/src/features/admin/registry/registry-audience-groups-tab.tsx` for audience-group CRUD, member editing and member preview.
+- `webapp/src/features/admin/registry/registry-audience-groups-tab.tsx` for audience-group CRUD, member editing and member preview, including RBAC `access_group` members as targeting facts only.
 
 Future Registry UI changes should keep `window.prompt` treated as a regression target and cover representative Russian labels in webapp tests.
 

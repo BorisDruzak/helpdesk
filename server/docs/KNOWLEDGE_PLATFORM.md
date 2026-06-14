@@ -56,6 +56,8 @@ Registry-scoped audience rules are tracked in [REGISTRY_VISIBILITY_FOUNDATION.md
 
 Current audience semantics are explicit: `target_type=department` matches only the requester's current primary `registry_people.department_id`; `target_type=department_tree` matches the requester's department path for subtree targeting. Registry audience groups are resolved by `EffectiveIdentityService` into deterministic `{audience_group_id, code}` entries and `target_type=audience_group` may match either value. Admin preview supports both item preview and space preview; space preview returns `item: null` and evaluates persisted or transient space rules without needing a representative article.
 
+The current rule model is allow-only. `knowledge_audience_rules.effect` is constrained to `allow`, authoring APIs persist `effect=allow`, and access evaluation ignores non-allow effects. If a published requester-safe item has no active audience rules, coarse visibility applies; if it has active rules, requester/agent/public access requires a matching allow rule. Privileged support/admin/security/auditor reads bypass audience matching after coarse visibility with `privileged_actor_override`; future AI-chat surfaces must decide explicitly whether privileged AI should respect requester audiences before using that override.
+
 ## Search And Suggestions
 
 `KnowledgeSearchService` uses PostgreSQL-compatible filtering and text matching over items, versions, chunks, bindings and active article segments. Ranking prefers exact title/slug matches, service/offering/request-template bindings, segment title/keyword matches, text matches, helpfulness and freshness. Segment matches return the owning article with a segment-derived snippet while preserving the same item ACL projection.

@@ -78,4 +78,57 @@ describe("RegistryQualityTab", () => {
     expect(onFix).toHaveBeenCalledWith(issue);
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it("surfaces audience and Knowledge visibility quality issues as actionable tasks", () => {
+    const issues = [
+      {
+        issue_key: "audience_group_empty:audience_group:aud-1",
+        kind: "audience_group_empty",
+        severity: "warning",
+        title: "Audience group has no people",
+        description: "aud-1",
+        object_type: "audience_group",
+        object_id: "aud-1",
+      },
+      {
+        issue_key: "knowledge_audience_rule_invalid_target:knowledge_audience_rule:rule-1",
+        kind: "knowledge_audience_rule_invalid_target",
+        severity: "danger",
+        title: "Broken Knowledge audience rule",
+        description: "rule-1",
+        object_type: "knowledge_audience_rule",
+        object_id: "rule-1",
+      },
+      {
+        issue_key: "knowledge_audience_zero_users:knowledge_item:item-1",
+        kind: "knowledge_audience_zero_users",
+        severity: "warning",
+        title: "Knowledge item has zero users",
+        description: "item-1",
+        object_type: "knowledge_item",
+        object_id: "item-1",
+      },
+    ] as const;
+    const onFix = vi.fn();
+
+    render(
+      <RegistryQualityTab
+        issues={[...issues]}
+        suggestions={[]}
+        onFix={onFix}
+        onIgnore={vi.fn()}
+        onSelect={vi.fn()}
+        onSnooze={vi.fn()}
+      />
+    );
+
+    expect(screen.getAllByText("Аудиторная группа без участников").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Правило видимости Knowledge с недействительной целью").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Статья Knowledge доступна нулю пользователей").length).toBeGreaterThan(0);
+
+    const fixButtons = screen.getAllByRole("button", { name: "Исправить" });
+    expect(fixButtons).toHaveLength(3);
+    fireEvent.click(fixButtons[0]);
+    expect(onFix).toHaveBeenCalledWith(issues[0]);
+  });
 });
