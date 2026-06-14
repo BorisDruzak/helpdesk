@@ -140,14 +140,14 @@ Phase 2 implemented audience group APIs:
 - `PUT /api/web/admin/registry/audience-groups/{audience_group_id}/members`
 - `POST /api/web/admin/registry/audience-groups/{audience_group_id}/preview-members`
 
-Phase 5 Knowledge visibility APIs:
+Phase 5 Knowledge visibility admin APIs:
 
 - `GET /api/web/admin/knowledge/audience-rules?subject_type=&subject_id=`
 - `PUT /api/web/admin/knowledge/audience-rules`
 - `POST /api/web/admin/knowledge/audience-rules/preview`
 - `GET /api/web/admin/knowledge/access/explain?actor_id=&item_id=`
 
-These APIs are still planned. Do not add client calls until the matching backend route, tests and CODEMAP entries exist. The current Phase 5 backend slice only adds migration `121`, `KnowledgeAudienceRule`, `server/knowledge/access_service.py`, and an optional `KnowledgeSearchService.search(..., effective_audience=...)` hook.
+The first admin API slice is implemented in `server/knowledge/audience_rules_service.py` and `server/web_api/knowledge_handlers.py`. These routes are admin-only, replace/list item or space rule rows through `knowledge_audience_rules`, preview item access with transient or persisted rules, and expose admin explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. `POST /api/web/admin/knowledge/audience-rules/preview` currently supports `subject_type=item`; Phase 5 is not complete until normal requester/support/search/suggest/portal/vector/RAG read paths enforce the same service and have anti-leak coverage.
 
 ## Knowledge Access Decision Order
 

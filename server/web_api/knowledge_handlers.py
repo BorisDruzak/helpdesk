@@ -21,6 +21,7 @@ from knowledge.contracts import (
 )
 from knowledge.ask_service import KnowledgeAskService
 from knowledge.ai_proposal_service import KnowledgeAiProposalService
+from knowledge.audience_rules_service import KnowledgeAudienceRulesService
 from knowledge.content_pack_service import KnowledgeContentPackService
 from knowledge.editor_history_service import KnowledgeEditorHistoryService
 from knowledge.embedding_service import KnowledgeEmbeddingService
@@ -92,6 +93,10 @@ def _permission_denied(permission_code: str) -> web.Response:
         },
         status=403,
     )
+
+
+def _admin_success(data: dict[str, object]) -> web.Response:
+    return web.json_response({"status": "success", "data": data})
 
 
 async def _can_manage_knowledge_metadata(session, request: web.Request) -> bool:
@@ -1298,6 +1303,75 @@ async def handle_web_knowledge_ops_summary(request: web.Request) -> web.Response
     async with get_session() as session:
         summary = await KnowledgeOpsSummaryService(session).summary(actor_role=role)
     return web.json_response({"status": "ok", "summary": summary})
+
+
+@require_auth("admin")
+async def handle_web_admin_knowledge_audience_rules(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    async with get_session() as session:
+        service = KnowledgeAudienceRulesService(session)
+        if request.method == "GET":
+            include_archived = str(request.query.get("include_archived") or "").strip().lower() in {"1", "true", "yes"}
+            try:
+                rules = await service.list_rules(
+                    subject_type=request.query.get("subject_type"),
+                    subject_id=request.query.get("subject_id"),
+                    include_archived=include_archived,
+                )
+            except ValueError as exc:
+                return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+            return _admin_success({"rules": rules})
+        try:
+            payload = await _json_payload(request)
+            rules = await service.replace_subject_rules(
+                subject_type=str(payload.get("subject_type") or ""),
+                subject_id=str(payload.get("subject_id") or ""),
+                rules=payload.get("rules") or [],
+                actor_id=auth_context.actor_id,
+                reason=str(payload.get("reason") or "").strip() or None,
+            )
+            await session.commit()
+            return _admin_success({"rules": rules})
+        except ValueError as exc:
+            await session.rollback()
+            return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin")
+async def handle_web_admin_knowledge_audience_rules_preview(request: web.Request) -> web.Response:
+    try:
+        payload = await _json_payload(request)
+        async with get_session() as session:
+            preview = await KnowledgeAudienceRulesService(session).preview_subject_access(
+                subject_type=str(payload.get("subject_type") or ""),
+                subject_id=str(payload.get("subject_id") or ""),
+                actor_id=str(payload.get("actor_id") or "").strip() or None,
+                actor_role=str(payload.get("actor_role") or "user"),
+                rules=payload.get("rules") if isinstance(payload.get("rules"), list) else None,
+                service_context=payload.get("service_context") if isinstance(payload.get("service_context"), dict) else None,
+            )
+        return _admin_success({"preview": preview})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
+
+
+@require_auth("admin")
+async def handle_web_admin_knowledge_access_explain(request: web.Request) -> web.Response:
+    try:
+        async with get_session() as session:
+            explain = await KnowledgeAudienceRulesService(session).explain_item_access(
+                item_id=str(request.query.get("item_id") or ""),
+                actor_id=str(request.query.get("actor_id") or "").strip() or None,
+                actor_role=str(request.query.get("actor_role") or "user"),
+                service_context={
+                    "service_code": request.query.get("service_code"),
+                    "offering_code": request.query.get("offering_code"),
+                    "request_template_key": request.query.get("request_template_key"),
+                },
+            )
+        return _admin_success({"explain": explain})
+    except ValueError as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
 
 
 @require_auth("admin", "support", "auditor")
