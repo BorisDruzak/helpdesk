@@ -54,6 +54,16 @@ def _actor(request: web.Request) -> tuple[str | None, str]:
     return actor_id, actor_role
 
 
+async def _portal_requester_audience(session, request: web.Request):
+    actor_id, _actor_role = _actor(request)
+    effective_audience = await EffectiveIdentityService(session).resolve_person_audience(
+        person_id=None,
+        actor_id=actor_id,
+        actor_role="requester",
+    )
+    return actor_id, effective_audience
+
+
 def _safe_query_vector(value: object) -> list[float] | None:
     if not isinstance(value, list):
         return None
@@ -1098,7 +1108,11 @@ async def handle_knowledge_feedback(request: web.Request) -> web.Response:
 async def handle_knowledge_portal_home(request: web.Request) -> web.Response:
     try:
         async with get_session() as session:
-            payload = await KnowledgePortalService(session).home(actor_role="requester")
+            _actor_id, effective_audience = await _portal_requester_audience(session, request)
+            payload = await KnowledgePortalService(session).home(
+                actor_role="requester",
+                effective_audience=effective_audience,
+            )
         return web.json_response({"status": "ok", **payload})
     except Exception:
         logger.exception("[knowledge] portal home failed")
@@ -1107,15 +1121,10 @@ async def handle_knowledge_portal_home(request: web.Request) -> web.Response:
 
 async def handle_knowledge_article_detail(request: web.Request) -> web.Response:
     slug = str(request.match_info.get("slug") or "").strip()
-    actor_id, actor_role = _actor(request)
     try:
         async with get_session() as session:
             service = KnowledgePortalService(session)
-            effective_audience = await EffectiveIdentityService(session).resolve_person_audience(
-                person_id=None,
-                actor_id=actor_id,
-                actor_role=actor_role,
-            )
+            actor_id, effective_audience = await _portal_requester_audience(session, request)
             payload = await service.article_detail(
                 slug,
                 actor_role="requester",
@@ -1246,10 +1255,12 @@ async def handle_knowledge_portal_space(request: web.Request) -> web.Response:
     code = str(request.match_info.get("space_code") or "").strip()
     try:
         async with get_session() as session:
+            _actor_id, effective_audience = await _portal_requester_audience(session, request)
             payload = await KnowledgePortalService(session).collection(
                 collection_type="space",
                 code=code,
                 actor_role="requester",
+                effective_audience=effective_audience,
             )
         return web.json_response({"status": "ok", **payload})
     except ValueError as exc:
@@ -1260,10 +1271,12 @@ async def handle_knowledge_portal_tag(request: web.Request) -> web.Response:
     tag = str(request.match_info.get("tag") or "").strip()
     try:
         async with get_session() as session:
+            _actor_id, effective_audience = await _portal_requester_audience(session, request)
             payload = await KnowledgePortalService(session).collection(
                 collection_type="tag",
                 code=tag,
                 actor_role="requester",
+                effective_audience=effective_audience,
             )
         return web.json_response({"status": "ok", **payload})
     except ValueError as exc:

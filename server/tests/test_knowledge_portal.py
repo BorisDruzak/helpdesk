@@ -246,6 +246,125 @@ async def test_knowledge_article_detail_applies_audience_rules_before_body_proje
 
 
 @pytest.mark.asyncio
+async def test_knowledge_portal_home_applies_audience_rules_before_article_projection(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    requester_login = f"portal-home-requester-{suffix}"
+    visible_item = await _published_item(
+        test_client,
+        space_code=f"portal-home-audience-{suffix}",
+        slug=f"portal-home-visible-{suffix}",
+        title="Portal home visible article",
+        body="Requester-visible portal home body.",
+        visibility="requester",
+    )
+    hidden_item = await _published_item(
+        test_client,
+        space_code=f"portal-home-audience-{suffix}",
+        slug=f"portal-home-finance-hidden-{suffix}",
+        title="Portal Finance home hidden article",
+        body="Finance-only portal home body must not leak.",
+        visibility="requester",
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _seed_requester_identity(session, login=requester_login, department_code=f"it-{suffix}")
+        finance = await _seed_requester_identity(
+            session,
+            login=f"portal-home-finance-{suffix}",
+            department_code=f"finance-{suffix}",
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=f"rule-portal-home-finance-{suffix}",
+                subject_type="item",
+                subject_id=hidden_item["item_id"],
+                target_type="department",
+                target_id=finance["department_id"],
+                effect="allow",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    resp = await test_client.get(
+        "/api/knowledge/portal/home",
+        headers={"Authorization": f"Bearer test-ui-user:{requester_login}"},
+    )
+
+    assert resp.status == 200
+    payload = await resp.json()
+    assert payload["status"] == "ok"
+    assert visible_item["slug"] in {article["slug"] for article in payload["recent_articles"]}
+    for section in ("featured_articles", "recent_articles", "popular_articles"):
+        assert hidden_item["slug"] not in {article["slug"] for article in payload[section]}
+    payload_text = str(payload)
+    assert "Portal Finance home hidden article" not in payload_text
+    assert "Finance-only portal home body" not in payload_text
+
+
+@pytest.mark.asyncio
+async def test_knowledge_portal_collections_apply_audience_rules_before_article_projection(test_client, test_engine) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    requester_login = f"portal-collection-requester-{suffix}"
+    visible_item = await _published_item(
+        test_client,
+        space_code=f"portal-collection-audience-{suffix}",
+        slug=f"portal-collection-visible-{suffix}",
+        title="Portal collection visible article",
+        body="Requester-visible portal collection body.",
+        visibility="requester",
+    )
+    hidden_item = await _published_item(
+        test_client,
+        space_code=f"portal-collection-audience-{suffix}",
+        slug=f"portal-collection-finance-hidden-{suffix}",
+        title="Portal Finance collection hidden article",
+        body="Finance-only portal collection body must not leak.",
+        visibility="requester",
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _seed_requester_identity(session, login=requester_login, department_code=f"it-{suffix}")
+        finance = await _seed_requester_identity(
+            session,
+            login=f"portal-collection-finance-{suffix}",
+            department_code=f"finance-{suffix}",
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=f"rule-portal-coll-fin-{suffix}",
+                subject_type="item",
+                subject_id=hidden_item["item_id"],
+                target_type="department",
+                target_id=finance["department_id"],
+                effect="allow",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    auth_headers = {"Authorization": f"Bearer test-ui-user:{requester_login}"}
+    space_resp = await test_client.get(
+        f"/api/knowledge/portal/spaces/portal-collection-audience-{suffix}",
+        headers=auth_headers,
+    )
+    assert space_resp.status == 200
+    space_payload = await space_resp.json()
+    space_slugs = {article["slug"] for article in space_payload["articles"]}
+    assert visible_item["slug"] in space_slugs
+    assert hidden_item["slug"] not in space_slugs
+    assert "Portal Finance collection hidden article" not in str(space_payload)
+
+    tag_resp = await test_client.get("/api/knowledge/portal/tags/vpn", headers=auth_headers)
+    assert tag_resp.status == 200
+    tag_payload = await tag_resp.json()
+    tag_slugs = {article["slug"] for article in tag_payload["articles"]}
+    assert visible_item["slug"] in tag_slugs
+    assert hidden_item["slug"] not in tag_slugs
+    assert "Portal Finance collection hidden article" not in str(tag_payload)
+
+
+@pytest.mark.asyncio
 async def test_knowledge_portal_service_sanitizes_direct_article_reads(test_engine) -> None:
     from knowledge.portal_service import KnowledgePortalService
 

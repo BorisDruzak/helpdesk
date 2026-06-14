@@ -116,9 +116,16 @@ class KnowledgePortalService:
         self.session = session
         self.repo = KnowledgeRepo(session)
 
-    async def home(self, *, actor_role: str = "requester", limit: int = 12) -> dict[str, Any]:
+    async def home(
+        self,
+        *,
+        actor_role: str = "requester",
+        limit: int = 12,
+        effective_audience: Any | None = None,
+    ) -> dict[str, Any]:
         role = _portal_role(actor_role)
         items = await self.repo.list_items(actor_role=role, include_archived=False)
+        items = await self._filter_audience_visible_items(items, effective_audience=effective_audience)
         spaces = [
             _safe_space(space)
             for space in await self.repo.list_spaces(actor_role=role)
@@ -296,7 +303,14 @@ class KnowledgePortalService:
             },
         )
 
-    async def collection(self, *, collection_type: str, code: str, actor_role: str = "requester") -> dict[str, Any]:
+    async def collection(
+        self,
+        *,
+        collection_type: str,
+        code: str,
+        actor_role: str = "requester",
+        effective_audience: Any | None = None,
+    ) -> dict[str, Any]:
         role = _portal_role(actor_role)
         normalized_type = str(collection_type or "").strip().lower()
         normalized_code = str(code or "").strip().lower()
@@ -304,6 +318,7 @@ class KnowledgePortalService:
             raise ValueError("knowledge collection not found")
 
         items = await self.repo.list_items(actor_role=role, include_archived=False)
+        items = await self._filter_audience_visible_items(items, effective_audience=effective_audience)
         if normalized_type == "space":
             spaces = [
                 _safe_space(space)
@@ -339,6 +354,72 @@ class KnowledgePortalService:
             "description": None,
             "articles": articles,
         }
+
+    async def _filter_audience_visible_items(
+        self,
+        items: list[dict[str, Any]],
+        *,
+        effective_audience: Any | None,
+    ) -> list[dict[str, Any]]:
+        if effective_audience is None or not items:
+            return items
+        item_ids = sorted({str(item.get("item_id") or "") for item in items if item.get("item_id")})
+        space_ids = sorted({str(item.get("space_id") or "") for item in items if item.get("space_id")})
+        if not item_ids:
+            return []
+        spaces = (
+            await self.session.execute(select(KnowledgeSpace).where(KnowledgeSpace.space_id.in_(space_ids)))
+        ).scalars().all()
+        spaces_by_id = {
+            space.space_id: {
+                "space_id": space.space_id,
+                "lifecycle_status": space.lifecycle_status,
+                "visibility": space.visibility,
+            }
+            for space in spaces
+        }
+        rules = (
+            await self.session.execute(
+                select(KnowledgeAudienceRule)
+                .where(
+                    KnowledgeAudienceRule.status == "active",
+                    or_(
+                        and_(
+                            KnowledgeAudienceRule.subject_type == "item",
+                            KnowledgeAudienceRule.subject_id.in_(item_ids),
+                        ),
+                        and_(
+                            KnowledgeAudienceRule.subject_type == "space",
+                            KnowledgeAudienceRule.subject_id.in_(space_ids),
+                        ),
+                    ),
+                )
+                .order_by(
+                    KnowledgeAudienceRule.priority.asc(),
+                    KnowledgeAudienceRule.created_at.asc(),
+                    KnowledgeAudienceRule.rule_id.asc(),
+                )
+            )
+        ).scalars().all()
+        return KnowledgeAccessService.filter_authorized_items(
+            items=items,
+            spaces_by_id=spaces_by_id,
+            audience=effective_audience,
+            rules=[
+                {
+                    "rule_id": row.rule_id,
+                    "subject_type": row.subject_type,
+                    "subject_id": row.subject_id,
+                    "target_type": row.target_type,
+                    "target_id": row.target_id,
+                    "effect": row.effect,
+                    "include_children": row.include_children,
+                    "priority": row.priority,
+                    "status": row.status,
+                }
+                for row in rules
+            ],
+        )
 
     async def _segments(self, *, item_id: str, version_id: str, actor_role: str) -> list[dict[str, Any]]:
         if not item_id or not version_id:
