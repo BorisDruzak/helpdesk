@@ -147,7 +147,7 @@ Phase 5 Knowledge visibility admin APIs:
 - `POST /api/web/admin/knowledge/audience-rules/preview`
 - `GET /api/web/admin/knowledge/access/explain?actor_id=&item_id=`
 
-The first admin API slice is implemented in `server/knowledge/audience_rules_service.py` and `server/web_api/knowledge_handlers.py`. These routes are admin-only, replace/list item or space rule rows through `knowledge_audience_rules`, preview item access with transient or persisted rules, and expose admin explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. `POST /api/web/admin/knowledge/audience-rules/preview` currently supports `subject_type=item`; Phase 5 is not complete until normal requester/support/search/suggest/portal/vector/RAG read paths enforce the same service and have anti-leak coverage.
+The first admin API slice is implemented in `server/knowledge/audience_rules_service.py` and `server/web_api/knowledge_handlers.py`. These routes are admin-only, replace/list item or space rule rows through `knowledge_audience_rules`, preview item access with transient or persisted rules, and expose admin explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. `POST /api/web/admin/knowledge/audience-rules/preview` currently supports `subject_type=item`; Phase 5 is not complete until normal requester/support/search/suggest/portal/vector/RAG read paths enforce the same service and have anti-leak coverage. Phase 6 consumes these APIs from `/app/admin/knowledge/studio` through a Russian-first `Область видимости` selector instead of raw JSON; this UI must remain an authoring/debug client and cannot become the access-control boundary.
 
 ## Knowledge Access Decision Order
 

@@ -1,4 +1,5 @@
 import { ArticleMetadataPanel } from "../article-metadata-panel";
+import { ArticleVisibilityPanel } from "../article-visibility-panel";
 import type { KnowledgeItem, KnowledgeSpace } from "../api";
 import { fieldClass, itemTypeOptions, type EditorDraft, visibilityOptions } from "./knowledge-studio-model";
 
@@ -50,6 +51,8 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
           </label>
         </div>
       </section>
+
+      <ArticleVisibilityPanel canManage={Boolean(selectedItem)} coarseVisibility={draft.visibility} item={selectedItem} />
 
       <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <summary className="cursor-pointer text-sm font-semibold text-slate-800">Advanced / служебные поля статьи</summary>

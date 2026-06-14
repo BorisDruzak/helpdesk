@@ -43,6 +43,60 @@ export type KnowledgeItem = {
   updated_at?: string | null;
 };
 
+export type KnowledgeAudienceRuleTargetType =
+  | "person"
+  | "department"
+  | "department_tree"
+  | "location"
+  | "access_group"
+  | "audience_group"
+  | "role"
+  | "service";
+
+export type KnowledgeAudienceRule = {
+  rule_id?: string | null;
+  subject_type: "item" | "space" | string;
+  subject_id: string;
+  target_type: KnowledgeAudienceRuleTargetType;
+  target_id: string;
+  effect?: "allow" | string;
+  include_children?: boolean;
+  priority?: number;
+  status?: "active" | "disabled" | string;
+  reason?: string | null;
+  metadata_json?: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
+  created_by?: string | null;
+  updated_by?: string | null;
+};
+
+export type KnowledgeAudienceRuleInput = Omit<
+  KnowledgeAudienceRule,
+  "created_at" | "created_by" | "rule_id" | "subject_id" | "subject_type" | "updated_at" | "updated_by"
+> & {
+  rule_id?: string | null;
+};
+
+export type KnowledgeAudienceDecision = {
+  allowed: boolean;
+  reason_code: string;
+  matched_rule_ids?: string[];
+};
+
+export type KnowledgeAudiencePreview = {
+  subject?: { subject_type: string; subject_id: string };
+  item?: Record<string, unknown>;
+  space?: Record<string, unknown> | null;
+  audience?: Record<string, unknown>;
+  decision: KnowledgeAudienceDecision;
+  safe_payload?: Record<string, unknown>;
+};
+
+export type KnowledgeAudienceExplain = KnowledgeAudiencePreview & {
+  rules?: KnowledgeAudienceRule[];
+};
+
 export type KnowledgeGraphNode = {
   node_id: string;
   node_type: string;
@@ -915,6 +969,13 @@ async function readJson<T>(response: Response, fallbackMessage: string): Promise
   return payload as T;
 }
 
+function unwrapAdminData<T>(payload: ({ data?: T } & Record<string, unknown>) | T): T {
+  if (payload && typeof payload === "object" && "data" in payload) {
+    return ((payload as { data?: T }).data ?? payload) as T;
+  }
+  return payload as T;
+}
+
 export async function fetchKnowledgeSpaces(): Promise<KnowledgeSpace[]> {
   const response = await fetch("/api/web/knowledge/spaces", { credentials: "same-origin" });
   const payload = await readJson<{ spaces: KnowledgeSpace[] }>(response, "Не удалось загрузить пространства знаний");
@@ -945,6 +1006,83 @@ export async function createKnowledgeItem(payload: Record<string, unknown>) {
     body: JSON.stringify(payload),
   });
   return readJson<{ item: KnowledgeItem }>(response, "Не удалось создать черновик знания");
+}
+
+export async function fetchKnowledgeAudienceRules(subjectType: "item" | "space", subjectId: string): Promise<KnowledgeAudienceRule[]> {
+  const params = new URLSearchParams({
+    subject_type: subjectType,
+    subject_id: subjectId,
+  });
+  const response = await fetch(`/api/web/admin/knowledge/audience-rules?${params.toString()}`, { credentials: "same-origin" });
+  const payload = await readJson<{ data?: { rules: KnowledgeAudienceRule[] }; rules?: KnowledgeAudienceRule[] }>(
+    response,
+    "Не удалось загрузить правила видимости знаний",
+  );
+  return payload.data?.rules ?? payload.rules ?? [];
+}
+
+export async function replaceKnowledgeAudienceRules(payload: {
+  subject_type: "item" | "space";
+  subject_id: string;
+  rules: KnowledgeAudienceRuleInput[];
+  reason?: string | null;
+}): Promise<KnowledgeAudienceRule[]> {
+  const response = await fetch("/api/web/admin/knowledge/audience-rules", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await readJson<{ data?: { rules: KnowledgeAudienceRule[] }; rules?: KnowledgeAudienceRule[] }>(
+    response,
+    "Не удалось сохранить правила видимости знаний",
+  );
+  return result.data?.rules ?? result.rules ?? [];
+}
+
+export async function previewKnowledgeAudienceRules(payload: {
+  subject_type: "item" | "space";
+  subject_id: string;
+  actor_id?: string | null;
+  actor_role?: string;
+  rules?: KnowledgeAudienceRuleInput[];
+  service_context?: Record<string, unknown> | null;
+}): Promise<KnowledgeAudiencePreview> {
+  const response = await fetch("/api/web/admin/knowledge/audience-rules/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const result = await readJson<{ data?: { preview: KnowledgeAudiencePreview }; preview?: KnowledgeAudiencePreview }>(
+    response,
+    "Не удалось выполнить предпросмотр видимости знаний",
+  );
+  return unwrapAdminData(result).preview;
+}
+
+export async function explainKnowledgeAccess(params: {
+  item_id: string;
+  actor_id?: string | null;
+  actor_role?: string;
+  service_code?: string | null;
+}): Promise<KnowledgeAudienceExplain> {
+  const searchParams = new URLSearchParams({
+    item_id: params.item_id,
+    actor_role: params.actor_role ?? "user",
+  });
+  if (params.actor_id) {
+    searchParams.set("actor_id", params.actor_id);
+  }
+  if (params.service_code) {
+    searchParams.set("service_code", params.service_code);
+  }
+  const response = await fetch(`/api/web/admin/knowledge/access/explain?${searchParams.toString()}`, { credentials: "same-origin" });
+  const result = await readJson<{ data?: { explain: KnowledgeAudienceExplain }; explain?: KnowledgeAudienceExplain }>(
+    response,
+    "Не удалось объяснить доступ к статье",
+  );
+  return unwrapAdminData(result).explain;
 }
 
 export async function previewKnowledgeImport(payload: Record<string, unknown>): Promise<KnowledgeImportPreview> {

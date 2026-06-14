@@ -378,6 +378,111 @@ function setupFetch() {
     if (url === "/api/web/knowledge/items/item-2/applicability" && !init?.method) {
       return jsonResponse({ status: "ok", rules: [] });
     }
+    if (url.startsWith("/api/web/admin/knowledge/audience-rules?") && !init?.method) {
+      return jsonResponse({
+        status: "success",
+        data: {
+          rules: [],
+        },
+      });
+    }
+    if (url === "/api/web/admin/registry" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        summary: {
+          assets: 0,
+          people: 1,
+          locations: 1,
+          departments: 1,
+          services: 1,
+          vendors: 0,
+          registrations_pending: 0,
+          registrations_conflicts: 0,
+          unregistered_devices: 0,
+          active_bindings: 0,
+          stale_bindings: 0,
+          data_quality_issues: 0,
+          suggestions: 0,
+        },
+        assets: [],
+        people: [
+          {
+            id: "person-1",
+            person_id: "person-1",
+            display_name: "Knowledge Tester",
+            full_name: "Knowledge Tester",
+            phone: null,
+            email: "knowledge@example.test",
+            login: "knowledge@example.test",
+            department_id: "dep-it",
+            location_id: "loc-1",
+            department_name: "IT",
+            location_name: "Office",
+            source: "test",
+            status: "active",
+            updated_at: "2026-06-14T08:00:00Z",
+          },
+        ],
+        locations: [
+          {
+            id: "loc-1",
+            location_id: "loc-1",
+            building: "HQ",
+            floor: null,
+            room: null,
+            display_name: "Office",
+            source: "test",
+            status: "active",
+            updated_at: "2026-06-14T08:00:00Z",
+          },
+        ],
+        departments: [
+          {
+            id: "dep-it",
+            department_id: "dep-it",
+            code: "it",
+            name: "IT",
+            parent_id: null,
+            source: "test",
+            status: "active",
+            updated_at: "2026-06-14T08:00:00Z",
+          },
+        ],
+        services: [
+          {
+            id: "svc-network",
+            code: "network",
+            name: "Network",
+            support_queue: null,
+            owner_person_id: null,
+            vendor_id: null,
+            source: "test",
+            status: "active",
+            updated_at: "2026-06-14T08:00:00Z",
+          },
+        ],
+        vendors: [],
+        data_quality: [],
+        suggestions: [],
+        registration_claims: [],
+        active_bindings: [],
+      });
+    }
+    if (url === "/api/web/admin/registry/audience-groups" && !init?.method) {
+      return jsonResponse({ status: "ok", groups: [] });
+    }
+    if (url === "/api/web/admin/access/summary" && !init?.method) {
+      return jsonResponse({
+        status: "success",
+        data: {
+          version: "test",
+          users: [],
+          queues: [],
+          access_groups: [],
+          notes: [],
+        },
+      });
+    }
     throw new Error(`Unexpected fetch ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock as typeof fetch);
@@ -459,6 +564,9 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByLabelText("Пространство статьи")).toHaveValue("it-self-service");
     expect(screen.getByLabelText("Тип материала")).toHaveValue("article");
     expect(screen.getByLabelText("Кому видна статья")).toHaveValue("requester");
+    const visibilityPanel = await screen.findByTestId("article-visibility-panel");
+    expect(within(visibilityPanel).getByRole("heading", { name: "Область видимости" })).toBeInTheDocument();
+    expect(within(visibilityPanel).getByText(/Кто увидит статью/)).toBeInTheDocument();
     expect(screen.getByText("Advanced / служебные поля статьи")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Advanced / служебные поля статьи"));
     expect(screen.getByLabelText("Адрес статьи")).toHaveValue("vpn-access");
