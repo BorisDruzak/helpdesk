@@ -40,6 +40,7 @@ from knowledge.search_service import KnowledgeSearchService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from knowledge.segmentation_service import KnowledgeSegmentationPolicyBlockedError, KnowledgeSegmentationService
 from knowledge.suggestion_service import KnowledgeSuggestionService
+from registry.effective_identity_service import EffectiveIdentityService
 
 KNOWLEDGE_METADATA_MANAGE_PERMISSION = "knowledge.metadata.manage"
 
@@ -291,13 +292,18 @@ async def handle_knowledge_ask(request: web.Request) -> web.Response:
 
 async def _handle_knowledge_search_response(request: web.Request) -> web.Response:
     try:
-        _actor_id, actor_role = _actor(request)
+        actor_id, actor_role = _actor(request)
         payload = await _json_payload(request)
         async with get_session() as session:
             settings = await KnowledgeSearchSettingsService(session).get_settings()
             configured_limit = int(settings.get("max_results") or 10)
             snippet_length = int(settings.get("snippet_length") or 180)
             requested_limit = int(payload.get("limit") or configured_limit)
+            effective_audience = await EffectiveIdentityService(session).resolve_person_audience(
+                person_id=None,
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
             results = await KnowledgeSearchService(session).search(
                 query=payload.get("query"),
                 actor_role=actor_role,
@@ -311,6 +317,7 @@ async def _handle_knowledge_search_response(request: web.Request) -> web.Respons
                 vector_enabled=bool(settings.get("vector_enabled")),
                 query_vector=_safe_query_vector(payload.get("query_vector")),
                 vector_weight=float(settings.get("vector_weight") or 1.0),
+                effective_audience=effective_audience,
             )
             await session.commit()
         ai_used = bool(settings.get("ai_enabled"))

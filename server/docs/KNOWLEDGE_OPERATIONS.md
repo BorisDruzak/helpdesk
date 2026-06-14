@@ -174,7 +174,7 @@ The Registry Visibility Foundation adds a future audience-rule layer on top of c
 - requester/agent/public APIs must not reveal hidden titles, summaries, snippets, chunks, result counts, diagnostics, rule ids or metadata for denied content;
 - admin explain/debug APIs may show rule reasons only behind admin authorization and with token/content redaction.
 
-The first backend slices add `server/knowledge/access_service.py`, `server/knowledge/audience_rules_service.py`, migration `121` for `knowledge_audience_rules`, admin-only audience-rule list/replace/preview/explain APIs under `/api/web/admin/knowledge/*`, and an optional `effective_audience` hook in `KnowledgeSearchService`. Remaining Phase 5 work must wire the same service through direct reads, suggestions, portal, support knowledge, graph/vector retrieval and RAG before authoring UI is exposed.
+The first backend slices add `server/knowledge/access_service.py`, `server/knowledge/audience_rules_service.py`, migration `121` for `knowledge_audience_rules`, admin-only audience-rule list/replace/preview/explain APIs under `/api/web/admin/knowledge/*`, and HTTP search enforcement by passing Registry effective audience into `KnowledgeSearchService.search(..., effective_audience=...)`. Remaining Phase 5 work must wire the same service through direct reads, suggestions, portal, support knowledge, graph/vector retrieval and RAG before authoring UI is exposed.
 
 ## Gap Detection
 

@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+import uuid
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
+from app.db.models import KnowledgeAudienceRule, RegistryDepartment, RegistryPerson, RegistryPersonIdentity, UiUser
+from app.repos.knowledge_repo import KnowledgeRepo
 
 
 def _admin_headers() -> dict[str, str]:
@@ -42,6 +47,109 @@ def _forbidden_paths(value: Any, path: str = "$") -> list[str]:
         for index, child in enumerate(value):
             found.extend(_forbidden_paths(child, f"{path}[{index}]"))
     return found
+
+
+async def _seed_requester_identity(session, *, login: str, department_code: str) -> dict[str, str]:
+    department = RegistryDepartment(
+        department_id=str(uuid.uuid4()),
+        code=department_code,
+        name=department_code.upper(),
+        status="active",
+        source="manual",
+    )
+    person = RegistryPerson(
+        person_id=str(uuid.uuid4()),
+        display_name=f"{department_code.upper()} Requester",
+        email=login,
+        department_id=department.department_id,
+        source="manual",
+        status="active",
+    )
+    session.add_all(
+        [
+            department,
+            person,
+            UiUser(user_login=login, password_hash="test", actor_role="user", is_active=True),
+            RegistryPersonIdentity(
+                person_id=person.person_id,
+                provider="ui_login",
+                identifier=login,
+                normalized_identifier=login,
+                verified=True,
+                source="admin_manual",
+            ),
+        ]
+    )
+    await session.flush()
+    return {"department_id": department.department_id, "person_id": person.person_id}
+
+
+async def _seed_requester_article(session, *, slug: str, title: str) -> dict[str, str]:
+    repo = KnowledgeRepo(session)
+    await repo.upsert_space(
+        {"code": "audience-api-search", "title": "Audience API Search", "visibility": "requester", "lifecycle_status": "active"},
+        actor_id="admin",
+    )
+    item = await repo.create_item_draft(
+        {
+            "space_code": "audience-api-search",
+            "slug": slug,
+            "item_type": "article",
+            "title": title,
+            "summary": title,
+            "visibility": "requester",
+            "owner_actor_id": "owner",
+            "reviewer_actor_id": "reviewer",
+        },
+        actor_id="support",
+    )
+    version = await repo.create_version(
+        item["item_id"],
+        {"title": title, "body_format": "markdown", "body": f"Body for {title}"},
+        actor_id="support",
+    )
+    await repo.publish_item(item["item_id"], version["version_id"], actor_id="admin")
+    return {"item_id": item["item_id"]}
+
+
+@pytest.mark.asyncio
+async def test_public_search_applies_registry_audience_rules_before_projection(test_client, test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _seed_requester_identity(session, login="requester-knowledge", department_code="it")
+        finance = await _seed_requester_identity(session, login="finance-knowledge", department_code="finance")
+        await _seed_requester_article(session, slug="it-search-audience-visible", title="Department marker IT visible")
+        hidden = await _seed_requester_article(
+            session,
+            slug="finance-search-audience-hidden",
+            title="Department marker Finance hidden",
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id="rule-api-finance-hidden",
+                subject_type="item",
+                subject_id=hidden["item_id"],
+                target_type="department",
+                target_id=finance["department_id"],
+                effect="allow",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/knowledge/search",
+        headers=_requester_headers(),
+        json={"query": "department marker", "limit": 10, "surface": "requester_portal"},
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    slugs = {item["slug"] for item in payload["results"]}
+    assert "it-search-audience-visible" in slugs
+    assert "finance-search-audience-hidden" not in slugs
+    assert "Finance hidden" not in str(payload)
+    assert _forbidden_paths(payload) == []
 
 
 @pytest.mark.asyncio
