@@ -45,6 +45,40 @@ function providerLabel(provider: KnowledgeAiProvider | undefined, providerId?: s
   return provider?.title ?? providerId;
 }
 
+function providerHealthSummary(providers: KnowledgeAiProvider[]) {
+  if (!providers.length) {
+    return "Health провайдеров: провайдеры не настроены";
+  }
+  if (providers.some((provider) => provider.health_status === "failed" || provider.enabled === false)) {
+    return "Health провайдеров: есть ошибки";
+  }
+  if (providers.some((provider) => !provider.health_status || provider.health_status === "disabled")) {
+    return "Health провайдеров: не все проверены";
+  }
+  return "Health провайдеров: OK";
+}
+
+function ragBlockSummary(policy: { enabled?: boolean; ai_allowed?: boolean; answer_allowed?: boolean } | undefined) {
+  if (!policy) {
+    return "RAG заблокирован: политика AI не настроена";
+  }
+  if (!policy.enabled || !policy.ai_allowed) {
+    return "RAG заблокирован: глобальная политика AI выключена";
+  }
+  if (!policy.answer_allowed) {
+    return "RAG заблокирован: ответы AI запрещены";
+  }
+  return "RAG разрешен политикой AI; статьи всё равно проходят видимость, аудиторию, раздел и article RAG policy.";
+}
+
+function cloudRequesterSafeSummary(policy: { allow_cloud_for_requester_safe?: boolean } | undefined) {
+  return `Cloud для requester-safe: ${policy?.allow_cloud_for_requester_safe ? "разрешен" : "запрещен"}`;
+}
+
+function securityRestrictedSummary(policy: { require_local_for_security_restricted?: boolean } | undefined) {
+  return `Security-restricted: ${policy?.require_local_for_security_restricted === false ? "cloud возможен по политике" : "только local"}`;
+}
+
 export function KnowledgeAiSettingsPage() {
   const queryClient = useQueryClient();
   const [providerDraft, setProviderDraft] = useState({
@@ -190,6 +224,30 @@ export function KnowledgeAiSettingsPage() {
           <CardContent className="text-3xl font-semibold">{auditQuery.data?.length ?? 0}</CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" />
+            Сводка безопасности AI/RAG
+          </CardTitle>
+          <CardDescription>Короткая интерпретация provider health, RAG policy blocks и границ отправки данных.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 text-sm leading-6 text-slate-700 md:grid-cols-2 xl:grid-cols-3">
+          {[
+            providerHealthSummary(providers),
+            ragBlockSummary(globalPolicy),
+            cloudRequesterSafeSummary(globalPolicy),
+            securityRestrictedSummary(globalPolicy),
+            "Prompt/output остаются redacted в журнале",
+            "Visibility, audience, section allow_rag и article ai_rag_policy фильтруют кандидатов до RAG prompt.",
+          ].map((item) => (
+            <p key={item} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+              {item}
+            </p>
+          ))}
+        </CardContent>
+      </Card>
 
       {statusMessage ? <div className="rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">{statusMessage}</div> : null}
 

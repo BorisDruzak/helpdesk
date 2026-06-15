@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Gauge, Save, Search, SlidersHorizontal } from "lucide-react";
+import { Gauge, Save, Search, ShieldCheck, SlidersHorizontal } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -57,6 +57,19 @@ const searchModes = [
 ] as const;
 
 const aiDependentSwitches = new Set(["vector_enabled", "rerank_enabled", "ai_query_rewrite_enabled", "rag_answer_enabled"]);
+
+const searchModeGuidance = [
+  "Keyword: быстрые совпадения по названию, slug, ключевым словам, сервису и шаблону обращения.",
+  "Full-text: поиск по опубликованному тексту статьи, чанкам и активным сегментам без AI-провайдера.",
+  "Vector: семантический поиск по embeddings; включается только при готовой индексации и разрешенной AI policy.",
+  "RAG: ответ только по найденным и разрешённым источникам; не расширяет видимость статьи и не обходит аудиторию.",
+];
+
+const ragEligibilityGuidance =
+  "RAG может использовать статью, когда она опубликована, доступна текущей роли/аудитории, раздел разрешает AI/RAG, а политика статьи не запрещает RAG.";
+
+const visibilityGuidance =
+  "Фильтры видимости и аудитории применяются до ранжирования, сниппетов и цитат. Запрещённые статьи не попадают в выдачу, счетчики и диагностические результаты requester/agent поверхностей.";
 
 function draftFromSettings(settings?: KnowledgeSearchSettings): SearchSettingsDraft {
   if (!settings) {
@@ -221,6 +234,40 @@ export function KnowledgeSearchSettingsPage() {
           <CardContent className="text-sm text-slate-700">
             <p>{draft.max_results} результатов</p>
             <p className="mt-1">{draft.snippet_length} символов сниппета</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="h-5 w-5" />
+              Как читать режимы поиска
+            </CardTitle>
+            <CardDescription>Короткая расшифровка, чтобы настройки не выглядели как набор технических флагов.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2 text-sm leading-6 text-slate-700 md:grid-cols-2">
+            {searchModeGuidance.map((item) => (
+              <p key={item} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                {item}
+              </p>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5" />
+              Видимость, аудитория и RAG
+            </CardTitle>
+            <CardDescription>Эти фильтры являются guardrail, а не настройкой ранжирования.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm leading-6 text-slate-700">
+            <p>{visibilityGuidance}</p>
+            <p>{ragEligibilityGuidance}</p>
+            <p className="text-xs text-slate-500">RAG trace и score breakdown показываются только привилегированным ролям; requester-safe ответы не получают скрытые заголовки, чанки или причины отказа.</p>
           </CardContent>
         </Card>
       </div>

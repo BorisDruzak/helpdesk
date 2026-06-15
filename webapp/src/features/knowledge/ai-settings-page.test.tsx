@@ -84,6 +84,8 @@ describe("KnowledgeAiSettingsPage", () => {
               rewrite_allowed: false,
               auto_markup_allowed: false,
               redact_before_send: true,
+              allow_cloud_for_requester_safe: false,
+              require_local_for_security_restricted: true,
             },
           ],
         });
@@ -123,6 +125,12 @@ describe("KnowledgeAiSettingsPage", () => {
     expect(screen.getByText("Провайдеры")).toBeInTheDocument();
     expect(screen.getByText("Профили моделей")).toBeInTheDocument();
     expect(screen.getByText("Политики AI")).toBeInTheDocument();
+    expect(screen.getByText("Сводка безопасности AI/RAG")).toBeInTheDocument();
+    expect(screen.getByText("Health провайдеров: есть ошибки")).toBeInTheDocument();
+    expect(screen.getByText("RAG заблокирован: глобальная политика AI выключена")).toBeInTheDocument();
+    expect(screen.getByText("Cloud для requester-safe: запрещен")).toBeInTheDocument();
+    expect(screen.getByText("Security-restricted: только local")).toBeInTheDocument();
+    expect(screen.getByText("Prompt/output остаются redacted в журнале")).toBeInTheDocument();
     expect(screen.getByText("Журнал AI")).toBeInTheDocument();
     expect(screen.getByText("Ответы через OpenRouter")).toBeInTheDocument();
     expect(screen.getByText("AI выключен")).toBeInTheDocument();

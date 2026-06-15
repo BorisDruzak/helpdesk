@@ -119,6 +119,13 @@ describe("KnowledgeSearchSettingsPage", () => {
     renderPage();
 
     expect(await screen.findByRole("heading", { name: "Настройки поиска базы знаний" })).toBeInTheDocument();
+    expect(screen.getByText("Как читать режимы поиска")).toBeInTheDocument();
+    expect(screen.getByText(/Keyword: быстрые совпадения по названию/)).toBeInTheDocument();
+    expect(screen.getByText(/Full-text: поиск по опубликованному тексту/)).toBeInTheDocument();
+    expect(screen.getByText(/Vector: семантический поиск по embeddings/)).toBeInTheDocument();
+    expect(screen.getByText(/RAG: ответ только по найденным и разрешённым источникам/)).toBeInTheDocument();
+    expect(screen.getByText(/Фильтры видимости и аудитории применяются до ранжирования/)).toBeInTheDocument();
+    expect(screen.getByText(/RAG может использовать статью, когда она опубликована/)).toBeInTheDocument();
     expect(screen.getByText("AI выключен")).toBeInTheDocument();
     expect(screen.getAllByText("keyword_only").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByLabelText("Keyword поиск")).toBeChecked();
