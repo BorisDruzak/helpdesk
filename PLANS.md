@@ -1,6 +1,6 @@
 ## Active Work: Knowledge Platform Refactor — Production Knowledge Base
 
-Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, and retrieval filters candidates by audience and RAG policy. K5 operations dashboard product pass is implemented in the current slice: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented locally and awaits live browser evidence after deploy. Remaining work is focused on K7 settings consistency, K8 graph simplification, stale mojibake cleanup across older plan/docs/tests, and live evidence for remaining UI slices.
+Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, and retrieval filters candidates by audience and RAG policy. K5 operations dashboard product pass is implemented in the current slice: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented, deployed and live-checked on the stand for commit `485969d6`; evidence is under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`. Remaining work is focused on K7 settings consistency, K8 graph simplification, stale mojibake cleanup across older plan/docs/tests, and live evidence for later UI slices.
 
 Progress, 2026-06-15: K2/K3/K4 backend production-correctness slice is implemented and live-checked on the stand for commit `c4d6c54c`; evidence is under `artifacts/browser_live_validation/knowledge-binding-surfaces-c4d6c54c-20260615/`. Binding `metadata.surfaces` is now enforced in search/suggestions/retrieval before projection, with `requester_portal -> requester_pre_submit`, `support_workspace -> support_ticket_workspace`, `agent_gui -> agent`, and Ask/retrieval surfaces -> `ai_rag`. Binding API now supports duplicate upsert plus `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`. Knowledge Studio binding panel is localized in Russian, includes surface guidance, and supports edit/delete. Quality scoring no longer reports `missing_reviewer` when `KNOWLEDGE_REVIEW_REQUIRED=false`. K1 hardening now rejects `show_in_requester_portal=true` for non-requester-safe visibility, empty `allowed_item_types`, `allow_rag=false` while active articles force `ai_rag_policy=allowed`, and article `ai_rag_policy=allowed` in a section where RAG is disabled. The requester portal reads `show_in_requester_portal`, the support workspace reads `show_in_support_workspace`, and Studio reads `article_length_recommendation`.
 
@@ -241,7 +241,7 @@ Acceptance:
 
 ## K6 — Import Alignment
 
-Status: implemented locally; final live/browser evidence still needs to be attached after deployment of the committed slice.
+Status: implemented, deployed and live-checked on the stand for commit `485969d6`.
 
 Implemented:
 
@@ -257,10 +257,11 @@ Implemented:
 4. Imported drafts carry `metadata.ai_rag_policy=inherit`; backend validation rejects explicit `ai_rag_policy=allowed` when the chosen section has `allow_rag=false`.
 5. Long documents use auto-segmentation at 800+ words instead of requiring manual segmentation.
 6. After import, the wizard opens the simplified Studio with the created article.
+7. Live browser evidence is saved under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`; the created live draft `K6 Live Import 485969d6` opened in Studio as item `51d2bc64-b237-4012-8fd2-f24f176374a0` with `visibility=support_internal`, `metadata.import_mode=safe_draft` and `metadata.ai_rag_policy=inherit`.
 
 Remaining:
 
-- Attach live browser evidence for `/app/admin/knowledge/import` after deploy.
+- No open K6 items after targeted and live verification pass.
 
 Acceptance:
 
