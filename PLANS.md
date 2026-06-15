@@ -1,6 +1,6 @@
 ## Active Work: Knowledge Platform Refactor — Production Knowledge Base
 
-Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, review-disabled publish no longer fails on missing reviewer, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is implemented for current retrieval/Ask/vector paths: RAG eligibility exists through article metadata and section `allow_rag`, binding surface `ai_rag` is part of eligibility, and retrieval filters candidates by audience and RAG policy before snippets/citations/prompts. K5 operations dashboard product pass is implemented: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented, deployed and live-checked on the stand for commit `485969d6`; evidence is under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`. K7 settings consistency is implemented, deployed and live-checked on the stand for commit `b430ab72`; evidence is under `artifacts/browser_live_validation/knowledge-settings-k7-b430ab72-20260615/`. K8 graph simplification is implemented, deployed and live-checked on the stand for commit `74e98a96`; evidence is under `artifacts/browser_live_validation/knowledge-graph-k8-74e98a96-20260615/`. Remaining work is focused on K2 Studio UX follow-up, K3 eligibility preview, K4 focused policy tests/future AI-path guardrails, and stale mojibake cleanup across older docs/tests.
+Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, review-disabled publish no longer fails on missing reviewer, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is implemented for current retrieval/Ask/vector paths: RAG eligibility exists through article metadata and section `allow_rag`, binding surface `ai_rag` is part of eligibility, retrieval filters candidates by audience and RAG policy before snippets/citations/prompts, and focused policy tests cover staff-only/requester-safe denial plus trace redaction. K5 operations dashboard product pass is implemented: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented, deployed and live-checked on the stand for commit `485969d6`; evidence is under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`. K7 settings consistency is implemented, deployed and live-checked on the stand for commit `b430ab72`; evidence is under `artifacts/browser_live_validation/knowledge-settings-k7-b430ab72-20260615/`. K8 graph simplification is implemented, deployed and live-checked on the stand for commit `74e98a96`; evidence is under `artifacts/browser_live_validation/knowledge-graph-k8-74e98a96-20260615/`. Remaining work is focused on K2 Studio UX follow-up, K3 eligibility preview, K4 future AI-path guardrails, and stale mojibake cleanup across older docs/tests.
 
 Progress, 2026-06-15: K2/K3/K4 backend production-correctness slice is implemented and live-checked on the stand for commit `c4d6c54c`; evidence is under `artifacts/browser_live_validation/knowledge-binding-surfaces-c4d6c54c-20260615/`. Binding `metadata.surfaces` is now enforced in search/suggestions/retrieval before projection, with `requester_portal -> requester_pre_submit`, `support_workspace -> support_ticket_workspace`, `agent_gui -> agent`, and Ask/retrieval surfaces -> `ai_rag`. Binding API now supports duplicate upsert plus `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`. Knowledge Studio binding panel is localized in Russian, includes surface guidance, and supports edit/delete. Quality scoring no longer reports `missing_reviewer` when `KNOWLEDGE_REVIEW_REQUIRED=false`. K1 hardening now rejects `show_in_requester_portal=true` for non-requester-safe visibility, empty `allowed_item_types`, `allow_rag=false` while active articles force `ai_rag_policy=allowed`, and article `ai_rag_policy=allowed` in a section where RAG is disabled. The requester portal reads `show_in_requester_portal`, the support workspace reads `show_in_support_workspace`, and Studio reads `article_length_recommendation`.
 
@@ -139,7 +139,7 @@ Acceptance:
 
 ## K4 — RAG Eligibility
 
-Status: implemented for current retrieval, Ask and vector paths; focused policy tests and future-path guardrails remain.
+Status: implemented for current retrieval, Ask and vector paths; future-path guardrails remain.
 
 Implemented:
 
@@ -150,12 +150,12 @@ Implemented:
 - `KnowledgeRetrievalService` applies binding-surface eligibility and RAG eligibility before ordering, rerank, citations and Ask prompt construction.
 - `KnowledgeVectorSearchService` applies the same policy before vector candidates are returned.
 - `/app/admin/knowledge/search-settings`, `/app/admin/knowledge/ai` and `/app/admin/knowledge` expose operational RAG/policy state without granting visibility.
+- Focused no-DB regression tests cover `staff_only` requester denial, `requester_safe_only` support-internal denial and excluded-trace redaction.
 
 Remaining:
 
-1. Add focused regression tests for `staff_only` requester denial, `requester_safe_only` support-internal denial and privileged trace redaction.
-2. When future orchestration center or support AI summary paths start using Knowledge, require them to call `KnowledgeRetrievalService` or an equivalent RAG policy gate.
-3. If Ops needs per-reason RAG drilldown beyond current policy-block counts, add a dedicated excluded-by-section/article/staff/requester-safe queue or filter.
+1. When future orchestration center or support AI summary paths start using Knowledge, require them to call `KnowledgeRetrievalService` or an equivalent RAG policy gate.
+2. If Ops needs per-reason RAG drilldown beyond current policy-block counts, add a dedicated excluded-by-section/article/staff/requester-safe queue or filter.
 
 Acceptance:
 
@@ -310,7 +310,7 @@ Implemented:
 1. Rewrote stale top status so completed K1/K3/K5/K6/K7/K8 work is no longer listed as open.
 2. Split K2 into completed core save/review-disabled behavior and remaining Studio UX follow-up.
 3. Moved completed K3 surfaces enforcement, edit/delete and duplicate upsert from remaining work to implemented status.
-4. Clarified K4 as implemented for current retrieval/Ask/vector paths, with future AI paths and focused edge tests still explicit.
+4. Clarified K4 as implemented for current retrieval/Ask/vector paths, with future AI paths still explicit.
 5. Recorded browser evidence paths after K6, K7 and K8 UI passes.
 
 Remaining:
@@ -319,7 +319,7 @@ Remaining:
 2. Keep open follow-ups visible:
    - K2 Studio UX: save error specificity, dirty-state warning, unsaved indicator, create-and-open flow, support/admin parity verification;
    - K3 eligibility preview;
-   - K4 focused RAG policy tests and future AI-path guardrails.
+   - K4 future AI-path guardrails.
 3. Add browser evidence after any future UI pass.
 
 Acceptance:
