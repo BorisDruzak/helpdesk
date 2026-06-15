@@ -34,6 +34,10 @@ from knowledge.contracts import (
 )
 from knowledge.binding_surfaces import SURFACE_ALIASES, normalize_binding_surfaces
 from knowledge.content_lint import lint_knowledge_content
+from knowledge.rag_policy import article_rag_policy
+
+
+DEFAULT_KNOWLEDGE_SPACE_ITEM_TYPES = ("article", "faq", "runbook")
 
 
 def _new_id() -> str:
@@ -108,6 +112,20 @@ def _binding_metadata(payload: dict[str, Any]) -> dict[str, Any]:
 def _validate_space_metadata(*, visibility: str, metadata: dict[str, Any]) -> None:
     if metadata.get("show_in_requester_portal") is True and visibility not in set(REQUESTER_SAFE_VISIBILITIES):
         raise KnowledgeValidationError("show_in_requester_portal requires requester-safe section visibility")
+
+
+def _validate_allowed_item_types(value: Any) -> list[str]:
+    values = [str(item or "").strip() for item in _list(value)]
+    if not values:
+        raise KnowledgeValidationError("allowed_item_types requires at least one material type")
+    unknown = [value for value in values if value not in KNOWLEDGE_ITEM_TYPES]
+    if unknown:
+        raise KnowledgeValidationError("unsupported allowed_item_types: " + ", ".join(unknown))
+    result: list[str] = []
+    for value in values:
+        if value not in result:
+            result.append(value)
+    return result
 
 
 def _knowledge_review_required() -> bool:
@@ -254,6 +272,26 @@ class KnowledgeRepo:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def _get_space_by_id(self, space_id: str | None) -> KnowledgeSpace | None:
+        if not space_id:
+            return None
+        return (
+            await self.session.execute(select(KnowledgeSpace).where(KnowledgeSpace.space_id == space_id))
+        ).scalar_one_or_none()
+
+    async def _space_has_forced_rag_allowed_items(self, space_id: str) -> bool:
+        rows = (
+            await self.session.execute(
+                select(KnowledgeItem).where(KnowledgeItem.space_id == space_id, KnowledgeItem.status != "archived")
+            )
+        ).scalars().all()
+        return any(article_rag_policy(row) == "allowed" for row in rows)
+
+    @staticmethod
+    def _validate_item_rag_policy_against_space(space: KnowledgeSpace | None, metadata: dict[str, Any]) -> None:
+        if space is not None and not bool(space.allow_rag) and article_rag_policy({"metadata": metadata}) == "allowed":
+            raise KnowledgeValidationError("ai_rag_policy=allowed requires section allow_rag=true")
+
     async def upsert_space(self, payload: dict[str, Any], *, actor_id: str | None) -> dict[str, Any]:
         code = normalize_knowledge_slug(payload.get("code"))
         row = (await self.session.execute(select(KnowledgeSpace).where(KnowledgeSpace.code == code))).scalar_one_or_none()
@@ -283,12 +321,17 @@ class KnowledgeRepo:
         row.owner_actor_id = _text(payload.get("owner_actor_id"))
         row.default_reviewer_actor_id = _text(payload.get("default_reviewer_actor_id"))
         row.default_review_period_days = payload.get("default_review_period_days")
-        row.allowed_item_types = _list(payload.get("allowed_item_types"))
+        if "allowed_item_types" in payload:
+            row.allowed_item_types = _validate_allowed_item_types(payload.get("allowed_item_types"))
+        elif not row.allowed_item_types:
+            row.allowed_item_types = list(DEFAULT_KNOWLEDGE_SPACE_ITEM_TYPES)
         row.allow_publication = bool(payload.get("allow_publication", row.allow_publication))
         row.allow_ingestion = bool(payload.get("allow_ingestion", row.allow_ingestion))
         row.allow_rag = bool(payload.get("allow_rag", row.allow_rag))
         metadata = _dict(payload.get("metadata") or payload.get("metadata_json"))
         _validate_space_metadata(visibility=row.visibility, metadata=metadata)
+        if not row.allow_rag and await self._space_has_forced_rag_allowed_items(row.space_id):
+            raise KnowledgeValidationError("allow_rag=false conflicts with article ai_rag_policy=allowed")
         row.metadata_json = metadata
         row.updated_at = now
         row.updated_by = actor_id
@@ -326,6 +369,8 @@ class KnowledgeRepo:
         visibility = _validate_choice(str(payload.get("visibility") or space.visibility), KNOWLEDGE_VISIBILITIES, "visibility")
         if not can_mutate_knowledge_visibility(actor_role, visibility):
             raise KnowledgeValidationError("actor cannot create knowledge with this visibility")
+        metadata = _dict(payload.get("metadata") or payload.get("metadata_json"))
+        self._validate_item_rag_policy_against_space(space, metadata)
         now = datetime.now(timezone.utc)
         row = KnowledgeItem(
             item_id=str(payload.get("item_id") or _new_id()),
@@ -344,7 +389,7 @@ class KnowledgeRepo:
             source_ticket_id=_text(payload.get("source_ticket_id")),
             source_passport_id=payload.get("source_passport_id"),
             tags=_list(payload.get("tags")),
-            metadata_json=_dict(payload.get("metadata") or payload.get("metadata_json")),
+            metadata_json=metadata,
             created_at=now,
             updated_at=now,
             created_by=actor_id,
@@ -425,6 +470,10 @@ class KnowledgeRepo:
             metadata = _dict(item.metadata_json)
             metadata.update(_dict(payload.get("metadata") or payload.get("metadata_json")))
             item.metadata_json = metadata
+        space = await self._get_space_by_id(item.space_id)
+        if space is None:
+            raise KnowledgeValidationError("knowledge space not found")
+        self._validate_item_rag_policy_against_space(space, _dict(item.metadata_json))
         now = datetime.now(timezone.utc)
         item.updated_at = now
         item.updated_by = actor_id

@@ -104,22 +104,24 @@ class KnowledgeContentPackService:
             return {"status": "dry_run", "summary": summary, "items": item_results, "source_hash": source_hash}
 
         for space in normalized["spaces"]:
+            space_payload = {
+                "code": space.get("code"),
+                "title": space.get("title"),
+                "description": space.get("description"),
+                "visibility": space.get("visibility") or "support_internal",
+                "lifecycle_status": space.get("lifecycle_status") or "active",
+                "owner_actor_id": space.get("owner") or space.get("owner_actor_id"),
+                "default_reviewer_actor_id": space.get("reviewer") or space.get("default_reviewer_actor_id"),
+                "default_review_period_days": space.get("default_review_period_days"),
+                "allow_publication": space.get("allow_publication", True),
+                "allow_ingestion": space.get("allow_ingestion", True),
+                "allow_rag": space.get("allow_rag", False),
+                "metadata": space.get("metadata") if isinstance(space.get("metadata"), dict) else {},
+            }
+            if "allowed_item_types" in space:
+                space_payload["allowed_item_types"] = space.get("allowed_item_types")
             await repo.upsert_space(
-                {
-                    "code": space.get("code"),
-                    "title": space.get("title"),
-                    "description": space.get("description"),
-                    "visibility": space.get("visibility") or "support_internal",
-                    "lifecycle_status": space.get("lifecycle_status") or "active",
-                    "owner_actor_id": space.get("owner") or space.get("owner_actor_id"),
-                    "default_reviewer_actor_id": space.get("reviewer") or space.get("default_reviewer_actor_id"),
-                    "default_review_period_days": space.get("default_review_period_days"),
-                    "allowed_item_types": space.get("allowed_item_types") or [],
-                    "allow_publication": space.get("allow_publication", True),
-                    "allow_ingestion": space.get("allow_ingestion", True),
-                    "allow_rag": space.get("allow_rag", False),
-                    "metadata": space.get("metadata") if isinstance(space.get("metadata"), dict) else {},
-                },
+                space_payload,
                 actor_id=actor_id,
             )
 

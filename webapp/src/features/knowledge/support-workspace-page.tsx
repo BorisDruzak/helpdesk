@@ -10,6 +10,7 @@ import { PageHeading } from "../../components/ui/page-heading";
 import {
   fetchKnowledgeItems,
   fetchKnowledgeItemVersions,
+  fetchKnowledgeSpaces,
   fetchSupportTicketKnowledgeSuggestions,
   createSupportTicketKnowledgeDraft,
   linkKnowledgeArticleToTicket,
@@ -17,6 +18,7 @@ import {
   recordKnowledgeSupportFeedback,
   type KnowledgeAskResult,
   type KnowledgeItem,
+  type KnowledgeSpace,
 } from "./api";
 
 const requesterSafeVisibilities = new Set(["public", "requester", "agent_requester_safe"]);
@@ -52,6 +54,15 @@ function itemTypeTone(type: string) {
     return "info" as const;
   }
   return "neutral" as const;
+}
+
+function metadataBoolean(metadata: Record<string, unknown> | undefined, key: string, fallback: boolean) {
+  const value = metadata?.[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function supportWorkspaceEnabled(space: KnowledgeSpace) {
+  return metadataBoolean(space.metadata, "show_in_support_workspace", true);
 }
 
 function buildSafeAnswer(item: KnowledgeItem, body?: string | null) {
@@ -112,12 +123,23 @@ export function KnowledgeSupportWorkspacePage() {
   const ticketQuerySuffix = ticketId ? `?ticket_id=${encodeURIComponent(ticketId)}` : "";
 
   const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
+  const spacesQuery = useQuery({ queryKey: ["knowledge-spaces"], queryFn: fetchKnowledgeSpaces });
   const ticketKnowledgeQuery = useQuery({
     queryKey: ["support-ticket-knowledge", ticketId],
     queryFn: () => fetchSupportTicketKnowledgeSuggestions(ticketId),
     enabled: Boolean(ticketId),
   });
-  const items = useMemo(() => (itemsQuery.data ?? []).filter((item) => supportVisibilities.has(item.visibility)), [itemsQuery.data]);
+  const supportSpaceIds = useMemo(
+    () => new Set((spacesQuery.data ?? []).filter(supportWorkspaceEnabled).map((space) => space.space_id)),
+    [spacesQuery.data],
+  );
+  const items = useMemo(
+    () =>
+      (itemsQuery.data ?? []).filter(
+        (item) => supportVisibilities.has(item.visibility) && (!supportSpaceIds.size || supportSpaceIds.has(item.space_id)),
+      ),
+    [itemsQuery.data, supportSpaceIds],
+  );
   const filteredItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return items.filter((item) => {

@@ -13,9 +13,19 @@ type EditorMetadataStepProps = {
   spaces: KnowledgeSpace[];
 };
 
+const articleLengthRecommendationLabels: Record<string, string> = {
+  short: "короткая статья до 2 экранов",
+  standard: "стандартная статья на 3-5 экранов",
+  detailed: "подробный runbook или регламент",
+};
+
 export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces }: EditorMetadataStepProps) {
   const [showAdvancedMetadata, setShowAdvancedMetadata] = useState(false);
   const selectedSpace = spaces.find((space) => space.code === draft.space_code);
+  const articleLengthRecommendation =
+    typeof selectedSpace?.metadata?.article_length_recommendation === "string"
+      ? articleLengthRecommendationLabels[selectedSpace.metadata.article_length_recommendation] ?? selectedSpace.metadata.article_length_recommendation
+      : "";
 
   return (
     <div className="space-y-4">
@@ -38,6 +48,7 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
             </label>
             <p className="mt-1 text-xs leading-5 text-slate-500">
               Раздел определяет, где хранится статья и какие политики применяются по умолчанию: видимость, аудитория, RAG, импорт и допустимые типы материалов.
+              {articleLengthRecommendation ? ` Рекомендация раздела: ${articleLengthRecommendation}.` : ""}
             </p>
           </div>
           <div>

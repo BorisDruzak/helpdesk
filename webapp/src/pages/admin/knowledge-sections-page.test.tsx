@@ -395,6 +395,37 @@ describe("AdminKnowledgeSectionsPage", () => {
     });
   });
 
+  it("requires at least one material type before saving a section policy", async () => {
+    const fetchMock = setupFetch();
+    renderPage();
+
+    const editor = await screen.findByTestId("section-policy-editor");
+    await within(editor).findByDisplayValue("IT Self-Service");
+
+    fireEvent.click(within(editor).getByRole("checkbox", { name: /Статья/ }));
+    fireEvent.click(within(editor).getByRole("checkbox", { name: /FAQ/ }));
+    fireEvent.click(within(editor).getByRole("checkbox", { name: /Пошаговая инструкция/ }));
+
+    expect(await within(editor).findByText("Выберите хотя бы один тип материала.")).toBeInTheDocument();
+    expect(within(editor).getByRole("button", { name: "Сохранить раздел" })).toBeDisabled();
+
+    fireEvent.click(within(editor).getByRole("button", { name: "Сохранить раздел" }));
+    expect(fetchMock.mock.calls.filter((call) => call[0] === "/api/web/knowledge/spaces" && call[1]?.method === "POST")).toHaveLength(0);
+  });
+
+  it("warns before archiving a section that still has active articles", async () => {
+    setupFetch();
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Support Runbooks/ }));
+    const editor = await screen.findByTestId("section-policy-editor");
+    await waitFor(() => expect(within(editor).getByDisplayValue("Support Runbooks")).toBeInTheDocument());
+
+    fireEvent.change(within(editor).getByLabelText("Статус раздела"), { target: { value: "archived" } });
+
+    expect(await within(editor).findByText("В разделе есть 1 статья. Перед архивированием проверьте, куда будут перенесены материалы.")).toBeInTheDocument();
+  });
+
   it("shows per-list audience summaries without exposing raw target ids", async () => {
     const fetchMock = setupFetch();
     renderPage();

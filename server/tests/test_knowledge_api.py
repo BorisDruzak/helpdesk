@@ -103,6 +103,99 @@ async def test_knowledge_space_rejects_requester_portal_flag_for_internal_visibi
     assert "show_in_requester_portal" in payload["details"]
 
 
+@pytest.mark.asyncio
+async def test_knowledge_space_rejects_empty_allowed_item_types(test_client) -> None:
+    resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={
+            "code": "empty-types-section",
+            "title": "Empty types section",
+            "visibility": "requester",
+            "lifecycle_status": "active",
+            "allowed_item_types": [],
+        },
+    )
+    assert resp.status == 400
+    payload = await resp.json()
+    assert payload["error"] == "validation_error"
+    assert "allowed_item_types" in payload["details"]
+
+
+@pytest.mark.asyncio
+async def test_knowledge_space_rejects_disabling_rag_with_forced_article_policy(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "rag-conflict-section", "title": "RAG conflict section", "visibility": "requester", "lifecycle_status": "active", "allow_rag": True},
+    )
+    assert space_resp.status == 200
+
+    item_resp = await test_client.post(
+        "/api/web/knowledge/items",
+        headers=_admin_headers(),
+        json={
+            "space_code": "rag-conflict-section",
+            "slug": "rag-conflict-article",
+            "item_type": "article",
+            "title": "RAG conflict article",
+            "summary": "Article forces RAG allowed",
+            "visibility": "requester",
+            "owner_actor_id": "owner",
+            "reviewer_actor_id": "reviewer",
+            "metadata": {"ai_rag_policy": "allowed"},
+        },
+    )
+    assert item_resp.status == 200
+
+    resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "rag-conflict-section", "title": "RAG conflict section", "visibility": "requester", "lifecycle_status": "active", "allow_rag": False},
+    )
+    assert resp.status == 400
+    payload = await resp.json()
+    assert payload["error"] == "validation_error"
+    assert "ai_rag_policy" in payload["details"]
+
+
+@pytest.mark.asyncio
+async def test_knowledge_item_rejects_forced_rag_policy_when_section_disallows_rag(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "rag-disabled-section", "title": "RAG disabled section", "visibility": "requester", "lifecycle_status": "active", "allow_rag": False},
+    )
+    assert space_resp.status == 200
+
+    item_resp = await test_client.post(
+        "/api/web/knowledge/items",
+        headers=_admin_headers(),
+        json={
+            "space_code": "rag-disabled-section",
+            "slug": "rag-disabled-article",
+            "item_type": "article",
+            "title": "RAG disabled article",
+            "summary": "Article starts inherited",
+            "visibility": "requester",
+            "owner_actor_id": "owner",
+            "reviewer_actor_id": "reviewer",
+        },
+    )
+    assert item_resp.status == 200
+    item = (await item_resp.json())["item"]
+
+    patch_resp = await test_client.patch(
+        f"/api/web/knowledge/items/{item['item_id']}",
+        headers=_admin_headers(),
+        json={"metadata": {"ai_rag_policy": "allowed"}},
+    )
+    assert patch_resp.status == 400
+    payload = await patch_resp.json()
+    assert payload["error"] == "validation_error"
+    assert "allow_rag" in payload["details"]
+
+
 async def _seed_requester_article(session, *, slug: str, title: str) -> dict[str, str]:
     repo = KnowledgeRepo(session)
     await repo.upsert_space(

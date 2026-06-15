@@ -1,8 +1,8 @@
 ## Active Work: Knowledge Platform Refactor — Production Knowledge Base
 
-Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1/K2/K3 are closed on the code side: Knowledge Sections exist, Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context. K4/K5 are partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, retrieval filters candidates by audience and RAG policy, and Knowledge Ops summary exposes action queues. Remaining work is focused on production correctness: apply binding surfaces in suggestion/retrieval flows, add binding edit/delete, align quality metrics with review-disabled mode, update stale plan text, and finish actionable Knowledge Operations UI.
+Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4/K5 are partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, retrieval filters candidates by audience and RAG policy, and Knowledge Ops summary exposes action queues. Remaining work is focused on K5 operations dashboard product pass, K6 import alignment, K7 settings consistency, K8 graph simplification, stale mojibake cleanup across older plan/docs/tests, and live evidence for those remaining slices.
 
-Progress, 2026-06-15: K2/K3/K4 backend production-correctness slice is implemented and live-checked on the stand for commit `c4d6c54c`; evidence is under `artifacts/browser_live_validation/knowledge-binding-surfaces-c4d6c54c-20260615/`. Binding `metadata.surfaces` is now enforced in search/suggestions/retrieval before projection, with `requester_portal -> requester_pre_submit`, `support_workspace -> support_ticket_workspace`, `agent_gui -> agent`, and Ask/retrieval surfaces -> `ai_rag`. Binding API now supports duplicate upsert plus `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`. Knowledge Studio binding panel is localized in Russian, includes surface guidance, and supports edit/delete. Quality scoring no longer reports `missing_reviewer` when `KNOWLEDGE_REVIEW_REQUIRED=false`. Section API rejects `show_in_requester_portal=true` for non-requester-safe visibility. Remaining work after this slice: full K1 metadata owner/reader documentation, K1 article-policy-vs-section-RAG validation, K5 operations dashboard product pass, K6 import alignment, K7 settings consistency, K8 graph simplification, stale mojibake cleanup across older plan/docs/tests, and live evidence for those remaining slices.
+Progress, 2026-06-15: K2/K3/K4 backend production-correctness slice is implemented and live-checked on the stand for commit `c4d6c54c`; evidence is under `artifacts/browser_live_validation/knowledge-binding-surfaces-c4d6c54c-20260615/`. Binding `metadata.surfaces` is now enforced in search/suggestions/retrieval before projection, with `requester_portal -> requester_pre_submit`, `support_workspace -> support_ticket_workspace`, `agent_gui -> agent`, and Ask/retrieval surfaces -> `ai_rag`. Binding API now supports duplicate upsert plus `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`. Knowledge Studio binding panel is localized in Russian, includes surface guidance, and supports edit/delete. Quality scoring no longer reports `missing_reviewer` when `KNOWLEDGE_REVIEW_REQUIRED=false`. K1 hardening now rejects `show_in_requester_portal=true` for non-requester-safe visibility, empty `allowed_item_types`, `allow_rag=false` while active articles force `ai_rag_policy=allowed`, and article `ai_rag_policy=allowed` in a section where RAG is disabled. The requester portal reads `show_in_requester_portal`, the support workspace reads `show_in_support_workspace`, and Studio reads `article_length_recommendation`.
 
 ### Scope
 
@@ -30,7 +30,7 @@ Registry/audience foundation is treated as an existing dependency.
 
 ## K1 — Knowledge Sections
 
-Status: implemented, needs hardening.
+Status: implemented and hardened.
 
 Implemented:
 
@@ -39,20 +39,21 @@ Implemented:
 - Section editor supports title, code, description, visibility, lifecycle status, publication, ingestion, RAG, portal/support exposure, allowed material types and article length recommendation.
 - Space-level audience summaries are shown.
 - Uses existing `KnowledgeSpace` API and `knowledge_audience_rules` with `subject_type=space`.
+- Stable section metadata keys are documented with owners/readers:
+  - `show_in_requester_portal`
+  - `show_in_support_workspace`
+  - `article_length_recommendation`
+- Backend rejects contradictory policies:
+  - `show_in_requester_portal=true` with non-requester-safe visibility;
+  - `allow_rag=false` while active article policy forces RAG allowed;
+  - article `ai_rag_policy=allowed` in a section where RAG is disabled;
+  - no allowed item types.
+- The section list has a clear no-sections empty state.
+- The section editor warns before archiving a section that still has active articles.
 
 Remaining:
 
-1. Document stable section metadata keys:
-   - `show_in_requester_portal`
-   - `show_in_support_workspace`
-   - `article_length_recommendation`
-2. Ensure every section metadata key has one owner and one reader.
-3. Add validation for contradictory policies:
-   - `show_in_requester_portal=true` with non-requester-safe visibility;
-   - `allow_rag=false` while article policy forces RAG allowed;
-   - no allowed item types.
-4. Add clear empty state for no sections.
-5. Add section archive warning if active articles exist.
+- No open K1 hardening items.
 
 Acceptance:
 

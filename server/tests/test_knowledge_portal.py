@@ -20,12 +20,19 @@ async def _published_item(
     slug: str,
     title: str,
     body: str,
+    space_metadata: dict | None = None,
     visibility: str = "requester",
 ) -> dict:
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",
         headers=ADMIN_HEADERS,
-        json={"code": space_code, "title": f"Space {space_code}", "visibility": visibility, "lifecycle_status": "active"},
+        json={
+            "code": space_code,
+            "title": f"Space {space_code}",
+            "visibility": visibility,
+            "lifecycle_status": "active",
+            **({"metadata": space_metadata} if space_metadata is not None else {}),
+        },
     )
     assert space_resp.status == 200
     item_resp = await test_client.post(
@@ -127,6 +134,44 @@ async def test_knowledge_portal_home_lists_only_requester_safe_published_article
     assert requester_item["slug"] in article_slugs
     assert f"portal-internal-{suffix}" not in article_slugs
     assert all("current_version" not in article for article in payload["recent_articles"])
+
+
+@pytest.mark.asyncio
+async def test_knowledge_portal_hides_sections_disabled_for_requester_portal(test_client) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    visible_item = await _published_item(
+        test_client,
+        space_code=f"portal-visible-{suffix}",
+        slug=f"portal-visible-{suffix}",
+        title="Portal visible article",
+        body="Visible requester portal body.",
+        visibility="requester",
+    )
+    hidden_item = await _published_item(
+        test_client,
+        space_code=f"portal-hidden-{suffix}",
+        slug=f"portal-hidden-{suffix}",
+        title="Portal hidden article",
+        body="Hidden requester portal body must not leak.",
+        space_metadata={"show_in_requester_portal": False},
+        visibility="requester",
+    )
+
+    home_resp = await test_client.get("/api/knowledge/portal/home")
+    assert home_resp.status == 200
+    home_payload = await home_resp.json()
+    home_text = str(home_payload)
+
+    assert visible_item["slug"] in home_text
+    assert hidden_item["slug"] not in home_text
+    assert "Hidden requester portal body" not in home_text
+    assert all(space["code"] != f"portal-hidden-{suffix}" for space in home_payload["spaces"])
+
+    collection_resp = await test_client.get(f"/api/knowledge/portal/spaces/portal-hidden-{suffix}")
+    assert collection_resp.status == 404
+
+    detail_resp = await test_client.get(f"/api/knowledge/articles/{hidden_item['slug']}")
+    assert detail_resp.status == 404
 
 
 @pytest.mark.asyncio

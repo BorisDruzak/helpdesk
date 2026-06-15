@@ -77,6 +77,28 @@ const itemsPayload = {
   ],
 };
 
+const spacesPayload = {
+  status: "ok",
+  spaces: [
+    {
+      space_id: "space-it",
+      code: "it",
+      title: "IT",
+      visibility: "support_internal",
+      lifecycle_status: "active",
+      metadata: { show_in_support_workspace: true },
+    },
+    {
+      space_id: "space-hidden",
+      code: "hidden",
+      title: "Hidden",
+      visibility: "support_internal",
+      lifecycle_status: "active",
+      metadata: { show_in_support_workspace: false },
+    },
+  ],
+};
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -86,6 +108,9 @@ describe("KnowledgeSupportWorkspacePage", () => {
     const fetchMock = vi.fn((url: string) => {
       if (url === "/api/web/knowledge/items") {
         return Promise.resolve(jsonResponse(itemsPayload));
+      }
+      if (url === "/api/web/knowledge/spaces") {
+        return Promise.resolve(jsonResponse(spacesPayload));
       }
       if (url === "/api/web/knowledge/items/item-runbook/versions") {
         return Promise.resolve(
@@ -135,6 +160,9 @@ describe("KnowledgeSupportWorkspacePage", () => {
       const url = String(input);
       if (url === "/api/web/knowledge/items") {
         return Promise.resolve(jsonResponse(itemsPayload));
+      }
+      if (url === "/api/web/knowledge/spaces") {
+        return Promise.resolve(jsonResponse(spacesPayload));
       }
       if (url === "/api/web/knowledge/items/item-runbook/versions") {
         return Promise.resolve(jsonResponse({ status: "ok", versions: [] }));
@@ -196,6 +224,9 @@ describe("KnowledgeSupportWorkspacePage", () => {
       const url = String(input);
       if (url === "/api/web/knowledge/items") {
         return Promise.resolve(jsonResponse(itemsPayload));
+      }
+      if (url === "/api/web/knowledge/spaces") {
+        return Promise.resolve(jsonResponse(spacesPayload));
       }
       if (url === "/api/web/knowledge/items/item-requester/versions") {
         return Promise.resolve(
@@ -330,5 +361,52 @@ describe("KnowledgeSupportWorkspacePage", () => {
         }),
       ]),
     );
+  });
+
+  it("hides articles from sections disabled for the support workspace", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/web/knowledge/items") {
+        return Promise.resolve(
+          jsonResponse({
+            status: "ok",
+            items: [
+              ...itemsPayload.items,
+              {
+                item_id: "item-hidden",
+                slug: "hidden-support-article",
+                title: "Hidden support article",
+                summary: "This article belongs to a section hidden from support workspace.",
+                item_type: "article",
+                type: "article",
+                status: "published",
+                visibility: "support_internal",
+                space_id: "space-hidden",
+                current_version_id: "version-hidden",
+                current_version: {
+                  version_id: "version-hidden",
+                  item_id: "item-hidden",
+                  version_number: 1,
+                  title: "Hidden support article",
+                  body_format: "markdown",
+                },
+              },
+            ],
+          }),
+        );
+      }
+      if (url === "/api/web/knowledge/spaces") {
+        return Promise.resolve(jsonResponse(spacesPayload));
+      }
+      if (url === "/api/web/knowledge/items/item-runbook/versions") {
+        return Promise.resolve(jsonResponse({ status: "ok", versions: [] }));
+      }
+      return Promise.resolve(jsonResponse({ status: "ok", versions: [] }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkspace("/app/knowledge/articles/item-runbook");
+
+    expect(await screen.findByRole("heading", { name: "База знаний поддержки" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("Hidden support article")).not.toBeInTheDocument());
   });
 });

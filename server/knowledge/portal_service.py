@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import KnowledgeAudienceRule, KnowledgeSpace
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.access_service import KnowledgeAccessService
-from knowledge.contracts import actor_visible_visibilities
+from knowledge.contracts import REQUESTER_SAFE_VISIBILITIES, actor_visible_visibilities
 
 
 REQUESTER_PORTAL_ROLES = {"public", "requester", "user", "agent"}
@@ -24,6 +24,10 @@ def _portal_role(actor_role: str | None) -> str:
 
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _text_value(value: Any) -> str | None:
@@ -56,6 +60,22 @@ def _safe_space(space: dict[str, Any]) -> dict[str, Any]:
         "allow_rag": bool(space.get("allow_rag")),
         "updated_at": space.get("updated_at"),
     }
+
+
+def _section_enabled_for_requester_portal(space: Any) -> bool:
+    if isinstance(space, dict):
+        visibility = str(space.get("visibility") or "")
+        lifecycle_status = str(space.get("lifecycle_status") or "active")
+        metadata = _dict(space.get("metadata") or space.get("metadata_json"))
+    else:
+        visibility = str(getattr(space, "visibility", "") or "")
+        lifecycle_status = str(getattr(space, "lifecycle_status", "") or "active")
+        metadata = _dict(getattr(space, "metadata_json", None))
+    return (
+        lifecycle_status == "active"
+        and visibility in set(REQUESTER_SAFE_VISIBILITIES)
+        and metadata.get("show_in_requester_portal") is not False
+    )
 
 
 def _safe_article_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -126,11 +146,14 @@ class KnowledgePortalService:
         role = _portal_role(actor_role)
         items = await self.repo.list_items(actor_role=role, include_archived=False)
         items = await self._filter_audience_visible_items(items, effective_audience=effective_audience)
-        spaces = [
-            _safe_space(space)
+        raw_spaces = [
+            space
             for space in await self.repo.list_spaces(actor_role=role)
-            if space.get("lifecycle_status") == "active"
+            if space.get("lifecycle_status") == "active" and _section_enabled_for_requester_portal(space)
         ]
+        portal_space_ids = {str(space.get("space_id") or "") for space in raw_spaces}
+        items = [item for item in items if str(item.get("space_id") or "") in portal_space_ids]
+        spaces = [_safe_space(space) for space in raw_spaces]
         article_summaries = [_safe_article_summary(item) for item in items if item.get("status") == "published"]
         recent = article_summaries[: max(1, min(int(limit or 12), 50))]
         signal_scores = await self._portal_signal_scores([str(article.get("item_id") or "") for article in article_summaries])
@@ -159,6 +182,7 @@ class KnowledgePortalService:
     ) -> dict[str, Any]:
         role = _portal_role(actor_role)
         item = await self.repo.get_item(slug, actor_role=role)
+        await self._ensure_item_space_enabled_for_requester_portal(item)
         version = item.get("current_version")
         if not isinstance(version, dict) or not version.get("body"):
             raise ValueError("knowledge article not found")
@@ -319,11 +343,12 @@ class KnowledgePortalService:
 
         items = await self.repo.list_items(actor_role=role, include_archived=False)
         items = await self._filter_audience_visible_items(items, effective_audience=effective_audience)
+        items = await self._filter_requester_portal_items(items)
         if normalized_type == "space":
             spaces = [
                 _safe_space(space)
                 for space in await self.repo.list_spaces(actor_role=role)
-                if space.get("lifecycle_status") == "active"
+                if space.get("lifecycle_status") == "active" and _section_enabled_for_requester_portal(space)
             ]
             space = next((space for space in spaces if str(space.get("code") or "").lower() == normalized_code), None)
             if space is None:
@@ -421,6 +446,18 @@ class KnowledgePortalService:
             ],
         )
 
+    async def _filter_requester_portal_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not items:
+            return []
+        space_ids = sorted({str(item.get("space_id") or "") for item in items if item.get("space_id")})
+        if not space_ids:
+            return []
+        spaces = (
+            await self.session.execute(select(KnowledgeSpace).where(KnowledgeSpace.space_id.in_(space_ids)))
+        ).scalars().all()
+        portal_space_ids = {space.space_id for space in spaces if _section_enabled_for_requester_portal(space)}
+        return [item for item in items if str(item.get("space_id") or "") in portal_space_ids]
+
     async def _segments(self, *, item_id: str, version_id: str, actor_role: str) -> list[dict[str, Any]]:
         if not item_id or not version_id:
             return []
@@ -510,6 +547,12 @@ class KnowledgePortalService:
             ],
         )
         if not decision.allowed:
+            raise ValueError("knowledge article not found")
+
+    async def _ensure_item_space_enabled_for_requester_portal(self, item: dict[str, Any]) -> None:
+        space_id = str(item.get("space_id") or "")
+        space = await self.session.get(KnowledgeSpace, space_id) if space_id else None
+        if space is None or not _section_enabled_for_requester_portal(space):
             raise ValueError("knowledge article not found")
 
     async def _portal_signal_scores(self, item_ids: list[str]) -> dict[str, float]:

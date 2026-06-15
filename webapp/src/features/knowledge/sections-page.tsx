@@ -352,6 +352,12 @@ export function KnowledgeSectionsPage() {
 
   const itemCounts = useMemo(() => articleCountsBySpace(items), [items]);
   const audienceRules = useMemo(() => audienceRulesBySpace(spaceAudienceRulesQuery.data ?? []), [spaceAudienceRulesQuery.data]);
+  const selectedArticleCount = selectedSpace ? itemCounts.get(selectedSpace.space_id) ?? 0 : 0;
+  const materialTypeValidationMessage = draft.allowed_item_types.length === 0 ? "Выберите хотя бы один тип материала." : "";
+  const archiveWarning =
+    !isCreating && draft.lifecycle_status === "archived" && selectedArticleCount > 0
+      ? `В разделе есть ${pluralArticles(selectedArticleCount)}. Перед архивированием проверьте, куда будут перенесены материалы.`
+      : "";
 
   const saveMutation = useMutation({
     mutationFn: () => {
@@ -384,7 +390,7 @@ export function KnowledgeSectionsPage() {
     },
   });
 
-  const canSave = normalizeCode(draft.code).length > 0 && draft.title.trim().length > 0;
+  const canSave = normalizeCode(draft.code).length > 0 && draft.title.trim().length > 0 && !materialTypeValidationMessage;
 
   return (
     <section className="space-y-6">
@@ -496,7 +502,9 @@ export function KnowledgeSectionsPage() {
               );
             })}
             {!spacesQuery.isLoading && filteredSpaces.length === 0 ? (
-              <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">Разделы не найдены.</p>
+              <p className="rounded-md border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                {spaces.length === 0 ? "Разделы базы знаний еще не созданы. Создайте первый раздел, чтобы задать политики." : "Разделы не найдены."}
+              </p>
             ) : null}
           </div>
         </section>
@@ -572,6 +580,11 @@ export function KnowledgeSectionsPage() {
                   ))}
                 </select>
               </label>
+              {archiveWarning ? (
+                <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900 lg:col-span-2" role="status">
+                  {archiveWarning}
+                </p>
+              ) : null}
               <label className="text-sm font-medium text-slate-700 lg:col-span-2">
                 Описание
                 <textarea
@@ -615,6 +628,7 @@ export function KnowledgeSectionsPage() {
               <aside className="rounded-md border border-slate-200 bg-white p-3 text-sm">
                 <p className="font-semibold text-slate-950">Сводка политики</p>
                 <p className="mt-2 text-slate-600">{materialTypeLabels(draft.allowed_item_types).join(", ") || "Типы материалов не выбраны"}</p>
+                {materialTypeValidationMessage ? <p className="mt-2 text-xs font-semibold text-rose-700">{materialTypeValidationMessage}</p> : null}
                 <p className="mt-2 text-xs text-slate-500">
                   Грубая видимость остается границей безопасности: внутренний раздел не станет заявительским только из-за флага портала.
                 </p>
