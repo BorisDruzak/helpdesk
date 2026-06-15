@@ -769,12 +769,13 @@ Exit bar:
 - Done, local slice: `KnowledgeRetrievalService` filters by RAG eligibility after audience filtering and before ordering/rerank/citations, and requester/agent/public responses do not receive RAG-policy trace.
 - Done, local slice: vector fallback candidates apply the same RAG eligibility gate before similarity scoring.
 - Done, local slice: `PATCH /api/web/knowledge/items/{item_id_or_slug}` updates article settings/metadata for Studio while preserving the one-button version+publish authoring flow.
+- Done, live stand: commit `9fa17fe7` verified on `https://192.168.100.17:9443` with Studio save through `PATCH`, support/admin retrieval filtering, safe RAG explain and no console/API errors; evidence is `artifacts/browser_live_validation/knowledge-k4-k5-9fa17fe7-1781485973241/summary.json`.
 
 Exit bar:
 
-- Ask/RAG never uses denied content;
-- admin explain can show rule reason;
-- requester response never leaks hidden metadata.
+- Done, live evidence: Ask/RAG retrieval does not use denied article-level or section-level RAG-disabled content.
+- Done, live evidence: admin explain shows `article_rag_disabled` and `section_rag_disabled`.
+- Done, live evidence: excluded RAG trace keeps hidden titles/slugs/body out of the explain payload.
 
 ### Phase K5 — Operations polish
 
@@ -789,11 +790,12 @@ Exit bar:
 - Keep Studio focused on authoring.
 - Done, local slice: `GET /api/web/knowledge/ops/summary` returns safe `action_queues` for no audience users, missing helpdesk binding, stale article, indexing failed, low quality and zero-result searches.
 - Done, local slice: `/app/admin/knowledge` renders the action queues as operations work, while article RAG policy and authoring remain in `/app/admin/knowledge/studio`.
+- Done, live stand: `action_queues` contract and visible `/app/admin/knowledge` queues verified in `artifacts/browser_live_validation/knowledge-k4-k5-9fa17fe7-1781485973241/summary.json`; live totals included no-audience `3`, missing binding `69`, stale article `2`, indexing failed `2`, low quality `100`, zero-result searches `11875`.
 
 Exit bar:
 
-- operations page shows what needs attention;
-- authoring page stays simple.
+- Done, live evidence: operations page shows actionable queues and links for the seeded K5 signals.
+- Done, live evidence: authoring stays in Studio; `/app/admin/knowledge` remains an operations landing page.
 
 ---
 
