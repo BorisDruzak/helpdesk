@@ -88,6 +88,32 @@ describe("KnowledgeOpsDashboardPanel", () => {
                 assigned_open: { total: 3 },
                 overdue: { total: 2 },
               },
+              action_queues: {
+                no_audience_users: {
+                  total: 1,
+                  items: [{ item_id: "item-zero", title: "VPN для заявителей", reason: "Аудитория не содержит пользователей", action_url: "/app/admin/knowledge/studio?item=item-zero" }],
+                },
+                missing_helpdesk_binding: {
+                  total: 2,
+                  items: [{ item_id: "item-binding", title: "Принтеры", reason: "Нет связи с услугой или формой обращения", action_url: "/app/admin/knowledge/studio?item=item-binding" }],
+                },
+                stale_article: {
+                  total: 1,
+                  items: [{ item_id: "item-stale", title: "VPN устарела", reason: "Просрочена проверка", action_url: "/app/admin/knowledge/studio?item=item-stale" }],
+                },
+                indexing_failed: {
+                  total: 2,
+                  items: [{ job_id: "job-1", title: "Индексация item", reason: "embedding provider unavailable", action_url: "/app/admin/knowledge/indexing" }],
+                },
+                low_quality: {
+                  total: 2,
+                  items: [{ item_id: "item-quality", title: "Слабая статья", reason: "Оценка качества ниже порога", action_url: "/app/admin/knowledge/studio?item=item-quality" }],
+                },
+                zero_result_searches: {
+                  total: 5,
+                  items: [{ query: "vpn", reason: "5 поисков без результата", action_url: "/app/admin/knowledge/search-settings" }],
+                },
+              },
               observer: {
                 degradations: [
                   {
@@ -153,6 +179,14 @@ describe("KnowledgeOpsDashboardPanel", () => {
     expect(screen.getByText("Поиск и RAG")).toBeInTheDocument();
     expect(screen.getByText("Покрытие и проверка")).toBeInTheDocument();
     expect(screen.getByText("AI, индексация и граф")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Очереди действий" })).toBeInTheDocument();
+    expect(screen.getByText("Нет пользователей в аудитории")).toBeInTheDocument();
+    expect(screen.getByText("Нет связи с обращениями")).toBeInTheDocument();
+    expect(screen.getByText("Устаревшие статьи")).toBeInTheDocument();
+    expect(screen.getByText("Слабое качество")).toBeInTheDocument();
+    expect(screen.getByText("Нулевые поиски")).toBeInTheDocument();
+    expect(screen.getByText("VPN для заявителей")).toBeInTheDocument();
+    expect(screen.getByText("embedding provider unavailable")).toBeInTheDocument();
     expect(screen.getByText("Деградации из Observer")).toBeInTheDocument();
     expect(screen.getByText("knowledge.indexing.failed")).toBeInTheDocument();
     expect(screen.getByText("Embedding provider unavailable")).toBeInTheDocument();

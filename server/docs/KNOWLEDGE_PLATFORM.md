@@ -9,7 +9,7 @@ P2 adds a universal company knowledge layer and uses it for helpdesk self-servic
 ## Core Model
 
 - `knowledge_spaces`: logical knowledge areas such as IT Support, Security, HR or Vendor Docs. Spaces define lifecycle, visibility, owner/reviewer defaults, ingestion/RAG flags and allowed item types.
-- `knowledge_items`: universal objects with item type, lifecycle, visibility, owner/reviewer, source metadata, review dates and current published version.
+- `knowledge_items`: universal objects with item type, lifecycle, visibility, owner/reviewer, source metadata, review dates, current published version and optional item metadata such as `metadata_json.ai_rag_policy`.
 - `knowledge_item_versions`: immutable versioned content. Publishing points `knowledge_items.current_version_id` at a reviewed version.
 - `knowledge_chunks`: chunked text for search and future ACL-filtered retrieval/RAG. P2 does not add a mandatory external search or vector database.
 - `knowledge_bindings`: operational links to `service_code`, `offering_code`, `request_template_key`, ticket type, symptoms, error codes and device/OS context.
@@ -56,9 +56,20 @@ Registry-scoped audience rules are tracked in [REGISTRY_VISIBILITY_FOUNDATION.md
 
 Knowledge Section Constructor K1 exposes the existing `KnowledgeSpace` policy surface as `/app/admin/knowledge/sections`. The UI uses the product term `Раздел базы знаний`, saves section policy through `GET|POST /api/web/knowledge/spaces`, and manages default section audience through the existing `subject_type=space` audience-rule API. The constructor also shows article counts from `GET /api/web/knowledge/items`, edits allowed material types through `KnowledgeSpace.allowed_item_types`, stores requester portal/support workspace exposure plus article length recommendation in `KnowledgeSpace.metadata` while preserving unrelated metadata keys, and loads `GET /api/web/admin/knowledge/audience-rules?subject_type=space` for per-list audience summaries without exposing raw target ids. Internal API/database names remain `KnowledgeSpace`, `space_id` and `space_code`; user-facing labels must not fall back to `Пространство`.
 
-Current audience semantics are explicit: `target_type=department` matches only the requester's current primary `registry_people.department_id`; `target_type=department_tree` matches the requester's department path for subtree targeting. Registry audience groups are resolved by `EffectiveIdentityService` into deterministic `{audience_group_id, code}` entries and `target_type=audience_group` may match either value. Admin preview supports both item preview and space preview; space preview returns `item: null` and evaluates persisted or transient space rules without needing a representative article.
+Current audience semantics are explicit: `target_type=department` matches only the requester's current primary `registry_people.department_id`; `target_type=department_tree` matches the requester's department path for subtree targeting. Registry audience groups are resolved by `EffectiveIdentityService` into deterministic `{audience_group_id, code}` entries and `target_type=audience_group` may match either value. Inside Registry audience groups, `member_type=department` with `include_children=true` is an intentional alias for subtree matching including the root department and is equivalent to `member_type=department_tree`; with `include_children=false`, `department` remains direct-current-department targeting. Admin preview supports both item preview and space preview; space preview returns `item: null` and evaluates persisted or transient space rules without needing a representative article.
 
 The current rule model is allow-only. `knowledge_audience_rules.effect` is constrained to `allow`, authoring APIs persist `effect=allow`, and access evaluation ignores non-allow effects. If a published requester-safe item has no active audience rules, coarse visibility applies; if it has active rules, requester/agent/public access requires a matching allow rule. Privileged support/admin/security/auditor reads bypass audience matching after coarse visibility with `privileged_actor_override`; future AI-chat surfaces must decide explicitly whether privileged AI should respect requester audiences before using that override.
+
+## RAG Eligibility
+
+RAG eligibility is a second gate after lifecycle, coarse visibility and audience rules. It never grants visibility.
+
+- Section default: `knowledge_spaces.allow_rag`.
+- Article override: `knowledge_items.metadata_json.ai_rag_policy`.
+- Supported article values: `inherit`, `allowed`, `disabled`, `staff_only`, `requester_safe_only`.
+- `inherit` follows `KnowledgeSpace.allow_rag`; `allowed` explicitly enables RAG for the article within existing visibility; `disabled` excludes it; `staff_only` allows only admin/support retrieval; `requester_safe_only` requires requester-safe item visibility.
+
+`KnowledgeRetrievalService` applies RAG eligibility after effective-audience filtering and before ordering, rerank, citations and Ask prompt construction. `KnowledgeVectorSearchService` also applies the same policy before returning vector candidates. Internal `/api/web/knowledge/retrieve` responses may include a `rag_policy` explain block with counts and reason codes for admin/support/auditor/security. Requester, agent and public responses do not receive this trace, and excluded trace entries do not include denied article title, slug, body, snippets or chunks.
 
 ## Search And Suggestions
 
@@ -151,6 +162,7 @@ Admin/support management:
 - `POST /api/web/knowledge/indexing/reindex-all`
 - `GET|POST /api/web/knowledge/spaces`
 - `GET|POST /api/web/knowledge/items`
+- `PATCH /api/web/knowledge/items/{item_id_or_slug}`
 - `GET|POST /api/web/knowledge/segmentation-profiles`
 - `PATCH|DELETE /api/web/knowledge/segments/{segment_id}`
 - `POST /api/web/knowledge/segments/{segment_id}/approve`

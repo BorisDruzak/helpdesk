@@ -4,9 +4,10 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import KnowledgeIndexJob, KnowledgeSearchEvent, ObserverIntegrityEvent
+from app.db.models import KnowledgeAudienceRule, KnowledgeIndexJob, KnowledgeItem, KnowledgeSearchEvent, ObserverIntegrityEvent, RegistryDepartment
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.ops_summary_service import KnowledgeOpsSummaryService
 
@@ -92,6 +93,78 @@ async def test_knowledge_ops_summary_aggregates_health_and_observer_degradations
     assert summary["rag"]["no_answer_count"]["total"] >= 1
     assert summary["indexing"]["failed"]["total"] >= 1
     assert any(item["code"] == "knowledge.indexing.failed" for item in summary["observer"]["degradations"])
+
+
+@pytest.mark.asyncio
+async def test_knowledge_ops_summary_returns_actionable_queues(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        item = await _published_article(session, slug=f"ops-queue-{uuid.uuid4().hex[:8]}")
+        row = (await session.execute(select(KnowledgeItem).where(KnowledgeItem.item_id == item["item_id"]))).scalar_one()
+        row.owner_actor_id = None
+        row.reviewer_actor_id = None
+        row.review_due_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        department_id = str(uuid.uuid4())
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code=f"empty-{uuid.uuid4().hex[:6]}",
+                name="Empty audience department",
+                status="active",
+                source="test",
+            )
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id=str(uuid.uuid4()),
+                subject_type="item",
+                subject_id=item["item_id"],
+                target_type="department",
+                target_id=department_id,
+                effect="allow",
+                include_children=False,
+                priority=10,
+                status="active",
+                reason="test zero audience",
+                metadata_json={},
+            )
+        )
+        session.add(
+            KnowledgeSearchEvent(
+                event_id=str(uuid.uuid4()),
+                actor_role="requester",
+                surface="requester_portal",
+                query_text_hash="hash-zero-queue",
+                query_text_redacted="missing vpn article",
+                result_count=0,
+                metadata_json={},
+            )
+        )
+        session.add(
+            KnowledgeIndexJob(
+                job_id=str(uuid.uuid4()),
+                scope_type="item",
+                scope_ref=item["item_id"],
+                status="failed",
+                error_redacted="embedding provider unavailable",
+                stats_json={"failed_embeddings": 1},
+                metadata_json={},
+            )
+        )
+        await session.commit()
+
+        summary = await KnowledgeOpsSummaryService(session).summary(actor_role="admin")
+
+    queues = summary["action_queues"]
+    assert queues["no_audience_users"]["total"] >= 1
+    assert queues["missing_helpdesk_binding"]["total"] >= 1
+    assert queues["stale_article"]["total"] >= 1
+    assert queues["indexing_failed"]["total"] >= 1
+    assert queues["low_quality"]["total"] >= 1
+    assert queues["zero_result_searches"]["total"] >= 1
+    assert queues["missing_helpdesk_binding"]["items"][0]["action_url"].startswith("/app/admin/knowledge/studio?item=")
+    assert queues["zero_result_searches"]["items"][0]["query"] == "missing vpn article"
+    assert "body" not in str(queues)
 
 
 @pytest.mark.asyncio

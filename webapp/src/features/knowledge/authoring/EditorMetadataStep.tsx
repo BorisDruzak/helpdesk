@@ -4,7 +4,7 @@ import { ArticleHelpDeskBindingPanel } from "../article-helpdesk-binding-panel";
 import { ArticleMetadataPanel } from "../article-metadata-panel";
 import { ArticleVisibilityPanel } from "../article-visibility-panel";
 import type { KnowledgeItem, KnowledgeSpace } from "../api";
-import { fieldClass, itemTypeOptions, type EditorDraft, visibilityOptions } from "./knowledge-studio-model";
+import { aiRagPolicyOptions, fieldClass, itemTypeOptions, type EditorDraft, visibilityOptions } from "./knowledge-studio-model";
 
 type EditorMetadataStepProps = {
   draft: EditorDraft;
@@ -15,6 +15,7 @@ type EditorMetadataStepProps = {
 
 export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces }: EditorMetadataStepProps) {
   const [showAdvancedMetadata, setShowAdvancedMetadata] = useState(false);
+  const selectedSpace = spaces.find((space) => space.code === draft.space_code);
 
   return (
     <div className="space-y-4">
@@ -69,6 +70,22 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
               Это базовый уровень доступа. Он ограничивает, кто вообще может получить статью: заявитель, агент, поддержка, администратор.
             </p>
           </div>
+          <div>
+            <label className="text-sm font-medium">
+              Использовать в AI/RAG
+              <select className={fieldClass} value={draft.ai_rag_policy} onChange={(event) => onDraftChange({ ai_rag_policy: event.target.value })}>
+                {aiRagPolicyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Второй фильтр перед AI-ответами и цитатами. Он не расширяет видимость статьи; по умолчанию наследует раздел
+              {selectedSpace ? ` (${selectedSpace.allow_rag ? "RAG включён" : "RAG отключён"})` : ""}.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -83,7 +100,9 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Портал заявителя</span>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Форма обращения</span>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">Карточка тикета</span>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">AI/RAG по политике раздела</span>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+            {aiRagPolicyOptions.find((option) => option.value === draft.ai_rag_policy)?.label ?? "AI/RAG по политике раздела"}
+          </span>
         </div>
       </section>
 

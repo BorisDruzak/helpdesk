@@ -643,6 +643,10 @@ Knowledge UI needs reliable pickers for:
 
 Use existing Registry/Admin APIs where possible.
 
+### 9.4. Department subtree contract
+
+Registry audience group member `member_type=department` with `include_children=true` is an intentional subtree contract: it matches the root department and descendants through `department_path_ids`, so it is equivalent to `member_type=department_tree` for audience-group expansion. `member_type=department` with `include_children=false` remains direct-current-department targeting. Knowledge audience rules that target `audience_group` inherit this Registry expansion contract.
+
 ---
 
 ## 10. Tests
@@ -761,6 +765,10 @@ Exit bar:
 - Ensure retrieval respects visibility + audience + RAG eligibility.
 - Add trace/explain for why article was included/excluded.
 - Keep citations safe.
+- Done, local slice: added article-level `Использовать в AI/RAG` policy stored in `knowledge_items.metadata_json.ai_rag_policy` with section default from `KnowledgeSpace.allow_rag`.
+- Done, local slice: `KnowledgeRetrievalService` filters by RAG eligibility after audience filtering and before ordering/rerank/citations, and requester/agent/public responses do not receive RAG-policy trace.
+- Done, local slice: vector fallback candidates apply the same RAG eligibility gate before similarity scoring.
+- Done, local slice: `PATCH /api/web/knowledge/items/{item_id_or_slug}` updates article settings/metadata for Studio while preserving the one-button version+publish authoring flow.
 
 Exit bar:
 
@@ -779,6 +787,8 @@ Exit bar:
   - low quality;
   - zero-result searches.
 - Keep Studio focused on authoring.
+- Done, local slice: `GET /api/web/knowledge/ops/summary` returns safe `action_queues` for no audience users, missing helpdesk binding, stale article, indexing failed, low quality and zero-result searches.
+- Done, local slice: `/app/admin/knowledge` renders the action queues as operations work, while article RAG policy and authoring remain in `/app/admin/knowledge/studio`.
 
 Exit bar:
 

@@ -24,7 +24,10 @@ async def _published_item(
     visibility: str,
 ) -> tuple[dict, dict, dict]:
     repo = KnowledgeRepo(session)
-    await repo.upsert_space({"code": "vector-search", "title": "Vector search", "visibility": "requester", "lifecycle_status": "active"}, actor_id="admin")
+    await repo.upsert_space(
+        {"code": "vector-search", "title": "Vector search", "visibility": "requester", "lifecycle_status": "active", "allow_rag": True},
+        actor_id="admin",
+    )
     item = await repo.create_item_draft(
         {
             "space_code": "vector-search",

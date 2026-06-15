@@ -28,6 +28,7 @@ import {
   fetchKnowledgeSpaces,
   fetchKnowledgeTemplates,
   publishKnowledgeItem,
+  updateKnowledgeItemSettings,
 } from "./api";
 
 const domainTabs = [
@@ -179,6 +180,15 @@ export function KnowledgeAuthoringStudioPage() {
       if (!selectedItem?.item_id) {
         throw new Error("Выберите статью перед сохранением");
       }
+      await updateKnowledgeItemSettings(selectedItem.item_id, {
+        item_type: draft.item_type,
+        metadata: { ...(selectedItem.metadata ?? {}), ai_rag_policy: draft.ai_rag_policy },
+        space_code: draft.space_code,
+        summary: draft.summary,
+        tags: normalizeList(draft.tags),
+        title: draft.title,
+        visibility: draft.visibility,
+      });
       const versionResult = await createKnowledgeVersion(selectedItem.item_id, {
         body: draft.body,
         body_format: draft.body_format,

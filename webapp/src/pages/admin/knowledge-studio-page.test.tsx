@@ -21,6 +21,7 @@ const spacesPayload = {
       title: "IT Self-Service",
       visibility: "requester",
       lifecycle_status: "active",
+      allow_rag: true,
       owner_actor_id: "owner",
       default_reviewer_actor_id: "reviewer",
     },
@@ -79,6 +80,7 @@ const itemsPayload = {
       owner_actor_id: "owner",
       reviewer_actor_id: "reviewer",
       tags: ["vpn", "remote"],
+      metadata: { ai_rag_policy: "inherit" },
       current_version_id: "ver-1",
       updated_at: "2026-06-12T07:00:00Z",
     },
@@ -239,6 +241,17 @@ function setupFetch() {
           title: "VPN access",
           body_format: "markdown",
           body: JSON.parse(String(init.body)).body,
+        },
+      });
+    }
+    if (url === "/api/web/knowledge/items/item-1" && init?.method === "PATCH") {
+      const body = JSON.parse(String(init.body));
+      return jsonResponse({
+        status: "ok",
+        item: {
+          ...itemsPayload.items[1],
+          ...body,
+          metadata: body.metadata,
         },
       });
     }
@@ -720,8 +733,27 @@ describe("AdminKnowledgeStudioPage", () => {
     fireEvent.change(screen.getByLabelText("Краткое описание"), {
       target: { value: "Updated requester-safe body" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "2. Настройки" }));
+    expect(await screen.findByLabelText("Использовать в AI/RAG")).toHaveValue("inherit");
+    fireEvent.change(screen.getByLabelText("Использовать в AI/RAG"), {
+      target: { value: "staff_only" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Сохранить статью" }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/knowledge/items/item-1",
+        expect.objectContaining({ method: "PATCH", credentials: "same-origin" }),
+      ),
+    );
+    const settingsCall = fetchMock.mock.calls.find((call) => call[0] === "/api/web/knowledge/items/item-1" && call[1]?.method === "PATCH");
+    expect(JSON.parse(String(settingsCall?.[1]?.body))).toMatchObject({
+      title: "VPN access",
+      summary: "Updated requester-safe body",
+      visibility: "requester",
+      metadata: { ai_rag_policy: "staff_only" },
+    });
+
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/knowledge/items/item-1/versions",

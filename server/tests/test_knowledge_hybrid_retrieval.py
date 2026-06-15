@@ -23,14 +23,26 @@ async def _published_item(
     slug: str,
     title: str,
     body: str,
+    space_code: str = "hybrid-retrieval",
+    space_allow_rag: bool = True,
     visibility: str = "requester",
     binding: dict | None = None,
+    metadata: dict | None = None,
 ) -> tuple[dict, dict, dict]:
     repo = KnowledgeRepo(session)
-    await repo.upsert_space({"code": "hybrid-retrieval", "title": "Hybrid retrieval", "visibility": "requester", "lifecycle_status": "active"}, actor_id="admin")
+    await repo.upsert_space(
+        {
+            "code": space_code,
+            "title": f"{space_code} space",
+            "visibility": "requester",
+            "lifecycle_status": "active",
+            "allow_rag": space_allow_rag,
+        },
+        actor_id="admin",
+    )
     item = await repo.create_item_draft(
         {
-            "space_code": "hybrid-retrieval",
+            "space_code": space_code,
             "slug": slug,
             "item_type": "article",
             "title": title,
@@ -38,6 +50,7 @@ async def _published_item(
             "visibility": visibility,
             "owner_actor_id": "owner",
             "reviewer_actor_id": "reviewer",
+            "metadata": metadata or {},
         },
         actor_id="admin",
         actor_role="admin",
@@ -215,6 +228,67 @@ async def test_hybrid_retrieval_merges_keyword_segment_binding_and_vector_scores
     assert "embedding_vector" not in first
     assert result["effective_mode"] == "hybrid_vector"
     assert result["ai_used"] is True
+
+
+@pytest.mark.asyncio
+async def test_hybrid_retrieval_filters_disabled_rag_policy_before_citations(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        allowed_item, allowed_version, allowed_chunk = await _published_item(
+            session,
+            slug="rag-policy-allowed",
+            title="VPN RAG allowed",
+            body="VPN policy content allowed for RAG.",
+            space_code="rag-policy-allowed-space",
+        )
+        disabled_section_item, disabled_section_version, disabled_section_chunk = await _published_item(
+            session,
+            slug="rag-policy-disabled-section",
+            title="VPN disabled section",
+            body="VPN disabled section content must not become a citation.",
+            space_code="rag-policy-disabled-space",
+            space_allow_rag=False,
+        )
+        disabled_article_item, disabled_article_version, disabled_article_chunk = await _published_item(
+            session,
+            slug="rag-policy-disabled-article",
+            title="VPN disabled article",
+            body="VPN disabled article content must not become a citation.",
+            space_code="rag-policy-article-space",
+            metadata={"ai_rag_policy": "disabled"},
+        )
+        await _insert_embedding(session, item=allowed_item, version=allowed_version, chunk=allowed_chunk, vector=[0.9, 0.1])
+        await _insert_embedding(
+            session,
+            item=disabled_section_item,
+            version=disabled_section_version,
+            chunk=disabled_section_chunk,
+            vector=[1.0, 0.0],
+        )
+        await _insert_embedding(
+            session,
+            item=disabled_article_item,
+            version=disabled_article_version,
+            chunk=disabled_article_chunk,
+            vector=[1.0, 0.0],
+        )
+        await _enable_hybrid(session, vector_enabled=True)
+        await session.commit()
+
+    async with session_maker() as session:
+        result = await KnowledgeRetrievalService(session).retrieve(
+            query="VPN",
+            actor_role="support",
+            query_vector=[1.0, 0.0],
+        )
+
+    slugs = [entry["item"]["slug"] for entry in result["results"]]
+    assert slugs == ["rag-policy-allowed"]
+    assert result["results"][0]["citations"]
+    assert "rag-policy-disabled-section" not in str(result)
+    assert "rag-policy-disabled-article" not in str(result)
+    assert result["rag_policy"]["excluded_count"] == 2
+    assert {entry["reason_code"] for entry in result["rag_policy"]["excluded"]} >= {"section_rag_disabled", "article_rag_disabled"}
 
 
 @pytest.mark.asyncio

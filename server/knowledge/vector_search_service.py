@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from knowledge.contracts import actor_visible_visibilities
+from knowledge.rag_policy import evaluate_rag_eligibility
 
 
 def _coerce_vector(value: Any) -> list[float]:
@@ -70,10 +71,16 @@ class KnowledgeVectorSearchService:
                         e.content_hash,
                         e.visibility,
                         e.indexed_at,
+                        i.slug,
+                        i.title,
+                        i.visibility AS item_visibility,
+                        i.metadata_json AS item_metadata_json,
+                        sp.allow_rag AS space_allow_rag,
                         c.text AS chunk_text,
                         c.heading AS chunk_heading
                     FROM knowledge_chunk_embeddings e
                     JOIN knowledge_items i ON i.item_id = e.item_id
+                    JOIN knowledge_spaces sp ON sp.space_id = i.space_id
                     JOIN knowledge_chunks c ON c.chunk_id = e.chunk_id
                     WHERE e.status = 'indexed'
                       AND e.embedding_vector IS NOT NULL
@@ -93,6 +100,19 @@ class KnowledgeVectorSearchService:
 
         scored: list[dict[str, Any]] = []
         for row in rows:
+            decision = evaluate_rag_eligibility(
+                {
+                    "item_id": row.get("item_id"),
+                    "slug": row.get("slug"),
+                    "title": row.get("title"),
+                    "visibility": row.get("item_visibility"),
+                    "metadata_json": row.get("item_metadata_json"),
+                },
+                {"allow_rag": row.get("space_allow_rag")},
+                actor_role=actor_role,
+            )
+            if not decision.allowed:
+                continue
             embedding_vector = _coerce_vector(row.get("embedding_vector"))
             score = cosine_similarity(vector, embedding_vector)
             if score < min_score:

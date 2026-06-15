@@ -15,6 +15,7 @@ from app.db.models import KnowledgeAudienceRule, KnowledgeItem, KnowledgeItemVer
 from app.repos.knowledge_repo import serialize_item
 from knowledge.access_service import KnowledgeAccessService
 from knowledge.contracts import actor_visible_visibilities, sanitize_requester_knowledge_projection
+from knowledge.rag_policy import EXPLAIN_RAG_POLICY_ROLES, evaluate_rag_eligibility, safe_rag_trace_item
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from knowledge.vector_search_service import KnowledgeVectorSearchService
@@ -122,6 +123,7 @@ class KnowledgeRetrievalService:
                 "request_template_key": request_template_key,
             },
         )
+        rag_policy_trace = await self._filter_candidates_by_rag_policy(candidates, actor_role=actor_role)
         ordered = sorted(candidates.values(), key=lambda item: (-float(item["score"]), str(item["item"].get("title") or "")))
         results = ordered[:max_results]
         rerank_used = False
@@ -156,9 +158,10 @@ class KnowledgeRetrievalService:
                 "vector_used": vector_used,
                 "rerank_used": rerank_used,
                 "fallback_mode": vector_fallback,
+                "rag_policy_excluded_count": rag_policy_trace["excluded_count"],
             },
         )
-        return {
+        payload = {
             "results": results,
             "search_mode": settings.get("search_mode"),
             "effective_mode": effective_mode,
@@ -171,6 +174,9 @@ class KnowledgeRetrievalService:
                 "rerank_enabled": bool(settings.get("rerank_enabled", False)),
             },
         }
+        if str(actor_role or "").lower() in EXPLAIN_RAG_POLICY_ROLES:
+            payload["rag_policy"] = rag_policy_trace
+        return payload
 
     async def _maybe_rerank(
         self,
@@ -517,6 +523,53 @@ class KnowledgeRetrievalService:
         for item_id in list(candidates):
             if item_id not in allowed_ids:
                 candidates.pop(item_id, None)
+
+    async def _filter_candidates_by_rag_policy(
+        self,
+        candidates: dict[str, dict[str, Any]],
+        *,
+        actor_role: str,
+    ) -> dict[str, Any]:
+        trace = {
+            "included_count": 0,
+            "excluded_count": 0,
+            "included": [],
+            "excluded": [],
+        }
+        if not candidates:
+            return trace
+        rows = (
+            await self.session.execute(
+                select(KnowledgeItem, KnowledgeSpace)
+                .join(KnowledgeSpace, KnowledgeSpace.space_id == KnowledgeItem.space_id)
+                .where(KnowledgeItem.item_id.in_(sorted(candidates)))
+            )
+        ).all()
+        item_space_by_id = {item.item_id: (item, space) for item, space in rows}
+        for item_id in list(candidates):
+            item_space = item_space_by_id.get(item_id)
+            if item_space is None:
+                candidates.pop(item_id, None)
+                trace["excluded_count"] += 1
+                trace["excluded"].append(
+                    {
+                        "item_id": item_id,
+                        "included": False,
+                        "reason_code": "knowledge_item_not_found",
+                        "policy": "inherit",
+                    }
+                )
+                continue
+            item, space = item_space
+            decision = evaluate_rag_eligibility(item, space, actor_role=actor_role)
+            if decision.allowed:
+                trace["included_count"] += 1
+                trace["included"].append(safe_rag_trace_item(item, decision, included=True))
+            else:
+                candidates.pop(item_id, None)
+                trace["excluded_count"] += 1
+                trace["excluded"].append(safe_rag_trace_item(item, decision, included=False))
+        return trace
 
     async def _audience_access_context(
         self,

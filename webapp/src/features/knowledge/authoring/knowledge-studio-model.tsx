@@ -20,6 +20,14 @@ export const visibilityOptions = [
   { label: "Только администраторы", value: "admin_internal" },
 ];
 
+export const aiRagPolicyOptions = [
+  { label: "По умолчанию раздела", value: "inherit" },
+  { label: "Использовать в AI/RAG", value: "allowed" },
+  { label: "Не использовать в AI/RAG", value: "disabled" },
+  { label: "Только поддержка и администраторы", value: "staff_only" },
+  { label: "Только requester-safe ответы", value: "requester_safe_only" },
+];
+
 export const statusFilterOptions = [
   { label: "Все", value: "all" },
   { label: "Черновики", value: "draft" },
@@ -49,6 +57,7 @@ const statusLabels: Record<string, string> = {
 };
 
 export type EditorDraft = {
+  ai_rag_policy: string;
   body: string;
   body_format: string;
   change_summary: string;
@@ -105,7 +114,10 @@ export function draftFrom(
   version: KnowledgeItemVersion | null,
   spaces: Array<Pick<KnowledgeSpace, "code" | "space_id">>,
 ): EditorDraft {
+  const metadata = item?.metadata ?? {};
+  const aiRagPolicy = typeof metadata.ai_rag_policy === "string" ? metadata.ai_rag_policy : "inherit";
   return {
+    ai_rag_policy: aiRagPolicy,
     body: version?.body ?? "",
     body_format: version?.body_format ?? "markdown",
     change_summary: "",

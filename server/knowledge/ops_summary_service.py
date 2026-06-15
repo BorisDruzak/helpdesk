@@ -21,6 +21,7 @@ from app.db.models import (
 from knowledge.contracts import actor_visible_visibilities
 from knowledge.embedding_service import KnowledgeEmbeddingService
 from knowledge.operations_service import KnowledgeOperationsService
+from registry.service import RegistrySnapshotService
 
 
 REQUESTER_SAFE_VISIBILITIES = {"public", "requester", "agent_requester_safe"}
@@ -55,6 +56,7 @@ class KnowledgeOpsSummaryService:
         review = await self._review()
         graph = await self._graph()
         ai = await self._ai(observer)
+        action_queues = await self._action_queues(allowed=allowed, quality=quality)
         status = self._status(indexing=indexing, observer=observer, search=search, quality=quality)
 
         return {
@@ -75,6 +77,7 @@ class KnowledgeOpsSummaryService:
             "ai": ai,
             "graph": graph,
             "review": review,
+            "action_queues": action_queues,
             "observer": observer,
         }
 
@@ -249,6 +252,143 @@ class KnowledgeOpsSummaryService:
                 )
             ),
         }
+
+    async def _action_queues(self, *, allowed: set[str], quality: dict[str, Any]) -> dict[str, Any]:
+        quality_items = quality.get("items") if isinstance(quality.get("items"), list) else []
+        return {
+            "no_audience_users": await self._no_audience_users_queue(),
+            "missing_helpdesk_binding": await self._missing_helpdesk_binding_queue(allowed),
+            "stale_article": self._stale_article_queue(quality_items),
+            "indexing_failed": await self._indexing_failed_queue(),
+            "low_quality": self._low_quality_queue(quality_items),
+            "zero_result_searches": await self._zero_result_searches_queue(),
+        }
+
+    async def _no_audience_users_queue(self) -> dict[str, Any]:
+        try:
+            snapshot = await RegistrySnapshotService(self.session).build_snapshot()
+        except Exception:
+            return _metric(0, items=[])
+        issues = [
+            issue
+            for issue in snapshot.get("data_quality", [])
+            if isinstance(issue, dict) and issue.get("kind") == "knowledge_audience_zero_users"
+        ]
+        items = [
+            {
+                "item_id": issue.get("knowledge_item_id") or issue.get("object_id"),
+                "title": issue.get("details") or issue.get("description") or "Статья без аудитории",
+                "reason": "Аудитория не содержит пользователей",
+                "action_url": f"/app/admin/knowledge/studio?item={issue.get('knowledge_item_id') or issue.get('object_id')}",
+            }
+            for issue in issues[:10]
+        ]
+        return _metric(len(issues), items=items)
+
+    async def _missing_helpdesk_binding_queue(self, allowed: set[str]) -> dict[str, Any]:
+        rows = (
+            await self.session.execute(
+                select(KnowledgeItem)
+                .outerjoin(KnowledgeBinding, KnowledgeBinding.item_id == KnowledgeItem.item_id)
+                .where(
+                    KnowledgeItem.status == "published",
+                    KnowledgeItem.visibility.in_(allowed),
+                    KnowledgeBinding.binding_id.is_(None),
+                )
+                .order_by(KnowledgeItem.updated_at.desc(), KnowledgeItem.title.asc())
+            )
+        ).scalars().all()
+        items = [
+            {
+                "item_id": row.item_id,
+                "slug": row.slug,
+                "title": row.title,
+                "reason": "Нет связи с услугой или формой обращения",
+                "action_url": f"/app/admin/knowledge/studio?item={row.item_id}",
+            }
+            for row in rows[:10]
+        ]
+        return _metric(len(rows), items=items)
+
+    def _stale_article_queue(self, quality_items: list[dict[str, Any]]) -> dict[str, Any]:
+        rows = [
+            item
+            for item in quality_items
+            if "review_overdue" in set(item.get("issues") or [])
+        ]
+        items = [
+            {
+                "item_id": item.get("item_id"),
+                "slug": item.get("slug"),
+                "title": item.get("title") or "Статья требует проверки",
+                "reason": "Просрочена проверка",
+                "action_url": f"/app/admin/knowledge/studio?item={item.get('item_id')}",
+            }
+            for item in rows[:10]
+        ]
+        return _metric(len(rows), items=items)
+
+    async def _indexing_failed_queue(self) -> dict[str, Any]:
+        rows = (
+            await self.session.execute(
+                select(KnowledgeIndexJob)
+                .where(KnowledgeIndexJob.status == "failed")
+                .order_by(KnowledgeIndexJob.completed_at.desc().nulls_last(), KnowledgeIndexJob.started_at.desc().nulls_last())
+            )
+        ).scalars().all()
+        items = [
+            {
+                "job_id": row.job_id,
+                "title": f"Индексация {row.scope_type}",
+                "scope_type": row.scope_type,
+                "scope_ref": row.scope_ref,
+                "reason": row.error_redacted or "Ошибка индексации",
+                "action_url": "/app/admin/knowledge/indexing",
+            }
+            for row in rows[:10]
+        ]
+        return _metric(len(rows), items=items)
+
+    def _low_quality_queue(self, quality_items: list[dict[str, Any]]) -> dict[str, Any]:
+        rows = [
+            item
+            for item in quality_items
+            if int(item.get("quality_score") or 0) < 70 or item.get("issues")
+        ]
+        rows.sort(key=lambda item: (int(item.get("quality_score") or 0), str(item.get("title") or "")))
+        items = [
+            {
+                "item_id": item.get("item_id"),
+                "slug": item.get("slug"),
+                "title": item.get("title") or "Статья с низким качеством",
+                "reason": "Оценка качества ниже порога",
+                "quality_score": item.get("quality_score"),
+                "action_url": f"/app/admin/knowledge/studio?item={item.get('item_id')}",
+            }
+            for item in rows[:10]
+        ]
+        return _metric(len(rows), items=items)
+
+    async def _zero_result_searches_queue(self) -> dict[str, Any]:
+        rows = (
+            await self.session.execute(
+                select(KnowledgeSearchEvent.query_text_redacted, func.count(KnowledgeSearchEvent.event_id))
+                .where(KnowledgeSearchEvent.result_count == 0, KnowledgeSearchEvent.query_text_redacted.is_not(None))
+                .group_by(KnowledgeSearchEvent.query_text_redacted)
+                .order_by(func.count(KnowledgeSearchEvent.event_id).desc(), KnowledgeSearchEvent.query_text_redacted.asc())
+            )
+        ).all()
+        items = [
+            {
+                "query": str(query),
+                "reason": f"{int(count)} поисков без результата",
+                "count": int(count),
+                "action_url": "/app/admin/knowledge/search-settings",
+            }
+            for query, count in rows[:10]
+            if str(query or "").strip()
+        ]
+        return _metric(sum(int(count) for _, count in rows), items=items)
 
     async def _observer(self) -> dict[str, Any]:
         rows = (

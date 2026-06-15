@@ -158,10 +158,21 @@ Phase 14C adds the first-class management editor:
 - `/app/admin/knowledge/studio` includes item-level metadata tabs: `Таксономия`, `Свойства`, `Применимость` and `Качество`. The tabs call the same protected item metadata/applicability APIs and validate required properties, allowed values, item-type applicability and term visibility.
 - `/app/admin/knowledge/studio` also includes the Registry Visibility Foundation `Область видимости` panel for the selected article. The panel consumes admin-only Knowledge audience-rule APIs plus Registry, audience-group and access-summary lookups; authors can add allow rules for roles, people, departments, department trees, locations, access groups, audience groups and services, preview/test access decisions and save with a reason without editing raw JSON.
 - `/app/admin/knowledge/studio` includes `Связь с обращениями` for helpdesk context linking. The panel uses `/api/service-catalog/current` to choose service/offering/request-template context, saves an existing article binding through `POST /api/web/knowledge/items/{item_id_or_slug}/bindings`, reads saved links through `GET /api/web/knowledge/items/{item_id_or_slug}/bindings`, stores selected surfaces in `metadata.surfaces`, and keeps `binding_id`/raw binding JSON out of the normal authoring UI.
+- `/app/admin/knowledge/studio` includes article-level `Использовать в AI/RAG` in the normal settings step. The field writes `knowledge_items.metadata_json.ai_rag_policy` through `PATCH /api/web/knowledge/items/{item_id_or_slug}` and keeps the save flow as one authoring action: update item settings, create a version, then publish that version.
 - Business taxonomy and property definitions are governed data, not frontend code constants. The optional default seed is `content_packs/knowledge/default_metadata.json`; apply it with `python scripts/seed_knowledge_metadata.py --dry-run` or `python scripts/seed_knowledge_metadata.py --apply`. The seed is idempotent, keeps existing admin edits unless `--force` is explicit and rejects requester-visible internal/security-classified defaults.
 - Live validation evidence for this editor should create/update taxonomy, property, applicability and quality-model rows, then verify `/app/admin/knowledge`, requester `/app/kb/search`, public-compatible `/api/knowledge/search` and support `/app/knowledge` projections.
 
 Requester/public endpoints (`/api/knowledge/search`, `/api/knowledge/suggest`, `/api/knowledge/ask`, portal article APIs and `/app/help`) must not include this admin metadata bundle, raw property diagnostics, applicability internals or quality model weights.
+
+## RAG Eligibility
+
+RAG eligibility is independent from visibility and audience. It is a second gate for AI answers, citations and vector/retrieval candidates:
+
+- `KnowledgeSpace.allow_rag` is the section default.
+- `KnowledgeItem.metadata_json.ai_rag_policy` is the article override.
+- Supported article values are `inherit`, `allowed`, `disabled`, `staff_only` and `requester_safe_only`.
+- Retrieval filters candidates by visibility, then effective audience, then RAG eligibility before rerank, citations or Ask prompt construction.
+- Internal retrieval explain may expose only counts and reason codes for excluded content. Requester/agent/public projections never expose denied titles, slugs, bodies, snippets, chunks or metadata.
 
 ## Registry Audience Visibility
 
@@ -271,6 +282,8 @@ Safety invariants:
 ## UI
 
 `/app/admin/knowledge` includes operations blocks for content packs, review tasks, quality, gap findings and structured rollout policies. The rollout editor uses first-class fields instead of raw JSON for scope/surface, enabled percent, gating, bypass, max/min suggestions, known-error/quality/freshness labels and fallback behavior. The webapp API reads first-class review tasks from `/api/web/knowledge/review/tasks` and first-class gap findings from `/api/web/knowledge/gap-findings`, while preserving the older dashboard summary shape for rendering.
+
+`/app/admin/knowledge` is the Knowledge Operations Center, not an article CRUD/editor page. `GET /api/web/knowledge/ops/summary` returns `action_queues` for `no_audience_users`, `missing_helpdesk_binding`, `stale_article`, `indexing_failed`, `low_quality` and `zero_result_searches`. Queue items are safe action pointers with ids, titles or redacted queries, reasons and admin URLs; they do not include article bodies, chunks or hidden requester data. Authoring, binding and policy edits stay in `/app/admin/knowledge/studio` or the dedicated workbenches.
 
 `/app/knowledge` remains support-facing and must not show admin-only content pack controls in support mode.
 

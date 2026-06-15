@@ -193,7 +193,10 @@ async def test_knowledge_rag_eval_records_recall_no_answer_and_acl_safety(test_e
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         repo = KnowledgeRepo(session)
-        await repo.upsert_space({"code": space_code, "title": "Eval KB", "visibility": "support_internal", "lifecycle_status": "active"}, actor_id="eval-admin")
+        await repo.upsert_space(
+            {"code": space_code, "title": "Eval KB", "visibility": "support_internal", "lifecycle_status": "active", "allow_rag": True},
+            actor_id="eval-admin",
+        )
         requester_article = await _publish_item(
             session,
             space_code=space_code,
@@ -310,7 +313,10 @@ async def test_knowledge_rag_eval_covers_vector_rerank_versions_and_archived_ite
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         repo = KnowledgeRepo(session)
-        await repo.upsert_space({"code": space_code, "title": "Eval deep KB", "visibility": "requester", "lifecycle_status": "active"}, actor_id="eval-admin")
+        await repo.upsert_space(
+            {"code": space_code, "title": "Eval deep KB", "visibility": "requester", "lifecycle_status": "active", "allow_rag": True},
+            actor_id="eval-admin",
+        )
         full_text_article = await _publish_item(
             session,
             space_code=space_code,

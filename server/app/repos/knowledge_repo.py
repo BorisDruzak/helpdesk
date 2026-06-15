@@ -8,7 +8,7 @@ import re
 from typing import Any
 import uuid
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -325,6 +325,57 @@ class KnowledgeRepo:
             raise ValueError("knowledge item not found")
         if str(actor_role or "").lower() not in {"admin", "support", "auditor", "security"} and item.status != "published":
             raise ValueError("knowledge item not found")
+        return serialize_item(item, current_version=await self._current_version(item))
+
+    async def update_item_settings(
+        self,
+        item_id_or_slug: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str = "admin",
+    ) -> dict[str, Any]:
+        item = await self.get_item_row(item_id_or_slug)
+        if item is None or not can_read_knowledge_visibility(actor_role, item.visibility):
+            raise ValueError("knowledge item not found")
+        if not can_mutate_knowledge_visibility(actor_role, item.visibility):
+            raise KnowledgeValidationError("actor cannot update this knowledge item")
+        if "space_code" in payload:
+            space = await self.get_space_by_code(str(payload.get("space_code") or ""))
+            if space is None:
+                raise KnowledgeValidationError("knowledge space not found")
+            item.space_id = space.space_id
+        if "item_type" in payload:
+            item.item_type = _validate_choice(str(payload.get("item_type") or item.item_type), KNOWLEDGE_ITEM_TYPES, "item_type")
+        if "visibility" in payload:
+            visibility = _validate_choice(str(payload.get("visibility") or item.visibility), KNOWLEDGE_VISIBILITIES, "visibility")
+            if not can_mutate_knowledge_visibility(actor_role, visibility):
+                raise KnowledgeValidationError("actor cannot set this knowledge visibility")
+            item.visibility = visibility
+            if item.current_version_id:
+                await self.session.execute(
+                    update(KnowledgeChunk)
+                    .where(KnowledgeChunk.item_id == item.item_id, KnowledgeChunk.version_id == item.current_version_id)
+                    .values(visibility=visibility)
+                )
+        if "title" in payload:
+            item.title = _text(payload.get("title")) or item.title
+        if "summary" in payload:
+            item.summary = _text(payload.get("summary"))
+        if "owner_actor_id" in payload:
+            item.owner_actor_id = _text(payload.get("owner_actor_id"))
+        if "reviewer_actor_id" in payload:
+            item.reviewer_actor_id = _text(payload.get("reviewer_actor_id"))
+        if "tags" in payload:
+            item.tags = _list(payload.get("tags"))
+        if "metadata" in payload or "metadata_json" in payload:
+            metadata = _dict(item.metadata_json)
+            metadata.update(_dict(payload.get("metadata") or payload.get("metadata_json")))
+            item.metadata_json = metadata
+        now = datetime.now(timezone.utc)
+        item.updated_at = now
+        item.updated_by = actor_id
+        await self.session.flush()
         return serialize_item(item, current_version=await self._current_version(item))
 
     async def list_items(self, *, actor_role: str = "admin", include_archived: bool = True) -> list[dict[str, Any]]:

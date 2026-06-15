@@ -62,7 +62,10 @@ async def _published_item(
     visibility: str = "requester",
 ) -> dict:
     repo = KnowledgeRepo(session)
-    await repo.upsert_space({"code": "ask-rag", "title": "Ask RAG", "visibility": "requester", "lifecycle_status": "active"}, actor_id="admin")
+    await repo.upsert_space(
+        {"code": "ask-rag", "title": "Ask RAG", "visibility": "requester", "lifecycle_status": "active", "allow_rag": True},
+        actor_id="admin",
+    )
     item = await repo.create_item_draft(
         {
             "space_code": "ask-rag",
@@ -233,7 +236,7 @@ async def test_public_knowledge_ask_endpoint_keeps_requester_safe_fallback(test_
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",
         headers=ADMIN_HEADERS,
-        json={"code": "ask-api", "title": "Ask API", "visibility": "requester", "lifecycle_status": "active"},
+        json={"code": "ask-api", "title": "Ask API", "visibility": "requester", "lifecycle_status": "active", "allow_rag": True},
     )
     assert space_resp.status == 200
     item_resp = await test_client.post(

@@ -44,6 +44,7 @@ export type KnowledgeItem = {
   current_version_id?: string | null;
   current_version?: KnowledgeItemVersion;
   tags?: string[];
+  metadata?: Record<string, unknown>;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -200,6 +201,21 @@ export type KnowledgeOpsMetric = {
   [key: string]: unknown;
 };
 
+export type KnowledgeOpsQueueItem = {
+  item_id?: string | null;
+  job_id?: string | null;
+  slug?: string | null;
+  title?: string | null;
+  query?: string | null;
+  reason?: string | null;
+  action_url?: string | null;
+  [key: string]: unknown;
+};
+
+export type KnowledgeOpsQueue = KnowledgeOpsMetric & {
+  items?: KnowledgeOpsQueueItem[];
+};
+
 export type KnowledgeOpsSummary = {
   status: "ok" | "degraded" | string;
   generated_at: string;
@@ -252,6 +268,14 @@ export type KnowledgeOpsSummary = {
   review: {
     assigned_open: KnowledgeOpsMetric;
     overdue: KnowledgeOpsMetric;
+  };
+  action_queues?: {
+    no_audience_users?: KnowledgeOpsQueue;
+    missing_helpdesk_binding?: KnowledgeOpsQueue;
+    stale_article?: KnowledgeOpsQueue;
+    indexing_failed?: KnowledgeOpsQueue;
+    low_quality?: KnowledgeOpsQueue;
+    zero_result_searches?: KnowledgeOpsQueue;
   };
   observer: {
     degradations: Array<{
@@ -1038,6 +1062,16 @@ export async function createKnowledgeItem(payload: Record<string, unknown>) {
     body: JSON.stringify(payload),
   });
   return readJson<{ item: KnowledgeItem }>(response, "Не удалось создать черновик знания");
+}
+
+export async function updateKnowledgeItemSettings(itemIdOrSlug: string, payload: Record<string, unknown>) {
+  const response = await fetch(`/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}`, {
+    method: "PATCH",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readJson<{ item: KnowledgeItem; display_message?: string }>(response, "Не удалось сохранить настройки статьи");
 }
 
 export async function fetchKnowledgeItemBindings(itemIdOrSlug: string): Promise<KnowledgeItemBinding[]> {

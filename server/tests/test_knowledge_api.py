@@ -456,6 +456,52 @@ async def test_knowledge_api_adds_helpdesk_binding_to_existing_article(test_clie
 
 
 @pytest.mark.asyncio
+async def test_knowledge_api_updates_article_rag_policy_metadata(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={"code": "rag-policy-api", "title": "RAG Policy API", "visibility": "requester", "lifecycle_status": "active", "allow_rag": True},
+    )
+    assert space_resp.status == 200
+
+    item_resp = await test_client.post(
+        "/api/web/knowledge/items",
+        headers=_admin_headers(),
+        json={
+            "space_code": "rag-policy-api",
+            "slug": "rag-policy-api-article",
+            "item_type": "article",
+            "title": "RAG policy API article",
+            "summary": "Draft before AI/RAG policy",
+            "visibility": "requester",
+            "owner_actor_id": "owner",
+            "reviewer_actor_id": "reviewer",
+        },
+    )
+    assert item_resp.status == 200
+    item = (await item_resp.json())["item"]
+
+    patch_resp = await test_client.patch(
+        f"/api/web/knowledge/items/{item['item_id']}",
+        headers=_admin_headers(),
+        json={
+            "title": "RAG policy API article",
+            "summary": "Updated AI/RAG policy",
+            "visibility": "requester",
+            "metadata": {"ai_rag_policy": "staff_only"},
+        },
+    )
+    assert patch_resp.status == 200
+    patch_payload = await patch_resp.json()
+    assert patch_payload["item"]["summary"] == "Updated AI/RAG policy"
+    assert patch_payload["item"]["metadata"]["ai_rag_policy"] == "staff_only"
+
+    detail_resp = await test_client.get(f"/api/web/knowledge/items/{item['item_id']}", headers=_admin_headers())
+    assert detail_resp.status == 200
+    assert (await detail_resp.json())["item"]["metadata"]["ai_rag_policy"] == "staff_only"
+
+
+@pytest.mark.asyncio
 async def test_knowledge_authoring_studio_records_editor_history(test_client) -> None:
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",

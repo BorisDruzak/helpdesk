@@ -1,9 +1,16 @@
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Bot, FileSearch, Gauge, GitBranch, Layers, Search, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Bot, FileSearch, Gauge, GitBranch, Layers, ListChecks, Search, ShieldAlert } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { fetchKnowledgeMetadata, fetchKnowledgeOpsSummary, type KnowledgeMetadataBundle, type KnowledgeOpsMetric, type KnowledgeOpsSummary } from "./api";
+import {
+  fetchKnowledgeMetadata,
+  fetchKnowledgeOpsSummary,
+  type KnowledgeMetadataBundle,
+  type KnowledgeOpsMetric,
+  type KnowledgeOpsQueue,
+  type KnowledgeOpsSummary,
+} from "./api";
 
 function metricValue(metric?: KnowledgeOpsMetric | null) {
   return Number(metric?.total ?? 0);
@@ -45,6 +52,68 @@ function SummaryGrid({ summary }: { summary: KnowledgeOpsSummary }) {
       <OpsCard description="Узлы графа без связанной статьи" title="Узлы графа без связей" value={metricValue(summary.graph.orphan_nodes)} />
       <OpsCard description="Блокировки политик поиска/RAG/индексации" title="Блокировки AI-политик" value={metricValue(summary.ai.policy_blocks)} />
     </div>
+  );
+}
+
+const queueLabels: Array<{ key: keyof NonNullable<KnowledgeOpsSummary["action_queues"]>; title: string; fallback: string }> = [
+  { key: "no_audience_users", title: "Нет пользователей в аудитории", fallback: "Аудитории статей не требуют вмешательства." },
+  { key: "missing_helpdesk_binding", title: "Нет связи с обращениями", fallback: "Все статьи связаны с услугами или формами." },
+  { key: "stale_article", title: "Устаревшие статьи", fallback: "Просроченных проверок нет." },
+  { key: "indexing_failed", title: "Индексация не прошла", fallback: "Ошибок индексации нет." },
+  { key: "low_quality", title: "Слабое качество", fallback: "Критичных замечаний качества нет." },
+  { key: "zero_result_searches", title: "Нулевые поиски", fallback: "Нулевых поисков нет." },
+];
+
+function ActionQueueColumn({ queue, title, fallback }: { queue?: KnowledgeOpsQueue; title: string; fallback: string }) {
+  const items = queue?.items ?? [];
+  return (
+    <div className="min-w-0 rounded-md border border-slate-200 bg-white p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+          <p className="mt-1 text-xs text-slate-500">Всего: {metricValue(queue)}</p>
+        </div>
+      </div>
+      <div className="mt-3 space-y-3">
+        {items.length ? (
+          items.slice(0, 3).map((item, index) => (
+            <div key={`${title}-${item.item_id ?? item.job_id ?? item.query ?? index}`} className="min-w-0 border-t border-slate-100 pt-3">
+              <p className="truncate text-sm font-medium text-slate-900">{item.title ?? item.query ?? item.item_id ?? item.job_id}</p>
+              {item.reason ? <p className="mt-1 text-xs leading-5 text-slate-600">{item.reason}</p> : null}
+              {item.action_url ? (
+                <a className="mt-2 inline-flex text-xs font-semibold text-brand-700 hover:text-brand-900" href={item.action_url}>
+                  Открыть
+                </a>
+              ) : null}
+            </div>
+          ))
+        ) : (
+          <p className="border-t border-slate-100 pt-3 text-sm text-slate-500">{fallback}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ActionQueuesPanel({ summary }: { summary: KnowledgeOpsSummary }) {
+  const queues = summary.action_queues ?? {};
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <ListChecks className="h-4 w-4" />
+          Очереди действий
+        </CardTitle>
+        <CardDescription>Конкретные места, где нужно поправить аудиторию, привязку, качество, индекс или поисковый спрос.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {queueLabels.map((queue) => (
+            <ActionQueueColumn fallback={queue.fallback} key={queue.key} queue={queues[queue.key]} title={queue.title} />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -153,6 +222,8 @@ export function KnowledgeOpsDashboardPanel() {
       </div>
 
       <SummaryGrid summary={summary} />
+
+      <ActionQueuesPanel summary={summary} />
 
       <MetadataModelPanel metadata={metadataQuery.data} />
 
