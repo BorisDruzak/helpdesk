@@ -5,7 +5,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 
 from auth.context import AuthContext, AuthType
-from auth.middleware import WEB_SESSION_COOKIE_NAME, auth_middleware
+from auth.middleware import AUTH_WHITELIST, WEB_SESSION_COOKIE_NAME, auth_middleware
 from access_control.catalog import CATALOG_VERSION
 from routes import setup_routes
 import auth.middleware as auth_middleware_module
@@ -111,6 +111,285 @@ async def test_web_session_login_sets_http_only_cookie(monkeypatch):
     assert response.cookies[WEB_SESSION_COOKIE_NAME].value == "issued-ui-token"
     assert "HttpOnly" in set_cookie
     assert "SameSite=Lax" in set_cookie
+
+
+class _FakeSessionContext:
+    async def __aenter__(self):
+        return object()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+@pytest.mark.no_db
+def test_web_session_register_is_auth_whitelisted():
+    assert "/api/web/session/register" in AUTH_WHITELIST
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_is_feature_flagged(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", False, raising=False)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "new.requester",
+                "password": "VeryStrong123!",
+                "password_repeat": "VeryStrong123!",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 403
+    assert payload["error_code"] == "SELF_REGISTRATION_DISABLED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_validates_password_repeat(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "new.requester",
+                "password": "VeryStrong123!",
+                "password_repeat": "DifferentStrong123!",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 400
+    assert payload["error_code"] == "PASSWORD_REPEAT_MISMATCH"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_creates_requester_user_without_cookie_or_role_escalation(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
+    created: dict[str, str] = {}
+
+    class FakeUiUsersRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_user(self, user_login, password_hash, actor_role="user", actor_id=None):
+            created.update(
+                {
+                    "user_login": user_login,
+                    "password_hash": password_hash,
+                    "actor_role": actor_role,
+                    "actor_id": actor_id,
+                }
+            )
+            return SimpleNamespace(user_login=user_login, actor_role=actor_role, is_active=True)
+
+    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "new.requester",
+                "password": "VeryStrong123!",
+                "password_repeat": "VeryStrong123!",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 201
+    assert payload["status"] == "success"
+    assert payload["data"]["user_login"] == "new.requester"
+    assert payload["data"]["actor_role"] == "user"
+    assert payload["data"]["next_path"] == "/app/login?registered=1"
+    assert "Set-Cookie" not in response.headers
+    assert created["actor_role"] == "user"
+    assert created["password_hash"] != "VeryStrong123!"
+    assert "full_name" not in payload["data"]
+    assert "department" not in payload["data"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_rejects_actor_role_escalation_payload(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "new.requester",
+                "password": "VeryStrong123!",
+                "password_repeat": "VeryStrong123!",
+                "actor_role": "admin",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 400
+    assert payload["error_code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_returns_duplicate_login_conflict(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
+
+    class FakeUiUsersRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_user(self, *args, **kwargs):
+            raise ValueError("User already exists")
+
+    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "new.requester",
+                "password": "VeryStrong123!",
+                "password_repeat": "VeryStrong123!",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 409
+    assert payload["error_code"] == "LOGIN_ALREADY_EXISTS"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_rejects_invalid_device_link_code_before_creating_user(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
+    created = False
+
+    class FakeBrowserPairingService:
+        def __init__(self, session):
+            self.session = session
+
+        async def lookup_by_pairing_code(self, pairing_code):
+            assert pairing_code == "BAD-CODE"
+            return None
+
+    class FakeUiUsersRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_user(self, *args, **kwargs):
+            nonlocal created
+            created = True
+            raise AssertionError("user must not be created for an invalid device-link code")
+
+    monkeypatch.setattr(session_handlers_module, "BrowserPairingService", FakeBrowserPairingService)
+    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "new.requester",
+                "password": "VeryStrong123!",
+                "password_repeat": "VeryStrong123!",
+                "device_link_code": "BAD-CODE",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 400
+    assert payload["error_code"] == "DEVICE_LINK_CODE_INVALID"
+    assert created is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_accepts_registration_device_link_code_without_confirming(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
+    confirmed = False
+
+    class FakeBrowserPairingService:
+        def __init__(self, session):
+            self.session = session
+
+        async def lookup_by_pairing_code(self, pairing_code):
+            assert pairing_code == "PAIR-1234"
+            return {
+                "pairing_id": "pair-1",
+                "purpose": "registration",
+                "status": "pending",
+                "expires_at": "2026-06-15T19:30:00+05:00",
+            }
+
+        async def confirm_registration_pairing_for_web_user(self, *args, **kwargs):
+            nonlocal confirmed
+            confirmed = True
+            raise AssertionError("registration must not confirm the device link")
+
+    class FakeUiUsersRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_user(self, user_login, password_hash, actor_role="user", actor_id=None):
+            return SimpleNamespace(user_login=user_login, actor_role=actor_role, is_active=True)
+
+    monkeypatch.setattr(session_handlers_module, "BrowserPairingService", FakeBrowserPairingService)
+    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "new.requester",
+                "password": "VeryStrong123!",
+                "password_repeat": "VeryStrong123!",
+                "device_link_code": "PAIR-1234",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 201
+    assert payload["data"]["device_link"] == {
+        "accepted": True,
+        "purpose": "registration",
+        "expires_at": "2026-06-15T19:30:00+05:00",
+    }
+    assert confirmed is False
 
 
 @pytest.mark.asyncio

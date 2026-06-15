@@ -21,7 +21,34 @@ type Props = {
   uiUsers?: AdminRegistryPayload["ui_users"];
 };
 
-const peopleGridClass = "grid min-w-[1560px] grid-cols-[48px_190px_160px_150px_170px_190px_130px_160px_150px_120px_100px_100px_100px_120px_130px_300px] gap-3";
+const peopleGridClass = "grid min-w-[1900px] grid-cols-[48px_190px_160px_150px_170px_190px_130px_210px_180px_160px_150px_120px_100px_100px_100px_120px_130px_300px] gap-3";
+
+function personContextSummary(person: PersonRow): string {
+  const parts = [
+    person.position,
+    person.workplace_label,
+    person.internal_extension ? `доб. ${person.internal_extension}` : null,
+    person.manager_name ? `рук. ${person.manager_name}` : null,
+  ].filter(Boolean);
+  return parts.join(" · ") || "Нет";
+}
+
+function ProfileCompletionCell({ person }: { person: PersonRow }) {
+  const completion = person.profile_completion;
+  if (!completion) {
+    return <span className="text-slate-500">Нет данных</span>;
+  }
+  if (completion.complete) {
+    return <Badge tone="success">Профиль заполнен</Badge>;
+  }
+  const missing = completion.missing_fields.map((field) => field.label).filter(Boolean).join(", ");
+  return (
+    <div className="space-y-1">
+      <Badge tone="warning">Нужно заполнить профиль</Badge>
+      {missing ? <p className="text-xs leading-5 text-slate-500">Не хватает: {missing}</p> : null}
+    </div>
+  );
+}
 
 export function RegistryPeopleTab({
   onAddIdentity,
@@ -43,7 +70,7 @@ export function RegistryPeopleTab({
     <div className="overflow-x-auto rounded-lg border border-border">
       <div className={`${peopleGridClass} bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500`}>
         <input aria-label="Выбрать всех видимых пользователей" checked={allVisibleSelected} disabled={!visibleIds.length} onChange={() => onToggleVisibleSelection(visibleIds)} title="Выбрать или снять выбор со всех людей в текущем фильтре" type="checkbox" />
-        <span>ФИО</span><span>Отображаемое имя</span><span>Логин</span><span>UI-аккаунт</span><span>Почта</span><span>Телефон</span><span>Подразделение</span><span>Локация</span><span>Статус</span><span>Основные ПК</span><span>Совместные ПК</span><span>Тикеты</span><span>Сессии</span><span>Последняя активность</span><span>Действия</span>
+        <span>ФИО</span><span>Отображаемое имя</span><span>Логин</span><span>UI-аккаунт</span><span>Почта</span><span>Телефон</span><span>Контекст</span><span>Профиль</span><span>Подразделение</span><span>Локация</span><span>Статус</span><span>Основные ПК</span><span>Совместные ПК</span><span>Тикеты</span><span>Сессии</span><span>Последняя активность</span><span>Действия</span>
       </div>
       {people.length ? people.map((person) => {
         const linkedUiUsers = uiUsers.filter((user) => user.linked_person_id === person.person_id);
@@ -61,6 +88,8 @@ export function RegistryPeopleTab({
             <span className="break-all text-slate-700">{linkedUiUsers.length ? linkedUiUsers.map((user) => user.user_login).join(", ") : "Нет"}</span>
             <span className="break-all text-slate-700">{person.email ?? "Нет"}</span>
             <span className="text-slate-700">{person.phone ?? "Нет"}</span>
+            <span className="break-words text-slate-700">{personContextSummary(person)}</span>
+            <ProfileCompletionCell person={person} />
             <span className="text-slate-700">{person.department_name ?? "Нет"}</span>
             <span className="text-slate-700">{person.location_name ?? "Нет"}</span>
             <Badge tone={statusTone(person.status)}>{registryStatusLabel(person.status)}</Badge>

@@ -42,6 +42,7 @@ _QUERY_TOKEN_AUTH_ATTEMPTS: deque[dict[str, object]] = deque(maxlen=QUERY_TOKEN_
 AUTH_WHITELIST = {
     "/api/ui_login",  # UI login endpoint
     "/api/web/session/login",
+    "/api/web/session/register",
     "/api/web/session/me",
     "/api/health",
     "/api/connection_request",

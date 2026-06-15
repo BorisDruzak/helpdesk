@@ -1,4 +1,4 @@
-﻿import { CheckCircle2, Link2, Paperclip, RefreshCw, RotateCcw, Send, Star, X } from "lucide-react";
+﻿import { CheckCircle2, KeyRound, Link2, Monitor, Paperclip, RefreshCw, RotateCcw, Send, Star, X } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -12,6 +12,7 @@ import {
   fetchRequesterConsents,
   fetchRequesterDevice,
   fetchRequesterProfile,
+  fetchRequesterRegistryOptions,
   fetchRequesterTicket,
   fetchRequesterTickets,
   fetchServiceCatalogCurrent,
@@ -22,8 +23,16 @@ import {
   sendRequesterTicketMessage,
   suggestKnowledge,
   submitRequesterTicketFeedback,
+  updateRequesterProfile,
   uploadRequesterTicketAttachment,
 } from "../../features/requester/api";
+import {
+  confirmDevicePairing,
+  DevicePairingApiError,
+  fetchDevicePairing,
+  lookupDevicePairingCode,
+  type DevicePairingPayload,
+} from "../device-pairing/api";
 import type {
   AuthenticatedRequesterTicket,
   KnowledgeAttempt,
@@ -33,9 +42,14 @@ import type {
   RequestFormField,
   RequesterBootstrap,
   RequesterConsent,
+  RequesterContextPreview,
   RequesterDevice,
   RequesterDeviceDetail,
+  RequesterPendingRegistrationClaim,
+  RequesterProfile,
   RequesterProfileDetail,
+  RequesterProfileSchemaField,
+  RequesterRegistryOption,
   RequesterTicketCreatePayload,
   RequesterTicketDetail,
   ServiceCatalogCurrent,
@@ -45,6 +59,28 @@ import type {
 type FieldValues = Record<string, string | boolean>;
 const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
 const ASK_TICKET_CONTEXT_MAX_AGE_MS = 30 * 60 * 1000;
+
+type ProfileFormState = {
+  full_name: string;
+  department_id: string;
+  location_id: string;
+  phone: string;
+  position: string;
+  workplace_label: string;
+  preferred_contact_method: string;
+  custom_fields: Record<string, string | boolean>;
+};
+
+const EMPTY_PROFILE_FORM: ProfileFormState = {
+  full_name: "",
+  department_id: "",
+  location_id: "",
+  phone: "",
+  position: "",
+  workplace_label: "",
+  preferred_contact_method: "",
+  custom_fields: {},
+};
 
 type AskTicketContext = {
   source?: string;
@@ -73,6 +109,21 @@ type AskTicketContext = {
     score?: number | null;
   }>;
 };
+
+function profileFormFrom(profile?: RequesterProfile | null): ProfileFormState {
+  return {
+    full_name: profile?.full_name || profile?.display_name || "",
+    department_id: profile?.department_id || "",
+    location_id: profile?.location_id || "",
+    phone: profile?.phone || "",
+    position: profile?.position || "",
+    workplace_label: profile?.workplace_label || "",
+    preferred_contact_method: profile?.preferred_contact_method || "",
+    custom_fields: Object.fromEntries(
+      Object.entries(profile?.custom_fields ?? {}).map(([key, value]) => [key, typeof value === "boolean" ? value : String(value ?? "")]),
+    ),
+  };
+}
 
 type PendingAttachment = {
   artifact_id: string;
@@ -107,17 +158,34 @@ function readAskTicketContext(): AskTicketContext | null {
 }
 
 function askContextTitle(context: AskTicketContext): string {
-  return `Knowledge Ask: ${compactText(context.query, 80) || "request"}`;
+  return `Запрос из базы знаний: ${compactText(context.query, 80) || "без темы"}`;
+}
+
+function askAnswerStatusLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    answered: "Ответ найден",
+    ai_disabled: "AI отключен",
+    no_answer: "Ответ не найден",
+    partial: "Ответ требует проверки",
+  };
+  return labels[value || ""] || compactText(value, 80) || "Не указан";
+}
+
+function askSearchModeLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    hybrid: "Гибридный поиск",
+    keyword_only: "Поиск по ключевым словам",
+    vector: "Векторный поиск",
+  };
+  return labels[value || ""] || compactText(value, 80) || "Не указан";
 }
 
 function askContextDescription(context: AskTicketContext): string {
   const lines = [
-    `Knowledge Ask query: ${compactText(context.query, 500)}`,
-    context.answer_status ? `Answer status: ${context.answer_status}` : null,
-    context.effective_mode ? `Effective mode: ${context.effective_mode}` : null,
-    context.audit_id ? `Ask audit id: ${context.audit_id}` : null,
-    context.primary_item?.title ? `Top article: ${compactText(context.primary_item.title, 240)}` : null,
-    context.primary_item?.slug ? `Article slug: ${context.primary_item.slug}` : null,
+    `Вопрос в базе знаний: ${compactText(context.query, 500)}`,
+    context.answer_status ? `Статус ответа: ${askAnswerStatusLabel(context.answer_status)}` : null,
+    context.effective_mode ? `Режим поиска: ${askSearchModeLabel(context.effective_mode)}` : null,
+    context.primary_item?.title ? `Подобранная статья: ${compactText(context.primary_item.title, 240)}` : null,
   ].filter(Boolean);
   return lines.join("\n");
 }
@@ -148,6 +216,61 @@ function deviceLabel(device: RequesterDevice): string {
   return device.hostname || device.asset_name || device.device_id;
 }
 
+function pairingDeviceLabel(pairing: DevicePairingPayload): string {
+  return pairing.device?.hostname || pairing.device?.device_id || "Устройство";
+}
+
+function registrationStatusLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    active: "Устройство привязано",
+    admin_confirmed: "Устройство привязано",
+    approved: "Устройство привязано",
+    conflict: "Требуется проверка администратора",
+    pending_admin_review: "Ожидает проверки администратора",
+    pending_user_confirmation: "Ожидает подтверждения",
+    pending_verification: "Ожидает проверки",
+    rejected: "Отклонено администратором",
+    user_confirmed: "Ожидает проверки администратора",
+  };
+  return labels[value || ""] || "Статус уточняется";
+}
+
+function pendingDeviceLinkStatusLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    conflict: "Требуется проверка администратора",
+    pending_admin_review: "Ожидает проверки администратора",
+    pending_user_confirmation: "Ожидает подтверждения пользователя",
+    self_reported: "Ожидает подтверждения",
+    user_confirmed: "Ожидает проверки администратора",
+  };
+  return labels[value || ""] || "Статус уточняется";
+}
+
+function pendingDeviceLinkLabel(claim: RequesterPendingRegistrationClaim): string {
+  const deviceId = compactText(claim.device_id, 80);
+  return deviceId ? `Устройство ${deviceId}` : "Устройство";
+}
+
+function formatSubmittedAt(value?: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return compactText(value, 80) || null;
+  }
+  return date.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
+}
+
+function agentVersionLabel(value?: string | null): string {
+  const version = String(value ?? "").trim();
+  return version ? `Агент ${version}` : "Версия агента не указана";
+}
+
+function deviceSystemLabel(os?: string | null, agentVersion?: string | null): string {
+  return `${os || "Система не указана"} · ${agentVersionLabel(agentVersion)}`;
+}
+
 function relationshipLabel(value?: string | null): string {
   const labels: Record<string, string> = {
     primary_user: "Основной пользователь",
@@ -157,6 +280,33 @@ function relationshipLabel(value?: string | null): string {
     temporary_user: "Временный пользователь",
   };
   return labels[value || ""] || value || "Связь не указана";
+}
+
+function bindingStatusLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    active: "Привязка активна",
+    admin_confirmed: "Подтверждено администратором",
+    approved: "Подтверждено",
+    expired: "Истекла",
+    pending: "Ожидает подтверждения",
+    pending_admin_review: "Ожидает проверки администратора",
+    pending_user_confirmation: "Ожидает подтверждения пользователя",
+    rejected: "Отклонена",
+    revoked: "Отозвана",
+    transferred: "Передана",
+    user_confirmed: "Подтверждена пользователем",
+  };
+  return labels[value || ""] || "Статус привязки уточняется";
+}
+
+function deviceOnlineLabel(value?: boolean | null): string {
+  if (value === true) {
+    return "В сети";
+  }
+  if (value === false) {
+    return "Не в сети";
+  }
+  return "Статус сети не указан";
 }
 
 function ticketStatus(ticket: AuthenticatedRequesterTicket): string {
@@ -209,12 +359,196 @@ function isFieldVisible(field: RequestFormField, values: FieldValues): boolean {
   return true;
 }
 
-function buildDefaultFieldValues(form: RequestFormDefinition | null): FieldValues {
+function compactPrefillValue(value: unknown): string | boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  const text = String(value ?? "").trim();
+  return text ? text : undefined;
+}
+
+function requesterFormPrefillFromContext(
+  context: RequesterContextPreview | null | undefined,
+  profile: RequesterProfile | null | undefined,
+  selectedDevice: RequesterDevice | null,
+  selectedService: ServiceCatalogCurrent["services"][number] | null,
+  selectedOffering: ServiceCatalogCurrent["services"][number]["offerings"][number] | null,
+): FieldValues {
+  const next: FieldValues = {};
+  Object.entries(context?.form_prefill ?? {}).forEach(([key, value]) => {
+    const normalized = compactPrefillValue(value);
+    if (normalized !== undefined) {
+      next[key] = normalized;
+    }
+  });
+  const profileValues: Record<string, unknown> = {
+    requester_name: profile?.full_name || profile?.display_name,
+    full_name: profile?.full_name || profile?.display_name,
+    email: profile?.email,
+    phone: profile?.phone,
+    department_id: profile?.department_id,
+    location_id: profile?.location_id,
+    position: profile?.position,
+    workplace_label: profile?.workplace_label,
+  };
+  Object.entries(profileValues).forEach(([key, value]) => {
+    const normalized = compactPrefillValue(value);
+    if (normalized !== undefined) {
+      next[key] = normalized;
+    }
+  });
+  if (selectedDevice) {
+    next.device_id = selectedDevice.device_id;
+    next.device = deviceLabel(selectedDevice);
+    if (selectedDevice.hostname) {
+      next.hostname = selectedDevice.hostname;
+      next.device_hostname = selectedDevice.hostname;
+    }
+    if (selectedDevice.asset_id) {
+      next.asset_id = selectedDevice.asset_id;
+    }
+    if (selectedDevice.asset_name) {
+      next.asset = selectedDevice.asset_name;
+    }
+    if (selectedDevice.asset_type) {
+      next.asset_type = selectedDevice.asset_type;
+    }
+    if (selectedDevice.department_id) {
+      next.device_department_id = selectedDevice.department_id;
+    }
+    if (selectedDevice.location_id) {
+      next.device_location_id = selectedDevice.location_id;
+    }
+  }
+  if (selectedService) {
+    next.service_code = selectedService.service_code;
+    next.service = selectedService.title || selectedService.service_code;
+  }
+  if (selectedOffering) {
+    next.offering_code = selectedOffering.offering_code;
+    next.offering_full_code = selectedOffering.full_code;
+    next.offering = selectedOffering.title || selectedOffering.full_code;
+    if (selectedOffering.request_template_key) {
+      next.request_template_key = selectedOffering.request_template_key;
+    }
+  }
+  return next;
+}
+
+function prefillKeysForField(field: RequestFormField): string[] {
+  const key = field.key.toLowerCase();
+  const candidates = [field.key];
+  if (field.type === "department_picker" || key.includes("department")) {
+    candidates.push(key.endsWith("_id") ? "department_id" : "department", "department_id", "department_code");
+  }
+  if (field.type === "location_picker" || key.includes("location") || key === "building" || key === "room") {
+    candidates.push(field.key, key.endsWith("_id") ? "location_id" : "location", "location_id", "building", "room");
+  }
+  if (field.type === "device_picker" || key.includes("device") || key === "hostname") {
+    candidates.push(key.endsWith("_id") ? "device_id" : "device", "device_id", "device_hostname", "hostname");
+  }
+  if (field.type === "service_picker" || key.includes("service") || key.includes("offering")) {
+    candidates.push(key.includes("offering") ? "offering_full_code" : "service_code", "service", "offering");
+  }
+  if (key.includes("phone")) {
+    candidates.push("phone");
+  }
+  if (key.includes("email")) {
+    candidates.push("email");
+  }
+  if (key.includes("name") || key.includes("requester")) {
+    candidates.push("requester_name", "full_name");
+  }
+  return Array.from(new Set(candidates));
+}
+
+function prefillValueForField(field: RequestFormField, prefill: FieldValues): string | boolean | undefined {
+  for (const key of prefillKeysForField(field)) {
+    const value = prefill[key];
+    if (value !== undefined && value !== "") {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function buildDefaultFieldValues(form: RequestFormDefinition | null, prefill: FieldValues = {}): FieldValues {
   const nextValues: FieldValues = {};
   for (const field of form?.fields ?? []) {
-    nextValues[field.key] = field.type === "checkbox" ? false : "";
+    const prefilled = prefillValueForField(field, prefill);
+    nextValues[field.key] = field.type === "checkbox" ? prefilled === true : typeof prefilled === "boolean" ? "" : prefilled ?? "";
   }
   return nextValues;
+}
+
+function mergeContextPrefillValues(
+  form: RequestFormDefinition | null,
+  current: FieldValues,
+  previousPrefill: FieldValues,
+  nextPrefill: FieldValues,
+): FieldValues {
+  const defaults = buildDefaultFieldValues(form, nextPrefill);
+  const next: FieldValues = {};
+  for (const field of form?.fields ?? []) {
+    const currentValue = current[field.key];
+    const previousValue = previousPrefill[field.key];
+    const defaultValue = defaults[field.key] ?? (field.type === "checkbox" ? false : "");
+    const isEmpty = field.type === "checkbox" ? currentValue === undefined : !String(currentValue ?? "").trim();
+    const stillPrevious = currentValue !== undefined && String(currentValue) === String(previousValue ?? "");
+    next[field.key] = isEmpty || stillPrevious ? defaultValue : currentValue;
+  }
+  return next;
+}
+
+function uniqueOptions(options: RequesterRegistryOption[]): RequesterRegistryOption[] {
+  const seen = new Set<string>();
+  const result: RequesterRegistryOption[] = [];
+  for (const option of options) {
+    const value = String(option.value || "").trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push({ value, label: option.label || value });
+  }
+  return result;
+}
+
+function fieldWithRequesterContextOptions(
+  field: RequestFormField,
+  context: {
+  departments: RequesterRegistryOption[];
+  locations: RequesterRegistryOption[];
+  devices: RequesterDevice[];
+  services: ServiceCatalogCurrent["services"];
+  },
+): RequestFormField {
+  const { departments, devices, locations, services } = context;
+  if (field.type === "department_picker") {
+    return { ...field, options: uniqueOptions([...(field.options ?? []), ...departments]) };
+  }
+  if (field.type === "location_picker") {
+    return { ...field, options: uniqueOptions([...(field.options ?? []), ...locations]) };
+  }
+  if (field.type === "device_picker") {
+    return {
+      ...field,
+      options: uniqueOptions([
+        ...(field.options ?? []),
+        ...devices.map((device) => ({ value: device.device_id, label: deviceLabel(device) })),
+      ]),
+    };
+  }
+  if (field.type === "service_picker") {
+    return {
+      ...field,
+      options: uniqueOptions([
+        ...(field.options ?? []),
+        ...services.map((service) => ({ value: service.service_code, label: service.title || service.service_code })),
+      ]),
+    };
+  }
+  return field;
 }
 
 function collectVisiblePayload(form: RequestFormDefinition | null, values: FieldValues): Record<string, unknown> {
@@ -265,12 +599,20 @@ function RequestFormFieldControl({
   value: string | boolean;
 }) {
   const label = `${field.label || field.key}${field.required ? " *" : ""}`;
+  const selectLike =
+    field.type === "select" ||
+    field.type === "radio" ||
+    field.type === "department_picker" ||
+    field.type === "location_picker" ||
+    field.type === "device_picker" ||
+    field.type === "service_picker" ||
+    field.type === "user_picker";
   if (field.type === "textarea") {
     return (
       <label className="block text-sm font-semibold text-slate-700">
         {label}
         <textarea
-          aria-label={`Requester form field ${field.key}`}
+          aria-label={`Поле формы обращения ${field.key}`}
           className="mt-1 min-h-24 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
           onChange={(event) => onChange(event.currentTarget.value)}
           placeholder={field.placeholder ?? ""}
@@ -279,12 +621,12 @@ function RequestFormFieldControl({
       </label>
     );
   }
-  if (field.type === "select" || field.type === "radio") {
+  if (selectLike) {
     return (
       <label className="block text-sm font-semibold text-slate-700">
         {label}
         <select
-          aria-label={`Requester form field ${field.key}`}
+          aria-label={`Поле формы обращения ${field.key}`}
           className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
           onChange={(event) => onChange(event.currentTarget.value)}
           value={String(value ?? "")}
@@ -303,7 +645,7 @@ function RequestFormFieldControl({
     return (
       <label className="flex items-center gap-2 rounded-panel border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
         <input
-          aria-label={`Requester form field ${field.key}`}
+          aria-label={`Поле формы обращения ${field.key}`}
           checked={value === true}
           onChange={(event) => onChange(event.currentTarget.checked)}
           type="checkbox"
@@ -316,13 +658,106 @@ function RequestFormFieldControl({
     <label className="block text-sm font-semibold text-slate-700">
       {label}
       <input
-        aria-label={`Requester form field ${field.key}`}
+        aria-label={`Поле формы обращения ${field.key}`}
         className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
         onChange={(event) => onChange(event.currentTarget.value)}
         placeholder={field.placeholder ?? ""}
-        type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
+        type={
+          field.type === "number" ? "number" :
+          field.type === "date" ? "date" :
+          field.type === "datetime" ? "datetime-local" :
+          field.type === "email" ? "email" :
+          field.type === "url" ? "url" :
+          field.type === "phone" ? "tel" :
+          "text"
+        }
         value={String(value ?? "")}
       />
+    </label>
+  );
+}
+
+function schemaOptionValue(option: string | { value: string; label: string }): { label: string; value: string } {
+  return typeof option === "string" ? { label: option, value: option } : option;
+}
+
+function ProfileCustomFieldControl({
+  field,
+  onChange,
+  value,
+}: {
+  field: RequesterProfileSchemaField;
+  onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
+  value: string | boolean;
+}) {
+  const label = `${field.label || field.key}${field.required ? " *" : ""}`;
+  const helpText = field.help_text ? <span className="mt-1 block text-xs font-normal text-slate-500">{field.help_text}</span> : null;
+  if (field.type === "textarea") {
+    return (
+      <label className="block text-sm font-semibold text-slate-700">
+        {label}
+        <textarea
+          aria-label={field.label || field.key}
+          className="mt-1 min-h-20 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          onChange={onChange}
+          value={String(value ?? "")}
+        />
+        {helpText}
+      </label>
+    );
+  }
+  if (field.type === "select") {
+    return (
+      <label className="block text-sm font-semibold text-slate-700">
+        {label}
+        <select
+          aria-label={field.label || field.key}
+          className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          onChange={onChange}
+          value={String(value ?? "")}
+        >
+          <option value="">Выберите...</option>
+          {(field.options ?? []).map((option) => {
+            const normalized = schemaOptionValue(option);
+            return <option key={normalized.value} value={normalized.value}>{normalized.label || normalized.value}</option>;
+          })}
+        </select>
+        {helpText}
+      </label>
+    );
+  }
+  if (field.type === "checkbox") {
+    return (
+      <label className="flex items-center gap-2 rounded-panel border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
+        <input
+          aria-label={field.label || field.key}
+          checked={value === true}
+          onChange={onChange}
+          type="checkbox"
+        />
+        <span>{label}</span>
+        {helpText}
+      </label>
+    );
+  }
+  const inputType =
+    field.type === "number" ? "number" :
+    field.type === "date" ? "date" :
+    field.type === "email" ? "email" :
+    field.type === "url" ? "url" :
+    field.type === "phone" ? "tel" :
+    "text";
+  return (
+    <label className="block text-sm font-semibold text-slate-700">
+      {label}
+      <input
+        aria-label={field.label || field.key}
+        className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+        onChange={onChange}
+        type={inputType}
+        value={String(value ?? "")}
+      />
+      {helpText}
     </label>
   );
 }
@@ -359,9 +794,22 @@ export function RequesterWorkspacePage() {
   const [selectedDeviceDetail, setSelectedDeviceDetail] = useState<RequesterDeviceDetail | null>(null);
   const [deviceDetailLoading, setDeviceDetailLoading] = useState(false);
   const [deviceDetailError, setDeviceDetailError] = useState<string | null>(null);
+  const [deviceLinkCode, setDeviceLinkCode] = useState("");
+  const [deviceLinkPairing, setDeviceLinkPairing] = useState<DevicePairingPayload | null>(null);
+  const [deviceLinkLoading, setDeviceLinkLoading] = useState(false);
+  const [deviceLinkConfirming, setDeviceLinkConfirming] = useState(false);
+  const [deviceLinkNotice, setDeviceLinkNotice] = useState<string | null>(null);
+  const [deviceLinkError, setDeviceLinkError] = useState<string | null>(null);
   const [profileDetail, setProfileDetail] = useState<RequesterProfileDetail | null>(null);
   const [profileDetailLoading, setProfileDetailLoading] = useState(false);
   const [profileDetailError, setProfileDetailError] = useState<string | null>(null);
+  const [profileForm, setProfileForm] = useState<ProfileFormState>(EMPTY_PROFILE_FORM);
+  const [profileSubmitting, setProfileSubmitting] = useState(false);
+  const [profileSetupNotice, setProfileSetupNotice] = useState<string | null>(null);
+  const [profileOptionsLoading, setProfileOptionsLoading] = useState(false);
+  const [profileOptionsError, setProfileOptionsError] = useState<string | null>(null);
+  const [departmentOptions, setDepartmentOptions] = useState<RequesterRegistryOption[]>([]);
+  const [locationOptions, setLocationOptions] = useState<RequesterRegistryOption[]>([]);
   const [claimTicketId, setClaimTicketId] = useState("");
   const [claimCode, setClaimCode] = useState("");
   const [claimSubmitting, setClaimSubmitting] = useState(false);
@@ -386,6 +834,8 @@ export function RequesterWorkspacePage() {
   const [reopenAvailable, setReopenAvailable] = useState(false);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const askPrefillAppliedRef = useRef(false);
+  const directPairingLoadedRef = useRef(false);
+  const previousContextPrefillRef = useRef<FieldValues>({});
 
   useEffect(() => {
     if (askPrefillAppliedRef.current) {
@@ -402,7 +852,7 @@ export function RequesterWorkspacePage() {
       const next = askContextAttempts(context);
       return next.length ? [...current, ...next] : current;
     });
-    setCatalogNotice("Knowledge Ask context was added to the ticket draft.");
+    setCatalogNotice("Контекст из базы знаний добавлен в черновик обращения.");
   }, []);
 
   const devices = bootstrap?.devices ?? [];
@@ -410,14 +860,66 @@ export function RequesterWorkspacePage() {
   const pendingConsents = consents.filter((consent) => consent.status === "pending");
   const actionCount = (bootstrap?.tickets_requiring_user_action_count ?? 0) + pendingConsents.length;
   const profileName = bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || bootstrap?.profile?.email || "Пользователь";
+  const profileCompletion = bootstrap?.profile_completion;
+  const profileBlocks = profileCompletion?.blocks;
+  const profileGateActive = profileBlocks
+    ? Boolean(profileBlocks.ticket_create || profileBlocks.ticket_preview || profileBlocks.device_binding_confirmation)
+    : profileCompletion?.complete === false;
+  const profileSetupRoute =
+    typeof window !== "undefined" && window.location.pathname.endsWith("/requester/profile/setup");
+  const profileSetupVisible = profileGateActive || profileSetupRoute;
+  const profileSchema = profileDetail?.profile_schema ?? bootstrap?.profile_schema ?? null;
+  const profileCustomFields = useMemo(
+    () => (profileSchema?.fields ?? []).filter((field) => field.custom && field.visible !== false),
+    [profileSchema?.fields],
+  );
+  const profileSchemaFieldsByKey = useMemo(
+    () => new Map((profileSchema?.fields ?? []).map((field) => [field.key, field])),
+    [profileSchema?.fields],
+  );
+  const isProfileFieldVisible = (fieldKey: string) => profileSchemaFieldsByKey.get(fieldKey)?.visible !== false;
+  const directDevicePairingId =
+    typeof window !== "undefined" && window.location.pathname.endsWith("/requester/devices")
+      ? new URLSearchParams(window.location.search).get("pairing_id") || ""
+      : "";
+  const pendingRegistrationClaims = bootstrap?.pending_registration_claims ?? [];
   const services = catalog?.services ?? [];
-  const noDeviceCreateEnabled = bootstrap?.feature_flags?.requester_no_device_create === true;
+  const noDeviceCreateEnabled = !profileGateActive && bootstrap?.feature_flags?.requester_no_device_create === true;
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.device_id === selectedDeviceId) ?? devices[0] ?? null,
     [devices, selectedDeviceId],
   );
-  const canCreateForCurrentScope = Boolean(selectedDevice) || noDeviceCreateEnabled;
+  const canCreateForCurrentScope = !profileGateActive && (Boolean(selectedDevice) || noDeviceCreateEnabled);
+
+  useEffect(() => {
+    if (!directDevicePairingId || directPairingLoadedRef.current || loading) {
+      return;
+    }
+    if (profileGateActive) {
+      directPairingLoadedRef.current = true;
+      setDeviceLinkError("Сначала заполните профиль, затем привяжите устройство.");
+      return;
+    }
+    directPairingLoadedRef.current = true;
+    setDeviceLinkLoading(true);
+    setDeviceLinkError(null);
+    setDeviceLinkNotice(null);
+    void fetchDevicePairing(directDevicePairingId)
+      .then((pairing) => {
+        if (pairing.purpose !== "registration") {
+          setDeviceLinkError("Эта ссылка предназначена для входа на уже привязанном устройстве.");
+          return;
+        }
+        setDeviceLinkPairing(pairing);
+        setDeviceLinkNotice("Проверьте устройство и отправьте заявку на привязку.");
+      })
+      .catch((exc) => {
+        setDeviceLinkError(exc instanceof Error ? exc.message : "Не удалось загрузить привязку устройства.");
+      })
+      .finally(() => setDeviceLinkLoading(false));
+  }, [directDevicePairingId, loading, profileGateActive]);
+
   const selectedService = useMemo(
     () => services.find((service) => service.service_code === selectedServiceCode) ?? services[0] ?? null,
     [selectedServiceCode, services],
@@ -433,9 +935,44 @@ export function RequesterWorkspacePage() {
     () => forms.find((form) => form.key === selectedFormKey) ?? forms[0] ?? null,
     [forms, selectedFormKey],
   );
+  const requestFormContextPrefill = useMemo(
+    () =>
+      requesterFormPrefillFromContext(
+        bootstrap?.requester_context,
+        bootstrap?.profile,
+        selectedDevice,
+        selectedService,
+        selectedOffering,
+      ),
+    [bootstrap?.profile, bootstrap?.requester_context, selectedDevice, selectedOffering, selectedService],
+  );
+  const requestFormContextPrefillKey = useMemo(
+    () => JSON.stringify(requestFormContextPrefill),
+    [requestFormContextPrefill],
+  );
+  const requestFormNeedsRegistryOptions = useMemo(
+    () =>
+      (selectedForm?.fields ?? []).some((field) =>
+        ["department_picker", "location_picker"].includes(field.type) ||
+        ["department_id", "location_id", "department", "location"].includes(field.key),
+      ),
+    [selectedForm],
+  );
   const visibleFields = useMemo(
     () => (selectedForm?.fields ?? []).filter((field) => isFieldVisible(field, fieldValues)),
     [fieldValues, selectedForm],
+  );
+  const contextualVisibleFields = useMemo(
+    () =>
+      visibleFields.map((field) =>
+        fieldWithRequesterContextOptions(field, {
+          departments: departmentOptions,
+          locations: locationOptions,
+          devices,
+          services,
+        }),
+      ),
+    [departmentOptions, devices, locationOptions, services, visibleFields],
   );
   const visiblePayload = useMemo(() => collectVisiblePayload(selectedForm, fieldValues), [fieldValues, selectedForm]);
   const knowledgeKey = useMemo(
@@ -445,9 +982,10 @@ export function RequesterWorkspacePage() {
         offering_full_code: selectedOffering?.full_code,
         form_key: selectedForm?.key,
         form_payload: visiblePayload,
+        device_id: selectedDevice?.device_id,
         description: description.slice(0, 240),
       }),
-    [description, selectedForm?.key, selectedOffering?.full_code, selectedService?.service_code, visiblePayload],
+    [description, selectedDevice?.device_id, selectedForm?.key, selectedOffering?.full_code, selectedService?.service_code, visiblePayload],
   );
   const currentPreviewKey = useMemo(
     () =>
@@ -477,6 +1015,16 @@ export function RequesterWorkspacePage() {
     () => visibleKnowledgeSuggestions(knowledgeResult?.suggestions ?? [], knowledgeRollout),
     [knowledgeResult?.suggestions, knowledgeRollout],
   );
+  const requesterContextSummary = useMemo(
+    () =>
+      [
+        { label: "Профиль", value: profileName },
+        { label: "Подразделение", value: bootstrap?.requester_context?.profile?.department },
+        { label: "Локация", value: bootstrap?.requester_context?.profile?.location },
+        { label: "Устройство", value: selectedDevice ? deviceLabel(selectedDevice) : noDeviceCreateEnabled ? "Без выбранного устройства" : null },
+      ].filter((item) => item.value),
+    [bootstrap?.requester_context?.profile?.department, bootstrap?.requester_context?.profile?.location, noDeviceCreateEnabled, profileName, selectedDevice],
+  );
 
   async function load() {
     setLoading(true);
@@ -485,6 +1033,7 @@ export function RequesterWorkspacePage() {
     try {
       const [nextBootstrap, nextTickets] = await Promise.all([fetchRequesterBootstrap(), fetchRequesterTickets()]);
       setBootstrap(nextBootstrap);
+      setProfileForm(profileFormFrom(nextBootstrap.profile));
       setTickets(nextTickets);
       setSelectedDeviceId((current) => current || nextBootstrap.devices[0]?.device_id || "");
       try {
@@ -550,6 +1099,36 @@ export function RequesterWorkspacePage() {
   }, []);
 
   useEffect(() => {
+    if (!profileSetupVisible && !requestFormNeedsRegistryOptions) {
+      return;
+    }
+    let canceled = false;
+    setProfileOptionsLoading(true);
+    setProfileOptionsError(null);
+    void fetchRequesterRegistryOptions()
+      .then((options) => {
+        if (canceled) {
+          return;
+        }
+        setDepartmentOptions(options.departments ?? []);
+        setLocationOptions(options.locations ?? []);
+      })
+      .catch((exc) => {
+        if (!canceled) {
+          setProfileOptionsError(exc instanceof RequesterApiError ? exc.message : "Не удалось загрузить справочники профиля");
+        }
+      })
+      .finally(() => {
+        if (!canceled) {
+          setProfileOptionsLoading(false);
+        }
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [profileSetupVisible, requestFormNeedsRegistryOptions]);
+
+  useEffect(() => {
     if (!selectedServiceCode && services[0]) {
       setSelectedServiceCode(services[0].service_code);
     }
@@ -574,8 +1153,17 @@ export function RequesterWorkspacePage() {
   }, [forms, selectedFormKey]);
 
   useEffect(() => {
-    setFieldValues(buildDefaultFieldValues(selectedForm));
-  }, [selectedForm?.key]);
+    setFieldValues((current) => {
+      const nextValues = mergeContextPrefillValues(
+        selectedForm,
+        current,
+        previousContextPrefillRef.current,
+        requestFormContextPrefill,
+      );
+      previousContextPrefillRef.current = buildDefaultFieldValues(selectedForm, requestFormContextPrefill);
+      return nextValues;
+    });
+  }, [requestFormContextPrefill, requestFormContextPrefillKey, selectedForm]);
 
   useEffect(() => {
     if (!selectedOffering) {
@@ -593,6 +1181,17 @@ export function RequesterWorkspacePage() {
       request_template_key: selectedOffering.request_template_key ?? selectedForm?.key,
       query: description || selectedOffering.title || selectedService?.title || "",
       form_payload: visiblePayload,
+      requester_context: bootstrap?.requester_context,
+      device_metadata: selectedDevice
+        ? {
+            device_id: selectedDevice.device_id,
+            hostname: selectedDevice.hostname,
+            os: selectedDevice.os,
+            agent_version: selectedDevice.agent_version,
+            asset_id: selectedDevice.asset_id,
+            asset_name: selectedDevice.asset_name,
+          }
+        : undefined,
       surface: "requester_portal",
       urgency: "normal",
       impact: "normal",
@@ -616,7 +1215,7 @@ export function RequesterWorkspacePage() {
     return () => {
       canceled = true;
     };
-  }, [description, knowledgeKey, selectedForm?.key, selectedOffering, selectedService?.service_code, selectedService?.title, visiblePayload]);
+  }, [bootstrap?.requester_context, description, knowledgeKey, selectedDevice, selectedForm?.key, selectedOffering, selectedService?.service_code, selectedService?.title, visiblePayload]);
 
   function appendKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
     const attempt: KnowledgeAttempt = {
@@ -647,6 +1246,69 @@ export function RequesterWorkspacePage() {
     }
   }
 
+  async function handleDeviceLinkLookup(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDeviceLinkNotice(null);
+    setDeviceLinkError(null);
+    setDeviceLinkPairing(null);
+    if (profileGateActive) {
+      setDeviceLinkError("Сначала заполните профиль, затем привяжите устройство.");
+      return;
+    }
+    const code = deviceLinkCode.trim();
+    if (!code) {
+      setDeviceLinkError("Введите код привязки из агента.");
+      return;
+    }
+    setDeviceLinkLoading(true);
+    try {
+      const lookup = await lookupDevicePairingCode(code);
+      if (lookup.purpose !== "registration") {
+        setDeviceLinkError("Этот код предназначен для входа на уже привязанном устройстве.");
+        return;
+      }
+      const pairing = await fetchDevicePairing(lookup.pairing_id);
+      setDeviceLinkPairing(pairing);
+      setDeviceLinkNotice("Проверьте устройство и отправьте заявку на привязку.");
+    } catch (exc) {
+      setDeviceLinkError(exc instanceof Error ? exc.message : "Код привязки не найден или истек.");
+    } finally {
+      setDeviceLinkLoading(false);
+    }
+  }
+
+  async function handleDeviceLinkConfirm() {
+    if (!deviceLinkPairing) {
+      return;
+    }
+    setDeviceLinkNotice(null);
+    setDeviceLinkError(null);
+    if (profileGateActive) {
+      setDeviceLinkError("Сначала заполните профиль, затем привяжите устройство.");
+      return;
+    }
+    setDeviceLinkConfirming(true);
+    try {
+      const result = await confirmDevicePairing(deviceLinkPairing.pairing_id, "registration");
+      setDeviceLinkPairing(result);
+      setDeviceLinkCode("");
+      setDeviceLinkNotice(
+        result.registration?.status
+          ? registrationStatusLabel(result.registration.status)
+          : "Заявка на привязку отправлена администратору.",
+      );
+      await load();
+    } catch (exc) {
+      if (exc instanceof DevicePairingApiError && exc.errorCode === "REQUESTER_PROFILE_INCOMPLETE") {
+        setDeviceLinkError("Сначала заполните профиль, затем привяжите устройство.");
+      } else {
+        setDeviceLinkError(exc instanceof Error ? exc.message : "Не удалось подтвердить устройство.");
+      }
+    } finally {
+      setDeviceLinkConfirming(false);
+    }
+  }
+
   async function openProfileDetail() {
     setProfileDetailLoading(true);
     setProfileDetailError(null);
@@ -674,6 +1336,9 @@ export function RequesterWorkspacePage() {
   }
 
   function buildCreatePayload(): RequesterTicketCreatePayload {
+    if (profileGateActive) {
+      throw new Error("Заполните профиль, чтобы продолжить работу в кабинете пользователя.");
+    }
     if (!canCreateForCurrentScope) {
       throw new Error("Выберите устройство");
     }
@@ -715,7 +1380,114 @@ export function RequesterWorkspacePage() {
     return payload;
   }
 
+  function handleProfileFieldChange(
+    field: Exclude<keyof ProfileFormState, "custom_fields">,
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) {
+    const { value } = event.currentTarget;
+    setProfileForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleProfileCustomFieldChange(
+    fieldKey: string,
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
+  ) {
+    const { currentTarget } = event;
+    const value = currentTarget instanceof HTMLInputElement && currentTarget.type === "checkbox"
+      ? currentTarget.checked
+      : currentTarget.value;
+    setProfileForm((current) => ({
+      ...current,
+      custom_fields: {
+        ...current.custom_fields,
+        [fieldKey]: value,
+      },
+    }));
+  }
+
+  async function handleProfileSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setProfileSetupNotice(null);
+    setError(null);
+    const nextProfile = {
+      person_id: bootstrap?.profile?.person_id,
+      full_name: profileForm.full_name.trim(),
+      department_id: profileForm.department_id,
+      location_id: profileForm.location_id,
+      phone: profileForm.phone.trim(),
+      position: profileForm.position.trim(),
+      workplace_label: profileForm.workplace_label.trim(),
+      preferred_contact_method: profileForm.preferred_contact_method.trim(),
+      custom_fields: Object.fromEntries(
+        Object.entries(profileForm.custom_fields).map(([key, value]) => [
+          key,
+          typeof value === "string" ? value.trim() : value,
+        ]),
+      ),
+    };
+    if (!nextProfile.full_name || !nextProfile.department_id || !nextProfile.location_id || !nextProfile.phone) {
+      setError("Заполните обязательные поля профиля.");
+      return;
+    }
+    const missingCustomFields = profileCustomFields
+      .filter((field) => field.required)
+      .filter((field) => {
+        const value = profileForm.custom_fields[field.key];
+        return field.type === "checkbox" ? value !== true : !String(value ?? "").trim();
+      })
+      .map((field) => field.label || field.key);
+    if (missingCustomFields.length) {
+      setError(`Заполните обязательные поля профиля: ${missingCustomFields.join(", ")}.`);
+      return;
+    }
+
+    setProfileSubmitting(true);
+    try {
+      const result = await updateRequesterProfile(nextProfile);
+      setProfileForm(profileFormFrom(result.profile));
+      setProfileDetail((current) =>
+        current
+          ? {
+              ...current,
+              profile: result.profile,
+              profile_completion: result.profile_completion,
+              profile_policy: result.profile_policy,
+              profile_schema: result.profile_schema ?? current.profile_schema,
+            }
+          : current,
+      );
+      setBootstrap((current) =>
+        current
+          ? {
+              ...current,
+              profile: result.profile,
+              profile_completion: result.profile_completion,
+              profile_schema: result.profile_schema ?? current.profile_schema,
+              feature_flags: {
+                ...(current.feature_flags ?? {}),
+                requester_ticket_create: result.profile_completion.complete,
+                requester_owned_device_create: result.profile_completion.complete,
+                requester_no_device_create: result.profile_completion.complete,
+              },
+            }
+          : current,
+      );
+      if (typeof window !== "undefined" && window.location.pathname.endsWith("/requester/profile/setup")) {
+        window.history.pushState({}, "", "/app/requester");
+      }
+      setProfileSetupNotice("Профиль сохранен. Теперь можно продолжить работу в кабинете пользователя.");
+    } catch (exc) {
+      setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось сохранить профиль");
+    } finally {
+      setProfileSubmitting(false);
+    }
+  }
+
   async function handlePreview() {
+    if (profileGateActive) {
+      setError("Заполните профиль, чтобы продолжить работу в кабинете пользователя.");
+      return;
+    }
     setPreviewSubmitting(true);
     setError(null);
     setPreviewResult(null);
@@ -766,6 +1538,10 @@ export function RequesterWorkspacePage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (profileGateActive) {
+      setError("Заполните профиль, чтобы продолжить работу в кабинете пользователя.");
+      return;
+    }
     if (!canCreateForCurrentScope || !description.trim()) {
       setError(canCreateForCurrentScope ? "Заполните описание" : "Выберите устройство и заполните описание");
       return;
@@ -1010,11 +1786,145 @@ export function RequesterWorkspacePage() {
           Создано обращение {createdTicketId}
         </div>
       ) : null}
+      {profileSetupNotice ? (
+        <div className="rounded-panel border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {profileSetupNotice}
+        </div>
+      ) : null}
+
+      {profileSetupVisible ? (
+        <section aria-label="Заполнение профиля заявителя" className="support-workspace__panel space-y-4">
+          <div className="support-workspace__panel-head">
+            <div>
+              <p className="workspace-boot__eyebrow">Профиль пользователя</p>
+              <h2 className="text-lg font-semibold text-slate-950">Заполните профиль</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Эти данные нужны для маршрутизации обращений, доступа к базе знаний и привязки устройств.
+              </p>
+            </div>
+            {profileGateActive ? (
+              <span className="rounded-panel bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">
+                Требуется
+              </span>
+            ) : null}
+          </div>
+          {profileCompletion?.missing_fields?.length ? (
+            <div className="flex flex-wrap gap-2 text-xs font-semibold text-amber-800">
+              {profileCompletion.missing_fields.map((field) => (
+                <span className="rounded-panel bg-amber-50 px-3 py-1" key={field.key}>
+                  {field.label}
+                </span>
+              ))}
+            </div>
+          ) : null}
+          {profileOptionsError ? <p className="text-sm text-rose-700">{profileOptionsError}</p> : null}
+          <form className="grid gap-3 lg:grid-cols-2" onSubmit={(event) => void handleProfileSubmit(event)}>
+            <label className="block text-sm font-semibold text-slate-700">
+              ФИО
+              <input
+                className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                onChange={(event) => handleProfileFieldChange("full_name", event)}
+                value={profileForm.full_name}
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Телефон или внутренний номер
+              <input
+                className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                onChange={(event) => handleProfileFieldChange("phone", event)}
+                value={profileForm.phone}
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Подразделение
+              <select
+                className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                disabled={profileOptionsLoading || !departmentOptions.length}
+                onChange={(event) => handleProfileFieldChange("department_id", event)}
+                value={profileForm.department_id}
+              >
+                <option value="">{profileOptionsLoading ? "Загружаем..." : "Выберите подразделение"}</option>
+                {departmentOptions.map((department) => (
+                  <option key={department.value} value={department.value}>
+                    {department.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Локация
+              <select
+                className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                disabled={profileOptionsLoading || !locationOptions.length}
+                onChange={(event) => handleProfileFieldChange("location_id", event)}
+                value={profileForm.location_id}
+              >
+                <option value="">{profileOptionsLoading ? "Загружаем..." : "Выберите локацию"}</option>
+                {locationOptions.map((location) => (
+                  <option key={location.value} value={location.value}>
+                    {location.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isProfileFieldVisible("position") ? (
+              <label className="block text-sm font-semibold text-slate-700">
+                Должность
+                <input
+                  className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                  onChange={(event) => handleProfileFieldChange("position", event)}
+                  value={profileForm.position}
+                />
+              </label>
+            ) : null}
+            {isProfileFieldVisible("workplace_label") ? (
+              <label className="block text-sm font-semibold text-slate-700">
+                Кабинет или рабочее место
+                <input
+                  className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                  onChange={(event) => handleProfileFieldChange("workplace_label", event)}
+                  value={profileForm.workplace_label}
+                />
+              </label>
+            ) : null}
+            {isProfileFieldVisible("preferred_contact_method") ? (
+              <label className="block text-sm font-semibold text-slate-700 lg:col-span-2">
+                Предпочтительный способ связи
+                <select
+                  className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                  onChange={(event) => handleProfileFieldChange("preferred_contact_method", event)}
+                  value={profileForm.preferred_contact_method}
+                >
+                  <option value="">Не выбран</option>
+                  <option value="phone">Телефон</option>
+                  <option value="chat">Чат в обращении</option>
+                  <option value="email">Email</option>
+                </select>
+              </label>
+            ) : null}
+            {profileCustomFields.map((field) => (
+              <ProfileCustomFieldControl
+                field={field}
+                key={field.key}
+                onChange={(event) => handleProfileCustomFieldChange(field.key, event)}
+                value={profileForm.custom_fields[field.key] ?? (field.type === "checkbox" ? false : "")}
+              />
+            ))}
+            <button
+              className="inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300 lg:col-span-2"
+              disabled={profileSubmitting || profileOptionsLoading || !departmentOptions.length || !locationOptions.length}
+              type="submit"
+            >
+              {profileSubmitting ? "Сохраняем..." : "Сохранить профиль"}
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-5">
           {pendingConsents.length ? (
-            <section aria-label="Requester pending consents" className="support-workspace__panel">
+            <section aria-label="Ожидающие согласия заявителя" className="support-workspace__panel">
               <div className="support-workspace__panel-head">
                 <div>
                   <p className="support-workspace__eyebrow">Согласие пользователя</p>
@@ -1048,7 +1958,7 @@ export function RequesterWorkspacePage() {
                         </div>
                         <div className="flex shrink-0 gap-2">
                           <button
-                            aria-label={`Deny requester consent ${consent.consent_id}`}
+                            aria-label={`Отклонить согласие ${consent.consent_id}`}
                             className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                             disabled={consentSubmittingId === consent.consent_id}
                             onClick={() => void handleConsentDecision(consent, "denied")}
@@ -1058,7 +1968,7 @@ export function RequesterWorkspacePage() {
                             Отклонить
                           </button>
                           <button
-                            aria-label={`Approve requester consent ${consent.consent_id}`}
+                            aria-label={`Подтвердить согласие ${consent.consent_id}`}
                             className="inline-flex items-center justify-center gap-2 rounded-panel bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                             disabled={consentSubmittingId === consent.consent_id}
                             onClick={() => void handleConsentDecision(consent, "approved")}
@@ -1090,7 +2000,7 @@ export function RequesterWorkspacePage() {
             {visibleTickets.length ? (
               visibleTickets.map((ticket) => (
                 <button
-                  aria-label={`Open requester ticket ${ticket.ticket_id}`}
+                  aria-label={`Открыть обращение ${ticket.ticket_id}`}
                   className={`block w-full py-3 text-left ${selectedTicketId === ticket.ticket_id ? "bg-slate-50" : ""}`}
                   key={ticket.ticket_id}
                   onClick={() => void openTicket(ticket.ticket_id)}
@@ -1169,7 +2079,7 @@ export function RequesterWorkspacePage() {
                     </div>
                     {canCloseSelectedTicket ? (
                       <button
-                        aria-label="Close requester ticket"
+                        aria-label="Закрыть обращение заявителя"
                         className="inline-flex items-center justify-center gap-2 rounded-panel bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                         disabled={actionSubmitting}
                         onClick={() => void handleCloseSelectedTicket()}
@@ -1187,7 +2097,7 @@ export function RequesterWorkspacePage() {
                         <label className="block text-sm font-semibold text-slate-700">
                           Оценка
                           <select
-                            aria-label="Requester feedback rating"
+                            aria-label="Оценка обращения"
                             className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
                             onChange={(event) => setFeedbackRating(Number(event.target.value))}
                             value={feedbackRating}
@@ -1201,7 +2111,7 @@ export function RequesterWorkspacePage() {
                         </label>
                         <label className="flex items-center gap-2 self-end text-sm font-semibold text-slate-700">
                           <input
-                            aria-label="Requester problem resolved"
+                            aria-label="Проблема решена"
                             checked={feedbackProblemResolved}
                             onChange={(event) => {
                               setFeedbackProblemResolved(event.target.checked);
@@ -1243,7 +2153,7 @@ export function RequesterWorkspacePage() {
                       </label>
                       <div className="flex flex-wrap gap-2">
                         <button
-                          aria-label="Submit requester feedback"
+                          aria-label="Отправить оценку обращения"
                           className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
                           disabled={actionSubmitting || (feedbackReason === "other" && !feedbackComment.trim())}
                           onClick={() => void handleFeedbackSubmit()}
@@ -1254,7 +2164,7 @@ export function RequesterWorkspacePage() {
                         </button>
                         {canReopenSelectedTicket ? (
                           <button
-                            aria-label="Reopen requester ticket"
+                            aria-label="Вернуть обращение в работу"
                             className="inline-flex items-center justify-center gap-2 rounded-panel border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:bg-slate-100"
                             disabled={actionSubmitting || (reopenReason === "other" && !reopenComment.trim() && !feedbackComment.trim())}
                             onClick={() => void handleReopenSelectedTicket()}
@@ -1285,7 +2195,7 @@ export function RequesterWorkspacePage() {
                 <label className="block text-sm font-semibold text-slate-700">
                   Ответ
                   <textarea
-                    aria-label="Requester message"
+                    aria-label="Ответ заявителя"
                     className="mt-1 min-h-24 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
                     onChange={(event) => setMessageText(event.target.value)}
                     value={messageText}
@@ -1293,7 +2203,7 @@ export function RequesterWorkspacePage() {
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
-                    aria-label="Attach requester file"
+                    aria-label="Прикрепить файл к ответу"
                     className="sr-only"
                     disabled={attachmentUploading || messageSending || !selectedTicketId}
                     multiple
@@ -1302,7 +2212,7 @@ export function RequesterWorkspacePage() {
                     type="file"
                   />
                   <button
-                    aria-label="Attach requester file button"
+                    aria-label="Выбрать файл для ответа"
                     className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
                     disabled={attachmentUploading || messageSending || !selectedTicketId}
                     onClick={() => attachmentInputRef.current?.click()}
@@ -1322,7 +2232,7 @@ export function RequesterWorkspacePage() {
                         <Paperclip className="h-3.5 w-3.5" />
                         {attachment.name}
                         <button
-                          aria-label={`Remove requester attachment ${attachment.name}`}
+                          aria-label={`Удалить вложение ${attachment.name}`}
                           className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"
                           onClick={() =>
                             setPendingAttachments((current) =>
@@ -1339,7 +2249,7 @@ export function RequesterWorkspacePage() {
                 ) : null}
                 {messageNotice ? <p className="text-sm text-emerald-700">{messageNotice}</p> : null}
                 <button
-                  aria-label="Send requester message"
+                  aria-label="Отправить ответ заявителя"
                   className="inline-flex items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                   disabled={
                     messageSending ||
@@ -1371,7 +2281,7 @@ export function RequesterWorkspacePage() {
                 {bootstrap?.profile?.email ? <p className="break-words text-slate-500">{bootstrap.profile.email}</p> : null}
               </div>
               <button
-                aria-label="Open requester profile detail"
+                aria-label="Открыть профиль заявителя"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
                 disabled={profileDetailLoading}
                 onClick={() => void openProfileDetail()}
@@ -1469,11 +2379,11 @@ export function RequesterWorkspacePage() {
                       />
                       <span className="min-w-0 flex-1">
                         <span className="block break-words font-semibold text-slate-900">{deviceLabel(device)}</span>
-                        <span className="block break-words text-xs text-slate-500">{device.os || "OS не указан"} · agent {device.agent_version || "unknown"}</span>
+                        <span className="block break-words text-xs text-slate-500">{deviceSystemLabel(device.os, device.agent_version)}</span>
                       </span>
                     </label>
                     <button
-                      aria-label={`Open requester device detail ${device.device_id}`}
+                      aria-label={`Открыть сведения об устройстве ${device.device_id}`}
                       className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
                       disabled={deviceDetailLoading}
                       onClick={() => void openDeviceDetail(device.device_id)}
@@ -1489,7 +2399,88 @@ export function RequesterWorkspacePage() {
                     <span className="block">Можно создать общее обращение без привязки к устройству.</span>
                   </p>
                 )}
+              {pendingRegistrationClaims.length ? (
+                <div className="rounded-panel border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                  <p className="font-semibold">Заявки на привязку</p>
+                  <ul className="mt-2 space-y-2">
+                    {pendingRegistrationClaims.map((claim, index) => {
+                      const submittedAt = formatSubmittedAt(claim.submitted_at);
+                      return (
+                        <li className="flex flex-col gap-1 border-t border-amber-200 pt-2 first:border-t-0 first:pt-0" key={claim.claim_id || `${claim.device_id || "device"}-${index}`}>
+                          <span className="break-words font-semibold">{pendingDeviceLinkLabel(claim)}</span>
+                          <span>{pendingDeviceLinkStatusLabel(claim.status)}</span>
+                          {submittedAt ? <span className="text-xs text-amber-800">Отправлено: {submittedAt}</span> : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </div>
+            <form className="mt-4 grid gap-3 border-t border-slate-200 pt-4" onSubmit={(event) => void handleDeviceLinkLookup(event)}>
+              <div>
+                <p className="text-sm font-semibold text-slate-950">Привязать устройство</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Введите код из локального агента. Перед отправкой заявки вы увидите имя устройства и версию агента.
+                </p>
+              </div>
+              {profileGateActive ? (
+                <a className="rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900" href="/app/requester/profile/setup">
+                  Сначала заполните профиль
+                </a>
+              ) : null}
+              <label className="block text-sm font-semibold text-slate-700">
+                Код привязки
+                <input
+                  autoComplete="one-time-code"
+                  className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-mono font-semibold uppercase"
+                  disabled={profileGateActive || deviceLinkLoading || deviceLinkConfirming}
+                  maxLength={16}
+                  onChange={(event) => setDeviceLinkCode(event.target.value.toUpperCase())}
+                  placeholder="ABCD-1234"
+                  value={deviceLinkCode}
+                />
+              </label>
+              <button
+                aria-label="Проверить код привязки"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                disabled={profileGateActive || deviceLinkLoading || deviceLinkConfirming}
+                type="submit"
+              >
+                <KeyRound className="h-4 w-4" />
+                {deviceLinkLoading ? "Проверяем..." : "Проверить код"}
+              </button>
+            </form>
+            {deviceLinkPairing ? (
+              <div className="mt-3 rounded-panel border border-brand-100 bg-brand-50 p-3 text-sm text-slate-700">
+                <div className="flex items-start gap-3">
+                  <Monitor className="mt-0.5 h-5 w-5 text-brand-700" />
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words font-semibold text-slate-950">{pairingDeviceLabel(deviceLinkPairing)}</p>
+                    <p className="mt-1 break-words text-xs text-slate-600">
+                      {deviceSystemLabel(deviceLinkPairing.device?.os, deviceLinkPairing.device?.agent_version)}
+                    </p>
+                    {deviceLinkPairing.registration?.status ? (
+                      <p className="mt-2 text-xs font-semibold text-brand-800">
+                        {registrationStatusLabel(deviceLinkPairing.registration.status)}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+                <button
+                  aria-label="Отправить заявку на привязку устройства"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                  disabled={deviceLinkConfirming || deviceLinkPairing.status === "confirmed"}
+                  onClick={() => void handleDeviceLinkConfirm()}
+                  type="button"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  {deviceLinkConfirming ? "Отправляем..." : "Отправить заявку на привязку"}
+                </button>
+              </div>
+            ) : null}
+            {deviceLinkNotice ? <p className="mt-3 text-sm text-emerald-700">{deviceLinkNotice}</p> : null}
+            {deviceLinkError ? <p className="mt-3 text-sm text-rose-700">{deviceLinkError}</p> : null}
             {deviceDetailError ? <p className="mt-3 text-sm text-rose-700">{deviceDetailError}</p> : null}
             {selectedDeviceDetail ? (
               <div className="mt-4 rounded-panel border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
@@ -1501,11 +2492,11 @@ export function RequesterWorkspacePage() {
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase text-slate-500">Система</dt>
-                    <dd className="break-words">{selectedDeviceDetail.device.os || "OS не указан"} · agent {selectedDeviceDetail.device.agent_version || "unknown"}</dd>
+                    <dd className="break-words">{deviceSystemLabel(selectedDeviceDetail.device.os, selectedDeviceDetail.device.agent_version)}</dd>
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase text-slate-500">Связь</dt>
-                    <dd>{relationshipLabel(selectedDeviceDetail.device.relationship_type)} · {selectedDeviceDetail.device.binding_status || "status unknown"}</dd>
+                    <dd>{relationshipLabel(selectedDeviceDetail.device.relationship_type)} · {bindingStatusLabel(selectedDeviceDetail.device.binding_status)}</dd>
                   </div>
                   {selectedDeviceDetail.device.asset_name ? (
                     <div>
@@ -1515,7 +2506,7 @@ export function RequesterWorkspacePage() {
                   ) : null}
                   <div>
                     <dt className="text-xs font-semibold uppercase text-slate-500">Активность</dt>
-                    <dd>{selectedDeviceDetail.device.online ? "online" : "offline"} · Открытые обращения: {selectedDeviceDetail.device.open_ticket_count ?? 0}</dd>
+                    <dd>{deviceOnlineLabel(selectedDeviceDetail.device.online)} · Открытые обращения: {selectedDeviceDetail.device.open_ticket_count ?? 0}</dd>
                   </div>
                 </dl>
                 {selectedDeviceDetail.recent_tickets?.length ? (
@@ -1550,7 +2541,7 @@ export function RequesterWorkspacePage() {
             <label className="block text-sm font-semibold text-slate-700">
               Номер заявки
               <input
-                aria-label="Public ticket id to claim"
+                aria-label="Номер обращения для привязки"
                 className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
                 onChange={(event) => setClaimTicketId(event.currentTarget.value)}
                 value={claimTicketId}
@@ -1559,7 +2550,7 @@ export function RequesterWorkspacePage() {
             <label className="block text-sm font-semibold text-slate-700">
               Код доступа
               <input
-                aria-label="Public ticket access code to claim"
+                aria-label="Код доступа для привязки обращения"
                 className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
                 onChange={(event) => setClaimCode(event.currentTarget.value)}
                 value={claimCode}
@@ -1567,7 +2558,7 @@ export function RequesterWorkspacePage() {
             </label>
             {claimNotice ? <p className="text-sm text-emerald-700">{claimNotice}</p> : null}
             <button
-              aria-label="Claim public requester ticket"
+              aria-label="Привязать публичное обращение"
               className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
               disabled={claimSubmitting || !claimTicketId.trim() || !claimCode.trim()}
               type="submit"
@@ -1595,12 +2586,22 @@ export function RequesterWorkspacePage() {
                 {catalogNotice}
               </div>
             ) : null}
+            {requesterContextSummary.length ? (
+              <dl aria-label="Контекст формы обращения" className="grid gap-2 rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600 sm:grid-cols-2">
+                {requesterContextSummary.map((item) => (
+                  <div key={item.label}>
+                    <dt className="font-semibold text-slate-500">{item.label}</dt>
+                    <dd className="mt-0.5 break-words text-slate-900">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
             {services.length ? (
               <div className="grid gap-3">
                 <label className="block text-sm font-semibold text-slate-700">
                   Услуга
                   <select
-                    aria-label="Requester service"
+                    aria-label="Услуга обращения"
                     className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
                     onChange={(event) => {
                       const nextCode = event.currentTarget.value;
@@ -1623,7 +2624,7 @@ export function RequesterWorkspacePage() {
                   <label className="block text-sm font-semibold text-slate-700">
                     Тип обращения
                     <select
-                      aria-label="Requester offering"
+                      aria-label="Вариант услуги"
                       className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
                       onChange={(event) => {
                         setSelectedOfferingFullCode(event.currentTarget.value);
@@ -1681,7 +2682,7 @@ export function RequesterWorkspacePage() {
                             ) : null}
                             <div className="mt-2 flex flex-wrap gap-2">
                               <button
-                                aria-label="Open requester knowledge suggestion"
+                                aria-label="Открыть рекомендацию из базы знаний"
                                 className="rounded-panel border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
                                 onClick={() => {
                                   setOpenedKnowledgeId((current) => (current === item.item_id ? null : item.item_id));
@@ -1692,7 +2693,7 @@ export function RequesterWorkspacePage() {
                                 {openedKnowledgeId === item.item_id ? "Скрыть" : "Открыть"}
                               </button>
                               <button
-                                aria-label="Mark requester knowledge suggestion helpful"
+                                aria-label="Отметить рекомендацию полезной"
                                 className="rounded-panel border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800"
                                 onClick={() => recordKnowledgeAttempt(item, "deflected")}
                                 type="button"
@@ -1700,7 +2701,7 @@ export function RequesterWorkspacePage() {
                                 Помогло
                               </button>
                               <button
-                                aria-label="Mark requester knowledge suggestion not helpful"
+                                aria-label="Отметить рекомендацию бесполезной"
                                 className="rounded-panel border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
                                 onClick={() => recordKnowledgeAttempt(item, "not_helpful")}
                                 type="button"
@@ -1723,7 +2724,7 @@ export function RequesterWorkspacePage() {
                 <label className="block text-sm font-semibold text-slate-700">
                   Форма обращения
                   <select
-                    aria-label="Requester form"
+                    aria-label="Форма обращения заявителя"
                     className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
                     onChange={(event) => {
                       setSelectedFormKey(event.currentTarget.value);
@@ -1739,7 +2740,7 @@ export function RequesterWorkspacePage() {
                     ))}
                   </select>
                 </label>
-                {visibleFields.map((field) => (
+                {contextualVisibleFields.map((field) => (
                   <RequestFormFieldControl
                     field={field}
                     key={field.key}
@@ -1774,12 +2775,21 @@ export function RequesterWorkspacePage() {
                 {previewResult.expected_resolution ? <p>Решение: {previewResult.expected_resolution}</p> : null}
                 {previewResult.approval?.text ? <p>{previewResult.approval.text}</p> : null}
                 {previewResult.diagnostics?.text ? <p>{previewResult.diagnostics.text}</p> : null}
+                {previewResult.requester_context?.summary?.length ? (
+                  <p>
+                    Контекст:{" "}
+                    {previewResult.requester_context.summary
+                      .map((item) => item.value)
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                ) : null}
                 {previewResult.blockers?.length ? <p className="text-rose-700">{previewResult.blockers.join(" ")}</p> : null}
               </div>
             ) : null}
             <div className="grid gap-2">
               <button
-                aria-label="Preview requester ticket"
+                aria-label="Проверить обращение перед отправкой"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
                 disabled={previewSubmitting || !canCreateForCurrentScope || !description.trim() || !selectedOffering}
                 onClick={() => void handlePreview()}
@@ -1788,7 +2798,7 @@ export function RequesterWorkspacePage() {
                 {previewSubmitting ? "Проверяем..." : "Проверить заявку"}
               </button>
               <button
-                aria-label="Create requester ticket"
+                aria-label="Создать обращение в кабинете пользователя"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                 disabled={submitting || !canCreateForCurrentScope || !description.trim() || Boolean(selectedOffering && !previewIsFresh)}
                 type="submit"

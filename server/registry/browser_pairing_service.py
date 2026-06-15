@@ -7,9 +7,10 @@ import re
 import secrets
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeviceBrowserPairing
+from app.db.models import DeviceBrowserPairing, RegistryPerson
 from app.repos.account_session_repo import AccountSessionRepo
 from app.repos.browser_pairing_repo import BrowserPairingRepo
 from app.repos.registration_repo import RegistrationRepo
@@ -58,6 +59,28 @@ def _profile_from_actor(actor_id: str) -> dict[str, Any]:
     return profile
 
 
+def _profile_from_person(actor_id: str, person: RegistryPerson) -> dict[str, Any]:
+    profile = _profile_from_actor(actor_id)
+    metadata = person.metadata_json or {}
+    full_name = _clean_text(person.full_name or person.display_name, max_length=320)
+    if full_name:
+        profile["full_name"] = full_name
+        profile["display_name"] = full_name
+    if person.email:
+        profile["email"] = person.email
+    if person.phone:
+        profile["phone"] = person.phone
+    if person.department_id:
+        profile["department_id"] = person.department_id
+    if person.location_id:
+        profile["location_id"] = person.location_id
+    for key in ("position", "workplace_label", "preferred_contact_method"):
+        value = _clean_text(metadata.get(key), max_length=500)
+        if value:
+            profile[key] = value
+    return profile
+
+
 class BrowserPairingService:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -89,6 +112,25 @@ class BrowserPairingService:
             await self.session.flush()
             return True
         return False
+
+    async def expire_stale_pairings(self, *, limit: int = 500) -> dict[str, Any]:
+        now = _now()
+        result = await self.session.execute(
+            select(DeviceBrowserPairing)
+            .where(DeviceBrowserPairing.status.in_(["pending", "confirmed"]))
+            .where(DeviceBrowserPairing.expires_at.is_not(None))
+            .where(DeviceBrowserPairing.expires_at <= now)
+            .order_by(DeviceBrowserPairing.expires_at)
+            .limit(max(1, min(int(limit or 500), 1000)))
+        )
+        rows = list(result.scalars().all())
+        for row in rows:
+            row.status = "expired"
+            row.completed_at = row.completed_at or now
+            row.metadata_json = {**(row.metadata_json or {}), "completion_reason": "expired_cleanup"}
+        if rows:
+            await self.session.flush()
+        return {"expired_count": len(rows), "pairing_ids": [row.pairing_id for row in rows]}
 
     async def create_pairing(
         self,
@@ -283,11 +325,12 @@ class BrowserPairingService:
         profile_updates: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         row = await self._require_pending_pairing_link(pairing_id, purpose="registration")
-        profile = _profile_from_actor(actor_id)
+        person = await self._resolve_person_for_actor(actor_id)
+        profile = _profile_from_person(actor_id, person) if person is not None else _profile_from_actor(actor_id)
         if profile_updates:
             for key in ("department_id", "location_id"):
                 value = _clean_text(profile_updates.get(key), max_length=36)
-                if value:
+                if value and not profile.get(key):
                     profile[key] = value
         result = await RegistrationService(self.session).submit_agent_profile_claim(
             device_id=row.device_id,

@@ -21,6 +21,7 @@ Browser-to-agent account handoff is persisted in `device_browser_pairings` and s
 - Browser confirmation marks the pairing as confirmed but does not return an account `session_token` to the browser UI.
 - The agent pickup creates/returns the account `session_token` once for login and marks the pairing `consumed`; later pickups return session metadata without the token. Registration pairing pickup consumes the pairing and leaves the agent on the account gate/account-state polling path.
 - Agent auth can create or poll pairings only for its own UUID `device_id`.
+- `BrowserPairingService.expire_stale_pairings()` marks expired pending/confirmed pairing rows as `expired` for maintenance jobs without deleting audit state.
 
 ## Session modes
 
@@ -63,8 +64,9 @@ Current implementation:
 - `confirmed_binding` sessions live until logout, admin revoke, binding revoke, or `expires_at` if a deployment policy sets it. The default TTL is currently disabled.
 - `verified_other_account` sessions live until logout, admin revoke, base binding revoke, or `expires_at`. The default TTL is 24 hours.
 - `registration_pending` sessions are invalidated by terminal claim state and also receive `expires_at`. Approved claims actively revoke matching pending sessions; rejected/expired/superseded claims remain invalid through validation even before cleanup. The default TTL is 72 hours.
+- `AccountSessionService.expire_stale_sessions()` marks expired `registration_pending` and `verified_other_account` rows as `expired` and writes account events. It does not delete history and does not expire default confirmed-binding sessions.
 
-Follow-up: add a cleanup job for expired/revoked sessions and old account events.
+Follow-up: add scheduler wiring if a deployment wants periodic cleanup instead of invoking the service from an existing maintenance job.
 
 ## Ownership Transfer
 

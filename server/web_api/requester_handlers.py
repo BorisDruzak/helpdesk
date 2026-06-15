@@ -16,7 +16,8 @@ from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_att
 from knowledge.feedback_service import KnowledgeFeedbackService
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
-from requester.identity_service import RequesterIdentityResolver
+from requester.identity_service import RequesterIdentityResolver, RequesterProfileValidationError
+from registry.profile_schema_service import RequesterProfileSchemaService
 from tickets.handlers import (
     _event_visible_to_requester,
     _normalize_attachment_refs,
@@ -53,6 +54,23 @@ def _validation_error(details: dict[str, Any]) -> web.Response:
         {"status": "error", "error": "validation_error", "error_code": "VALIDATION_ERROR", "details": details},
         status=400,
     )
+
+
+def _profile_incomplete_error(completion: dict[str, Any]) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": "Заполните профиль, чтобы продолжить работу в кабинете пользователя.",
+            "error_code": "REQUESTER_PROFILE_INCOMPLETE",
+            "details": completion,
+        },
+        status=403,
+    )
+
+
+def _profile_completion_blocks(completion: dict[str, Any], key: str) -> bool:
+    blocks = completion.get("blocks") if isinstance(completion.get("blocks"), dict) else {}
+    return bool(blocks.get(key, not completion.get("complete", False)))
 
 
 def _clean(value: object, *, max_length: int = 500) -> str:
@@ -119,6 +137,24 @@ async def handle_web_requester_profile(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
         payload = await RequesterIdentityResolver(session).build_profile(actor_id=auth_context.actor_id)
+    return _success(payload)
+
+
+@require_auth("user")
+async def handle_web_requester_profile_update(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    data = await _json_body(request)
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        try:
+            payload = await resolver.update_own_profile(actor_id=auth_context.actor_id, payload=data)
+            await session.commit()
+        except RequesterProfileValidationError as exc:
+            await session.rollback()
+            return _validation_error(exc.details or {"profile": str(exc)})
+        except PermissionError as exc:
+            await session.rollback()
+            return _error(str(exc), status=403, error_code="REQUESTER_PROFILE_FORBIDDEN")
     return _success(payload)
 
 
@@ -558,6 +594,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session)
+        profile_schema = await RequesterProfileSchemaService(session).get_schema()
         binding = None
         if device_id:
             try:
@@ -566,31 +603,28 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                 return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
         else:
             person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
-            if person is None:
-                return _error("requester person not found", status=403, error_code="REQUESTER_IDENTITY_REQUIRED")
+        completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
+        if _profile_completion_blocks(completion, "ticket_preview"):
+            return _profile_incomplete_error(completion)
 
         preview_payload = dict(data)
-        requester_context = preview_payload.get("requester_context") if isinstance(preview_payload.get("requester_context"), dict) else {}
-        requester_context = dict(requester_context)
         account_mode = "confirmed_binding" if binding is not None else "browser_no_device"
-        requester_context.setdefault(
-            "requester_profile",
-            {
-                "full_name": getattr(person, "full_name", None) or getattr(person, "display_name", None) or auth_context.actor_id,
-                "email": getattr(person, "email", None) or auth_context.actor_id,
-                "phone": getattr(person, "phone", None),
-            },
+        requester_context = await resolver.build_requester_context(
+            actor_id=auth_context.actor_id,
+            person=person,
+            binding=binding,
+            account_mode=account_mode,
         )
-        requester_context.setdefault(
-            "requester_account",
-            {
-                "account_mode": account_mode,
-                "person_id": person.person_id if person else None,
-                "binding_id": binding.binding_id if binding is not None else None,
-                "validation": "web_requester_identity_resolved",
-            },
+        context_custom_fields = RequesterIdentityResolver.requester_context_custom_fields(requester_context)
+        client_custom_fields = (
+            preview_payload.get("custom_fields")
+            if isinstance(preview_payload.get("custom_fields"), dict)
+            else {}
         )
+        preview_payload["custom_fields"] = {**client_custom_fields, **context_custom_fields}
         preview_payload["requester_context"] = requester_context
+        if isinstance(requester_context.get("device"), dict):
+            preview_payload["device_metadata"] = dict(requester_context["device"])
         if not _has_catalog_selection(preview_payload):
             return _success(
                 {
@@ -609,6 +643,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                     "warnings": [],
                     "blockers": [],
                     "would_create_ticket": False,
+                    "requester_context": RequesterIdentityResolver.requester_context_preview(requester_context),
                 }
             )
         try:
@@ -617,6 +652,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             return _validation_error(exc.details)
         except ValueError as exc:
             return _validation_error({"preview": str(exc)})
+        preview["requester_context"] = RequesterIdentityResolver.requester_context_preview(requester_context)
 
     return _success(preview)
 
@@ -648,6 +684,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session)
+        profile_schema = await RequesterProfileSchemaService(session).get_schema()
         binding = None
         if supplied_device_id:
             try:
@@ -659,11 +696,12 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             request_context = "authenticated_requester_workspace"
         else:
             person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
-            if person is None:
-                return _error("requester person not found", status=403, error_code="REQUESTER_IDENTITY_REQUIRED")
             device_id = str(uuid.uuid4())
             account_mode = "browser_no_device"
             request_context = "no_device"
+        completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
+        if _profile_completion_blocks(completion, "ticket_create"):
+            return _profile_incomplete_error(completion)
 
         requester_profile = {
             "full_name": getattr(person, "full_name", None) or getattr(person, "display_name", None) or auth_context.actor_id,
@@ -679,7 +717,23 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             "email": getattr(person, "email", None),
             "validation": "web_requester_identity_resolved",
         }
-        extra_custom_fields: dict[str, Any] = {"request_context": request_context}
+        requester_context_snapshot = await resolver.build_requester_context(
+            actor_id=auth_context.actor_id,
+            person=person,
+            binding=binding,
+            account_mode=account_mode,
+        )
+        snapshot_profile = (
+            requester_context_snapshot.get("profile")
+            if isinstance(requester_context_snapshot.get("profile"), dict)
+            else {}
+        )
+        requester_profile["building"] = snapshot_profile.get("building")
+        requester_profile["room"] = snapshot_profile.get("room")
+        extra_custom_fields: dict[str, Any] = {
+            "request_context": request_context,
+            **RequesterIdentityResolver.requester_context_custom_fields(requester_context_snapshot),
+        }
         if account_mode == "browser_no_device":
             extra_custom_fields["no_device"] = {
                 "created_from": "requester_portal",

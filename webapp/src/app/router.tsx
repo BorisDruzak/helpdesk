@@ -53,6 +53,7 @@ import {
   TicketPassportPrintPage,
 } from "./routes/lazy-pages";
 import { LoginPage } from "../features/auth/login-page";
+import { RegisterPage } from "../features/auth/register-page";
 import { useSession } from "../features/auth/session-provider";
 import {
   hasWorkspaceAccess,
@@ -209,6 +210,10 @@ export const appRoutes: RouteObject[] = [
         element: <LoginPage />
       },
       {
+        path: "register",
+        element: <RegisterPage />
+      },
+      {
         path: "help",
         element: (
           <PublicPage>
@@ -265,6 +270,22 @@ export const appRoutes: RouteObject[] = [
           },
           {
             path: "requester",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterWorkspacePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/profile",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterWorkspacePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/profile/setup",
             element: (
               <WorkspaceAccessGate workspace="requester">
                 <RequesterWorkspacePage />

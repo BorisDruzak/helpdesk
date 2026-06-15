@@ -16,6 +16,9 @@ import type {
   RequesterDeviceDetail,
   RequesterProfileDetail,
   RequesterAttachmentUploadResult,
+  RequesterProfileUpdatePayload,
+  RequesterProfileUpdateResult,
+  RequesterRegistryOptionsPayload,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
   RequesterConsent,
@@ -29,6 +32,7 @@ import type {
   RequesterTicketMessageResult,
   RequesterTicketReopenPayload,
   RequesterTicketReopenResult,
+  RequesterContextPreview,
   AuthenticatedRequesterTicket,
 } from "./types";
 
@@ -212,6 +216,24 @@ export async function fetchRequesterProfile(): Promise<RequesterProfileDetail> {
   return readSuccess<RequesterProfileDetail>(response, "Не удалось загрузить профиль");
 }
 
+export async function updateRequesterProfile(payload: RequesterProfileUpdatePayload): Promise<RequesterProfileUpdateResult> {
+  const response = await fetch("/api/web/requester/profile", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: publicHeaders(null, true),
+    body: JSON.stringify(payload),
+  });
+  return readSuccess<RequesterProfileUpdateResult>(response, "Не удалось сохранить профиль");
+}
+
+export async function fetchRequesterRegistryOptions(): Promise<RequesterRegistryOptionsPayload> {
+  const response = await fetch("/api/registry/options", {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  return readSuccess<RequesterRegistryOptionsPayload>(response, "Не удалось загрузить справочники профиля");
+}
+
 export async function createRequesterTicket(
   payload: RequesterTicketCreatePayload,
 ): Promise<RequesterTicketCreateResult> {
@@ -361,6 +383,8 @@ export async function suggestKnowledge(payload: {
   request_template_key?: string;
   query?: string;
   form_payload?: Record<string, unknown>;
+  requester_context?: RequesterContextPreview;
+  device_metadata?: Record<string, unknown>;
   surface: "requester_portal" | "agent_gui" | "support_workspace";
   urgency?: string;
   impact?: string;

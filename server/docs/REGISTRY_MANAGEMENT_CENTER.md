@@ -10,6 +10,7 @@ Registry visibility, effective identity and audience groups are tracked in [REGI
 - `registry_assets.assigned_person_id` and `device_inventory_bindings.person_id/source_binding_id/registration_status` are derived state.
 - Binding lifecycle operations must go through `RegistrationService`.
 - UI login to registry-person links are represented only as verified `registry_person_identities(provider='ui_login')`; `ui_users` rows are not duplicated into person records.
+- `GET /api/web/admin/registry` person rows include schema-aware `profile_completion` for moderation visibility. It exposes status and missing field labels only; requester profile storage internals, tokens, sessions and secret values stay hidden.
 - Departments are organization structure. Access groups are RBAC/queue permissions. Audience groups are content/service targeting objects and must not grant permissions by themselves.
 - Account sessions are revoked through `AccountSessionService` when bindings are revoked or transferred.
 - Location, department, policy, merge and bulk admin actions write `registry_admin_events`.
@@ -91,6 +92,17 @@ The Registry Visibility Foundation extends this management center without changi
 - dangerous audience, visibility and bulk operations must follow the same preview/apply/audit pattern already used by Registry transfer, merge, bulk and import flows.
 
 Normal operator UI must prefer names/codes and searchable pickers. Raw ids belong only in `Advanced / служебные поля`.
+
+## R10 Admin Moderation Contract
+
+The admin registry is the web-first registration moderation center:
+
+- pending device-link claims are approved/rejected from typed registry APIs with Russian action labels and admin reasons;
+- person, UI-account and identity links remain explicit verified identities rather than copied user rows;
+- duplicate people and conflicting identities use preview/apply flows before mutation;
+- device transfer, account-session revoke, merge, bulk and import operations require preview before apply and return normalized operation reports;
+- `people[].profile_completion` is computed from the active requester profile schema so operators can see whether a requester profile is complete and which labels are missing;
+- the timeline drawer is the audit surface for profile, device, binding, account-session and claim changes.
 
 ## Timeline Contract
 

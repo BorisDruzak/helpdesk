@@ -199,9 +199,85 @@ describe("DevicePairingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Подтвердить регистрацию" }));
 
     expect(await screen.findByText("Регистрация подтверждена")).toBeInTheDocument();
-    expect(screen.getByText("pending_admin_review")).toBeInTheDocument();
+    expect(screen.getByText("Ожидает проверки администратора")).toBeInTheDocument();
+    expect(screen.queryByText("pending_admin_review")).not.toBeInTheDocument();
     expect(screen.getByText("NEW-PC")).toBeInTheDocument();
     expect(screen.getByText("Windows")).toBeInTheDocument();
+  });
+
+  it("redirects registration confirmation to profile setup when the profile is incomplete", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/registry/browser-pairings/pair-profile") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-profile",
+            purpose: "registration",
+            status: "pending",
+            device: { hostname: "PROFILE-PC", os: "Windows", agent_version: "3.1.62" },
+          },
+        });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-profile/registration/confirm") {
+        expect(init?.method).toBe("POST");
+        return jsonResponse(
+          {
+            status: "error",
+            error_code: "REQUESTER_PROFILE_INCOMPLETE",
+            error: "Заполните профиль, чтобы продолжить работу в кабинете пользователя.",
+            details: { setup_path: "/app/requester/profile/setup" },
+          },
+          403,
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(
+      <MemoryRouter initialEntries={["/app/device/register?pairing_id=pair-profile"]}>
+        <Routes>
+          <Route
+            element={
+              <>
+                <DevicePairingPage purpose="registration" />
+                <LocationProbe />
+              </>
+            }
+            path="/app/device/register"
+          />
+          <Route element={<LocationProbe />} path="/app/requester/profile/setup" />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("PROFILE-PC")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить регистрацию" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/profile/setup");
+    });
+  });
+
+  it("shows a product-safe Russian error when the device link id is missing", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const { container } = render(
+      <MemoryRouter initialEntries={["/app/device/register"]}>
+        <Routes>
+          <Route element={<DevicePairingPage purpose="registration" />} path="/app/device/register" />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Откройте эту страницу из агента или введите код подключения.")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.textContent ?? "").not.toMatch(/pairing_id|binding_id|claim_id|session/i);
   });
 
   it("sends selected registry department and location when confirming registration", async () => {

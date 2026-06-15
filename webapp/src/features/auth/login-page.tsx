@@ -22,6 +22,7 @@ export function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const nextPath = resolveNextPath(searchParams.get("next"), session);
+  const registrationComplete = searchParams.get("registered") === "1";
 
   if (status === "authenticated") {
     return <Navigate replace to={nextPath} />;
@@ -121,6 +122,12 @@ export function LoginPage() {
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit}>
+              {registrationComplete ? (
+                <p aria-live="polite" className="rounded-[1rem] bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  Аккаунт создан. Войдите, чтобы продолжить настройку доступа.
+                </p>
+              ) : null}
+
               <label className="block space-y-2">
                 <span className="text-sm font-medium text-slate-800">Логин</span>
                 <Input

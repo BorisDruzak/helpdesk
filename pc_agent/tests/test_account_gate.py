@@ -61,7 +61,7 @@ def test_account_gate_approved_other_account_can_be_selected():
     assert state["approved_other_account"]["display_name"] == "Approved Guest"
 
 
-def test_account_gate_no_binding_state_shows_registration():
+def test_account_gate_no_binding_state_uses_browser_registration_only_by_default():
     state = account_gate_view_state(
         {
             "accounts": [],
@@ -72,12 +72,43 @@ def test_account_gate_no_binding_state_shows_registration():
     )
 
     assert state["mode"] == "unregistered"
-    assert state["show_register"] is True
+    assert state["show_register"] is False
     assert state["show_browser_register"] is True
     assert state["show_login_other"] is False
 
 
-def test_account_gate_unregistered_fallback_shows_registration_only():
+def test_account_gate_legacy_registration_can_be_enabled_explicitly():
+    state = account_gate_view_state(
+        {
+            "accounts": [],
+            "can_register": True,
+            "can_login_other_account": False,
+            "registration": {"status": "unregistered"},
+        },
+        legacy_registration_enabled=True,
+    )
+
+    assert state["mode"] == "unregistered"
+    assert state["show_register"] is True
+    assert state["show_browser_register"] is True
+
+
+def test_account_gate_browser_pairing_code_can_be_copied():
+    state = account_gate_view_state(
+        {
+            "accounts": [],
+            "can_register": True,
+            "can_login_other_account": False,
+            "registration": {"status": "unregistered"},
+            "browser_pairing_code": "ABCD-1234",
+        }
+    )
+
+    assert state["browser_pairing_code"] == "ABCD-1234"
+    assert state["show_copy_pairing_code"] is True
+
+
+def test_account_gate_unregistered_fallback_shows_browser_registration_only():
     state = account_gate_view_state(
         {
             "accounts": [],
@@ -88,7 +119,8 @@ def test_account_gate_unregistered_fallback_shows_registration_only():
     )
 
     assert state["mode"] == "unregistered"
-    assert state["show_register"] is True
+    assert state["show_register"] is False
+    assert state["show_browser_register"] is True
     assert state["show_login_other"] is False
 
 
@@ -100,7 +132,7 @@ def test_account_gate_unknown_state_does_not_offer_account_actions():
     assert state["show_login_other"] is False
 
 
-def test_account_gate_pending_state_shows_continue_registration():
+def test_account_gate_pending_state_hides_legacy_confirm_by_default():
     state = account_gate_view_state(
         {
             "accounts": [
@@ -118,8 +150,29 @@ def test_account_gate_pending_state_shows_continue_registration():
 
     assert state["mode"] == "pending"
     assert state["show_register"] is False
-    assert state["show_confirm"] is True
+    assert state["show_confirm"] is False
     assert state["show_login_other"] is False
+
+
+def test_account_gate_pending_state_can_show_legacy_confirm_when_enabled():
+    state = account_gate_view_state(
+        {
+            "accounts": [
+                {
+                    "account_mode": "registration_pending",
+                    "display_name": "Pending User",
+                    "registration_status": "pending_user_confirmation",
+                }
+            ],
+            "can_register": True,
+            "can_login_other_account": False,
+            "registration": {"status": "self_reported"},
+        },
+        legacy_registration_enabled=True,
+    )
+
+    assert state["mode"] == "pending"
+    assert state["show_confirm"] is True
 
 
 def test_main_window_does_not_treat_registration_pending_as_ticket_login():
@@ -273,7 +326,11 @@ async def test_main_window_browser_registration_pairing_refreshes_account_state(
 
         async def create_browser_pairing(self, purpose: str) -> dict:
             assert purpose == "registration"
-            return {"pairing_id": "pair-2", "browser_url": "/app/device/register?pairing_id=pair-2"}
+            return {
+                "pairing_id": "pair-2",
+                "pairing_code": "ABCD-1234",
+                "browser_url": "/app/device/register?pairing_id=pair-2",
+            }
 
         async def get_browser_pairing(self, pairing_id: str) -> dict:
             assert pairing_id == "pair-2"
@@ -291,6 +348,7 @@ async def test_main_window_browser_registration_pairing_refreshes_account_state(
 
     await window._async_browser_pairing("registration", poll_interval_seconds=0.0, max_polls=1)
 
+    assert any(item["state"].get("browser_pairing_code") == "ABCD-1234" for item in rendered)
     assert rendered[-1]["state"]["registration"]["status"] == "pending_user_confirmation"
 
 

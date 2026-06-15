@@ -2,7 +2,7 @@
 
 Документация по безопасности, аутентификации и авторизации сервера PC Agent.
 
-**Дата обновления:** 2026-04-20
+**Дата обновления:** 2026-06-15
 
 Security update 2026-05-23:
 - `POST /api/login` is removed from the unauthenticated whitelist and is admin-only. It is retained only as an audited compatibility path for manual agent-token issue.
@@ -28,6 +28,13 @@ Security update 2026-06-11:
 - User consent creation is race-safe around the partial unique pending-subject index. Duplicate concurrent creation returns the existing pending `UserConsentRequest` instead of leaking a duplicate-key 500.
 - Consent-required operation retry ticket events use the same sensitive-key redaction helper as `UserConsentRequest.requested_action_payload_redacted`; raw `authorization`, `cookie`, `password`, `secret`, `session_token` and token-like params must not be written into `ticket_events`.
 - Requester-facing Remote Assist consent list/detail/decision responses are consent-only payloads and must not include ICE servers, SDP offers/answers/candidates, signaling tokens, agent/viewer tokens, session tokens, cookies or authorization material.
+
+Security update 2026-06-15:
+- Web self-registration is fail-closed by default through `WEB_SELF_REGISTRATION_ENABLED=false`.
+- Requester profile completion is blocking by default through `PROFILE_COMPLETION_REQUIRED=true`. Temporary rollout override may set it to `false`; missing fields still return in `profile_completion`, but requester ticket preview/create uses policy-aware `blocks`.
+- `POST /api/web/session/register` creates only a UI account with role `user`, validates the existing password policy and duplicate login constraints, rejects role-escalation fields through strict DTO validation, and does not set `pc_client_web_session`.
+- Optional registration device-link codes are validated only as registration pairings; account creation does not create an active device binding or bypass the later profile/admin approval policy.
+- `PUT /api/web/requester/profile` is web-session protected, writes only the authenticated caller's registry profile and verified `ui_login` identity, rejects foreign `person_id`, and requires active registry department/location ids before normal requester ticket preview/create is allowed.
 
 ---
 
@@ -143,6 +150,7 @@ Security update 2026-06-11:
 - `POST /api/login` — admin-only audited compatibility endpoint for manual agent-token issue; it is not in the unauthenticated whitelist.
 - `POST /api/ui_login` — логин UI (логин/пароль → выдача UI токена).
 - `POST /api/web/session/login` — логин нового `webapp` и установка httpOnly cookie-session.
+- `POST /api/web/session/register` — feature-flagged account-only self-registration; when disabled it returns 403 and creates nothing, when enabled it creates role `user` without issuing a session cookie.
 - `GET /api/ui_session` — проверка текущей UI-сессии по Bearer UI token; возвращает `user_login`, `actor_role`, `auth_type`.
 - `GET /api/health` — (зарезервировано для проверки здоровья сервиса; endpoint может быть добавлен отдельно).
 
@@ -166,7 +174,7 @@ Security update 2026-06-11:
 
 - Роль и идентификатор актора берутся только из `request['auth_context']`.
 - Декоратор `require_auth(*allowed_roles)` проверяет наличие `auth_context` и вхождение `actor_role` в `allowed_roles`. При отсутствии контекста — 401, при недопустимой роли — 403 (`error_code: "FORBIDDEN"`).
-- Browser-pairing web endpoints `POST /api/web/registry/browser-pairings/lookup`, `GET /api/web/registry/browser-pairings/{pairing_id}` and `/login|registration/confirm` accept web-session roles `admin`, `support` and `user`; login confirmation still relies on `BrowserPairingService` to resolve the actor identity and require an active primary/shared/responsible binding for the pairing device.
+- Browser-pairing web endpoints `POST /api/web/registry/browser-pairings/lookup`, `GET /api/web/registry/browser-pairings/{pairing_id}` and `/login|registration/confirm` accept web-session roles `admin`, `support` and `user`; login confirmation still relies on `BrowserPairingService` to resolve the actor identity and require an active primary/shared/responsible binding for the pairing device. Registration confirmation for a requester-owned device link now additionally requires a completed registry-backed requester profile; `REQUESTER_PROFILE_INCOMPLETE` returns before claim creation, and the claim profile snapshot is built from the resolved `RegistryPerson` instead of browser-supplied person/profile fields.
 - Для `DELETE /api/devices/{device_id}` допускается только `admin`: support/user/agent не могут архивировать устройства в реестре.
 - Legacy endpoint `POST /api/tools/run` также берёт роль только из `AuthContext`; если запрос пришёл по agent token, `device_id` в body обязан совпадать с `AuthContext.actor_id`, иначе сервер возвращает 403 `DEVICE_CONTEXT_MISMATCH` до metadata/policy/dispatch. Это не даёт agent token запускать diagnostics/tool commands в чужом device context даже при подмене `actor_role` в JSON.
 
@@ -244,7 +252,9 @@ Security update 2026-06-11:
 ### 5.4 Web session: `/api/web/session/*`
 
 - `POST /api/web/session/login` принимает `{"login": "...", "password": "..."}` и при успехе выставляет httpOnly cookie `pc_client_web_session` с `SameSite=Lax`.
+- `POST /api/web/session/register` is controlled by `WEB_SELF_REGISTRATION_ENABLED`. It accepts only `login`, `password`, `password_repeat` and optional `device_link_code`, creates a DB UI user with `actor_role=user`, returns `next_path=/app/login?registered=1`, and must not issue a cookie or auto-login. Optional `device_link_code` only validates a live registration pairing and returns accepted metadata; active registry binding/profile completion remains a separate policy-controlled flow.
 - `GET /api/web/session/me` требует валидную cookie-session и возвращает typed payload `{"status":"success","data":{"user_login", "actor_role", "auth_type", "default_workspace", "available_workspaces", "permissions", "permissions_version"}}`.
+- `PUT /api/web/requester/profile` requires the same authenticated web session, accepts only controlled requester profile fields, validates registry picker ids, and must not trust client role/account/person context beyond `AuthContext`.
 - `default_workspace`, `available_workspaces`, `permissions` и `permissions_version` формируются сервером по effective access и считаются каноничным источником истины для redirect/access-gate и element-visibility логики нового `/app/*`; React-клиент не должен заново вычислять эти права из произвольных role-switch веток.
 - `POST /api/web/session/logout` отзывает текущий UI token server-side и очищает cookie.
 - Новый React `webapp` под `/app/*` не хранит bearer token в `localStorage`; сервер остаётся источником истины для web session через cookie и `AuthContext`.

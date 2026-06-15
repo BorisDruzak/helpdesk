@@ -6,7 +6,25 @@ export type RequestFormFieldOption = {
 export type RequestFormField = {
   key: string;
   label: string;
-  type: "text" | "textarea" | "select" | "radio" | "checkbox" | "number" | "date";
+  type:
+    | "text"
+    | "textarea"
+    | "select"
+    | "multi_select"
+    | "radio"
+    | "checkbox"
+    | "number"
+    | "date"
+    | "datetime"
+    | "file"
+    | "user_picker"
+    | "department_picker"
+    | "location_picker"
+    | "device_picker"
+    | "service_picker"
+    | "url"
+    | "phone"
+    | "email";
   required?: boolean;
   placeholder?: string | null;
   help_text?: string | null;
@@ -80,6 +98,28 @@ export type RequesterTicketPreviewPayload = ServiceCatalogPreviewPayload & {
   device_id?: string;
 };
 
+export type RequesterContextPreview = {
+  profile?: {
+    display_name?: string | null;
+    full_name?: string | null;
+    phone?: string | null;
+    department?: string | null;
+    location?: string | null;
+    position?: string | null;
+    workplace_label?: string | null;
+  } | null;
+  device?: {
+    device_id?: string | null;
+    label?: string | null;
+    relationship_type?: string | null;
+    asset_name?: string | null;
+    asset_type?: string | null;
+  } | null;
+  form_prefill?: Record<string, string | number | boolean | null>;
+  routing_facts?: Record<string, string | number | boolean | null>;
+  summary?: Array<{ label: string; value?: string | null }>;
+};
+
 export type ServiceCatalogSafePreview = {
   ok: boolean;
   service: { code?: string | null; title?: string | null };
@@ -94,6 +134,7 @@ export type ServiceCatalogSafePreview = {
   warnings: string[];
   blockers: string[];
   would_create_ticket: false;
+  requester_context?: RequesterContextPreview;
 };
 
 export type KnowledgeSuggestionItem = {
@@ -300,6 +341,80 @@ export type RequesterProfile = {
   department_id?: string | null;
   location_id?: string | null;
   status?: string | null;
+  position?: string | null;
+  workplace_label?: string | null;
+  preferred_contact_method?: string | null;
+  custom_fields?: Record<string, string | boolean | number | null>;
+};
+
+export type RequesterProfileSchemaField = {
+  key: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  visible?: boolean;
+  system?: boolean;
+  custom?: boolean;
+  editable?: boolean;
+  can_delete?: boolean;
+  can_hide?: boolean;
+  target_kind?: string;
+  storage_target?: string;
+  help_text?: string | null;
+  validation?: Record<string, unknown>;
+  options?: Array<string | { value: string; label: string }>;
+  audit_behavior?: string;
+};
+
+export type RequesterProfileSchema = {
+  schema_key: string;
+  version?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  fields: RequesterProfileSchemaField[];
+  custom_fields?: RequesterProfileSchemaField[];
+  required_fields?: Array<{ key: string; label: string }>;
+  system_fields?: string[];
+  editable_optional_fields?: string[];
+  warnings?: string[];
+};
+
+export type RequesterProfileCompletion = {
+  complete: boolean;
+  status: "complete" | "required" | string;
+  required_fields: Array<{ key: string; label: string }>;
+  missing_fields: Array<{ key: string; label: string }>;
+  setup_path: string;
+  blocks?: Record<string, boolean>;
+};
+
+export type RequesterProfileUpdatePayload = {
+  person_id?: string;
+  full_name: string;
+  department_id: string;
+  location_id: string;
+  phone: string;
+  position?: string;
+  workplace_label?: string;
+  preferred_contact_method?: string;
+  custom_fields?: Record<string, string | boolean | number | null>;
+};
+
+export type RequesterProfileUpdateResult = {
+  profile: RequesterProfile;
+  profile_completion: RequesterProfileCompletion;
+  profile_policy: RequesterProfileDetail["profile_policy"];
+  profile_schema?: RequesterProfileSchema;
+};
+
+export type RequesterRegistryOption = {
+  value: string;
+  label: string;
+};
+
+export type RequesterRegistryOptionsPayload = {
+  departments?: RequesterRegistryOption[];
+  locations?: RequesterRegistryOption[];
 };
 
 export type RequesterIdentity = {
@@ -329,6 +444,7 @@ export type RequesterDeviceDetail = {
 
 export type RequesterProfileDetail = {
   profile?: RequesterProfile | null;
+  requester_context?: RequesterContextPreview;
   identities: RequesterIdentity[];
   devices: RequesterDevice[];
   active_bindings: Array<{
@@ -337,17 +453,29 @@ export type RequesterProfileDetail = {
     relationship_type?: string | null;
     status?: string | null;
   }>;
-  pending_registration_claims: Array<Record<string, unknown>>;
+  pending_registration_claims: RequesterPendingRegistrationClaim[];
   profile_policy: {
     editable: boolean;
     editable_fields: string[];
     change_request_required: boolean;
   };
+  profile_completion?: RequesterProfileCompletion;
+  profile_schema?: RequesterProfileSchema;
+};
+
+export type RequesterPendingRegistrationClaim = {
+  claim_id?: string | null;
+  device_id?: string | null;
+  status?: string | null;
+  submitted_at?: string | null;
 };
 
 export type RequesterBootstrap = {
   workspace: "requester";
   profile?: RequesterProfile | null;
+  profile_completion?: RequesterProfileCompletion;
+  profile_schema?: RequesterProfileSchema;
+  requester_context?: RequesterContextPreview;
   devices: RequesterDevice[];
   active_bindings: Array<{
     binding_id?: string | null;
@@ -355,7 +483,7 @@ export type RequesterBootstrap = {
     relationship_type?: string | null;
     status?: string | null;
   }>;
-  pending_registration_claims: Array<Record<string, unknown>>;
+  pending_registration_claims: RequesterPendingRegistrationClaim[];
   open_ticket_count: number;
   tickets_requiring_user_action_count: number;
   pending_consent_count: number;

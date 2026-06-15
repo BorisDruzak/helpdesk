@@ -73,7 +73,7 @@ describe("RequesterWorkspacePage", () => {
         return jsonResponse({ status: "success", data: { tickets: [] } });
       }
       if (url === "/api/web/requester/tickets" && init?.method === "POST") {
-        return jsonResponse({ status: "success", data: { ticket_id: "T-ASK", ticket: { ticket_id: "T-ASK", title: "Knowledge Ask: VPN access error" } } });
+        return jsonResponse({ status: "success", data: { ticket_id: "T-ASK", ticket: { ticket_id: "T-ASK", title: "Запрос из базы знаний: VPN access error" } } });
       }
       if (url === "/api/web/requester/consents?status=pending") {
         return jsonResponse({ status: "success", data: { consents: [] } });
@@ -90,16 +90,20 @@ describe("RequesterWorkspacePage", () => {
 
     render(<RequesterWorkspacePage />);
 
-    expect(await screen.findByDisplayValue("Knowledge Ask: VPN access error")).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/Knowledge Ask query: VPN access error/)).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("Запрос из базы знаний: VPN access error")).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Вопрос в базе знаний: VPN access error/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Статус ответа: AI отключен/)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/Режим поиска: Поиск по ключевым словам/)).toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/Knowledge Ask/)).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/ask-audit-prefill/)).not.toBeInTheDocument();
     expect(window.sessionStorage.getItem("pc_client.knowledge_ask.ticket_context")).toBeNull();
 
-    fireEvent.click(screen.getByLabelText("Create requester ticket"));
+    fireEvent.click(screen.getByLabelText("Создать обращение в кабинете пользователя"));
 
     await waitFor(() => expect(fetchMock.mock.calls.some((call) => String(call[0]) === "/api/web/requester/tickets" && call[1]?.method === "POST")).toBe(true));
     const createCall = fetchMock.mock.calls.find((call) => String(call[0]) === "/api/web/requester/tickets" && call[1]?.method === "POST");
     expect(JSON.parse(createCall?.[1]?.body as string)).toMatchObject({
-      title: "Knowledge Ask: VPN access error",
+      title: "Запрос из базы знаний: VPN access error",
       knowledge_attempts: [
         {
           item_id: "ki-ask-prefill",
@@ -177,7 +181,7 @@ describe("RequesterWorkspacePage", () => {
 
     await screen.findByText("Ожидают вашего подтверждения");
     await screen.findByText("Просмотр экрана");
-    fireEvent.click(screen.getByLabelText("Approve requester consent consent-1"));
+    fireEvent.click(screen.getByLabelText("Подтвердить согласие consent-1"));
 
     await screen.findByText("Согласие подтверждено");
     await waitFor(() => {
@@ -196,8 +200,29 @@ describe("RequesterWorkspacePage", () => {
           status: "success",
           data: {
             workspace: "requester",
-            profile: { person_id: "person-1", display_name: "Requester One", email: "requester@example.test" },
-            devices: [{ device_id: "device-1", hostname: "desk-1", os: "Windows", agent_version: "3.1.61" }],
+            profile: {
+              person_id: "person-1",
+              display_name: "Requester One",
+              full_name: "Requester One",
+              email: "requester@example.test",
+              phone: "1001",
+              department_id: "dept-1",
+              location_id: "loc-1",
+            },
+            requester_context: {
+              profile: { full_name: "Requester One", department: "IT", location: "HQ / 101", phone: "1001" },
+              form_prefill: { department_id: "dept-1", location_id: "loc-1", phone: "1001" },
+            },
+            devices: [
+              {
+                device_id: "device-1",
+                hostname: "desk-1",
+                os: "Windows",
+                agent_version: "3.1.61",
+                asset_id: "asset-1",
+                asset_name: "Desk 1",
+              },
+            ],
             active_bindings: [],
             pending_registration_claims: [],
             open_ticket_count: 1,
@@ -245,7 +270,7 @@ describe("RequesterWorkspacePage", () => {
 
     render(<RequesterWorkspacePage />);
 
-    const profileButton = await screen.findByLabelText("Open requester profile detail");
+    const profileButton = await screen.findByLabelText("Открыть профиль заявителя");
     fireEvent.click(profileButton);
 
     await screen.findByText("Профиль заявителя");
@@ -301,6 +326,7 @@ describe("RequesterWorkspacePage", () => {
               agent_version: "3.1.61",
               relationship_type: "primary_user",
               binding_status: "active",
+              online: false,
               asset_name: "Desk one asset",
               open_ticket_count: 2,
               available_actions: { create_ticket: true },
@@ -315,13 +341,15 @@ describe("RequesterWorkspacePage", () => {
 
     render(<RequesterWorkspacePage />);
 
-    await screen.findByText("desk-1");
-    fireEvent.click(screen.getByLabelText("Open requester device detail device-1"));
+    await waitFor(() => expect(screen.getAllByText("desk-1").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByLabelText("Открыть сведения об устройстве device-1"));
 
     await screen.findByText("Сведения об устройстве");
     await screen.findByText("desk-1.corp");
     await screen.findByText(/Основной пользователь/);
-    await screen.findByText((_, element) => element?.textContent === "offline · Открытые обращения: 2");
+    await screen.findByText((_, element) => element?.textContent === "Не в сети · Открытые обращения: 2");
+    expect(screen.queryByText(/agent/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unknown/i)).not.toBeInTheDocument();
     await screen.findByText("Device ticket");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/web/requester/devices/device-1",
@@ -396,9 +424,9 @@ describe("RequesterWorkspacePage", () => {
     render(<RequesterWorkspacePage />);
 
     await screen.findByText("Привязать обращение");
-    fireEvent.change(screen.getByLabelText("Public ticket id to claim"), { target: { value: "T-91" } });
-    fireEvent.change(screen.getByLabelText("Public ticket access code to claim"), { target: { value: "ABCD12" } });
-    fireEvent.click(screen.getByLabelText("Claim public requester ticket"));
+    fireEvent.change(screen.getByLabelText("Номер обращения для привязки"), { target: { value: "T-91" } });
+    fireEvent.change(screen.getByLabelText("Код доступа для привязки обращения"), { target: { value: "ABCD12" } });
+    fireEvent.click(screen.getByLabelText("Привязать публичное обращение"));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -459,9 +487,9 @@ describe("RequesterWorkspacePage", () => {
     render(<RequesterWorkspacePage />);
 
     await screen.findByText("Привязать обращение");
-    fireEvent.change(screen.getByLabelText("Public ticket id to claim"), { target: { value: "T-91" } });
-    fireEvent.change(screen.getByLabelText("Public ticket access code to claim"), { target: { value: "ABCD12" } });
-    fireEvent.click(screen.getByLabelText("Claim public requester ticket"));
+    fireEvent.change(screen.getByLabelText("Номер обращения для привязки"), { target: { value: "T-91" } });
+    fireEvent.change(screen.getByLabelText("Код доступа для привязки обращения"), { target: { value: "ABCD12" } });
+    fireEvent.click(screen.getByLabelText("Привязать публичное обращение"));
 
     await screen.findByText(
       "Для привязки обращения нужен связанный профиль пользователя. Обратитесь к администратору для привязки учетной записи.",
@@ -565,14 +593,14 @@ describe("RequesterWorkspacePage", () => {
     fireEvent.click(screen.getByText("Owned ticket"));
 
     await screen.findByText("Owned ticket detail");
-    fireEvent.change(screen.getByLabelText("Attach requester file"), {
+    fireEvent.change(screen.getByLabelText("Прикрепить файл к ответу"), {
       target: { files: [new File(["requester evidence"], "requester-log.txt", { type: "text/plain" })] },
     });
     await screen.findByText("requester-log.txt");
-    fireEvent.change(screen.getByLabelText("Requester message"), {
+    fireEvent.change(screen.getByLabelText("Ответ заявителя"), {
       target: { value: "Here is the requested context" },
     });
-    fireEvent.click(screen.getByLabelText("Send requester message"));
+    fireEvent.click(screen.getByLabelText("Отправить ответ заявителя"));
 
     await waitFor(() => {
       const uploadCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/upload");
@@ -655,7 +683,7 @@ describe("RequesterWorkspacePage", () => {
     fireEvent.click(screen.getByText("Resolved ticket"));
     await screen.findByText("Resolved ticket detail");
 
-    fireEvent.click(screen.getByLabelText("Close requester ticket"));
+    fireEvent.click(screen.getByLabelText("Закрыть обращение заявителя"));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/requester/tickets/T-77/close",
@@ -663,9 +691,9 @@ describe("RequesterWorkspacePage", () => {
       );
     });
 
-    fireEvent.change(screen.getByLabelText("Requester feedback rating"), { target: { value: "2" } });
-    fireEvent.click(screen.getByLabelText("Requester problem resolved"));
-    fireEvent.click(screen.getByLabelText("Submit requester feedback"));
+    fireEvent.change(screen.getByLabelText("Оценка обращения"), { target: { value: "2" } });
+    fireEvent.click(screen.getByLabelText("Проблема решена"));
+    fireEvent.click(screen.getByLabelText("Отправить оценку обращения"));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/requester/tickets/T-77/feedback",
@@ -676,7 +704,7 @@ describe("RequesterWorkspacePage", () => {
       );
     });
 
-    fireEvent.click(screen.getByLabelText("Reopen requester ticket"));
+    fireEvent.click(screen.getByLabelText("Вернуть обращение в работу"));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/requester/tickets/T-77/reopen",
@@ -693,8 +721,29 @@ describe("RequesterWorkspacePage", () => {
           status: "success",
           data: {
             workspace: "requester",
-            profile: { person_id: "person-1", display_name: "Requester One", email: "requester@example.test" },
-            devices: [{ device_id: "device-1", hostname: "desk-1", os: "Windows", agent_version: "3.1.61" }],
+            profile: {
+              person_id: "person-1",
+              display_name: "Requester One",
+              full_name: "Requester One",
+              email: "requester@example.test",
+              phone: "1001",
+              department_id: "dept-1",
+              location_id: "loc-1",
+            },
+            requester_context: {
+              profile: { full_name: "Requester One", department: "IT", location: "HQ / 101", phone: "1001" },
+              form_prefill: { department_id: "dept-1", location_id: "loc-1", phone: "1001" },
+            },
+            devices: [
+              {
+                device_id: "device-1",
+                hostname: "desk-1",
+                os: "Windows",
+                agent_version: "3.1.61",
+                asset_id: "asset-1",
+                asset_name: "Desk 1",
+              },
+            ],
             active_bindings: [],
             pending_registration_claims: [],
             open_ticket_count: 0,
@@ -718,9 +767,22 @@ describe("RequesterWorkspacePage", () => {
                 key: "breakage",
                 title: "Поломка",
                 request_kind: "incident",
-                fields: [{ key: "summary", label: "Кратко", type: "text", required: true }],
+                fields: [
+                  { key: "department_id", label: "Department", type: "department_picker", required: true },
+                  { key: "device_id", label: "Device", type: "device_picker", required: true },
+                  { key: "summary", label: "Кратко", type: "text", required: true },
+                ],
               },
             ],
+          },
+        });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            departments: [{ value: "dept-1", label: "IT" }],
+            locations: [{ value: "loc-1", label: "HQ / 101" }],
           },
         });
       }
@@ -779,6 +841,13 @@ describe("RequesterWorkspacePage", () => {
             warnings: [],
             blockers: [],
             would_create_ticket: false,
+            requester_context: {
+              summary: [
+                { label: "profile", value: "Requester One" },
+                { label: "department", value: "IT" },
+                { label: "device", value: "desk-1" },
+              ],
+            },
           },
         });
       }
@@ -811,24 +880,47 @@ describe("RequesterWorkspacePage", () => {
 
     render(<RequesterWorkspacePage />);
 
-    await screen.findByLabelText("Requester offering");
+    await screen.findByLabelText("Вариант услуги");
+    const contextBlock = await screen.findByLabelText("Контекст формы обращения");
+    expect(contextBlock).toHaveTextContent("IT");
+    await waitFor(() => {
+      const suggestCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/knowledge/suggest");
+      expect(suggestCall).toBeTruthy();
+      const suggestBody = JSON.parse(String((suggestCall?.[1] as RequestInit).body));
+      expect(suggestBody).toMatchObject({
+        requester_context: {
+          form_prefill: {
+            department_id: "dept-1",
+            location_id: "loc-1",
+            phone: "1001",
+          },
+        },
+        device_metadata: {
+          device_id: "device-1",
+          hostname: "desk-1",
+          asset_id: "asset-1",
+          asset_name: "Desk 1",
+        },
+      });
+    });
     await screen.findByText("Проверьте питание ноутбука");
-    fireEvent.click(screen.getByLabelText("Open requester knowledge suggestion"));
+    fireEvent.click(screen.getByLabelText("Открыть рекомендацию из базы знаний"));
     await screen.findByText("Отключите зарядку на 10 секунд и подключите снова.");
-    fireEvent.click(screen.getByLabelText("Mark requester knowledge suggestion not helpful"));
-    fireEvent.change(screen.getByLabelText("Requester form field summary"), {
+    fireEvent.click(screen.getByLabelText("Отметить рекомендацию бесполезной"));
+    fireEvent.change(screen.getByLabelText("Поле формы обращения summary"), {
       target: { value: "Ноутбук не включается" },
     });
     fireEvent.change(screen.getByLabelText("Описание"), {
       target: { value: "Ноутбук не загружается после включения" },
     });
-    fireEvent.change(screen.getByLabelText("Requester form field summary"), {
+    fireEvent.change(screen.getByLabelText("Поле формы обращения summary"), {
       target: { value: "Ноутбук не включается" },
     });
-    fireEvent.click(screen.getByLabelText("Preview requester ticket"));
+    fireEvent.click(screen.getByLabelText("Проверить обращение перед отправкой"));
 
     await screen.findByText("Безопасный preview");
-    fireEvent.click(screen.getByLabelText("Create requester ticket"));
+    await screen.findByText(/Контекст:/);
+    fireEvent.click(screen.getByLabelText("Создать обращение в кабинете пользователя"));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -852,7 +944,11 @@ describe("RequesterWorkspacePage", () => {
       form_key: "breakage",
       form_pack_key: "request_forms",
       form_pack_version: "2026.06",
-      form_payload: { summary: "Ноутбук не включается" },
+      form_payload: {
+        department_id: "dept-1",
+        device_id: "device-1",
+        summary: "Ноутбук не включается",
+      },
       ticket_type: "incident",
       knowledge_attempts: expect.arrayContaining([
         expect.objectContaining({
@@ -923,7 +1019,7 @@ describe("RequesterWorkspacePage", () => {
     fireEvent.change(screen.getByLabelText("Описание"), {
       target: { value: "Нужна помощь без зарегистрированного устройства" },
     });
-    fireEvent.click(screen.getByLabelText("Create requester ticket"));
+    fireEvent.click(screen.getByLabelText("Создать обращение в кабинете пользователя"));
 
     await screen.findByText("Создано обращение T-99");
     const createCall = fetchMock.mock.calls.find(
@@ -937,5 +1033,549 @@ describe("RequesterWorkspacePage", () => {
       user_display_name: "Requester No Device",
     });
     expect(body).not.toHaveProperty("device_id");
+  });
+
+  it("shows pending device-link requests from legacy registration claims", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: { person_id: "person-pending", display_name: "Requester Pending" },
+            profile_completion: {
+              complete: true,
+              status: "complete",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [],
+              missing_fields: [],
+              blocks: {
+                ticket_create: false,
+                ticket_preview: false,
+                device_binding_confirmation: false,
+              },
+            },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [
+              {
+                claim_id: "claim-legacy-1",
+                device_id: "legacy-device-1",
+                status: "pending_admin_review",
+                submitted_at: "2026-06-15T10:30:00+05:00",
+              },
+            ],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: true },
+            policies: { device_selection_required: false },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    expect(await screen.findByText("Заявки на привязку")).toBeInTheDocument();
+    expect(screen.getByText("Устройство legacy-device-1")).toBeInTheDocument();
+    expect(screen.getByText("Ожидает проверки администратора")).toBeInTheDocument();
+  });
+
+  it("allows no-device ticket creation when profile completion is not blocking rollout", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: null,
+            profile_completion: {
+              complete: false,
+              status: "optional",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [{ key: "full_name", label: "ФИО" }],
+              missing_fields: [{ key: "full_name", label: "ФИО" }],
+              blocks: {
+                ticket_create: false,
+                ticket_preview: false,
+                device_binding_confirmation: false,
+              },
+            },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: true, requester_ticket_create: true },
+            policies: { device_selection_required: false },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "T-override",
+            ticket: { ticket_id: "T-override", title: "Проверка рабочего места", status: "new" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("Зарегистрированных устройств пока нет.");
+    expect(screen.queryByText("Заполните профиль")).not.toBeInTheDocument();
+    const createButton = screen.getByLabelText("Создать обращение в кабинете пользователя");
+    fireEvent.change(screen.getByLabelText("Описание"), {
+      target: { value: "Нужно создать обращение без обязательного профиля" },
+    });
+    expect(createButton).not.toBeDisabled();
+    fireEvent.click(createButton);
+
+    await screen.findByText("Создано обращение T-override");
+  });
+
+  it("blocks normal ticket creation while requester profile is incomplete", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: null,
+            profile_completion: {
+              complete: false,
+              status: "required",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [],
+              missing_fields: [
+                { key: "full_name", label: "ФИО" },
+                { key: "department_id", label: "Подразделение" },
+                { key: "location_id", label: "Локация" },
+                { key: "phone", label: "Телефон или внутренний номер" },
+              ],
+            },
+            profile_schema: {
+              schema_key: "requester_profile",
+              fields: [
+                {
+                  key: "position",
+                  label: "Должность",
+                  type: "text",
+                  required: false,
+                  visible: false,
+                  custom: false,
+                  system: false,
+                },
+              ],
+              custom_fields: [],
+              required_fields: [],
+            },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: true, requester_ticket_create: false },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            departments: [{ value: "dept-1", label: "ИТ" }],
+            locations: [{ value: "loc-1", label: "Офис 7 / 701" }],
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    expect(await screen.findByText("Заполните профиль")).toBeInTheDocument();
+    expect(screen.getByLabelText("Телефон или внутренний номер")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Должность")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Создать обращение в кабинете пользователя")).toBeDisabled();
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => String(input) === "/api/web/requester/tickets" && init?.method === "POST"),
+    ).toBe(false);
+  });
+
+  it("saves requester profile from registry pickers and unlocks the workspace", async () => {
+    window.history.pushState({}, "", "/app/requester/profile/setup");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: null,
+            profile_completion: {
+              complete: false,
+              status: "required",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [],
+              missing_fields: [{ key: "full_name", label: "ФИО" }],
+            },
+            profile_schema: {
+              schema_key: "requester_profile",
+              fields: [
+                {
+                  key: "cost_center",
+                  label: "Центр затрат",
+                  type: "text",
+                  required: true,
+                  visible: true,
+                  custom: true,
+                  system: false,
+                  storage_target: "registry_people.metadata_json.profile_custom_fields.cost_center",
+                  help_text: "Укажите центр затрат из карточки сотрудника",
+                },
+              ],
+              custom_fields: [
+                {
+                  key: "cost_center",
+                  label: "Центр затрат",
+                  type: "text",
+                  required: true,
+                  visible: true,
+                  custom: true,
+                  system: false,
+                  storage_target: "registry_people.metadata_json.profile_custom_fields.cost_center",
+                  help_text: "Укажите центр затрат из карточки сотрудника",
+                },
+              ],
+              required_fields: [
+                { key: "full_name", label: "ФИО" },
+                { key: "cost_center", label: "Центр затрат" },
+              ],
+            },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: false, requester_ticket_create: false },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            departments: [{ value: "dept-1", label: "ИТ" }],
+            locations: [{ value: "loc-1", label: "Офис 7 / 701" }],
+          },
+        });
+      }
+      if (url === "/api/web/requester/profile" && init?.method === "PUT") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            profile: {
+              person_id: "person-setup",
+              display_name: "Иван Петров",
+              full_name: "Иван Петров",
+              department_id: "dept-1",
+              location_id: "loc-1",
+              phone: "1234",
+              custom_fields: { cost_center: "CC-10" },
+            },
+            profile_completion: {
+              complete: true,
+              status: "complete",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [],
+              missing_fields: [],
+            },
+            profile_policy: { editable: true, editable_fields: [], change_request_required: false },
+            profile_schema: {
+              schema_key: "requester_profile",
+              fields: [],
+              custom_fields: [],
+              required_fields: [],
+            },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    fireEvent.change(await screen.findByLabelText("ФИО"), { target: { value: "Иван Петров" } });
+    fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), { target: { value: "1234" } });
+    await screen.findByRole("option", { name: "ИТ" });
+    fireEvent.change(screen.getByLabelText("Подразделение"), { target: { value: "dept-1" } });
+    fireEvent.change(screen.getByLabelText("Локация"), { target: { value: "loc-1" } });
+    fireEvent.change(screen.getByLabelText("Должность"), { target: { value: "Инженер" } });
+    fireEvent.change(screen.getByLabelText(/Центр затрат/), { target: { value: "CC-10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить профиль" }));
+
+    expect(await screen.findByText("Профиль сохранен. Теперь можно продолжить работу в кабинете пользователя.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input, init]) => String(input) === "/api/web/requester/profile" && init?.method === "PUT"),
+      ).toBe(true),
+    );
+    const updateCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/web/requester/profile" && init?.method === "PUT",
+    );
+    expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
+      full_name: "Иван Петров",
+      department_id: "dept-1",
+      location_id: "loc-1",
+      phone: "1234",
+      position: "Инженер",
+      custom_fields: { cost_center: "CC-10" },
+    });
+    expect(window.location.pathname).toBe("/app/requester");
+  });
+
+  it("looks up a device-link code and sends a registration claim from the requester cabinet", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: {
+              person_id: "person-complete",
+              display_name: "Иван Петров",
+              full_name: "Иван Петров",
+              phone: "1234",
+              department_id: "dept-1",
+              location_id: "loc-1",
+            },
+            profile_completion: {
+              complete: true,
+              status: "complete",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [],
+              missing_fields: [],
+            },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: true, requester_ticket_create: true },
+            policies: { device_selection_required: false },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/registry/browser-pairings/lookup") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({ pairing_code: "ABCD-1234" });
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-r4",
+            purpose: "registration",
+            next_url: "/app/device/register?pairing_id=pair-r4",
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-r4") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-r4",
+            purpose: "registration",
+            status: "pending",
+            device: { device_id: "device-r4", hostname: "R4-PC", os: "Windows", agent_version: "3.1.64" },
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-r4/registration/confirm") {
+        expect(init?.method).toBe("POST");
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-r4",
+            purpose: "registration",
+            status: "confirmed",
+            claim_id: "claim-r4",
+            device: { device_id: "device-r4", hostname: "R4-PC", os: "Windows", agent_version: "3.1.64" },
+            registration: { status: "pending_admin_review", device_id: "device-r4" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    fireEvent.change(await screen.findByLabelText("Код привязки"), { target: { value: "abcd-1234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Проверить код привязки" }));
+
+    expect(await screen.findByText("R4-PC")).toBeInTheDocument();
+    expect(screen.getByText("Windows · Агент 3.1.64")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку устройства" }));
+
+    expect((await screen.findAllByText("Ожидает проверки администратора")).length).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([input, init]) =>
+            String(input) === "/api/web/registry/browser-pairings/pair-r4/registration/confirm" &&
+            init?.method === "POST",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("loads a direct requester device-link URL and shows the device before confirmation", async () => {
+    window.history.pushState({}, "", "/app/requester/devices?pairing_id=pair-direct");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: {
+              person_id: "person-direct",
+              display_name: "Иван Петров",
+              full_name: "Иван Петров",
+              phone: "1234",
+              department_id: "dept-1",
+              location_id: "loc-1",
+            },
+            profile_completion: {
+              complete: true,
+              status: "complete",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [],
+              missing_fields: [],
+            },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: true, requester_ticket_create: true },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-direct") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-direct",
+            purpose: "registration",
+            status: "pending",
+            device: { device_id: "device-direct", hostname: "DIRECT-PC", os: "Windows", agent_version: "3.1.64" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    expect(await screen.findByText("DIRECT-PC")).toBeInTheDocument();
+    expect(screen.getByText("Проверьте устройство и отправьте заявку на привязку.")).toBeInTheDocument();
   });
 });

@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import uuid
 
-from app.db.models import Device
+from app.db.models import Device, RegistryAdminEvent, RegistryPerson
 from registry.service import RegistryIngestionService
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
@@ -73,6 +74,59 @@ async def test_web_admin_registry_returns_snapshot_for_reestr_ui(test_client, te
     assert data["assets"][0]["registration_status"] == "pending"
     assert data["locations"][0]["building"] == "Здание 2"
     assert data["people"][0]["department_name"] == "Документооборот"
+
+
+@pytest.mark.asyncio
+async def test_web_admin_registry_person_update_writes_production_context_metadata(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    manager_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(RegistryPerson(person_id=manager_id, display_name="R7 Manager", source="manual", status="active"))
+        session.add(RegistryPerson(person_id=person_id, display_name="R7 User", source="manual", status="active"))
+        await session.commit()
+
+    response = await test_client.patch(
+        f"/api/web/admin/registry/people/{person_id}",
+        headers=_admin_headers(),
+        json={
+            "display_name": "R7 User",
+            "position": "Lead Engineer",
+            "workplace_label": "Desk 12",
+            "internal_extension": "4567",
+            "manager_person_id": manager_id,
+            "reason": "R7 production context",
+        },
+    )
+    assert response.status == 200, await response.text()
+
+    registry_response = await test_client.get("/api/web/admin/registry", headers=_admin_headers())
+    assert registry_response.status == 200
+    registry = (await registry_response.json())["data"]
+    person = next(item for item in registry["people"] if item["person_id"] == person_id)
+    assert person["position"] == "Lead Engineer"
+    assert person["workplace_label"] == "Desk 12"
+    assert person["internal_extension"] == "4567"
+    assert person["manager_person_id"] == manager_id
+    assert person["manager_name"] == "R7 Manager"
+
+    async with session_maker() as session:
+        row = await session.get(RegistryPerson, person_id)
+        event = (
+            await session.execute(
+                select(RegistryAdminEvent).where(
+                    RegistryAdminEvent.object_id == person_id,
+                    RegistryAdminEvent.event_type == "person_updated",
+                )
+            )
+        ).scalar_one()
+
+    assert row.metadata_json["position"] == "Lead Engineer"
+    assert row.metadata_json["workplace_label"] == "Desk 12"
+    assert row.metadata_json["internal_extension"] == "4567"
+    assert row.metadata_json["manager_person_id"] == manager_id
+    assert event.payload["after"]["position"] == "Lead Engineer"
 
 
 @pytest.mark.asyncio

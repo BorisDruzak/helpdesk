@@ -75,6 +75,39 @@ REQUESTER_SAFE_TICKET_FIELDS = {
     "relations",
 }
 
+REQUESTER_SAFE_CUSTOM_FIELD_KEYS = {
+    "request_kind",
+    "request_form_pack_key",
+    "request_form_version",
+    "request_form_key",
+    "request_form_title",
+    "request_form",
+    "resolved_from",
+    "resolved_pack_key",
+    "resolved_pack_version",
+    "resolved_template_key",
+    "resolved_template_version",
+    "resolved_form_schema_id",
+    "resolved_form_schema_version",
+    "request_form_data",
+    "request_form_summary",
+}
+
+REQUESTER_FORBIDDEN_CUSTOM_FIELD_ROOTS = {
+    "approval_runtime",
+    "diagnostic_consent",
+    "diagnostic_result",
+    "diagnostics",
+    "knowledge_attempts",
+    "ola_runtime",
+    "priority_decision",
+    "public_access",
+    "request_template",
+    "requester_account_context",
+    "resolution_confirmation_policy",
+    "routing_decision",
+}
+
 
 def get_template_visibility_policy(ticket: Any) -> dict[str, Any]:
     custom_fields = getattr(ticket, "custom_fields", None) or {}
@@ -177,7 +210,10 @@ def _prune_requester_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
     if "ticket_id" not in payload and "ticket_code" not in payload:
         return payload
+    custom_fields = _requester_custom_fields_projection(payload)
     pruned = {key: value for key, value in payload.items() if key in REQUESTER_SAFE_TICKET_FIELDS}
+    if custom_fields:
+        pruned["custom_fields"] = custom_fields
     visibility = pruned.get("visibility")
     if isinstance(visibility, dict):
         pruned["visibility"] = {
@@ -185,6 +221,41 @@ def _prune_requester_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "requester_safe": True,
         }
     return pruned
+
+
+def _copy_nested_field(source: dict[str, Any], target: dict[str, Any], parts: list[str]) -> None:
+    if not parts or parts[0] in REQUESTER_FORBIDDEN_CUSTOM_FIELD_ROOTS:
+        return
+    current: Any = source
+    for part in parts:
+        if not isinstance(current, dict) or part not in current:
+            return
+        current = current.get(part)
+    cursor = target
+    for part in parts[:-1]:
+        child = cursor.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            cursor[part] = child
+        cursor = child
+    cursor[parts[-1]] = deepcopy(current)
+
+
+def _requester_custom_fields_projection(payload: dict[str, Any]) -> dict[str, Any]:
+    custom_fields = payload.get("custom_fields")
+    if not isinstance(custom_fields, dict):
+        return {}
+
+    result = {
+        key: deepcopy(custom_fields[key])
+        for key in REQUESTER_SAFE_CUSTOM_FIELD_KEYS
+        if key in custom_fields
+    }
+    for field in _string_list(payload.get("requester_visible_fields")):
+        parts = [part for part in field.split(".") if part]
+        if len(parts) >= 2 and parts[0] == "custom_fields":
+            _copy_nested_field(custom_fields, result, parts[1:])
+    return result
 
 
 def build_visibility_metadata(ticket: Any) -> dict[str, Any]:

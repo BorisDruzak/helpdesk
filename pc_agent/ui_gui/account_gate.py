@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Optional
 
-from PySide6.QtCore import QTimer, Signal
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
 from . import theme
 from .dynamic_form_widget import DynamicFormWidget
@@ -30,11 +31,17 @@ OTHER_ACCOUNT_FORM = {
 TERMINAL_OTHER_ACCOUNT_REQUEST_STATUSES = {"approved", "rejected", "expired", "canceled"}
 
 
+def legacy_agent_registration_enabled() -> bool:
+    raw = os.environ.get("AGENT_LEGACY_REGISTRATION_ENABLED", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def account_gate_view_state(
     account_state: dict[str, Any] | None,
     *,
     local_session: dict[str, Any] | None = None,
     error: str | None = None,
+    legacy_registration_enabled: bool | None = None,
 ) -> dict[str, Any]:
     if error:
         return {
@@ -121,20 +128,25 @@ def account_gate_view_state(
     )
     if approved_other is not None:
         can_login_other = True
+    if legacy_registration_enabled is None:
+        legacy_registration_enabled = legacy_agent_registration_enabled()
+    browser_pairing_code = str(account_state.get("browser_pairing_code") or "").strip()
     return {
         "mode": mode,
         "title": {
             "registered": "Этот ПК зарегистрирован за:",
             "pending": "Регистрация ожидает подтверждения",
-            "unregistered": "Для работы с обращениями нужно зарегистрироваться",
+            "unregistered": "Привяжите это устройство через браузер",
         }.get(mode, "Проверяем регистрацию устройства..."),
         "message": str(account_state.get("message") or ""),
-        "show_register": can_register and confirmed is None,
+        "show_register": bool(legacy_registration_enabled) and can_register and confirmed is None,
         "show_browser_register": can_register and confirmed is None,
+        "browser_pairing_code": browser_pairing_code,
+        "show_copy_pairing_code": bool(browser_pairing_code),
         "show_login_confirmed": confirmed is not None,
         "show_browser_login": confirmed is not None,
         "show_login_other": can_login_other,
-        "show_confirm": mode == "pending",
+        "show_confirm": bool(legacy_registration_enabled) and mode == "pending",
         "show_check_pending_request": False,
         "warning": warning,
         "primary_account": confirmed,
@@ -162,6 +174,7 @@ class AccountGateWidget(QFrame):
         self._primary_account: dict[str, Any] | None = None
         self._approved_other_account: dict[str, Any] | None = None
         self._pending_request_id: str | None = None
+        self._browser_pairing_code: str = ""
         self._showing_other_form = False
         self._pending_poll_timer = QTimer(self)
         self._pending_poll_timer.setInterval(20000)
@@ -199,6 +212,12 @@ class AccountGateWidget(QFrame):
         self.warning_label.setWordWrap(True)
         layout.addWidget(self.warning_label)
 
+        self.pairing_code_label = QLabel("")
+        self.pairing_code_label.setObjectName("CardMeta")
+        self.pairing_code_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.pairing_code_label.setWordWrap(True)
+        layout.addWidget(self.pairing_code_label)
+
         self.other_form = DynamicFormWidget()
         self.other_form.set_form(OTHER_ACCOUNT_FORM)
         layout.addWidget(self.other_form)
@@ -213,9 +232,12 @@ class AccountGateWidget(QFrame):
         self.other_button = QPushButton("Войти в другой аккаунт")
         self.other_button.setObjectName("SecondaryButton")
         self.other_button.clicked.connect(self._on_other_clicked)
-        self.browser_register_button = QPushButton("Зарегистрировать через браузер")
+        self.browser_register_button = QPushButton("Привязать через браузер")
         self.browser_register_button.setObjectName("PrimaryButton")
         self.browser_register_button.clicked.connect(self.browserRegisterRequested.emit)
+        self.copy_pairing_code_button = QPushButton("Скопировать код")
+        self.copy_pairing_code_button.setObjectName("SecondaryButton")
+        self.copy_pairing_code_button.clicked.connect(self._on_copy_pairing_code)
         self.register_button = QPushButton("Регистрация")
         self.register_button.setObjectName("SecondaryButton")
         self.register_button.clicked.connect(self.registerRequested.emit)
@@ -236,6 +258,7 @@ class AccountGateWidget(QFrame):
             self.login_button,
             self.other_button,
             self.browser_register_button,
+            self.copy_pairing_code_button,
             self.register_button,
             self.confirm_button,
             self.check_request_button,
@@ -278,6 +301,9 @@ class AccountGateWidget(QFrame):
         self.title_label.setText(state["title"])
         self.message_label.setText(state.get("message") or "")
         self.message_label.setVisible(bool(self.message_label.text()))
+        self._browser_pairing_code = str(state.get("browser_pairing_code") or "").strip()
+        self.pairing_code_label.setVisible(bool(self._browser_pairing_code))
+        self.pairing_code_label.setText(f"Код привязки: {self._browser_pairing_code}" if self._browser_pairing_code else "")
         account = state.get("primary_account") or state.get("pending_account")
         self.account_card.setVisible(isinstance(account, dict))
         if isinstance(account, dict):
@@ -315,6 +341,7 @@ class AccountGateWidget(QFrame):
         elif not self._showing_other_form:
             self.other_button.setText("Войти в другой аккаунт")
         self.browser_register_button.setVisible(bool(state["show_browser_register"]))
+        self.copy_pairing_code_button.setVisible(bool(state.get("show_copy_pairing_code")))
         self.register_button.setVisible(bool(state["show_register"]))
         self.register_button.setText("Регистрация")
         self.confirm_button.setVisible(bool(state["show_confirm"]))
@@ -344,6 +371,10 @@ class AccountGateWidget(QFrame):
         if missing:
             return
         self.loginOtherRequested.emit(self.other_form.values(visible_only=True))
+
+    def _on_copy_pairing_code(self) -> None:
+        if self._browser_pairing_code:
+            QApplication.clipboard().setText(self._browser_pairing_code)
 
     def reset_other_form(self) -> None:
         self._showing_other_form = False

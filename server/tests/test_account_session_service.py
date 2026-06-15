@@ -516,6 +516,58 @@ async def test_account_session_ttl_defaults(test_engine):
 
 
 @pytest.mark.asyncio
+async def test_account_session_cleanup_expires_stale_pending_and_other_account_sessions(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        service = AccountSessionService(session)
+        confirmed = await service.create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        registration = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="pending-cleanup@example.test",
+            display_name="Pending Cleanup",
+            profile={"full_name": "Pending Cleanup", "email": "pending-cleanup@example.test"},
+        )
+        pending = await service.create_registration_pending_session(
+            device_id=device_id,
+            claim_id=registration["registration"]["claim_id"],
+        )
+        request = await service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other Cleanup", "login": "other-cleanup", "reason": "Temporary replacement"},
+        )
+        other = await service.approve_login_request(request["request_id"], reviewed_by="admin")
+        stale_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        pending_row = await session.get(DeviceAccountSession, pending["session"]["session_id"])
+        other_row = await session.get(DeviceAccountSession, other["session"]["session_id"])
+        assert pending_row is not None
+        assert other_row is not None
+        pending_row.expires_at = stale_at
+        other_row.expires_at = stale_at
+
+        cleanup = await service.expire_stale_sessions(limit=10)
+        confirmed_validation = await service.validate_session(
+            device_id=device_id,
+            session_id=confirmed["session"]["session_id"],
+            session_token=confirmed["session_token"],
+        )
+        await session.commit()
+
+    assert cleanup["expired_count"] == 2
+    assert confirmed_validation["valid"] is True
+    async with session_maker() as session:
+        pending_row = await session.get(DeviceAccountSession, pending["session"]["session_id"])
+        other_row = await session.get(DeviceAccountSession, other["session"]["session_id"])
+        assert pending_row is not None and pending_row.verification_status == "expired"
+        assert other_row is not None and other_row.verification_status == "expired"
+
+
+@pytest.mark.asyncio
 async def test_logout_and_admin_revoke_invalidate_account_sessions(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

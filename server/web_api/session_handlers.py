@@ -1,21 +1,53 @@
+import re
+
 from aiohttp import web
 from pydantic import ValidationError
 
+import config as config_module
 from access_control.service import resolve_effective_access
 from access_control.service import resolve_session_access
 from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
+from app.repos.ui_users_repo import VALID_ROLES, UiUsersRepo
 from auth.middleware import WEB_SESSION_COOKIE_NAME, extract_auth_context, require_auth
+from auth.password_service import PasswordPolicyError, hash_password, validate_password_policy
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
-from app.repos.ui_users_repo import VALID_ROLES
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
+from registry.browser_pairing_service import BrowserPairingService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
+    WebSessionRegisterDeviceLinkPayload,
     WebSessionLoginRequest,
     WebSessionLogoutPayload,
     WebSessionPayload,
+    WebSessionRegisterPayload,
+    WebSessionRegisterRequest,
 )
+
+
+_LOGIN_RE = re.compile(r"^[A-Za-z0-9._@-]{3,128}$")
+
+
+def _error(message: str, code: str, *, status: int) -> web.Response:
+    return web.json_response({"status": "error", "error": message, "error_code": code}, status=status)
+
+
+def _normalize_login(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _password_policy_message(exc: PasswordPolicyError) -> str:
+    message = str(exc)
+    if "at least" in message:
+        return "Пароль должен быть не короче 12 символов."
+    if "must not match login" in message:
+        return "Пароль не должен совпадать с логином."
+    if "too common" in message:
+        return "Выберите более надежный пароль."
+    if "empty" in message or "whitespace" in message:
+        return "Введите пароль."
+    return "Пароль не соответствует политике безопасности."
 
 
 def _resolve_workspace_access(actor_role: str) -> tuple[str | None, list[str]]:
@@ -148,6 +180,74 @@ async def handle_web_session_login(request):
         secure=WEB_SESSION_COOKIE_SECURE,
     )
     return response
+
+
+async def handle_web_session_register(request):
+    if not getattr(config_module, "WEB_SELF_REGISTRATION_ENABLED", False):
+        return _error(
+            "Самостоятельная регистрация временно недоступна. Обратитесь к администратору.",
+            "SELF_REGISTRATION_DISABLED",
+            status=403,
+        )
+
+    try:
+        payload = WebSessionRegisterRequest.model_validate(await request.json())
+    except (ValidationError, ValueError):
+        return _error("Некорректные данные регистрации", "VALIDATION_ERROR", status=400)
+
+    login = _normalize_login(payload.login)
+    if not _LOGIN_RE.match(login):
+        return _error(
+            "Логин должен содержать от 3 до 128 символов: латиницу, цифры, точку, дефис, подчеркивание или @.",
+            "VALIDATION_ERROR",
+            status=400,
+        )
+    if payload.password != payload.password_repeat:
+        return _error("Пароли не совпадают.", "PASSWORD_REPEAT_MISMATCH", status=400)
+    try:
+        validate_password_policy(payload.password, login=login)
+    except PasswordPolicyError as exc:
+        return _error(_password_policy_message(exc), "PASSWORD_POLICY_ERROR", status=400)
+
+    if not check_rate_limit("web_session_register", f"{client_ip(request)}:{login}", limit=5, window_seconds=60):
+        return rate_limited_response()
+
+    device_link_payload: WebSessionRegisterDeviceLinkPayload | None = None
+    async with get_session() as session:
+        device_link_code = str(payload.device_link_code or "").strip()
+        if device_link_code:
+            pairing = await BrowserPairingService(session).lookup_by_pairing_code(device_link_code)
+            if not pairing or pairing.get("purpose") != "registration":
+                return _error("Код подключения не найден или истек.", "DEVICE_LINK_CODE_INVALID", status=400)
+            device_link_payload = WebSessionRegisterDeviceLinkPayload(
+                accepted=True,
+                purpose="registration",
+                expires_at=pairing.get("expires_at"),
+            )
+
+        try:
+            user = await UiUsersRepo(session).create_user(
+                login,
+                hash_password(payload.password),
+                actor_role="user",
+                actor_id=login,
+            )
+        except ValueError as exc:
+            if "already exists" in str(exc).lower():
+                return _error("Пользователь с таким логином уже существует.", "LOGIN_ALREADY_EXISTS", status=409)
+            return _error("Не удалось создать аккаунт.", "VALIDATION_ERROR", status=400)
+
+    return json_model_response(
+        SuccessResponse[WebSessionRegisterPayload](
+            data=WebSessionRegisterPayload(
+                user_login=user.user_login,
+                actor_role="user",
+                next_path="/app/login?registered=1",
+                device_link=device_link_payload,
+            )
+        ),
+        status=201,
+    )
 
 
 @require_auth("admin", "support", "auditor", "user")

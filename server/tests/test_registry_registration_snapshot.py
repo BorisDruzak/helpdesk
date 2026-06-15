@@ -7,7 +7,17 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DevicePresenceSnapshot, DeviceUserBinding, RegistryPersonIdentity
+from app.db.models import (
+    Device,
+    DevicePresenceSnapshot,
+    DeviceUserBinding,
+    RegistryAsset,
+    RegistryDepartment,
+    RegistryLocation,
+    RegistryPerson,
+    RegistryPersonIdentity,
+    RegistryService as RegistryServiceModel,
+)
 from registry.registration_service import RegistrationService
 from registry.service import RegistrySnapshotService
 
@@ -26,6 +36,194 @@ def _device(device_id: str) -> Device:
         last_seen_at=now,
         last_handshake_at=now,
     )
+
+
+@pytest.mark.asyncio
+async def test_registry_snapshot_projects_production_context_from_registry_metadata(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    asset_id = str(uuid.uuid4())
+    department_id = str(uuid.uuid4())
+    location_id = str(uuid.uuid4())
+    manager_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    service_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        session.add(
+            RegistryLocation(
+                location_id=location_id,
+                building="HQ",
+                floor="4",
+                room="401",
+                display_name="HQ 401",
+                source="manual",
+                status="active",
+            )
+        )
+        session.add(RegistryPerson(person_id=manager_id, display_name="Manager User", source="manual", status="active"))
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code="ITPROD",
+                name="IT Production",
+                source="manual",
+                status="active",
+                metadata_json={"manager_person_id": manager_id, "support_queue": "it-l1"},
+            )
+        )
+        session.add(
+            RegistryServiceModel(
+                service_id=service_id,
+                code=f"svc_{uuid.uuid4().hex[:8]}",
+                name="Production ERP",
+                source="manual",
+                status="active",
+                metadata_json={"criticality": "critical", "audience": "office", "owner_person_id": manager_id},
+            )
+        )
+        session.add(
+            RegistryPerson(
+                person_id=person_id,
+                display_name="Production User",
+                full_name="Production User",
+                phone="+7 343 000-00-00",
+                department_id=department_id,
+                location_id=location_id,
+                source="manual",
+                status="active",
+                metadata_json={
+                    "position": "Engineer",
+                    "internal_extension": "1234",
+                    "workplace_label": "HQ-401-A",
+                    "manager_person_id": manager_id,
+                },
+            )
+        )
+        await session.flush()
+        session.add(
+            RegistryAsset(
+                asset_id=asset_id,
+                asset_type="pc",
+                name="prod-pc",
+                hostname="prod-pc",
+                device_id=device_id,
+                assigned_person_id=person_id,
+                department_id=department_id,
+                location_id=location_id,
+                service_id=service_id,
+                source="manual",
+                status="active",
+                discovery_payload={},
+            )
+        )
+        await session.flush()
+        session.add(
+            DeviceUserBinding(
+                binding_id=str(uuid.uuid4()),
+                device_id=device_id,
+                asset_id=asset_id,
+                person_id=person_id,
+                relationship_type="responsible",
+                status="active",
+                source="manual",
+                confidence=1,
+            )
+        )
+        snapshot = await RegistrySnapshotService(session).build_snapshot()
+        await session.commit()
+
+    person = next(item for item in snapshot["people"] if item["person_id"] == person_id)
+    assert person["position"] == "Engineer"
+    assert person["internal_extension"] == "1234"
+    assert person["workplace_label"] == "HQ-401-A"
+    assert person["manager_person_id"] == manager_id
+    assert person["manager_name"] == "Manager User"
+    assert person["production_context"]["department_name"] == "IT Production"
+    assert person["production_context"]["location_name"] == "HQ 401"
+    assert person["production_context"]["manager_name"] == "Manager User"
+
+    department = next(item for item in snapshot["departments"] if item["department_id"] == department_id)
+    assert department["manager_name"] == "Manager User"
+
+    asset = next(item for item in snapshot["assets"] if item["asset_id"] == asset_id)
+    assert asset["responsible_person_id"] == person_id
+    assert asset["responsible_person_name"] == "Production User"
+
+    service = next(item for item in snapshot["services"] if item["service_id"] == service_id)
+    assert service["criticality"] == "critical"
+    assert service["audience"] == "office"
+    assert service["owner_person_id"] == manager_id
+    assert service["owner_person_name"] == "Manager User"
+
+
+@pytest.mark.asyncio
+async def test_registry_snapshot_projects_requester_profile_completion_status(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    complete_person_id = str(uuid.uuid4())
+    incomplete_person_id = str(uuid.uuid4())
+    department_id = str(uuid.uuid4())
+    location_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code="support",
+                name="Support",
+                source="manual",
+                status="active",
+            )
+        )
+        session.add(
+            RegistryLocation(
+                location_id=location_id,
+                building="HQ",
+                floor="2",
+                room="201",
+                display_name="HQ 201",
+                source="manual",
+                status="active",
+            )
+        )
+        session.add(
+            RegistryPerson(
+                person_id=complete_person_id,
+                display_name="Complete User",
+                full_name="Complete User",
+                phone="+7 343 000-00-01",
+                department_id=department_id,
+                location_id=location_id,
+                source="manual",
+                status="active",
+            )
+        )
+        session.add(
+            RegistryPerson(
+                person_id=incomplete_person_id,
+                display_name="Incomplete User",
+                full_name="Incomplete User",
+                phone=None,
+                department_id=None,
+                location_id=location_id,
+                source="manual",
+                status="active",
+            )
+        )
+        snapshot = await RegistrySnapshotService(session).build_snapshot()
+        await session.commit()
+
+    complete = next(item for item in snapshot["people"] if item["person_id"] == complete_person_id)
+    incomplete = next(item for item in snapshot["people"] if item["person_id"] == incomplete_person_id)
+
+    assert complete["profile_completion"]["complete"] is True
+    assert complete["profile_completion"]["status"] == "complete"
+    assert complete["profile_completion"]["missing_fields"] == []
+
+    assert incomplete["profile_completion"]["complete"] is False
+    assert incomplete["profile_completion"]["status"] == "required"
+    assert {field["key"] for field in incomplete["profile_completion"]["missing_fields"]} == {"department_id", "phone"}
 
 
 @pytest.mark.asyncio

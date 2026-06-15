@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -12,7 +13,11 @@ from app.db.models import (
     Device,
     DeviceUserBinding,
     KnowledgeFeedbackEvent,
+    RegistryAdminEvent,
+    RegistryAdminPolicy,
     RegistryAsset,
+    RegistryDepartment,
+    RegistryLocation,
     RegistryPerson,
     RegistryPersonIdentity,
     RequestTemplate,
@@ -25,12 +30,16 @@ from app.db.models import (
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from registry.registration_service import RegistrationService
-from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_USER_PREFIX
+from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 
 
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _admin_headers() -> dict[str, str]:
+    return _headers(TEST_UI_ADMIN_TOKEN)
 
 
 def _device(device_id: str, hostname: str = "requester-device") -> Device:
@@ -49,6 +58,37 @@ def _device(device_id: str, hostname: str = "requester-device") -> Device:
     )
 
 
+async def _seed_profile_context(session, person: RegistryPerson, *, marker: str) -> None:
+    suffix = uuid.uuid4().hex[:8]
+    department_id = str(uuid.uuid4())
+    location_id = str(uuid.uuid4())
+    session.add(
+        RegistryDepartment(
+            department_id=department_id,
+            code=f"dept-{marker[:16]}-{suffix}",
+            name=f"Department {marker}",
+            status="active",
+            source="test",
+            metadata_json={},
+        )
+    )
+    session.add(
+        RegistryLocation(
+            location_id=location_id,
+            building=f"Building {marker[:8]} {suffix}",
+            floor="1",
+            room="101",
+            display_name=f"Building {marker[:8]} {suffix} / 101",
+            status="active",
+            source="test",
+            metadata_json={},
+        )
+    )
+    person.department_id = department_id
+    person.location_id = location_id
+    person.phone = person.phone or "1001"
+
+
 async def _approved_binding(session, *, device_id: str, login: str):
     service = RegistrationService(session)
     claim = await service.submit_agent_profile_claim(
@@ -57,7 +97,11 @@ async def _approved_binding(session, *, device_id: str, login: str):
         display_name=f"Requester {login}",
         profile={"full_name": f"Requester {login}", "email": login, "login": login, "user_confirmed": True},
     )
-    return await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+    approved = await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+    person = await session.get(RegistryPerson, approved["person"]["person_id"])
+    assert person is not None
+    await _seed_profile_context(session, person, marker=login.replace("@", "-")[:32])
+    return approved
 
 
 async def _person_for_login(session, *, login: str) -> RegistryPerson:
@@ -69,6 +113,7 @@ async def _person_for_login(session, *, login: str) -> RegistryPerson:
         source="manual",
         status="active",
     )
+    await _seed_profile_context(session, person, marker=login.replace("@", "-")[:32])
     session.add(person)
     session.add(
         RegistryPersonIdentity(
@@ -118,8 +163,8 @@ async def test_requester_profile_returns_safe_identities_and_devices(test_client
     assert data["profile"]["person_id"] == approved["person"]["person_id"]
     assert data["profile"]["email"] == login
     assert data["profile"]["phone"] == "+7 000 111-22-33"
-    assert data["profile_policy"]["editable"] is False
-    assert data["profile_policy"]["change_request_required"] is True
+    assert data["profile_policy"]["editable"] is True
+    assert data["profile_policy"]["change_request_required"] is False
     assert data["devices"][0]["device_id"] == device_id
     identities = {(item["provider"], item["identifier"]) for item in data["identities"]}
     assert ("ui_login", login) in identities
@@ -143,6 +188,431 @@ async def test_requester_profile_returns_safe_identities_and_devices(test_client
         headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
     )
     assert agent_denied.status == 403
+
+
+@pytest.mark.asyncio
+async def test_requester_bootstrap_reports_profile_completion_gate_for_new_user(test_client):
+    response = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}requester-profile-new@example.test"),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    completion = payload["data"]["profile_completion"]
+    assert payload["data"]["profile"] is None
+    assert completion["complete"] is False
+    assert completion["status"] == "required"
+    assert completion["setup_path"] == "/app/requester/profile/setup"
+    assert {item["key"] for item in completion["missing_fields"]} == {
+        "full_name",
+        "department_id",
+        "location_id",
+        "phone",
+    }
+    assert payload["data"]["feature_flags"]["requester_ticket_create"] is False
+
+
+@pytest.mark.asyncio
+async def test_requester_can_create_own_profile_with_registry_pickers(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    department_id = str(uuid.uuid4())
+    location_id = str(uuid.uuid4())
+    login = "requester-profile-setup@example.test"
+    async with session_maker() as session:
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code="it",
+                name="ИТ",
+                status="active",
+                source="test",
+                metadata_json={},
+            )
+        )
+        session.add(
+            RegistryLocation(
+                location_id=location_id,
+                building="Офис 7",
+                floor="7",
+                room="701",
+                display_name="Офис 7 / 701",
+                status="active",
+                source="test",
+                metadata_json={},
+            )
+        )
+        await session.commit()
+
+    response = await test_client.put(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "full_name": "Иван Петров",
+            "department_id": department_id,
+            "location_id": location_id,
+            "phone": "1234",
+            "position": "Инженер",
+            "workplace_label": "7 этаж / 701",
+            "preferred_contact_method": "phone",
+        },
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    assert payload["data"]["profile"]["full_name"] == "Иван Петров"
+    assert payload["data"]["profile"]["department_id"] == department_id
+    assert payload["data"]["profile"]["location_id"] == location_id
+    assert payload["data"]["profile"]["position"] == "Инженер"
+    assert payload["data"]["profile_completion"]["complete"] is True
+    assert payload["data"]["profile_policy"]["editable"] is True
+
+    async with session_maker() as session:
+        identity = await session.scalar(
+            select(RegistryPersonIdentity).where(
+                RegistryPersonIdentity.provider == "ui_login",
+                RegistryPersonIdentity.normalized_identifier == login,
+            )
+        )
+        assert identity is not None
+        person = await session.get(RegistryPerson, identity.person_id)
+        assert person is not None
+        assert person.full_name == "Иван Петров"
+        assert person.department_id == department_id
+        assert person.location_id == location_id
+        assert person.metadata_json["profile_updated_from"] == "requester_web"
+
+
+@pytest.mark.asyncio
+async def test_admin_profile_schema_enforces_system_fields_and_audits_update(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    initial = await test_client.get("/api/web/admin/registry/profile-schema", headers=_admin_headers())
+    initial_payload = await initial.json()
+    assert initial.status == 200, initial_payload
+    default_fields = {field["key"]: field for field in initial_payload["data"]["schema"]["fields"]}
+    assert default_fields["full_name"]["system"] is True
+    assert default_fields["full_name"]["can_delete"] is False
+    assert default_fields["department_id"]["storage_target"] == "registry_people.department_id"
+
+    invalid = await test_client.put(
+        "/api/web/admin/registry/profile-schema",
+        headers=_admin_headers(),
+        json={"field_overrides": {"full_name": {"visible": False}}},
+    )
+    invalid_payload = await invalid.json()
+    assert invalid.status == 400, invalid_payload
+    assert invalid_payload["error_code"] == "VALIDATION_ERROR"
+    assert "full_name" in invalid_payload["details"]
+
+    response = await test_client.put(
+        "/api/web/admin/registry/profile-schema",
+        headers=_admin_headers(),
+        json={
+            "field_overrides": {
+                "position": {
+                    "visible": True,
+                    "required": True,
+                    "help_text": "Укажите рабочую должность для маршрутизации заявок.",
+                }
+            },
+            "custom_fields": [
+                {
+                    "key": "cost_center",
+                    "label": "Центр затрат",
+                    "type": "text",
+                    "visible": True,
+                    "required": True,
+                    "help_text": "Код подразделения для отчетности.",
+                    "validation": {"max_length": 32},
+                    "storage_target": "registry_people.metadata_json.profile_custom_fields.cost_center",
+                }
+            ],
+            "reason": "R6 profile schema test",
+        },
+    )
+    payload = await response.json()
+    assert response.status == 200, payload
+    schema = payload["data"]["schema"]
+    fields = {field["key"]: field for field in schema["fields"]}
+    assert fields["position"]["required"] is True
+    assert fields["position"]["target_kind"] == "registry_person_metadata"
+    assert fields["cost_center"]["custom"] is True
+    assert fields["cost_center"]["audit_behavior"] == "profile_custom_field_change"
+    assert fields["cost_center"]["storage_target"] == "registry_people.metadata_json.profile_custom_fields.cost_center"
+
+    async with session_maker() as session:
+        policy = await session.get(RegistryAdminPolicy, "requester_profile_schema")
+        assert policy is not None
+        assert policy.config_json["custom_fields"][0]["key"] == "cost_center"
+        event_count = await session.scalar(
+            select(func.count())
+            .select_from(RegistryAdminEvent)
+            .where(RegistryAdminEvent.event_type == "profile_schema_updated")
+        )
+        assert event_count == 1
+
+
+@pytest.mark.asyncio
+async def test_admin_profile_schema_rejects_uncontrolled_custom_fields(test_client):
+    response = await test_client.put(
+        "/api/web/admin/registry/profile-schema",
+        headers=_admin_headers(),
+        json={
+            "custom_fields": [
+                {
+                    "key": "full_name",
+                    "label": "Duplicate system field",
+                    "type": "text",
+                    "storage_target": "registry_people.metadata_json.profile_custom_fields.full_name",
+                },
+                {
+                    "key": "unsafe_notes",
+                    "label": "Unsafe target",
+                    "type": "text",
+                    "storage_target": "registry_people.raw_sql.unsafe_notes",
+                },
+            ],
+        },
+    )
+    payload = await response.json()
+
+    assert response.status == 400, payload
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert "custom_fields.0.key" in payload["details"]
+    assert "custom_fields.1.storage_target" in payload["details"]
+
+
+@pytest.mark.asyncio
+async def test_requester_profile_schema_required_custom_fields_are_enforced(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    department_id = str(uuid.uuid4())
+    location_id = str(uuid.uuid4())
+    login = "requester-profile-schema-required@example.test"
+    async with session_maker() as session:
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code="schema-dept",
+                name="Profile Schema Department",
+                status="active",
+                source="test",
+                metadata_json={},
+            )
+        )
+        session.add(
+            RegistryLocation(
+                location_id=location_id,
+                building="Profile Schema Office",
+                floor="2",
+                room="201",
+                display_name="Profile Schema Office / 201",
+                status="active",
+                source="test",
+                metadata_json={},
+            )
+        )
+        await session.commit()
+
+    configured = await test_client.put(
+        "/api/web/admin/registry/profile-schema",
+        headers=_admin_headers(),
+        json={
+            "custom_fields": [
+                {
+                    "key": "cost_center",
+                    "label": "Центр затрат",
+                    "type": "text",
+                    "visible": True,
+                    "required": True,
+                    "storage_target": "registry_people.metadata_json.profile_custom_fields.cost_center",
+                }
+            ],
+            "reason": "R6 required custom field test",
+        },
+    )
+    assert configured.status == 200, await configured.text()
+
+    missing = await test_client.put(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "full_name": "Requester With Required Custom Field",
+            "department_id": department_id,
+            "location_id": location_id,
+            "phone": "1001",
+            "custom_fields": {},
+        },
+    )
+    missing_payload = await missing.json()
+    assert missing.status == 400, missing_payload
+    assert missing_payload["details"]["custom_fields.cost_center"] == "Заполните поле: Центр затрат."
+
+    profile = await test_client.get(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    profile_payload = await profile.json()
+    assert profile.status == 200, profile_payload
+    assert any(
+        item["key"] == "cost_center"
+        for item in profile_payload["data"]["profile_completion"]["missing_fields"]
+    )
+    schema_fields = {field["key"]: field for field in profile_payload["data"]["profile_schema"]["fields"]}
+    assert schema_fields["cost_center"]["required"] is True
+    assert schema_fields["cost_center"]["custom"] is True
+
+    saved = await test_client.put(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "full_name": "Requester With Required Custom Field",
+            "department_id": department_id,
+            "location_id": location_id,
+            "phone": "1001",
+            "custom_fields": {"cost_center": "CC-42"},
+        },
+    )
+    saved_payload = await saved.json()
+    assert saved.status == 200, saved_payload
+    assert saved_payload["data"]["profile"]["custom_fields"]["cost_center"] == "CC-42"
+    assert saved_payload["data"]["profile_completion"]["complete"] is True
+
+    async with session_maker() as session:
+        person = await session.scalar(
+            select(RegistryPerson)
+            .join(RegistryPersonIdentity, RegistryPersonIdentity.person_id == RegistryPerson.person_id)
+            .where(RegistryPersonIdentity.provider == "ui_login")
+            .where(RegistryPersonIdentity.normalized_identifier == login)
+        )
+        assert person is not None
+        assert person.metadata_json["profile_custom_fields"]["cost_center"] == "CC-42"
+
+
+@pytest.mark.asyncio
+async def test_requester_profile_update_rejects_other_person_and_invalid_registry_values(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "requester-profile-owner-guard@example.test"
+    other_login = "requester-profile-other@example.test"
+    async with session_maker() as session:
+        owner = await _person_for_login(session, login=login)
+        other = await _person_for_login(session, login=other_login)
+        await session.commit()
+
+    other_response = await test_client.put(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "person_id": other.person_id,
+            "full_name": "Чужой профиль",
+            "department_id": "missing-dept",
+            "location_id": "missing-loc",
+            "phone": "1234",
+        },
+    )
+    other_payload = await other_response.json()
+    assert other_response.status == 403, other_payload
+    assert other_payload["error_code"] == "REQUESTER_PROFILE_FORBIDDEN"
+
+    invalid_response = await test_client.put(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "person_id": owner.person_id,
+            "full_name": "Владелец профиля",
+            "department_id": "missing-dept",
+            "location_id": "missing-loc",
+            "phone": "1234",
+        },
+    )
+    invalid_payload = await invalid_response.json()
+    assert invalid_response.status == 400, invalid_payload
+    assert invalid_payload["error_code"] == "VALIDATION_ERROR"
+    assert invalid_payload["details"]["department_id"] == "Выберите подразделение из справочника."
+
+
+@pytest.mark.asyncio
+async def test_requester_ticket_create_is_blocked_until_profile_complete(test_client):
+    response = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}requester-profile-blocked@example.test"),
+        json={"title": "Blocked", "description": "Cannot create yet"},
+    )
+    payload = await response.json()
+
+    assert response.status == 403, payload
+    assert payload["error_code"] == "REQUESTER_PROFILE_INCOMPLETE"
+    assert payload["details"]["setup_path"] == "/app/requester/profile/setup"
+
+
+@pytest.mark.asyncio
+async def test_profile_completion_required_flag_can_disable_no_device_create_gate(test_client, monkeypatch):
+    import requester.identity_service as identity_service_module
+
+    config_proxy = getattr(identity_service_module, "config_module", SimpleNamespace())
+    monkeypatch.setattr(config_proxy, "PROFILE_COMPLETION_REQUIRED", False, raising=False)
+    monkeypatch.setattr(identity_service_module, "config_module", config_proxy, raising=False)
+
+    login = "requester-profile-rollout-override@example.test"
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+
+    bootstrap_response = await test_client.get("/api/web/requester/bootstrap", headers=headers)
+    bootstrap_payload = await bootstrap_response.json()
+    assert bootstrap_response.status == 200, bootstrap_payload
+    completion = bootstrap_payload["data"]["profile_completion"]
+    assert completion["complete"] is False
+    assert completion["blocks"]["ticket_create"] is False
+    assert bootstrap_payload["data"]["feature_flags"]["requester_no_device_create"] is True
+
+    preview_response = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=headers,
+        json={"title": "Preview without profile", "description": "Rollout override preview"},
+    )
+    preview_payload = await preview_response.json()
+    assert preview_response.status == 200, preview_payload
+
+    create_response = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=headers,
+        json={"title": "Override ticket", "description": "Rollout override ticket"},
+    )
+    create_payload = await create_response.json()
+    assert create_response.status == 200, create_payload
+    assert create_payload["data"]["ticket_id"]
+
+
+@pytest.mark.asyncio
+async def test_existing_pending_agent_claim_is_visible_to_requester_and_admin(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-legacy-pending-claim@example.test"
+
+    async with session_maker() as session:
+        session.add(_device(device_id, "legacy-pending-device"))
+        claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id=login,
+            display_name="Legacy Pending User",
+            profile={"full_name": "Legacy Pending User", "email": login, "login": login, "user_confirmed": True},
+        )
+        claim_id = claim["registration"]["claim_id"]
+        await session.commit()
+
+    requester_response = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    requester_payload = await requester_response.json()
+    assert requester_response.status == 200, requester_payload
+    requester_claims = requester_payload["data"]["pending_registration_claims"]
+    assert any(item["claim_id"] == claim_id and item["device_id"] == device_id for item in requester_claims)
+
+    admin_response = await test_client.get("/api/web/admin/registry", headers=_admin_headers())
+    admin_payload = await admin_response.json()
+    assert admin_response.status == 200, admin_payload
+    admin_claims = admin_payload["data"]["registration_claims"]
+    assert any(item["claim_id"] == claim_id and item["device_id"] == device_id for item in admin_claims)
 
 
 @pytest.mark.asyncio
@@ -493,6 +963,13 @@ async def test_requester_can_create_no_device_ticket_and_preview_without_device(
     assert custom_fields["requester_account_context"]["account_mode"] == "browser_no_device"
     assert custom_fields["requester_account_context"]["validation"] == "web_requester_identity_resolved"
     assert custom_fields["requester_registration"]["status"] == "no_device"
+    assert custom_fields["requester_department_id"] == person.department_id
+    assert custom_fields["requester_location_id"] == person.location_id
+    assert custom_fields["requester_account_mode"] == "browser_no_device"
+    assert custom_fields["requester_context_snapshot"]["profile"]["person_id"] == person.person_id
+    assert custom_fields["requester_context_snapshot"]["profile"]["department_id"] == person.department_id
+    assert custom_fields["requester_context_snapshot"]["form_prefill"]["department_id"] == person.department_id
+    assert custom_fields["requester_context_snapshot"]["account"]["account_mode"] == "browser_no_device"
 
     listed = await test_client.get(
         "/api/web/requester/tickets",
@@ -526,7 +1003,8 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     login = "requester-catalog-create@example.test"
     async with session_maker() as session:
         queue = TicketQueue(code=f"requester_queue_{suffix}", name="Requester queue", is_active=True)
-        session.add_all([_device(device_id, "catalog-owned-device"), queue])
+        department_queue = TicketQueue(code=f"requester_dept_queue_{suffix}", name="Requester department queue", is_active=True)
+        session.add_all([_device(device_id, "catalog-owned-device"), queue, department_queue])
         await session.flush()
         forms_repo = TicketFormPacksRepo(session)
         await forms_repo.upsert_pack(
@@ -542,6 +1020,19 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
                         "title": "Laptop incident",
                         "request_kind": "incident",
                         "ticket_type": "incident",
+                        "routing_policy": {
+                            "rules": [
+                                {
+                                    "when": {
+                                        "field": "custom_fields.requester_device_id",
+                                        "op": "eq",
+                                        "value": device_id,
+                                    },
+                                    "then": {"queue_id": department_queue.id},
+                                }
+                            ],
+                            "fallback": {"queue_id": queue.id},
+                        },
                         "fields": [
                             {"key": "summary", "label": "Summary", "type": "text", "required": True},
                         ],
@@ -551,13 +1042,31 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
             created_by="test",
         )
         await forms_repo.set_preferred(pack_key="request_forms", version=f"test-{suffix}", updated_by="test")
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        person = await session.get(RegistryPerson, approved["person"]["person_id"])
+        assert person is not None
         session.add(
             RequestTemplate(
                 template_code=template_code,
                 version="1",
                 public_title="Laptop incident",
                 ticket_type="incident",
-                config_json={"default_queue_id": queue.id, "no_sla": True},
+                config_json={
+                    "routing_policy": {
+                        "rules": [
+                            {
+                                "when": {
+                                    "field": "custom_fields.requester_department_id",
+                                    "op": "eq",
+                                    "value": person.department_id,
+                                },
+                                "then": {"queue_id": department_queue.id},
+                            }
+                        ],
+                        "fallback": {"queue_id": queue.id},
+                    },
+                    "no_sla": True,
+                },
                 is_active=True,
                 published_at=datetime.now(timezone.utc),
             )
@@ -593,7 +1102,6 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
         )
         await repo.publish_service(service_code, actor_id="test", actor_role="admin")
         await repo.publish_offering(offering["full_code"], actor_id="test", actor_role="admin")
-        approved = await _approved_binding(session, device_id=device_id, login=login)
         await session.commit()
 
     created = await test_client.post(
@@ -636,8 +1144,15 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     assert ticket.ticket_type == "incident"
     assert ticket.request_type == "incident"
     assert ticket.reporting_category == "requester_incidents"
+    assert ticket.queue_id == department_queue.id
     custom_fields = ticket.custom_fields or {}
     assert custom_fields["request_context"] == "authenticated_requester_workspace"
+    assert custom_fields["requester_context_snapshot"]["profile"]["person_id"] == approved["person"]["person_id"]
+    assert custom_fields["requester_context_snapshot"]["device"]["device_id"] == device_id
+    assert custom_fields["requester_device_id"] == device_id
+    assert custom_fields["requester_asset_id"] == approved["binding"]["asset_id"]
+    assert custom_fields["requester_binding_id"] == approved["binding"]["binding_id"]
+    assert custom_fields["routing_decision"]["source"] == "request_template.routing_policy"
     assert custom_fields["request_form_data"] == {"summary": "No boot"}
     assert custom_fields["service_catalog"]["service_code"] == service_code
     assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"
@@ -761,6 +1276,10 @@ async def test_requester_preview_ticket_accepts_catalog_form_payload(test_client
     assert payload["data"]["service"]["code"] == service_code
     assert payload["data"]["offering"]["full_code"] == f"{service_code}.laptop_broken"
     assert payload["data"]["would_create_ticket"] is False
+    assert payload["data"]["requester_context"]["profile"]["department"]
+    assert payload["data"]["requester_context"]["device"]["device_id"] == device_id
+    assert payload["data"]["requester_context"]["form_prefill"]["device_id"] == device_id
+    assert payload["data"]["requester_context"]["routing_facts"]["account_mode"] == "confirmed_binding"
 
     async with session_maker() as session:
         ticket_count = await session.scalar(select(func.count()).select_from(Ticket))

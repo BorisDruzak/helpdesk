@@ -67,6 +67,39 @@ const registryPayload = {
       phone: null,
       email: "ivan@example.test",
       login: "ivan",
+      position: "R7 Engineer",
+      workplace_label: "Desk R7",
+      internal_extension: "1234",
+      manager_person_id: "manager-1",
+      manager_name: "R7 Manager",
+      production_context: {
+        position: "R7 Engineer",
+        workplace_label: "Desk R7",
+        internal_extension: "1234",
+        manager_person_id: "manager-1",
+        manager_name: "R7 Manager",
+      },
+      profile_completion: {
+        complete: false,
+        status: "required",
+        required_fields: [
+          { key: "full_name", label: "ФИО" },
+          { key: "department_id", label: "Подразделение" },
+          { key: "location_id", label: "Локация" },
+          { key: "phone", label: "Телефон или внутренний номер" },
+        ],
+        missing_fields: [
+          { key: "department_id", label: "Подразделение" },
+          { key: "phone", label: "Телефон или внутренний номер" },
+        ],
+        setup_path: "/app/requester/profile/setup",
+        blocks: {
+          ticket_create: true,
+          ticket_preview: true,
+          knowledge_requester_actions: true,
+          device_binding_confirmation: true,
+        },
+      },
       department_id: null,
       location_id: "loc-1",
       department_name: null,
@@ -320,6 +353,57 @@ const registryPoliciesPayload = {
   restart_required_fields: [],
 };
 
+const registryProfileSchemaPayload = {
+  schema: {
+    schema_key: "requester_profile",
+    version: "test",
+    storage: {
+      system_fields: "registry_people",
+      identities: "registry_person_identities",
+      custom_fields: "registry_people.metadata_json.profile_custom_fields",
+    },
+    fields: [
+      {
+        key: "full_name",
+        label: "ФИО",
+        type: "text",
+        required: true,
+        visible: true,
+        system: true,
+        custom: false,
+        editable: true,
+        can_delete: false,
+        can_hide: false,
+        target_kind: "registry_person_field",
+        storage_target: "registry_people.full_name",
+        help_text: null,
+        validation: {},
+      },
+      {
+        key: "position",
+        label: "Должность",
+        type: "text",
+        required: false,
+        visible: true,
+        system: false,
+        custom: false,
+        editable: true,
+        can_delete: false,
+        can_hide: true,
+        target_kind: "registry_person_metadata",
+        storage_target: "registry_people.metadata_json.position",
+        help_text: null,
+        validation: {},
+      },
+    ],
+    custom_fields: [],
+    system_fields: ["full_name"],
+    editable_optional_fields: ["position"],
+    required_fields: [{ key: "full_name", label: "ФИО" }],
+    warnings: [],
+  },
+};
+
 function jsonResponse(data: unknown) {
   return Promise.resolve(new Response(JSON.stringify({ status: "success", data }), {
     headers: { "Content-Type": "application/json" },
@@ -356,6 +440,9 @@ describe("AdminRegistryPage", () => {
       }
       if (url === "/api/web/admin/registry") {
         return jsonResponse(currentRegistryPayload);
+      }
+      if (url === "/api/web/admin/registry/people/person-1" && init?.method === "PATCH") {
+        return jsonResponse({ person: { person_id: "person-1", display_name: "Иван Петров", status: "active" } });
       }
       if (url === "/api/web/admin/registry/audience-groups") {
         if (init?.method === "POST") {
@@ -408,6 +495,15 @@ describe("AdminRegistryPage", () => {
           },
         });
       }
+      if (url === "/api/web/admin/registry/profile-schema") {
+        if (init?.method === "PUT") {
+          return jsonResponse({ ...registryProfileSchemaPayload, updated: true });
+        }
+        return jsonResponse(registryProfileSchemaPayload);
+      }
+      if (url === "/api/web/admin/registry/profile-schema/preview") {
+        return jsonResponse({ ...registryProfileSchemaPayload, dry_run: true });
+      }
       if (url === "/api/web/admin/registry/bulk/preview") {
         return jsonResponse({
           operation: "devices.assign_department",
@@ -443,6 +539,51 @@ describe("AdminRegistryPage", () => {
   it("does not use window.prompt in registry operator UI", () => {
     expect(readFileSync("src/pages/admin/registry-page.tsx", "utf-8")).not.toContain("window.prompt");
     expect(readFileSync("src/features/admin/registry/registry-quality-tab.tsx", "utf-8")).not.toContain("window.prompt");
+  });
+
+  it("shows production context in the people registry", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
+
+    expect(await screen.findByText(/R7 Engineer/)).toBeInTheDocument();
+    expect(screen.getByText(/Desk R7/)).toBeInTheDocument();
+    expect(screen.getByText(/1234/)).toBeInTheDocument();
+    expect(screen.getByText(/R7 Manager/)).toBeInTheDocument();
+  });
+
+  it("shows requester profile completion status in the people registry", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
+
+    expect(await screen.findByText("Нужно заполнить профиль")).toBeInTheDocument();
+    expect(screen.getByText("Не хватает: Подразделение, Телефон или внутренний номер")).toBeInTheDocument();
+  });
+
+  it("submits production context fields from the person edit dialog", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Править" }))[0]);
+
+    fireEvent.change(await screen.findByLabelText("Должность"), { target: { value: "Lead Engineer" } });
+    fireEvent.change(screen.getByLabelText("Рабочее место"), { target: { value: "Desk 12" } });
+    fireEvent.change(screen.getByLabelText("Внутренний номер"), { target: { value: "4567" } });
+    fireEvent.change(screen.getByLabelText("ID руководителя"), { target: { value: "manager-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    const saveCall = await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) => url === "/api/web/admin/registry/people/person-1" && init?.method === "PATCH");
+      expect(call).toBeTruthy();
+      return call;
+    });
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toMatchObject({
+      position: "Lead Engineer",
+      workplace_label: "Desk 12",
+      internal_extension: "4567",
+      manager_person_id: "manager-1",
+    });
   });
 
   it("uses a bulk dialog with department picker and preview before apply", async () => {
@@ -554,7 +695,8 @@ describe("AdminRegistryPage", () => {
     expect(screen.getByText("Локация: Кабинет 101")).toBeInTheDocument();
     expect(screen.getByText("Идентичность: anna@example.test / anna")).toBeInTheDocument();
     expect(screen.getByText("Тип привязки: Основной пользователь")).toBeInTheDocument();
-    expect(screen.getByText("Блокер: active_primary_user_exists")).toBeInTheDocument();
+    expect(screen.getByText("Блокер: уже есть активный основной пользователь")).toBeInTheDocument();
+    expect(screen.queryByText("Блокер: active_primary_user_exists")).not.toBeInTheDocument();
   });
 
   it("exposes department and location modes as first-class registration policy controls", async () => {
@@ -596,5 +738,47 @@ describe("AdminRegistryPage", () => {
         body: expect.stringContaining('"location_mode":"optional"'),
       })
     );
+  });
+
+  it("edits requester profile schema with protected system fields and controlled custom storage", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Схема профиля · P1" }));
+
+    expect(await screen.findByText("Системные поля защищены")).toBeInTheDocument();
+    expect(screen.getByText("Нельзя скрыть или удалить")).toBeInTheDocument();
+    expect(screen.getByText(/registry_people\.full_name/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("cost_center"), { target: { value: "cost_center" } });
+    fireEvent.change(screen.getByPlaceholderText("Центр затрат"), { target: { value: "Центр затрат" } });
+    fireEvent.click(screen.getByLabelText("Обязательное поле"));
+    fireEvent.click(screen.getByRole("button", { name: "Добавить поле" }));
+
+    expect(screen.getByText(/registry_people\.metadata_json\.profile_custom_fields\.cost_center/)).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Например: вводим обязательный центр затрат"), {
+      target: { value: "Вводим обязательный центр затрат для маршрутизации" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Предпросмотр" }));
+    expect(await screen.findByText("Серверная проверка")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить схему" }));
+
+    const saveCall = await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) => url === "/api/web/admin/registry/profile-schema" && init?.method === "PUT");
+      expect(call).toBeTruthy();
+      return call;
+    });
+    expect(JSON.parse(String(saveCall?.[1]?.body))).toMatchObject({
+      custom_fields: [
+        expect.objectContaining({
+          key: "cost_center",
+          label: "Центр затрат",
+          required: true,
+          storage_target: "registry_people.metadata_json.profile_custom_fields.cost_center",
+          audit_behavior: "profile_custom_field_change",
+        }),
+      ],
+      reason: "Вводим обязательный центр затрат для маршрутизации",
+    });
   });
 });

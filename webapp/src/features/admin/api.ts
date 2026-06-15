@@ -393,6 +393,8 @@ export type AdminRegistryPayload = {
     active_binding_id: string | null;
     active_person_id: string | null;
     active_person_name: string | null;
+    responsible_person_id?: string | null;
+    responsible_person_name?: string | null;
     active_bindings?: AdminDeviceUserBinding[];
     active_sessions_count?: number;
     active_tickets_count?: number;
@@ -422,6 +424,30 @@ export type AdminRegistryPayload = {
     phone: string | null;
     email: string | null;
     login?: string | null;
+    position?: string | null;
+    workplace_label?: string | null;
+    internal_extension?: string | null;
+    manager_person_id?: string | null;
+    manager_name?: string | null;
+    production_context?: {
+      position?: string | null;
+      workplace_label?: string | null;
+      internal_extension?: string | null;
+      manager_person_id?: string | null;
+      manager_name?: string | null;
+      department_id?: string | null;
+      department_name?: string | null;
+      location_id?: string | null;
+      location_name?: string | null;
+    };
+    profile_completion?: {
+      complete: boolean;
+      status: "complete" | "required" | string;
+      required_fields: Array<{ key: string; label: string }>;
+      missing_fields: Array<{ key: string; label: string }>;
+      setup_path: string;
+      blocks: Record<string, boolean>;
+    };
     department_id: string | null;
     location_id: string | null;
     department_name: string | null;
@@ -461,6 +487,7 @@ export type AdminRegistryPayload = {
     name: string;
     parent_id?: string | null;
     manager_person_id?: string | null;
+    manager_name?: string | null;
     support_queue?: string | null;
     source: string;
     status: string;
@@ -476,6 +503,10 @@ export type AdminRegistryPayload = {
     name: string;
     support_queue: string | null;
     owner_person_id: string | null;
+    owner_person_name?: string | null;
+    criticality?: string | null;
+    audience?: string | null;
+    audience_group_id?: string | null;
     vendor_id: string | null;
     source: string;
     status: string;
@@ -504,6 +535,8 @@ export type AdminRegistryPayload = {
     object_id: string;
     device_id?: string | null;
     person_id?: string | null;
+    department_id?: string | null;
+    location_id?: string | null;
     binding_id?: string | null;
     claim_id?: string | null;
     duplicate_person_ids?: string[];
@@ -831,6 +864,51 @@ export type AdminRegistryPolicyPayload = {
   dry_run?: boolean;
 };
 
+export type AdminRegistryProfileSchemaField = {
+  key: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  visible?: boolean;
+  system?: boolean;
+  custom?: boolean;
+  editable?: boolean;
+  can_delete?: boolean;
+  can_hide?: boolean;
+  target_kind?: string;
+  storage_target?: string;
+  help_text?: string | null;
+  validation?: Record<string, unknown>;
+  options?: Array<string | { value: string; label: string }>;
+  audit_behavior?: string;
+};
+
+export type AdminRegistryProfileSchema = {
+  schema_key: string;
+  version?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+  storage?: Record<string, string>;
+  fields: AdminRegistryProfileSchemaField[];
+  custom_fields?: AdminRegistryProfileSchemaField[];
+  required_fields?: Array<{ key: string; label: string }>;
+  system_fields?: string[];
+  editable_optional_fields?: string[];
+  warnings?: string[];
+};
+
+export type AdminRegistryProfileSchemaPayload = {
+  schema: AdminRegistryProfileSchema;
+  updated?: boolean;
+  dry_run?: boolean;
+};
+
+export type AdminRegistryProfileSchemaUpdatePayload = {
+  field_overrides: Record<string, Pick<AdminRegistryProfileSchemaField, "help_text" | "required" | "visible" | "validation">>;
+  custom_fields: AdminRegistryProfileSchemaField[];
+  reason?: string;
+};
+
 export type AdminRegistryTimelineItem = {
   event_id: string;
   source?: "registry_admin" | "registration" | "account" | string;
@@ -1112,6 +1190,10 @@ export async function createAdminRegistryPerson(payload: {
   display_name: string;
   email?: string | null;
   phone?: string | null;
+  position?: string | null;
+  workplace_label?: string | null;
+  internal_extension?: string | null;
+  manager_person_id?: string | null;
   department_id?: string | null;
   location_id?: string | null;
   status?: string | null;
@@ -1131,6 +1213,10 @@ export async function updateAdminRegistryPerson(personId: string, payload: {
   display_name?: string | null;
   email?: string | null;
   phone?: string | null;
+  position?: string | null;
+  workplace_label?: string | null;
+  internal_extension?: string | null;
+  manager_person_id?: string | null;
   department_id?: string | null;
   location_id?: string | null;
   status?: string | null;
@@ -1377,6 +1463,35 @@ export async function resetAdminRegistryPolicies(reason: string): Promise<AdminR
     body: JSON.stringify({ reason }),
   });
   return readSuccessResponse(response, "Не удалось сбросить политики реестра");
+}
+
+export async function fetchAdminRegistryProfileSchema(): Promise<AdminRegistryProfileSchemaPayload> {
+  const response = await fetch("/api/web/admin/registry/profile-schema", { credentials: "same-origin" });
+  return readSuccessResponse(response, "Не удалось загрузить схему профиля");
+}
+
+export async function saveAdminRegistryProfileSchema(
+  payload: AdminRegistryProfileSchemaUpdatePayload,
+): Promise<AdminRegistryProfileSchemaPayload> {
+  const response = await fetch("/api/web/admin/registry/profile-schema", {
+    method: "PUT",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось сохранить схему профиля");
+}
+
+export async function previewAdminRegistryProfileSchema(
+  payload: AdminRegistryProfileSchemaUpdatePayload,
+): Promise<AdminRegistryProfileSchemaPayload> {
+  const response = await fetch("/api/web/admin/registry/profile-schema/preview", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось построить предпросмотр схемы профиля");
 }
 
 export async function mergeAdminRegistryPeople(payload: {

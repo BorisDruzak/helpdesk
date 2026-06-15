@@ -9,7 +9,15 @@ from aiohttp.test_utils import TestClient, TestServer
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceBrowserPairing, DeviceRegistrationClaim, RegistryPersonIdentity
+from app.db.models import (
+    Device,
+    DeviceBrowserPairing,
+    DeviceRegistrationClaim,
+    RegistryDepartment,
+    RegistryLocation,
+    RegistryPerson,
+    RegistryPersonIdentity,
+)
 from auth.rate_limit import reset_rate_limits
 from registry.browser_pairing_service import BrowserPairingService
 from registry.account_session_service import AccountSessionService
@@ -38,6 +46,65 @@ def _device(device_id: str) -> Device:
         last_seen_at=now,
         last_handshake_at=now,
     )
+
+
+async def _completed_requester_profile(
+    session,
+    *,
+    login: str,
+    department_id: str | None = None,
+    location_id: str | None = None,
+) -> RegistryPerson:
+    suffix = uuid.uuid4().hex[:8]
+    if department_id is None:
+        department_id = str(uuid.uuid4())
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code=f"test-{suffix}",
+                name=f"Test Department {suffix}",
+                status="active",
+                source="test",
+                metadata_json={},
+            )
+        )
+    if location_id is None:
+        location_id = str(uuid.uuid4())
+        session.add(
+            RegistryLocation(
+                location_id=location_id,
+                building=f"Test Building {suffix}",
+                floor="1",
+                room="101",
+                display_name=f"Test Building {suffix} / 101",
+                status="active",
+                source="test",
+                metadata_json={},
+            )
+        )
+    person = RegistryPerson(
+        person_id=str(uuid.uuid4()),
+        display_name=f"Requester {login}",
+        full_name=f"Requester {login}",
+        email=login if "@" in login else None,
+        phone="1001",
+        department_id=department_id,
+        location_id=location_id,
+        source="test",
+        status="active",
+    )
+    session.add(person)
+    session.add(
+        RegistryPersonIdentity(
+            person_id=person.person_id,
+            provider="ui_login",
+            identifier=login,
+            normalized_identifier=login.lower(),
+            verified=True,
+            source="test",
+        )
+    )
+    return person
 
 
 @pytest.mark.asyncio
@@ -155,6 +222,47 @@ async def test_web_user_lookup_browser_pairing_code_rejects_inactive_pairings(te
 
         assert response.status == 404, payload
         assert payload["error_code"] == "PAIRING_CODE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_browser_pairing_cleanup_expires_stale_pending_and_confirmed_rows(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        expired_pending_device_id = str(uuid.uuid4())
+        expired_confirmed_device_id = str(uuid.uuid4())
+        fresh_device_id = str(uuid.uuid4())
+        session.add_all([
+            _device(expired_pending_device_id),
+            _device(expired_confirmed_device_id),
+            _device(fresh_device_id),
+        ])
+        service = BrowserPairingService(session)
+        expired_pending = await service.create_pairing(device_id=expired_pending_device_id, purpose="login", actor_id="agent")
+        expired_pending_row = await session.get(DeviceBrowserPairing, expired_pending["pairing_id"])
+        assert expired_pending_row is not None
+        expired_pending_row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+
+        expired_confirmed = await service.create_pairing(device_id=expired_confirmed_device_id, purpose="registration", actor_id="agent")
+        expired_confirmed_row = await session.get(DeviceBrowserPairing, expired_confirmed["pairing_id"])
+        assert expired_confirmed_row is not None
+        expired_confirmed_row.status = "confirmed"
+        expired_confirmed_row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+
+        fresh = await service.create_pairing(device_id=fresh_device_id, purpose="login", actor_id="agent")
+        fresh_row = await session.get(DeviceBrowserPairing, fresh["pairing_id"])
+        assert fresh_row is not None
+
+        cleanup = await service.expire_stale_pairings(limit=10)
+        await session.commit()
+
+    assert cleanup["expired_count"] == 2
+    async with session_maker() as session:
+        pending_row = await session.get(DeviceBrowserPairing, expired_pending["pairing_id"])
+        confirmed_row = await session.get(DeviceBrowserPairing, expired_confirmed["pairing_id"])
+        fresh_row = await session.get(DeviceBrowserPairing, fresh["pairing_id"])
+        assert pending_row is not None and pending_row.status == "expired"
+        assert confirmed_row is not None and confirmed_row.status == "expired"
+        assert fresh_row is not None and fresh_row.status == "pending"
 
 
 @pytest.mark.asyncio
@@ -343,6 +451,7 @@ async def test_web_user_confirms_registration_pairing_for_pairing_device(test_cl
     async with session_maker() as session:
         session.add(_device(device_id))
         pairing = await BrowserPairingService(session).create_pairing(device_id=device_id, purpose="registration", actor_id=device_id)
+        await _completed_requester_profile(session, login="new-user@example.test")
         await session.commit()
 
     response = await test_client.post(
@@ -361,6 +470,38 @@ async def test_web_user_confirms_registration_pairing_for_pairing_device(test_cl
         claim = await session.get(DeviceRegistrationClaim, payload["data"]["claim_id"])
     assert claim is not None
     assert claim.device_id == device_id
+    assert claim.profile_snapshot["phone"] == "1001"
+
+
+@pytest.mark.asyncio
+async def test_registration_pairing_confirmation_requires_completed_profile(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        pairing = await BrowserPairingService(session).create_pairing(device_id=device_id, purpose="registration", actor_id=device_id)
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/registration/confirm",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}account-only@example.test"),
+        json={},
+    )
+    payload = await response.json()
+
+    assert response.status == 403, payload
+    assert payload["error_code"] == "REQUESTER_PROFILE_INCOMPLETE"
+    assert payload["details"]["setup_path"] == "/app/requester/profile/setup"
+
+    async with session_maker() as session:
+        row = await session.get(DeviceBrowserPairing, pairing["pairing_id"])
+        claims = (await session.execute(
+            DeviceRegistrationClaim.__table__.select().where(DeviceRegistrationClaim.device_id == device_id)
+        )).all()
+
+    assert row is not None
+    assert row.status == "pending"
+    assert claims == []
 
 
 @pytest.mark.asyncio
@@ -369,6 +510,7 @@ async def test_registration_pairing_approval_surfaces_confirmed_binding_to_agent
     device_id = str(uuid.uuid4())
     async with session_maker() as session:
         session.add(_device(device_id))
+        await _completed_requester_profile(session, login="stage1-new-user@example.test")
         await session.commit()
 
     created = await test_client.post(
@@ -483,6 +625,12 @@ async def test_registration_pairing_confirmation_accepts_required_registry_ids(t
                 }
             },
             actor_id="admin",
+        )
+        await _completed_requester_profile(
+            session,
+            login="strict-browser@example.test",
+            department_id=department.department_id,
+            location_id=location.location_id,
         )
         await session.commit()
 

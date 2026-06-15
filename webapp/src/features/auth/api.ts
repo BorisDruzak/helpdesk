@@ -8,6 +8,19 @@ export type WebSession = {
   permissions_version?: string;
 };
 
+export type WebSessionRegisterDeviceLink = {
+  accepted: boolean;
+  purpose: string;
+  expires_at?: string | null;
+};
+
+export type WebSessionRegisterResult = {
+  user_login: string;
+  actor_role: string;
+  next_path: string;
+  device_link?: WebSessionRegisterDeviceLink | null;
+};
+
 type SuccessResponse<T> = {
   status: "success";
   data: T;
@@ -80,6 +93,49 @@ export async function loginWebSession(credentials: {
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new WebSessionApiError(
       errorPayload?.error ?? "Не удалось выполнить вход",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
+export async function registerWebSessionAccount(input: {
+  login: string;
+  password: string;
+  passwordRepeat: string;
+  deviceLinkCode?: string;
+}): Promise<WebSessionRegisterResult> {
+  const body: {
+    login: string;
+    password: string;
+    password_repeat: string;
+    device_link_code?: string;
+  } = {
+    login: input.login,
+    password: input.password,
+    password_repeat: input.passwordRepeat
+  };
+  const deviceLinkCode = input.deviceLinkCode?.trim();
+  if (deviceLinkCode) {
+    body.device_link_code = deviceLinkCode;
+  }
+
+  const response = await fetch("/api/web/session/register", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+  const payload = await readJson<SuccessResponse<WebSessionRegisterResult> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new WebSessionApiError(
+      errorPayload?.error ?? "Не удалось создать аккаунт",
       response.status,
       errorPayload?.error_code
     );

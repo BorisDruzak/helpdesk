@@ -80,6 +80,7 @@ import { RegistryOverviewTab } from "../../features/admin/registry/registry-over
 import { RegistryPeopleTab } from "../../features/admin/registry/registry-people-tab";
 import { RegistryPersonEditDialog, type PersonEditDialogState } from "../../features/admin/registry/registry-person-edit-dialog";
 import { RegistryPoliciesTab } from "../../features/admin/registry/registry-policies-tab";
+import { RegistryProfileSchemaTab } from "../../features/admin/registry/registry-profile-schema-tab";
 import { RegistryQualityTab } from "../../features/admin/registry/registry-quality-tab";
 import { RegistryReasonDialog, type RegistryReasonDialogState } from "../../features/admin/registry/registry-reason-dialog";
 import { RegistryRequestsTab } from "../../features/admin/registry/registry-requests-tab";
@@ -99,6 +100,7 @@ const tabs: Array<{ key: RegistryTabKey; label: string; description: string; p1?
   { key: "departments", label: "Подразделения", description: "Организационная структура для людей, устройств и правил видимости. Слияние подразделений выполняйте только после предпросмотра.", p1: true },
   { key: "access_groups", label: "Группы доступа", description: "Только сводка RBAC-групп. Права и очереди редактируются в отдельном RBAC-редакторе.", p1: true },
   { key: "audience_groups", label: "Аудитории", description: "Группы таргетинга для базы знаний и сервисов. Аудитории не выдают права доступа, а только участвуют в правилах видимости.", p1: true },
+  { key: "profile_schema", label: "Схема профиля", description: "Управляемые поля профиля заявителя. Системные поля нельзя удалить, пользовательские поля пишутся только в контролируемый блок.", p1: true },
   { key: "policies", label: "Политики", description: "Правила регистрации, аккаунт-сессий и видимости тикетов. Перед сохранением используйте предпросмотр.", p1: true },
 ];
 
@@ -604,6 +606,7 @@ export function AdminRegistryPage() {
               onUpdate={(groupId, payload) => mutation.mutate(() => updateAdminRegistryAudienceGroup(groupId, payload).then(() => undefined))}
             />
           ) : null}
+          {tab === "profile_schema" ? <RegistryProfileSchemaTab /> : null}
           {tab === "policies" ? <RegistryPoliciesTab /> : null}
         </CardContent>
       </Card>

@@ -7,6 +7,7 @@ import re
 import secrets
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeviceAccountLoginRequest, DeviceAccountSession
@@ -542,6 +543,33 @@ class AccountSessionService:
             return
         row.metadata_json = {**(row.metadata_json or {}), "last_validated_at": _now().isoformat()}
         await self.session.flush()
+
+    async def expire_stale_sessions(self, *, limit: int = 500) -> dict[str, Any]:
+        now = _now()
+        result = await self.session.execute(
+            select(DeviceAccountSession)
+            .where(DeviceAccountSession.account_mode.in_(["registration_pending", "verified_other_account"]))
+            .where(DeviceAccountSession.verification_status.in_(["pending_verification", "verified"]))
+            .where(DeviceAccountSession.expires_at.is_not(None))
+            .where(DeviceAccountSession.expires_at <= now)
+            .order_by(DeviceAccountSession.expires_at)
+            .limit(max(1, min(int(limit or 500), 1000)))
+        )
+        rows = list(result.scalars().all())
+        for row in rows:
+            row.verification_status = "expired"
+            row.metadata_json = {**(row.metadata_json or {}), "expiration_reason": "expired_cleanup"}
+            await self.repo.append_event(
+                device_id=row.device_id,
+                session_id=row.session_id,
+                event_type="account_session_expired_by_cleanup",
+                actor_id="system",
+                actor_role="system",
+                payload={"account_mode": row.account_mode, "expires_at": _iso(row.expires_at)},
+            )
+        if rows:
+            await self.session.flush()
+        return {"expired_count": len(rows), "session_ids": [row.session_id for row in rows]}
 
     async def validate_session(
         self,

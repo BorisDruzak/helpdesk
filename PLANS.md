@@ -391,7 +391,7 @@ Acceptance:
 
 ## Phase R0 — Baseline inventory and regression lock
 
-Status: in progress. R0 baseline inventory started on 2026-06-15; product implementation remains blocked until the recorded baseline failure and pending agent screenshot are resolved.
+Status: completed on 2026-06-15. R0 baseline inventory and regression lock are closed. One R0 corrective contract fix was made before product work: requester/public ticket detail now preserves only requester-safe request-form `custom_fields` while hiding internal policy snapshots. Product implementation remains gated by the R1 decisions below, but the R0 blockers are resolved.
 
 Tasks:
 
@@ -459,16 +459,18 @@ R0 automated baseline results:
 
 - `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_account_session_manager.py pc_agent/tests/test_registration_status.py -q` -> 43 passed.
 - `pnpm --dir webapp exec vitest run src/pages/device-pairing/device-pairing-page.test.tsx src/pages/requester/index.test.tsx src/features/auth/session-provider.test.tsx src/features/requester/api.test.ts --reporter=dot` -> 4 files / 32 tests passed.
-- Registration/account-session/browser-pairing backend split runs all passed:
+- Registration/account-session/browser-pairing backend split runs all passed sequentially with explicit shared-test-DB fallback (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1`) after isolated DB pytest setup timed out in this Windows environment:
   - `server/tests/test_browser_pairing_service.py` -> 6 passed.
   - `server/tests/test_account_session_service.py` -> 16 passed.
   - `server/tests/test_device_registration_service.py` -> 16 passed.
   - `server/tests/test_registry_registration_policy.py` -> 2 passed.
   - `server/tests/test_registration_api.py` -> 32 passed.
 - Combined registration backend run timed out at 5 minutes, but the same files passed when split. Record this as a runtime-size baseline, not a product failure.
-- Requester/form/service-catalog sequential baseline: `python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_ticket_form_packs.py server/tests/test_ticket_create_service_catalog.py -q` -> 57 passed, 1 failed.
-- Confirmed baseline failure: `server/tests/test_ticket_form_packs.py::test_create_ticket_stores_legacy_form_source_and_computed_snapshot` fails because requester-safe `GET /api/tickets/{ticket_id}` response no longer includes `ticket.custom_fields`; the test expects `custom_fields` to exist while hiding `request_template`.
-- Knowledge audience/access baseline: `python -m pytest server/tests/test_knowledge_access_service.py server/tests/test_knowledge_audience_rules.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_rag_policy.py -q` -> 28 passed.
+- Initial requester/form/service-catalog baseline found one real contract regression: `server/tests/test_ticket_form_packs.py::test_create_ticket_stores_legacy_form_source_and_computed_snapshot` failed because requester-safe `GET /api/tickets/{ticket_id}` no longer included safe request-form `custom_fields` while hiding `request_template`.
+- Corrective fix: `server/tickets/visibility_policy.py` now projects only requester-safe request-form `custom_fields` (`request_form`, `request_form_key`, `request_form_title`, `request_form_data`, `request_form_summary` and resolver metadata) and still hides `request_template`, `priority_decision`, `routing_decision`, `public_access` and related internals. Regression coverage was added in `server/tests/test_ticket_visibility_policy.py::test_requester_visibility_keeps_safe_request_form_custom_fields_without_internal_snapshot`.
+- Final requester/form/service-catalog sequential baseline with shared-test-DB fallback: `python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_ticket_form_packs.py server/tests/test_ticket_create_service_catalog.py -q` -> 58 passed.
+- Visibility-policy focused verification: `python -m pytest server/tests/test_ticket_visibility_policy.py -q` -> 4 passed.
+- Knowledge audience/access baseline with shared-test-DB fallback: `python -m pytest server/tests/test_knowledge_access_service.py server/tests/test_knowledge_audience_rules.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_rag_policy.py -q` -> 28 passed.
 - A parallel shared-DB attempt for requester/form and knowledge tests produced deadlock/connection-closed cleanup errors; do not treat that as application baseline. DB-backed R0 pytest groups must run sequentially.
 
 R0 live evidence:
@@ -481,19 +483,23 @@ R0 live evidence:
   - `requester-profile.md` / `requester-profile.png`: `/app/requester/profile` under current admin web session shows requester shell plus `Insufficient permissions` in English; console recorded failed requester bootstrap/tickets resource loads.
   - `admin-registry.md` / `admin-registry.png`: admin registry overview shows registrations/account-session/data-quality summary.
   - `admin-registry-requests.md` / `admin-registry-requests.png`: admin `requests` tab shows registration diff, current binding, declared identity, pending/approved states and admin override controls.
-- Agent UI evidence is incomplete: existing packaged agent window `Maria Agent v3.1.64` was found by UIA at PID 9504 and `agent-uia-noscreenshot.json` / `agent-uia-shallow.json` were written, but screenshot capture timed out with `screenshot_path="capture_timeout"`. Capture agent account-gate screenshot from a controlled isolated agent before closing R0.
+- Previous packaged-agent UIA screenshot capture timed out, but controlled isolated source-agent evidence is now complete:
+  - `agent-account-gate-controlled-noscreenshot.json`: PID-scoped UIA probe found auth/account gate.
+  - `agent-account-gate-controlled.json` / `agent-account-gate-controlled.png`: screenshot probe captured the Russian account-gate message asking the user to wait for administrator authorization, with manual-token and cancel actions.
+  - The temporary agent instance `web-first-r0-agent-20260615` was stopped after evidence capture. No token was issued; remote `control` status was stopped and `manage_remote_stack.py smoke server` failed, so this is account-gate evidence only.
 
-R0 blockers before implementation:
+R0 blockers resolved before implementation:
 
-1. Decide whether to fix or intentionally rebaseline `test_create_ticket_stores_legacy_form_source_and_computed_snapshot`; this is a requester-safe custom-field projection contract.
-2. Capture fresh agent account-gate screenshot from a controlled local agent instance, or fix the UIA screenshot capture path.
-3. After blockers are resolved, rerun `python scripts/verify_workspace.py`, the focused R0 tests above, and record final R0 completion before starting R1/R2 implementation.
+1. Requester-safe custom-field projection contract fixed and covered by regression test.
+2. Fresh controlled agent account-gate screenshot captured under `artifacts/browser_live_validation/web-first-registration-r0-cc22879f-20260615/`.
+3. `python scripts/verify_workspace.py` rerun after code/docs updates -> passed.
+4. Remaining R0 caveat: isolated DB pytest setup timed out in this environment, so DB-backed R0 baseline evidence used the project-approved shared-test-DB fallback sequentially. This is not a substitute for a later full DB/API gate.
 
 ---
 
 ## Phase R1 — Product vocabulary, routes and UX contract
 
-Status: not started.
+Status: completed on 2026-06-15 for the contract slice. The canonical route/copy/error decisions live in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`; the existing device-link route now follows the R1 safe-copy rule for missing device-link ids and backend status values.
 
 Tasks:
 
@@ -522,11 +528,20 @@ Acceptance:
 - Technical ids are hidden unless in admin/debug surfaces.
 - User always knows the next action.
 
+R1 completion checkpoint, 2026-06-15:
+
+- Added `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md` with canonical user terms, target routes, status labels, error dictionary and the eight rollout decisions.
+- Updated `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py` so web-first registration/profile/device-link work routes to the new contract.
+- Updated `webapp/src/pages/device-pairing/index.tsx` so `/app/device/register` without a device-link id shows `Откройте эту страницу из агента или введите код подключения.` instead of raw `pairing_id`, and registration/device-link statuses render Russian product labels instead of backend enums.
+- Added focused frontend coverage in `webapp/src/pages/device-pairing/device-pairing-page.test.tsx` for missing device-link id and `pending_admin_review` status.
+- Browser evidence: local Playwright/Chromium validation with stubbed `/api/web/session/me` captured `/app/device/register` missing-link safe error at `artifacts/browser_live_validation/web-first-registration-r1-20260615/device-register-missing-link-safe-error.png` and report JSON at `artifacts/browser_live_validation/web-first-registration-r1-20260615/device-register-missing-link-safe-error.json`. Remote stand was not deployed for R1 because current workspace contains unrelated dirty files; remote `server` and `control` were stopped.
+- Verification: `pnpm --dir webapp exec vitest run src/pages/device-pairing/device-pairing-page.test.tsx --reporter=dot` -> 7 passed.
+
 ---
 
 ## Phase R2 — Web account self-registration
 
-Status: not started.
+Status: completed on 2026-06-15. R2 account-only self-registration is implemented behind `WEB_SELF_REGISTRATION_ENABLED`, with `/app/register`, `POST /api/web/session/register`, no auto-login/cookie issuance, role `user`, password/repeat/duplicate validation, optional device-link code validation without active binding creation, and login success redirect copy.
 
 Tasks:
 
@@ -562,11 +577,19 @@ Acceptance:
 - Account creation is simple and separate from profile.
 - Optional device code does not bypass profile/admin policy.
 
+R2 completion checkpoint, 2026-06-15:
+
+- Backend: `server/config.py` defines fail-closed `WEB_SELF_REGISTRATION_ENABLED`; `server/web_api/session_handlers.py` handles `POST /api/web/session/register`; `server/web_api/dto/session.py` defines strict registration DTOs; `server/routes.py` registers the route; `server/auth/middleware.py` whitelists the anonymous route so the feature flag, not auth middleware, controls availability.
+- Frontend: `webapp/src/features/auth/register-page.tsx` implements account-only fields (`Логин`, `Пароль`, `Повторите пароль`, optional `Код привязки устройства`); `webapp/src/features/auth/api.ts` posts the typed request; `webapp/src/features/auth/login-page.tsx` shows the `/app/login?registered=1` success notice; `webapp/src/app/router.tsx` exposes `/app/register`.
+- Browser evidence: local Vite + Playwright Browser validation captured success, duplicate-login and repeat-password states at `artifacts/browser_live_validation/web-first-registration-r2-20260615/account-registration-success.png`, `account-registration-duplicate.png`, `account-registration-password-repeat.png`, with redacted report `account-registration-browser-report.json`. The browser report confirms optional `device_link_code` is sent on success, repeat-password mismatch sends no registration request, and no forbidden profile fields are rendered.
+- Verification: `python -m pytest server/tests/test_web_session_api.py -q` -> 28 passed; `pnpm --dir webapp exec vitest run src/features/auth/register-page.test.tsx src/pages/device-pairing/device-pairing-page.test.tsx --reporter=dot` -> 10 passed; `pnpm --dir webapp run build` -> passed; `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q` -> 14 passed; `python scripts/verify_workspace.py` -> passed.
+- Caveat: R2 browser validation used intercepted local API responses rather than remote stand deployment because the workspace still contains unrelated dirty files and remote deployment is reserved for later release/live-gate phases.
+
 ---
 
 ## Phase R3 — Web profile setup gate
 
-Status: not started.
+Status: completed on 2026-06-15. R3 profile setup gate is implemented for the web requester cabinet: bootstrap returns `profile_completion`, `/app/requester/profile/setup` and `/app/requester/profile` render the registry-backed setup form, `PUT /api/web/requester/profile` updates only the authenticated caller's `RegistryPerson` and verified `ui_login` identity, department/location values must come from registry pickers, and normal requester ticket preview/create is blocked with `REQUESTER_PROFILE_INCOMPLETE` until the required profile fields are complete. Local browser evidence is under `artifacts/browser_live_validation/web-first-registration-r3-20260615/`; full real-stand admin registry confirmation remains part of R14 live validation.
 
 Tasks:
 
@@ -603,6 +626,13 @@ Live evidence:
 - User reaches requester home after completion.
 - Admin registry shows created/updated person and identities.
 
+R3 evidence recorded:
+
+- `artifacts/browser_live_validation/web-first-registration-r3-20260615/profile-setup-required.png`
+- `artifacts/browser_live_validation/web-first-registration-r3-20260615/profile-setup-saved.png`
+- `artifacts/browser_live_validation/web-first-registration-r3-20260615/profile-setup-browser-report.json`
+- Backend tests verify registry person and `ui_login` identity writes for the created/updated profile.
+
 Acceptance:
 
 - Profile is understandable and fully Russian.
@@ -613,7 +643,7 @@ Acceptance:
 
 ## Phase R4 — Web-first device linking
 
-Status: not started.
+Status: implementation completed on 2026-06-15 for the backend/frontend contract slice. Local browser evidence covers manual code entry, direct `pairing_id` preview, safe device facts and pending admin-review state in `/app/requester/devices`; full connected-agent/admin approval evidence remains part of R14 LV2.
 
 Tasks:
 
@@ -654,11 +684,27 @@ Acceptance:
 - User can link device without typing profile in agent.
 - Device linking has clear status and next action.
 
+Implementation notes, 2026-06-15:
+
+- `/app/requester/devices` now supports manual device-link code lookup and direct `pairing_id` preview through the existing browser-pairing APIs.
+- `registration/confirm` returns `REQUESTER_PROFILE_INCOMPLETE` before claim creation when the web requester profile is incomplete.
+- Successful registration confirmation builds the claim profile snapshot from the resolved `RegistryPerson`, not browser-submitted profile fields.
+- `/app/device/register` redirects incomplete-profile confirmation to `/app/requester/profile/setup`.
+- R4 evidence is under `artifacts/browser_live_validation/web-first-registration-r4-20260615/`.
+
+Verification, 2026-06-15:
+
+- `python -m pytest server/tests/test_registration_api.py -q --tb=short` -> 33 passed.
+- `python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 20 passed.
+- `pnpm --dir webapp exec vitest run src/pages/device-pairing/device-pairing-page.test.tsx src/pages/requester/index.test.tsx --reporter=dot` -> 22 passed.
+- `pnpm --dir webapp run build` -> passed with existing Vite chunk-size warning.
+- Browser evidence report `device-link-browser-report.json` recorded 0 console errors, 0 page errors and 0 unhandled mocked API routes.
+
 ---
 
 ## Phase R5 — Remove profile registration from GUI agent
 
-Status: not started.
+Status: completed on 2026-06-15. Normal GUI agent registration is now browser-first; the legacy full-profile registration/confirm UI is hidden by default and can only be re-enabled explicitly with `AGENT_LEGACY_REGISTRATION_ENABLED=1`.
 
 Tasks:
 
@@ -699,11 +745,27 @@ Acceptance:
 - Agent GUI is no longer a profile editor.
 - Agent remains useful as local status/handoff tool.
 
+Implementation, 2026-06-15:
+
+- `pc_agent/ui_gui/account_gate.py` hides legacy local registration and pending-confirm actions unless `AGENT_LEGACY_REGISTRATION_ENABLED` is true, keeps browser device handoff as the default action, and exposes a copyable browser pairing code after handoff creation.
+- `pc_agent/ui_gui/main_window.py` no longer builds or enters the full registration form in the normal path; accidental registration navigation starts browser registration handoff and returns to the account gate. A disabled legacy page remains only as an explicit fallback when the feature flag is off.
+- Existing backend registration endpoints remain unchanged for compatibility.
+- Documentation/catalog routing was updated in `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py`.
+- R5 visual evidence is under `artifacts/browser_live_validation/web-first-registration-r5-20260615-windows/`.
+
+Verification, 2026-06-15:
+
+- `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_main_window_runtime_windows.py -q --tb=short` -> 34 passed.
+- `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py -q --tb=short` -> 13 passed.
+- `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q` -> 14 passed.
+- `python scripts/verify_workspace.py` -> passed.
+- Qt Windows-platform screenshots captured unlinked, pending and linked account-gate states; no default legacy full-profile registration button/form is visible.
+
 ---
 
 ## Phase R6 — Profile schema and controlled registry attributes
 
-Status: not started.
+Status: completed on 2026-06-15. R6 profile schema is implemented as controlled admin configuration, not as a free-form registry constructor. The requester profile flow now uses the active schema for visible optional fields, required controlled custom fields and completion gating.
 
 Tasks:
 
@@ -745,11 +807,28 @@ Acceptance:
 - This is not an unrestricted registry constructor.
 - Admins can adapt profile forms without breaking core identity/binding logic.
 
+Implementation, 2026-06-15:
+
+- `server/registry/profile_schema_service.py` adds `RequesterProfileSchemaService` over `registry_admin_policies(policy_key=requester_profile_schema)` and `registry_admin_events`, so no database migration was required.
+- Admin APIs expose `GET|PUT /api/web/admin/registry/profile-schema` and `POST /api/web/admin/registry/profile-schema/preview`.
+- System fields are protected; optional built-ins can be hidden/required; custom fields are restricted to `registry_people.metadata_json.profile_custom_fields.<key>` with `profile_custom_field_change` audit behavior.
+- Requester bootstrap/profile responses return a safe schema projection with no storage targets, raw registry targets or `metadata_json` internals.
+- Requester profile update accepts `custom_fields`, stores controlled custom values under `RegistryPerson.metadata_json.profile_custom_fields`, and schema-aware profile completion blocks tickets/device confirmation while required custom values are missing.
+- React admin registry adds the profile schema tab; React requester setup renders schema custom fields and hides optional built-ins when the schema marks them invisible.
+
+Verification, 2026-06-15:
+
+- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 22 passed.
+- `pnpm --dir webapp run build` -> passed with the existing Vite large chunk warning.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 23 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registration_api.py -q --tb=short` -> 33 passed.
+- Local Playwright browser fallback evidence is in `artifacts/browser_live_validation/web-first-registration-r6-20260615/`: report shows no console/network errors, no horizontal scroll at 1366/1920, hidden `position`, saved `cost_center` custom field, and requester save payload under `custom_fields`.
+
 ---
 
 ## Phase R7 — Registry extension for production context
 
-Status: not started.
+Status: completed on 2026-06-15. R7 extends the existing lightweight registry context without a database migration: the admin snapshot now projects production context from existing registry rows and controlled `metadata_json`, the admin person editor can update focused work-context fields, and data quality reports flag missing production context that affects routing/support diagnostics.
 
 Tasks:
 
@@ -787,11 +866,26 @@ Acceptance:
 
 - Registry is strong enough for context, not bloated into a generic database builder.
 
+Implementation:
+
+- `server/registry/service.py` projects person `position`, `workplace_label`, `internal_extension`, `manager_person_id`, manager display name and `production_context` from `RegistryPerson.metadata_json`, plus department manager, service owner/criticality/audience and asset responsible-person context from existing registry rows.
+- `server/web_api/registry_handlers.py` accepts and audits controlled admin person metadata updates for `position`, `workplace_label`, `internal_extension` and `manager_person_id`.
+- Data-quality generation now includes `person_missing_department`, `person_missing_location`, `asset_missing_owner_or_responsible` and `department_pending_confirmation` so incomplete profiles/devices/departments surface in the admin registry quality queue.
+- `/app/admin/registry` shows compact person work context in the People tab and edits the controlled production fields through the person edit dialog.
+
+Verification:
+
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registry_registration_snapshot.py server/tests/test_registry_quality_remediation.py server/tests/test_registry_web_api.py -q --tb=short` -> 17 passed.
+- `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` -> 10 passed.
+- `python -m py_compile server\registry\service.py server\web_api\registry_handlers.py` -> passed.
+- `pnpm --dir webapp run build` -> passed with the existing Vite large chunk warning.
+- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r7-20260615/`: mocked admin registry payload verified person context rendering, edit-dialog submit payload, R7 quality issue labels, no body horizontal scroll at 1366/1920, and no console/network errors. Full real-stand admin confirmation remains part of R14 live validation.
+
 ---
 
 ## Phase R8 — Request forms consume profile and registry context
 
-Status: not started.
+Status: completed on 2026-06-15. R8 connects requester request forms to the resolved registry-backed requester context: preview/create recompute context server-side from the authenticated web session, completed `RegistryPerson` and active binding, forms are prefilled from profile/device facts, registry-backed pickers include department/location/device options, ticket custom fields store a stable `requester_context_snapshot` plus routing aliases, and preview explains the resolved requester/form context.
 
 Tasks:
 
@@ -823,11 +917,25 @@ Acceptance:
 - Users do not repeatedly type cabinet/department/phone.
 - Support receives accurate context with every ticket.
 
+Implementation:
+
+- `server/requester/identity_service.py` now builds requester context v1 with safe profile, device, form prefill, routing facts, requester-safe preview projection and stable custom-field aliases.
+- `server/web_api/requester_handlers.py` uses that resolver for preview/create, ignores client-supplied requester context as authority, stores `requester_context_snapshot`, exposes alias fields such as `requester_department_id`, `requester_location_id`, `requester_device_id`, `requester_asset_id` and lets routing policies match resolved context.
+- `webapp/src/pages/requester/index.tsx` merges context prefill into untouched request-form fields, renders registry-backed picker options for department/location/device/service/user picker field types, shows a requester context summary in the form and renders preview context explanation.
+
+Verification:
+
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 23 passed.
+- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx --reporter=dot` -> 14 passed.
+- `python -m py_compile server\requester\identity_service.py server\web_api\requester_handlers.py` -> passed.
+- `pnpm --dir webapp run build` -> passed with the existing Vite large chunk warning.
+- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r8-20260615/`: mocked requester cabinet verified visible requester context, department/device picker prefill, preview context explanation, preview/create payloads with prefilled department/device ids, no body horizontal scroll at 1366/1920, and no console/network errors.
+
 ---
 
 ## Phase R9 — Knowledge access and recommendations from registry context
 
-Status: not started.
+Status: completed on 2026-06-15. R9 uses the existing Registry Visibility Foundation for actor -> person -> effective-audience enforcement across search, suggestions, requester portal, Ask/RAG and support ticket knowledge suggestions, and adds the R8 requester/form/device context as safe pre-submit suggestion signals. Ticket create continues to persist safe `knowledge_attempts` for support visibility.
 
 Tasks:
 
@@ -859,11 +967,27 @@ Acceptance:
 
 - Knowledge is personalized by registry context without leaking restricted content.
 
+R9 completion checkpoint, 2026-06-15:
+
+- `server/knowledge/suggestion_service.py` now builds ordered candidate queries from explicit request text plus safe values in `form_payload`, `requester_context` and `device_metadata`, while skipping raw ids, token/secret/session fields, email/phone and other sensitive identifiers. Each candidate search still passes through `KnowledgeSearchService.search(..., effective_audience=...)`, so Registry audience rules remain the enforcement layer before projection.
+- `/app/requester` sends the server-owned R8 requester context and selected safe device metadata to `/api/knowledge/suggest`, refreshes suggestions when the selected device changes, and stores viewed/not-helpful knowledge attempts in the ticket create payload.
+- Existing `EffectiveIdentityService`, `KnowledgeAccessService`, `KnowledgeAudienceRulesService`, binding-surface aliases and Ask/RAG retrieval tests cover department/location/groups/service audience enforcement and keep `requester_portal` mapped to canonical `requester_pre_submit`.
+
+R9 verification:
+
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_suggestions.py -q --tb=short` -> 7 passed.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_api.py::test_public_suggestions_apply_registry_audience_rules_before_projection server/tests/test_knowledge_api.py::test_public_search_applies_registry_audience_rules_before_projection -q --tb=short` -> 2 passed.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 23 passed.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py::test_public_knowledge_ask_applies_audience_rules_before_vector_retrieval_projection server/tests/test_knowledge_hybrid_retrieval.py::test_hybrid_retrieval_filters_disabled_rag_policy_before_citations server/tests/test_knowledge_hybrid_retrieval.py::test_hybrid_retrieval_requires_ai_rag_binding_surface -q --tb=short` -> 3 passed.
+- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx --reporter=dot` -> 14 passed.
+- `python -m py_compile server\knowledge\suggestion_service.py` -> passed.
+- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r9-20260615/`: the mocked requester cabinet verified requester-context/device-metadata suggestion input, feedback recording, persisted `knowledge_attempts`, prefilled department/device ids, no console/network errors and no horizontal overflow at 1366/1920.
+
 ---
 
 ## Phase R10 — Admin registry and moderation workflow
 
-Status: not started.
+Status: completed on 2026-06-15. R10 admin moderation is covered by the existing registry management center plus an explicit schema-aware requester profile-completion projection in the admin People tab. Admins can review pending device-link claims, person/UI-account identity links, duplicate people, department/location suggestions, device transfer previews, account-session revoke effects and timeline audit without raw JSON workflows.
 
 Tasks:
 
@@ -901,11 +1025,28 @@ Acceptance:
 
 - Admin can manage registry state without raw JSON or unsafe hidden side effects.
 
+R10 completion checkpoint, 2026-06-15:
+
+- `server/registry/service.py` now projects `people[].profile_completion` from the active requester profile schema, using the same completion rules as requester bootstrap. Admin rows expose only status and missing field labels, not requester-only storage internals.
+- `webapp/src/features/admin/registry/registry-people-tab.tsx` renders the profile-completion state in Russian (`Профиль заполнен`, `Нужно заполнить профиль`) and lists missing profile fields compactly for moderation.
+- Existing admin registry workflows already cover pending device-link approval/rejection, transfer-owner preview/commit, UI-user to person links, people merge preview/apply, account-session revoke, policy/quality suggestions and the timeline drawer for `device`, `person`, `binding`, `account_session` and `claim`.
+- Dangerous operations keep the preview/apply pattern with required reason and audited events; transfer, merge, bulk and import previews remain read-only and the UI requires preview before apply.
+
+R10 verification:
+
+- Red backend TDD: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registry_registration_snapshot.py::test_registry_snapshot_projects_requester_profile_completion_status -q --tb=short` initially failed with missing `profile_completion`.
+- Red frontend TDD: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` initially failed because the People tab did not render profile-completion status.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registry_registration_snapshot.py::test_registry_snapshot_projects_requester_profile_completion_status -q --tb=short` -> 1 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registry_registration_snapshot.py server/tests/test_registry_web_api.py server/tests/test_registry_people_admin.py server/tests/test_registry_admin_previews.py server/tests/test_registry_timeline_admin.py server/tests/test_registration_api.py::test_admin_approve_and_reject_registration_claim server/tests/test_registration_api.py::test_other_account_login_request_and_admin_approval_endpoints server/tests/test_registration_api.py::test_admin_lists_and_revokes_device_account_sessions -q --tb=short` -> 23 passed.
+- `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` -> 11 passed.
+- `python -m py_compile server\registry\service.py` -> passed.
+- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r10-20260615/`: mocked `/app/admin/registry` verified People tab profile status/missing fields, no body/document horizontal overflow at 1366/1920, no console errors and no unexpected requests.
+
 ---
 
 ## Phase R11 — Russian localization and user guidance
 
-Status: not started.
+Status: completed on 2026-06-15. R11 localized the remaining web-first registration/requester/admin moderation strings found in the R0-R10 touched surfaces, added a static mojibake/raw-label guard, repaired a corrupted Windows agent account-session message, and captured clean browser evidence for the major Russian-label flows.
 
 Tasks:
 
@@ -946,11 +1087,26 @@ Acceptance:
 
 - A non-technical user understands what to do next on every screen.
 
+R11 completion checkpoint, 2026-06-15:
+
+- `webapp/src/pages/requester/index.tsx` now uses Russian user-facing labels for Knowledge Ask prefill text, requester device agent/version/status/activity strings, requester form/message/feedback/attachment accessible labels, public ticket claim controls and ticket create/preview controls.
+- `webapp/src/features/admin/registry/registry-requests-tab.tsx` maps `active_primary_user_exists` to `уже есть активный основной пользователь` in the approval diff instead of rendering the raw backend code.
+- `pc_agent/ui_gui/main_window.py` repaired a mojibake account-session error string: `Сессия аккаунта недействительна. Войдите снова.`
+- `scripts/test_web_first_registration_localization.py` statically checks touched web-first registration docs/UI/agent files for common mojibake markers and the R11 forbidden normal-UI snippets (`Knowledge Ask`, Latin `agent unknown`, raw `status unknown`, raw blocker code).
+
+R11 verification:
+
+- Red frontend TDD: `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` initially failed on English Knowledge Ask/device/admin blocker expectations.
+- Red static TDD: `python -m pytest scripts/test_web_first_registration_localization.py -q` initially failed on the mojibake agent string and normal-UI forbidden snippets.
+- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 25 passed.
+- `python -m pytest scripts/test_web_first_registration_localization.py -q` -> 2 passed.
+- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r11-20260615/`: profile setup, Knowledge Ask prefill, requester device link, account registration and admin conflict screenshots; report `web-first-registration-r11-localization-report.json` shows no console messages, no unexpected requests, no horizontal overflow and no forbidden raw text.
+
 ---
 
 ## Phase R12 — Compatibility, migration and cleanup
 
-Status: not started.
+Status: completed on 2026-06-15. R12 compatibility is implemented: legacy backend endpoints remain covered by existing registration tests, web self-registration stays controlled by `WEB_SELF_REGISTRATION_ENABLED`, the agent legacy registration UI remains hidden by default behind `AGENT_LEGACY_REGISTRATION_ENABLED`, and requester profile enforcement now has `PROFILE_COMPLETION_REQUIRED=true` by default with policy-aware `profile_completion.blocks` for rollout override.
 
 Tasks:
 
@@ -980,11 +1136,27 @@ Acceptance:
 
 - Migration does not strand current users/devices.
 
+Completion notes:
+
+- `server/config.py` defines `PROFILE_COMPLETION_REQUIRED=true` by default. `server/requester/identity_service.py` keeps incomplete profile `missing_fields` visible but makes `blocks` and requester create feature flags policy-aware. `server/web_api/requester_handlers.py` follows `blocks.ticket_preview` / `blocks.ticket_create`, so disabling the flag makes profile completion advisory without losing setup guidance.
+- Existing old-style pending agent profile claims are visible through both `GET /api/web/requester/bootstrap` (`pending_registration_claims`) and `GET /api/web/admin/registry` (`registration_claims`). The requester UI renders them as Russian pending device-link requests without exposing raw `claim` terminology.
+- Existing confirmed bindings and verified other-account sessions continue through current `AccountSessionService.validate_session()` rules; expired/revoked/base-binding failures return explicit error codes for GUI recovery.
+- `BrowserPairingService.expire_stale_pairings()` and `AccountSessionService.expire_stale_sessions()` add explicit service-level cleanup for expired browser pairings and temporary sessions without deleting audit history.
+- Rollback path is documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`: disable new web accounts with `WEB_SELF_REGISTRATION_ENABLED=false`, make incomplete profiles advisory with `PROFILE_COMPLETION_REQUIRED=false`, and use emergency-only `AGENT_LEGACY_REGISTRATION_ENABLED=1` through normal deploy scripts.
+
+Evidence and verification:
+
+- Red R12 tests failed before implementation: `test_profile_completion_required_flag_can_disable_no_device_create_gate` saw `blocks.ticket_create=true`; requester UI optional-gate test kept create disabled; cleanup tests initially lacked explicit cleanup service methods.
+- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r12-20260615/`: `requester-r12-pending-claim-rollout-1366x768.png`, `requester-r12-create-override-1366x768.png`, and `web-first-registration-r12-compatibility-report.json`. The report shows the pending request visible, profile setup gate not blocking, create enabled after description, no console messages, no unexpected requests, no horizontal overflow and no forbidden raw normal-UI text.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_registration_api.py server/tests/test_account_session_service.py -q --tb=short` -> 76 passed.
+- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 27 passed.
+- `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_main_window_runtime_windows.py -q --tb=short` -> 34 passed.
+
 ---
 
 ## Phase R13 — Automated test matrix
 
-Status: not started.
+Status: completed on 2026-06-15. The automated R13 matrix is covered by focused backend, frontend and agent test groups for all changed contracts.
 
 Required backend tests:
 
@@ -1030,6 +1202,15 @@ Required integration/e2e tests:
 Acceptance:
 
 - No phase is considered done without tests for changed contracts.
+
+Completion notes:
+
+- Backend matrix:
+  - R12 compatibility/core path: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_registration_api.py server/tests/test_account_session_service.py -q --tb=short` -> 76 passed.
+  - Additional R13 backend coverage: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_web_session_api.py server/tests/test_registry_registration_snapshot.py server/tests/test_registry_web_api.py server/tests/test_registry_people_admin.py server/tests/test_registry_admin_previews.py server/tests/test_registry_timeline_admin.py server/tests/test_registry_quality_remediation.py server/tests/test_registry_registration_policy.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_api.py server/tests/test_knowledge_ask.py server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_ticket_account_access.py server/tests/test_ticket_registration_enrichment.py -q --tb=short` -> 113 passed, 26 existing aiohttp `NotAppKeyWarning` warnings in web-session test setup.
+- Frontend matrix: `pnpm --dir webapp exec vitest run src/features/auth/register-page.test.tsx src/pages/requester/index.test.tsx src/pages/device-pairing/device-pairing-page.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 38 passed.
+- Agent matrix: `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_main_window_runtime_windows.py pc_agent/tests/test_account_session_manager.py -q --tb=short` -> 47 passed.
+- Additional guards from R12/R13: docs/catalog/localization guard `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py scripts/test_web_first_registration_localization.py -q` -> 16 passed; `pnpm --dir webapp run build` passed with the existing large chunk warning.
 
 ---
 
@@ -1158,16 +1339,16 @@ Do not mark this refactor complete until all are true:
 
 ---
 
-## Open decisions before implementation
+## Decisions locked in R1 before implementation
 
-1. Should self-registration be always enabled or controlled by `WEB_SELF_REGISTRATION_ENABLED`?
-2. Should profile completion block all requester pages or only create-ticket/knowledge/actions?
-3. Should device link claims require admin approval by default, or auto-approve first device for a new profile?
-4. Should department/location creation by users become pending suggestions or be disallowed entirely?
-5. Should old `/app/device/register` remain as a compatibility route or redirect into `/app/requester/devices/link`?
-6. Should emergency ticket without completed profile be allowed, and what minimum context is required?
-7. Which profile fields are mandatory for the first production rollout?
-8. Which registry entities are required immediately: printers/MFU/services/access groups, or only people/departments/locations/devices?
+1. Self-registration is controlled by `WEB_SELF_REGISTRATION_ENABLED`; production defaults fail-closed.
+2. Profile completion blocks normal requester actions, not every page. Setup, profile, device-link status, existing consents, logout and policy-controlled emergency ticket paths stay available.
+3. Device-link claims require admin approval by default. First-device auto-approval is a later explicit policy option, not the default.
+4. Department/location values must come from registry pickers in the first rollout. Free-text creation is disallowed in normal user UI; pending suggestions are a later audited policy option.
+5. `/app/device/register` remains a compatibility route only when a device-link id exists. Missing id shows safe Russian guidance to open the flow from the agent or enter the code at `/app/device/pair`.
+6. Emergency ticket without completed profile is allowed only by policy, with authenticated account, problem description, contact, and an explicit incomplete-profile marker.
+7. Mandatory first-rollout profile fields: full name, department, location, phone or internal extension.
+8. Required first-rollout registry entities: people, UI-login identities, departments, locations, devices and device-user bindings. Services and access/audience groups are consumed when present but are not mandatory for initial profile completion.
 
 ---
 

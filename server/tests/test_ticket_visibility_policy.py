@@ -144,3 +144,48 @@ def test_requester_visibility_uses_ticket_payload_allowlist():
         "custom_fields",
     ):
         assert forbidden not in requester_payload
+
+
+def test_requester_visibility_keeps_safe_request_form_custom_fields_without_internal_snapshot():
+    from tickets.visibility_policy import apply_ticket_visibility_payload
+
+    ticket = SimpleNamespace(status="queued", requester_status="accepted", custom_fields={})
+    payload = {
+        "ticket_id": "ticket-1",
+        "ticket_code": "T-1",
+        "title": "Website issue",
+        "status": "queued",
+        "custom_fields": {
+            "request_form": {
+                "source": "legacy_pack",
+                "pack_key": "request_forms",
+                "pack_version": "1.0",
+                "form_key": "website",
+                "form_title": "Проблема с сайтом",
+            },
+            "request_form_key": "website",
+            "request_form_title": "Проблема с сайтом",
+            "request_form_data": {"impact_scope": "department"},
+            "request_form_summary": [{"key": "impact_scope", "label": "Impact", "value": "department"}],
+            "request_template": {"computed": {"queue_id": 1}},
+            "priority_decision": {"effective_priority": "P1"},
+            "routing_decision": {"queue_id": 1},
+            "public_access": {"code_hash": "secret-hash"},
+        },
+    }
+
+    requester_payload = apply_ticket_visibility_payload(ticket, payload, visibility="requester")
+
+    assert requester_payload["custom_fields"] == {
+        "request_form": {
+            "source": "legacy_pack",
+            "pack_key": "request_forms",
+            "pack_version": "1.0",
+            "form_key": "website",
+            "form_title": "Проблема с сайтом",
+        },
+        "request_form_key": "website",
+        "request_form_title": "Проблема с сайтом",
+        "request_form_data": {"impact_scope": "department"},
+        "request_form_summary": [{"key": "impact_scope", "label": "Impact", "value": "department"}],
+    }

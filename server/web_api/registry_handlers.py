@@ -18,6 +18,8 @@ from registry.effective_identity_service import EffectiveIdentityService
 from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
+from registry.profile_schema_service import ProfileSchemaValidationError, RequesterProfileSchemaService
+from requester.identity_service import RequesterIdentityResolver
 
 import uuid
 
@@ -50,6 +52,18 @@ async def _device_exists(session, device_id: str) -> bool:
 
 def _forbidden(message: str = "forbidden") -> web.Response:
     return web.json_response({"status": "error", "error": message, "error_code": "FORBIDDEN"}, status=403)
+
+
+def _requester_profile_incomplete_response(completion: dict) -> web.Response:
+    return web.json_response(
+        {
+            "status": "error",
+            "error": "Заполните профиль, чтобы продолжить работу в кабинете пользователя.",
+            "error_code": "REQUESTER_PROFILE_INCOMPLETE",
+            "details": completion,
+        },
+        status=403,
+    )
 
 
 def _browser_pairing_next_url(payload: dict) -> str:
@@ -176,6 +190,57 @@ async def handle_web_admin_registry(_request: web.Request) -> web.Response:
             "data_quality": [],
             "suggestions": [],
         }
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_profile_schema(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    async with get_session() as session:
+        service = RequesterProfileSchemaService(session)
+        if request.method == "GET":
+            return _success({"schema": await service.get_schema()})
+        data = await request.json() if request.can_read_body else {}
+        if not isinstance(data, dict):
+            data = {}
+        try:
+            payload = await service.save_schema(data, actor_id=auth_context.actor_id)
+            await session.commit()
+        except ProfileSchemaValidationError as exc:
+            await session.rollback()
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": str(exc),
+                    "error_code": "VALIDATION_ERROR",
+                    "details": exc.details,
+                },
+                status=400,
+            )
+        except ValueError as exc:
+            await session.rollback()
+            return _registry_admin_error(exc)
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_profile_schema_preview(request: web.Request) -> web.Response:
+    data = await request.json() if request.can_read_body else {}
+    if not isinstance(data, dict):
+        data = {}
+    async with get_session() as session:
+        try:
+            payload = await RequesterProfileSchemaService(session).preview_schema(data)
+        except ProfileSchemaValidationError as exc:
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": str(exc),
+                    "error_code": "VALIDATION_ERROR",
+                    "details": exc.details,
+                },
+                status=400,
+            )
     return _success(payload)
 
 
@@ -539,6 +604,12 @@ async def handle_web_registry_browser_pairing_registration_confirm(request: web.
     if not isinstance(data, dict):
         data = {}
     async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        profile_schema = await RequesterProfileSchemaService(session).get_schema()
+        person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
+        if not completion["complete"]:
+            return _requester_profile_incomplete_response(completion)
         service = BrowserPairingService(session)
         try:
             payload = await service.confirm_registration_pairing_for_web_user(
@@ -1240,7 +1311,19 @@ async def handle_web_admin_registry_people_create(request: web.Request) -> web.R
             location_id=_text(data.get("location_id"), max_length=36),
             source="manual",
             status=_text(data.get("status"), max_length=40) or "active",
-            metadata_json={"reason": _text(data.get("reason"), max_length=1000)},
+            metadata_json={
+                "reason": _text(data.get("reason"), max_length=1000),
+                **{
+                    field: value
+                    for field, value in {
+                        "position": _text(data.get("position"), max_length=200),
+                        "workplace_label": _text(data.get("workplace_label"), max_length=200),
+                        "internal_extension": _text(data.get("internal_extension"), max_length=50),
+                        "manager_person_id": _text(data.get("manager_person_id"), max_length=36),
+                    }.items()
+                    if value
+                },
+            },
         )
         session.add(person)
         await session.flush()
@@ -1261,6 +1344,10 @@ async def handle_web_admin_registry_people_create(request: web.Request) -> web.R
                     "phone": person.phone,
                     "department_id": person.department_id,
                     "location_id": person.location_id,
+                    "position": (person.metadata_json or {}).get("position"),
+                    "workplace_label": (person.metadata_json or {}).get("workplace_label"),
+                    "internal_extension": (person.metadata_json or {}).get("internal_extension"),
+                    "manager_person_id": (person.metadata_json or {}).get("manager_person_id"),
                     "status": person.status,
                     "source": person.source,
                 },
@@ -1288,6 +1375,10 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
             "email": person.email,
             "department_id": person.department_id,
             "location_id": person.location_id,
+            "position": (person.metadata_json or {}).get("position"),
+            "workplace_label": (person.metadata_json or {}).get("workplace_label"),
+            "internal_extension": (person.metadata_json or {}).get("internal_extension"),
+            "manager_person_id": (person.metadata_json or {}).get("manager_person_id"),
             "status": person.status,
         }
         for field, max_length in {
@@ -1301,6 +1392,21 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
         }.items():
             if field in data:
                 setattr(person, field, _text(data.get(field), max_length=max_length))
+        metadata = dict(person.metadata_json or {})
+        for field, max_length in {
+            "position": 200,
+            "workplace_label": 200,
+            "internal_extension": 50,
+            "manager_person_id": 36,
+        }.items():
+            if field not in data:
+                continue
+            value = _text(data.get(field), max_length=max_length)
+            if value:
+                metadata[field] = value
+            else:
+                metadata.pop(field, None)
+        person.metadata_json = metadata
         if not person.display_name:
             return web.json_response({"status": "error", "error": "display_name is required", "error_code": "VALIDATION_ERROR"}, status=400)
         revoked_bindings: list[dict[str, object]] = []
@@ -1344,6 +1450,10 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
                     "email": person.email,
                     "department_id": person.department_id,
                     "location_id": person.location_id,
+                    "position": (person.metadata_json or {}).get("position"),
+                    "workplace_label": (person.metadata_json or {}).get("workplace_label"),
+                    "internal_extension": (person.metadata_json or {}).get("internal_extension"),
+                    "manager_person_id": (person.metadata_json or {}).get("manager_person_id"),
                     "status": person.status,
                 },
                 "revoked_binding_ids": [row.get("binding_id") for row in revoked_bindings],
@@ -1598,7 +1708,11 @@ async def handle_web_admin_registry_person_identity_delete(request: web.Request)
 def _registry_admin_error(exc: Exception) -> web.Response:
     if isinstance(exc, LookupError):
         return web.json_response({"status": "error", "error": str(exc), "error_code": "NOT_FOUND"}, status=404)
-    return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    payload = {"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}
+    details = getattr(exc, "details", None)
+    if isinstance(details, dict):
+        payload["details"] = details
+    return web.json_response(payload, status=400)
 
 
 @require_auth("admin")

@@ -39,6 +39,40 @@ function purposeText(purpose: DevicePairingPurpose) {
   };
 }
 
+const DEVICE_LINK_STATUS_LABELS: Record<string, string> = {
+  canceled: "Отменено",
+  confirmed: "Подтверждено",
+  expired: "Срок действия истёк",
+  pending: "Ожидает подтверждения",
+  rejected: "Отклонено",
+};
+
+const REGISTRATION_STATUS_LABELS: Record<string, string> = {
+  active: "Устройство привязано",
+  admin_confirmed: "Устройство привязано",
+  approved: "Устройство привязано",
+  conflict: "Требуется проверка администратора",
+  pending_admin_review: "Ожидает проверки администратора",
+  pending_user_confirmation: "Ожидает подтверждения",
+  pending_verification: "Ожидает проверки",
+  rejected: "Отклонено администратором",
+  self_reported: "Ожидает проверки",
+  user_confirmed: "Ожидает проверки администратора",
+};
+
+function productStatusLabel(status: string | null | undefined, labels: Record<string, string>) {
+  const normalized = status?.trim().toLowerCase();
+  return normalized ? labels[normalized] ?? "Статус уточняется" : "Статус не указан";
+}
+
+function deviceLinkStatusLabel(status: string | null | undefined) {
+  return productStatusLabel(status, DEVICE_LINK_STATUS_LABELS);
+}
+
+function registrationStatusLabel(status: string | null | undefined) {
+  return productStatusLabel(status, REGISTRATION_STATUS_LABELS);
+}
+
 export function DevicePairCodePage() {
   const navigate = useNavigate();
   const [pairingCode, setPairingCode] = useState("");
@@ -119,6 +153,7 @@ export function DevicePairCodePage() {
 }
 
 export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const pairingId = searchParams.get("pairing_id") ?? "";
   const [pairing, setPairing] = useState<DevicePairingPayload | null>(null);
@@ -140,7 +175,11 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
     void (async () => {
       try {
         if (!pairingId) {
-          throw new DevicePairingApiError("Не указан pairing_id", 400, "PAIRING_ID_REQUIRED");
+          throw new DevicePairingApiError(
+            "Откройте эту страницу из агента или введите код подключения.",
+            400,
+            "PAIRING_ID_REQUIRED",
+          );
         }
         const [payload, options] = await Promise.all([
           fetchDevicePairing(pairingId),
@@ -197,6 +236,10 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
       setConfirmed(nextPayload);
       setPairing(nextPayload);
     } catch (err) {
+      if (err instanceof DevicePairingApiError && err.errorCode === "REQUESTER_PROFILE_INCOMPLETE") {
+        navigate("/app/requester/profile/setup", { replace: true });
+        return;
+      }
       setError(err instanceof Error ? err.message : "Не удалось подтвердить устройство");
     } finally {
       setIsConfirming(false);
@@ -246,7 +289,9 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
                 </div>
                 <div className="rounded-[0.5rem] bg-surface-subtle px-4 py-3">
                   <dt className="text-xs font-medium text-slate-500">Статус</dt>
-                  <dd className="mt-1 text-sm font-semibold text-slate-900">{confirmed?.status ?? pairing?.status}</dd>
+                  <dd className="mt-1 text-sm font-semibold text-slate-900">
+                    {deviceLinkStatusLabel(confirmed?.status ?? pairing?.status)}
+                  </dd>
                 </div>
               </dl>
 
@@ -256,7 +301,7 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
                   <div>
                     <p className="font-semibold">{copy.done}</p>
                     {confirmed?.registration?.status ? (
-                      <p className="mt-1 text-sm">{confirmed.registration.status}</p>
+                      <p className="mt-1 text-sm">{registrationStatusLabel(confirmed.registration.status)}</p>
                     ) : (
                       <p className="mt-1 text-sm">Вернитесь в локальный агент, он получит результат автоматически.</p>
                     )}

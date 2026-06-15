@@ -12,6 +12,7 @@ export type RegistryTabKey =
   | "departments"
   | "access_groups"
   | "audience_groups"
+  | "profile_schema"
   | "policies";
 
 export type RegistrySelection =
@@ -179,12 +180,16 @@ export function actorRoleLabel(value: string | null | undefined): string {
 const QUALITY_ISSUE_LABELS: Record<string, string> = {
   asset_missing_location: "ПК без локации",
   asset_missing_confirmed_user: "ПК без подтвержденного пользователя",
+  asset_missing_owner_or_responsible: "ПК без владельца или ответственного",
   registration_pending_confirmation: "Регистрация ожидает подтверждения",
   registration_conflict: "Конфликт регистрации",
   binding_stale: "Привязка регистрации устарела",
   binding_inactive_person: "Активная привязка ведет к неактивному пользователю",
   presence_user_mismatch: "Пользователь ОС отличается от активной привязки",
   location_pending_confirmation: "Локация ожидает подтверждения",
+  department_pending_confirmation: "Подразделение ожидает подтверждения",
+  person_missing_department: "У пользователя не указано подразделение",
+  person_missing_location: "У пользователя не указана локация",
   person_archived_department: "Пользователь привязан к архивному подразделению",
   person_archived_location: "Пользователь привязан к архивной локации",
   ui_user_unlinked_registry_person: "UI-пользователь не связан с персоной реестра",

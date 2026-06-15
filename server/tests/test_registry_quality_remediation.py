@@ -46,6 +46,80 @@ def _device(device_id: str, *, hostname: str = "quality-pc") -> Device:
 
 
 @pytest.mark.asyncio
+async def test_registry_quality_reports_r7_missing_production_context_gaps(test_client, test_engine):
+    device_id = str(uuid.uuid4())
+    asset_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    department_id = str(uuid.uuid4())
+    binding_id = str(uuid.uuid4())
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(_device(device_id, hostname="quality-r7-context"))
+        session.add(
+            RegistryAsset(
+                asset_id=asset_id,
+                asset_type="pc",
+                name="quality-r7-context",
+                hostname="quality-r7-context",
+                device_id=device_id,
+                source="manual",
+                status="active",
+                discovery_payload={},
+            )
+        )
+        session.add(RegistryPerson(person_id=person_id, display_name="R7 Missing Context", source="manual", status="active"))
+        session.add(
+            RegistryDepartment(
+                department_id=department_id,
+                code=f"quality_r7_pending_{uuid.uuid4().hex[:8]}",
+                name="Quality R7 Pending Department",
+                source="manual",
+                status="pending",
+            )
+        )
+        await session.flush()
+        session.add(
+            DeviceUserBinding(
+                binding_id=binding_id,
+                device_id=device_id,
+                person_id=person_id,
+                relationship_type="shared_user",
+                status="active",
+                source="manual",
+                confidence=1,
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get("/api/web/admin/registry", headers=ADMIN_HEADERS)
+    assert response.status == 200
+    issues = (await response.json())["data"]["data_quality"]
+
+    person_department_issue = next(
+        item for item in issues
+        if item["kind"] == "person_missing_department" and item["object_id"] == person_id
+    )
+    person_location_issue = next(
+        item for item in issues
+        if item["kind"] == "person_missing_location" and item["object_id"] == person_id
+    )
+    device_owner_issue = next(
+        item for item in issues
+        if item["kind"] == "asset_missing_owner_or_responsible" and item["object_id"] == asset_id
+    )
+    department_issue = next(
+        item for item in issues
+        if item["kind"] == "department_pending_confirmation" and item["object_id"] == department_id
+    )
+
+    assert person_department_issue["issue_key"] == f"person_missing_department:person:{person_id}"
+    assert person_location_issue["issue_key"] == f"person_missing_location:person:{person_id}"
+    assert device_owner_issue["issue_key"] == f"asset_missing_owner_or_responsible:asset:{asset_id}"
+    assert device_owner_issue["device_id"] == device_id
+    assert department_issue["issue_key"] == f"department_pending_confirmation:department:{department_id}"
+
+
+@pytest.mark.asyncio
 async def test_registry_quality_issue_ignore_hides_issue_and_writes_audit(test_client, test_engine):
     device_id = str(uuid.uuid4())
     asset_id = str(uuid.uuid4())

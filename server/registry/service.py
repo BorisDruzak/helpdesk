@@ -21,11 +21,18 @@ from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import normalize_identifier
 from registry.account_session_service import AccountSessionService
 from registry.audience_group_service import RegistryAudienceService
+from registry.profile_schema_service import RequesterProfileSchemaService
 
 
 def _clean(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _metadata_value(metadata: Any, key: str) -> str | None:
+    if not isinstance(metadata, dict):
+        return None
+    return _clean(metadata.get(key))
 
 
 def _presence_identity_match(current_user: str | None, identities: list[RegistryPersonIdentity]) -> bool | None:
@@ -289,6 +296,11 @@ class RegistrySnapshotService:
             for binding in bindings
             if binding.status == "active" and binding.relationship_type == "primary_user"
         }
+        active_owner_by_device = {
+            binding.device_id: binding
+            for binding in bindings
+            if binding.status == "active" and binding.relationship_type == "owner"
+        }
         active_shared_by_device: dict[str, list[Any]] = {}
         active_responsible_by_device: dict[str, Any] = {}
         active_any_by_device: dict[str, Any] = {}
@@ -353,6 +365,11 @@ class RegistrySnapshotService:
         data_quality = []
         for asset in assets:
             active_binding = active_any_by_device.get(asset.device_id or "")
+            active_owner_binding = (
+                active_primary_by_device.get(asset.device_id or "")
+                or active_owner_by_device.get(asset.device_id or "")
+            )
+            active_responsible_binding = active_responsible_by_device.get(asset.device_id or "")
             pending_claims = pending_by_device.get(asset.device_id or "", [])
             if asset.asset_type == "pc" and not asset.location_id:
                 data_quality.append({
@@ -373,6 +390,17 @@ class RegistrySnapshotService:
                     "object_id": asset.asset_id,
                     "device_id": asset.device_id,
                     "title": "PC without confirmed user",
+                    "description": asset.name,
+                    "details": asset.name,
+                })
+            if asset.asset_type == "pc" and not (active_owner_binding or active_responsible_binding or asset.assigned_person_id):
+                data_quality.append({
+                    "kind": "asset_missing_owner_or_responsible",
+                    "severity": "warning",
+                    "object_type": "asset",
+                    "object_id": asset.asset_id,
+                    "device_id": asset.device_id,
+                    "title": "PC without owner or responsible person",
                     "description": asset.name,
                     "details": asset.name,
                 })
@@ -459,9 +487,43 @@ class RegistrySnapshotService:
                     "description": location.display_name,
                     "details": location.display_name,
                 })
+        for department in departments:
+            if department.status == "pending":
+                data_quality.append({
+                    "kind": "department_pending_confirmation",
+                    "severity": "info",
+                    "object_type": "department",
+                    "object_id": department.department_id,
+                    "department_id": department.department_id,
+                    "title": "Department pending confirmation",
+                    "description": department.name,
+                    "details": department.name,
+                })
         for person in people:
             if not _is_active_person(person):
                 continue
+            if not person.department_id:
+                data_quality.append({
+                    "kind": "person_missing_department",
+                    "severity": "warning",
+                    "object_type": "person",
+                    "object_id": person.person_id,
+                    "person_id": person.person_id,
+                    "title": "Person without department",
+                    "description": person.display_name,
+                    "details": person.display_name,
+                })
+            if not person.location_id:
+                data_quality.append({
+                    "kind": "person_missing_location",
+                    "severity": "warning",
+                    "object_type": "person",
+                    "object_id": person.person_id,
+                    "person_id": person.person_id,
+                    "title": "Person without location",
+                    "description": person.display_name,
+                    "details": person.display_name,
+                })
             if person.department_id:
                 department = departments_by_id.get(person.department_id)
                 if department is not None and department.status == "archived":
@@ -688,6 +750,115 @@ class RegistrySnapshotService:
                     "confidence": 0.95,
                 })
 
+        profile_schema_service = RequesterProfileSchemaService(self.session)
+        profile_schema = await profile_schema_service.get_schema()
+
+        def person_profile_completion_payload(person: Any) -> dict[str, Any]:
+            missing = profile_schema_service.completion_missing_fields(person, profile_schema)
+            required_fields = [
+                {"key": field["key"], "label": field["label"]}
+                for field in profile_schema.get("fields", [])
+                if isinstance(field, dict) and field.get("visible", True) and field.get("required")
+            ]
+            complete = not missing
+            return {
+                "complete": complete,
+                "status": "complete" if complete else "required",
+                "required_fields": required_fields,
+                "missing_fields": missing,
+                "setup_path": "/app/requester/profile/setup",
+                "blocks": {
+                    "ticket_create": not complete,
+                    "ticket_preview": not complete,
+                    "knowledge_requester_actions": not complete,
+                    "device_binding_confirmation": not complete,
+                },
+            }
+
+        def person_context_payload(person: Any) -> dict[str, Any]:
+            metadata = person.metadata_json if isinstance(person.metadata_json, dict) else {}
+            manager_person_id = _metadata_value(metadata, "manager_person_id") or _metadata_value(metadata, "manager_id")
+            manager = people_by_id.get(manager_person_id or "")
+            department = departments_by_id.get(person.department_id or "")
+            location = locations_by_id.get(person.location_id or "")
+            return {
+                "position": _metadata_value(metadata, "position"),
+                "workplace_label": _metadata_value(metadata, "workplace_label"),
+                "internal_extension": _metadata_value(metadata, "internal_extension") or _metadata_value(metadata, "extension"),
+                "manager_person_id": manager_person_id,
+                "manager_name": manager.display_name if manager else None,
+                "department_id": person.department_id,
+                "department_name": department.name if department else None,
+                "location_id": person.location_id,
+                "location_name": location.display_name if location else None,
+            }
+
+        def department_manager_name(department: Any) -> str | None:
+            manager_person_id = _metadata_value(department.metadata_json, "manager_person_id")
+            manager = people_by_id.get(manager_person_id or "")
+            return manager.display_name if manager else None
+
+        def asset_responsible_binding(asset: Any) -> Any | None:
+            return active_responsible_by_device.get(asset.device_id or "")
+
+        def service_payload(service: Any) -> dict[str, Any]:
+            metadata = service.metadata_json if isinstance(service.metadata_json, dict) else {}
+            owner_person_id = _metadata_value(metadata, "owner_person_id")
+            owner = people_by_id.get(owner_person_id or "")
+            return {
+                "id": service.service_id,
+                "service_id": service.service_id,
+                "code": service.code,
+                "name": service.name,
+                "owner_queue_id": service.owner_queue_id,
+                "owner_person_id": owner_person_id,
+                "owner_person_name": owner.display_name if owner else None,
+                "support_queue": str(service.owner_queue_id) if service.owner_queue_id else None,
+                "criticality": _metadata_value(metadata, "criticality"),
+                "audience": _metadata_value(metadata, "audience"),
+                "audience_group_id": _metadata_value(metadata, "audience_group_id"),
+                "vendor_id": service.vendor_id,
+                "source": service.source,
+                "status": service.status,
+                "updated_at": service.updated_at.isoformat() if service.updated_at else None,
+            }
+
+        def person_payload(person: Any) -> dict[str, Any]:
+            context = person_context_payload(person)
+            return {
+                "id": person.person_id,
+                "person_id": person.person_id,
+                "display_name": person.display_name,
+                "full_name": person.full_name,
+                "phone": person.phone,
+                "email": person.email,
+                "position": context["position"],
+                "workplace_label": context["workplace_label"],
+                "internal_extension": context["internal_extension"],
+                "manager_person_id": context["manager_person_id"],
+                "manager_name": context["manager_name"],
+                "production_context": context,
+                "profile_completion": person_profile_completion_payload(person),
+                "status": person.status,
+                "source": person.source,
+                "department_id": person.department_id,
+                "department_name": context["department_name"],
+                "location_id": person.location_id,
+                "location_display_name": context["location_name"],
+                "location_name": context["location_name"],
+                "login": next((identity.identifier for identity in identities_by_person.get(person.person_id, []) if identity.provider in {"windows_login", "ui_login", "ad"}), None),
+                "identities": [identity_payload(identity) for identity in identities_by_person.get(person.person_id, [])],
+                "identity_count": len(identities_by_person.get(person.person_id, [])),
+                "verified_identity_count": sum(1 for identity in identities_by_person.get(person.person_id, []) if identity.verified),
+                "primary_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "primary_user"),
+                "shared_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "shared_user"),
+                "responsible_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "responsible"),
+                "active_ticket_count": 0,
+                "active_session_count": len(active_sessions_by_person.get(person.person_id, [])),
+                "last_seen_at": person.last_seen_at.isoformat() if person.last_seen_at else None,
+                "updated_at": person.updated_at.isoformat() if person.updated_at else None,
+            }
+
         def claim_payload(claim: Any) -> dict[str, Any]:
             person = people_by_id.get(claim.person_id or "")
             return {
@@ -861,6 +1032,12 @@ class RegistrySnapshotService:
                         and (active_primary_by_device.get(asset.device_id or "") or active_any_by_device.get(asset.device_id or "")).person_id in people_by_id
                     )
                     else None,
+                    "responsible_person_id": asset_responsible_binding(asset).person_id
+                    if asset_responsible_binding(asset)
+                    else None,
+                    "responsible_person_name": people_by_id.get(asset_responsible_binding(asset).person_id).display_name
+                    if asset_responsible_binding(asset) and asset_responsible_binding(asset).person_id in people_by_id
+                    else None,
                     "pending_claim_count": len(pending_by_device.get(asset.device_id or "", [])),
                     "last_claim_at": max(
                         (claim.submitted_at for claim in pending_by_device.get(asset.device_id or "", []) if claim.submitted_at),
@@ -906,41 +1083,7 @@ class RegistrySnapshotService:
                 }
                 for asset in assets
             ],
-            "people": [
-                {
-                    "id": person.person_id,
-                    "person_id": person.person_id,
-                    "display_name": person.display_name,
-                    "full_name": person.full_name,
-                    "phone": person.phone,
-                    "email": person.email,
-                    "status": person.status,
-                    "source": person.source,
-                    "department_id": person.department_id,
-                    "department_name": departments_by_id.get(person.department_id or "").name
-                    if person.department_id in departments_by_id
-                    else None,
-                    "location_id": person.location_id,
-                    "location_display_name": locations_by_id.get(person.location_id or "").display_name
-                    if person.location_id in locations_by_id
-                    else None,
-                    "location_name": locations_by_id.get(person.location_id or "").display_name
-                    if person.location_id in locations_by_id
-                    else None,
-                    "login": next((identity.identifier for identity in identities_by_person.get(person.person_id, []) if identity.provider in {"windows_login", "ui_login", "ad"}), None),
-                    "identities": [identity_payload(identity) for identity in identities_by_person.get(person.person_id, [])],
-                    "identity_count": len(identities_by_person.get(person.person_id, [])),
-                    "verified_identity_count": sum(1 for identity in identities_by_person.get(person.person_id, []) if identity.verified),
-                    "primary_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "primary_user"),
-                    "shared_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "shared_user"),
-                    "responsible_device_count": sum(1 for row in bindings_by_person.get(person.person_id, []) if row.status == "active" and row.relationship_type == "responsible"),
-                    "active_ticket_count": 0,
-                    "active_session_count": len(active_sessions_by_person.get(person.person_id, [])),
-                    "last_seen_at": person.last_seen_at.isoformat() if person.last_seen_at else None,
-                    "updated_at": person.updated_at.isoformat() if person.updated_at else None,
-                }
-                for person in people
-            ],
+            "people": [person_payload(person) for person in people],
             "locations": [
                 {
                     "id": location.location_id,
@@ -969,6 +1112,7 @@ class RegistrySnapshotService:
                     "source": department.source,
                     "parent_id": department.parent_department_id,
                     "manager_person_id": (department.metadata_json or {}).get("manager_person_id"),
+                    "manager_name": department_manager_name(department),
                     "support_queue": (department.metadata_json or {}).get("support_queue"),
                     "notes": (department.metadata_json or {}).get("notes"),
                     "metadata_json": department.metadata_json or {},
@@ -978,22 +1122,7 @@ class RegistrySnapshotService:
                 }
                 for department in departments
             ],
-            "services": [
-                {
-                    "id": service.service_id,
-                    "service_id": service.service_id,
-                    "code": service.code,
-                    "name": service.name,
-                    "owner_queue_id": service.owner_queue_id,
-                    "owner_person_id": None,
-                    "support_queue": str(service.owner_queue_id) if service.owner_queue_id else None,
-                    "vendor_id": service.vendor_id,
-                    "source": service.source,
-                    "status": service.status,
-                    "updated_at": service.updated_at.isoformat() if service.updated_at else None,
-                }
-                for service in services
-            ],
+            "services": [service_payload(service) for service in services],
             "vendors": [
                 {
                     "id": vendor.vendor_id,

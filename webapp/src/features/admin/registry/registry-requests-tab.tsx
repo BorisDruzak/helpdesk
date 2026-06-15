@@ -67,6 +67,15 @@ function labelLocation(registry: RegistryApprovalContext, locationId: string | n
   return location?.display_name ?? locationId;
 }
 
+function conflictReasonLabel(reason?: string | null): string {
+  const labels: Record<string, string> = {
+    active_primary_user_exists: "уже есть активный основной пользователь",
+    device_not_found: "устройство не найдено",
+    person_not_found: "пользователь не найден",
+  };
+  return labels[reason || ""] || "требуется проверка администратора";
+}
+
 function ApprovalDiff({ claim, registry }: { claim: AdminRegistrationClaim; registry: RegistryApprovalContext }) {
   const profile = claim.profile_snapshot;
   const currentBinding = findCurrentBinding(claim, registry);
@@ -90,7 +99,7 @@ function ApprovalDiff({ claim, registry }: { claim: AdminRegistrationClaim; regi
       <p>Локация: {labelLocation(registry, claimedLocationId)}</p>
       <p>Идентичность: {identity}</p>
       <p>Тип привязки: {relationshipTypeLabel(claim.relationship_type)}</p>
-      {claim.conflict_reason ? <p>Блокер: {claim.conflict_reason}</p> : null}
+      {claim.conflict_reason ? <p>Блокер: {conflictReasonLabel(claim.conflict_reason)}</p> : null}
     </div>
   );
 }

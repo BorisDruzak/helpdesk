@@ -27,7 +27,7 @@ from .remote_assist_dialog import RemoteAssistConsentDialog
 from .user_consent_dialog import UserConsentPromptDialog
 from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
 from .accessibility import account_description, connection_description, normalize_connection_state, set_uia_metadata
-from .account_gate import AccountGateWidget
+from .account_gate import AccountGateWidget, legacy_agent_registration_enabled
 from .dynamic_form_widget import DynamicFormWidget
 from . import theme
 from .window_chrome import CustomTitleBar, FramelessResizeHandler
@@ -293,7 +293,10 @@ class MainWindow(QMainWindow):
         self.account_gate_page.refreshRequested.connect(self._refresh_account_state)
         self.account_gate_page.settingsRequested.connect(self._show_settings_dialog)
         self.account_gate_page.checkOtherLoginRequestRequested.connect(self._on_check_other_login_request)
-        self.registration_entry_page = self._build_registration_entry_page()
+        if legacy_agent_registration_enabled():
+            self.registration_entry_page = self._build_registration_entry_page()
+        else:
+            self.registration_entry_page = self._build_legacy_registration_disabled_page()
         self.account_page = self._build_account_page()
 
         self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1398,6 +1401,46 @@ class MainWindow(QMainWindow):
             logger.debug(f"[account] unhandled account-session error: {code}")
         return False
 
+    def _build_legacy_registration_disabled_page(self) -> QWidget:
+        page = QFrame()
+        page.setObjectName("MainPanel")
+        outer = QVBoxLayout(page)
+        outer.setContentsMargins(32, 32, 32, 32)
+        outer.setSpacing(12)
+
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        title = QLabel("Привязка устройства через браузер")
+        title.setObjectName("MainTitle")
+        header_row.addWidget(title, 1)
+        back_btn = QPushButton("Назад")
+        back_btn.setObjectName("SecondaryButton")
+        back_btn.clicked.connect(self._show_account_gate_entry)
+        header_row.addWidget(back_btn, 0)
+        outer.addLayout(header_row)
+
+        subtitle = QLabel(
+            "Профиль заполняется в веб-кабинете. Агент создаёт только ссылку или код для привязки этого устройства."
+        )
+        subtitle.setObjectName("MainSubtitle")
+        subtitle.setWordWrap(True)
+        outer.addWidget(subtitle)
+
+        actions = QHBoxLayout()
+        browser_btn = QPushButton("Привязать через браузер")
+        browser_btn.setObjectName("PrimaryButton")
+        browser_btn.clicked.connect(self._on_browser_register_requested)
+        actions.addWidget(browser_btn)
+        refresh_btn = QPushButton("Проверить статус")
+        refresh_btn.setObjectName("SecondaryButton")
+        refresh_btn.clicked.connect(self._refresh_account_state)
+        actions.addWidget(refresh_btn)
+        actions.addStretch(1)
+        outer.addLayout(actions)
+        outer.addStretch(1)
+        page.setStyleSheet(theme.main_window_stylesheet())
+        return page
+
     def _build_registration_entry_page(self) -> QWidget:
         page = QFrame()
         page.setObjectName("MainPanel")
@@ -1492,7 +1535,7 @@ class MainWindow(QMainWindow):
             self.account_gate_page.render(
                 self._account_state,
                 local_session=self._account_session,
-                error="РЎРµСЃСЃРёСЏ Р°РєРєР°СѓРЅС‚Р° РЅРµРґРµР№СЃС‚РІРёС‚РµР»СЊРЅР°. Р’РѕР№РґРёС‚Рµ СЃРЅРѕРІР°.",
+                error="Сессия аккаунта недействительна. Войдите снова.",
             )
             self._render_profile_status()
             self._select_sidebar_view("account_gate", expand=True)
@@ -1568,6 +1611,7 @@ class MainWindow(QMainWindow):
             return
         pairing_id = str(payload.get("pairing_id") or "").strip() if isinstance(payload, dict) else ""
         browser_url = self._browser_pairing_url(str(payload.get("browser_url") or "")) if isinstance(payload, dict) else ""
+        pairing_code = str(payload.get("pairing_code") or "").strip() if isinstance(payload, dict) else ""
         if not pairing_id or not browser_url:
             self.account_gate_page.render(
                 self._account_state,
@@ -1576,8 +1620,11 @@ class MainWindow(QMainWindow):
             )
             return
         self._browser_pairing_open_url(browser_url)
+        message = "Открылся браузер. Подтвердите действие на веб-странице."
+        if pairing_code:
+            message = f"{message} Код привязки: {pairing_code}."
         self.account_gate_page.render(
-            {**self._account_state, "message": "Открылся браузер. Подтвердите действие на веб-странице."},
+            {**self._account_state, "message": message, "browser_pairing_code": pairing_code},
             local_session=self._account_session,
         )
         for attempt in range(max(1, int(max_polls))):
@@ -1835,6 +1882,10 @@ class MainWindow(QMainWindow):
                 self.body_splitter.setSizes([sidebar_width, 1000])
 
     def _show_registration_entry(self) -> None:
+        if not legacy_agent_registration_enabled():
+            self._on_browser_register_requested()
+            self._show_account_gate_entry()
+            return
         self._select_sidebar_view("registration", expand=True)
         self._load_registration_profile_to_form()
         self._set_registration_entry_status("Заполните форму регистрации пользователя.", error=False)
@@ -1954,6 +2005,9 @@ class MainWindow(QMainWindow):
         return task
 
     def _select_sidebar_view(self, view_name: str, *, expand: bool) -> None:
+        if view_name == "registration" and not legacy_agent_registration_enabled():
+            view_name = "account_gate"
+            expand = True
         if view_name in {"dashboard", "tickets", "ticket", "profile", "create"} and not self._active_account_session_for_tickets():
             view_name = "account_gate"
             expand = True

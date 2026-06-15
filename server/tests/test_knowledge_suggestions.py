@@ -56,6 +56,74 @@ async def test_knowledge_suggestions_return_requester_safe_bound_items(test_engi
 
 
 @pytest.mark.asyncio
+async def test_knowledge_suggestions_use_requester_context_as_pre_submit_query(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = KnowledgeRepo(session)
+        await repo.upsert_space({"code": "r9-context", "title": "R9 Context", "visibility": "requester", "lifecycle_status": "active"}, actor_id="admin")
+        unrelated = await repo.create_item_draft(
+            {
+                "space_code": "r9-context",
+                "slug": "aaa-unrelated-r9-context",
+                "item_type": "article",
+                "title": "AAA unrelated requester context article",
+                "summary": "No matching device context here",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        unrelated_version = await repo.create_version(
+            unrelated["item_id"],
+            {"title": "AAA unrelated requester context article", "body_format": "markdown", "body": "Generic requester content."},
+            actor_id="support",
+        )
+        await repo.publish_item(unrelated["item_id"], unrelated_version["version_id"], actor_id="admin")
+
+        context_item = await repo.create_item_draft(
+            {
+                "space_code": "r9-context",
+                "slug": "zzz-r9-asset-context",
+                "item_type": "article",
+                "title": "ZZZ asset context article",
+                "summary": "Use the device asset context before submit",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        context_version = await repo.create_version(
+            context_item["item_id"],
+            {
+                "title": "ZZZ asset context article",
+                "body_format": "markdown",
+                "body": "needle-r9-asset-context power adapter steps.",
+            },
+            actor_id="support",
+        )
+        await repo.publish_item(context_item["item_id"], context_version["version_id"], actor_id="admin")
+        await session.commit()
+
+    async with session_maker() as session:
+        suggestions = await KnowledgeSuggestionService(session).suggest(
+            {
+                "surface": "requester_portal",
+                "requester_context": {
+                    "device": {"asset_name": "needle-r9-asset-context", "device_id": "raw-device-id"},
+                    "profile": {"department": "IT Operations", "person_id": "raw-person-id"},
+                },
+            },
+            actor_role="requester",
+        )
+
+    assert [item["slug"] for item in suggestions["suggestions"]] == ["zzz-r9-asset-context"]
+    assert "raw-device-id" not in str(suggestions)
+    assert "raw-person-id" not in str(suggestions)
+
+
+@pytest.mark.asyncio
 async def test_knowledge_suggestions_use_binding_context_before_audience_projection(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
