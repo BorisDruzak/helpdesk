@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import pc_agent.ui_gui.main_window as main_window_module
 from pc_agent.ui_gui.main_window import MainWindow, gui_soft_shadows_enabled
 from pc_agent.ui_gui.performance_probe import (
     GuiPerformanceProbe,
@@ -174,20 +175,36 @@ def test_main_window_sidebar_resize_tolerates_early_setup_before_footer_card():
     assert "self.footer_status_block.setVisible(expanded)" in resize_source
 
 
-def test_main_window_legacy_registration_entry_is_gated_by_default():
+def test_main_window_has_no_local_legacy_registration_entry():
+    module_source = inspect.getsource(main_window_module)
     setup_source = inspect.getsource(MainWindow._setup_ui)
-    show_registration_source = inspect.getsource(MainWindow._show_registration_entry)
     select_source = inspect.getsource(MainWindow._select_sidebar_view)
 
-    assert "legacy_agent_registration_enabled()" in setup_source
-    assert "self.registration_entry_page = self._build_legacy_registration_disabled_page()" in setup_source
-    assert "self.registration_entry_page = self._build_registration_entry_page()" in setup_source
-    assert "self.main_content_stack.addWidget(self.registration_entry_page)" in setup_source
-    assert "legacy_agent_registration_enabled()" in show_registration_source
-    assert "self._on_browser_register_requested()" in show_registration_source
-    assert 'view_name == "registration" and not legacy_agent_registration_enabled()' in select_source
-    assert 'elif view_name == "registration"' in select_source
+    assert "default_agent_registration_form" not in module_source
+    assert "legacy_agent_registration_enabled" not in module_source
+    assert "_build_registration_entry_page" not in module_source
+    assert "_build_legacy_registration_disabled_page" not in module_source
+    assert "registration_entry_page" not in module_source
+    assert "registration_form_widget" not in module_source
+    assert "submit_registration_profile" not in module_source
+    assert "UserProfileManager" not in module_source
+    assert "registerRequested" not in setup_source
+    assert "confirmRegistrationRequested" not in setup_source
+    assert 'view_name == "registration"' in select_source
+    assert 'view_name = "account_gate"' in select_source
+    assert "registration_entry_page" not in select_source
     assert "identity_section_layout.addWidget(registration_group)" not in setup_source
+
+
+def test_main_window_account_page_uses_russian_technical_labels():
+    source = inspect.getsource(MainWindow._build_account_page)
+
+    assert 'details_layout.addRow("Сессия", self.account_page_session_label)' in source
+    assert 'details_layout.addRow("Привязка", self.account_page_binding_label)' in source
+    assert 'details_layout.addRow("Заявка на привязку", self.account_page_claim_label)' in source
+    assert 'details_layout.addRow("Session"' not in source
+    assert 'details_layout.addRow("Binding"' not in source
+    assert 'details_layout.addRow("Claim"' not in source
 
 
 def test_main_window_entry_settings_has_back_to_account_gate():

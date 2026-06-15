@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import inspect
 from types import SimpleNamespace
 
 import pytest
 
-from pc_agent.ui_gui.account_gate import account_gate_view_state
+from pc_agent.ui_gui.account_gate import AccountGateWidget, account_gate_view_state
 from pc_agent.ui_gui.main_window import MainWindow
 
 
@@ -77,7 +78,7 @@ def test_account_gate_no_binding_state_uses_browser_registration_only_by_default
     assert state["show_login_other"] is False
 
 
-def test_account_gate_legacy_registration_can_be_enabled_explicitly():
+def test_account_gate_legacy_registration_flag_does_not_expose_local_registration():
     state = account_gate_view_state(
         {
             "accounts": [],
@@ -89,7 +90,7 @@ def test_account_gate_legacy_registration_can_be_enabled_explicitly():
     )
 
     assert state["mode"] == "unregistered"
-    assert state["show_register"] is True
+    assert state["show_register"] is False
     assert state["show_browser_register"] is True
 
 
@@ -154,7 +155,7 @@ def test_account_gate_pending_state_hides_legacy_confirm_by_default():
     assert state["show_login_other"] is False
 
 
-def test_account_gate_pending_state_can_show_legacy_confirm_when_enabled():
+def test_account_gate_pending_state_never_shows_local_confirm_action():
     state = account_gate_view_state(
         {
             "accounts": [
@@ -172,7 +173,16 @@ def test_account_gate_pending_state_can_show_legacy_confirm_when_enabled():
     )
 
     assert state["mode"] == "pending"
-    assert state["show_confirm"] is True
+    assert state["show_confirm"] is False
+
+
+def test_account_gate_widget_has_no_local_registration_controls():
+    source = inspect.getsource(AccountGateWidget)
+
+    assert "registerRequested" not in source
+    assert "confirmRegistrationRequested" not in source
+    assert "self.register_button" not in source
+    assert "self.confirm_button" not in source
 
 
 def test_main_window_does_not_treat_registration_pending_as_ticket_login():

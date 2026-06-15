@@ -368,9 +368,9 @@ R11 localization slice:
 
 R12 compatibility, migration and cleanup slice:
 
-- `server/config.py` defines `PROFILE_COMPLETION_REQUIRED=true` by default alongside the existing `WEB_SELF_REGISTRATION_ENABLED` server flag and the agent-side `AGENT_LEGACY_REGISTRATION_ENABLED=false` default.
+- `server/config.py` defines `PROFILE_COMPLETION_REQUIRED=true` by default alongside the fail-closed `WEB_SELF_REGISTRATION_ENABLED` server flag.
 - `server/requester/identity_service.py` keeps `profile_completion.missing_fields` accurate while making `blocks` and requester feature flags policy-aware. With the rollout override disabled, normal requester preview/create can proceed without changing the profile setup contract.
 - Existing pending `device_registration_claims` remain visible in both `GET /api/web/requester/bootstrap` as user-facing device-link requests and `GET /api/web/admin/registry` as admin moderation rows.
 - Existing confirmed bindings and `verified_other_account` sessions keep validating through `AccountSessionService` until logout, revoke, base binding revoke or expiry; validation returns explicit invalidation codes for GUI recovery.
 - `BrowserPairingService.expire_stale_pairings()` and `AccountSessionService.expire_stale_sessions()` provide service-level cleanup for expired browser pairings and temporary account sessions without deleting audit history.
-- Rollback path: set `WEB_SELF_REGISTRATION_ENABLED=false` to stop new web account creation, set `PROFILE_COMPLETION_REQUIRED=false` to make incomplete profiles advisory during rollout recovery, and set `AGENT_LEGACY_REGISTRATION_ENABLED=1` only for an emergency agent-side legacy registration window. Do not manually patch deployed files; deploy the rollback through the project release scripts.
+- Rollback path: set `WEB_SELF_REGISTRATION_ENABLED=false` to stop new web account creation and set `PROFILE_COMPLETION_REQUIRED=false` to make incomplete profiles advisory during rollout recovery. Normal agent GUI releases remain browser-only; older agents may still use the legacy backend endpoints during compatibility rollout. Do not manually patch deployed files; deploy the rollback through the project release scripts.

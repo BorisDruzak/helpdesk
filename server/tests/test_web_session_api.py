@@ -6,6 +6,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 from auth.context import AuthContext, AuthType
 from auth.middleware import AUTH_WHITELIST, WEB_SESSION_COOKIE_NAME, auth_middleware
+from auth.rate_limit import reset_rate_limits
 from access_control.catalog import CATALOG_VERSION
 from routes import setup_routes
 import auth.middleware as auth_middleware_module
@@ -223,6 +224,49 @@ async def test_web_session_register_creates_requester_user_without_cookie_or_rol
     assert created["password_hash"] != "VeryStrong123!"
     assert "full_name" not in payload["data"]
     assert "department" not in payload["data"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_register_rate_limit_blocks_repeated_attempts_before_create_user(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
+    created_logins: list[str] = []
+
+    class FakeUiUsersRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_user(self, user_login, password_hash, actor_role="user", actor_id=None):
+            created_logins.append(user_login)
+            return SimpleNamespace(user_login=user_login, actor_role=actor_role, is_active=True)
+
+    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
+    reset_rate_limits()
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    try:
+        async with TestClient(TestServer(app)) as client:
+            responses = []
+            for _ in range(6):
+                response = await client.post(
+                    "/api/web/session/register",
+                    json={
+                        "login": "rate.limit.user",
+                        "password": "VeryStrong123!",
+                        "password_repeat": "VeryStrong123!",
+                    },
+                )
+                responses.append((response.status, await response.json()))
+    finally:
+        reset_rate_limits()
+
+    assert [status for status, _payload in responses] == [201, 201, 201, 201, 201, 429]
+    assert responses[-1][1]["error_code"] == "RATE_LIMITED"
+    assert created_logins == ["rate.limit.user"] * 5
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from typing import Any, Optional
 
 from PySide6.QtCore import QTimer, Qt, Signal
@@ -29,11 +28,6 @@ OTHER_ACCOUNT_FORM = {
 }
 
 TERMINAL_OTHER_ACCOUNT_REQUEST_STATUSES = {"approved", "rejected", "expired", "canceled"}
-
-
-def legacy_agent_registration_enabled() -> bool:
-    raw = os.environ.get("AGENT_LEGACY_REGISTRATION_ENABLED", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
 
 
 def account_gate_view_state(
@@ -128,8 +122,6 @@ def account_gate_view_state(
     )
     if approved_other is not None:
         can_login_other = True
-    if legacy_registration_enabled is None:
-        legacy_registration_enabled = legacy_agent_registration_enabled()
     browser_pairing_code = str(account_state.get("browser_pairing_code") or "").strip()
     return {
         "mode": mode,
@@ -139,14 +131,14 @@ def account_gate_view_state(
             "unregistered": "Привяжите это устройство через браузер",
         }.get(mode, "Проверяем регистрацию устройства..."),
         "message": str(account_state.get("message") or ""),
-        "show_register": bool(legacy_registration_enabled) and can_register and confirmed is None,
+        "show_register": False,
         "show_browser_register": can_register and confirmed is None,
         "browser_pairing_code": browser_pairing_code,
         "show_copy_pairing_code": bool(browser_pairing_code),
         "show_login_confirmed": confirmed is not None,
         "show_browser_login": confirmed is not None,
         "show_login_other": can_login_other,
-        "show_confirm": bool(legacy_registration_enabled) and mode == "pending",
+        "show_confirm": False,
         "show_check_pending_request": False,
         "warning": warning,
         "primary_account": confirmed,
@@ -160,8 +152,6 @@ class AccountGateWidget(QFrame):
     browserRegisterRequested = Signal()
     loginConfirmedRequested = Signal(dict)
     loginOtherRequested = Signal(dict)
-    registerRequested = Signal()
-    confirmRegistrationRequested = Signal()
     refreshRequested = Signal()
     settingsRequested = Signal()
     checkOtherLoginRequestRequested = Signal(str)
@@ -238,12 +228,6 @@ class AccountGateWidget(QFrame):
         self.copy_pairing_code_button = QPushButton("Скопировать код")
         self.copy_pairing_code_button.setObjectName("SecondaryButton")
         self.copy_pairing_code_button.clicked.connect(self._on_copy_pairing_code)
-        self.register_button = QPushButton("Регистрация")
-        self.register_button.setObjectName("SecondaryButton")
-        self.register_button.clicked.connect(self.registerRequested.emit)
-        self.confirm_button = QPushButton("Подтвердить данные")
-        self.confirm_button.setObjectName("SecondaryButton")
-        self.confirm_button.clicked.connect(self.confirmRegistrationRequested.emit)
         self.refresh_button = QPushButton("Обновить")
         self.refresh_button.setObjectName("SecondaryButton")
         self.refresh_button.clicked.connect(self.refreshRequested.emit)
@@ -259,8 +243,6 @@ class AccountGateWidget(QFrame):
             self.other_button,
             self.browser_register_button,
             self.copy_pairing_code_button,
-            self.register_button,
-            self.confirm_button,
             self.check_request_button,
             self.refresh_button,
             self.settings_button,
@@ -342,9 +324,6 @@ class AccountGateWidget(QFrame):
             self.other_button.setText("Войти в другой аккаунт")
         self.browser_register_button.setVisible(bool(state["show_browser_register"]))
         self.copy_pairing_code_button.setVisible(bool(state.get("show_copy_pairing_code")))
-        self.register_button.setVisible(bool(state["show_register"]))
-        self.register_button.setText("Регистрация")
-        self.confirm_button.setVisible(bool(state["show_confirm"]))
         self.check_request_button.setVisible(bool(state.get("show_check_pending_request") and self._pending_request_id))
         self.other_form.setVisible(self._showing_other_form)
         if self._pending_request_id or state.get("mode") == "pending":

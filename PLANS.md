@@ -2,6 +2,8 @@
 
 Status, 2026-06-15: completed at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`. R0-R14 implementation, targeted tests, deploy smoke, browser evidence and local Windows GUI-agent evidence are recorded below. The refactor simplifies requester onboarding, moves the user-facing workflow into the browser, makes the web requester cabinet the primary workspace, and keeps the GUI agent as a secondary local helper for device handoff, emergency ticketing, consent and diagnostics.
 
+Follow-up, 2026-06-16: strict browser-only agent registration is now the active decision. The normal GUI agent no longer builds the legacy full-profile registration page, local registration buttons, or local submit/confirm handlers; backend legacy endpoints remain only as compatibility API surface for older agents. Env feature flags are covered by explicit regression tests, and repeatable live smoke scripts now cover clean account/profile/device/ticket/KB onboarding plus rollout compatibility cases.
+
 Carryover closed before this plan became active: Knowledge K4 focused policy tests were added in `22825944`, and Knowledge K3 binding eligibility preview was implemented and live-checked in `536f749e`; evidence is under `artifacts/browser_live_validation/knowledge-binding-preview-536f749e-20260615/`.
 
 ## Product thesis
@@ -704,7 +706,7 @@ Verification, 2026-06-15:
 
 ## Phase R5 — Remove profile registration from GUI agent
 
-Status: completed on 2026-06-15. Normal GUI agent registration is now browser-first; the legacy full-profile registration/confirm UI is hidden by default and can only be re-enabled explicitly with `AGENT_LEGACY_REGISTRATION_ENABLED=1`.
+Status: completed on 2026-06-15; tightened on 2026-06-16. Normal GUI agent registration is browser-first only; the legacy full-profile registration/confirm page and local form handlers are removed from the normal agent GUI. Backend legacy endpoints remain as compatibility surface for older deployed agents.
 
 Tasks:
 
@@ -724,7 +726,7 @@ Tasks:
    - `Проверить статус`.
 5. Preserve emergency ticket and consent/remote-assist flows.
 6. Ensure old backend endpoints remain temporarily for compatibility but are no longer reachable from normal GUI.
-7. Add a kill switch or feature flag if needed: `AGENT_LEGACY_REGISTRATION_ENABLED=false` by default.
+7. Legacy GUI re-enable is not part of the normal rollout. Compatibility stays server/API-side for old agents only.
 
 Tests:
 
@@ -747,8 +749,8 @@ Acceptance:
 
 Implementation, 2026-06-15:
 
-- `pc_agent/ui_gui/account_gate.py` hides legacy local registration and pending-confirm actions unless `AGENT_LEGACY_REGISTRATION_ENABLED` is true, keeps browser device handoff as the default action, and exposes a copyable browser pairing code after handoff creation.
-- `pc_agent/ui_gui/main_window.py` no longer builds or enters the full registration form in the normal path; accidental registration navigation starts browser registration handoff and returns to the account gate. A disabled legacy page remains only as an explicit fallback when the feature flag is off.
+- `pc_agent/ui_gui/account_gate.py` no longer exposes local registration or pending-confirm actions, keeps browser device handoff as the only registration action, and exposes a copyable browser pairing code after handoff creation. `pc_agent/ui_gui/main_window.py` no longer builds `default_agent_registration_form()` or the legacy registration entry page.
+- `pc_agent/ui_gui/main_window.py` no longer builds or enters the full registration form in the normal path; accidental registration view names redirect to the account gate/browser handoff. There is no disabled legacy registration page in the normal GUI stack.
 - Existing backend registration endpoints remain unchanged for compatibility.
 - Documentation/catalog routing was updated in `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py`.
 - R5 visual evidence is under `artifacts/browser_live_validation/web-first-registration-r5-20260615-windows/`.
@@ -1106,13 +1108,13 @@ R11 verification:
 
 ## Phase R12 — Compatibility, migration and cleanup
 
-Status: completed on 2026-06-15. R12 compatibility is implemented: legacy backend endpoints remain covered by existing registration tests, web self-registration stays controlled by `WEB_SELF_REGISTRATION_ENABLED`, the agent legacy registration UI remains hidden by default behind `AGENT_LEGACY_REGISTRATION_ENABLED`, and requester profile enforcement now has `PROFILE_COMPLETION_REQUIRED=true` by default with policy-aware `profile_completion.blocks` for rollout override.
+Status: completed on 2026-06-15; tightened on 2026-06-16. R12 compatibility is implemented: legacy backend endpoints remain covered by existing registration tests for older agents, web self-registration stays controlled by `WEB_SELF_REGISTRATION_ENABLED`, normal agent GUI legacy registration was removed, and requester profile enforcement now has `PROFILE_COMPLETION_REQUIRED=true` by default with policy-aware `profile_completion.blocks` for rollout override.
 
 Tasks:
 
 1. Keep backend legacy endpoints temporarily if existing tests/clients depend on them.
 2. Add feature flags for transition:
-   - `AGENT_LEGACY_REGISTRATION_ENABLED=false` default.
+   - no normal GUI re-enable for legacy agent profile registration.
    - `WEB_SELF_REGISTRATION_ENABLED=true` if deployed.
    - `PROFILE_COMPLETION_REQUIRED=true` with admin override for rollout if needed.
 3. Migrate existing pending agent registration claims into web-visible pending profile/device link state.
@@ -1126,7 +1128,7 @@ Tests:
 - Existing active binding still works.
 - Existing pending claim is visible in new requester/admin UI.
 - Existing verified other-account session still validates until expiry/revoke.
-- Legacy agent registration hidden by default but can be temporarily re-enabled for emergency rollout if feature flag exists.
+- Legacy backend registration remains API-compatible for old agents, but the normal GUI no longer exposes the local full-profile registration page or confirm action.
 
 Live evidence:
 
@@ -1142,7 +1144,7 @@ Completion notes:
 - Existing old-style pending agent profile claims are visible through both `GET /api/web/requester/bootstrap` (`pending_registration_claims`) and `GET /api/web/admin/registry` (`registration_claims`). The requester UI renders them as Russian pending device-link requests without exposing raw `claim` terminology.
 - Existing confirmed bindings and verified other-account sessions continue through current `AccountSessionService.validate_session()` rules; expired/revoked/base-binding failures return explicit error codes for GUI recovery.
 - `BrowserPairingService.expire_stale_pairings()` and `AccountSessionService.expire_stale_sessions()` add explicit service-level cleanup for expired browser pairings and temporary sessions without deleting audit history.
-- Rollback path is documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`: disable new web accounts with `WEB_SELF_REGISTRATION_ENABLED=false`, make incomplete profiles advisory with `PROFILE_COMPLETION_REQUIRED=false`, and use emergency-only `AGENT_LEGACY_REGISTRATION_ENABLED=1` through normal deploy scripts.
+- Rollback path is documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`: disable new web accounts with `WEB_SELF_REGISTRATION_ENABLED=false`, make incomplete profiles advisory with `PROFILE_COMPLETION_REQUIRED=false`, and keep older agents on their existing legacy API compatibility while normal GUI releases stay browser-only.
 
 Evidence and verification:
 
@@ -1184,7 +1186,7 @@ Required frontend tests:
 
 Required agent tests:
 
-- Account gate hides legacy registration.
+- Account gate has no local legacy registration controls.
 - Browser linking button still creates pairing.
 - Copy code/open browser works.
 - Pending/approved/rejected states render correctly.
@@ -1355,7 +1357,7 @@ Release gate completion checkpoint:
 - Items 1-6: R2-R5/R12 implement browser-first account/profile/device linking, separate account/profile flows, mandatory profile gate policy and hidden legacy GUI full-profile registration. R14 browser and UIA evidence confirms account-only `/app/register`, requester devices, connected GUI agent and no legacy full-profile controls.
 - Items 7-10: R8-R11 implement request-form context, registry-audience knowledge/RAG, admin registry moderation and Russian-localized touched surfaces. R14 smoke/browser evidence confirms ticket context visibility, other-account warning, owner/other knowledge isolation and no forbidden raw status text in captured browser flows.
 - Items 11-13: R13 automated matrix passed for backend, frontend and agent; R14 live smoke confirms confirmed bindings, verified other-account sessions, pending registrations and revoked sessions are not broken.
-- Item 14: rollback and feature flags are documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`; R12 records `WEB_SELF_REGISTRATION_ENABLED`, `PROFILE_COMPLETION_REQUIRED` and emergency `AGENT_LEGACY_REGISTRATION_ENABLED`.
+- Item 14: rollback and feature flags are documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`; R12 records `WEB_SELF_REGISTRATION_ENABLED`, `PROFILE_COMPLETION_REQUIRED` and the 2026-06-16 decision that normal agent GUI stays browser-only while legacy backend compatibility remains for older agents.
 - Release mode note: the remote deploy used the documented quick gate for staging/live validation. A frozen production release would still require the explicit full CI artifact and full release gate before production publication.
 
 ---

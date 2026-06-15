@@ -561,6 +561,9 @@ async def test_profile_completion_required_flag_can_disable_no_device_create_gat
     assert bootstrap_response.status == 200, bootstrap_payload
     completion = bootstrap_payload["data"]["profile_completion"]
     assert completion["complete"] is False
+    assert completion["required"] is False
+    assert completion["status"] == "optional"
+    assert completion["missing_fields"]
     assert completion["blocks"]["ticket_create"] is False
     assert bootstrap_payload["data"]["feature_flags"]["requester_no_device_create"] is True
 
