@@ -62,3 +62,12 @@ def test_person_id_from_effective_identity_uses_nested_person_contract() -> None
     identity = SimpleNamespace(person={"person_id": "person-1"})
 
     assert smoke.person_id_from_effective_identity(identity) == "person-1"
+
+
+def test_registry_visibility_live_smoke_space_is_rag_eligible_for_ask_checks() -> None:
+    payload = smoke.knowledge_space_payload("phase7-visibility-test", "test-run")
+
+    assert payload["code"] == "phase7-visibility-test"
+    assert payload["visibility"] == "requester"
+    assert payload["lifecycle_status"] == "active"
+    assert payload["allow_rag"] is True

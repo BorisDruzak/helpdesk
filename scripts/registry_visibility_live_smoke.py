@@ -130,6 +130,16 @@ def support_ticket_search_text(marker: str) -> str:
     return f"{payload['title']} {payload['description']}".strip()
 
 
+def knowledge_space_payload(space_code: str, run_id: str) -> dict[str, Any]:
+    return {
+        "code": space_code,
+        "title": f"Phase 7 Visibility {run_id}",
+        "visibility": "requester",
+        "lifecycle_status": "active",
+        "allow_rag": True,
+    }
+
+
 def build_initial_report(*, run_id: str, base_url: str, commit: str | None) -> dict[str, Any]:
     return {
         "phase": "phase7_registry_visibility",
@@ -370,7 +380,7 @@ class RegistryVisibilityLiveSmoke:
             repo = KnowledgeRepo(session)
             space_code = f"phase7-visibility-{self.run_id}"
             await repo.upsert_space(
-                {"code": space_code, "title": f"Phase 7 Visibility {self.run_id}", "visibility": "requester", "lifecycle_status": "active"},
+                knowledge_space_payload(space_code, self.run_id),
                 actor_id=self.ids["admin_login"],
             )
             public_item = await self._published_item(repo, space_code, "public", "public visible", "public body", "requester")
