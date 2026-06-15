@@ -1,6 +1,6 @@
 # Active Work: Web-first Registration, Profiles and Registry Context Refactor
 
-Status, 2026-06-15: planning document. No implementation is accepted until each phase below has tests and live evidence. The goal is to simplify requester onboarding, move the user-facing workflow into the browser, make the web requester cabinet the primary workspace, and keep the GUI agent as a secondary local helper for device handoff, emergency ticketing, consent and diagnostics.
+Status, 2026-06-15: completed at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`. R0-R14 implementation, targeted tests, deploy smoke, browser evidence and local Windows GUI-agent evidence are recorded below. The refactor simplifies requester onboarding, moves the user-facing workflow into the browser, makes the web requester cabinet the primary workspace, and keeps the GUI agent as a secondary local helper for device handoff, emergency ticketing, consent and diagnostics.
 
 Carryover closed before this plan became active: Knowledge K4 focused policy tests were added in `22825944`, and Knowledge K3 binding eligibility preview was implemented and live-checked in `536f749e`; evidence is under `artifacts/browser_live_validation/knowledge-binding-preview-536f749e-20260615/`.
 
@@ -1216,7 +1216,7 @@ Completion notes:
 
 ## Phase R14 — Live validation checklist
 
-Status: not started.
+Status: completed on 2026-06-15 for commit `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`.
 
 Live validation must run against a real local/dev stand with server, webapp, Postgres and at least one GUI agent.
 
@@ -1316,9 +1316,22 @@ Recommended evidence folder format:
 
 `artifacts/browser_live_validation/web-first-registration-<commit>-<YYYYMMDD>/`
 
+R14 completion checkpoint, 2026-06-15:
+
+- Environment: remote Linux stand `https://192.168.100.17:9443` with server, webapp and PostgreSQL deployed through `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --leave-running --smoke-insecure-tls --smoke-base-url https://192.168.100.17:9443`; local Windows GUI agent instance `r14-gui-20260615` was started through `python scripts/manage_local_agent.py start r14-gui-20260615 --gui --ui-port 8794`.
+- Candidate: `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`. The final R14 smoke run id is `webfirst-r14-c5be05b-20260615`.
+- HTTP/DB live smoke: `artifacts/browser_live_validation/web-first-registration-r14-20260615/registry_visibility_live_smoke.passed.json` -> `status=passed`. It covers confirmed owner binding, verified other-account session, pending registration blocking, revoked-session denial, owner ticket visibility, other-account ticket isolation/warning, support suggestions and registry-aware search/suggest/Ask/RAG slugs.
+- Browser live evidence: `artifacts/browser_live_validation/web-first-registration-r14-20260615/r14-live-browser-evidence-report.json` -> `status=passed`; screenshots `01-register-account-only.png` through `08-admin-registry-requests.png` cover account-only registration, requester cabinet/devices, owner/other requester knowledge filtering, support ticket warning, and admin registry overview/requests. Assertions: no forbidden raw status text, no horizontal overflow, no console/page/API failures, owner IT slug visible only to owner, finance slug visible only to other account.
+- Direct cookie-auth regression after the optional-auth fix confirmed `/api/knowledge/search` preserves web-session audience context: owner saw only `phase7-it-webfirst-r14-c5be05b-20260615` + public, other account saw only `phase7-finance-webfirst-r14-c5be05b-20260615` + public.
+- Local GUI-agent evidence: `artifacts/browser_live_validation/web-first-registration-r14-20260615/agent-gui-evidence-report.json` -> `status=passed`; supporting files are `agent-gui-status.json` and `agent-gui-connected-uia.json`. Assertions: real `Maria Agent v3.1.64` main window seen through pywinauto/UIA, `/ui/agent/status` reports `connection_state=connected`, `has_auth_token=true`, `ui_bridge_running=true`, and the captured UIA tree does not expose legacy full-profile registration controls.
+- Evidence limitations: the HTTP/DB smoke report still lists its built-in `real_agent_gui` and `browser_support_ui` fields as `not_collected`; those are superseded by the separate browser and GUI artifacts above. Windows bitmap capture for the local GUI returned invalid/black frames in the Codex desktop session, so GUI pass evidence uses canonical UIA plus `/ui/agent/status` rather than a PNG screenshot.
+- Local GUI cleanup: `POST http://127.0.0.1:8794/ui/agent/shutdown` returned `{status: "ok", accepted: true}`, and `python scripts/manage_local_agent.py status r14-gui-20260615` reported the instance stopped.
+
 ---
 
 ## Release gate
+
+Status: completed on 2026-06-15 at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`. Each gate item below has implementation, targeted automated tests and R14 live evidence.
 
 Do not mark this refactor complete until all are true:
 
@@ -1336,6 +1349,14 @@ Do not mark this refactor complete until all are true:
 12. Live evidence exists for account, profile, device linking, ticket context, knowledge access, other-account and localization flows.
 13. Existing confirmed bindings and current users are not broken.
 14. Rollback/feature-flag behavior is documented.
+
+Release gate completion checkpoint:
+
+- Items 1-6: R2-R5/R12 implement browser-first account/profile/device linking, separate account/profile flows, mandatory profile gate policy and hidden legacy GUI full-profile registration. R14 browser and UIA evidence confirms account-only `/app/register`, requester devices, connected GUI agent and no legacy full-profile controls.
+- Items 7-10: R8-R11 implement request-form context, registry-audience knowledge/RAG, admin registry moderation and Russian-localized touched surfaces. R14 smoke/browser evidence confirms ticket context visibility, other-account warning, owner/other knowledge isolation and no forbidden raw status text in captured browser flows.
+- Items 11-13: R13 automated matrix passed for backend, frontend and agent; R14 live smoke confirms confirmed bindings, verified other-account sessions, pending registrations and revoked sessions are not broken.
+- Item 14: rollback and feature flags are documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`; R12 records `WEB_SELF_REGISTRATION_ENABLED`, `PROFILE_COMPLETION_REQUIRED` and emergency `AGENT_LEGACY_REGISTRATION_ENABLED`.
+- Release mode note: the remote deploy used the documented quick gate for staging/live validation. A frozen production release would still require the explicit full CI artifact and full release gate before production publication.
 
 ---
 
