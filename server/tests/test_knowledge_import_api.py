@@ -79,6 +79,83 @@ async def test_knowledge_import_create_drafts_uses_preview_payload_without_ai(te
 
 
 @pytest.mark.asyncio
+async def test_knowledge_import_create_drafts_defaults_to_internal_draft_and_rag_inherit(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={
+            "code": "import-safe-defaults",
+            "title": "Import Safe Defaults",
+            "visibility": "support_internal",
+            "lifecycle_status": "active",
+            "allow_rag": False,
+        },
+    )
+    assert space_resp.status == 200
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-safe-defaults",
+            "source_kind": "markdown",
+            "source_name": "safe-defaults.md",
+            "slug": "safe-defaults-import-api",
+            "item_type": "article",
+            "title": "Safe Defaults Import API",
+            "body": "# Safe Defaults Import API\n\n## Steps\nReconnect VPN.",
+            "ai_enrichment_enabled": False,
+        },
+    )
+
+    assert resp.status == 200
+    payload = await resp.json()
+    assert payload["job"]["status"] == "review_required"
+    assert payload["item"]["status"] == "draft"
+    assert payload["item"]["visibility"] == "support_internal"
+    assert payload["item"]["metadata"]["ai_rag_policy"] == "inherit"
+    assert payload["item"]["metadata"]["import_mode"] == "safe_draft"
+
+
+@pytest.mark.asyncio
+async def test_knowledge_import_create_drafts_rejects_rag_policy_that_conflicts_with_section(test_client) -> None:
+    space_resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={
+            "code": "import-rag-disabled",
+            "title": "Import RAG Disabled",
+            "visibility": "support_internal",
+            "lifecycle_status": "active",
+            "allow_rag": False,
+        },
+    )
+    assert space_resp.status == 200
+
+    resp = await test_client.post(
+        "/api/web/knowledge/import/create-drafts",
+        headers=_admin_headers(),
+        json={
+            "space_code": "import-rag-disabled",
+            "source_kind": "markdown",
+            "source_name": "rag-conflict.md",
+            "slug": "rag-conflict-import-api",
+            "item_type": "article",
+            "title": "RAG Conflict Import API",
+            "visibility": "support_internal",
+            "metadata": {"ai_rag_policy": "allowed"},
+            "body": "# RAG Conflict Import API\n\n## Steps\nReconnect VPN.",
+            "ai_enrichment_enabled": False,
+        },
+    )
+
+    assert resp.status == 400
+    payload = await resp.json()
+    assert payload["error"] == "validation_error"
+    assert "ai_rag_policy=allowed" in payload["details"]
+
+
+@pytest.mark.asyncio
 async def test_knowledge_import_jobs_list_and_detail_are_acl_safe(test_client) -> None:
     space_resp = await test_client.post(
         "/api/web/knowledge/spaces",

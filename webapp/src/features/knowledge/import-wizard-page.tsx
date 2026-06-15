@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FileText, Sparkles, UploadCloud } from "lucide-react";
+import { FileText, ShieldCheck, Sparkles, UploadCloud } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -13,12 +14,16 @@ import {
   previewKnowledgeImport,
   type KnowledgeImportDraftResult,
   type KnowledgeImportPreview,
+  type KnowledgeSpace,
 } from "./api";
 
 const fieldClass = "mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-sm";
 const textareaClass = `${fieldClass} min-h-64 font-mono text-xs`;
 const textSourceKinds = new Set(["text", "markdown", "html"]);
 const fileSourceKinds = new Set(["docx", "pdf"]);
+const safeImportVisibility = "support_internal";
+const defaultRagPolicy = "inherit";
+const longImportAutoSegmentWords = 800;
 
 type DraftState = {
   ai_enrichment_enabled: boolean;
@@ -35,7 +40,6 @@ type DraftState = {
   space_code: string;
   title: string;
   url: string;
-  visibility: string;
 };
 
 function defaultDraft(): DraftState {
@@ -50,10 +54,9 @@ function defaultDraft(): DraftState {
     slug: "",
     source_kind: "markdown",
     source_name: "vpn-import.md",
-    space_code: "it-support",
+    space_code: "",
     title: "",
     url: "",
-    visibility: "support_internal",
   };
 }
 
@@ -79,7 +82,37 @@ function aiStatusLabel(status?: string) {
   return status ?? "нет данных";
 }
 
+function sectionLabel(space: KnowledgeSpace | null) {
+  return space ? `${space.title} (${space.code})` : "раздел не выбран";
+}
+
+function previewWordCount(preview: KnowledgeImportPreview | null) {
+  return preview?.word_count ?? 0;
+}
+
+function shouldAutoSegmentLongImport(preview: KnowledgeImportPreview | null) {
+  return previewWordCount(preview) >= longImportAutoSegmentWords;
+}
+
+function autoSegmentationPreviewLabel(preview: KnowledgeImportPreview | null, enabledByUser: boolean) {
+  if (shouldAutoSegmentLongImport(preview)) {
+    return "Авторазметка: будет запущена (длинный документ)";
+  }
+  if (enabledByUser) {
+    return "Авторазметка: будет запущена вручную";
+  }
+  return "Авторазметка: не будет запущена";
+}
+
+function safeImportMetadata() {
+  return {
+    ai_rag_policy: defaultRagPolicy,
+    import_mode: "safe_draft",
+  };
+}
+
 export function KnowledgeImportWizardPage() {
+  const navigate = useNavigate();
   const [draft, setDraft] = useState<DraftState>(() => defaultDraft());
   const [preview, setPreview] = useState<KnowledgeImportPreview | null>(null);
   const [result, setResult] = useState<KnowledgeImportDraftResult | null>(null);
@@ -93,19 +126,30 @@ export function KnowledgeImportWizardPage() {
   const textSource = textSourceKinds.has(draft.source_kind);
   const fileSource = fileSourceKinds.has(draft.source_kind);
   const remoteSource = draft.source_kind === "url" || draft.source_kind === "git";
-  const canPreview =
-    (textSource && draft.body.trim()) ||
-    (fileSource && draft.file_content_base64) ||
-    (draft.source_kind === "url" && draft.url.trim()) ||
-    (draft.source_kind === "git" && draft.repo_url.trim());
+  const hasImportSource =
+    (textSource && Boolean(draft.body.trim())) ||
+    (fileSource && Boolean(draft.file_content_base64)) ||
+    (draft.source_kind === "url" && Boolean(draft.url.trim())) ||
+    (draft.source_kind === "git" && Boolean(draft.repo_url.trim()));
+  const autoSegmentWillRun = draft.auto_segment_after_import || shouldAutoSegmentLongImport(preview);
+  const canPreview = Boolean(selectedSpace) && hasImportSource;
+  const canCreate = Boolean(selectedSpace && preview);
 
-  const payload = {
-    ...draft,
-    space_code: selectedSpace?.code ?? draft.space_code,
-  };
+  function buildPayload(forceAutoSegmentation: boolean) {
+    return {
+      ...draft,
+      auto_segment_after_import: forceAutoSegmentation,
+      metadata: safeImportMetadata(),
+      space_code: selectedSpace?.code ?? "",
+      visibility: safeImportVisibility,
+    };
+  }
+
+  const previewPayload = buildPayload(draft.auto_segment_after_import);
+  const createPayload = buildPayload(autoSegmentWillRun);
 
   const previewMutation = useMutation({
-    mutationFn: () => previewKnowledgeImport(payload),
+    mutationFn: () => previewKnowledgeImport(previewPayload),
     onSuccess: (nextPreview) => {
       setPreview(nextPreview);
       setResult(null);
@@ -116,27 +160,35 @@ export function KnowledgeImportWizardPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createKnowledgeImportDrafts({ ...payload, title: draft.title || preview?.detected_title }),
-    onSuccess: (nextResult) => setResult(nextResult),
+    mutationFn: () => createKnowledgeImportDrafts({ ...createPayload, title: draft.title || preview?.detected_title }),
+    onSuccess: (nextResult) => {
+      setResult(nextResult);
+      navigate(`/app/admin/knowledge/studio?item=${encodeURIComponent(nextResult.item.item_id)}`);
+    },
   });
+
+  function updateDraft(patch: Partial<DraftState>, resetPreview = true) {
+    setDraft((current) => ({ ...current, ...patch }));
+    if (resetPreview) {
+      setPreview(null);
+      setResult(null);
+    }
+  }
 
   async function handleFileUpload(file: File | null) {
     setFileError(null);
     if (!file) {
-      setDraft((current) => ({ ...current, file_content_base64: undefined }));
+      updateDraft({ file_content_base64: undefined });
       return;
     }
     try {
       const content = await fileToBase64(file);
-      setDraft((current) => ({
-        ...current,
+      updateDraft({
         body: "",
         file_content_base64: content,
         source_name: file.name,
-        title: current.title || file.name.replace(/\.[^.]+$/, ""),
-      }));
-      setPreview(null);
-      setResult(null);
+        title: draft.title || file.name.replace(/\.[^.]+$/, ""),
+      });
     } catch (error) {
       setFileError(error instanceof Error ? error.message : String(error));
     }
@@ -147,12 +199,12 @@ export function KnowledgeImportWizardPage() {
       <PageHeading
         eyebrow="Knowledge Import"
         title="Импорт знаний"
-        description="Мастер импортирует text/markdown без AI по умолчанию, показывает preview структуры и создает review draft."
+        description="Импорт создает безопасный внутренний черновик, наследует аудиторию и RAG-политику выбранного раздела базы знаний, а затем открывает статью в упрощенной Studio."
       />
 
       <div className="surface-panel flex flex-wrap items-center justify-between gap-3 p-4">
         <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-700">
-          {["1. Источник", "2. Preview", "3. Черновик"].map((step, index) => (
+          {["1. Источник", "2. Предпросмотр", "3. Studio"].map((step, index) => (
             <span className={`rounded-md px-3 py-1 ${index === 0 && !preview ? "bg-brand-600 text-white" : index === 1 && preview && !result ? "bg-brand-600 text-white" : index === 2 && result ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-700"}`} key={step}>
               {step}
             </span>
@@ -162,8 +214,8 @@ export function KnowledgeImportWizardPage() {
           <Button disabled={!canPreview || previewMutation.isPending} onClick={() => previewMutation.mutate()}>
             Предпросмотр
           </Button>
-          <Button disabled={!preview || createMutation.isPending} onClick={() => createMutation.mutate()} variant="secondary">
-            Создать черновик
+          <Button disabled={!canCreate || createMutation.isPending} onClick={() => createMutation.mutate()} variant="secondary">
+            Создать черновик и открыть Studio
           </Button>
         </div>
       </div>
@@ -175,19 +227,24 @@ export function KnowledgeImportWizardPage() {
               <UploadCloud className="h-5 w-5" />
               Источник
             </CardTitle>
-            <CardDescription>Источник может быть текстом, upload-файлом или внешней ссылкой, если серверная политика это разрешает.</CardDescription>
+            <CardDescription>Выберите раздел, источник и параметры безопасного черновика. Публикация не выполняется из импорта.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <label className="text-sm font-medium">
-                Пространство
-                <select className={fieldClass} value={selectedSpace?.code ?? draft.space_code} onChange={(event) => setDraft({ ...draft, space_code: event.target.value })}>
+                Раздел базы знаний
+                <select
+                  className={fieldClass}
+                  disabled={spacesQuery.isLoading || !spaces.length}
+                  value={selectedSpace?.code ?? ""}
+                  onChange={(event) => updateDraft({ space_code: event.target.value })}
+                >
                   {spaces.map((space) => (
                     <option key={space.code} value={space.code}>
                       {space.title} ({space.code})
                     </option>
                   ))}
-                  {!spaces.length ? <option value={draft.space_code}>{draft.space_code}</option> : null}
+                  {!spaces.length ? <option value="">Разделы не загружены</option> : null}
                 </select>
               </label>
               <label className="text-sm font-medium">
@@ -197,52 +254,59 @@ export function KnowledgeImportWizardPage() {
                   value={draft.source_kind}
                   onChange={(event) => {
                     const nextKind = event.target.value;
-                    setDraft({
-                      ...draft,
+                    updateDraft({
                       source_kind: nextKind,
                       body: textSourceKinds.has(nextKind) ? draft.body || "# VPN Import\n\n## Steps\nReconnect VPN." : "",
                       file_content_base64: undefined,
                     });
-                    setPreview(null);
-                    setResult(null);
                     setFileError(null);
                   }}
                 >
-                  <option value="markdown">markdown</option>
-                  <option value="text">text</option>
-                  <option value="html">html</option>
-                  <option value="docx">docx upload</option>
-                  <option value="pdf">pdf upload</option>
-                  <option value="url">external URL</option>
+                  <option value="markdown">Markdown</option>
+                  <option value="text">Текст</option>
+                  <option value="html">HTML</option>
+                  <option value="docx">DOCX файл</option>
+                  <option value="pdf">PDF файл</option>
+                  <option value="url">Внешний URL</option>
                   <option value="git">Git repository</option>
                 </select>
               </label>
               <label className="text-sm font-medium">
                 Источник
-                <input className={fieldClass} value={draft.source_name} onChange={(event) => setDraft({ ...draft, source_name: event.target.value })} />
+                <input className={fieldClass} value={draft.source_name} onChange={(event) => updateDraft({ source_name: event.target.value }, false)} />
               </label>
               <label className="text-sm font-medium">
                 Название
-                <input className={fieldClass} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+                <input className={fieldClass} value={draft.title} onChange={(event) => updateDraft({ title: event.target.value }, false)} />
               </label>
               <label className="text-sm font-medium">
                 Slug
-                <input className={fieldClass} value={draft.slug} onChange={(event) => setDraft({ ...draft, slug: event.target.value })} />
+                <input className={fieldClass} value={draft.slug} onChange={(event) => updateDraft({ slug: event.target.value }, false)} />
               </label>
-              <label className="text-sm font-medium">
-                Видимость
-                <select className={fieldClass} value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value })}>
-                  <option value="requester">requester</option>
-                  <option value="agent_requester_safe">agent_requester_safe</option>
-                  <option value="support_internal">support_internal</option>
-                  <option value="admin_internal">admin_internal</option>
-                </select>
-              </label>
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                <p className="font-semibold">Безопасный режим: внутренний черновик для поддержки</p>
+                <p className="mt-1 text-xs leading-5">Импорт не создает requester-visible материал и не публикует статью автоматически.</p>
+              </div>
             </div>
+
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 h-4 w-4 text-brand-700" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-slate-900">Политики черновика</p>
+                  <p>Аудитория будет наследоваться от выбранного раздела.</p>
+                  <p>AI/RAG будет работать только по политике выбранного раздела.</p>
+                  <p className="text-xs text-slate-500">
+                    {selectedSpace ? `Выбран раздел: ${sectionLabel(selectedSpace)}. RAG в разделе ${selectedSpace.allow_rag ? "включен" : "отключен"}.` : "Выберите раздел, чтобы увидеть политики импорта."}
+                  </p>
+                </div>
+              </div>
+            </div>
+
             {textSource ? (
               <label className="text-sm font-medium">
                 Текст импорта
-                <textarea className={textareaClass} value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })} />
+                <textarea className={textareaClass} value={draft.body} onChange={(event) => updateDraft({ body: event.target.value })} />
               </label>
             ) : null}
             {fileSource ? (
@@ -256,25 +320,25 @@ export function KnowledgeImportWizardPage() {
                     type="file"
                   />
                 </label>
-                {draft.file_content_base64 ? <p className="mt-2 text-xs text-emerald-700">Файл готов к preview: {draft.source_name}</p> : null}
+                {draft.file_content_base64 ? <p className="mt-2 text-xs text-emerald-700">Файл готов к предпросмотру: {draft.source_name}</p> : null}
                 {fileError ? <p className="mt-2 text-xs text-rose-700">{fileError}</p> : null}
               </div>
             ) : null}
             {draft.source_kind === "url" ? (
               <label className="text-sm font-medium">
                 URL источника
-                <input className={fieldClass} value={draft.url} onChange={(event) => setDraft({ ...draft, url: event.target.value })} />
+                <input className={fieldClass} value={draft.url} onChange={(event) => updateDraft({ url: event.target.value })} />
               </label>
             ) : null}
             {draft.source_kind === "git" ? (
               <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px]">
                 <label className="text-sm font-medium">
                   Git repository URL
-                  <input className={fieldClass} value={draft.repo_url} onChange={(event) => setDraft({ ...draft, repo_url: event.target.value })} />
+                  <input className={fieldClass} value={draft.repo_url} onChange={(event) => updateDraft({ repo_url: event.target.value })} />
                 </label>
                 <label className="text-sm font-medium">
                   Ref
-                  <input className={fieldClass} placeholder="main" value={draft.ref} onChange={(event) => setDraft({ ...draft, ref: event.target.value })} />
+                  <input className={fieldClass} placeholder="main" value={draft.ref} onChange={(event) => updateDraft({ ref: event.target.value })} />
                 </label>
               </div>
             ) : null}
@@ -285,16 +349,16 @@ export function KnowledgeImportWizardPage() {
             ) : null}
             <div className="rounded-md border border-slate-200 bg-white px-4 py-3">
               <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input checked={draft.auto_segment_after_import} onChange={(event) => setDraft({ ...draft, auto_segment_after_import: event.target.checked })} type="checkbox" />
-                Запустить авторазметку после создания draft
+                <input checked={draft.auto_segment_after_import} onChange={(event) => updateDraft({ auto_segment_after_import: event.target.checked }, false)} type="checkbox" />
+                Запустить авторазметку после создания черновика
               </label>
               <label className="mt-3 block text-sm font-medium">
-                Профиль разметки
+                Профиль авторазметки
                 <select
                   className={fieldClass}
-                  disabled={!draft.auto_segment_after_import}
+                  disabled={!draft.auto_segment_after_import && !shouldAutoSegmentLongImport(preview)}
                   value={draft.segmentation_profile_code}
-                  onChange={(event) => setDraft({ ...draft, segmentation_profile_code: event.target.value })}
+                  onChange={(event) => updateDraft({ segmentation_profile_code: event.target.value }, false)}
                 >
                   {profiles.map((profile) => (
                     <option key={profile.code} value={profile.code}>
@@ -304,11 +368,16 @@ export function KnowledgeImportWizardPage() {
                   {!profiles.length ? <option value="default-auto">default-auto</option> : null}
                 </select>
               </label>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                Документы от {longImportAutoSegmentWords} слов автоматически отправляются в авторазметку, чтобы не требовать ручной сегментации.
+              </p>
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input checked={draft.ai_enrichment_enabled} onChange={(event) => setDraft({ ...draft, ai_enrichment_enabled: event.target.checked })} type="checkbox" />
-              Запросить AI enrichment после preview
+              <input checked={draft.ai_enrichment_enabled} onChange={(event) => updateDraft({ ai_enrichment_enabled: event.target.checked })} type="checkbox" />
+              Запросить AI enrichment после предпросмотра
             </label>
+            {spacesQuery.isError ? <p className="text-sm text-rose-700">Не удалось загрузить разделы базы знаний.</p> : null}
+            {!spacesQuery.isLoading && !spaces.length ? <p className="text-sm text-rose-700">Перед импортом нужен хотя бы один активный раздел базы знаний.</p> : null}
             {previewMutation.error ? <p className="text-sm text-rose-700">{String(previewMutation.error.message)}</p> : null}
             {createMutation.error ? <p className="text-sm text-rose-700">{String(createMutation.error.message)}</p> : null}
           </CardContent>
@@ -319,9 +388,9 @@ export function KnowledgeImportWizardPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
-                Preview
+                Предпросмотр
               </CardTitle>
-              <CardDescription>Структура, которую сервер извлек перед созданием draft.</CardDescription>
+              <CardDescription>Проверьте структуру и политики до создания черновика.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {preview ? (
@@ -331,11 +400,19 @@ export function KnowledgeImportWizardPage() {
                     <Badge tone="neutral">{preview.body_format}</Badge>
                     <Badge tone={preview.ai_enrichment.status === "disabled" ? "neutral" : "warning"}>{aiStatusLabel(preview.ai_enrichment.status)}</Badge>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-950">{preview.detected_title}</p>
-                    <p className="text-xs text-slate-500">
+                  <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Обнаруженное название</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-950">{preview.detected_title}</p>
+                    <p className="mt-1 text-xs text-slate-500">
                       {preview.section_count} секций, {preview.word_count ?? 0} слов
                     </p>
+                  </div>
+                  <div className="space-y-1 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                    <p>Раздел: {sectionLabel(selectedSpace)}</p>
+                    <p>Видимость: внутренний черновик для поддержки</p>
+                    <p>Аудитория: наследуется от раздела</p>
+                    <p>AI/RAG: по политике раздела</p>
+                    <p>{autoSegmentationPreviewLabel(preview, draft.auto_segment_after_import)}</p>
                   </div>
                   <div className="space-y-2">
                     {preview.sections.map((section) => (
@@ -356,7 +433,7 @@ export function KnowledgeImportWizardPage() {
                   ) : null}
                 </>
               ) : (
-                <p className="text-sm text-slate-500">Preview появится после проверки источника.</p>
+                <p className="text-sm text-slate-500">Предпросмотр появится после проверки источника.</p>
               )}
             </CardContent>
           </Card>
@@ -380,11 +457,11 @@ export function KnowledgeImportWizardPage() {
                     </p>
                   ) : null}
                   <a className="text-sm font-medium text-brand-700 hover:underline" href={`/app/admin/knowledge/studio?item=${encodeURIComponent(result.item.item_id)}`}>
-                    Открыть в студии
+                    Открыть в Studio
                   </a>
                 </div>
               ) : (
-                <p className="text-sm text-slate-500">После создания здесь появится ссылка на draft.</p>
+                <p className="text-sm text-slate-500">После создания черновика откроется упрощенная Studio с импортированной статьей.</p>
               )}
             </CardContent>
           </Card>

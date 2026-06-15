@@ -320,6 +320,14 @@ def _safe_keywords(*values: str) -> list[str]:
     return words
 
 
+def _import_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    raw = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else payload.get("metadata_json")
+    metadata = dict(raw) if isinstance(raw, dict) else {}
+    metadata.setdefault("ai_rag_policy", "inherit")
+    metadata.setdefault("import_mode", "safe_draft")
+    return metadata
+
+
 def _parse_import_payload(payload: dict[str, Any], remote_fetcher: KnowledgeRemoteImportFetcher | None = None) -> tuple[dict[str, Any], str]:
     source_kind = str(payload.get("source_kind") or "text").lower()
     remote_source: dict[str, Any] | None = None
@@ -626,6 +634,7 @@ class KnowledgeIngestionService:
                 "source_ref": payload.get("source_name"),
                 "owner_actor_id": payload.get("owner_actor_id") or actor_id,
                 "reviewer_actor_id": payload.get("reviewer_actor_id") or actor_id,
+                "metadata": _import_metadata(payload),
             },
             actor_id=actor_id,
             actor_role=actor_role,
