@@ -48,6 +48,11 @@ AUTH_WHITELIST = {
     "/api/connection_request",
     "/api/connection_request/status",
 }
+PUBLIC_OPTIONAL_AUTH_POSTS = {
+    "/api/knowledge/search",
+    "/api/knowledge/suggest",
+    "/api/knowledge/feedback",
+}
 
 
 def _record_query_token_attempt(request: web.Request, *, rejected: bool) -> None:
@@ -133,6 +138,21 @@ def extract_token_from_header(request: web.Request) -> Optional[str]:
         return token.strip()
     
     return None
+
+
+def _request_has_header_or_query_token(request: web.Request) -> bool:
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header:
+        parts = auth_header.split(" ", 1)
+        if len(parts) == 2:
+            scheme, token = parts
+            if scheme.lower() in ("bearer", "token") and token.strip():
+                return True
+
+    if str(request.headers.get("X-Auth-Token") or "").strip():
+        return True
+
+    return bool(request.query.get("token"))
 
 
 def extract_token_from_web_cookie(request: web.Request) -> Optional[str]:
@@ -353,6 +373,54 @@ async def _write_web_auth_audit(
         logger.debug(f"[AuthMiddleware] web auth audit write skipped: {exc}")
 
 
+async def _web_session_same_origin_response(
+    request: web.Request,
+    auth_context: AuthContext,
+) -> web.Response | None:
+    same_origin_error = _same_origin_error(request)
+    if same_origin_error is None:
+        return None
+
+    error_code, message = same_origin_error
+    logger.warning(
+        f"[AuthMiddleware] Cookie-auth same-origin check failed: "
+        f"path={request.path}, method={request.method}, error_code={error_code}"
+    )
+    await _write_web_auth_audit(
+        request,
+        event_type="web_csrf_failed",
+        error_code=error_code,
+        auth_state="cookie_authenticated_origin_failed",
+        actor_id=auth_context.actor_id,
+        actor_role=auth_context.actor_role,
+    )
+    return web.json_response(
+        {
+            "status": "error",
+            "error": message,
+            "error_code": error_code,
+        },
+        status=403,
+    )
+
+
+async def _handle_public_optional_auth(request: web.Request, handler):
+    web_session_auth = bool(extract_token_from_web_cookie(request))
+    if web_session_auth or _request_has_header_or_query_token(request):
+        auth_context = await extract_auth_context(request)
+        if auth_context:
+            request["auth_context"] = auth_context
+            request["web_session_auth"] = web_session_auth
+            if web_session_auth:
+                same_origin_response = await _web_session_same_origin_response(request, auth_context)
+                if same_origin_response is not None:
+                    return same_origin_response
+        else:
+            request["web_session_auth"] = False
+
+    return await handler(request)
+
+
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """
@@ -384,12 +452,8 @@ async def auth_middleware(request: web.Request, handler):
         return await handler(request)
     if request.method == "POST" and request.path == "/api/service-catalog/preview":
         return await handler(request)
-    if request.method == "POST" and request.path in {
-        "/api/knowledge/search",
-        "/api/knowledge/suggest",
-        "/api/knowledge/feedback",
-    }:
-        return await handler(request)
+    if request.method == "POST" and request.path in PUBLIC_OPTIONAL_AUTH_POSTS:
+        return await _handle_public_optional_auth(request, handler)
     if request.path.startswith("/api/connection_request"):
         return await handler(request)
 
@@ -434,29 +498,9 @@ async def auth_middleware(request: web.Request, handler):
     request["web_session_auth"] = web_session_auth
 
     if web_session_auth:
-        same_origin_error = _same_origin_error(request)
-        if same_origin_error is not None:
-            error_code, message = same_origin_error
-            logger.warning(
-                f"[AuthMiddleware] Cookie-auth same-origin check failed: "
-                f"path={request.path}, method={request.method}, error_code={error_code}"
-            )
-            await _write_web_auth_audit(
-                request,
-                event_type="web_csrf_failed",
-                error_code=error_code,
-                auth_state="cookie_authenticated_origin_failed",
-                actor_id=auth_context.actor_id,
-                actor_role=auth_context.actor_role,
-            )
-            return web.json_response(
-                {
-                    "status": "error",
-                    "error": message,
-                    "error_code": error_code,
-                },
-                status=403,
-            )
+        same_origin_response = await _web_session_same_origin_response(request, auth_context)
+        if same_origin_response is not None:
+            return same_origin_response
 
     logger.debug(
         f"[AuthMiddleware] Authenticated: path={request.path}, "
