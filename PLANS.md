@@ -391,7 +391,7 @@ Acceptance:
 
 ## Phase R0 — Baseline inventory and regression lock
 
-Status: not started.
+Status: in progress. R0 baseline inventory started on 2026-06-15; product implementation remains blocked until the recorded baseline failure and pending agent screenshot are resolved.
 
 Tasks:
 
@@ -443,6 +443,51 @@ Acceptance:
 
 - Baseline is documented in this file or linked evidence folder.
 - No implementation starts until current behavior is understood.
+
+R0 baseline checkpoint, 2026-06-15:
+
+- Scope classification: cross-cutting baseline only. No behavior/code implementation started.
+- Context commands run: `python scripts/task_intake.py --task "PLANS R0 web-first registration baseline inventory and regression lock"`, `python scripts/diff_context.py`, `python scripts/build_context_index.py --force`, `python scripts/build_context_pack.py --topic "web-first registration profile requester device pairing baseline R0"`, and focused `python scripts/search_context_index.py ...` queries for registration, requester, forms and knowledge.
+- Current route map: there is no `/app/register` route in `webapp/src/app/router.tsx`; current web device routes are `/app/device/pair`, `/app/device/login` and `/app/device/register`. Requester cabinet routes are `/app/requester` and `/app/requester/:section`, guarded by `WorkspaceAccessGate`.
+- Current mutating registration/session endpoints include legacy/agent profile submission through `/api/registry/profile` and `/api/registry/agent/profile`, agent `account-state`, account-session create/validate/logout, browser pairing create/poll, other-account login requests, web pairing lookup/login/registration confirm, and admin registration approve/reject/account-session operations.
+- Current requester APIs are mostly read/workspace actions: `GET /api/web/requester/profile`, `GET /devices`, ticket list/detail, ticket create/preview/claim/message/close/feedback/reopen and consents. Profile detail currently exposes `profile_policy.editable=false` in frontend tests; no web-first profile setup/update flow is present yet.
+- Current GUI agent still exposes both browser registration and legacy registration: `pc_agent/ui_gui/account_gate.py` has `browser_register_button` and `register_button`; `pc_agent/ui_gui/main_window.py` still builds a full registration form with full name/login/email/phone/department/location/relationship fields and submits through `submit_registration_profile()`.
+- Current form integration points: `server/tickets/form_catalog.py` validates/submits legacy packs and request-template computed snapshots; `server/tickets/create_flow.py` stores requester account/profile context, supports authenticated requester create and no-device requester create via the web wrapper.
+- Current knowledge integration points: `server/knowledge/access_service.py` and `server/knowledge/audience_rules_service.py` already evaluate person/department/department tree/location/access group/audience group/role/service audience facts; requester search/retrieval/suggestions use those services before projection.
+
+R0 automated baseline results:
+
+- `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_account_session_manager.py pc_agent/tests/test_registration_status.py -q` -> 43 passed.
+- `pnpm --dir webapp exec vitest run src/pages/device-pairing/device-pairing-page.test.tsx src/pages/requester/index.test.tsx src/features/auth/session-provider.test.tsx src/features/requester/api.test.ts --reporter=dot` -> 4 files / 32 tests passed.
+- Registration/account-session/browser-pairing backend split runs all passed:
+  - `server/tests/test_browser_pairing_service.py` -> 6 passed.
+  - `server/tests/test_account_session_service.py` -> 16 passed.
+  - `server/tests/test_device_registration_service.py` -> 16 passed.
+  - `server/tests/test_registry_registration_policy.py` -> 2 passed.
+  - `server/tests/test_registration_api.py` -> 32 passed.
+- Combined registration backend run timed out at 5 minutes, but the same files passed when split. Record this as a runtime-size baseline, not a product failure.
+- Requester/form/service-catalog sequential baseline: `python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_ticket_form_packs.py server/tests/test_ticket_create_service_catalog.py -q` -> 57 passed, 1 failed.
+- Confirmed baseline failure: `server/tests/test_ticket_form_packs.py::test_create_ticket_stores_legacy_form_source_and_computed_snapshot` fails because requester-safe `GET /api/tickets/{ticket_id}` response no longer includes `ticket.custom_fields`; the test expects `custom_fields` to exist while hiding `request_template`.
+- Knowledge audience/access baseline: `python -m pytest server/tests/test_knowledge_access_service.py server/tests/test_knowledge_audience_rules.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_rag_policy.py -q` -> 28 passed.
+- A parallel shared-DB attempt for requester/form and knowledge tests produced deadlock/connection-closed cleanup errors; do not treat that as application baseline. DB-backed R0 pytest groups must run sequentially.
+
+R0 live evidence:
+
+- Remote stand deployed from `cc22879f` with `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls`; webapp build passed and `/api/health` smoke passed on attempt 2.
+- Evidence folder: `artifacts/browser_live_validation/web-first-registration-r0-cc22879f-20260615/`.
+- Captured browser evidence:
+  - `device-pair.md` / `device-pair.png`: current manual pairing code page.
+  - `device-register-no-pairing.md` / `device-register-no-pairing.png`: current `/app/device/register` without pairing id shows a safe error, but message still includes raw `pairing_id`.
+  - `requester-profile.md` / `requester-profile.png`: `/app/requester/profile` under current admin web session shows requester shell plus `Insufficient permissions` in English; console recorded failed requester bootstrap/tickets resource loads.
+  - `admin-registry.md` / `admin-registry.png`: admin registry overview shows registrations/account-session/data-quality summary.
+  - `admin-registry-requests.md` / `admin-registry-requests.png`: admin `requests` tab shows registration diff, current binding, declared identity, pending/approved states and admin override controls.
+- Agent UI evidence is incomplete: existing packaged agent window `Maria Agent v3.1.64` was found by UIA at PID 9504 and `agent-uia-noscreenshot.json` / `agent-uia-shallow.json` were written, but screenshot capture timed out with `screenshot_path="capture_timeout"`. Capture agent account-gate screenshot from a controlled isolated agent before closing R0.
+
+R0 blockers before implementation:
+
+1. Decide whether to fix or intentionally rebaseline `test_create_ticket_stores_legacy_form_source_and_computed_snapshot`; this is a requester-safe custom-field projection contract.
+2. Capture fresh agent account-gate screenshot from a controlled local agent instance, or fix the UIA screenshot capture path.
+3. After blockers are resolved, rerun `python scripts/verify_workspace.py`, the focused R0 tests above, and record final R0 completion before starting R1/R2 implementation.
 
 ---
 
