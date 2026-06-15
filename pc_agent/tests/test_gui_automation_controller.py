@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 
 import pytest
@@ -9,6 +10,17 @@ from pc_agent.ui_gui.chat_panel import TICKET_DETAIL_POLL_INTERVAL_MS
 
 
 pytestmark = pytest.mark.no_db
+
+
+def test_automation_controller_has_no_local_profile_mutation_actions():
+    source = inspect.getsource(GuiAutomationController)
+
+    assert "profile.upsert" not in source
+    assert "profile.select" not in source
+    assert "_upsert_profile" not in source
+    assert "_select_profile" not in source
+    assert "active_profile_id" not in source
+    assert "profile_count" not in source
 
 
 class _Timer:

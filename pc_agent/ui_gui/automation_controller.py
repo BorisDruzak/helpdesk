@@ -45,8 +45,6 @@ class GuiAutomationController:
             "connection_detail": str(getattr(self.window, "_server_connection_detail", "")),
             "tray_available": bool(self.tray_manager and self.tray_manager.available),
             "has_active_profile": chat_panel.has_active_profile(),
-            "active_profile_id": chat_panel._profiles_data.get("active_profile_id"),
-            "profile_count": len(chat_panel._profiles()),
             "active_ticket_id": chat_panel.active_ticket_id,
             "ticket_count": len(chat_panel.tickets_cache),
             "ticket_ids": [
@@ -113,17 +111,6 @@ class GuiAutomationController:
                     raise ValueError("sidebar.select requires view=tickets|profile|settings")
                 self.window._select_sidebar_view(view_name, expand=bool(payload.get("expand", True)))
                 result = await self._result(action, view=view_name)
-            elif action == "profile.upsert":
-                profile_result = self._upsert_profile(payload)
-                self.window._render_profile_status()
-                result = await self._result(action, **profile_result)
-            elif action == "profile.select":
-                profile_id = str(payload.get("profile_id") or "").strip()
-                if not profile_id:
-                    raise ValueError("profile.select requires profile_id")
-                self._select_profile(profile_id)
-                self.window._render_profile_status()
-                result = await self._result(action, profile_id=profile_id)
             elif action == "account.refresh":
                 await self.window._async_refresh_account_state()
                 result = await self._result(
@@ -478,26 +465,6 @@ class GuiAutomationController:
         self.window.raise_()
         self.window.activateWindow()
 
-    def _upsert_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
-        chat_panel = self.window.chat_panel
-        profile_id = str(payload.get("profile_id") or "").strip() or str(uuid.uuid4())
-        profile = {
-            "id": profile_id,
-            "display_name": str(payload.get("display_name") or "").strip(),
-            "full_name": str(payload.get("full_name") or "").strip(),
-            "building": str(payload.get("building") or "").strip(),
-            "room": str(payload.get("room") or "").strip(),
-            "phone": str(payload.get("phone") or "").strip(),
-        }
-        profiles = [item for item in chat_panel._profiles() if item.get("id") != profile_id]
-        profiles.append(profile)
-        chat_panel._profiles_data["profiles"] = profiles
-        if bool(payload.get("set_active", True)) or not chat_panel._profiles_data.get("active_profile_id"):
-            chat_panel._profiles_data["active_profile_id"] = profile_id
-        chat_panel._save_profiles()
-        chat_panel._refresh_profile_selector()
-        return {"profile_id": profile_id, "profile": profile}
-
     def _select_confirmed_account(self, payload: dict[str, Any]) -> dict[str, Any]:
         binding_id = str(payload.get("binding_id") or "").strip()
         accounts = (getattr(self.window, "_account_state", {}) or {}).get("accounts") or []
@@ -579,23 +546,11 @@ class GuiAutomationController:
             "request_template_key": item.get("request_template_key"),
         }
 
-    def _select_profile(self, profile_id: str) -> None:
-        chat_panel = self.window.chat_panel
-        for profile in chat_panel._profiles():
-            if str(profile.get("id") or "") == profile_id:
-                chat_panel._profiles_data["active_profile_id"] = profile_id
-                chat_panel._save_profiles()
-                chat_panel._refresh_profile_selector()
-                return
-        raise ValueError(f"unknown profile_id: {profile_id}")
-
     def _content_view_name(self, widget: Any) -> str:
         if widget is self.window.tickets_sidebar:
             return "tickets"
         if widget is self.window.chat_panel:
             return "chat"
-        if widget is self.window.profile_sidebar:
-            return "profile"
         if widget is getattr(self.window, "settings_page", None):
             return "settings"
         return "unknown"

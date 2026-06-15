@@ -186,6 +186,8 @@ def test_main_window_has_no_local_legacy_registration_entry():
     assert "_build_legacy_registration_disabled_page" not in module_source
     assert "registration_entry_page" not in module_source
     assert "registration_form_widget" not in module_source
+    assert "ProfileSidebarWidget" not in module_source
+    assert "self.profile_sidebar" not in module_source
     assert "submit_registration_profile" not in module_source
     assert "UserProfileManager" not in module_source
     assert "registerRequested" not in setup_source

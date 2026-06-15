@@ -846,6 +846,22 @@ def test_ticket_create_wizard_hides_legacy_profile_selector_when_account_session
     assert "Server Account" in wizard.profile_summary.text()
 
 
+def test_chat_panel_has_no_local_profile_manager_form_or_registry_sync():
+    source = inspect.getsource(ChatPanel)
+    manager_source = inspect.getsource(ChatPanel.open_profile_manager)
+
+    assert "_profiles_data" not in source
+    assert "QFormLayout" not in manager_source
+    assert "QLineEdit" not in manager_source
+    assert "QListWidget" not in manager_source
+    assert "sync_registry_profile" not in source
+    assert "ФИО" not in manager_source
+    assert "department" not in manager_source
+    assert "building" not in manager_source
+    assert "room" not in manager_source
+    assert "Привяжите устройство через браузер" in manager_source
+
+
 async def test_ticket_create_wizard_submit_click_calls_create_when_ready():
     class _FakeClient:
         async def preview_ticket_create(self, **_kwargs):

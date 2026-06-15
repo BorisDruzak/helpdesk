@@ -24,7 +24,7 @@ from loguru import logger
 from .consent_dialog import ConsentDialog
 from .remote_assist_dialog import RemoteAssistConsentDialog
 from .user_consent_dialog import UserConsentPromptDialog
-from .chat_panel import ChatPanel, ProfileSidebarWidget, TicketCreateWizardWidget, TicketsSidebarWidget
+from .chat_panel import ChatPanel, TicketCreateWizardWidget, TicketsSidebarWidget
 from .accessibility import account_description, connection_description, normalize_connection_state, set_uia_metadata
 from .account_gate import AccountGateWidget
 from . import theme
@@ -229,9 +229,6 @@ class MainWindow(QMainWindow):
             auth_token=self.auth_token,
             account_session_provider=self._active_account_session_for_tickets,
         )
-        self.profile_sidebar = ProfileSidebarWidget(self.chat_panel)
-        self.profile_sidebar.setMinimumWidth(0)
-        self.profile_sidebar.setMaximumWidth(16777215)
         self.tickets_sidebar = TicketsSidebarWidget(self.chat_panel)
         self.tickets_sidebar.setMinimumWidth(0)
         self.tickets_sidebar.setMaximumWidth(16777215)
@@ -241,7 +238,6 @@ class MainWindow(QMainWindow):
         self.chat_panel.ticketFormPackChanged.connect(lambda _pack: self.ticket_create_page.refresh_from_panel())
         self.chat_panel.serviceCatalogChanged.connect(lambda _catalog: self.ticket_create_page.refresh_from_panel())
         self.chat_panel.accountSessionError.connect(self.handle_account_session_error)
-        self.chat_panel.set_profile_sidebar(self.profile_sidebar)
         self.chat_panel.set_tickets_sidebar(self.tickets_sidebar)
         self.account_gate_page = AccountGateWidget()
         self.account_gate_page.browserLoginRequested.connect(self._on_browser_login_requested)
@@ -1983,7 +1979,6 @@ class MainWindow(QMainWindow):
         self.chat_panel.setStyleSheet(theme.chat_panel_stylesheet())
         if hasattr(self.chat_panel, "refresh_theme"):
             self.chat_panel.refresh_theme()
-        self.profile_sidebar.setStyleSheet(theme.profile_sidebar_stylesheet())
         self.tickets_sidebar.setStyleSheet(theme.chat_panel_stylesheet() + theme.profile_sidebar_stylesheet())
         if hasattr(self.tickets_sidebar, "refresh_theme"):
             self.tickets_sidebar.refresh_theme()

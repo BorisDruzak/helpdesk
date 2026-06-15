@@ -6,7 +6,6 @@ import asyncio
 import json
 import re
 import socket
-import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -2038,32 +2037,14 @@ class TicketCreateDialog(QDialog):
             self.profile_selector.blockSignals(False)
             self.profile_summary.setText(self.panel.current_requester_profile_summary())
             return
-        self.profile_selector.setVisible(True)
-        self.manage_profiles_btn.setVisible(True)
-        active_id = self.panel._profiles_data.get("active_profile_id")
         self.profile_selector.blockSignals(True)
         self.profile_selector.clear()
-        for profile in self.panel._profiles():
-            title = profile.get("display_name") or profile.get("full_name") or "Без имени"
-            self.profile_selector.addItem(title, profile.get("id"))
-
-        if self.profile_selector.count() > 0:
-            if active_id:
-                idx = self.profile_selector.findData(active_id)
-                self.profile_selector.setCurrentIndex(idx if idx >= 0 else 0)
-            else:
-                self.profile_selector.setCurrentIndex(0)
-
+        self.profile_selector.setVisible(False)
+        self.manage_profiles_btn.setVisible(False)
         self.profile_selector.blockSignals(False)
-        self.profile_summary.setText(self.panel.current_requester_profile_summary())
+        self.profile_summary.setText("Сначала войдите в аккаунт на этом устройстве.")
 
     def _on_profile_changed(self, *_args) -> None:
-        account_reader = getattr(self.panel, "_current_account_session", None)
-        if callable(account_reader) and account_reader():
-            return
-        profile_id = self.profile_selector.currentData()
-        self.panel._profiles_data["active_profile_id"] = profile_id
-        self.panel._save_profiles()
         self.profile_summary.setText(self.panel.current_requester_profile_summary())
 
     def _refresh_forms(self) -> None:
@@ -2119,7 +2100,7 @@ class TicketCreateDialog(QDialog):
 
     def _on_accept(self) -> None:
         if not self.panel.has_active_profile():
-            QMessageBox.warning(self, "Профиль обязателен", "Выберите профиль инициатора.")
+            QMessageBox.warning(self, "Аккаунт обязателен", "Сначала войдите в аккаунт на этом устройстве.")
             return
         if not self.description_input.toPlainText().strip():
             QMessageBox.warning(self, "Ошибка", "Опишите проблему")
@@ -2722,30 +2703,17 @@ class TicketCreateWizardWidget(QFrame):
             self.profile_selector.blockSignals(False)
             self.profile_summary.setText(self._panel.current_requester_profile_summary() or "Аккаунт выбран.")
             return
-        self.profile_selector.setVisible(True)
-        self.manage_profiles_btn.setVisible(True)
-        active_id = self._panel._profiles_data.get("active_profile_id")
         self.profile_selector.blockSignals(True)
         self.profile_selector.clear()
-        for profile in self._panel._profiles():
-            title = profile.get("display_name") or profile.get("full_name") or "Без имени"
-            self.profile_selector.addItem(title, profile.get("id"))
-        if self.profile_selector.count() > 0:
-            idx = self.profile_selector.findData(active_id) if active_id else 0
-            self.profile_selector.setCurrentIndex(idx if idx >= 0 else 0)
+        self.profile_selector.setVisible(False)
+        self.manage_profiles_btn.setVisible(False)
         self.profile_selector.blockSignals(False)
-        self.profile_summary.setText(self._panel.current_requester_profile_summary() or "Профиль не выбран.")
+        self.profile_summary.setText("Сначала войдите в аккаунт на этом устройстве.")
 
     def _on_profile_changed(self, *_args) -> None:
         if self._loading_profile_combo:
             return
-        account_reader = getattr(self._panel, "_current_account_session", None)
-        if callable(account_reader) and account_reader():
-            return
-        profile_id = self.profile_selector.currentData()
-        self._panel._profiles_data["active_profile_id"] = profile_id
-        self._panel._save_profiles()
-        self.profile_summary.setText(self._panel.current_requester_profile_summary() or "Профиль не выбран.")
+        self.profile_summary.setText(self._panel.current_requester_profile_summary())
         self._update_navigation_state()
         self._update_creation_preview()
 
@@ -3611,153 +3579,6 @@ class TicketCreateWizardWidget(QFrame):
             self._update_navigation_state()
 
 
-class ProfileSidebarWidget(QFrame):
-    """Левая колонка главного окна: данные активного аккаунта и переключение."""
-
-    def __init__(self, panel: "ChatPanel", parent: Optional[QWidget] = None) -> None:
-        super().__init__(parent)
-        self._panel = panel
-        self._loading_combo = False
-        self.setObjectName("ProfileSidebar")
-        self.setStyleSheet(theme.profile_sidebar_stylesheet())
-        self.setMinimumWidth(280)
-        self.setMaximumWidth(400)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(14, 14, 14, 14)
-        outer.setSpacing(12)
-
-        title = QLabel("Аккаунт")
-        title.setObjectName("ProfileSidebarTitle")
-        outer.addWidget(title)
-
-        self._hint = QLabel("")
-        self._hint.setObjectName("ProfileHint")
-        self._hint.setWordWrap(True)
-        outer.addWidget(self._hint)
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
-        form.setFormAlignment(Qt.AlignmentFlag.AlignTop)
-        form.setHorizontalSpacing(10)
-        form.setVerticalSpacing(8)
-
-        self._fld_display = QLabel("—")
-        self._fld_display.setObjectName("ProfileFieldValue")
-        self._fld_display.setWordWrap(True)
-        self._lbl_display = QLabel("Отображаемое имя")
-        self._lbl_display.setObjectName("ProfileFieldLabel")
-        form.addRow(self._lbl_display, self._fld_display)
-
-        self._fld_full = QLabel("—")
-        self._fld_full.setObjectName("ProfileFieldValue")
-        self._fld_full.setWordWrap(True)
-        self._lbl_full = QLabel("ФИО")
-        self._lbl_full.setObjectName("ProfileFieldLabel")
-        form.addRow(self._lbl_full, self._fld_full)
-
-        self._fld_location = QLabel("—")
-        self._fld_location.setObjectName("ProfileFieldValue")
-        self._fld_location.setWordWrap(True)
-        self._lbl_location = QLabel("Корпус / кабинет")
-        self._lbl_location.setObjectName("ProfileFieldLabel")
-        form.addRow(self._lbl_location, self._fld_location)
-
-        self._fld_phone = QLabel("—")
-        self._fld_phone.setObjectName("ProfileFieldValue")
-        self._fld_phone.setWordWrap(True)
-        self._lbl_phone = QLabel("Телефон")
-        self._lbl_phone.setObjectName("ProfileFieldLabel")
-        form.addRow(self._lbl_phone, self._fld_phone)
-
-        outer.addLayout(form)
-
-        combo_label = QLabel("Активный аккаунт")
-        combo_label.setObjectName("ProfileFieldLabel")
-        outer.addWidget(combo_label)
-        self._profile_combo = QComboBox()
-        self._profile_combo.currentIndexChanged.connect(self._on_combo_changed)
-        outer.addWidget(self._profile_combo)
-
-        btn_row = QVBoxLayout()
-        btn_row.setSpacing(8)
-        self._btn_manage = QPushButton("Изменить / создать аккаунт")
-        self._btn_manage.clicked.connect(self._on_manage_clicked)
-        btn_row.addWidget(self._btn_manage)
-        outer.addLayout(btn_row)
-
-        outer.addStretch(1)
-        self.refresh_from_panel()
-
-    def _on_manage_clicked(self) -> None:
-        self._panel.open_profile_manager(start_new=False)
-
-    def _on_combo_changed(self, _index: int) -> None:
-        if self._loading_combo:
-            return
-        pid = self._profile_combo.currentData()
-        if pid is None:
-            return
-        cur = self._panel._profiles_data.get("active_profile_id")
-        if pid == cur:
-            return
-        self._panel._profiles_data["active_profile_id"] = pid
-        self._panel._save_profiles()
-
-    def refresh_from_panel(self) -> None:
-        profile = self._panel._active_profile()
-        if profile is None:
-            account = self._panel._current_account_session()
-            if account:
-                self._hint.setText("")
-                self._fld_display.setText(str(account.get("display_name") or account.get("login") or "—"))
-                self._fld_full.setText(str(account.get("full_name") or "—"))
-                self._fld_location.setText(str(account.get("registration_status") or account.get("account_mode") or "—"))
-                self._fld_phone.setText(str(account.get("email") or "—"))
-            else:
-                self._hint.setText("Аккаунт не выбран. Войдите в аккаунт — без него нельзя создать обращение.")
-                self._fld_display.setText("—")
-                self._fld_full.setText("—")
-                self._fld_location.setText("—")
-                self._fld_phone.setText("—")
-        if profile is None:
-            for w in (
-                self._lbl_display,
-                self._lbl_full,
-                self._lbl_location,
-                self._lbl_phone,
-                self._fld_display,
-                self._fld_full,
-                self._fld_location,
-                self._fld_phone,
-            ):
-                w.show()
-        else:
-            self._hint.setText("")
-            self._fld_display.setText(str(profile.get("display_name") or "—"))
-            self._fld_full.setText(str(profile.get("full_name") or "—"))
-            loc = " ".join(filter(None, [profile.get("building"), profile.get("room")])) or "—"
-            self._fld_location.setText(loc)
-            self._fld_phone.setText(str(profile.get("phone") or "—"))
-
-        self._loading_combo = True
-        self._profile_combo.clear()
-        active_id = self._panel._profiles_data.get("active_profile_id")
-        for p in self._panel._profiles():
-            title = p.get("display_name") or p.get("full_name") or "Без имени"
-            self._profile_combo.addItem(str(title), p.get("id"))
-        if self._profile_combo.count() == 0:
-            self._profile_combo.addItem("(нет аккаунтов)", None)
-        else:
-            idx = -1
-            if active_id:
-                idx = self._profile_combo.findData(active_id)
-            if idx < 0:
-                idx = 0
-            self._profile_combo.setCurrentIndex(idx)
-        self._loading_combo = False
-
-
 class TicketsSidebarWidget(QFrame):
     """Left function panel with ticket search, filters, and list."""
 
@@ -4070,7 +3891,6 @@ class ChatPanel(QWidget):
         self._force_scroll_to_latest_on_next_render = False
         self._suspend_scroll_tracking = False
         self._timeline_scroll_restore_revision = 0
-        self._profile_sidebar: Optional[ProfileSidebarWidget] = None
         self._tickets_sidebar: Optional[TicketsSidebarWidget] = None
         self._last_tickets_list_fingerprint: Optional[str] = None
         self._last_detail_header_sig: Optional[str] = None
@@ -4084,7 +3904,6 @@ class ChatPanel(QWidget):
         self._account_session_provider = account_session_provider
 
         self._profiles_path = resolve_data_root() / "requester_profiles.json"
-        self._profiles_data = self._load_profiles()
         self._ticket_form_pack_path = resolve_data_root() / "ticket_form_pack.json"
         self._ticket_form_pack = self._load_ticket_form_pack()
         self._service_catalog_path = resolve_data_root() / "service_catalog.json"
@@ -4417,22 +4236,10 @@ class ChatPanel(QWidget):
         self._profiles_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _load_profiles(self) -> dict:
-        try:
-            if self._profiles_path.exists():
-                return json.loads(self._profiles_path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            logger.warning(f"Не удалось загрузить профили: {exc}")
         return {"active_profile_id": None, "profiles": []}
 
     def _save_profiles(self) -> None:
-        self._profiles_dir_ready()
-        self._profiles_path.write_text(
-            json.dumps(self._profiles_data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        self._refresh_profile_selector()
         self.requesterProfileChanged.emit()
-        self._sync_profile_to_registry()
 
     def _load_ticket_form_pack(self) -> dict[str, Any]:
         try:
@@ -4534,11 +4341,7 @@ class ChatPanel(QWidget):
             logger.info(f"Справочники форм недоступны, используем кеш: {exc}")
 
     def _profiles(self) -> List[dict]:
-        profiles = self._profiles_data.get("profiles")
-        return profiles if isinstance(profiles, list) else []
-
-    def set_profile_sidebar(self, sidebar: ProfileSidebarWidget) -> None:
-        self._profile_sidebar = sidebar
+        return []
 
     def set_tickets_sidebar(self, sidebar: TicketsSidebarWidget) -> None:
         self._tickets_sidebar = sidebar
@@ -4555,8 +4358,7 @@ class ChatPanel(QWidget):
         self._update_tickets_list_ui()
 
     def _refresh_profile_selector(self) -> None:
-        if self._profile_sidebar is not None:
-            self._profile_sidebar.refresh_from_panel()
+        self.requesterProfileChanged.emit()
 
     def _filtered_tickets_for_list(self) -> List[dict]:
         filtered: List[dict] = []
@@ -4607,12 +4409,6 @@ class ChatPanel(QWidget):
         self._update_tickets_list_ui()
 
     def _active_profile(self) -> Optional[dict]:
-        active_id = self._profiles_data.get("active_profile_id")
-        if not active_id:
-            return None
-        for profile in self._profiles():
-            if profile.get("id") == active_id:
-                return profile
         return None
 
     def current_requester_profile_summary(self) -> str:
@@ -4628,179 +4424,20 @@ class ChatPanel(QWidget):
             if account.get("email"):
                 parts.append(str(account.get("email")))
             return " | ".join(parts)
-        profile = self._active_profile()
-        if not profile:
-            account = self._current_account_session()
-            if account:
-                parts = [account.get("display_name") or account.get("full_name") or account.get("login") or "Без имени"]
-                mode_label = {
-                    "confirmed_binding": "подтвержденный аккаунт",
-                    "registration_pending": "регистрация ожидает подтверждения",
-                    "verified_other_account": "другой аккаунт",
-                }.get(str(account.get("account_mode")), "аккаунт")
-                parts.append(mode_label)
-                if account.get("email"):
-                    parts.append(str(account.get("email")))
-                return " | ".join(parts)
-            return f"Аккаунт не выбран | {self.user_display_name}"
-        parts = [profile.get("full_name") or profile.get("display_name") or "Без имени"]
-        if profile.get("department"):
-            parts.append(profile["department"])
-        location = " ".join(filter(None, [profile.get("building"), profile.get("room")]))
-        if location:
-            parts.append(location)
-        if profile.get("phone"):
-            parts.append(profile["phone"])
-        return " | ".join(parts)
+        return f"Аккаунт не выбран | {self.user_display_name}"
 
     def has_active_profile(self) -> bool:
-        return self._active_profile() is not None or self._has_account_session()
+        return self._has_account_session()
 
     def open_profile_manager(self, *, start_new: bool = False) -> None:
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Аккаунты обращения")
-        dialog.setMinimumWidth(540)
-        theme.apply_agent_dialog_theme(dialog)
-        layout = QVBoxLayout(dialog)
-
-        profiles_list = QListWidget()
-        profiles_list.setObjectName("ProfileManagerList")
-        layout.addWidget(profiles_list)
-
-        form_widget = QWidget()
-        form = QFormLayout(form_widget)
-        display_name = QLineEdit()
-        full_name = QLineEdit()
-        department = QLineEdit()
-        building = QLineEdit()
-        room = QLineEdit()
-        phone = QLineEdit()
-        form.addRow("Отображаемое имя", display_name)
-        form.addRow("ФИО", full_name)
-        form.addRow("Подразделение", department)
-        form.addRow("Здание", building)
-        form.addRow("Кабинет", room)
-        form.addRow("Телефон", phone)
-        layout.addWidget(form_widget)
-
-        def refresh_profiles(
-            selected_id: Optional[str] = None,
-            *,
-            skip_auto_select: bool = False,
-        ) -> None:
-            profiles_list.clear()
-            for profile in self._profiles():
-                title = profile.get("display_name") or profile.get("full_name") or "Без имени"
-                item = QListWidgetItem(title)
-                item.setData(Qt.ItemDataRole.UserRole, profile.get("id"))
-                profiles_list.addItem(item)
-                if selected_id and profile.get("id") == selected_id:
-                    profiles_list.setCurrentItem(item)
-            if skip_auto_select:
-                return
-            if profiles_list.count() and profiles_list.currentRow() < 0:
-                profiles_list.setCurrentRow(0)
-
-        def load_current() -> None:
-            item = profiles_list.currentItem()
-            profile_id = item.data(Qt.ItemDataRole.UserRole) if item else None
-            profile = next((p for p in self._profiles() if p.get("id") == profile_id), None)
-            display_name.setText(profile.get("display_name") if profile else "")
-            full_name.setText(profile.get("full_name") if profile else "")
-            department.setText(profile.get("department") if profile else "")
-            building.setText(profile.get("building") if profile else "")
-            room.setText(profile.get("room") if profile else "")
-            phone.setText(profile.get("phone") if profile else "")
-
-        profiles_list.currentItemChanged.connect(lambda *_: load_current())
-
-        buttons = QHBoxLayout()
-        btn_new = QPushButton("Новый")
-        btn_save = QPushButton("Сохранить")
-        btn_delete = QPushButton("Удалить")
-        btn_select = QPushButton("Выбрать активным")
-        btn_save.setObjectName("PrimaryButton")
-        btn_select.setObjectName("PrimaryButton")
-        btn_new.setObjectName("SecondaryButton")
-        btn_delete.setObjectName("SecondaryButton")
-        buttons.addWidget(btn_new)
-        buttons.addWidget(btn_save)
-        buttons.addWidget(btn_delete)
-        buttons.addWidget(btn_select)
-        layout.addLayout(buttons)
-
-        def current_profile_id() -> Optional[str]:
-            item = profiles_list.currentItem()
-            return item.data(Qt.ItemDataRole.UserRole) if item else None
-
-        def save_profile(*, force_new: bool) -> None:
-            profile_id = None if force_new else current_profile_id()
-            payload = {
-                "id": profile_id or str(uuid.uuid4()),
-                "display_name": display_name.text().strip(),
-                "full_name": full_name.text().strip(),
-                "department": department.text().strip(),
-                "building": building.text().strip(),
-                "room": room.text().strip(),
-                "phone": phone.text().strip(),
-            }
-            profiles = [p for p in self._profiles() if p.get("id") != payload["id"]]
-            profiles.append(payload)
-            self._profiles_data["profiles"] = profiles
-            if not self._profiles_data.get("active_profile_id"):
-                self._profiles_data["active_profile_id"] = payload["id"]
-            self._save_profiles()
-            refresh_profiles(payload["id"])
-
-        def save_clicked() -> None:
-            save_profile(force_new=current_profile_id() is None)
-
-        def start_blank_profile() -> None:
-            profiles_list.clearSelection()
-            display_name.clear()
-            full_name.clear()
-            department.clear()
-            building.clear()
-            room.clear()
-            phone.clear()
-
-        def delete_profile() -> None:
-            profile_id = current_profile_id()
-            if not profile_id:
-                return
-            self._profiles_data["profiles"] = [p for p in self._profiles() if p.get("id") != profile_id]
-            if self._profiles_data.get("active_profile_id") == profile_id:
-                self._profiles_data["active_profile_id"] = self._profiles()[0].get("id") if self._profiles() else None
-            self._save_profiles()
-            refresh_profiles()
-            load_current()
-
-        def select_active() -> None:
-            profile_id = current_profile_id()
-            if not profile_id:
-                return
-            self._profiles_data["active_profile_id"] = profile_id
-            self._save_profiles()
-            dialog.accept()
-
-        btn_new.clicked.connect(start_blank_profile)
-        btn_save.clicked.connect(save_clicked)
-        btn_delete.clicked.connect(delete_profile)
-        btn_select.clicked.connect(select_active)
-
-        active = self._profiles_data.get("active_profile_id")
-        if start_new:
-            refresh_profiles(None, skip_auto_select=True)
-            profiles_list.clearSelection()
-            load_current()
-        else:
-            refresh_profiles(active)
-            load_current()
-        dialog.exec()
-        self._refresh_profile_selector()
+        QMessageBox.information(
+            self,
+            "Аккаунт",
+            "Профиль заполняется в веб-кабинете. Привяжите устройство через браузер и дождитесь подтверждения.",
+        )
 
     def _current_requester_payload(self) -> tuple[dict, str]:
-        profile = self._current_account_session() or self._active_profile() or {}
+        profile = self._current_account_session() or {}
         requester_profile = {
             "profile_id": profile.get("id") or "",
             "display_name": profile.get("display_name") or "",
@@ -4816,36 +4453,10 @@ class ChatPanel(QWidget):
         return requester_profile, display_name
 
     def _registry_profile_payload(self, profile: Optional[dict] = None) -> Optional[tuple[str, str, dict]]:
-        profile = profile or self._active_profile()
-        if not profile:
-            return None
-        profile_id = str(profile.get("id") or "").strip()
-        if not profile_id:
-            return None
-        display_name = profile.get("display_name") or profile.get("full_name") or self.user_display_name
-        payload = {
-            "profile_id": profile_id,
-            "display_name": profile.get("display_name") or "",
-            "full_name": profile.get("full_name") or "",
-            "department": profile.get("department") or "",
-            "building": profile.get("building") or "",
-            "room": profile.get("room") or "",
-            "phone": profile.get("phone") or "",
-        }
-        return profile_id, display_name, payload
+        return None
 
     def _sync_profile_to_registry(self, profile: Optional[dict] = None) -> None:
-        registry_payload = self._registry_profile_payload(profile)
-        if registry_payload is None:
-            return
-        requester_id, display_name, payload = registry_payload
-        self._spawn_task(
-            self.ticket_client.sync_registry_profile(
-                requester_id=requester_id,
-                display_name=display_name,
-                profile=payload,
-            )
-        )
+        return None
 
     def _spawn_task(self, coro) -> Optional[asyncio.Task]:
         if self._is_closing:
@@ -6104,10 +5715,6 @@ class ChatPanel(QWidget):
     def _on_create_ticket(self) -> None:
         if not self._has_account_session():
             QMessageBox.warning(self, "Аккаунт обязателен", "Сначала войдите в аккаунт.")
-            return
-        if not self.has_active_profile():
-            QMessageBox.warning(self, "Аккаунт обязателен", "Сначала заполните и выберите аккаунт обращения.")
-            self.open_profile_manager(start_new=True)
             return
         self._spawn_task(self._async_open_create_ticket_dialog())
 

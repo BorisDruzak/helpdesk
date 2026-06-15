@@ -4,6 +4,8 @@ Status, 2026-06-15: completed at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06
 
 Follow-up, 2026-06-16: strict browser-only agent registration is now the active decision. The normal GUI agent no longer builds the legacy full-profile registration page, local registration buttons, or local submit/confirm handlers; backend legacy endpoints remain only as compatibility API surface for older agents. Env feature flags are covered by explicit regression tests, and repeatable live smoke scripts now cover clean account/profile/device/ticket/KB onboarding plus rollout compatibility cases.
 
+Final release follow-up, 2026-06-16: agent `3.1.67` removes the remaining normal-GUI legacy requester profile manager/sidebar state and the `profile.upsert`/`profile.select` automation actions. Ticket creation in the GUI and `/ui/automation/run` now depends only on a server-issued web account session; old profile sync code is no longer invoked from `ChatPanel`.
+
 Carryover closed before this plan became active: Knowledge K4 focused policy tests were added in `22825944`, and Knowledge K3 binding eligibility preview was implemented and live-checked in `536f749e`; evidence is under `artifacts/browser_live_validation/knowledge-binding-preview-536f749e-20260615/`.
 
 ## Product thesis
