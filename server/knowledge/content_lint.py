@@ -33,6 +33,7 @@ def lint_knowledge_content(
     source_refs: Any = None,
     metadata: dict[str, Any] | None = None,
     acknowledged_warning_codes: set[str] | None = None,
+    review_required: bool = True,
 ) -> dict[str, Any]:
     errors: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
@@ -48,7 +49,7 @@ def lint_knowledge_content(
         errors.append(_issue("error", "empty_body", "Knowledge body is required.", "Add reviewed content."))
     if not str(owner_actor_id or "").strip():
         errors.append(_issue("error", "missing_owner", "Knowledge owner is required.", "Assign an owner."))
-    if not str(reviewer_actor_id or "").strip():
+    if review_required and not str(reviewer_actor_id or "").strip():
         errors.append(_issue("error", "missing_reviewer", "Knowledge reviewer is required.", "Assign a reviewer."))
     if review_due_at is None:
         errors.append(_issue("error", "missing_review_due", "Published knowledge requires a review due date.", "Set review_due_at."))

@@ -1251,6 +1251,8 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/knowledge/items/{item_id_or_slug}/publish', handle_web_knowledge_item_publish),
         web.get('/api/web/knowledge/items/{item_id_or_slug}/bindings', handle_web_knowledge_item_bindings),
         web.post('/api/web/knowledge/items/{item_id_or_slug}/bindings', handle_web_knowledge_item_bindings),
+        web.patch('/api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}', handle_web_knowledge_item_bindings),
+        web.delete('/api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}', handle_web_knowledge_item_bindings),
         web.get('/api/web/knowledge/items/{item_id_or_slug}', handle_web_knowledge_item_detail),
         web.patch('/api/web/knowledge/items/{item_id_or_slug}', handle_web_knowledge_item_detail),
         web.post('/api/web/knowledge/items/{item_id_or_slug}/review-action', handle_web_knowledge_review_action),

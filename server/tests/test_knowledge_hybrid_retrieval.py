@@ -292,6 +292,50 @@ async def test_hybrid_retrieval_filters_disabled_rag_policy_before_citations(tes
 
 
 @pytest.mark.asyncio
+async def test_hybrid_retrieval_requires_ai_rag_binding_surface(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        await _published_item(
+            session,
+            slug="rag-binding-requester-only",
+            title="VPN RAG binding requester only",
+            body="VPN RAG surface marker requester only content.",
+            space_code="rag-binding-requester-only-space",
+            binding={
+                "service_code": "network",
+                "offering_code": "network.vpn_issue",
+                "metadata": {"surfaces": ["requester_pre_submit"]},
+            },
+        )
+        await _published_item(
+            session,
+            slug="rag-binding-ai",
+            title="VPN RAG binding AI",
+            body="VPN RAG surface marker AI content.",
+            space_code="rag-binding-ai-space",
+            binding={
+                "service_code": "network",
+                "offering_code": "network.vpn_issue",
+                "metadata": {"surfaces": ["ai_rag"]},
+            },
+        )
+        await _enable_hybrid(session, vector_enabled=False)
+        await session.commit()
+
+    async with session_maker() as session:
+        result = await KnowledgeRetrievalService(session).retrieve(
+            query="VPN RAG surface marker",
+            actor_role="support",
+            service_code="network",
+            offering_code="network.vpn_issue",
+            surface="knowledge_ask",
+        )
+
+    assert [entry["item"]["slug"] for entry in result["results"]] == ["rag-binding-ai"]
+    assert "rag-binding-requester-only" not in str(result)
+
+
+@pytest.mark.asyncio
 async def test_hybrid_retrieval_vector_disabled_falls_back_to_non_vector(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:

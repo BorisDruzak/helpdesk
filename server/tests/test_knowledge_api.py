@@ -84,6 +84,25 @@ async def _seed_requester_identity(session, *, login: str, department_code: str)
     return {"department_id": department.department_id, "person_id": person.person_id}
 
 
+@pytest.mark.asyncio
+async def test_knowledge_space_rejects_requester_portal_flag_for_internal_visibility(test_client) -> None:
+    resp = await test_client.post(
+        "/api/web/knowledge/spaces",
+        headers=_admin_headers(),
+        json={
+            "code": "internal-portal-flag",
+            "title": "Internal portal flag",
+            "visibility": "support_internal",
+            "lifecycle_status": "active",
+            "metadata": {"show_in_requester_portal": True},
+        },
+    )
+    assert resp.status == 400
+    payload = await resp.json()
+    assert payload["error"] == "validation_error"
+    assert "show_in_requester_portal" in payload["details"]
+
+
 async def _seed_requester_article(session, *, slug: str, title: str) -> dict[str, str]:
     repo = KnowledgeRepo(session)
     await repo.upsert_space(
@@ -448,11 +467,53 @@ async def test_knowledge_api_adds_helpdesk_binding_to_existing_article(test_clie
     list_payload = await list_resp.json()
     assert [binding["request_template_key"] for binding in list_payload["bindings"]] == ["network"]
 
+    duplicate_resp = await test_client.post(
+        f"/api/web/knowledge/items/{item['item_id']}/bindings",
+        headers=_admin_headers(),
+        json={
+            "service_code": "network",
+            "offering_code": "network.vpn_issue",
+            "request_template_key": "network",
+            "ticket_type": "incident",
+            "weight": 2,
+            "metadata": {"surfaces": ["support_ticket_workspace"]},
+        },
+    )
+    assert duplicate_resp.status == 200, await duplicate_resp.text()
+    duplicate_payload = await duplicate_resp.json()
+    assert duplicate_payload["binding"]["binding_id"] == payload["binding"]["binding_id"]
+    assert duplicate_payload["binding"]["weight"] == 2
+    assert duplicate_payload["binding"]["metadata"]["surfaces"] == ["support_ticket_workspace"]
+
+    patch_resp = await test_client.patch(
+        f"/api/web/knowledge/items/{item['item_id']}/bindings/{payload['binding']['binding_id']}",
+        headers=_admin_headers(),
+        json={"queue_code": "network-l2", "metadata": {"surfaces": ["ai_rag"]}},
+    )
+    assert patch_resp.status == 200, await patch_resp.text()
+    patched_payload = await patch_resp.json()
+    assert patched_payload["binding"]["queue_code"] == "network-l2"
+    assert patched_payload["binding"]["metadata"]["surfaces"] == ["ai_rag"]
+
     requester_list_resp = await test_client.get(
         f"/api/web/knowledge/items/{item['item_id']}/bindings",
         headers=_requester_headers(),
     )
     assert requester_list_resp.status in {401, 403}
+
+    delete_resp = await test_client.delete(
+        f"/api/web/knowledge/items/{item['item_id']}/bindings/{payload['binding']['binding_id']}",
+        headers=_admin_headers(),
+    )
+    assert delete_resp.status == 200, await delete_resp.text()
+    assert (await delete_resp.json())["binding"]["binding_id"] == payload["binding"]["binding_id"]
+
+    empty_list_resp = await test_client.get(
+        f"/api/web/knowledge/items/{item['item_id']}/bindings",
+        headers=_admin_headers(),
+    )
+    assert empty_list_resp.status == 200
+    assert (await empty_list_resp.json())["bindings"] == []
 
 
 @pytest.mark.asyncio

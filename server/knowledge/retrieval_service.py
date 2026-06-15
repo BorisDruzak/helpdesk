@@ -14,6 +14,7 @@ from ai.openrouter_client import OpenRouterClient
 from app.db.models import KnowledgeAudienceRule, KnowledgeItem, KnowledgeItemVersion, KnowledgeSpace
 from app.repos.knowledge_repo import serialize_item
 from knowledge.access_service import KnowledgeAccessService
+from knowledge.binding_surfaces import allowed_item_ids_for_binding_surface
 from knowledge.contracts import actor_visible_visibilities, sanitize_requester_knowledge_projection
 from knowledge.rag_policy import EXPLAIN_RAG_POLICY_ROLES, evaluate_rag_eligibility, safe_rag_trace_item
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
@@ -123,6 +124,7 @@ class KnowledgeRetrievalService:
                 "request_template_key": request_template_key,
             },
         )
+        await self._filter_candidates_by_binding_surface(candidates, surface=surface)
         rag_policy_trace = await self._filter_candidates_by_rag_policy(candidates, actor_role=actor_role)
         ordered = sorted(candidates.values(), key=lambda item: (-float(item["score"]), str(item["item"].get("title") or "")))
         results = ordered[:max_results]
@@ -520,6 +522,23 @@ class KnowledgeRetrievalService:
                 service_context=service_context,
             ):
                 allowed_ids.add(item.item_id)
+        for item_id in list(candidates):
+            if item_id not in allowed_ids:
+                candidates.pop(item_id, None)
+
+    async def _filter_candidates_by_binding_surface(
+        self,
+        candidates: dict[str, dict[str, Any]],
+        *,
+        surface: str,
+    ) -> None:
+        if not candidates:
+            return
+        allowed_ids = await allowed_item_ids_for_binding_surface(
+            self.session,
+            set(candidates),
+            surface=surface,
+        )
         for item_id in list(candidates):
             if item_id not in allowed_ids:
                 candidates.pop(item_id, None)

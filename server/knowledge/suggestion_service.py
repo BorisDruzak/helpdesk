@@ -34,6 +34,7 @@ class KnowledgeSuggestionService:
             service_code=context.get("service_code"),
             offering_code=context.get("offering_code"),
             request_template_key=context.get("request_template_key"),
+            surface=str(context.get("surface") or context.get("source_surface") or "suggest"),
             limit=max_suggestions,
             effective_audience=effective_audience,
         )
@@ -44,6 +45,7 @@ class KnowledgeSuggestionService:
                 service_code=context.get("service_code"),
                 offering_code=context.get("offering_code"),
                 request_template_key=context.get("request_template_key"),
+                surface=str(context.get("surface") or context.get("source_surface") or "suggest"),
                 limit=max_suggestions,
                 effective_audience=effective_audience,
             )

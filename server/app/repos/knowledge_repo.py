@@ -25,12 +25,14 @@ from knowledge.contracts import (
     KNOWLEDGE_VISIBILITIES,
     KnowledgePublicationBlockedError,
     KnowledgeValidationError,
+    REQUESTER_SAFE_VISIBILITIES,
     actor_visible_visibilities,
     can_mutate_knowledge_visibility,
     can_read_knowledge_visibility,
     lint_requester_safe_publication,
     normalize_knowledge_slug,
 )
+from knowledge.binding_surfaces import SURFACE_ALIASES, normalize_binding_surfaces
 from knowledge.content_lint import lint_knowledge_content
 
 
@@ -57,6 +59,55 @@ def _list(value: Any) -> list[Any]:
 
 def _dict(value: Any) -> dict[str, Any]:
     return deepcopy(value) if isinstance(value, dict) else {}
+
+
+_BINDING_DIMENSION_FIELDS = (
+    "service_code",
+    "offering_code",
+    "request_template_key",
+    "ticket_type",
+    "reporting_category",
+    "device_class",
+    "os_family",
+    "symptom_code",
+    "error_code",
+    "priority",
+    "queue_code",
+)
+
+
+def _binding_dimension_values(payload: dict[str, Any]) -> dict[str, str | None]:
+    return {field: _text(payload.get(field)) for field in _BINDING_DIMENSION_FIELDS}
+
+
+def _binding_matches(row: KnowledgeBinding, values: dict[str, str | None]) -> bool:
+    return all(getattr(row, field) == value for field, value in values.items())
+
+
+def _binding_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = _dict(payload.get("metadata") or payload.get("metadata_json"))
+    if "surfaces" not in metadata:
+        return metadata
+    raw_surfaces = metadata.get("surfaces")
+    if raw_surfaces in (None, ""):
+        metadata["surfaces"] = []
+        return metadata
+    if not isinstance(raw_surfaces, list):
+        raise KnowledgeValidationError("binding metadata.surfaces must be a list")
+    unknown = [
+        str(value)
+        for value in raw_surfaces
+        if str(value or "").strip().lower() not in SURFACE_ALIASES
+    ]
+    if unknown:
+        raise KnowledgeValidationError("unsupported binding metadata.surfaces: " + ", ".join(unknown))
+    metadata["surfaces"] = normalize_binding_surfaces(raw_surfaces)
+    return metadata
+
+
+def _validate_space_metadata(*, visibility: str, metadata: dict[str, Any]) -> None:
+    if metadata.get("show_in_requester_portal") is True and visibility not in set(REQUESTER_SAFE_VISIBILITIES):
+        raise KnowledgeValidationError("show_in_requester_portal requires requester-safe section visibility")
 
 
 def _knowledge_review_required() -> bool:
@@ -236,7 +287,9 @@ class KnowledgeRepo:
         row.allow_publication = bool(payload.get("allow_publication", row.allow_publication))
         row.allow_ingestion = bool(payload.get("allow_ingestion", row.allow_ingestion))
         row.allow_rag = bool(payload.get("allow_rag", row.allow_rag))
-        row.metadata_json = _dict(payload.get("metadata") or payload.get("metadata_json"))
+        metadata = _dict(payload.get("metadata") or payload.get("metadata_json"))
+        _validate_space_metadata(visibility=row.visibility, metadata=metadata)
+        row.metadata_json = metadata
         row.updated_at = now
         row.updated_by = actor_id
         await self.session.flush()
@@ -637,6 +690,7 @@ class KnowledgeRepo:
             source_refs=version.source_refs if version is not None else [],
             metadata={**metadata, **(_dict(version.metadata_json) if version is not None else {})},
             acknowledged_warning_codes={"missing_required_sections", "missing_self_service_binding"},
+            review_required=_knowledge_review_required(),
         )
         blockers.extend(lint["errors"])
         return blockers
@@ -654,23 +708,35 @@ class KnowledgeRepo:
             raise ValueError("knowledge item not found")
         if not can_mutate_knowledge_visibility(actor_role, item.visibility):
             raise KnowledgeValidationError("actor cannot add bindings to this knowledge item")
+        dimensions = _binding_dimension_values(payload)
+        existing_rows = (
+            await self.session.execute(select(KnowledgeBinding).where(KnowledgeBinding.item_id == item.item_id))
+        ).scalars().all()
+        existing = next((row for row in existing_rows if _binding_matches(row, dimensions)), None)
+        if existing is not None:
+            if "weight" in payload:
+                existing.weight = payload.get("weight") or 1
+            if "metadata" in payload or "metadata_json" in payload:
+                existing.metadata_json = _binding_metadata(payload)
+            await self.session.flush()
+            return serialize_binding(existing)
         row = KnowledgeBinding(
             binding_id=str(payload.get("binding_id") or _new_id()),
             item_id=item.item_id,
-            service_code=_text(payload.get("service_code")),
-            offering_code=_text(payload.get("offering_code")),
-            request_template_key=_text(payload.get("request_template_key")),
-            ticket_type=_text(payload.get("ticket_type")),
-            reporting_category=_text(payload.get("reporting_category")),
-            device_class=_text(payload.get("device_class")),
-            os_family=_text(payload.get("os_family")),
-            symptom_code=_text(payload.get("symptom_code")),
-            error_code=_text(payload.get("error_code")),
-            priority=_text(payload.get("priority")),
-            queue_code=_text(payload.get("queue_code")),
+            service_code=dimensions["service_code"],
+            offering_code=dimensions["offering_code"],
+            request_template_key=dimensions["request_template_key"],
+            ticket_type=dimensions["ticket_type"],
+            reporting_category=dimensions["reporting_category"],
+            device_class=dimensions["device_class"],
+            os_family=dimensions["os_family"],
+            symptom_code=dimensions["symptom_code"],
+            error_code=dimensions["error_code"],
+            priority=dimensions["priority"],
+            queue_code=dimensions["queue_code"],
             weight=payload.get("weight") or 1,
             created_by=actor_id,
-            metadata_json=_dict(payload.get("metadata") or payload.get("metadata_json")),
+            metadata_json=_binding_metadata(payload),
         )
         self.session.add(row)
         await self.session.flush()
@@ -686,3 +752,65 @@ class KnowledgeRepo:
             )
         ).scalars().all()
         return [serialize_binding(row) for row in rows]
+
+    async def update_binding(
+        self,
+        item_id_or_slug: str,
+        binding_id: str,
+        payload: dict[str, Any],
+        *,
+        actor_id: str | None,
+        actor_role: str = "admin",
+    ) -> dict[str, Any]:
+        item = await self.get_item_row(item_id_or_slug)
+        if item is None or not can_read_knowledge_visibility(actor_role, item.visibility):
+            raise ValueError("knowledge item not found")
+        if not can_mutate_knowledge_visibility(actor_role, item.visibility):
+            raise KnowledgeValidationError("actor cannot update bindings for this knowledge item")
+        row = (
+            await self.session.execute(
+                select(KnowledgeBinding).where(
+                    KnowledgeBinding.item_id == item.item_id,
+                    KnowledgeBinding.binding_id == binding_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise ValueError("knowledge binding not found")
+        for field in _BINDING_DIMENSION_FIELDS:
+            if field in payload:
+                setattr(row, field, _text(payload.get(field)))
+        if "weight" in payload:
+            row.weight = payload.get("weight") or 1
+        if "metadata" in payload or "metadata_json" in payload:
+            row.metadata_json = _binding_metadata(payload)
+        await self.session.flush()
+        return serialize_binding(row)
+
+    async def delete_binding(
+        self,
+        item_id_or_slug: str,
+        binding_id: str,
+        *,
+        actor_id: str | None,
+        actor_role: str = "admin",
+    ) -> dict[str, Any]:
+        item = await self.get_item_row(item_id_or_slug)
+        if item is None or not can_read_knowledge_visibility(actor_role, item.visibility):
+            raise ValueError("knowledge item not found")
+        if not can_mutate_knowledge_visibility(actor_role, item.visibility):
+            raise KnowledgeValidationError("actor cannot delete bindings for this knowledge item")
+        row = (
+            await self.session.execute(
+                select(KnowledgeBinding).where(
+                    KnowledgeBinding.item_id == item.item_id,
+                    KnowledgeBinding.binding_id == binding_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            raise ValueError("knowledge binding not found")
+        payload = serialize_binding(row)
+        await self.session.delete(row)
+        await self.session.flush()
+        return payload

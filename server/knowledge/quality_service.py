@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 from typing import Any
 import uuid
 
@@ -25,6 +26,11 @@ from knowledge.metadata_service import serialize_quality_model
 
 def _new_id() -> str:
     return str(uuid.uuid4())
+
+
+def _knowledge_review_required() -> bool:
+    raw = str(os.getenv("KNOWLEDGE_REVIEW_REQUIRED", "false") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _grade(score: int) -> str:
@@ -222,7 +228,10 @@ class KnowledgeQualityService:
             dimensions["governance"] += 5
         else:
             issues.append(_issue("error", "missing_owner", "Owner is missing.", "Assign an owner."))
+        review_required = _knowledge_review_required()
         if item.reviewer_actor_id:
+            dimensions["governance"] += 5
+        elif not review_required:
             dimensions["governance"] += 5
         else:
             issues.append(_issue("error", "missing_reviewer", "Reviewer is missing.", "Assign a reviewer."))
@@ -245,6 +254,7 @@ class KnowledgeQualityService:
             bindings=[{"service_code": row.service_code, "offering_code": row.offering_code} for row in bindings],
             source_refs=source_refs,
             metadata=item.metadata_json if isinstance(item.metadata_json, dict) else {},
+            review_required=review_required,
         )
         if lint["errors"]:
             dimensions["safety"] = max(0, dimensions["safety"] - 15)

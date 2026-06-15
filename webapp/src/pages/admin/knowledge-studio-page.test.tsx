@@ -630,7 +630,7 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByText("Где показывать статью")).toBeInTheDocument();
     expect(screen.getByText(/Определяет, в каких сценариях система будет предлагать статью/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Связь с обращениями" })).toBeInTheDocument();
-    expect(screen.getByText("Связанные услуги / формы обращения")).toBeInTheDocument();
+    expect(screen.getByText("Сервис, услуга, шаблон и поверхности показа")).toBeInTheDocument();
     expect(screen.getByText("Где статья будет предложена")).toBeInTheDocument();
     expect(screen.getByLabelText("Сервис")).toHaveValue("");
     await screen.findByRole("option", { name: /Сеть и VPN/ });
@@ -640,7 +640,7 @@ describe("AdminKnowledgeStudioPage", () => {
     await waitFor(() => expect(screen.getByLabelText("Шаблон обращения")).toHaveValue("network"));
     expect(screen.getAllByText("Форма обращения до отправки").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Карточка тикета поддержки").length).toBeGreaterThanOrEqual(1);
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить связь с обращениями" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить связь" }));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/knowledge/items/item-1/bindings",

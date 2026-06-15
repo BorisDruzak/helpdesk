@@ -16,6 +16,7 @@ from app.db.models import (
 )
 from app.repos.knowledge_repo import serialize_item
 from knowledge.access_service import KnowledgeAccessService
+from knowledge.binding_surfaces import allowed_item_ids_for_binding_surface
 from knowledge.contracts import actor_visible_visibilities, sanitize_requester_knowledge_projection
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
 from knowledge.vector_search_service import KnowledgeVectorSearchService
@@ -225,6 +226,14 @@ class KnowledgeSearchService:
                 current = scored.get(item.item_id)
                 if current is None or score > current[0]:
                     scored[item.item_id] = (score, payload)
+        allowed_surface_item_ids = await allowed_item_ids_for_binding_surface(
+            self.session,
+            set(scored),
+            surface=surface,
+        )
+        for item_id in list(scored):
+            if item_id not in allowed_surface_item_ids:
+                scored.pop(item_id, None)
         ordered = sorted(scored.values(), key=lambda item: (-item[0], str(item[1].get("title") or "")))
         results = [payload for _score, payload in ordered[: max(1, min(limit, 50))]]
         await KnowledgeSearchAnalyticsService(self.session).record_search_event(

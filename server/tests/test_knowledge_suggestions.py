@@ -181,6 +181,107 @@ async def test_knowledge_suggestions_use_binding_context_before_audience_project
 
 
 @pytest.mark.asyncio
+async def test_knowledge_suggestions_respect_binding_surface_metadata(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = KnowledgeRepo(session)
+        await repo.upsert_space(
+            {"code": "surface-context", "title": "Surface Context", "visibility": "requester", "lifecycle_status": "active"},
+            actor_id="admin",
+        )
+        requester_item = await repo.create_item_draft(
+            {
+                "space_code": "surface-context",
+                "slug": "vpn-requester-surface",
+                "item_type": "article",
+                "title": "VPN surface gate marker requester",
+                "summary": "Requester pre-submit surface only",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        requester_version = await repo.create_version(
+            requester_item["item_id"],
+            {
+                "title": "VPN surface gate marker requester",
+                "body_format": "markdown",
+                "body": "VPN surface gate marker requester body.",
+            },
+            actor_id="support",
+        )
+        await repo.add_binding(
+            requester_item["item_id"],
+            {
+                "service_code": "network",
+                "offering_code": "network.vpn_issue",
+                "request_template_key": "network",
+                "metadata": {"surfaces": ["requester_pre_submit"]},
+            },
+            actor_id="support",
+        )
+        await repo.publish_item(requester_item["item_id"], requester_version["version_id"], actor_id="admin")
+
+        support_item = await repo.create_item_draft(
+            {
+                "space_code": "surface-context",
+                "slug": "vpn-support-surface",
+                "item_type": "article",
+                "title": "VPN surface gate marker support",
+                "summary": "Support workspace surface only",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        support_version = await repo.create_version(
+            support_item["item_id"],
+            {
+                "title": "VPN surface gate marker support",
+                "body_format": "markdown",
+                "body": "VPN surface gate marker support body.",
+            },
+            actor_id="support",
+        )
+        await repo.add_binding(
+            support_item["item_id"],
+            {
+                "service_code": "network",
+                "offering_code": "network.vpn_issue",
+                "request_template_key": "network",
+                "metadata": {"surfaces": ["support_ticket_workspace"]},
+            },
+            actor_id="support",
+        )
+        await repo.publish_item(support_item["item_id"], support_version["version_id"], actor_id="admin")
+        await session.commit()
+
+    context = {
+        "service_code": "network",
+        "offering_code": "network.vpn_issue",
+        "request_template_key": "network",
+        "query": "VPN surface gate marker",
+        "limit": 10,
+    }
+    async with session_maker() as session:
+        requester_result = await KnowledgeSuggestionService(session).suggest(
+            {**context, "surface": "requester_portal"},
+            actor_role="requester",
+        )
+        support_result = await KnowledgeSuggestionService(session).suggest(
+            {**context, "surface": "support_workspace"},
+            actor_role="support",
+        )
+
+    assert [item["slug"] for item in requester_result["suggestions"]] == ["vpn-requester-surface"]
+    assert [item["slug"] for item in support_result["suggestions"]] == ["vpn-support-surface"]
+    assert "vpn-support-surface" not in str(requester_result)
+    assert "vpn-requester-surface" not in str(support_result)
+
+
+@pytest.mark.asyncio
 async def test_support_suggestions_can_include_internal_runbooks(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:

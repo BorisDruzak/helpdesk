@@ -148,15 +148,18 @@ async def handle_web_knowledge_spaces(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
     if request.method == "POST" and role != "admin":
         return web.json_response({"status": "error", "error": "forbidden"}, status=403)
-    async with get_session() as session:
-        repo = KnowledgeRepo(session)
-        if request.method == "POST":
-            payload = await _json_payload(request)
-            space = await repo.upsert_space(payload, actor_id=actor_id)
-            await session.commit()
-            return web.json_response({"status": "ok", "space": space})
-        spaces = await repo.list_spaces(actor_role=role)
-        return web.json_response({"status": "ok", "spaces": spaces})
+    try:
+        async with get_session() as session:
+            repo = KnowledgeRepo(session)
+            if request.method == "POST":
+                payload = await _json_payload(request)
+                space = await repo.upsert_space(payload, actor_id=actor_id)
+                await session.commit()
+                return web.json_response({"status": "ok", "space": space})
+            spaces = await repo.list_spaces(actor_role=role)
+            return web.json_response({"status": "ok", "spaces": spaces})
+    except KnowledgeValidationError as exc:
+        return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
 
 
 @require_auth("admin", "support", "auditor")
@@ -212,6 +215,7 @@ async def handle_web_knowledge_item_detail(request: web.Request) -> web.Response
 async def handle_web_knowledge_item_bindings(request: web.Request) -> web.Response:
     actor_id, role = _actor(request)
     item_id = str(request.match_info.get("item_id_or_slug") or "")
+    binding_id = str(request.match_info.get("binding_id") or "")
     try:
         async with get_session() as session:
             repo = KnowledgeRepo(session)
@@ -221,8 +225,14 @@ async def handle_web_knowledge_item_bindings(request: web.Request) -> web.Respon
                 return web.json_response({"status": "ok", "bindings": bindings})
             if role not in {"admin", "support"}:
                 return web.json_response({"status": "error", "error": "forbidden"}, status=403)
-            payload = await _json_payload(request)
-            binding = await repo.add_binding(item_id, payload, actor_id=actor_id, actor_role=role)
+            if request.method == "PATCH" and binding_id:
+                payload = await _json_payload(request)
+                binding = await repo.update_binding(item_id, binding_id, payload, actor_id=actor_id, actor_role=role)
+            elif request.method == "DELETE" and binding_id:
+                binding = await repo.delete_binding(item_id, binding_id, actor_id=actor_id, actor_role=role)
+            else:
+                payload = await _json_payload(request)
+                binding = await repo.add_binding(item_id, payload, actor_id=actor_id, actor_role=role)
             await session.commit()
             return web.json_response({"status": "ok", "binding": binding})
     except KnowledgeValidationError as exc:

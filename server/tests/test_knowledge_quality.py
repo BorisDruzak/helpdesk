@@ -69,3 +69,24 @@ async def test_missing_governance_unsafe_and_negative_feedback_lower_quality(tes
     codes = {issue["code"] for issue in score["issues"]}
     assert score["score"] < 80
     assert {"unsafe_requester_content", "review_overdue", "not_helpful_feedback"} <= codes
+
+
+@pytest.mark.asyncio
+async def test_review_disabled_quality_does_not_require_reviewer(test_engine, monkeypatch) -> None:
+    monkeypatch.setenv("KNOWLEDGE_REVIEW_REQUIRED", "false")
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        item = await _article(
+            session,
+            slug="quality-no-reviewer-simplified",
+            body="## Steps\nReconnect VPN.\n## Verification\nVPN connects.",
+            owner="owner",
+            reviewer="reviewer",
+        )
+        repo = KnowledgeRepo(session)
+        row = await repo.get_item_row(item["item_id"])
+        row.reviewer_actor_id = None
+        score = await KnowledgeQualityService(session).score_item(item["item_id"])
+
+    codes = {issue["code"] for issue in score["issues"]}
+    assert "missing_reviewer" not in codes

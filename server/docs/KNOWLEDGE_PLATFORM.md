@@ -12,7 +12,7 @@ P2 adds a universal company knowledge layer and uses it for helpdesk self-servic
 - `knowledge_items`: universal objects with item type, lifecycle, visibility, owner/reviewer, source metadata, review dates, current published version and optional item metadata such as `metadata_json.ai_rag_policy`.
 - `knowledge_item_versions`: immutable versioned content. Publishing points `knowledge_items.current_version_id` at a reviewed version.
 - `knowledge_chunks`: chunked text for search and future ACL-filtered retrieval/RAG. P2 does not add a mandatory external search or vector database.
-- `knowledge_bindings`: operational links to `service_code`, `offering_code`, `request_template_key`, ticket type, symptoms, error codes and device/OS context.
+- `knowledge_bindings`: operational links to `service_code`, `offering_code`, `request_template_key`, ticket type, symptoms, error codes and device/OS context. `metadata.surfaces` is an intentional contract for where the binding is eligible to appear.
 - `knowledge_nodes` / `knowledge_edges` / `knowledge_entity_mentions`: PostgreSQL graph foundation for services, offerings, items, concepts, known errors, workarounds and ticket-derived relations.
 - `knowledge_ai_proposals`: governed AI-generated proposal review queue for summaries, tags, glossary, graph nodes/edges and duplicate candidates. Proposals stay pending until admin/support review; approval can apply graph node/edge payloads and writes Observer-visible audit rows.
 - `knowledge_feedback_events`: suggested/viewed/helpful/not_helpful/deflected/support-used/draft-created events for usage and deflection metrics.
@@ -69,7 +69,7 @@ RAG eligibility is a second gate after lifecycle, coarse visibility and audience
 - Supported article values: `inherit`, `allowed`, `disabled`, `staff_only`, `requester_safe_only`.
 - `inherit` follows `KnowledgeSpace.allow_rag`; `allowed` explicitly enables RAG for the article within existing visibility; `disabled` excludes it; `staff_only` allows only admin/support retrieval; `requester_safe_only` requires requester-safe item visibility.
 
-`KnowledgeRetrievalService` applies RAG eligibility after effective-audience filtering and before ordering, rerank, citations and Ask prompt construction. `KnowledgeVectorSearchService` also applies the same policy before returning vector candidates. Internal `/api/web/knowledge/retrieve` responses may include a `rag_policy` explain block with counts and reason codes for admin/support/auditor/security. Requester, agent and public responses do not receive this trace, and excluded trace entries do not include denied article title, slug, body, snippets or chunks.
+`KnowledgeRetrievalService` applies binding-surface eligibility, then RAG eligibility after effective-audience filtering and before ordering, rerank, citations and Ask prompt construction. `surface=knowledge_ask`, `admin_knowledge_retrieve` and related retrieval aliases require bindings with `metadata.surfaces` containing `ai_rag` when an article has explicit binding surfaces. `KnowledgeVectorSearchService` also applies the same policy before returning vector candidates. Internal `/api/web/knowledge/retrieve` responses may include a `rag_policy` explain block with counts and reason codes for admin/support/auditor/security. Requester, agent and public responses do not receive this trace, and excluded trace entries do not include denied article title, slug, body, snippets or chunks.
 
 ## Search And Suggestions
 
@@ -83,11 +83,13 @@ RAG eligibility is a second gate after lifecycle, coarse visibility and audience
 - `ticket_type`
 - query/form text
 - device metadata
-- surface (`requester_portal`, `agent_gui`, `support_workspace`)
+- surface (`requester_portal`, `requester_after_submit`, `agent_gui`, `support_workspace`, `support_command_center`, `knowledge_ask`)
 
 The service returns visibility-filtered suggestions, known errors and workarounds.
 
 Authoring K3 exposes existing-article helpdesk bindings without making the raw binding model the normal workflow. `GET /api/web/knowledge/items/{item_id_or_slug}/bindings` lists bindings only after the actor can read the article; `POST /api/web/knowledge/items/{item_id_or_slug}/bindings` is admin/support-only and reuses `KnowledgeRepo.add_binding()` to add service, offering, request-template, ticket-type and metadata context. The Studio panel is labelled `Связь с обращениями`, loads Service Catalog options from `/api/service-catalog/current`, writes selected display surfaces into `metadata.surfaces`, and must not show `binding_id` or raw JSON in default UI.
+
+2026-06-15 update: binding surfaces are enforced by `knowledge.binding_surfaces`: `requester_portal` maps to `requester_pre_submit`, `support_workspace` maps to `support_ticket_workspace`, `agent_gui` maps to `agent`, and retrieval/Ask surfaces map to `ai_rag`. If a binding has no `metadata.surfaces`, it remains legacy-compatible and is eligible for all surfaces. If an article has only explicit disallowed binding surfaces, search/suggestion/retrieval removes the article before projection so denied titles and snippets do not leak. The binding API now supports `GET|POST /api/web/knowledge/items/{item_id_or_slug}/bindings` and `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`; duplicate same-dimension `POST` calls update the existing binding.
 
 Content-pack baseline bindings must use the same canonical Service Catalog defaults as ticket create/preview: for example VPN is `network` + `network.vpn_issue` + template `network`, password reset is `access` + `access.reset_password` + template `access`, mail is `mail` + `mail.mailbox_issue` + template `mail_issue`, laptop is `workplace` + `workplace.laptop_broken` + template `breakage`, and fallback is `other` + `other.unknown` + template `general_request`. `scripts/validate_knowledge_pack_bindings.py --strict` enforces this against `server/tickets/service_catalog_defaults.py`.
 
@@ -175,6 +177,8 @@ Admin/support management:
 - `POST /api/web/knowledge/items/{item_id_or_slug}/segments/index-sync`
 - `GET|POST /api/web/knowledge/items/{item_id_or_slug}/versions`
 - `POST /api/web/knowledge/items/{item_id_or_slug}/publish`
+- `GET|POST /api/web/knowledge/items/{item_id_or_slug}/bindings`
+- `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`
 - `GET|POST /api/web/knowledge/graph/nodes`
 - `GET|PATCH|DELETE /api/web/knowledge/graph/nodes/{node_id_or_stable_key}`
 - `GET /api/web/knowledge/graph/search`

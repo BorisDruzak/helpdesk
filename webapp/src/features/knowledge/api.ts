@@ -1090,6 +1090,30 @@ export async function addKnowledgeItemBinding(itemIdOrSlug: string, payload: Kno
   return readJson<{ binding: KnowledgeItemBinding }>(response, "Не удалось сохранить связь статьи с обращениями");
 }
 
+export async function updateKnowledgeItemBinding(itemIdOrSlug: string, bindingId: string, payload: KnowledgeItemBindingInput) {
+  const response = await fetch(
+    `/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/bindings/${encodeURIComponent(bindingId)}`,
+    {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return readJson<{ binding: KnowledgeItemBinding }>(response, "Не удалось обновить связь статьи с обращениями");
+}
+
+export async function deleteKnowledgeItemBinding(itemIdOrSlug: string, bindingId: string) {
+  const response = await fetch(
+    `/api/web/knowledge/items/${encodeURIComponent(itemIdOrSlug)}/bindings/${encodeURIComponent(bindingId)}`,
+    {
+      method: "DELETE",
+      credentials: "same-origin",
+    },
+  );
+  return readJson<{ binding: KnowledgeItemBinding }>(response, "Не удалось удалить связь статьи с обращениями");
+}
+
 export async function fetchKnowledgeAudienceRules(subjectType: "item" | "space", subjectId: string): Promise<KnowledgeAudienceRule[]> {
   const params = new URLSearchParams({
     subject_type: subjectType,
