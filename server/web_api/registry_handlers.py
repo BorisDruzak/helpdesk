@@ -22,6 +22,9 @@ from registry.service import RegistryIngestionService, RegistrySnapshotService
 import uuid
 
 
+WEB_BROWSER_PAIRING_ROLES = ("admin", "support", "user")
+
+
 def _success(data: dict) -> web.Response:
     return web.json_response({"status": "success", "data": data})
 
@@ -450,7 +453,7 @@ async def _browser_pairing_payload_with_device(session, service: BrowserPairingS
     return payload
 
 
-@require_auth("user")
+@require_auth(*WEB_BROWSER_PAIRING_ROLES)
 async def handle_web_registry_browser_pairing_code_lookup(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     rate_key = f"{client_ip(request)}:{auth_context.actor_id}"
@@ -489,7 +492,7 @@ async def handle_web_registry_browser_pairing_code_lookup(request: web.Request) 
     )
 
 
-@require_auth("user")
+@require_auth(*WEB_BROWSER_PAIRING_ROLES)
 async def handle_web_registry_browser_pairing_get(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     rate_key = f"{client_ip(request)}:{auth_context.actor_id}:direct"
@@ -505,7 +508,7 @@ async def handle_web_registry_browser_pairing_get(request: web.Request) -> web.R
     return _success(payload)
 
 
-@require_auth("user")
+@require_auth(*WEB_BROWSER_PAIRING_ROLES)
 async def handle_web_registry_browser_pairing_login_confirm(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     pairing_id = str(request.match_info.get("pairing_id") or "").strip()
@@ -527,7 +530,7 @@ async def handle_web_registry_browser_pairing_login_confirm(request: web.Request
     return _success(payload)
 
 
-@require_auth("user")
+@require_auth(*WEB_BROWSER_PAIRING_ROLES)
 async def handle_web_registry_browser_pairing_registration_confirm(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     pairing_id = str(request.match_info.get("pairing_id") or "").strip()

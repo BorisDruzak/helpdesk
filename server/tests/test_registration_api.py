@@ -9,7 +9,7 @@ from aiohttp.test_utils import TestClient, TestServer
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceBrowserPairing, DeviceRegistrationClaim
+from app.db.models import Device, DeviceBrowserPairing, DeviceRegistrationClaim, RegistryPersonIdentity
 from auth.rate_limit import reset_rate_limits
 from registry.browser_pairing_service import BrowserPairingService
 from registry.account_session_service import AccountSessionService
@@ -259,6 +259,53 @@ async def test_web_user_confirms_login_pairing_and_agent_picks_up_token_once(tes
     assert repeated.status == 200
     assert repeated_payload["data"]["status"] == "consumed"
     assert "session_token" not in repeated_payload["data"]
+
+
+@pytest.mark.asyncio
+async def test_admin_web_session_confirms_login_pairing_for_linked_registry_identity(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        claim = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="owner@example.test",
+            display_name="Owner User",
+            profile={"full_name": "Owner User", "email": "owner@example.test", "user_confirmed": True},
+        )
+        approved = await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+        session.add(
+            RegistryPersonIdentity(
+                person_id=approved["person"]["person_id"],
+                provider="ui_login",
+                identifier="admin-test",
+                normalized_identifier="admin-test",
+                verified=True,
+                source="test",
+            )
+        )
+        pairing = await BrowserPairingService(session).create_pairing(device_id=device_id, purpose="login", actor_id=device_id)
+        await session.commit()
+
+    page_response = await test_client.get(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+    )
+    page_payload = await page_response.json()
+    assert page_response.status == 200, page_payload
+    assert page_payload["data"]["pairing_id"] == pairing["pairing_id"]
+
+    confirmed = await test_client.post(
+        f"/api/web/registry/browser-pairings/{pairing['pairing_id']}/login/confirm",
+        headers=_headers(TEST_UI_ADMIN_TOKEN),
+        json={},
+    )
+    confirmed_payload = await confirmed.json()
+    assert confirmed.status == 200, confirmed_payload
+    assert confirmed_payload["data"]["status"] == "confirmed"
+    assert confirmed_payload["data"]["binding_id"] == approved["binding"]["binding_id"]
+    assert "session_token" not in confirmed_payload["data"]
 
 
 @pytest.mark.asyncio

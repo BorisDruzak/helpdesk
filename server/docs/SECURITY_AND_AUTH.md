@@ -166,6 +166,7 @@ Security update 2026-06-11:
 
 - Роль и идентификатор актора берутся только из `request['auth_context']`.
 - Декоратор `require_auth(*allowed_roles)` проверяет наличие `auth_context` и вхождение `actor_role` в `allowed_roles`. При отсутствии контекста — 401, при недопустимой роли — 403 (`error_code: "FORBIDDEN"`).
+- Browser-pairing web endpoints `POST /api/web/registry/browser-pairings/lookup`, `GET /api/web/registry/browser-pairings/{pairing_id}` and `/login|registration/confirm` accept web-session roles `admin`, `support` and `user`; login confirmation still relies on `BrowserPairingService` to resolve the actor identity and require an active primary/shared/responsible binding for the pairing device.
 - Для `DELETE /api/devices/{device_id}` допускается только `admin`: support/user/agent не могут архивировать устройства в реестре.
 - Legacy endpoint `POST /api/tools/run` также берёт роль только из `AuthContext`; если запрос пришёл по agent token, `device_id` в body обязан совпадать с `AuthContext.actor_id`, иначе сервер возвращает 403 `DEVICE_CONTEXT_MISMATCH` до metadata/policy/dispatch. Это не даёт agent token запускать diagnostics/tool commands в чужом device context даже при подмене `actor_role` в JSON.
 
