@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { ArticleHelpDeskBindingPanel } from "../article-helpdesk-binding-panel";
 import { ArticleMetadataPanel } from "../article-metadata-panel";
+import { ArticleRelatedGraphPanel } from "../article-related-graph-panel";
 import { ArticleVisibilityPanel } from "../article-visibility-panel";
 import type { KnowledgeItem, KnowledgeSpace } from "../api";
 import { aiRagPolicyOptions, fieldClass, itemTypeOptions, type EditorDraft, visibilityOptions } from "./knowledge-studio-model";
@@ -116,6 +117,8 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
           </span>
         </div>
       </section>
+
+      <ArticleRelatedGraphPanel item={selectedItem} />
 
       <ArticleHelpDeskBindingPanel item={selectedItem} visibility={draft.visibility} />
 

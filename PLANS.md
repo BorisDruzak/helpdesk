@@ -1,6 +1,6 @@
 ## Active Work: Knowledge Platform Refactor — Production Knowledge Base
 
-Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, and retrieval filters candidates by audience and RAG policy. K5 operations dashboard product pass is implemented in the current slice: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented, deployed and live-checked on the stand for commit `485969d6`; evidence is under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`. K7 settings consistency is implemented, deployed and live-checked on the stand for commit `b430ab72`; evidence is under `artifacts/browser_live_validation/knowledge-settings-k7-b430ab72-20260615/`. Remaining work is focused on K8 graph simplification, stale mojibake cleanup across older plan/docs/tests, and live evidence for later UI slices.
+Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, and retrieval filters candidates by audience and RAG policy. K5 operations dashboard product pass is implemented in the current slice: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented, deployed and live-checked on the stand for commit `485969d6`; evidence is under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`. K7 settings consistency is implemented, deployed and live-checked on the stand for commit `b430ab72`; evidence is under `artifacts/browser_live_validation/knowledge-settings-k7-b430ab72-20260615/`. K8 graph simplification is implemented locally and awaits live browser evidence after deploy. Remaining work is focused on stale mojibake cleanup across older plan/docs/tests and live evidence for later UI slices.
 
 Progress, 2026-06-15: K2/K3/K4 backend production-correctness slice is implemented and live-checked on the stand for commit `c4d6c54c`; evidence is under `artifacts/browser_live_validation/knowledge-binding-surfaces-c4d6c54c-20260615/`. Binding `metadata.surfaces` is now enforced in search/suggestions/retrieval before projection, with `requester_portal -> requester_pre_submit`, `support_workspace -> support_ticket_workspace`, `agent_gui -> agent`, and Ask/retrieval surfaces -> `ai_rag`. Binding API now supports duplicate upsert plus `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`. Knowledge Studio binding panel is localized in Russian, includes surface guidance, and supports edit/delete. Quality scoring no longer reports `missing_reviewer` when `KNOWLEDGE_REVIEW_REQUIRED=false`. K1 hardening now rejects `show_in_requester_portal=true` for non-requester-safe visibility, empty `allowed_item_types`, `allow_rag=false` while active articles force `ai_rag_policy=allowed`, and article `ai_rag_policy=allowed` in a section where RAG is disabled. The requester portal reads `show_in_requester_portal`, the support workspace reads `show_in_support_workspace`, and Studio reads `article_length_recommendation`.
 
@@ -303,19 +303,26 @@ Acceptance:
 
 ## K8 — Knowledge Graph / Related Articles
 
-Status: not part of the simplified authoring MVP.
+Status: implemented locally; live/browser evidence still needs to be collected after deploy.
 
-Remaining:
+Implemented:
 
 1. Keep graph as advanced workbench.
-2. Add simple “Связанные статьи” UI in Studio later.
+2. Add simple “Связанные статьи” UI in Studio settings.
 3. Use graph for:
    - related articles;
    - duplicates;
    - supersedes;
-   - known error → workaround;
-   - service → article.
+   - known error / workaround;
+   - service / article.
 4. Do not force authors to use graph for normal article creation.
+5. Studio reads graph search/neighborhood opportunistically for linked article nodes, but empty/error graph states do not block normal save.
+
+Remaining:
+
+1. Collect live browser evidence for:
+   - `/app/admin/knowledge/studio`;
+   - `/app/admin/knowledge/graph`.
 
 Acceptance:
 

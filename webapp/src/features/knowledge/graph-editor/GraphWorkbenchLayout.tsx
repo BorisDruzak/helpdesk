@@ -16,6 +16,10 @@ export function GraphWorkbenchLayout({ canvas, explorer, inspector }: GraphWorkb
         title="Граф знаний"
         description="Визуальный редактор узлов, связей и схемы размещения для администратора базы знаний."
       />
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600">
+        <p className="font-semibold text-slate-900">Advanced workbench</p>
+        <p>Обычное создание и сохранение статьи не требует работы с графом; используйте эту страницу для related articles, duplicates, supersedes, known error/workaround и service/article связей.</p>
+      </div>
       <div className="grid min-w-0 gap-4 xl:grid-cols-[260px_minmax(420px,1fr)_300px] 2xl:grid-cols-[300px_minmax(620px,1fr)_340px]">
         <aside className="min-w-0 space-y-4">{explorer}</aside>
         <main className="min-w-0">{canvas}</main>

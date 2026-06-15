@@ -219,6 +219,8 @@ describe("KnowledgeGraphStudioPage", () => {
     renderGraphStudio();
 
     expect(await screen.findByRole("heading", { name: "Граф знаний" })).toBeInTheDocument();
+    expect(screen.getByText(/Advanced workbench/)).toBeInTheDocument();
+    expect(screen.getByText(/Обычное создание и сохранение статьи не требует работы с графом/)).toBeInTheDocument();
     expect(await screen.findByTestId("knowledge-react-flow-canvas")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Проводник" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Холст" })).toBeInTheDocument();

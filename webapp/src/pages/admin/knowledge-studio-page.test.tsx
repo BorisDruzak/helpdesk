@@ -432,6 +432,61 @@ function setupFetch() {
         },
       });
     }
+    if (url === "/api/web/knowledge/graph/search?q=vpn-access" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        nodes: [
+          {
+            node_id: "node-current",
+            stable_key: "knowledge_item:vpn-access",
+            node_type: "knowledge_item",
+            label: "VPN access",
+            visibility: "requester",
+            linked_item_id: "item-1",
+            status: "confirmed",
+          },
+        ],
+        edges: [],
+      });
+    }
+    if (url === "/api/web/knowledge/graph/nodes/knowledge_item%3Avpn-access/neighborhood?depth=1" && !init?.method) {
+      return jsonResponse({
+        status: "ok",
+        nodes: [
+          {
+            node_id: "node-current",
+            stable_key: "knowledge_item:vpn-access",
+            node_type: "knowledge_item",
+            label: "VPN access",
+            visibility: "requester",
+            linked_item_id: "item-1",
+            status: "confirmed",
+          },
+          {
+            node_id: "node-related",
+            stable_key: "knowledge_item:printer-reset",
+            node_type: "knowledge_item",
+            label: "Printer reset",
+            visibility: "support_internal",
+            linked_item_id: "item-2",
+            status: "confirmed",
+          },
+        ],
+        edges: [
+          {
+            edge_id: "edge-related",
+            source_node_id: "node-current",
+            target_node_id: "node-related",
+            relation_type: "related_to",
+            visibility: "support_internal",
+            status: "confirmed",
+          },
+        ],
+      });
+    }
+    if (url === "/api/web/knowledge/graph/search?q=printer-reset" && !init?.method) {
+      return jsonResponse({ status: "ok", nodes: [], edges: [] });
+    }
     if (url.startsWith("/api/web/admin/knowledge/audience-rules?") && !init?.method) {
       return jsonResponse({
         status: "success",
@@ -629,6 +684,16 @@ describe("AdminKnowledgeStudioPage", () => {
     expect(screen.getByText(/Это базовый уровень доступа/)).toBeInTheDocument();
     expect(screen.getByText("Где показывать статью")).toBeInTheDocument();
     expect(screen.getByText(/Определяет, в каких сценариях система будет предлагать статью/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Связанные статьи" })).toBeInTheDocument();
+    expect(screen.getByText(/Лёгкий список из графа знаний/)).toBeInTheDocument();
+    const relatedArticleLink = await screen.findByRole("link", { name: "Открыть связанную статью" });
+    expect(screen.getAllByText("Printer reset").length).toBeGreaterThanOrEqual(1);
+    expect(relatedArticleLink).toHaveAttribute(
+      "href",
+      "/app/admin/knowledge/studio?item=item-2",
+    );
+    expect(screen.getByRole("link", { name: "Открыть advanced Graph" })).toHaveAttribute("href", "/app/admin/knowledge/graph");
+    expect(screen.queryByRole("button", { name: "Создать связь от узла" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Связь с обращениями" })).toBeInTheDocument();
     expect(screen.getByText("Сервис, услуга, шаблон и поверхности показа")).toBeInTheDocument();
     expect(screen.getByText("Где статья будет предложена")).toBeInTheDocument();
