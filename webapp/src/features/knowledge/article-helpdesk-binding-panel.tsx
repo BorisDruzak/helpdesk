@@ -6,6 +6,7 @@ import { Button } from "../../components/ui/button";
 import {
   addKnowledgeItemBinding,
   deleteKnowledgeItemBinding,
+  fetchKnowledgeAudienceRules,
   fetchKnowledgeItemBindings,
   fetchKnowledgeServiceCatalogOptions,
   updateKnowledgeItemBinding,
@@ -14,6 +15,7 @@ import {
   type KnowledgeItemBindingInput,
   type KnowledgeServiceCatalogOption,
 } from "./api";
+import { estimateAudience, fetchVisibilityLookups, ruleToDraft, visibilityLabels } from "./article-visibility-model";
 import { fieldClass } from "./authoring/knowledge-studio-model";
 
 const surfaceOptions = [
@@ -50,6 +52,10 @@ const surfaceOptions = [
 ] as const;
 
 const defaultSurfaces = ["requester_pre_submit", "support_ticket_workspace"];
+const requesterSafeVisibilities = new Set(["public", "requester", "agent_requester_safe"]);
+const supportVisibleVisibilities = new Set(["public", "requester", "agent_requester_safe", "support_internal"]);
+const requesterSurfaces = new Set(["requester_pre_submit", "requester_after_submit", "agent"]);
+const supportSurfaces = new Set(["support_ticket_workspace", "support_command_center"]);
 
 type BindingDraft = {
   offering_code: string;
@@ -120,12 +126,39 @@ function surfaceLabels(values: string[]) {
   return surfaceOptions.filter((option) => values.includes(option.value)).map((option) => option.label);
 }
 
+type PreviewReason = {
+  code: "audience" | "RAG disabled" | "surface disabled" | "visibility";
+  detail: string;
+};
+
+function isRagBlocked(aiRagPolicy: string, sectionAllowRag: boolean | null | undefined, visibility: string): PreviewReason | null {
+  const policy = aiRagPolicy || "inherit";
+  const requesterSafe = requesterSafeVisibilities.has(visibility);
+  if (policy === "disabled") {
+    return { code: "RAG disabled", detail: "политика статьи запрещает использовать её в AI-ответах." };
+  }
+  if (sectionAllowRag === false && policy !== "disabled") {
+    return { code: "RAG disabled", detail: "раздел базы знаний отключил RAG для этой статьи." };
+  }
+  if (policy === "requester_safe_only" && !requesterSafe) {
+    return { code: "RAG disabled", detail: "режим requester-safe_only требует requester-safe видимость статьи." };
+  }
+  return null;
+}
+
 type ArticleHelpDeskBindingPanelProps = {
+  aiRagPolicy?: string;
   item: KnowledgeItem | null;
+  sectionAllowRag?: boolean | null;
   visibility: string;
 };
 
-export function ArticleHelpDeskBindingPanel({ item, visibility }: ArticleHelpDeskBindingPanelProps) {
+export function ArticleHelpDeskBindingPanel({
+  aiRagPolicy = "inherit",
+  item,
+  sectionAllowRag = null,
+  visibility,
+}: ArticleHelpDeskBindingPanelProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<BindingDraft>(() => emptyDraft());
   const [editingBindingId, setEditingBindingId] = useState<string | null>(null);
@@ -140,6 +173,16 @@ export function ArticleHelpDeskBindingPanel({ item, visibility }: ArticleHelpDes
     queryKey: ["knowledge-service-catalog-options"],
     queryFn: fetchKnowledgeServiceCatalogOptions,
   });
+  const audienceRulesQuery = useQuery({
+    queryKey: ["knowledge-audience-rules", "item", item?.item_id],
+    queryFn: () => fetchKnowledgeAudienceRules("item", item?.item_id ?? ""),
+    enabled: Boolean(item?.item_id),
+  });
+  const visibilityLookupsQuery = useQuery({
+    queryKey: ["knowledge-visibility-lookups"],
+    queryFn: fetchVisibilityLookups,
+    enabled: Boolean(item?.item_id),
+  });
 
   const catalogOptions = catalogQuery.data ?? [];
   const serviceOptions = useMemo(() => catalogOptions.filter((option) => option.type === "service"), [catalogOptions]);
@@ -148,7 +191,58 @@ export function ArticleHelpDeskBindingPanel({ item, visibility }: ArticleHelpDes
       catalogOptions.filter((option) => option.type === "offering" && (!draft.service_code || option.service_code === draft.service_code)),
     [catalogOptions, draft.service_code],
   );
-  const selectedSurfaceLabels = surfaceLabels(draft.surfaces);
+  const audienceRules = audienceRulesQuery.data ?? [];
+  const activeAudienceRules = useMemo(() => audienceRules.filter((rule) => (rule.status ?? "active") === "active"), [audienceRules]);
+  const audienceEstimate = useMemo(
+    () => estimateAudience(activeAudienceRules.map(ruleToDraft), visibilityLookupsQuery.data),
+    [activeAudienceRules, visibilityLookupsQuery.data],
+  );
+  const audienceBlocked = Boolean(
+    activeAudienceRules.length
+    && !audienceRulesQuery.isLoading
+    && !visibilityLookupsQuery.isLoading
+    && audienceEstimate.count === 0,
+  );
+  const eligibilityPreview = useMemo(() => {
+    const proposed: Array<{ detail?: string; label: string }> = [];
+    const blocked: Array<{ label: string; reasons: PreviewReason[] }> = [];
+    const visibilityLabel = (visibilityLabels[visibility] ?? visibility) || "не задана";
+    for (const option of surfaceOptions) {
+      const selected = draft.surfaces.includes(option.value);
+      const reasons: PreviewReason[] = [];
+      if (!selected) {
+        reasons.push({ code: "surface disabled", detail: "поверхность не выбрана." });
+      } else {
+        if (requesterSurfaces.has(option.value) && !requesterSafeVisibilities.has(visibility)) {
+          reasons.push({ code: "visibility", detail: `видимость "${visibilityLabel}" не разрешает показ заявителю или агенту.` });
+        }
+        if (supportSurfaces.has(option.value) && !supportVisibleVisibilities.has(visibility)) {
+          reasons.push({ code: "visibility", detail: `видимость "${visibilityLabel}" не разрешает показ поддержке.` });
+        }
+        if (option.value === "ai_rag") {
+          const ragReason = isRagBlocked(aiRagPolicy, sectionAllowRag, visibility);
+          if (ragReason) {
+            reasons.push(ragReason);
+          }
+        }
+        if (audienceBlocked) {
+          reasons.push({ code: "audience", detail: "правила аудитории не находят активных пользователей." });
+        }
+      }
+
+      if (selected && !reasons.length) {
+        proposed.push({
+          label: option.label,
+          detail: option.value === "ai_rag" && aiRagPolicy === "staff_only"
+            ? "AI/RAG получит статью только для support/admin сценариев."
+            : undefined,
+        });
+      } else {
+        blocked.push({ label: option.label, reasons });
+      }
+    }
+    return { blocked, proposed };
+  }, [aiRagPolicy, audienceBlocked, draft.surfaces, sectionAllowRag, visibility]);
   const savedBindings = bindingsQuery.data ?? [];
   const canSave = Boolean(item?.item_id)
     && Boolean(draft.service_code || draft.offering_code || draft.request_template_key)
@@ -312,16 +406,49 @@ export function ArticleHelpDeskBindingPanel({ item, visibility }: ArticleHelpDes
             ))}
           </div>
         </div>
-        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
-          <p className="font-semibold text-slate-950">Предпросмотр</p>
-          {selectedSurfaceLabels.length ? (
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-600">
-              {selectedSurfaceLabels.map((label) => (
-                <li key={label}>{label}</li>
-              ))}
-            </ul>
+        <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm" data-testid="binding-eligibility-preview">
+          <p className="font-semibold text-slate-950">Предпросмотр eligibility</p>
+          {!item ? (
+            <p className="mt-2 text-slate-500">Выберите статью, чтобы увидеть условия показа.</p>
           ) : (
-            <p className="mt-2 text-red-700">Выберите хотя бы один сценарий показа.</p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div>
+                <p className="font-semibold text-emerald-800">Статья будет предложена в:</p>
+                {eligibilityPreview.proposed.length ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-600">
+                    {eligibilityPreview.proposed.map((previewItem) => (
+                      <li key={previewItem.label}>
+                        <span>{previewItem.label}</span>
+                        {previewItem.detail ? <span className="block text-xs text-slate-500">{previewItem.detail}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-slate-500">Нет сценариев, которые сейчас пройдут все условия.</p>
+                )}
+              </div>
+              <div>
+                <p className="font-semibold text-rose-800">Не будет предложена в:</p>
+                {eligibilityPreview.blocked.length ? (
+                  <ul className="mt-2 list-disc space-y-2 pl-5 text-slate-600">
+                    {eligibilityPreview.blocked.map((previewItem) => (
+                      <li key={previewItem.label}>
+                        <span>{previewItem.label}</span>
+                        <span className="mt-1 block space-y-1 text-xs text-slate-500">
+                          {previewItem.reasons.map((reason) => (
+                            <span className="block" key={`${previewItem.label}-${reason.code}`}>
+                              Причина: {reason.code} — {reason.detail}
+                            </span>
+                          ))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-slate-500">Все выбранные поверхности сейчас проходят условия.</p>
+                )}
+              </div>
+            </div>
           )}
           <label className="mt-3 block text-sm font-medium">
             Тип тикета

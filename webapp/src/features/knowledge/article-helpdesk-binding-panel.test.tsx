@@ -25,7 +25,14 @@ const item = {
   tags: [],
 } as KnowledgeItem;
 
-function renderPanel() {
+type RenderPanelOptions = {
+  aiRagPolicy?: string;
+  itemOverride?: KnowledgeItem;
+  sectionAllowRag?: boolean | null;
+  visibility?: string;
+};
+
+function renderPanel(options: RenderPanelOptions = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -35,9 +42,30 @@ function renderPanel() {
 
   render(
     <QueryClientProvider client={queryClient}>
-      <ArticleHelpDeskBindingPanel item={item} visibility="requester" />
+      <ArticleHelpDeskBindingPanel
+        aiRagPolicy={options.aiRagPolicy}
+        item={options.itemOverride ?? item}
+        sectionAllowRag={options.sectionAllowRag}
+        visibility={options.visibility ?? "requester"}
+      />
     </QueryClientProvider>,
   );
+}
+
+function mockReadOnlyEligibilityFetches(url: string) {
+  if (url.startsWith("/api/web/admin/knowledge/audience-rules?")) {
+    return jsonResponse({ status: "ok", data: { rules: [] } });
+  }
+  if (url === "/api/web/admin/registry") {
+    return jsonResponse({ status: "success", data: { people: [], departments: [], locations: [], services: [] } });
+  }
+  if (url === "/api/web/admin/registry/audience-groups") {
+    return jsonResponse({ status: "ok", groups: [] });
+  }
+  if (url === "/api/web/admin/access/summary") {
+    return jsonResponse({ status: "ok", access_groups: [] });
+  }
+  return null;
 }
 
 afterEach(() => {
@@ -59,6 +87,10 @@ describe("ArticleHelpDeskBindingPanel", () => {
     ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      const eligibilityResponse = mockReadOnlyEligibilityFetches(url);
+      if (eligibilityResponse) {
+        return eligibilityResponse;
+      }
       if (url === "/api/service-catalog/current") {
         return jsonResponse({
           services: [
@@ -98,6 +130,10 @@ describe("ArticleHelpDeskBindingPanel", () => {
     renderPanel();
 
     expect(await screen.findByRole("heading", { name: "Связь с обращениями" })).toBeInTheDocument();
+    const preview = screen.getByTestId("binding-eligibility-preview");
+    expect(within(preview).getByText("Статья будет предложена в:")).toBeInTheDocument();
+    expect(within(preview).getByText("Не будет предложена в:")).toBeInTheDocument();
+    expect(within(preview).getAllByText(/Причина: surface disabled/).length).toBeGreaterThan(0);
     const savedSection = (await screen.findByText("Сохранённые связи")).closest("div");
     expect(savedSection).not.toBeNull();
     const saved = within(savedSection as HTMLElement).getByText(/VPN не подключается/);
@@ -129,5 +165,78 @@ describe("ArticleHelpDeskBindingPanel", () => {
       ),
     );
     expect(await screen.findByText("Связь с обращениями удалена.")).toBeInTheDocument();
+  });
+
+  it("explains visibility and RAG-disabled eligibility blockers", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const eligibilityResponse = mockReadOnlyEligibilityFetches(url);
+      if (eligibilityResponse) {
+        return eligibilityResponse;
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ services: [] });
+      }
+      if (url === "/api/web/knowledge/items/item-1/bindings" && !init?.method) {
+        return jsonResponse({ status: "ok", bindings: [] });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderPanel({
+      itemOverride: { ...item, visibility: "support_internal" },
+      sectionAllowRag: false,
+      visibility: "support_internal",
+    });
+
+    const preview = await screen.findByTestId("binding-eligibility-preview");
+    expect(within(preview).getByText("Статья будет предложена в:")).toBeInTheDocument();
+    expect(within(preview).getByText("Карточка тикета поддержки")).toBeInTheDocument();
+    expect(within(preview).getByText(/Причина: visibility/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText(/AI\/RAG/));
+
+    expect(within(preview).getByText(/Причина: RAG disabled/)).toBeInTheDocument();
+  });
+
+  it("explains empty audience eligibility blockers", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/web/admin/knowledge/audience-rules?")) {
+        return jsonResponse({
+          status: "ok",
+          data: {
+            rules: [
+              {
+                rule_id: "rule-1",
+                subject_type: "item",
+                subject_id: "item-1",
+                target_type: "department",
+                target_id: "dept-empty",
+                status: "active",
+              },
+            ],
+          },
+        });
+      }
+      const eligibilityResponse = mockReadOnlyEligibilityFetches(url);
+      if (eligibilityResponse) {
+        return eligibilityResponse;
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ services: [] });
+      }
+      if (url === "/api/web/knowledge/items/item-1/bindings" && !init?.method) {
+        return jsonResponse({ status: "ok", bindings: [] });
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderPanel();
+
+    const preview = await screen.findByTestId("binding-eligibility-preview");
+    await waitFor(() => expect(within(preview).getAllByText(/Причина: audience/).length).toBeGreaterThan(0));
   });
 });

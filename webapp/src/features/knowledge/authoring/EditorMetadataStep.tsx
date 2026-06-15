@@ -120,7 +120,12 @@ export function EditorMetadataStep({ draft, onDraftChange, selectedItem, spaces 
 
       <ArticleRelatedGraphPanel item={selectedItem} />
 
-      <ArticleHelpDeskBindingPanel item={selectedItem} visibility={draft.visibility} />
+      <ArticleHelpDeskBindingPanel
+        aiRagPolicy={draft.ai_rag_policy}
+        item={selectedItem}
+        sectionAllowRag={selectedSpace?.allow_rag ?? null}
+        visibility={draft.visibility}
+      />
 
       <details className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <summary className="cursor-pointer text-sm font-semibold text-slate-800">Advanced / служебные поля</summary>
