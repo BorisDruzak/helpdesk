@@ -55,40 +55,138 @@ function SummaryGrid({ summary }: { summary: KnowledgeOpsSummary }) {
   );
 }
 
-const queueLabels: Array<{ key: keyof NonNullable<KnowledgeOpsSummary["action_queues"]>; title: string; fallback: string }> = [
-  { key: "no_audience_users", title: "Нет пользователей в аудитории", fallback: "Аудитории статей не требуют вмешательства." },
-  { key: "missing_helpdesk_binding", title: "Нет связи с обращениями", fallback: "Все статьи связаны с услугами или формами." },
-  { key: "stale_article", title: "Устаревшие статьи", fallback: "Просроченных проверок нет." },
-  { key: "indexing_failed", title: "Индексация не прошла", fallback: "Ошибок индексации нет." },
-  { key: "low_quality", title: "Слабое качество", fallback: "Критичных замечаний качества нет." },
-  { key: "zero_result_searches", title: "Нулевые поиски", fallback: "Нулевых поисков нет." },
+type ActionQueueKey = keyof NonNullable<KnowledgeOpsSummary["action_queues"]>;
+type ActionQueueItem = NonNullable<KnowledgeOpsQueue["items"]>[number];
+
+const queueDefinitions: Array<{
+  key: ActionQueueKey;
+  title: string;
+  description: string;
+  fallback: string;
+  actionLabel: string;
+  actionHint: string;
+  fallbackActionUrl: string;
+}> = [
+  {
+    key: "no_audience_users",
+    title: "Статьи без аудитории",
+    description: "Проверьте правила видимости: опубликованный материал не попадает ни к одному пользователю.",
+    fallback: "Аудитории статей не требуют вмешательства.",
+    actionLabel: "Проверить аудиторию",
+    actionHint: "Откройте статью и проверьте аудиторию, видимость раздела и правила доступа.",
+    fallbackActionUrl: "/app/admin/knowledge/sections",
+  },
+  {
+    key: "missing_helpdesk_binding",
+    title: "Статьи без связи с обращениями",
+    description: "Свяжите материал с услугой, предложением или формой, чтобы он появлялся в нужном helpdesk-сценарии.",
+    fallback: "Все статьи связаны с услугами или формами.",
+    actionLabel: "Настроить связь",
+    actionHint: "Откройте панель связи с обращениями и выберите service/offering/template плюс поверхности показа.",
+    fallbackActionUrl: "/app/admin/knowledge/studio",
+  },
+  {
+    key: "stale_article",
+    title: "Просроченные статьи",
+    description: "Обновите устаревшие материалы и сохраните новую опубликованную версию.",
+    fallback: "Просроченных проверок нет.",
+    actionLabel: "Обновить статью",
+    actionHint: "Откройте статью в Studio, обновите содержимое и сохраните актуальную опубликованную версию.",
+    fallbackActionUrl: "/app/admin/knowledge/studio",
+  },
+  {
+    key: "indexing_failed",
+    title: "Ошибки индексации",
+    description: "Разберите сбои индексирования, чтобы поиск и RAG видели актуальные фрагменты.",
+    fallback: "Ошибок индексации нет.",
+    actionLabel: "Открыть индексацию",
+    actionHint: "Откройте очередь индексации, проверьте ошибку провайдера и запустите повторную индексацию.",
+    fallbackActionUrl: "/app/admin/knowledge/indexing",
+  },
+  {
+    key: "low_quality",
+    title: "Низкое качество",
+    description: "Исправьте слабые статьи: владельца, обзор, полноту, безопасность или метаданные.",
+    fallback: "Критичных замечаний качества нет.",
+    actionLabel: "Улучшить качество",
+    actionHint: "Откройте статью и устраните причину низкой оценки: полноту, владельца, безопасность или метаданные.",
+    fallbackActionUrl: "/app/admin/knowledge/studio",
+  },
+  {
+    key: "zero_result_searches",
+    title: "Поиски без результата",
+    description: "Разберите спрос, который не закрывается статьями, настройками поиска или новым импортом.",
+    fallback: "Поисков без результата нет.",
+    actionLabel: "Проверить поиск",
+    actionHint: "Откройте настройки поиска, проверьте retrieval/RAG или создайте статью под незакрытый запрос.",
+    fallbackActionUrl: "/app/admin/knowledge/search-settings",
+  },
 ];
 
-function ActionQueueColumn({ queue, title, fallback }: { queue?: KnowledgeOpsQueue; title: string; fallback: string }) {
+const quickFixLinks = [
+  { href: "/app/admin/knowledge/sections", label: "Разделы", text: "Политики разделов, аудитория и RAG", hint: "Открыть разделы базы знаний для настройки аудитории, публикации и RAG." },
+  { href: "/app/admin/knowledge/import", label: "Создать статью", text: "Импорт или черновик для незакрытого спроса", hint: "Открыть импорт или создание черновика для запроса без результата." },
+  { href: "/app/admin/knowledge/indexing", label: "Индексация", text: "Очередь, сбои и reindex", hint: "Открыть диагностику индексации и повторную обработку статей." },
+  { href: "/app/admin/knowledge/search-settings", label: "Настройки поиска", text: "Retrieval, RAG и explain preview", hint: "Открыть настройки поиска, RAG и explain preview." },
+];
+
+function itemTitle(item: ActionQueueItem, fallback: string) {
+  return item.title ?? item.query ?? fallback;
+}
+
+function ActionQueueColumn({
+  actionLabel,
+  actionHint,
+  fallback,
+  fallbackActionUrl,
+  queue,
+  title,
+  description,
+}: {
+  actionLabel: string;
+  actionHint: string;
+  fallback: string;
+  fallbackActionUrl: string;
+  queue?: KnowledgeOpsQueue;
+  title: string;
+  description: string;
+}) {
   const items = queue?.items ?? [];
   return (
-    <div className="min-w-0 rounded-md border border-slate-200 bg-white p-3">
+    <div className="min-w-0 rounded-md border border-slate-200 bg-white p-3" title={actionHint}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
-          <p className="mt-1 text-xs text-slate-500">Всего: {metricValue(queue)}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
         </div>
+        <Badge tone={metricValue(queue) ? "warning" : "success"}>{metricValue(queue)}</Badge>
       </div>
       <div className="mt-3 space-y-3">
         {items.length ? (
           items.slice(0, 3).map((item, index) => (
             <div key={`${title}-${item.item_id ?? item.job_id ?? item.query ?? index}`} className="min-w-0 border-t border-slate-100 pt-3">
-              <p className="truncate text-sm font-medium text-slate-900">{item.title ?? item.query ?? item.item_id ?? item.job_id}</p>
+              <p className="truncate text-sm font-medium text-slate-900">{itemTitle(item, title)}</p>
               {item.reason ? <p className="mt-1 text-xs leading-5 text-slate-600">{item.reason}</p> : null}
-              {item.action_url ? (
-                <a className="mt-2 inline-flex text-xs font-semibold text-brand-700 hover:text-brand-900" href={item.action_url}>
-                  Открыть
-                </a>
-              ) : null}
+              <a
+                className="mt-2 inline-flex text-xs font-semibold text-brand-700 hover:text-brand-900"
+                href={item.action_url ?? fallbackActionUrl}
+                title={actionHint}
+              >
+                {actionLabel}
+              </a>
             </div>
           ))
         ) : (
-          <p className="border-t border-slate-100 pt-3 text-sm text-slate-500">{fallback}</p>
+          <div className="border-t border-slate-100 pt-3">
+            <p className="text-sm text-slate-500">{fallback}</p>
+            <a
+              className="mt-2 inline-flex text-xs font-semibold text-brand-700 hover:text-brand-900"
+              href={fallbackActionUrl}
+              title={actionHint}
+            >
+              Открыть рабочую область
+            </a>
+          </div>
         )}
       </div>
     </div>
@@ -108,8 +206,31 @@ function ActionQueuesPanel({ summary }: { summary: KnowledgeOpsSummary }) {
       </CardHeader>
       <CardContent>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {queueLabels.map((queue) => (
-            <ActionQueueColumn fallback={queue.fallback} key={queue.key} queue={queues[queue.key]} title={queue.title} />
+          {queueDefinitions.map((queue) => (
+            <ActionQueueColumn
+              actionLabel={queue.actionLabel}
+              actionHint={queue.actionHint}
+              description={queue.description}
+              fallback={queue.fallback}
+              fallbackActionUrl={queue.fallbackActionUrl}
+              key={queue.key}
+              queue={queues[queue.key]}
+              title={queue.title}
+            />
+          ))}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {quickFixLinks.map((link) => (
+            <a
+              aria-label={link.label}
+              className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm transition-colors hover:border-brand-200 hover:bg-brand-50"
+              href={link.href}
+              key={link.href}
+              title={link.hint}
+            >
+              <span className="font-semibold text-brand-800">{link.label}</span>
+              <span className="mt-1 block text-xs leading-5 text-slate-600">{link.text}</span>
+            </a>
           ))}
         </div>
       </CardContent>

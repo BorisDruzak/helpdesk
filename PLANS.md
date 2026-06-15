@@ -1,6 +1,6 @@
 ## Active Work: Knowledge Platform Refactor — Production Knowledge Base
 
-Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4/K5 are partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, retrieval filters candidates by audience and RAG policy, and Knowledge Ops summary exposes action queues. Remaining work is focused on K5 operations dashboard product pass, K6 import alignment, K7 settings consistency, K8 graph simplification, stale mojibake cleanup across older plan/docs/tests, and live evidence for those remaining slices.
+Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, and retrieval filters candidates by audience and RAG policy. K5 operations dashboard product pass is implemented in the current slice: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. Remaining work is focused on K6 import alignment, K7 settings consistency, K8 graph simplification, stale mojibake cleanup across older plan/docs/tests, and live evidence for remaining UI slices.
 
 Progress, 2026-06-15: K2/K3/K4 backend production-correctness slice is implemented and live-checked on the stand for commit `c4d6c54c`; evidence is under `artifacts/browser_live_validation/knowledge-binding-surfaces-c4d6c54c-20260615/`. Binding `metadata.surfaces` is now enforced in search/suggestions/retrieval before projection, with `requester_portal -> requester_pre_submit`, `support_workspace -> support_ticket_workspace`, `agent_gui -> agent`, and Ask/retrieval surfaces -> `ai_rag`. Binding API now supports duplicate upsert plus `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`. Knowledge Studio binding panel is localized in Russian, includes surface guidance, and supports edit/delete. Quality scoring no longer reports `missing_reviewer` when `KNOWLEDGE_REVIEW_REQUIRED=false`. K1 hardening now rejects `show_in_requester_portal=true` for non-requester-safe visibility, empty `allowed_item_types`, `allow_rag=false` while active articles force `ai_rag_policy=allowed`, and article `ai_rag_policy=allowed` in a section where RAG is disabled. The requester portal reads `show_in_requester_portal`, the support workspace reads `show_in_support_workspace`, and Studio reads `article_length_recommendation`.
 
@@ -196,7 +196,7 @@ Acceptance:
 
 ## K5 — Knowledge Operations Center
 
-Status: backend queues exist, UI needs product pass.
+Status: implemented; live/browser evidence must be collected for the final committed slice.
 
 Implemented:
 
@@ -207,25 +207,28 @@ Implemented:
   - `indexing_failed`;
   - `low_quality`;
   - `zero_result_searches`.
-
-Remaining:
-
-1. `/app/admin/knowledge` must become a true operations dashboard.
-2. Replace generic cards with actionable queues:
+- `/app/admin/knowledge` is a true operations dashboard rather than an article editor.
+- Generic queue cards are replaced with actionable queues:
    - “Статьи без аудитории”;
    - “Статьи без связи с обращениями”;
    - “Просроченные статьи”;
    - “Ошибки индексации”;
    - “Низкое качество”;
    - “Поиски без результата”.
-3. Each queue item should open the correct fixing route:
+- Each queue item opens the correct fixing route:
    - Studio article;
    - Sections;
    - Indexing;
    - Search settings;
    - Import/create article.
-4. Hide raw content-pack JSON from default ops screen.
-5. Keep content packs/import/debug under advanced/admin tools.
+- Fast transitions exist for Sections, Import/create article, Indexing and Search settings.
+- Queue and fast-transition links include Russian hover hints for the expected fix.
+- Raw content-pack JSON is hidden from the default ops screen.
+- Content packs/import/debug remain under dedicated advanced/admin tools.
+
+Remaining:
+
+- No open K5 UI product-pass items after targeted and live verification pass.
 
 Acceptance:
 
