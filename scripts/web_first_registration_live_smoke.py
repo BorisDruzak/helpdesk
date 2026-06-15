@@ -325,6 +325,8 @@ class WebFirstRegistrationLiveSmoke:
             },
             expect_success=False,
         )
+        if escalation["http_status"] == 403 and escalation["body"].get("error_code") == "SELF_REGISTRATION_DISABLED":
+            raise SmokeFailure("WEB_SELF_REGISTRATION_ENABLED is not enabled on the target server")
         _require(escalation["http_status"] == 400, "self-registration accepted actor_role escalation payload")
         self.report["checks"]["role_escalation_rejected"] = escalation["body"].get("error_code")
 

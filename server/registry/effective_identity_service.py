@@ -23,6 +23,7 @@ from registry.audience_contracts import EffectiveAudience, EffectiveIdentity, Wa
 
 
 TOKEN_FIELD_FRAGMENTS = ("token", "secret", "password", "hash")
+REQUESTER_IDENTITY_PERSON_STATUSES = {"active", "self_reported"}
 
 
 def _normalize_role(actor_role: str | None) -> str:
@@ -312,7 +313,7 @@ class EffectiveIdentityService:
                     RegistryPersonIdentity.provider == provider,
                     RegistryPersonIdentity.normalized_identifier == normalized,
                     RegistryPersonIdentity.verified.is_(True),
-                    RegistryPerson.status == "active",
+                    RegistryPerson.status.in_(REQUESTER_IDENTITY_PERSON_STATUSES),
                 )
                 .limit(1)
             )

@@ -177,6 +177,60 @@ async def test_linked_ui_login_resolves_registry_person_department_path_and_acce
 
 
 @pytest.mark.asyncio
+async def test_verified_self_reported_ui_login_resolves_requester_audience(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    actor_id = "self-reported.identity@example.test"
+
+    async with session_maker() as session:
+        department = RegistryDepartment(
+            department_id=str(uuid.uuid4()),
+            code="self-reported-dept",
+            name="Self Reported Department",
+            status="active",
+            source="requester_profile",
+        )
+        person = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Self Reported Requester",
+            email=actor_id,
+            department_id=department.department_id,
+            source="requester_profile",
+            status="self_reported",
+        )
+        session.add_all(
+            [
+                department,
+                person,
+                RegistryPersonIdentity(
+                    person_id=person.person_id,
+                    provider="ui_login",
+                    identifier=actor_id,
+                    normalized_identifier=actor_id.lower(),
+                    verified=True,
+                    source="requester_profile",
+                ),
+                UiUser(user_login=actor_id, password_hash="test", actor_role="user", is_active=True),
+            ]
+        )
+
+        service = EffectiveIdentityService(session)
+        identity_payload = (await service.resolve_actor_identity(actor_id, "user")).to_dict()
+        audience_payload = (
+            await service.resolve_person_audience(
+                person_id=None,
+                actor_id=actor_id,
+                actor_role="user",
+            )
+        ).to_dict()
+
+    assert identity_payload["person"]["person_id"] == person.person_id
+    assert [item["department_id"] for item in identity_payload["department_path"]] == [department.department_id]
+    assert "registry_person_not_linked" not in _warning_codes(identity_payload)
+    assert audience_payload["person_id"] == person.person_id
+    assert [item["department_id"] for item in audience_payload["department_path"]] == [department.department_id]
+
+
+@pytest.mark.asyncio
 async def test_audience_group_department_include_children_matches_department_tree_contract(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     actor_id = "department-tree-alias@example.test"
