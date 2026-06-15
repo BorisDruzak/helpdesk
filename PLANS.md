@@ -1,6 +1,6 @@
 ## Active Work: Knowledge Platform Refactor — Production Knowledge Base
 
-Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is partially implemented: RAG eligibility exists through article metadata and section `allow_rag`, and retrieval filters candidates by audience and RAG policy. K5 operations dashboard product pass is implemented in the current slice: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented, deployed and live-checked on the stand for commit `485969d6`; evidence is under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`. K7 settings consistency is implemented, deployed and live-checked on the stand for commit `b430ab72`; evidence is under `artifacts/browser_live_validation/knowledge-settings-k7-b430ab72-20260615/`. K8 graph simplification is implemented, deployed and live-checked on the stand for commit `74e98a96`; evidence is under `artifacts/browser_live_validation/knowledge-graph-k8-74e98a96-20260615/`. Remaining work is focused on stale mojibake cleanup across older plan/docs/tests and live evidence for later UI slices.
+Status, 2026-06-15: Knowledge Platform refactor is partially complete. K1 is implemented and hardened: Knowledge Sections exist, section metadata has documented owners/readers, contradictory section policies are rejected, and the UI has clear empty/archive/validation states. K2/K3 are closed on the core code side: Knowledge Studio uses a simplified one-save authoring flow, review/version/manual segmentation are hidden from default UI, review-disabled publish no longer fails on missing reviewer, and articles can be linked to Help Desk service/offering/request-template context with enforceable binding surfaces. K4 is implemented for current retrieval/Ask/vector paths: RAG eligibility exists through article metadata and section `allow_rag`, binding surface `ai_rag` is part of eligibility, and retrieval filters candidates by audience and RAG policy before snippets/citations/prompts. K5 operations dashboard product pass is implemented: Knowledge Ops summary action queues are rendered as Russian-first actionable queues with fixing routes, quick transitions and hover hints. K6 import alignment is implemented, deployed and live-checked on the stand for commit `485969d6`; evidence is under `artifacts/browser_live_validation/knowledge-import-k6-485969d6-20260615/`. K7 settings consistency is implemented, deployed and live-checked on the stand for commit `b430ab72`; evidence is under `artifacts/browser_live_validation/knowledge-settings-k7-b430ab72-20260615/`. K8 graph simplification is implemented, deployed and live-checked on the stand for commit `74e98a96`; evidence is under `artifacts/browser_live_validation/knowledge-graph-k8-74e98a96-20260615/`. Remaining work is focused on K2 Studio UX follow-up, K3 eligibility preview, K4 focused policy tests/future AI-path guardrails, and stale mojibake cleanup across older docs/tests.
 
 Progress, 2026-06-15: K2/K3/K4 backend production-correctness slice is implemented and live-checked on the stand for commit `c4d6c54c`; evidence is under `artifacts/browser_live_validation/knowledge-binding-surfaces-c4d6c54c-20260615/`. Binding `metadata.surfaces` is now enforced in search/suggestions/retrieval before projection, with `requester_portal -> requester_pre_submit`, `support_workspace -> support_ticket_workspace`, `agent_gui -> agent`, and Ask/retrieval surfaces -> `ai_rag`. Binding API now supports duplicate upsert plus `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`. Knowledge Studio binding panel is localized in Russian, includes surface guidance, and supports edit/delete. Quality scoring no longer reports `missing_reviewer` when `KNOWLEDGE_REVIEW_REQUIRED=false`. K1 hardening now rejects `show_in_requester_portal=true` for non-requester-safe visibility, empty `allowed_item_types`, `allow_rag=false` while active articles force `ai_rag_policy=allowed`, and article `ai_rag_policy=allowed` in a section where RAG is disabled. The requester portal reads `show_in_requester_portal`, the support workspace reads `show_in_support_workspace`, and Studio reads `article_length_recommendation`.
 
@@ -66,7 +66,7 @@ Acceptance:
 
 ## K2 — Simplified Knowledge Studio
 
-Status: implemented, needs production cleanup.
+Status: core implemented; UX follow-up remains.
 
 Implemented:
 
@@ -77,22 +77,20 @@ Implemented:
 - Basic field explanations exist for section, type, visibility and RAG.
 - Version history is moved out of the main flow.
 - Tests verify no visible review buttons and no visible manual segmentation in default UI.
+- When `KNOWLEDGE_REVIEW_REQUIRED=false`, `missing_reviewer` is not a blocking quality issue.
+- `KnowledgeRepo.publish_item` autofills a missing reviewer from the actor or `servicedesk` in simplified mode, so the one-save path does not fail only because `reviewer_actor_id` is empty.
 
 Remaining:
 
-1. Align backend quality with review-disabled mode:
-   - `missing_reviewer` must not be treated as a blocking quality issue when review is disabled;
-   - or reviewer must be auto-filled.
-2. Ensure failed publish due to missing reviewer cannot happen in simplified save.
-3. Add explicit save error messages:
+1. Add explicit save error messages:
    - validation error;
    - publish blocked;
    - audience denied;
    - section publication disabled.
-4. Add dirty-state warning when leaving unsaved article.
-5. Add autosave draft or explicit “Несохранённые изменения” indicator.
-6. Add a simple “Создать статью и сразу открыть редактор” flow without requiring the left drawer to feel separate.
-7. Ensure support and admin see the same normal authoring flow for allowed visibilities.
+2. Add dirty-state warning when leaving unsaved article.
+3. Add autosave draft or explicit “Несохранённые изменения” indicator.
+4. Add a simple “Создать статью и сразу открыть редактор” flow without requiring the left drawer to feel separate.
+5. Verify support and admin see the same normal authoring flow for allowed visibilities.
 
 Acceptance:
 
@@ -105,7 +103,7 @@ Acceptance:
 
 ## K3 — Help Desk Binding / Where to Show Article
 
-Status: implemented at UI/API create level, not fully enforced.
+Status: implemented and enforced; preview UX remains.
 
 Implemented:
 
@@ -119,28 +117,13 @@ Implemented:
   - agent;
   - AI/RAG.
 - Binding metadata stores `surfaces`.
+- `metadata.surfaces` is enforced in search/suggestions/retrieval before projection.
+- Binding edit/delete is available through `PATCH|DELETE /api/web/knowledge/items/{item_id_or_slug}/bindings/{binding_id}`.
+- Duplicate same-dimension binding saves update the existing row instead of creating a second binding.
 
-Critical remaining work:
+Remaining:
 
-1. Enforce `metadata.surfaces` in suggestion/retrieval flows.
-   - `requester_pre_submit` must affect pre-submit/request form suggestions.
-   - `requester_after_submit` must affect requester ticket suggestions after submit.
-   - `support_ticket_workspace` must affect support ticket workspace suggestions.
-   - `support_command_center` must affect command center queues/suggestions.
-   - `agent` must affect agent-side suggestions.
-   - `ai_rag` must affect AI/RAG candidate eligibility together with RAG policy.
-
-2. Add binding edit/delete:
-   - edit service/offering/template;
-   - edit surfaces;
-   - delete or archive binding;
-   - show reason for destructive changes if audited.
-
-3. Add duplicate binding handling:
-   - prevent duplicate same service/offering/template binding;
-   - or merge/update existing binding.
-
-4. Add preview:
+1. Add an explicit eligibility preview:
    - “Статья будет предложена в: …”
    - “Не будет предложена в: …”
    - “Причина: visibility/audience/surface/RAG disabled.”
@@ -156,7 +139,7 @@ Acceptance:
 
 ## K4 — RAG Eligibility
 
-Status: backend exists, needs UI/ops verification.
+Status: implemented for current retrieval, Ask and vector paths; focused policy tests and future-path guardrails remain.
 
 Implemented:
 
@@ -164,27 +147,15 @@ Implemented:
 - Section supports `allow_rag`.
 - Retrieval filters candidates by RAG policy after audience filtering.
 - RAG trace is exposed for privileged explain roles.
+- `KnowledgeRetrievalService` applies binding-surface eligibility and RAG eligibility before ordering, rerank, citations and Ask prompt construction.
+- `KnowledgeVectorSearchService` applies the same policy before vector candidates are returned.
+- `/app/admin/knowledge/search-settings`, `/app/admin/knowledge/ai` and `/app/admin/knowledge` expose operational RAG/policy state without granting visibility.
 
 Remaining:
 
-1. Verify `ai_rag_policy` is applied in all AI paths:
-   - Ask;
-   - retrieve;
-   - vector retrieval;
-   - future orchestration center;
-   - support AI summary if it uses Knowledge.
-2. Connect binding surface `ai_rag` with RAG eligibility.
-3. Make RAG policy visible in Ops:
-   - excluded by section;
-   - excluded by article;
-   - excluded by staff_only;
-   - excluded by requester_safe_only.
-4. Add tests for:
-   - article policy disabled;
-   - section allow_rag false;
-   - staff_only requester denied;
-   - requester_safe_only support_internal denied;
-   - privileged trace redacts safely.
+1. Add focused regression tests for `staff_only` requester denial, `requester_safe_only` support-internal denial and privileged trace redaction.
+2. When future orchestration center or support AI summary paths start using Knowledge, require them to call `KnowledgeRetrievalService` or an equivalent RAG policy gate.
+3. If Ops needs per-reason RAG drilldown beyond current policy-block counts, add a dedicated excluded-by-section/article/staff/requester-safe queue or filter.
 
 Acceptance:
 
@@ -196,7 +167,7 @@ Acceptance:
 
 ## K5 — Knowledge Operations Center
 
-Status: implemented; live/browser evidence must be collected for the final committed slice.
+Status: implemented and live-checked in the K5 committed slice.
 
 Implemented:
 
@@ -332,24 +303,24 @@ Acceptance:
 
 ## K9 — Cleanup and Documentation
 
+Status: current `PLANS.md` problem statement normalized in this cleanup slice.
+
+Implemented:
+
+1. Rewrote stale top status so completed K1/K3/K5/K6/K7/K8 work is no longer listed as open.
+2. Split K2 into completed core save/review-disabled behavior and remaining Studio UX follow-up.
+3. Moved completed K3 surfaces enforcement, edit/delete and duplicate upsert from remaining work to implemented status.
+4. Clarified K4 as implemented for current retrieval/Ask/vector paths, with future AI paths and focused edge tests still explicit.
+5. Recorded browser evidence paths after K6, K7 and K8 UI passes.
+
 Remaining:
 
-1. Rewrite stale `PLANS.md` problem statement.
-2. Move completed K1/K2/K3 from problem statement to completed status.
-3. Keep current open issues clear:
-   - surfaces enforcement;
-   - binding edit/delete;
-   - review-quality alignment;
-   - section metadata contract;
-   - import alignment;
-   - ops UI pass.
-4. Update docs:
-   - Knowledge Sections contract;
-   - Article visibility contract;
-   - Help Desk binding contract;
-   - RAG eligibility contract;
-   - simplified Studio user guide.
-5. Add browser evidence after each UI pass.
+1. Clean stale mojibake in older docs/tests outside the current PLANS cleanup.
+2. Keep open follow-ups visible:
+   - K2 Studio UX: save error specificity, dirty-state warning, unsaved indicator, create-and-open flow, support/admin parity verification;
+   - K3 eligibility preview;
+   - K4 focused RAG policy tests and future AI-path guardrails.
+3. Add browser evidence after any future UI pass.
 
 Acceptance:
 
