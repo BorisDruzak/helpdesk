@@ -157,6 +157,33 @@ def test_account_gate_pending_other_account_request_state():
     assert state["pending_account"]["display_name"] == "Guest User"
 
 
+def test_account_gate_terminal_pending_other_account_request_falls_back_to_account_state():
+    state = account_gate_view_state(
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "display_name": "Registered Owner",
+                    "can_login": True,
+                }
+            ],
+            "registration": {"status": "admin_confirmed"},
+            "can_request_other_account_login": True,
+        },
+        local_session={
+            "account_mode": "pending_other_account_request",
+            "pending_login_request_id": "request-1",
+            "pending_login_request_status": "canceled",
+            "display_name": "Guest User",
+        },
+    )
+
+    assert state["mode"] == "registered"
+    assert state["show_check_pending_request"] is False
+    assert state["primary_account"]["display_name"] == "Registered Owner"
+
+
 def test_main_window_builds_absolute_browser_pairing_url():
     window = MainWindow.__new__(MainWindow)
     window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="https://example.test/api"))

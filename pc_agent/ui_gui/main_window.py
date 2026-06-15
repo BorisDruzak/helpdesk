@@ -1759,6 +1759,24 @@ class MainWindow(QMainWindow):
                 error="Токен подтверждения уже был выдан. Обновите заявку или обратитесь к администратору.",
             )
             return
+        if status in {"rejected", "expired", "canceled"}:
+            self._account_session_manager.clear()
+            self._account_session = {"schema_version": 1, "account_mode": "none"}
+            refreshed = await self.chat_panel.ticket_client.get_account_state()
+            if isinstance(refreshed, dict) and refreshed.get("status") != "error":
+                self._account_state = refreshed
+            if status == "rejected":
+                message = str(payload.get("rejection_reason") or "Заявка на вход отклонена.")
+            elif status == "expired":
+                message = "Заявка на вход устарела. Обновите состояние и создайте новую заявку."
+            else:
+                message = str(
+                    payload.get("rejection_reason")
+                    or "Заявка на вход отменена после изменения привязки устройства. Обновите состояние и создайте новую заявку."
+                )
+            self.account_gate_page.render({**self._account_state, "message": message}, local_session=self._account_session)
+            self._render_profile_status()
+            return
         self._account_session = self._account_session_manager.save(
             self._account_session_manager.build_pending_other_account_request_session(
                 payload.get("requested_account") if isinstance(payload.get("requested_account"), dict) else {},

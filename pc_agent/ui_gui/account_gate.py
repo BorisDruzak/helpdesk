@@ -27,6 +27,8 @@ OTHER_ACCOUNT_FORM = {
     ],
 }
 
+TERMINAL_OTHER_ACCOUNT_REQUEST_STATUSES = {"approved", "rejected", "expired", "canceled"}
+
 
 def account_gate_view_state(
     account_state: dict[str, Any] | None,
@@ -51,7 +53,12 @@ def account_gate_view_state(
             "approved_other_account": None,
         }
     account_state = account_state or {}
-    if isinstance(local_session, dict) and local_session.get("account_mode") == "pending_other_account_request":
+    pending_request_status = str((local_session or {}).get("pending_login_request_status") or "").strip().lower()
+    if (
+        isinstance(local_session, dict)
+        and local_session.get("account_mode") == "pending_other_account_request"
+        and pending_request_status not in TERMINAL_OTHER_ACCOUNT_REQUEST_STATUSES
+    ):
         return {
             "mode": "pending_other_account_request",
             "title": "Заявка на вход в другой аккаунт ожидает подтверждения",

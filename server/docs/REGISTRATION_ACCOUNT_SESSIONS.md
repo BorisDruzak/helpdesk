@@ -101,6 +101,8 @@ Planned transfer flow:
 7. Other account sees B and cannot see/open A.
 8. Support UI shows the other-account warning on B with declared account, reason, phone, verification and registered owner.
 
+Pending other-account login requests are tied to the active base binding that allowed the request. If that binding is transferred or revoked before approval, the server cancels the pending request instead of leaving the agent in `pending_verification`; approving a stale request also cancels it with a safe error.
+
 ### Registration pending
 
 1. Device has no active binding.

@@ -7,7 +7,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceAccountSession
+from app.db.models import Device, DeviceAccountLoginRequest, DeviceAccountSession, DeviceUserBinding
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
@@ -49,6 +49,21 @@ async def _approved_binding(
         },
     )
     return await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+
+
+async def _person_from_claim(session, *, device_id: str, email: str, display_name: str) -> str:
+    result = await RegistrationService(session).submit_agent_profile_claim(
+        device_id=device_id,
+        requester_id=email,
+        display_name=display_name,
+        profile={
+            "full_name": display_name,
+            "email": email,
+            "login": email.split("@", 1)[0],
+            "user_confirmed": True,
+        },
+    )
+    return result["person"]["person_id"]
 
 
 @pytest.mark.asyncio
@@ -264,6 +279,69 @@ async def test_revoked_base_binding_invalidates_verified_other_account_session(t
     assert invalid["error_code"] == "ACCOUNT_SESSION_REVOKED"
     assert session_row.verification_status == "revoked"
     assert session_row.revoked_by == "admin"
+
+
+@pytest.mark.asyncio
+async def test_transfer_owner_cancels_pending_other_account_login_requests(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        new_person_id = await _person_from_claim(
+            session,
+            device_id=device_id,
+            email="new-owner@example.test",
+            display_name="New Owner",
+        )
+        account_service = AccountSessionService(session)
+        request = await account_service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other User", "login": "other", "reason": "Temporary replacement"},
+        )
+
+        await RegistrationService(session).transfer_owner(
+            device_id=device_id,
+            new_person_id=new_person_id,
+            old_binding_action="transferred",
+            reviewed_by="admin",
+            reason="device handed over",
+        )
+        request_row = await session.get(DeviceAccountLoginRequest, request["request_id"])
+        pending = await account_service.list_pending_login_requests_for_device(device_id)
+        await session.commit()
+
+    assert request["base_binding_id"] == approved["binding"]["binding_id"]
+    assert request_row.status == "canceled"
+    assert request_row.reviewed_by == "admin"
+    assert request_row.rejection_reason == "base binding changed: device handed over"
+    assert pending == []
+
+
+@pytest.mark.asyncio
+async def test_approve_login_request_cancels_stale_base_binding_request(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        account_service = AccountSessionService(session)
+        request = await account_service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={"full_name": "Other User", "login": "other", "reason": "Temporary replacement"},
+        )
+        binding = await session.get(DeviceUserBinding, approved["binding"]["binding_id"])
+        binding.status = "transferred"
+
+        with pytest.raises(ValueError, match="base binding is no longer active"):
+            await account_service.approve_login_request(request["request_id"], reviewed_by="admin")
+
+        request_row = await session.get(DeviceAccountLoginRequest, request["request_id"])
+        await session.commit()
+
+    assert request_row.status == "canceled"
+    assert request_row.reviewed_by == "admin"
+    assert request_row.rejection_reason == "base binding is no longer active"
 
 
 @pytest.mark.asyncio

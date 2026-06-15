@@ -367,6 +367,21 @@ class RegistrationService:
             reason=reason,
         )
 
+    async def _cancel_account_login_requests_for_binding(
+        self,
+        binding_id: str,
+        *,
+        canceled_by: str | None,
+        reason: str,
+    ) -> list[dict[str, Any]]:
+        from registry.account_session_service import AccountSessionService
+
+        return await AccountSessionService(self.session).cancel_pending_login_requests_for_binding(
+            binding_id=binding_id,
+            canceled_by=canceled_by,
+            reason=reason,
+        )
+
     async def _revoke_registration_pending_sessions_for_claim(
         self,
         claim_id: str,
@@ -499,6 +514,11 @@ class RegistrationService:
             binding.binding_id,
             revoked_by=reviewed_by,
             reason=f"{event_type}: {reason or status}",
+        )
+        await self._cancel_account_login_requests_for_binding(
+            binding.binding_id,
+            canceled_by=reviewed_by,
+            reason=f"base binding changed: {reason or status}",
         )
         if revoked_sessions:
             await self.repo.append_event(
@@ -1537,6 +1557,11 @@ class RegistrationService:
             revoked_by=revoked_by,
             reason=f"binding revoked: {reason or 'admin revoke'}",
         )
+        canceled_login_requests = await self._cancel_account_login_requests_for_binding(
+            binding.binding_id,
+            canceled_by=revoked_by,
+            reason=f"base binding changed: {reason or 'admin revoke'}",
+        )
         replacement = await self.repo.get_active_primary_binding(binding.device_id)
         if replacement:
             await self.sync_asset_from_active_binding(replacement)
@@ -1554,7 +1579,11 @@ class RegistrationService:
             person_id=binding.person_id,
             actor_id=revoked_by,
             actor_role="admin",
-            payload={"reason": reason, "revoked_session_ids": [row["session_id"] for row in revoked_sessions]},
+            payload={
+                "reason": reason,
+                "revoked_session_ids": [row["session_id"] for row in revoked_sessions],
+                "canceled_login_request_ids": [row["request_id"] for row in canceled_login_requests],
+            },
         )
         if revoked_sessions:
             await self.repo.append_event(
@@ -1569,7 +1598,7 @@ class RegistrationService:
         await self.session.flush()
         return {
             "binding": {"binding_id": binding.binding_id, "status": binding.status},
-            "events": {"revoked_sessions": revoked_sessions},
+            "events": {"revoked_sessions": revoked_sessions, "canceled_login_requests": canceled_login_requests},
         }
 
     async def sync_asset_from_active_binding(self, binding: Any) -> None:

@@ -378,6 +378,7 @@ async def handle_registry_agent_account_state(request: web.Request) -> web.Respo
         if not await _device_exists(session, device_id):
             return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
         payload = await build_agent_account_state(session, device_id)
+        await session.commit()
     return _success(payload)
 
 
@@ -649,17 +650,14 @@ async def handle_registry_agent_account_login_request_get(request: web.Request) 
     request_id = str(request.match_info.get("request_id") or "").strip()
     async with get_session() as session:
         service = AccountSessionService(session)
-        row = await service.repo.get_login_request(request_id)
-        if row is None or row.device_id != device_id:
+        payload, changed = await service.get_login_request_for_device(
+            device_id=device_id,
+            request_id=request_id,
+            include_session_token=True,
+        )
+        if payload is None:
             return web.json_response({"status": "error", "error": "request not found", "error_code": "NOT_FOUND"}, status=404)
-        payload = service.serialize_login_request(row, include_session_token=True)
-        if row.resulting_session_id:
-            session_row = await service.repo.get_session(row.resulting_session_id)
-            if session_row:
-                payload = {**payload, "session": await service.serialize_session(session_row)}
-        if payload.get("session_token"):
-            row.metadata_json = {**(row.metadata_json or {})}
-            row.metadata_json.pop("session_token_once", None)
+        if changed:
             await session.commit()
     return _success(payload)
 
@@ -673,6 +671,7 @@ async def handle_web_admin_registry_account_login_requests(request: web.Request)
         limit = 100
     async with get_session() as session:
         items = await AccountSessionService(session).list_login_requests(status=status, limit=limit)
+        await session.commit()
     return _success({"items": items})
 
 

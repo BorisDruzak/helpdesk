@@ -107,12 +107,15 @@ class AccountSessionRepo:
         self,
         *,
         device_id: str | None = None,
+        base_binding_id: str | None = None,
         status: str | None = None,
         limit: int = 100,
     ) -> list[DeviceAccountLoginRequest]:
         stmt = select(DeviceAccountLoginRequest)
         if device_id:
             stmt = stmt.where(DeviceAccountLoginRequest.device_id == str(device_id))
+        if base_binding_id:
+            stmt = stmt.where(DeviceAccountLoginRequest.base_binding_id == str(base_binding_id))
         if status:
             stmt = stmt.where(DeviceAccountLoginRequest.status == str(status))
         result = await self.session.execute(

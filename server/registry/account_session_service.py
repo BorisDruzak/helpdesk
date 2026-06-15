@@ -311,6 +311,14 @@ class AccountSessionService:
                 return {"request": self.serialize_login_request(request), "session": await self.serialize_session(existing)}
         if request.status != "pending_verification":
             raise ValueError("account login request is not pending")
+        request, canceled = await self._cancel_stale_login_request_if_needed(
+            request,
+            reviewed_by=reviewed_by,
+            reason="base binding is no longer active",
+            actor_role="admin",
+        )
+        if canceled:
+            raise ValueError("account login request base binding is no longer active")
         policy = await self._account_session_policy()
         declared = dict(request.requested_account or {})
         token = secrets.token_urlsafe(32)
@@ -370,6 +378,71 @@ class AccountSessionService:
             payload={"reason": row.rejection_reason},
         )
         return self.serialize_login_request(row)
+
+    async def _cancel_stale_login_request_if_needed(
+        self,
+        request: DeviceAccountLoginRequest,
+        *,
+        reviewed_by: str | None,
+        reason: str,
+        actor_role: str,
+    ) -> tuple[DeviceAccountLoginRequest, bool]:
+        if request.status != "pending_verification":
+            return request, False
+        active_base = None
+        if request.base_binding_id:
+            active_base = await self.registration_repo.get_active_binding_for_device(
+                request.device_id,
+                request.base_binding_id,
+            )
+        if active_base is not None:
+            return request, False
+        updated = await self.repo.mark_login_request(
+            request.request_id,
+            status="canceled",
+            reviewed_by=reviewed_by,
+            rejection_reason=_clean(reason, max_length=500) or "base binding is no longer active",
+        )
+        await self.repo.append_event(
+            device_id=updated.device_id,
+            request_id=updated.request_id,
+            event_type="other_account_login_canceled_due_to_binding_change",
+            actor_id=reviewed_by,
+            actor_role=actor_role,
+            payload={"base_binding_id": request.base_binding_id, "reason": updated.rejection_reason},
+        )
+        return updated, True
+
+    async def cancel_pending_login_requests_for_binding(
+        self,
+        *,
+        binding_id: str,
+        canceled_by: str | None,
+        reason: str,
+    ) -> list[dict[str, Any]]:
+        rows = await self.repo.list_login_requests(
+            base_binding_id=binding_id,
+            status="pending_verification",
+            limit=500,
+        )
+        canceled: list[dict[str, Any]] = []
+        for row in rows:
+            updated = await self.repo.mark_login_request(
+                row.request_id,
+                status="canceled",
+                reviewed_by=canceled_by,
+                rejection_reason=_clean(reason, max_length=500) or "base binding changed",
+            )
+            await self.repo.append_event(
+                device_id=updated.device_id,
+                request_id=updated.request_id,
+                event_type="other_account_login_canceled_due_to_binding_change",
+                actor_id=canceled_by,
+                actor_role="admin",
+                payload={"binding_id": binding_id, "reason": updated.rejection_reason},
+            )
+            canceled.append(self.serialize_login_request(updated))
+        return canceled
 
     async def logout_session(
         self,
@@ -577,10 +650,59 @@ class AccountSessionService:
         rows = await self.repo.list_events(session_id=session_id, limit=limit)
         return [self.serialize_event(row) for row in rows]
 
+    async def get_login_request_for_device(
+        self,
+        *,
+        device_id: str,
+        request_id: str,
+        include_session_token: bool = False,
+    ) -> tuple[dict[str, Any] | None, bool]:
+        row = await self.repo.get_login_request(request_id)
+        if row is None or row.device_id != str(device_id):
+            return None, False
+        row, canceled = await self._cancel_stale_login_request_if_needed(
+            row,
+            reviewed_by="system",
+            reason="base binding is no longer active",
+            actor_role="system",
+        )
+        payload = self.serialize_login_request(row, include_session_token=include_session_token)
+        if row.resulting_session_id:
+            session_row = await self.repo.get_session(row.resulting_session_id)
+            if session_row:
+                payload = {**payload, "session": await self.serialize_session(session_row)}
+        token_consumed = bool(payload.get("session_token"))
+        if token_consumed:
+            row.metadata_json = {**(row.metadata_json or {})}
+            row.metadata_json.pop("session_token_once", None)
+        return payload, canceled or token_consumed
+
     async def list_pending_login_requests_for_device(self, device_id: str) -> list[dict[str, Any]]:
         rows = await self.repo.list_login_requests(device_id=device_id, status="pending_verification")
-        return [self.serialize_login_request(row) for row in rows]
+        pending: list[dict[str, Any]] = []
+        for row in rows:
+            row, canceled = await self._cancel_stale_login_request_if_needed(
+                row,
+                reviewed_by="system",
+                reason="base binding is no longer active",
+                actor_role="system",
+            )
+            if not canceled and row.status == "pending_verification":
+                pending.append(self.serialize_login_request(row))
+        return pending
 
     async def list_login_requests(self, *, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         rows = await self.repo.list_login_requests(status=status, limit=limit)
-        return [self.serialize_login_request(row) for row in rows]
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            if row.status == "pending_verification":
+                row, _canceled = await self._cancel_stale_login_request_if_needed(
+                    row,
+                    reviewed_by="system",
+                    reason="base binding is no longer active",
+                    actor_role="system",
+                )
+            if status == "pending_verification" and row.status != "pending_verification":
+                continue
+            items.append(self.serialize_login_request(row))
+        return items
