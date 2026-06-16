@@ -30,6 +30,9 @@ This is the Phase R1 contract for `PLANS.md`: web account registration, profile 
 6. Emergency ticket without completed profile is allowed only by policy.
    - Minimum context: authenticated web account, short problem description, reachable contact, and explicit marker that the profile is incomplete.
    - It must not create a device binding or bypass requester identity checks.
+   - The request form must opt in through `availability_policy.available_without_completed_profile` and/or `availability_policy.available_without_agent_binding`.
+   - `contact_required=true` requires a reachable contact before create/preview.
+   - `requires_manual_triage=true` routes to support triage and must not auto-run device diagnostics unless a valid target device exists.
 
 7. Mandatory first-rollout profile fields:
    - full name;
@@ -373,5 +376,12 @@ R12 compatibility, migration and cleanup slice:
 - `server/requester/identity_service.py` keeps `profile_completion.missing_fields` accurate while making `blocks` and requester feature flags policy-aware. With the rollout override disabled, normal requester preview/create can proceed without changing the profile setup contract.
 - Existing pending `device_registration_claims` remain visible in both `GET /api/web/requester/bootstrap` as user-facing device-link requests and `GET /api/web/admin/registry` as admin moderation rows.
 - Existing confirmed bindings and `verified_other_account` sessions keep validating through `AccountSessionService` until logout, revoke, base binding revoke or expiry; validation returns explicit invalidation codes for GUI recovery.
+
+PA10 emergency/no-agent request-form slice:
+
+- `server/tickets/form_catalog.py` normalizes request-form `availability_policy` booleans and exposes compatibility fields for legacy pack consumers.
+- `server/web_api/requester_handlers.py` lets only explicitly allowed forms bypass incomplete-profile or missing-agent gates, requires contact data when `contact_required=true`, and stores manual triage plus no-primary-agent diagnostic evidence.
+- `server/tickets/routing_service.py` sends `requires_manual_triage` availability-policy tickets to `servicedesk_l1`.
+- `webapp/src/pages/requester/index.tsx` hides normal forms when profile/agent context is incomplete and shows a Russian warning that diagnostics may be unavailable until support clarifies the profile and primary device.
 - `BrowserPairingService.expire_stale_pairings()` and `AccountSessionService.expire_stale_sessions()` provide service-level cleanup for expired browser pairings and temporary account sessions without deleting audit history.
 - Rollback path: set `WEB_SELF_REGISTRATION_ENABLED=false` to stop new web account creation and set `PROFILE_COMPLETION_REQUIRED=false` to make incomplete profiles advisory during rollout recovery. Normal agent GUI releases remain browser-only; older agents may still use the legacy backend endpoints during compatibility rollout. Do not manually patch deployed files; deploy the rollback through the project release scripts.

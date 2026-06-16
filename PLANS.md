@@ -968,7 +968,7 @@ Verification:
 
 ## Phase PA10 — Forms allowed without full registration/profile/agent
 
-Status: not started.
+Status: completed 2026-06-16.
 
 Goal:
 
@@ -1002,6 +1002,27 @@ Tests:
 Acceptance:
 
 - Users are not stranded, but normal forms still require the right context.
+
+Completed changes:
+
+- Legacy request-form packs now normalize form-level `availability_policy` and expose top-level compatibility booleans: `available_without_completed_profile`, `available_without_agent_binding`, `requires_manual_triage`, `contact_required` and `allowed_for_anonymous=false`.
+- Requester preview/create resolves the selected request form policy before the profile gate. Allowed emergency forms can bypass incomplete-profile and missing-agent gates, but they must provide contact data when `contact_required=true`; normal forms still return `REQUESTER_PROFILE_INCOMPLETE` or `REQUESTER_AGENT_REQUIRED`.
+- Emergency/no-agent tickets store `custom_fields.request_form_availability`, `requires_manual_triage`, `manual_triage_reason`, no-primary-agent diagnostic target evidence and suppressed autorun metadata.
+- Routing sends manual-triage availability-policy tickets to `servicedesk_l1` before ordinary template/default routing.
+- `/app/requester` filters request forms by profile/device availability, keeps normal forms hidden while profile/agent context is incomplete, enables explicitly allowed emergency forms and shows a Russian warning that diagnostics may be unavailable and the request will be handled manually.
+
+Verification:
+
+- Red before implementation: `python -m pytest server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_normalizes_availability_policy -q --tb=short` failed with missing `availability_policy`.
+- Red before implementation: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_incomplete_profile_can_create_only_allowed_emergency_form server/tests/test_requester_workspace_api.py::test_no_agent_user_cannot_create_normal_form_without_agent_binding -q --tb=short` failed because emergency forms were still profile-blocked and normal no-agent forms were accepted.
+- Red before implementation: `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx --reporter=dot` failed because normal forms stayed visible for incomplete profile/no-agent context.
+- `python -m pytest server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_normalizes_availability_policy -q --tb=short` -> 1 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_incomplete_profile_can_create_only_allowed_emergency_form server/tests/test_requester_workspace_api.py::test_no_agent_user_cannot_create_normal_form_without_agent_binding -q --tb=short` -> 2 passed.
+- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx --reporter=dot` -> 18 passed.
+- `python -m pytest server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_normalizes_on_behalf_policy server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_normalizes_availability_policy server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_omits_absent_on_behalf_policy -q --tb=short` -> 3 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_requester_ticket_create_is_blocked_until_profile_complete server/tests/test_requester_workspace_api.py::test_incomplete_profile_can_create_only_allowed_emergency_form server/tests/test_requester_workspace_api.py::test_no_agent_user_cannot_create_normal_form_without_agent_binding server/tests/test_requester_workspace_api.py::test_profile_completion_required_flag_can_disable_no_device_create_gate server/tests/test_requester_workspace_api.py::test_requester_can_create_no_device_ticket_and_preview_without_device server/tests/test_requester_workspace_api.py::test_requester_create_ticket_accepts_catalog_form_payload server/tests/test_requester_workspace_api.py::test_requester_preview_ticket_accepts_catalog_form_payload -q --tb=short` -> 7 passed.
+- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/features/requester/api.test.ts --reporter=dot` -> 33 passed.
+- `pnpm --dir webapp run build` -> passed; Vite reported only existing large chunk warnings.
 
 ---
 

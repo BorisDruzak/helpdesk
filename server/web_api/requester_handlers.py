@@ -45,6 +45,23 @@ from tickets.statuses import enrich_chat_payload_with_requester_name
 from tickets.workflow_service import TicketWorkflowService
 
 _ON_BEHALF_EXCLUDED_PERSON_STATUSES = frozenset({"archived", "deleted", "disabled", "inactive", "merged"})
+_AVAILABILITY_POLICY_FIELDS = (
+    "available_without_completed_profile",
+    "available_without_agent_binding",
+    "requires_manual_triage",
+    "contact_required",
+    "allowed_for_anonymous",
+)
+_DEFAULT_AVAILABILITY_POLICY = {field: False for field in _AVAILABILITY_POLICY_FIELDS}
+_CONTACT_FIELD_KEYS = (
+    "contact",
+    "contact_phone",
+    "callback_phone",
+    "phone",
+    "email",
+    "preferred_contact",
+    "preferred_contact_method",
+)
 
 
 def _success(data: dict[str, Any]) -> web.Response:
@@ -79,8 +96,102 @@ def _profile_completion_blocks(completion: dict[str, Any], key: str) -> bool:
     return bool(blocks.get(key, not completion.get("complete", False)))
 
 
+def _profile_completion_blocks_for_form(completion: dict[str, Any], key: str, availability_policy: dict[str, Any]) -> bool:
+    if _profile_completion_blocks(completion, key) and availability_policy.get("available_without_completed_profile"):
+        return False
+    return _profile_completion_blocks(completion, key)
+
+
 def _clean(value: object, *, max_length: int = 500) -> str:
     return str(value or "").strip()[:max_length]
+
+
+def _availability_policy_from_form(form: dict[str, Any]) -> dict[str, bool]:
+    raw_policy = form.get("availability_policy") if isinstance(form.get("availability_policy"), dict) else {}
+    return {
+        field: bool(form.get(field, raw_policy.get(field, _DEFAULT_AVAILABILITY_POLICY[field])))
+        for field in _AVAILABILITY_POLICY_FIELDS
+    }
+
+
+async def _resolve_form_availability_policy(
+    session,
+    *,
+    pack_key: str,
+    pack_version: str | None,
+    form_key: str,
+    request_template_key: str,
+) -> dict[str, bool]:
+    lookup_keys = {key for key in (form_key, request_template_key) if key}
+    if not lookup_keys:
+        return dict(_DEFAULT_AVAILABILITY_POLICY)
+
+    pack = await resolve_ticket_form_pack(
+        TicketFormPacksRepo(session),
+        pack_key=pack_key or DEFAULT_TICKET_FORM_PACK_KEY,
+        version=pack_version or None,
+    )
+    forms = pack.get("forms") if isinstance(pack.get("forms"), list) else []
+    for item in forms:
+        if not isinstance(item, dict):
+            continue
+        keys = {
+            str(item.get("key") or "").strip(),
+            str(item.get("request_template_key") or "").strip(),
+        }
+        if lookup_keys.intersection({key for key in keys if key}):
+            return _availability_policy_from_form(item)
+    return dict(_DEFAULT_AVAILABILITY_POLICY)
+
+
+def _has_contact_for_emergency(person: RegistryPerson | None, form_payload: dict[str, Any], data: dict[str, Any]) -> bool:
+    for value in (getattr(person, "phone", None), getattr(person, "email", None), data.get("user_display_name")):
+        if _clean(value, max_length=240):
+            return True
+    for source in (form_payload, data):
+        for key in _CONTACT_FIELD_KEYS:
+            if _clean(source.get(key), max_length=240):
+                return True
+    return False
+
+
+def _manual_triage_custom_fields(
+    *,
+    availability_policy: dict[str, Any],
+    no_valid_target: bool,
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "request_form_availability": dict(availability_policy),
+    }
+    if availability_policy.get("requires_manual_triage"):
+        fields.update(
+            {
+                "requires_manual_triage": True,
+                "manual_triage_reason": "request_form_availability_policy",
+            }
+        )
+    if no_valid_target:
+        diagnostics = {
+            "autorun_suppressed": True,
+            "last_autorun_skip_reason": "manual_triage_required"
+            if availability_policy.get("requires_manual_triage")
+            else "target_device_missing",
+            "diagnostic_target": {
+                "target_device_id": None,
+                "source": "no_primary_agent",
+                "agent_status": "missing",
+                "reason_code": "primary_device_missing",
+            },
+        }
+        fields.update(
+            {
+                "diagnostic_target_source": "no_primary_agent",
+                "target_agent_status": "missing",
+                "diagnostic_target_reason_code": "primary_device_missing",
+                "diagnostics": diagnostics,
+            }
+        )
+    return fields
 
 
 class _OnBehalfRequestError(ValueError):
@@ -857,6 +968,11 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         return _error("JSON body must be an object", status=400)
 
     device_id = _clean(data.get("device_id"), max_length=80)
+    pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
+    pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
+    form_key = _clean(data.get("form_key") or data.get("request_template_key"), max_length=120)
+    request_template_key = _clean(data.get("request_template_key"), max_length=120)
+    form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
 
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session)
@@ -870,13 +986,37 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         else:
             person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
-        if _profile_completion_blocks(completion, "ticket_preview"):
+        availability_policy = await _resolve_form_availability_policy(
+            session,
+            pack_key=pack_key,
+            pack_version=pack_version,
+            form_key=form_key,
+            request_template_key=request_template_key,
+        )
+        if _profile_completion_blocks_for_form(completion, "ticket_preview", availability_policy):
             return _profile_incomplete_error(completion)
+        if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
+            return _error(
+                "Укажите телефон или другой контакт для связи.",
+                status=400,
+                error_code="REQUESTER_CONTACT_REQUIRED",
+            )
+        has_agent_binding = bool(binding)
+        if not has_agent_binding and person is not None:
+            has_agent_binding = bool(await resolver.list_allowed_devices(person.person_id))
+        if (
+            form_key
+            and not device_id
+            and not has_agent_binding
+            and not availability_policy.get("available_without_agent_binding")
+            and not _raw_on_behalf_context(data).get("affected_person_id")
+        ):
+            return _error(
+                "Для этой формы нужно основное устройство. Выберите форму для экстренного обращения или привяжите устройство.",
+                status=403,
+                error_code="REQUESTER_AGENT_REQUIRED",
+            )
 
-        pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
-        pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
-        form_key = _clean(data.get("form_key") or data.get("request_template_key"), max_length=120)
-        request_template_key = _clean(data.get("request_template_key"), max_length=120)
         try:
             on_behalf_context = await _authorize_on_behalf_context(
                 session,
@@ -904,6 +1044,13 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             account_mode=account_mode,
         )
         context_custom_fields = RequesterIdentityResolver.requester_context_custom_fields(requester_context)
+        if form_key:
+            context_custom_fields.update(
+                _manual_triage_custom_fields(
+                    availability_policy=availability_policy,
+                    no_valid_target=not has_agent_binding and not on_behalf_context,
+                )
+            )
         client_custom_fields = (
             preview_payload.get("custom_fields")
             if isinstance(preview_payload.get("custom_fields"), dict)
@@ -988,8 +1135,36 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             account_mode = "browser_no_device"
             request_context = "no_device"
         completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
-        if _profile_completion_blocks(completion, "ticket_create"):
+        availability_policy = await _resolve_form_availability_policy(
+            session,
+            pack_key=pack_key,
+            pack_version=pack_version,
+            form_key=form_key,
+            request_template_key=request_template_key,
+        )
+        if _profile_completion_blocks_for_form(completion, "ticket_create", availability_policy):
             return _profile_incomplete_error(completion)
+        if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
+            return _error(
+                "Укажите телефон или другой контакт для связи.",
+                status=400,
+                error_code="REQUESTER_CONTACT_REQUIRED",
+            )
+        has_agent_binding = bool(binding)
+        if not has_agent_binding and person is not None:
+            has_agent_binding = bool(await resolver.list_allowed_devices(person.person_id))
+        if (
+            form_key
+            and not supplied_device_id
+            and not has_agent_binding
+            and not availability_policy.get("available_without_agent_binding")
+            and not _raw_on_behalf_context(data).get("affected_person_id")
+        ):
+            return _error(
+                "Для этой формы нужно основное устройство. Выберите форму для экстренного обращения или привяжите устройство.",
+                status=403,
+                error_code="REQUESTER_AGENT_REQUIRED",
+            )
 
         requester_profile = {
             "full_name": getattr(person, "full_name", None) or getattr(person, "display_name", None) or auth_context.actor_id,
@@ -1023,6 +1198,13 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             **RequesterIdentityResolver.requester_context_custom_fields(requester_context_snapshot),
         }
         on_behalf_context: dict[str, str] | None = None
+        if form_key:
+            extra_custom_fields.update(
+                _manual_triage_custom_fields(
+                    availability_policy=availability_policy,
+                    no_valid_target=not has_agent_binding and not _raw_on_behalf_context(data).get("affected_person_id"),
+                )
+            )
         if account_mode == "browser_no_device":
             extra_custom_fields["no_device"] = {
                 "created_from": "requester_portal",

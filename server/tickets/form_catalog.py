@@ -193,6 +193,13 @@ _ON_BEHALF_NO_PRIMARY_AGENT_BEHAVIORS = frozenset(
         "block_create",
     }
 )
+_AVAILABILITY_BOOL_FIELDS = (
+    "available_without_completed_profile",
+    "available_without_agent_binding",
+    "requires_manual_triage",
+    "contact_required",
+    "allowed_for_anonymous",
+)
 FIELD_ROLE_OPTIONS = (
     {"value": "routing_field", "label": "Routing field"},
     {"value": "priority_impact", "label": "Priority impact"},
@@ -581,6 +588,15 @@ def _normalize_on_behalf_policy(raw_value: Any) -> dict[str, Any] | None:
     }
 
 
+def _normalize_availability_policy(raw_form: dict[str, Any]) -> dict[str, bool]:
+    raw_policy = raw_form.get("availability_policy")
+    policy = raw_policy if isinstance(raw_policy, dict) else {}
+    return {
+        field: _normalize_policy_bool(raw_form.get(field, policy.get(field)), default=False)
+        for field in _AVAILABILITY_BOOL_FIELDS
+    }
+
+
 def _normalize_process_mapping(raw_value: Any, *, roles: list[str] | None = None) -> dict[str, Any]:
     mapping = _normalize_optional_dict(raw_value, "process_mapping")
     normalized_roles: list[str] = []
@@ -833,6 +849,9 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
         on_behalf_policy = _normalize_on_behalf_policy(raw_form.get("on_behalf_policy"))
         if on_behalf_policy is not None:
             template_context["on_behalf_policy"] = on_behalf_policy
+        availability_policy = _normalize_availability_policy(raw_form)
+        template_context["availability_policy"] = availability_policy
+        template_context.update(availability_policy)
 
         for dict_field in _TEMPLATE_DICT_FIELDS:
             value = _normalize_optional_dict(raw_form.get(dict_field), dict_field)

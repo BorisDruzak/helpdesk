@@ -171,6 +171,72 @@ async def _publish_on_behalf_form(
     await forms_repo.set_preferred(pack_key="request_forms", version=version, updated_by="test")
 
 
+async def _publish_availability_forms(
+    session,
+    *,
+    emergency_key: str,
+    normal_key: str,
+    version: str,
+    routed_queue_id: int | None = None,
+) -> None:
+    routing_policy = (
+        {
+            "default_queue_id": routed_queue_id,
+        }
+        if routed_queue_id is not None
+        else {}
+    )
+    forms_repo = TicketFormPacksRepo(session)
+    await forms_repo.upsert_pack(
+        pack_key="request_forms",
+        version=version,
+        schema_json={
+            "pack_key": "request_forms",
+            "version": version,
+            "forms": [
+                {
+                    "key": emergency_key,
+                    "request_template_key": emergency_key,
+                    "title": "Emergency access",
+                    "request_kind": "incident",
+                    "ticket_type": "incident",
+                    "availability_policy": {
+                        "available_without_completed_profile": True,
+                        "available_without_agent_binding": True,
+                        "requires_manual_triage": True,
+                        "contact_required": True,
+                    },
+                    "routing_policy": routing_policy,
+                    "playbook_triggers": [
+                        {
+                            "event": "ticket_created",
+                            "playbook_key": f"emergency_diag_{emergency_key}",
+                            "module_kind": "diagnostic",
+                            "enabled": True,
+                        }
+                    ],
+                    "fields": [
+                        {"key": "contact_phone", "label": "Contact phone", "type": "phone", "required": True},
+                        {"key": "summary", "label": "Summary", "type": "text", "required": False},
+                    ],
+                },
+                {
+                    "key": normal_key,
+                    "request_template_key": normal_key,
+                    "title": "Normal request",
+                    "request_kind": "request",
+                    "ticket_type": "request",
+                    "fields": [
+                        {"key": "summary", "label": "Summary", "type": "text", "required": False},
+                    ],
+                },
+            ],
+        },
+        created_by="test",
+    )
+    await forms_repo.set_preferred(pack_key="request_forms", version=version, updated_by="test")
+
+
 @pytest.mark.asyncio
 async def test_requester_profile_returns_safe_identities_and_devices(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -586,6 +652,148 @@ async def test_requester_ticket_create_is_blocked_until_profile_complete(test_cl
     assert response.status == 403, payload
     assert payload["error_code"] == "REQUESTER_PROFILE_INCOMPLETE"
     assert payload["details"]["setup_path"] == "/app/requester/profile/setup"
+
+
+@pytest.mark.asyncio
+async def test_incomplete_profile_can_create_only_allowed_emergency_form(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:8]
+    emergency_key = f"emergency_login_{suffix}"
+    normal_key = f"normal_request_{suffix}"
+    login = f"requester-emergency-incomplete-{suffix}@example.test"
+    async with session_maker() as session:
+        triage_queue = TicketQueue(code="servicedesk_l1", name="ServiceDesk L1", is_triage=True, is_active=True)
+        routed_queue = TicketQueue(code=f"non_triage_{suffix}", name="Non triage", is_triage=False, is_active=True)
+        session.add_all([triage_queue, routed_queue])
+        await session.flush()
+        await _publish_availability_forms(
+            session,
+            emergency_key=emergency_key,
+            normal_key=normal_key,
+            version=f"availability-{suffix}",
+            routed_queue_id=routed_queue.id,
+        )
+        await session.commit()
+
+    missing_contact = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "Cannot login",
+            "description": "Need urgent access help",
+            "form_key": emergency_key,
+            "request_template_key": emergency_key,
+            "form_payload": {"summary": "No contact yet"},
+        },
+    )
+    missing_contact_payload = await missing_contact.json()
+    assert missing_contact.status == 400, missing_contact_payload
+    assert missing_contact_payload["error_code"] == "REQUESTER_CONTACT_REQUIRED"
+
+    normal = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "Normal request",
+            "description": "Should still require profile",
+            "form_key": normal_key,
+            "request_template_key": normal_key,
+            "form_payload": {"summary": "Normal"},
+        },
+    )
+    normal_payload = await normal.json()
+    assert normal.status == 403, normal_payload
+    assert normal_payload["error_code"] == "REQUESTER_PROFILE_INCOMPLETE"
+
+    created = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "Cannot login",
+            "description": "Need urgent access help",
+            "form_key": emergency_key,
+            "request_template_key": emergency_key,
+            "form_payload": {"contact_phone": "+7 000 123-45-67", "summary": "Cannot sign in"},
+        },
+    )
+    created_payload = await created.json()
+    assert created.status == 200, created_payload
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, created_payload["data"]["ticket_id"])
+        triage_queue = (await session.execute(select(TicketQueue).where(TicketQueue.code == "servicedesk_l1"))).scalar_one()
+        events = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == created_payload["data"]["ticket_id"],
+                    TicketEvent.event_type == "diagnostic_autorun_skipped",
+                )
+            )
+        ).scalars().all()
+
+    assert ticket is not None
+    assert ticket.queue_id == triage_queue.id
+    assert ticket.requester_registration_status == "no_device"
+    custom_fields = ticket.custom_fields or {}
+    assert custom_fields["requires_manual_triage"] is True
+    assert custom_fields["manual_triage_reason"] == "request_form_availability_policy"
+    assert custom_fields["request_form_availability"]["available_without_completed_profile"] is True
+    assert custom_fields["request_form_availability"]["available_without_agent_binding"] is True
+    assert custom_fields["request_form_availability"]["contact_required"] is True
+    assert custom_fields["diagnostic_target_source"] == "no_primary_agent"
+    assert custom_fields["target_agent_status"] == "missing"
+    assert custom_fields["diagnostics"]["autorun_suppressed"] is True
+    assert custom_fields["diagnostics"]["last_autorun_skip_reason"] == "manual_triage_required"
+    assert events
+    assert events[0].payload["reason"] == "target_device_missing"
+
+
+@pytest.mark.asyncio
+async def test_no_agent_user_cannot_create_normal_form_without_agent_binding(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:8]
+    emergency_key = f"emergency_no_agent_{suffix}"
+    normal_key = f"normal_no_agent_{suffix}"
+    login = f"requester-no-agent-{suffix}@example.test"
+    async with session_maker() as session:
+        session.add(TicketQueue(code="servicedesk_l1", name="ServiceDesk L1", is_triage=True, is_active=True))
+        await _publish_availability_forms(
+            session,
+            emergency_key=emergency_key,
+            normal_key=normal_key,
+            version=f"availability-no-agent-{suffix}",
+        )
+        await _person_for_login(session, login=login)
+        await session.commit()
+
+    normal = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "Normal request",
+            "description": "Should require an agent binding",
+            "form_key": normal_key,
+            "request_template_key": normal_key,
+            "form_payload": {"summary": "Normal"},
+        },
+    )
+    normal_payload = await normal.json()
+    assert normal.status == 403, normal_payload
+    assert normal_payload["error_code"] == "REQUESTER_AGENT_REQUIRED"
+
+    emergency = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "No agent emergency",
+            "description": "PC will not start",
+            "form_key": emergency_key,
+            "request_template_key": emergency_key,
+            "form_payload": {"contact_phone": "+7 000 777-77-77", "summary": "PC will not start"},
+        },
+    )
+    emergency_payload = await emergency.json()
+    assert emergency.status == 200, emergency_payload
 
 
 @pytest.mark.asyncio

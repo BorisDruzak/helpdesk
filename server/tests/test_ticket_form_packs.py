@@ -84,6 +84,64 @@ def test_validate_form_pack_schema_normalizes_on_behalf_policy():
 
 
 @pytest.mark.no_db
+def test_validate_form_pack_schema_normalizes_availability_policy():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "version": "1.0.0",
+            "title": "Catalog",
+            "forms": [
+                {
+                    "key": "emergency_access",
+                    "request_kind": "incident",
+                    "title": "Emergency access",
+                    "availability_policy": {
+                        "available_without_completed_profile": True,
+                        "available_without_agent_binding": True,
+                        "requires_manual_triage": True,
+                        "contact_required": True,
+                    },
+                    "fields": [
+                        {"key": "contact_phone", "label": "Contact phone", "type": "phone", "required": True},
+                    ],
+                },
+                {
+                    "key": "normal_request",
+                    "request_kind": "request",
+                    "title": "Normal request",
+                    "fields": [
+                        {"key": "summary", "label": "Summary", "type": "text", "required": False},
+                    ],
+                },
+            ],
+        }
+    )
+
+    emergency = next(form for form in pack["forms"] if form["key"] == "emergency_access")
+    normal = next(form for form in pack["forms"] if form["key"] == "normal_request")
+
+    assert emergency["availability_policy"] == {
+        "available_without_completed_profile": True,
+        "available_without_agent_binding": True,
+        "requires_manual_triage": True,
+        "contact_required": True,
+        "allowed_for_anonymous": False,
+    }
+    assert emergency["available_without_completed_profile"] is True
+    assert emergency["available_without_agent_binding"] is True
+    assert emergency["requires_manual_triage"] is True
+    assert emergency["contact_required"] is True
+    assert emergency["allowed_for_anonymous"] is False
+    assert normal["availability_policy"] == {
+        "available_without_completed_profile": False,
+        "available_without_agent_binding": False,
+        "requires_manual_triage": False,
+        "contact_required": False,
+        "allowed_for_anonymous": False,
+    }
+
+
+@pytest.mark.no_db
 def test_validate_form_pack_schema_omits_absent_on_behalf_policy():
     pack = validate_form_pack_schema(
         {

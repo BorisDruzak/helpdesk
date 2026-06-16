@@ -1437,6 +1437,133 @@ describe("RequesterWorkspacePage", () => {
     ).toBe(false);
   });
 
+  it("shows only emergency forms when profile and agent context are incomplete", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: null,
+            profile_completion: {
+              complete: false,
+              status: "required",
+              setup_path: "/app/requester/profile/setup",
+              required_fields: [],
+              missing_fields: [{ key: "full_name", label: "ФИО" }],
+              blocks: {
+                ticket_create: true,
+                ticket_preview: true,
+                device_binding_confirmation: true,
+              },
+            },
+            profile_schema: {
+              schema_key: "requester_profile",
+              fields: [],
+              custom_fields: [],
+              required_fields: [],
+            },
+            devices: [],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+            feature_flags: { requester_no_device_create: false, requester_ticket_create: false },
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({
+          status: "ok",
+          pack: {
+            pack_key: "request_forms",
+            version: "pa10",
+            forms: [
+              {
+                key: "emergency_registration_help",
+                title: "Помощь с регистрацией или входом",
+                request_kind: "incident",
+                availability_policy: {
+                  available_without_completed_profile: true,
+                  available_without_agent_binding: true,
+                  requires_manual_triage: true,
+                  contact_required: true,
+                  allowed_for_anonymous: false,
+                },
+                fields: [
+                  { key: "contact_phone", label: "Телефон для связи", type: "phone", required: true },
+                ],
+              },
+              {
+                key: "normal_access",
+                title: "Обычный доступ",
+                request_kind: "request",
+                availability_policy: {
+                  available_without_completed_profile: false,
+                  available_without_agent_binding: false,
+                  requires_manual_triage: false,
+                  contact_required: false,
+                  allowed_for_anonymous: false,
+                },
+                fields: [{ key: "summary", label: "Кратко", type: "text", required: false }],
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "T-EMERGENCY",
+            ticket: { ticket_id: "T-EMERGENCY", title: "Помощь с регистрацией или входом", status: "new" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    const formSelect = await screen.findByLabelText("Форма обращения заявителя");
+    expect(screen.getByRole("option", { name: "Помощь с регистрацией или входом" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Обычный доступ" })).not.toBeInTheDocument();
+    expect(formSelect).toHaveValue("emergency_registration_help");
+    expect(screen.getByText("Диагностика может быть недоступна, пока поддержка не уточнит профиль и основное устройство.")).toBeInTheDocument();
+    expect(screen.getByText("Обращение попадет на ручную обработку поддержки.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Поле формы обращения contact_phone"), { target: { value: "+7 000 555-55-55" } });
+    fireEvent.change(screen.getByLabelText("Описание"), { target: { value: "Не могу войти и заполнить профиль" } });
+    const createButton = screen.getByLabelText("Создать обращение в кабинете пользователя");
+    expect(createButton).not.toBeDisabled();
+    fireEvent.click(createButton);
+
+    await screen.findByText("Создано обращение T-EMERGENCY");
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/web/requester/tickets" && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(JSON.parse(String((createCall?.[1] as RequestInit).body))).toMatchObject({
+      form_key: "emergency_registration_help",
+      form_payload: { contact_phone: "+7 000 555-55-55" },
+    });
+  });
+
   it("saves requester profile from registry pickers and unlocks the workspace", async () => {
     window.history.pushState({}, "", "/app/requester/profile/setup");
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

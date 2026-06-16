@@ -39,6 +39,7 @@ import type {
   KnowledgeAttempt,
   KnowledgeSuggestResult,
   KnowledgeSuggestionItem,
+  RequestFormAvailabilityPolicy,
   RequestFormDefinition,
   RequestFormField,
   RequesterBootstrap,
@@ -572,6 +573,30 @@ function onBehalfPrimaryAgentMissing(person: RequesterOnBehalfPerson | null): bo
   return status === "missing" || status === "ambiguous";
 }
 
+function formAvailabilityPolicy(form: RequestFormDefinition | null | undefined): Required<RequestFormAvailabilityPolicy> {
+  const raw = form?.availability_policy ?? {};
+  return {
+    available_without_completed_profile: Boolean(
+      form?.available_without_completed_profile ?? raw.available_without_completed_profile,
+    ),
+    available_without_agent_binding: Boolean(form?.available_without_agent_binding ?? raw.available_without_agent_binding),
+    requires_manual_triage: Boolean(form?.requires_manual_triage ?? raw.requires_manual_triage),
+    contact_required: Boolean(form?.contact_required ?? raw.contact_required),
+    allowed_for_anonymous: Boolean(form?.allowed_for_anonymous ?? raw.allowed_for_anonymous),
+  };
+}
+
+function formVisibleForRequester(form: RequestFormDefinition, profileGateActive: boolean, hasAgentContext: boolean): boolean {
+  const availability = formAvailabilityPolicy(form);
+  if (profileGateActive && !availability.available_without_completed_profile) {
+    return false;
+  }
+  if (!hasAgentContext && !availability.available_without_agent_binding && !form.on_behalf_policy?.allowed) {
+    return false;
+  }
+  return true;
+}
+
 function missingRequiredFields(form: RequestFormDefinition | null, values: FieldValues): string[] {
   return (form?.fields ?? [])
     .filter((field) => field.required && isFieldVisible(field, values))
@@ -902,7 +927,7 @@ export function RequesterWorkspacePage() {
       : "";
   const pendingRegistrationClaims = bootstrap?.pending_registration_claims ?? [];
   const services = catalog?.services ?? [];
-  const noDeviceCreateEnabled = !profileGateActive && bootstrap?.feature_flags?.requester_no_device_create === true;
+  const legacyNoDeviceCreateEnabled = !profileGateActive && bootstrap?.feature_flags?.requester_no_device_create === true;
 
   const selectedDevice = useMemo(
     () => devices.find((device) => device.device_id === selectedDeviceId) ?? devices[0] ?? null,
@@ -948,12 +973,20 @@ export function RequesterWorkspacePage() {
       null,
     [selectedOfferingFullCode, selectedService],
   );
-  const selectedForm = useMemo(
-    () => forms.find((form) => form.key === selectedFormKey) ?? forms[0] ?? null,
-    [forms, selectedFormKey],
+  const visibleForms = useMemo(
+    () => forms.filter((form) => formVisibleForRequester(form, profileGateActive, devices.length > 0)),
+    [devices.length, forms, profileGateActive],
   );
+  const selectedForm = useMemo(
+    () => visibleForms.find((form) => form.key === selectedFormKey) ?? visibleForms[0] ?? null,
+    [selectedFormKey, visibleForms],
+  );
+  const selectedAvailability = formAvailabilityPolicy(selectedForm);
+  const selectedFormProfileAllowed = !profileGateActive || selectedAvailability.available_without_completed_profile || !selectedForm;
   const selectedOnBehalfPolicy = selectedForm?.on_behalf_policy?.allowed ? selectedForm.on_behalf_policy : null;
   const onBehalfActive = Boolean(selectedOnBehalfPolicy?.allowed && onBehalfEnabled);
+  const selectedFormNoAgentAllowed = selectedAvailability.available_without_agent_binding || Boolean(selectedOnBehalfPolicy?.allowed);
+  const noDeviceCreateEnabled = selectedForm ? selectedFormNoAgentAllowed : legacyNoDeviceCreateEnabled;
   const selectedOnBehalfPerson = useMemo(
     () => onBehalfPeople.find((person) => person.person_id === onBehalfSelectedPersonId) ?? null,
     [onBehalfPeople, onBehalfSelectedPersonId],
@@ -976,7 +1009,7 @@ export function RequesterWorkspacePage() {
   const onBehalfMissingRequired = Boolean(
     onBehalfActive && (!selectedOnBehalfPerson || (selectedOnBehalfPolicy?.reason_required && !onBehalfReason.trim())),
   );
-  const canCreateForCurrentScope = !profileGateActive && (Boolean(selectedDevice) || noDeviceCreateEnabled || onBehalfActive);
+  const canCreateForCurrentScope = selectedFormProfileAllowed && (Boolean(selectedDevice) || noDeviceCreateEnabled || onBehalfActive);
 
   useEffect(() => {
     setOnBehalfEnabled(false);
@@ -1213,10 +1246,16 @@ export function RequesterWorkspacePage() {
   }, [selectedOffering?.request_template_key]);
 
   useEffect(() => {
-    if (!selectedFormKey && forms[0]) {
-      setSelectedFormKey(forms[0].key);
+    if (!visibleForms.length) {
+      if (forms.length && selectedFormKey) {
+        setSelectedFormKey("");
+      }
+      return;
     }
-  }, [forms, selectedFormKey]);
+    if (!visibleForms.some((form) => form.key === selectedFormKey)) {
+      setSelectedFormKey(visibleForms[0].key);
+    }
+  }, [forms.length, selectedFormKey, visibleForms]);
 
   useEffect(() => {
     setFieldValues((current) => {
@@ -1437,11 +1476,11 @@ export function RequesterWorkspacePage() {
   }
 
   function buildCreatePayload(): RequesterTicketCreatePayload {
-    if (profileGateActive) {
+    if (!selectedFormProfileAllowed) {
       throw new Error("Заполните профиль, чтобы продолжить работу в кабинете пользователя.");
     }
     if (!canCreateForCurrentScope) {
-      throw new Error("Выберите устройство");
+      throw new Error("Выберите устройство или доступную форму обращения.");
     }
     if (!description.trim()) {
       throw new Error("Заполните описание");
@@ -1594,7 +1633,7 @@ export function RequesterWorkspacePage() {
   }
 
   async function handlePreview() {
-    if (profileGateActive) {
+    if (!selectedFormProfileAllowed) {
       setError("Заполните профиль, чтобы продолжить работу в кабинете пользователя.");
       return;
     }
@@ -1649,12 +1688,12 @@ export function RequesterWorkspacePage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (profileGateActive) {
+    if (!selectedFormProfileAllowed) {
       setError("Заполните профиль, чтобы продолжить работу в кабинете пользователя.");
       return;
     }
     if (!canCreateForCurrentScope || !description.trim()) {
-      setError(canCreateForCurrentScope ? "Заполните описание" : "Выберите устройство и заполните описание");
+      setError(canCreateForCurrentScope ? "Заполните описание" : "Выберите доступную форму и заполните описание");
       return;
     }
     if (selectedOffering && !previewIsFresh) {
@@ -2830,7 +2869,7 @@ export function RequesterWorkspacePage() {
                 ) : null}
               </div>
             ) : null}
-            {forms.length ? (
+            {visibleForms.length ? (
               <div className="grid gap-3">
                 <label className="block text-sm font-semibold text-slate-700">
                   Форма обращения
@@ -2844,13 +2883,21 @@ export function RequesterWorkspacePage() {
                     }}
                     value={selectedForm?.key ?? ""}
                   >
-                    {forms.map((form) => (
+                    {visibleForms.map((form) => (
                       <option key={form.key} value={form.key}>
                         {form.title || form.key}
                       </option>
                     ))}
                   </select>
                 </label>
+                {selectedAvailability.available_without_completed_profile || selectedAvailability.available_without_agent_binding ? (
+                  <div className="rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <p>Диагностика может быть недоступна, пока поддержка не уточнит профиль и основное устройство.</p>
+                    {selectedAvailability.requires_manual_triage ? (
+                      <p className="mt-1">Обращение попадет на ручную обработку поддержки.</p>
+                    ) : null}
+                  </div>
+                ) : null}
                 {selectedOnBehalfPolicy?.allowed ? (
                   <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
                     <label className="flex items-center gap-2 font-semibold text-slate-800">

@@ -49,12 +49,26 @@ export type RequestFormOnBehalfPolicy = {
   support_override_allowed?: boolean;
 };
 
+export type RequestFormAvailabilityPolicy = {
+  available_without_completed_profile?: boolean;
+  available_without_agent_binding?: boolean;
+  requires_manual_triage?: boolean;
+  contact_required?: boolean;
+  allowed_for_anonymous?: boolean;
+};
+
 export type RequestFormDefinition = {
   key: string;
   title: string;
   description?: string | null;
   request_kind?: string | null;
   on_behalf_policy?: RequestFormOnBehalfPolicy | null;
+  availability_policy?: RequestFormAvailabilityPolicy | null;
+  available_without_completed_profile?: boolean;
+  available_without_agent_binding?: boolean;
+  requires_manual_triage?: boolean;
+  contact_required?: boolean;
+  allowed_for_anonymous?: boolean;
   fields: RequestFormField[];
 };
 

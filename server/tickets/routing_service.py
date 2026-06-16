@@ -233,6 +233,16 @@ def _get_template_routing_policy(ticket: Ticket) -> dict:
     return routing_policy if isinstance(routing_policy, dict) else {}
 
 
+def _requires_manual_triage(custom_fields: Optional[dict]) -> bool:
+    if not isinstance(custom_fields, dict):
+        return False
+    availability = custom_fields.get("request_form_availability")
+    return bool(
+        custom_fields.get("requires_manual_triage")
+        or (isinstance(availability, dict) and availability.get("requires_manual_triage"))
+    )
+
+
 def _as_int(value: Any) -> Optional[int]:
     if value is None or value == "":
         return None
@@ -459,6 +469,15 @@ class TicketRoutingService:
         if device_metadata is None and ticket.device_id:
             device_metadata = await self.get_device_metadata(ticket.device_id)
         context = _get_ticket_context(ticket, device_metadata)
+        if _requires_manual_triage(getattr(ticket, "custom_fields", None)):
+            queue = await self.ticket_repo.get_queue_by_code(FALLBACK_QUEUE_CODE)
+            if queue:
+                return {
+                    "source": "request_form.manual_triage",
+                    "queue_id": queue.id,
+                    "actions": {"queue_id": queue.id, "queue_code": FALLBACK_QUEUE_CODE},
+                    "matched_rule": None,
+                }
 
         template_policy = _get_template_routing_policy(ticket)
         if template_policy:
