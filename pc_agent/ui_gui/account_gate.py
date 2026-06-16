@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout
 
 from . import theme
 from .dynamic_form_widget import DynamicFormWidget
@@ -45,6 +45,7 @@ def account_gate_view_state(
             "show_register": False,
             "show_browser_register": False,
             "show_login_confirmed": False,
+            "show_gui_password_login": False,
             "show_browser_login": False,
             "show_login_other": False,
             "show_confirm": False,
@@ -67,6 +68,7 @@ def account_gate_view_state(
             "show_register": False,
             "show_browser_register": False,
             "show_login_confirmed": False,
+            "show_gui_password_login": False,
             "show_browser_login": False,
             "show_login_other": False,
             "show_confirm": False,
@@ -136,6 +138,7 @@ def account_gate_view_state(
         "browser_pairing_code": browser_pairing_code,
         "show_copy_pairing_code": bool(browser_pairing_code),
         "show_login_confirmed": confirmed is not None,
+        "show_gui_password_login": confirmed is not None,
         "show_browser_login": confirmed is not None,
         "show_login_other": can_login_other,
         "show_confirm": False,
@@ -151,6 +154,7 @@ class AccountGateWidget(QFrame):
     browserLoginRequested = Signal()
     browserRegisterRequested = Signal()
     loginConfirmedRequested = Signal(dict)
+    guiPasswordLoginRequested = Signal(str, str)
     loginOtherRequested = Signal(dict)
     refreshRequested = Signal()
     settingsRequested = Signal()
@@ -208,6 +212,29 @@ class AccountGateWidget(QFrame):
         self.pairing_code_label.setWordWrap(True)
         layout.addWidget(self.pairing_code_label)
 
+        self.gui_login_frame = QFrame()
+        self.gui_login_frame.setObjectName("ProfileCard")
+        gui_login_layout = QVBoxLayout(self.gui_login_frame)
+        gui_login_layout.setContentsMargins(16, 14, 16, 14)
+        gui_login_layout.setSpacing(8)
+        self.gui_login_title_label = QLabel("Вход по логину и паролю")
+        self.gui_login_title_label.setObjectName("CardTitle")
+        self.gui_login_input = QLineEdit()
+        self.gui_login_input.setObjectName("agent.account.gui_login")
+        self.gui_login_input.setPlaceholderText("Логин")
+        self.gui_password_input = QLineEdit()
+        self.gui_password_input.setObjectName("agent.account.gui_password")
+        self.gui_password_input.setPlaceholderText("Пароль")
+        self.gui_password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.gui_password_login_button = QPushButton("Войти")
+        self.gui_password_login_button.setObjectName("PrimaryButton")
+        self.gui_password_login_button.clicked.connect(self._on_gui_password_login)
+        gui_login_layout.addWidget(self.gui_login_title_label)
+        gui_login_layout.addWidget(self.gui_login_input)
+        gui_login_layout.addWidget(self.gui_password_input)
+        gui_login_layout.addWidget(self.gui_password_login_button)
+        layout.addWidget(self.gui_login_frame)
+
         self.other_form = DynamicFormWidget()
         self.other_form.set_form(OTHER_ACCOUNT_FORM)
         layout.addWidget(self.other_form)
@@ -257,6 +284,7 @@ class AccountGateWidget(QFrame):
         self.render({}, error=None)
         self.title_label.setText("Проверяем регистрацию устройства...")
         self.account_card.hide()
+        self.gui_login_frame.hide()
         self.other_form.hide()
 
     def _on_check_pending_request(self) -> None:
@@ -285,6 +313,7 @@ class AccountGateWidget(QFrame):
         self.message_label.setVisible(bool(self.message_label.text()))
         self._browser_pairing_code = str(state.get("browser_pairing_code") or "").strip()
         self.pairing_code_label.setVisible(bool(self._browser_pairing_code))
+        self.gui_login_frame.setVisible(bool(state.get("show_gui_password_login")))
         self.pairing_code_label.setText(f"Код привязки: {self._browser_pairing_code}" if self._browser_pairing_code else "")
         account = state.get("primary_account") or state.get("pending_account")
         self.account_card.setVisible(isinstance(account, dict))
@@ -336,6 +365,16 @@ class AccountGateWidget(QFrame):
     def _on_login_confirmed(self) -> None:
         if self._primary_account:
             self.loginConfirmedRequested.emit(dict(self._primary_account))
+
+    def _on_gui_password_login(self) -> None:
+        login = str(self.gui_login_input.text() or "").strip()
+        password = str(self.gui_password_input.text() or "")
+        if not login or not password:
+            self.warning_label.setText("Введите логин и пароль.")
+            self.warning_label.setVisible(True)
+            return
+        self.gui_password_input.clear()
+        self.guiPasswordLoginRequested.emit(login, password)
 
     def _on_other_clicked(self) -> None:
         if self._approved_other_account:

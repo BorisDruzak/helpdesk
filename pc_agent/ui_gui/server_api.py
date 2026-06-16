@@ -210,7 +210,11 @@ class ServerApiClient:
                 redacted: dict[str, Any] = {}
                 for key, item in value.items():
                     key_text = str(key).lower()
-                    if key_text in {"session_token", "token", "authorization", "cookie"} or key_text.endswith("_token"):
+                    if (
+                        key_text in {"session_token", "token", "authorization", "cookie", "password"}
+                        or key_text.endswith("_token")
+                        or "password" in key_text
+                    ):
                         redacted[key] = "<redacted>"
                     else:
                         redacted[key] = _redact(item)
@@ -255,7 +259,11 @@ class ServerApiClient:
                 redacted: dict[str, Any] = {}
                 for key, item in value.items():
                     key_text = str(key).lower()
-                    if key_text in {"session_token", "token", "authorization", "cookie"} or key_text.endswith("_token"):
+                    if (
+                        key_text in {"session_token", "token", "authorization", "cookie", "password"}
+                        or key_text.endswith("_token")
+                        or "password" in key_text
+                    ):
                         redacted[key] = "<redacted>"
                     else:
                         redacted[key] = _redact(item)
@@ -568,7 +576,11 @@ class TicketApiClient:
                 redacted: dict[str, Any] = {}
                 for key, item in value.items():
                     key_text = str(key).lower()
-                    if key_text in {"session_token", "token", "authorization", "cookie"} or key_text.endswith("_token"):
+                    if (
+                        key_text in {"session_token", "token", "authorization", "cookie", "password"}
+                        or key_text.endswith("_token")
+                        or "password" in key_text
+                    ):
                         redacted[key] = "<redacted>"
                     else:
                         redacted[key] = _redact(item)
@@ -795,6 +807,25 @@ class TicketApiClient:
             logger.info("Confirmed binding account session create error: %s", exc)
             return {"status": "error", "error": str(exc)}
 
+    async def create_gui_password_account_session(self, login: str, password: str) -> dict:
+        url = f"{self.base_url}/registry/agent/account-sessions/login"
+        payload = {"login": str(login or "").strip(), "password": str(password or "")}
+        session = await self._get_session()
+        headers = self._get_headers()
+        try:
+            async with session.post(url, headers=headers, json=payload) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    return self._api_error_result(
+                        response.status,
+                        response_text,
+                        fallback="Не удалось войти по логину и паролю",
+                    )
+                return self._unwrap_success_data(json.loads(response_text))
+        except (aiohttp.ClientError, json.JSONDecodeError) as exc:
+            logger.info("GUI password account session create error: %s", exc)
+            return {"status": "error", "error": str(exc)}
+
     async def create_browser_pairing(self, purpose: str) -> dict:
         url = f"{self.base_url}/registry/agent/browser-pairings"
         session = await self._get_session()
@@ -992,6 +1023,13 @@ class TicketApiClient:
             message = "Недостаточно прав для проверки аккаунта на этом устройстве."
         elif error_code == "DEVICE_NOT_FOUND":
             message = "Устройство не найдено на сервере. Проверьте подключение агента."
+        elif error_code == "INVALID_CREDENTIALS":
+            message = "Неверный логин или пароль."
+        elif error_code == "ACCOUNT_SESSION_DEVICE_MISMATCH":
+            message = (
+                "Этот аккаунт не привязан к текущему агенту. "
+                "Войдите через веб-кабинет или запросите изменение привязки."
+            )
         return {
             "status": "error",
             "http_status": status,

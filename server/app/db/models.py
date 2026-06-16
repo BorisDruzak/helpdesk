@@ -3524,7 +3524,7 @@ class DeviceAccountSession(Base):
             name="ck_device_account_sessions_verification_status",
         ),
         sa.CheckConstraint(
-            "verification_method IS NULL OR verification_method IN ('device_binding', 'registration_claim', 'admin_approval', 'email_otp', 'sso', 'break_glass')",
+            "verification_method IS NULL OR verification_method IN ('device_binding', 'registration_claim', 'admin_approval', 'gui_password', 'email_otp', 'sso', 'break_glass')",
             name="ck_device_account_sessions_verification_method",
         ),
         Index("ix_device_account_sessions_device_status", "device_id", "verification_status"),

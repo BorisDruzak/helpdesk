@@ -205,6 +205,55 @@ class AccountSessionService:
         )
         return {"session": await self.serialize_session(row), "session_token": token}
 
+    async def create_gui_password_session(self, *, device_id: str, login: str) -> dict[str, Any]:
+        clean_login = _clean(login, max_length=128)
+        if not clean_login:
+            raise ValueError("login is required")
+        identity = await self.registration_repo.find_identity("ui_login", clean_login)
+        person = await self.registry_repo.get_person(identity.person_id) if identity and identity.verified else None
+        if person is None:
+            raise PermissionError("account is not bound to this device")
+        active_bindings = [
+            binding
+            for binding in await self.registration_repo.list_active_bindings_for_device(device_id)
+            if binding.person_id == person.person_id
+            and binding.relationship_type in {"primary_user", "shared_user", "responsible"}
+        ]
+        if not active_bindings:
+            raise PermissionError("account is not bound to this device")
+        binding = next(
+            (
+                item
+                for relationship in ("primary_user", "responsible", "shared_user")
+                for item in active_bindings
+                if item.relationship_type == relationship
+            ),
+            active_bindings[0],
+        )
+        policy = await self._account_session_policy()
+        token = secrets.token_urlsafe(32)
+        row = await self.repo.create_session(
+            session_token_hash=_token_hash(token),
+            device_id=str(device_id),
+            account_mode="confirmed_binding",
+            verification_status="verified",
+            verification_method="gui_password",
+            person_id=binding.person_id,
+            binding_id=binding.binding_id,
+            verified_at=_now(),
+            expires_at=_expires_after(policy.get("confirmed_binding_ttl_hours", CONFIRMED_BINDING_TTL_HOURS)),
+            declared_account={"login": clean_login},
+            metadata_json={"source": "agent_gui_password_login"},
+        )
+        await self.repo.append_event(
+            device_id=device_id,
+            session_id=row.session_id,
+            event_type="gui_password_session_created",
+            actor_role="agent",
+            payload={"binding_id": binding.binding_id, "person_id": binding.person_id},
+        )
+        return {"session": await self.serialize_session(row), "session_token": token}
+
     async def create_registration_pending_session(self, *, device_id: str, claim_id: str) -> dict[str, Any]:
         claim = await self.registration_repo.get_claim(claim_id)
         if claim is None:

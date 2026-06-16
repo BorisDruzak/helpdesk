@@ -89,6 +89,20 @@ def test_server_api_error_derives_error_code_from_error_name():
     assert error.details == {"state": "closed"}
 
 
+def test_ticket_api_client_trace_preview_redacts_password_fields():
+    preview = TicketApiClient._trace_payload_preview(
+        {
+            "login": "owner@example.test",
+            "password": "RawPasswordMustNotLeak123!",
+            "nested": {"new_password": "AnotherRawPassword123!"},
+        }
+    )
+
+    assert preview["login"] == "owner@example.test"
+    assert preview["password"] == "<redacted>"
+    assert preview["nested"]["new_password"] == "<redacted>"
+
+
 @pytest.mark.asyncio
 async def test_ticket_api_client_lists_user_consents_with_account_session_headers():
     response = _FakeResponse(

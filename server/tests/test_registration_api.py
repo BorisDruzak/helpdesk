@@ -7,17 +7,22 @@ from unittest.mock import patch
 
 from aiohttp.test_utils import TestClient, TestServer
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     Device,
+    DeviceAccountSession,
     DeviceBrowserPairing,
     DeviceRegistrationClaim,
+    DeviceUserBinding,
     RegistryDepartment,
     RegistryLocation,
     RegistryPerson,
     RegistryPersonIdentity,
+    UiUser,
 )
+from auth.password_service import hash_password
 from auth.rate_limit import reset_rate_limits
 from registry.browser_pairing_service import BrowserPairingService
 from registry.account_session_service import AccountSessionService
@@ -105,6 +110,123 @@ async def _completed_requester_profile(
         )
     )
     return person
+
+
+async def _seed_bound_ui_user(
+    session,
+    *,
+    device_id: str,
+    login: str,
+    password: str = "StrongGuiPassword123!",
+) -> dict:
+    person = await _completed_requester_profile(session, login=login)
+    await session.flush()
+    session.add(
+        UiUser(
+            user_login=login,
+            password_hash=hash_password(password),
+            actor_role="user",
+            is_active=True,
+        )
+    )
+    binding = DeviceUserBinding(
+        binding_id=str(uuid.uuid4()),
+        device_id=device_id,
+        person_id=person.person_id,
+        relationship_type="primary_user",
+        status="active",
+        source="test",
+        confirmed_by_admin="test-admin",
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    session.add(binding)
+    await session.flush()
+    return {"person": person, "binding": binding, "password": password}
+
+
+@pytest.mark.asyncio
+async def test_agent_gui_password_login_bound_user_creates_device_scoped_session(test_client, test_engine):
+    reset_rate_limits()
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"gui-owner-{uuid.uuid4().hex[:8]}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        seeded = await _seed_bound_ui_user(session, device_id=device_id, login=login)
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/registry/agent/account-sessions/login",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"login": login, "password": seeded["password"]},
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    data = payload["data"]
+    assert data["session_token"]
+    assert data["session"]["account_mode"] == "confirmed_binding"
+    assert data["session"]["verification_method"] == "gui_password"
+    assert data["session"]["device_id"] == device_id
+    assert data["session"]["binding_id"] == seeded["binding"].binding_id
+    assert data["session"]["person_id"] == seeded["person"].person_id
+    assert data["session"]["login"] == login
+
+
+@pytest.mark.asyncio
+async def test_agent_gui_password_login_wrong_password_rejects_without_session(test_client, test_engine):
+    reset_rate_limits()
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"gui-wrong-{uuid.uuid4().hex[:8]}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await _seed_bound_ui_user(session, device_id=device_id, login=login)
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/registry/agent/account-sessions/login",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+        json={"login": login, "password": "WrongPassword123!"},
+    )
+    payload = await response.json()
+
+    assert response.status == 401, payload
+    assert payload["error_code"] == "INVALID_CREDENTIALS"
+    assert "session" not in payload
+    async with session_maker() as session:
+        rows = (
+            await session.execute(select(DeviceAccountSession).where(DeviceAccountSession.device_id == device_id))
+        ).scalars().all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_agent_gui_password_login_valid_user_on_other_device_rejects_without_session(test_client, test_engine):
+    reset_rate_limits()
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    actor_device_id = str(uuid.uuid4())
+    owner_device_id = str(uuid.uuid4())
+    login = f"gui-mismatch-{uuid.uuid4().hex[:8]}@example.test"
+    async with session_maker() as session:
+        session.add_all([_device(actor_device_id), _device(owner_device_id)])
+        seeded = await _seed_bound_ui_user(session, device_id=owner_device_id, login=login)
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/registry/agent/account-sessions/login",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{actor_device_id}"),
+        json={"login": login, "password": seeded["password"]},
+    )
+    payload = await response.json()
+
+    assert response.status == 403, payload
+    assert payload["error_code"] == "ACCOUNT_SESSION_DEVICE_MISMATCH"
+    async with session_maker() as session:
+        rows = (
+            await session.execute(select(DeviceAccountSession).where(DeviceAccountSession.device_id == actor_device_id))
+        ).scalars().all()
+    assert rows == []
 
 
 @pytest.mark.asyncio

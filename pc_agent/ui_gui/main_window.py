@@ -243,6 +243,7 @@ class MainWindow(QMainWindow):
         self.account_gate_page.browserLoginRequested.connect(self._on_browser_login_requested)
         self.account_gate_page.browserRegisterRequested.connect(self._on_browser_register_requested)
         self.account_gate_page.loginConfirmedRequested.connect(self._on_account_login_confirmed)
+        self.account_gate_page.guiPasswordLoginRequested.connect(self._on_gui_password_login_requested)
         self.account_gate_page.loginOtherRequested.connect(self._on_account_login_other)
         self.account_gate_page.refreshRequested.connect(self._refresh_account_state)
         self.account_gate_page.settingsRequested.connect(self._show_settings_dialog)
@@ -1523,6 +1524,48 @@ class MainWindow(QMainWindow):
 
     def _on_account_login_confirmed(self, account: dict[str, Any]) -> None:
         self._spawn_gui_task(self._async_account_login_confirmed(account), name="account.login_confirmed")
+
+    def _on_gui_password_login_requested(self, login: str, password: str) -> None:
+        self._spawn_gui_task(
+            self._async_gui_password_login(login, password),
+            name="account.gui_password_login",
+        )
+
+    async def _async_gui_password_login(self, login: str, password: str) -> None:
+        payload = await self.chat_panel.ticket_client.create_gui_password_account_session(login, password)
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            state = dict(self._account_state) if isinstance(self._account_state, dict) else {}
+            state["message"] = str(payload.get("error") or "Не удалось войти по логину и паролю")
+            self.account_gate_page.render(
+                state,
+                local_session=self._account_session,
+            )
+            return
+        session_payload = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+        token = str(payload.get("session_token") or "").strip()
+        if not session_payload or not token:
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error="Сервер не вернул токен сессии аккаунта. Повторите вход.",
+            )
+            return
+        session_payload = {
+            key: value
+            for key, value in session_payload.items()
+            if "password" not in str(key).lower()
+        }
+        session_payload["session_token"] = token
+        self._account_session = self._account_session_manager.save(
+            self._account_session_manager.build_confirmed_binding_session(
+                session_payload,
+                device_id=self.chat_panel.device_id,
+            )
+        )
+        self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        self._set_account_entry_mode(False)
+        self._render_profile_status()
+        self._select_sidebar_view("tickets", expand=True)
 
     async def _async_account_login_confirmed(self, account: dict[str, Any]) -> None:
         payload = await self.chat_panel.ticket_client.create_confirmed_binding_account_session(str(account.get("binding_id") or ""))

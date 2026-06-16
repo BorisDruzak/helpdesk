@@ -86,6 +86,31 @@ def test_confirmed_binding_session_reads_nested_server_person(tmp_path):
     assert session["phone"] == "+10000000001"
 
 
+def test_gui_password_confirmed_session_does_not_persist_password(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+
+    saved = manager.save(
+        manager.build_confirmed_binding_session(
+            {
+                "session_id": "server-session-1",
+                "session_token": "server-token-1",
+                "person_id": "person-1",
+                "binding_id": "binding-1",
+                "login": "owner@example.test",
+                "verification_method": "gui_password",
+                "password": "RawPasswordMustNotPersist123!",
+            },
+            device_id="device-1",
+        )
+    )
+    persisted = manager.path.read_text(encoding="utf-8")
+
+    assert saved["verification_method"] == "gui_password"
+    assert "password" not in saved
+    assert "RawPasswordMustNotPersist123!" not in persisted
+    assert '"password"' not in persisted.lower()
+
+
 def test_existing_confirmed_session_is_enriched_from_account_state(tmp_path):
     manager = AccountSessionManager(data_root=tmp_path)
     saved = manager.save(

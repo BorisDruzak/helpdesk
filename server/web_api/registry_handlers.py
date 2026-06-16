@@ -8,6 +8,7 @@ from app.db import get_session
 from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser
 from auth.middleware import require_auth
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
+from auth.service import AuthService
 from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
@@ -471,6 +472,93 @@ async def handle_registry_agent_account_session_confirmed_binding(request: web.R
             await session.commit()
         except ValueError as exc:
             return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    return _success(payload)
+
+
+@require_auth("agent")
+async def handle_registry_agent_account_session_login(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    device_id = _validate_uuid_device_id(auth_context.actor_id)
+    if not device_id:
+        return web.json_response(
+            {"status": "error", "error": "agent device_id required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    try:
+        data = await request.json() if request.can_read_body else {}
+    except Exception:
+        data = {}
+    login = str(data.get("login") or "").strip()
+    password = str(data.get("password") or "")
+    if not login or not password:
+        return web.json_response(
+            {"status": "error", "error": "login and password are required", "error_code": "VALIDATION_ERROR"},
+            status=400,
+        )
+    rate_key = f"{client_ip(request)}:{device_id}:{login.lower()}"
+    if not check_rate_limit("agent_gui_password_login", rate_key, limit=10, window_seconds=60):
+        return rate_limited_response()
+    try:
+        ok, actor_role = await AuthService(request.app["state"]).authenticate(login, password)
+    except Exception:
+        return web.json_response(
+            {"status": "error", "error": "Authentication backend unavailable", "error_code": "AUTH_BACKEND_UNAVAILABLE"},
+            status=503,
+        )
+    if not ok:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Invalid login or password",
+                "error_code": "INVALID_CREDENTIALS",
+            },
+            status=401,
+        )
+    if actor_role != "user":
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Account is not available on this agent",
+                "error_code": "ACCOUNT_SESSION_DEVICE_MISMATCH",
+            },
+            status=403,
+        )
+    async with get_session() as session:
+        if not await _device_exists(session, device_id):
+            return web.json_response(
+                {"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"},
+                status=404,
+            )
+        try:
+            payload = await AccountSessionService(session).create_gui_password_session(
+                device_id=device_id,
+                login=login,
+            )
+            await session.commit()
+        except PermissionError:
+            await session.rollback()
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "Account is not available on this agent",
+                    "error_code": "ACCOUNT_SESSION_DEVICE_MISMATCH",
+                    "details": {
+                        "actions": [
+                            "open_web_cabinet",
+                            "create_ticket_web",
+                            "request_temporary_access",
+                            "request_ownership_change",
+                        ]
+                    },
+                },
+                status=403,
+            )
+        except ValueError as exc:
+            await session.rollback()
+            return web.json_response(
+                {"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"},
+                status=400,
+            )
     return _success(payload)
 
 

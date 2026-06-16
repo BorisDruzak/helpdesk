@@ -4,6 +4,7 @@ import inspect
 from types import SimpleNamespace
 
 import pytest
+from PySide6.QtWidgets import QApplication
 
 from pc_agent.ui_gui.account_gate import AccountGateWidget, account_gate_view_state
 from pc_agent.ui_gui.main_window import MainWindow
@@ -30,8 +31,40 @@ def test_account_gate_registered_state_hides_registration():
     assert state["primary_account"]["display_name"] == "Registered User"
     assert state["show_login_confirmed"] is True
     assert state["show_browser_login"] is True
+    assert state["show_gui_password_login"] is True
     assert state["show_register"] is False
     assert state["show_login_other"] is True
+
+
+def test_account_gate_widget_emits_gui_password_login_and_clears_password():
+    app = QApplication.instance() or QApplication([])
+    widget = AccountGateWidget()
+    events: list[tuple[str, str]] = []
+    widget.guiPasswordLoginRequested.connect(lambda login, password: events.append((login, password)))
+
+    widget.render(
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "display_name": "Registered User",
+                    "binding_id": "binding-1",
+                    "can_login": True,
+                }
+            ],
+            "registration": {"status": "admin_confirmed"},
+        }
+    )
+    widget.show()
+    app.processEvents()
+
+    assert widget.gui_login_frame.isVisible()
+    widget.gui_login_input.setText("owner@example.test")
+    widget.gui_password_input.setText("RawPasswordMustNotPersist123!")
+    widget.gui_password_login_button.click()
+
+    assert events == [("owner@example.test", "RawPasswordMustNotPersist123!")]
+    assert widget.gui_password_input.text() == ""
 
 
 def test_account_gate_approved_other_account_can_be_selected():
@@ -324,6 +357,94 @@ async def test_main_window_browser_login_pairing_polls_and_saves_session(monkeyp
     assert saved_sessions[0]["session_token"] == "secret-token"
     assert saved_sessions[0]["account_mode"] == "confirmed_binding"
     assert selected_views == ["tickets"]
+
+
+@pytest.mark.asyncio
+async def test_main_window_gui_password_login_saves_session_without_password():
+    selected_views: list[str] = []
+    rendered: list[dict] = []
+    saved_sessions: list[dict] = []
+
+    class FakeClient:
+        async def create_gui_password_account_session(self, login: str, password: str) -> dict:
+            assert login == "owner@example.test"
+            assert password == "RawPasswordMustNotPersist123!"
+            return {
+                "session_token": "secret-token",
+                "session": {
+                    "session_id": "session-1",
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "display_name": "Registered User",
+                    "verification_method": "gui_password",
+                },
+            }
+
+    class FakeSessionManager:
+        def build_confirmed_binding_session(self, account: dict, *, device_id: str) -> dict:
+            assert account["session_token"] == "secret-token"
+            assert "password" not in account
+            return {**account, "device_id": device_id, "account_mode": "confirmed_binding"}
+
+        def save(self, session: dict) -> dict:
+            saved_sessions.append(session)
+            return session
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session_manager = FakeSessionManager()
+    window._account_session = {"account_mode": "none"}
+    window._account_state = {}
+    window._set_account_entry_mode = lambda value: None
+    window._render_profile_status = lambda: None
+    window._select_sidebar_view = lambda view, **kwargs: selected_views.append(view)
+
+    await window._async_gui_password_login("owner@example.test", "RawPasswordMustNotPersist123!")
+
+    assert saved_sessions[0]["session_token"] == "secret-token"
+    assert saved_sessions[0]["verification_method"] == "gui_password"
+    assert "password" not in saved_sessions[0]
+    assert selected_views == ["tickets"]
+
+
+@pytest.mark.asyncio
+async def test_main_window_gui_password_login_error_keeps_gate_actions_available():
+    rendered: list[dict] = []
+
+    class FakeClient:
+        async def create_gui_password_account_session(self, login: str, password: str) -> dict:
+            return {
+                "status": "error",
+                "error_code": "ACCOUNT_SESSION_DEVICE_MISMATCH",
+                "error": "Этот аккаунт не привязан к текущему агенту.",
+            }
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session = {"account_mode": "none"}
+    window._account_state = {
+        "accounts": [
+            {
+                "account_mode": "confirmed_binding",
+                "display_name": "Registered User",
+                "binding_id": "binding-1",
+                "can_login": True,
+            }
+        ],
+        "registration": {"status": "admin_confirmed"},
+        "can_request_other_account_login": True,
+    }
+
+    await window._async_gui_password_login("other@example.test", "RawPasswordMustNotPersist123!")
+
+    state = account_gate_view_state(rendered[0]["state"], local_session=rendered[0]["local_session"])
+    assert "error" not in rendered[0]
+    assert "не привязан" in state["message"]
+    assert state["show_gui_password_login"] is True
+    assert state["show_browser_login"] is True
+    assert state["show_login_other"] is True
 
 
 @pytest.mark.asyncio
