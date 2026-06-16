@@ -1,76 +1,125 @@
-# Active Work: Web-first Registration, Profiles and Registry Context Refactor
+# Active Work: Primary Agent, GUI Login and On-Behalf Ticket Context
 
-Status, 2026-06-15: completed at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`. R0-R14 implementation, targeted tests, deploy smoke, browser evidence and local Windows GUI-agent evidence are recorded below. The refactor simplifies requester onboarding, moves the user-facing workflow into the browser, makes the web requester cabinet the primary workspace, and keeps the GUI agent as a secondary local helper for device handoff, emergency ticketing, consent and diagnostics.
+Status, 2026-06-16: planning document. This plan follows the completed Web-first Registration/Profile refactor and defines the next product decision: one ordinary requester has one primary agent/PC by default, the web cabinet does not ask the requester to choose a device in normal flows, and tickets may optionally be created for another person through explicit form policy. No implementation is accepted until the automated and live validation gates below are satisfied.
 
-Follow-up, 2026-06-16: strict browser-only agent registration is now the active decision. The normal GUI agent no longer builds the legacy full-profile registration page, local registration buttons, or local submit/confirm handlers; backend legacy endpoints remain only as compatibility API surface for older agents. Env feature flags are covered by explicit regression tests, and repeatable live smoke scripts now cover clean account/profile/device/ticket/KB onboarding plus rollout compatibility cases.
+Previous completed baseline:
 
-Final release follow-up, 2026-06-16: agent `3.1.67` removes the remaining normal-GUI legacy requester profile manager/sidebar state and the `profile.upsert`/`profile.select` automation actions. Ticket creation in the GUI and `/ui/automation/run` now depends only on a server-issued web account session; old profile sync code is no longer invoked from `ChatPanel`.
+- Web-first registration/profile/device-linking refactor is treated as completed baseline at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06bf11` plus follow-up agent cleanup noted in the previous PLANS history.
+- The old active plan established: account != profile, profile != device, device != user; browser-first registration; GUI agent no longer owns requester profile; request forms and Knowledge consume Registry context.
+- This new plan does not revert that architecture. It clarifies how normal requester ticket context and diagnostic target selection work after registration.
 
-Carryover closed before this plan became active: Knowledge K4 focused policy tests were added in `22825944`, and Knowledge K3 binding eligibility preview was implemented and live-checked in `536f749e`; evidence is under `artifacts/browser_live_validation/knowledge-binding-preview-536f749e-20260615/`.
+---
 
 ## Product thesis
 
-Аккаунт не равен профилю. Профиль не равен устройству. Устройство не равно пользователю.
+The primary production model is:
 
-- Account: web login credentials and role used to enter `/app`.
-- Profile: registry-backed person context: ФИО, подразделение, локация, контакты, должность, devices, access/audience attributes.
-- Device link: approved binding between a registry person and a concrete agent device.
-- Agent identity: machine identity only: `device_id`, agent token, WebSocket/API authorization and technical health.
-- Request forms: ticket/request templates that consume profile and registry context, but do not own the profile lifecycle.
-- Knowledge access: audience and registry-based visibility for requester-safe knowledge and RAG retrieval.
+1. One ordinary requester has one primary active agent/PC.
+2. The web cabinet belongs to the requester, not to the current physical PC.
+3. The primary agent is a technical diagnostic target resolved by the server from Registry bindings.
+4. The GUI agent is a local tool for connection/setup/status/optional local actions; it is not the primary requester workspace.
+5. Rebinding a device is not a login flow. It is an admin-controlled transfer or an audited user request for ownership change.
+6. Creating a ticket for another person is not a rebinding. It is an explicit ticket context: creator != affected user.
 
-Primary UX direction: registration, profile completion, device linking, requester ticket creation and knowledge search happen in the web cabinet. The GUI agent must stop being a profile editor or primary registration surface.
+Core invariant:
 
----
-
-## Non-negotiable invariants
-
-1. Registration is browser-first.
-   - No active full-profile registration form in the GUI agent.
-   - GUI agent may only create/copy/open a browser device-linking flow and show status.
-
-2. Account creation is separate from profile completion.
-   - Initial account form: login, password, repeat password.
-   - Optional device pairing code may be entered during account registration, but profile fields must not be mixed into account creation.
-
-3. Profile is web-first and registry-backed.
-   - Profile completion is required before normal requester work.
-   - Profile data writes to registry entities and stable registry relationships, not only to arbitrary JSON.
-
-4. Web requester cabinet is the main user workspace.
-   - Tickets, devices, profile, knowledge, consents and device linking live in `/app/requester`.
-   - Agent GUI is secondary: open web cabinet, link this device, show status, emergency ticket, consent/remote assist.
-
-5. Request forms and knowledge must use registry context.
-   - Forms prefill from profile/device/service context.
-   - Knowledge audience rules use person, department, location, access/audience groups, service and role.
-
-6. Full Russian localization is required.
-   - User-facing labels, hints, empty states, errors and confirmations must be Russian.
-   - Technical identifiers may remain English in code/API only.
-   - No mojibake, mixed encodings, placeholder English, raw ids in normal UI, or unexplained backend error text.
+- Normal requester ticket: `creator_person == affected_person`, diagnostic target = creator primary agent.
+- On-behalf ticket: `creator_person != affected_person`, diagnostic target = affected person's primary agent.
+- If affected person's primary agent is offline or missing, that is diagnostic evidence, not a reason to run checks on the creator's current PC.
 
 ---
 
-## Current system map to preserve or refactor
+## Terms and Russian UI wording
 
-Existing useful foundations:
+Use these user-facing names:
 
-- `device_user_bindings` is the authoritative device-person link.
-- `device_registration_claims` supports pending/admin-reviewed device registration.
-- `device_account_sessions` separates machine identity from requester identity.
-- `device_browser_pairings` already supports browser login/registration pairing.
-- `/app/device/pair`, `/app/device/login`, `/app/device/register` already require a web session.
-- `/app/requester` already exists and has profile/devices/tickets/consents APIs.
-- Admin registry already has people, identities, bindings, account sessions and transfer-owner actions.
-- Ticket form builder already supports picker fields, field roles, process mapping and policy publication.
-- Knowledge audience rules already support person, department, department tree, location, access group, audience group, role and service targets.
+- `Кабинет пользователя` — web requester workspace.
+- `Основное устройство` — the primary active agent/PC bound to the affected person.
+- `Проблема у другого сотрудника` — requester-facing toggle for on-behalf ticket creation.
+- `Сотрудник, у которого проблема` — the affected person selector.
+- `Создал обращение` — creator/person who submitted the ticket.
+- `Кого касается обращение` — affected person.
+- `Устройство для диагностики` — server-resolved affected user's primary agent/PC.
+- `Запросить смену владельца устройства` — user-facing request, not immediate rebinding.
+- `Передать устройство другому пользователю` — admin transfer action.
 
-Main refactor target:
+Avoid in normal requester UI:
 
-- Stop treating the GUI agent as the main user registration/profile UI.
-- Promote web requester workspace to the primary requester product.
-- Make profile/schema/registry/form/knowledge context coherent and visible.
+- `pairing`, `binding`, `claim`, `session`, `registry person`, raw UUIDs, raw enum values.
+
+Technical names may remain in code/API/tests where useful:
+
+- `creator_person_id`
+- `affected_person_id`
+- `target_device_id`
+- `target_binding_id`
+- `created_on_behalf`
+- `diagnostic_target_source`
+
+---
+
+## Target behavior summary
+
+### Normal requester flow
+
+1. User opens `/app/requester` from any browser/device.
+2. Server resolves web account -> `RegistryPerson`.
+3. Server resolves that person's primary active binding.
+4. Request forms prefill profile facts and primary agent/device context.
+5. User does not choose a device in the normal path.
+6. Ticket create stores creator, affected person and target device context.
+7. Diagnostics run only against the server-resolved primary target device when allowed and online.
+8. If the primary agent is offline, the ticket records offline evidence and does not try to diagnose the current browser PC.
+
+### On-behalf requester flow
+
+1. A form may opt into `allow_on_behalf=true`.
+2. The requester toggles `Проблема у другого сотрудника`.
+3. The requester selects the affected person.
+4. The form does not ask for a separate diagnostic device in the normal case.
+5. Server resolves affected person's primary active agent.
+6. Ticket is marked as created on behalf of another person.
+7. Support sees both:
+   - who created the ticket;
+   - who is affected;
+   - which device is the diagnostic target.
+8. Knowledge shown to the creator remains filtered by the creator's access; affected context may be used for routing/diagnostic target only and must not leak restricted Knowledge to the creator.
+
+### GUI agent flow
+
+1. If the agent has no machine token, GUI opens as connection/setup tool only.
+2. If the agent has machine token but no user binding, GUI opens as device-linking wizard only.
+3. If the agent is bound, it runs in background by default.
+4. GUI does not auto-open as a full workspace after binding.
+5. If the user explicitly opens GUI and wants local GUI access, they may enter login/password.
+6. The server validates credentials and grants a local GUI account session only if the logged-in user is bound to this current agent/device.
+7. If the credentials are valid but the user is not bound to this agent, GUI must not rebind; it offers:
+   - `Открыть мой кабинет`;
+   - `Создать обращение в web`;
+   - `Запросить временный доступ к этому агенту`;
+   - `Сообщить, что устройство нужно передать другому пользователю`.
+
+### Admin flow
+
+1. Admin manages ownership changes in one registration/registry center.
+2. User cannot directly remove another user's binding or silently rebind a PC through login.
+3. User may create an audited request for ownership change.
+4. Admin reviews device, current owner, requested affected user, recent sessions, tickets, and quality warnings in one place.
+5. Admin chooses transfer/revoke/shared/responsible/reject actions with preview, reason and audit.
+
+---
+
+## What we explicitly do not do
+
+Do not implement these behaviors:
+
+- Do not automatically rebind an agent when another user logs into GUI.
+- Do not use the current browser/physical PC as diagnostic target just because the requester is sitting there.
+- Do not require normal requester to choose a device in the default ticket flow.
+- Do not show a global list of all users in every form by default.
+- Do not let on-behalf ticket creation leak Knowledge articles restricted to the affected user.
+- Do not run diagnostics on the creator's PC when the ticket is for another person.
+- Do not create a new generic registry constructor as part of this work.
 
 ---
 
@@ -78,1320 +127,906 @@ Main refactor target:
 
 In scope:
 
-- Web account self-registration.
-- Web profile setup and profile completion gate.
-- Browser-first device linking.
-- Removal/hiding of GUI agent profile registration UI.
-- Registry-backed profile fields and additional registry context.
-- Request form integration with requester profile and registry context.
-- Knowledge access/retrieval integration with registry audience context.
-- Admin registry/profile/schema controls.
-- Russian localization and UX copy.
-- Automated and live validation.
+- Server-side primary-agent resolver for a person.
+- Server-side ticket context model: creator, affected person, target diagnostic device.
+- Request form policy flag allowing on-behalf creation.
+- Requester UI toggle/search for affected user only when the form allows it.
+- Automatic diagnostic target resolution from affected user's primary active binding.
+- Knowledge suggestion/access separation: creator-visible Knowledge vs affected-context routing/diagnostic target.
+- GUI agent login with server-side credential validation and bound-device check.
+- GUI agent state machine for no token / no binding / bound background / bound local GUI login / wrong user on this agent.
+- Admin registration/registry center improvements for user/device ownership transfer and on-behalf evidence.
+- Automated backend/frontend/agent tests.
+- Live validation with real or controlled server, webapp, DB and GUI agent evidence.
 
-Out of scope for this phase:
+Out of scope:
 
-- Replacing the whole auth system with SSO/AD-only auth.
-- Building an unrestricted low-code database/registry constructor.
-- Removing existing backend tables before migration evidence exists.
-- Redesigning the entire support command center.
-- Reworking unrelated knowledge authoring UX, except where knowledge access depends on registry/profile context.
-
----
-
-## Target user journeys
-
-### Journey A — user creates account without an agent
-
-1. User opens `/app/register`.
-2. User enters login, password and repeated password.
-3. Server creates a `user` web account.
-4. User enters `/app/requester/profile/setup`.
-5. User fills required profile fields.
-6. Server creates or updates `RegistryPerson` and identities.
-7. User reaches requester cabinet.
-8. Device list shows an empty state: `Устройства пока не привязаны`.
-9. User can create web tickets without an agent if policy allows no-device tickets.
-
-Acceptance:
-
-- Account creation does not ask for ФИО/department/location/device.
-- Profile completion is the first in-cabinet task.
-- No agent token or device binding is required for a web-only account.
-
-### Journey B — user creates account and links the current agent device
-
-1. GUI agent shows `Привязать это устройство через браузер`.
-2. Agent creates browser pairing and shows:
-   - `Открыть в браузере`;
-   - `Скопировать код привязки`;
-   - pairing expiry/status.
-3. User opens `/app/register` or `/app/device/pair`.
-4. User creates or enters a web account.
-5. User enters pairing code if not opened from direct link.
-6. User completes profile in web cabinet.
-7. Server creates a device registration claim for that profile/device.
-8. Admin approves, auto-approves, or rejects according to policy.
-9. User sees linked device status in web cabinet and agent sees updated account-state.
-
-Acceptance:
-
-- GUI agent never asks for full profile fields.
-- Pairing code can be copied and pasted during account registration.
-- Pending/admin review status is visible in both browser and agent.
-
-### Journey C — existing user links a new device
-
-1. User opens `/app/requester/devices`.
-2. User clicks `Привязать устройство`.
-3. User enters pairing code from the agent or follows the agent-opened link.
-4. User confirms device details.
-5. Registration claim is created.
-6. Admin approval produces active `device_user_bindings`.
-
-Acceptance:
-
-- Device linking is discoverable from the web cabinet.
-- User sees device hostname, OS, agent version and status before confirmation.
-- If claim is pending, the UI says what happens next.
-
-### Journey D — user uses agent after device was linked
-
-1. Agent starts.
-2. Agent account gate fetches account-state.
-3. If the web user/device link is approved, agent shows a simple card:
-   - owner/person;
-   - device link status;
-   - buttons: `Открыть кабинет`, `Создать аварийное обращение`, `Обновить статус`.
-4. Normal work is directed to web cabinet.
-
-Acceptance:
-
-- Agent no longer exposes full profile registration form.
-- Agent can still perform emergency flows and consent/remote assist.
-
-### Journey E — other account on a registered device
-
-1. User is not the registered owner but needs to create a ticket on a registered device.
-2. Agent offers `Войти временно как другой пользователь` only as a secondary/advanced action.
-3. User enters minimal reason/account data.
-4. Admin approves.
-5. Tickets from this session are visibly marked as `создано с другого аккаунта на зарегистрированном устройстве`.
-
-Acceptance:
-
-- Other-account flow remains available for operational exceptions.
-- It does not transfer ownership and does not alter device binding.
-
----
-
-## Target information architecture
-
-### `/app/requester`
-
-Recommended sections and Russian names:
-
-- `Главная`
-  - profile completion status;
-  - open tickets;
-  - pending consents;
-  - linked devices;
-  - recommended knowledge.
-- `Мой профиль`
-  - ФИО, отдел, должность, локация, контакты;
-  - identities and account links;
-  - profile quality status.
-- `Мои устройства`
-  - linked PCs and devices;
-  - pending device links;
-  - button `Привязать устройство`.
-- `Обращения`
-  - create/list/detail/message/feedback/reopen.
-- `База знаний`
-  - requester-safe search, recommendations and AI answer if allowed.
-- `Согласования и доступы`
-  - user consents, remote assist requests, approval requests.
-
-### GUI agent
-
-Recommended main states:
-
-- `Устройство не привязано`
-  - primary: `Привязать через браузер`;
-  - secondary: `Скопировать код`;
-  - secondary: `Открыть настройки подключения`.
-- `Ожидает подтверждения`
-  - status text;
-  - `Проверить статус`;
-  - `Открыть кабинет`.
-- `Устройство привязано`
-  - owner card;
-  - `Открыть кабинет`;
-  - `Создать аварийное обращение`;
-  - `Обновить статус`.
-- `Нет связи с сервером`
-  - connection diagnostics;
-  - emergency/offline guidance.
-
-Forbidden normal GUI actions:
-
-- Full profile form.
-- Local registration form with ФИО/department/location/device type.
-- Unexplained local account switching as a primary action.
+- Full SSO/AD replacement.
+- Multi-device user selection as default requester UX.
+- Automatic self-service device rebinding by ordinary users.
+- Large CMDB redesign.
+- Support workspace redesign except showing the new ticket context clearly.
 
 ---
 
 ## Data model target
 
-### Account domain
+Prefer explicit fields if migrations are acceptable. If the current slice avoids migration, store the same structure in `ticket.custom_fields` under stable keys and add migration later.
 
-Required:
+Required logical fields:
 
-- `ui_users` remains the web account source.
-- Add self-registration flow for role `user`.
-- Enforce password policy.
-- Add audit event for user self-registration.
-- Ensure user account can later link to `RegistryPerson` via `RegistryPersonIdentity`.
+```json
+{
+  "created_on_behalf": true,
+  "creator_person_id": "person_creator",
+  "creator_actor_id": "ivanov",
+  "affected_person_id": "person_affected",
+  "affected_display_name": "Петров П.П.",
+  "affected_department_id": "department_finance",
+  "affected_location_id": "location_12",
+  "target_device_id": "device_petrov_primary",
+  "target_binding_id": "binding_petrov_primary",
+  "target_agent_status": "offline",
+  "diagnostic_target_source": "affected_user_primary_agent",
+  "on_behalf_reason": "ПК не включается, сотрудник не может создать обращение"
+}
+```
 
-Do not:
+For normal tickets:
 
-- Store profile fields directly in `ui_users` except minimal display/account metadata if already needed.
-- Treat login as full person profile.
+```json
+{
+  "created_on_behalf": false,
+  "creator_person_id": "person_creator",
+  "affected_person_id": "person_creator",
+  "target_device_id": "creator_primary_device",
+  "diagnostic_target_source": "creator_primary_agent"
+}
+```
 
-### Profile/person domain
+Naming rule:
 
-Required profile fields:
+- Keep existing `requester_*` fields for backward compatibility.
+- Introduce new explicit semantics for new code:
+  - `creator_*` = who submitted the ticket.
+  - `affected_*` = who has the problem.
+  - `target_device_*` = where diagnostics should run.
 
-- `full_name` / ФИО.
-- `display_name` if needed, generated by default from ФИО.
-- `department_id`.
-- `location_id` or location request if not found.
-- `phone` or internal extension.
-- `position` / должность — recommended production field.
-
-Recommended additional fields:
-
-- manager/responsible person.
-- room/workplace label.
-- preferred contact method.
-- schedule/availability if needed later.
-- used services/systems if useful for forms and KB.
-
-Registry writes:
-
-- Profile updates must update `RegistryPerson` and `RegistryPersonIdentity`.
-- Department/location must be selected from registry where policy says existing values are required.
-- User-submitted new department/location should become a pending registry suggestion, not an uncontrolled canonical value.
-
-### Device link domain
-
-Continue using:
-
-- `device_browser_pairings` for short-lived browser handoff.
-- `device_registration_claims` for requested link.
-- `device_user_bindings` for approved active link.
-
-Required states visible to users:
-
-- `Не привязано`.
-- `Ожидает заполнения профиля`.
-- `Ожидает подтверждения администратора`.
-- `Привязано`.
-- `Отклонено`.
-- `Конфликт: устройство уже привязано`.
-
-### Profile schema domain
-
-Do not build unrestricted registry constructor.
-
-Build controlled profile schema:
-
-- system fields cannot be removed;
-- admin may mark optional fields visible/hidden/required;
-- admin may add custom fields in a dedicated extra block;
-- each custom field must have type, label, help text, validation and data target;
-- every field must map to one of:
-  - registry person field;
-  - identity field;
-  - department/location relationship;
-  - custom registry metadata;
-  - pending change request.
+Do not overload `requester_*` to mean both creator and affected user.
 
 ---
 
-## Form builder integration target
+## Request form policy target
 
-Existing request form builder supports useful field types: `user_picker`, `department_picker`, `location_picker`, `device_picker`, `service_picker`, plus standard text/select/date/file/email/phone fields.
+Add form-level policy/config fields, not a hardcoded field in every form:
 
-Target rule:
+```json
+{
+  "on_behalf_policy": {
+    "allowed": true,
+    "label": "Проблема у другого сотрудника",
+    "affected_person_required": false,
+    "reason_required": true,
+    "allowed_scope": "same_department_or_privileged",
+    "diagnostic_target": "affected_person_primary_agent",
+    "knowledge_visibility": "creator_only",
+    "support_visibility": "creator_and_affected"
+  }
+}
+```
 
-- Reuse the form schema engine concepts.
-- Do not store profile forms inside the request form pack as if they were ticket forms.
-- Introduce separate schema domains:
-  - `request_form_schema` for ticket/request templates;
-  - `profile_form_schema` for user profile completion;
-  - `registry_attribute_schema` for controlled custom attributes;
-  - `consent_form_schema` if consent payloads become configurable.
+Recommended admin wording in form builder:
 
-Request forms must consume profile context:
+- `Разрешить создание обращения за другого сотрудника`.
+- Help text: `Если включено, заявитель сможет выбрать сотрудника, у которого проблема. Диагностика будет выполняться по основному устройству выбранного сотрудника, а не по ПК заявителя.`
 
-- Prefill requester department, location, phone and device.
-- Offer device picker based on active bindings.
-- Offer service picker based on service catalog and audience/context.
-- Allow profile-context conditions in a safe limited form:
-  - requester has no linked device;
-  - requester department equals X;
-  - selected device type is printer/MFU/PC;
-  - selected service/offering equals X.
+Default:
 
-Field roles must remain the main production mapping:
+- `allowed=false` for all existing forms unless explicitly enabled.
 
-- `routing_field`.
-- `priority_impact`.
-- `priority_urgency`.
-- `priority_importance`.
-- `diagnostic_input`.
-- `approval_subject`.
-- `closure_evidence`.
-- `reporting_dimension`.
-- `passport_fact`.
-- `visibility_public`.
-- `display_only`.
+Forms where it is usually useful:
 
-Acceptance:
+- `Не включается ПК`.
+- `Не могу войти`.
+- `Проблема с рабочим местом`.
+- `Принтер / МФУ`.
+- `Нет доступа`.
+- `Новый сотрудник / смена сотрудника`.
+- `Помощь с регистрацией или привязкой устройства`.
 
-- Admin can understand which profile/registry values each form uses.
-- Request form preview shows resolved requester context.
-- Ticket creation stores a stable requester/profile context snapshot.
+Forms where it should normally remain disabled:
 
----
-
-## Knowledge integration target
-
-Knowledge access must be registry-aware and requester-safe.
-
-Rules:
-
-- Knowledge audience rules may target person, department, department tree, location, access group, audience group, role and service.
-- Requester search must resolve actor -> person -> department/location/groups/services before filtering.
-- RAG retrieval must use the same access decision as normal search.
-- Knowledge suggestions in ticket creation must include service/request-template/profile/device context.
-- Denials must be safe: no leaking private article titles or inaccessible spaces.
-
-Required UX:
-
-- In profile setup: show why profile completion improves knowledge recommendations.
-- In request creation: show recommended articles before ticket submit.
-- In support workspace: show what KB was shown/tried by requester.
-- In admin knowledge access explain: show audience match in Russian.
-
-Acceptance:
-
-- User from department A cannot see department B restricted content.
-- Support/admin can explain why a user sees or does not see an article.
-- RAG never returns inaccessible content.
+- `Изменить мой профиль`.
+- `Мои согласия`.
+- `Моя обратная связь`.
+- `Персональные настройки`.
+- Any form that requires personal verification by the account owner.
 
 ---
 
-## Phase R0 — Baseline inventory and regression lock
+## Knowledge and RAG access target
 
-Status: completed on 2026-06-15. R0 baseline inventory and regression lock are closed. One R0 corrective contract fix was made before product work: requester/public ticket detail now preserves only requester-safe request-form `custom_fields` while hiding internal policy snapshots. Product implementation remains gated by the R1 decisions below, but the R0 blockers are resolved.
+Strict rule:
+
+- Creator sees only Knowledge allowed for the creator's own audience.
+- Affected person context may be used for diagnostic target, routing, priority, and support context.
+- Affected person context must not make restricted articles visible to the creator.
+- Support/admin may see both creator and affected context according to their role and Knowledge visibility.
+
+Examples:
+
+- Ivanov creates ticket for Petrov from Finance.
+- Ivanov is not in Finance.
+- Pre-submit Knowledge suggestions shown to Ivanov must not include Finance-only articles just because Petrov is affected.
+- The ticket may route to Finance IT queue if the affected user/affected service context requires it.
+- Support workspace may show that the ticket affects Petrov from Finance and may show support-visible related articles.
+
+Tests must verify no leakage before snippets/citations/RAG prompt construction.
+
+---
+
+## GUI agent target
+
+### State 1 — no machine token
+
+Show only:
+
+- `Агент не подключён к серверу`.
+- `Ввести токен`.
+- `Запросить подключение`.
+- `Настройки`.
+- `Проверить соединение`.
+
+### State 2 — machine authorized, no user binding
+
+Show only:
+
+- `Устройство ещё не привязано к пользователю`.
+- `Создать аккаунт`.
+- `Привязать это устройство`.
+- `Показать код привязки`.
+- `Настройки подключения`.
+
+No tickets, profile, modules, diagnostics or full workspace.
+
+### State 3 — bound, background default
+
+On normal OS startup:
+
+- agent starts hidden/tray/background;
+- no full GUI opens automatically;
+- server sees agent online.
+
+If opened manually:
+
+- show bound status;
+- show `Открыть кабинет`;
+- show `Войти в GUI агента`;
+- show `Настройки`.
+
+### State 4 — GUI login success for bound user
+
+User enters login/password in GUI. Server validates credentials and verifies binding to current `device_id`.
+
+If allowed, issue short-lived account session for this GUI/device. GUI stores only session id/token, never password.
+
+### State 5 — valid credentials but wrong device binding
+
+Do not rebind. Show:
+
+- `Этот агент привязан к другому пользователю`.
+- `Открыть мой кабинет`.
+- `Создать обращение в web`.
+- `Запросить временный доступ к этому агенту`.
+- `Сообщить, что устройство нужно передать другому пользователю`.
+
+### GUI login endpoint options
+
+Preferred implementation:
+
+- Add dedicated endpoint `POST /api/registry/agent/account-sessions/login`.
+- Request: agent auth + device_id from token context + login/password.
+- Server authenticates account, resolves person, checks active binding for this device, returns account session only if allowed.
+- Reject wrong-bound user with safe code `AGENT_GUI_LOGIN_DEVICE_MISMATCH` and Russian message.
+
+Alternative:
+
+- Reuse `/api/web/session/login` only for credentials, then call a second device-scoped session endpoint. This is more round-trip and easier to misuse; dedicated endpoint is cleaner.
+
+---
+
+## Admin registry center target
+
+The admin should not jump between inventory, users and registry pages to resolve registration.
+
+Existing `/app/admin/registry` should become/continue as `Центр регистрации и привязок` with scenario-first sections:
+
+1. `Очередь регистрации`
+   - pending device links;
+   - on-behalf/ownership-change requests;
+   - users without completed profile;
+   - devices without active owner;
+   - duplicate identities;
+   - pending department/location quality issues.
+
+2. `Карточка пользователя`
+   - web account;
+   - RegistryPerson;
+   - identities;
+   - profile completeness;
+   - primary device;
+   - recent tickets;
+   - access/audience groups;
+   - password reset/admin actions;
+   - audit timeline.
+
+3. `Карточка устройства`
+   - agent identity;
+   - online/offline status;
+   - current owner;
+   - responsible/shared users;
+   - pending claims;
+   - recent account sessions;
+   - recent tickets;
+   - transfer owner;
+   - revoke sessions;
+   - diagnostics status.
+
+4. `Конфликты`
+   - device already bound but new user requests binding;
+   - user has no primary device;
+   - multiple primary devices for one person;
+   - active session after ownership transfer.
+
+5. `Preview before apply`
+   - transfer owner;
+   - add shared user;
+   - revoke binding;
+   - revoke account sessions;
+   - merge persons;
+   - reject request.
+
+All destructive/admin actions require reason and audit.
+
+---
+
+## Phase PA0 — Baseline and current behavior check
+
+Status: not started.
 
 Tasks:
 
-1. Build a current registration map from code and docs.
-2. Freeze baseline tests for current behavior before refactor.
-3. Identify all GUI strings and components related to registration/profile.
-4. Identify all endpoints that submit or mutate registration/profile/account sessions.
-5. Identify all requester profile APIs and current read-only limitations.
-6. Identify current form builder and knowledge access integration points.
+1. Confirm current account-state and requester context behavior.
+2. Confirm current form builder policy surface.
+3. Confirm current Knowledge suggestion filtering and RAG access gates.
+4. Confirm current admin registry device/person/binding/action surfaces.
+5. Confirm current GUI agent account gate and browser-login behavior.
 
-Files/areas to inspect:
+Files to inspect:
 
-- `server/registry/registration_service.py`
+- `server/registry/account_state_service.py`
 - `server/registry/account_session_service.py`
 - `server/registry/browser_pairing_service.py`
-- `server/registry/account_state_service.py`
-- `server/web_api/registry_handlers.py`
-- `server/web_api/requester_handlers.py`
 - `server/requester/identity_service.py`
+- `server/web_api/requester_handlers.py`
 - `server/tickets/form_catalog.py`
 - `server/tickets/create_flow.py`
+- `server/knowledge/suggestion_service.py`
 - `server/knowledge/access_service.py`
-- `server/knowledge/audience_rules_service.py`
-- `webapp/src/pages/device-pairing/*`
-- `webapp/src/pages/requester/*`
-- `webapp/src/features/auth/*`
+- `webapp/src/pages/requester/index.tsx`
+- `webapp/src/pages/admin/registry-page.tsx`
 - `pc_agent/ui_gui/account_gate.py`
 - `pc_agent/ui_gui/main_window.py`
-- `pc_agent/ui_gui/server_api.py`
-- `pc_agent/core/account_session.py`
 
 Tests:
 
-- Run all existing registration/account-session/browser-pairing tests.
-- Run existing requester workspace tests.
-- Run existing form pack tests.
-- Run existing knowledge access/audience tests.
-- Record failing tests before changes.
-
-Live evidence:
-
-- Screenshot current agent account gate.
-- Screenshot current `/app/device/pair`.
-- Screenshot current `/app/device/register`.
-- Screenshot current requester profile.
-- Screenshot current admin registry registration list.
+- Existing requester workspace tests.
+- Existing registration/account-session tests.
+- Existing form builder tests.
+- Existing Knowledge access/RAG tests.
+- Existing agent account gate tests.
 
 Acceptance:
 
-- Baseline is documented in this file or linked evidence folder.
-- No implementation starts until current behavior is understood.
-
-R0 baseline checkpoint, 2026-06-15:
-
-- Scope classification: cross-cutting baseline only. No behavior/code implementation started.
-- Context commands run: `python scripts/task_intake.py --task "PLANS R0 web-first registration baseline inventory and regression lock"`, `python scripts/diff_context.py`, `python scripts/build_context_index.py --force`, `python scripts/build_context_pack.py --topic "web-first registration profile requester device pairing baseline R0"`, and focused `python scripts/search_context_index.py ...` queries for registration, requester, forms and knowledge.
-- Current route map: there is no `/app/register` route in `webapp/src/app/router.tsx`; current web device routes are `/app/device/pair`, `/app/device/login` and `/app/device/register`. Requester cabinet routes are `/app/requester` and `/app/requester/:section`, guarded by `WorkspaceAccessGate`.
-- Current mutating registration/session endpoints include legacy/agent profile submission through `/api/registry/profile` and `/api/registry/agent/profile`, agent `account-state`, account-session create/validate/logout, browser pairing create/poll, other-account login requests, web pairing lookup/login/registration confirm, and admin registration approve/reject/account-session operations.
-- Current requester APIs are mostly read/workspace actions: `GET /api/web/requester/profile`, `GET /devices`, ticket list/detail, ticket create/preview/claim/message/close/feedback/reopen and consents. Profile detail currently exposes `profile_policy.editable=false` in frontend tests; no web-first profile setup/update flow is present yet.
-- Current GUI agent still exposes both browser registration and legacy registration: `pc_agent/ui_gui/account_gate.py` has `browser_register_button` and `register_button`; `pc_agent/ui_gui/main_window.py` still builds a full registration form with full name/login/email/phone/department/location/relationship fields and submits through `submit_registration_profile()`.
-- Current form integration points: `server/tickets/form_catalog.py` validates/submits legacy packs and request-template computed snapshots; `server/tickets/create_flow.py` stores requester account/profile context, supports authenticated requester create and no-device requester create via the web wrapper.
-- Current knowledge integration points: `server/knowledge/access_service.py` and `server/knowledge/audience_rules_service.py` already evaluate person/department/department tree/location/access group/audience group/role/service audience facts; requester search/retrieval/suggestions use those services before projection.
-
-R0 automated baseline results:
-
-- `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_account_session_manager.py pc_agent/tests/test_registration_status.py -q` -> 43 passed.
-- `pnpm --dir webapp exec vitest run src/pages/device-pairing/device-pairing-page.test.tsx src/pages/requester/index.test.tsx src/features/auth/session-provider.test.tsx src/features/requester/api.test.ts --reporter=dot` -> 4 files / 32 tests passed.
-- Registration/account-session/browser-pairing backend split runs all passed sequentially with explicit shared-test-DB fallback (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1`) after isolated DB pytest setup timed out in this Windows environment:
-  - `server/tests/test_browser_pairing_service.py` -> 6 passed.
-  - `server/tests/test_account_session_service.py` -> 16 passed.
-  - `server/tests/test_device_registration_service.py` -> 16 passed.
-  - `server/tests/test_registry_registration_policy.py` -> 2 passed.
-  - `server/tests/test_registration_api.py` -> 32 passed.
-- Combined registration backend run timed out at 5 minutes, but the same files passed when split. Record this as a runtime-size baseline, not a product failure.
-- Initial requester/form/service-catalog baseline found one real contract regression: `server/tests/test_ticket_form_packs.py::test_create_ticket_stores_legacy_form_source_and_computed_snapshot` failed because requester-safe `GET /api/tickets/{ticket_id}` no longer included safe request-form `custom_fields` while hiding `request_template`.
-- Corrective fix: `server/tickets/visibility_policy.py` now projects only requester-safe request-form `custom_fields` (`request_form`, `request_form_key`, `request_form_title`, `request_form_data`, `request_form_summary` and resolver metadata) and still hides `request_template`, `priority_decision`, `routing_decision`, `public_access` and related internals. Regression coverage was added in `server/tests/test_ticket_visibility_policy.py::test_requester_visibility_keeps_safe_request_form_custom_fields_without_internal_snapshot`.
-- Final requester/form/service-catalog sequential baseline with shared-test-DB fallback: `python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_ticket_form_packs.py server/tests/test_ticket_create_service_catalog.py -q` -> 58 passed.
-- Visibility-policy focused verification: `python -m pytest server/tests/test_ticket_visibility_policy.py -q` -> 4 passed.
-- Knowledge audience/access baseline with shared-test-DB fallback: `python -m pytest server/tests/test_knowledge_access_service.py server/tests/test_knowledge_audience_rules.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_rag_policy.py -q` -> 28 passed.
-- A parallel shared-DB attempt for requester/form and knowledge tests produced deadlock/connection-closed cleanup errors; do not treat that as application baseline. DB-backed R0 pytest groups must run sequentially.
-
-R0 live evidence:
-
-- Remote stand deployed from `cc22879f` with `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls`; webapp build passed and `/api/health` smoke passed on attempt 2.
-- Evidence folder: `artifacts/browser_live_validation/web-first-registration-r0-cc22879f-20260615/`.
-- Captured browser evidence:
-  - `device-pair.md` / `device-pair.png`: current manual pairing code page.
-  - `device-register-no-pairing.md` / `device-register-no-pairing.png`: current `/app/device/register` without pairing id shows a safe error, but message still includes raw `pairing_id`.
-  - `requester-profile.md` / `requester-profile.png`: `/app/requester/profile` under current admin web session shows requester shell plus `Insufficient permissions` in English; console recorded failed requester bootstrap/tickets resource loads.
-  - `admin-registry.md` / `admin-registry.png`: admin registry overview shows registrations/account-session/data-quality summary.
-  - `admin-registry-requests.md` / `admin-registry-requests.png`: admin `requests` tab shows registration diff, current binding, declared identity, pending/approved states and admin override controls.
-- Previous packaged-agent UIA screenshot capture timed out, but controlled isolated source-agent evidence is now complete:
-  - `agent-account-gate-controlled-noscreenshot.json`: PID-scoped UIA probe found auth/account gate.
-  - `agent-account-gate-controlled.json` / `agent-account-gate-controlled.png`: screenshot probe captured the Russian account-gate message asking the user to wait for administrator authorization, with manual-token and cancel actions.
-  - The temporary agent instance `web-first-r0-agent-20260615` was stopped after evidence capture. No token was issued; remote `control` status was stopped and `manage_remote_stack.py smoke server` failed, so this is account-gate evidence only.
-
-R0 blockers resolved before implementation:
-
-1. Requester-safe custom-field projection contract fixed and covered by regression test.
-2. Fresh controlled agent account-gate screenshot captured under `artifacts/browser_live_validation/web-first-registration-r0-cc22879f-20260615/`.
-3. `python scripts/verify_workspace.py` rerun after code/docs updates -> passed.
-4. Remaining R0 caveat: isolated DB pytest setup timed out in this environment, so DB-backed R0 baseline evidence used the project-approved shared-test-DB fallback sequentially. This is not a substitute for a later full DB/API gate.
+- Baseline behavior documented in this file before changes.
+- Existing tests pass or known failures are documented.
 
 ---
 
-## Phase R1 — Product vocabulary, routes and UX contract
+## Phase PA1 — Primary agent resolver
 
-Status: completed on 2026-06-15 for the contract slice. The canonical route/copy/error decisions live in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`; the existing device-link route now follows the R1 safe-copy rule for missing device-link ids and backend status values.
+Status: not started.
 
-Tasks:
+Goal:
 
-1. Define canonical Russian labels:
-   - `Аккаунт` = вход в систему;
-   - `Профиль` = данные человека;
-   - `Устройство` = ПК/agent machine;
-   - `Привязка устройства` = связь пользователя и устройства;
-   - `Кабинет пользователя` = requester workspace;
-   - `Заявка на привязку` = pending device link request.
-2. Add UX copy guidelines for registration/profile/device linking.
-3. Ensure every flow has clear empty/error/success/pending states.
-4. Define target routes:
-   - `/app/register`;
-   - `/app/requester/profile/setup`;
-   - `/app/requester/profile`;
-   - `/app/requester/devices`;
-   - `/app/device/pair`;
-   - `/app/device/login`;
-   - `/app/device/register` as transitional route or redirect to device pair flow.
-5. Define user-facing error dictionary in Russian.
-
-Acceptance:
-
-- No UI says `pairing`, `binding`, `claim`, `session`, `registry person` to normal users.
-- Technical ids are hidden unless in admin/debug surfaces.
-- User always knows the next action.
-
-R1 completion checkpoint, 2026-06-15:
-
-- Added `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md` with canonical user terms, target routes, status labels, error dictionary and the eight rollout decisions.
-- Updated `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py` so web-first registration/profile/device-link work routes to the new contract.
-- Updated `webapp/src/pages/device-pairing/index.tsx` so `/app/device/register` without a device-link id shows `Откройте эту страницу из агента или введите код подключения.` instead of raw `pairing_id`, and registration/device-link statuses render Russian product labels instead of backend enums.
-- Added focused frontend coverage in `webapp/src/pages/device-pairing/device-pairing-page.test.tsx` for missing device-link id and `pending_admin_review` status.
-- Browser evidence: local Playwright/Chromium validation with stubbed `/api/web/session/me` captured `/app/device/register` missing-link safe error at `artifacts/browser_live_validation/web-first-registration-r1-20260615/device-register-missing-link-safe-error.png` and report JSON at `artifacts/browser_live_validation/web-first-registration-r1-20260615/device-register-missing-link-safe-error.json`. Remote stand was not deployed for R1 because current workspace contains unrelated dirty files; remote `server` and `control` were stopped.
-- Verification: `pnpm --dir webapp exec vitest run src/pages/device-pairing/device-pairing-page.test.tsx --reporter=dot` -> 7 passed.
-
----
-
-## Phase R2 — Web account self-registration
-
-Status: completed on 2026-06-15. R2 account-only self-registration is implemented behind `WEB_SELF_REGISTRATION_ENABLED`, with `/app/register`, `POST /api/web/session/register`, no auto-login/cookie issuance, role `user`, password/repeat/duplicate validation, optional device-link code validation without active binding creation, and login success redirect copy.
+Server can resolve a person's primary diagnostic target without asking the requester to choose a device.
 
 Tasks:
 
-1. Add `/app/register` page.
-2. Add backend endpoint for user self-registration.
-3. Form fields:
-   - `Логин`;
-   - `Пароль`;
-   - `Повторите пароль`;
-   - optional `Код привязки устройства`.
-4. Enforce password policy.
-5. Prevent duplicate login.
-6. Auto-login after registration only if secure and consistent with existing session model; otherwise redirect to login with success message.
-7. Do not require profile data during account creation.
-8. If pairing code is supplied, validate it but do not create active binding before profile completion.
-
-Tests:
-
-- Unit: password validation, duplicate login, invalid repeat password.
-- API: create user with role `user`; no admin role escalation.
-- API: optional pairing code accepted/rejected correctly.
-- Frontend: form validation and Russian errors.
-
-Live evidence:
-
-- Browser: successful account registration.
-- Browser: duplicate login error.
-- Browser: invalid password/repeat password error.
-- DB/API: created user has role `user` and no full profile fields in account row.
-
-Acceptance:
-
-- Account creation is simple and separate from profile.
-- Optional device code does not bypass profile/admin policy.
-
-R2 completion checkpoint, 2026-06-15:
-
-- Backend: `server/config.py` defines fail-closed `WEB_SELF_REGISTRATION_ENABLED`; `server/web_api/session_handlers.py` handles `POST /api/web/session/register`; `server/web_api/dto/session.py` defines strict registration DTOs; `server/routes.py` registers the route; `server/auth/middleware.py` whitelists the anonymous route so the feature flag, not auth middleware, controls availability.
-- Frontend: `webapp/src/features/auth/register-page.tsx` implements account-only fields (`Логин`, `Пароль`, `Повторите пароль`, optional `Код привязки устройства`); `webapp/src/features/auth/api.ts` posts the typed request; `webapp/src/features/auth/login-page.tsx` shows the `/app/login?registered=1` success notice; `webapp/src/app/router.tsx` exposes `/app/register`.
-- Browser evidence: local Vite + Playwright Browser validation captured success, duplicate-login and repeat-password states at `artifacts/browser_live_validation/web-first-registration-r2-20260615/account-registration-success.png`, `account-registration-duplicate.png`, `account-registration-password-repeat.png`, with redacted report `account-registration-browser-report.json`. The browser report confirms optional `device_link_code` is sent on success, repeat-password mismatch sends no registration request, and no forbidden profile fields are rendered.
-- Verification: `python -m pytest server/tests/test_web_session_api.py -q` -> 28 passed; `pnpm --dir webapp exec vitest run src/features/auth/register-page.test.tsx src/pages/device-pairing/device-pairing-page.test.tsx --reporter=dot` -> 10 passed; `pnpm --dir webapp run build` -> passed; `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q` -> 14 passed; `python scripts/verify_workspace.py` -> passed.
-- Caveat: R2 browser validation used intercepted local API responses rather than remote stand deployment because the workspace still contains unrelated dirty files and remote deployment is reserved for later release/live-gate phases.
-
----
-
-## Phase R3 — Web profile setup gate
-
-Status: completed on 2026-06-15. R3 profile setup gate is implemented for the web requester cabinet: bootstrap returns `profile_completion`, `/app/requester/profile/setup` and `/app/requester/profile` render the registry-backed setup form, `PUT /api/web/requester/profile` updates only the authenticated caller's `RegistryPerson` and verified `ui_login` identity, department/location values must come from registry pickers, and normal requester ticket preview/create is blocked with `REQUESTER_PROFILE_INCOMPLETE` until the required profile fields are complete. Local browser evidence is under `artifacts/browser_live_validation/web-first-registration-r3-20260615/`; full real-stand admin registry confirmation remains part of R14 live validation.
-
-Tasks:
-
-1. Build profile completion status in requester bootstrap.
-2. Redirect or gate normal requester actions when required profile fields are missing.
-3. Add `/app/requester/profile/setup`.
-4. Add profile edit/update endpoint for the authenticated user.
-5. Required fields:
-   - ФИО;
-   - подразделение;
-   - локация;
-   - телефон/internal extension.
-6. Recommended fields:
-   - должность;
-   - кабинет/workplace label;
-   - preferred contact method.
-7. All department/location selection must use registry pickers.
-8. If department/location does not exist, submit a pending registry suggestion/change request according to policy.
-9. Store profile changes as registry updates or auditable profile change requests.
-
-Tests:
-
-- API: requester can update own profile only.
-- API: requester cannot update someone else’s person_id.
-- API: required profile fields enforced.
-- API: invalid department/location rejected or turned into pending suggestion based on policy.
-- Frontend: setup gate blocks create-ticket until profile complete.
-- Frontend: profile complete state unlocks requester workspace.
-
-Live evidence:
-
-- New user sees profile setup gate.
-- User completes profile with department/location pickers.
-- User reaches requester home after completion.
-- Admin registry shows created/updated person and identities.
-
-R3 evidence recorded:
-
-- `artifacts/browser_live_validation/web-first-registration-r3-20260615/profile-setup-required.png`
-- `artifacts/browser_live_validation/web-first-registration-r3-20260615/profile-setup-saved.png`
-- `artifacts/browser_live_validation/web-first-registration-r3-20260615/profile-setup-browser-report.json`
-- Backend tests verify registry person and `ui_login` identity writes for the created/updated profile.
-
-Acceptance:
-
-- Profile is understandable and fully Russian.
-- Profile writes to registry-backed structures.
-- No arbitrary free-text department/location becomes canonical without policy.
-
----
-
-## Phase R4 — Web-first device linking
-
-Status: implementation completed on 2026-06-15 for the backend/frontend contract slice. Local browser evidence covers manual code entry, direct `pairing_id` preview, safe device facts and pending admin-review state in `/app/requester/devices`; full connected-agent/admin approval evidence remains part of R14 LV2.
-
-Tasks:
-
-1. Add `Мои устройства` section in requester cabinet if missing or incomplete.
-2. Add `Привязать устройство` flow.
-3. Reuse browser pairing lookup by code.
-4. Support direct link from agent and manual code entry.
-5. Show device details before confirmation:
+1. Add service function: resolve primary active agent/binding for person.
+2. Prefer active `primary_user` binding.
+3. If no primary exists:
+   - fallback to single active binding only if policy allows;
+   - otherwise return `primary_device_missing` or `ambiguous_primary_device`.
+4. Return safe diagnostic status:
+   - device id;
+   - binding id;
    - hostname;
-   - OS;
-   - agent version;
-   - current status;
-   - expiry.
-6. On confirmation, create registration claim connected to the current profile/person.
-7. Show pending/approved/rejected/conflict status in web cabinet.
-8. If profile is incomplete, redirect to profile setup before creating claim.
+   - online/offline;
+   - last_seen/last_handshake;
+   - agent_version;
+   - reason when unavailable.
+5. Do not expose raw technical ids in normal requester UI unless needed by admin/support/debug.
 
 Tests:
 
-- API: code lookup rate limit and expired code.
-- API: authenticated user can confirm device pairing only for pending pairing.
-- API: profile incomplete blocks final device link claim.
-- API: approved claim creates active binding.
-- Frontend: direct pairing link and manual code flow.
-- Frontend: pending/rejected/conflict UI states.
-
-Live evidence:
-
-- Agent generates pairing code.
-- User enters code in web cabinet.
-- Pending claim appears in admin registry.
-- Admin approves claim.
-- User sees linked device in web.
-- Agent sees updated account-state.
+- Person with one primary device resolves target.
+- Person with only shared/responsible device follows policy.
+- Person with no device returns no target and safe reason.
+- Person with multiple primary bindings returns data-quality/ambiguity issue.
+- Offline primary device returns target with `online=false`, not failure.
 
 Acceptance:
 
-- User can link device without typing profile in agent.
-- Device linking has clear status and next action.
-
-Implementation notes, 2026-06-15:
-
-- `/app/requester/devices` now supports manual device-link code lookup and direct `pairing_id` preview through the existing browser-pairing APIs.
-- `registration/confirm` returns `REQUESTER_PROFILE_INCOMPLETE` before claim creation when the web requester profile is incomplete.
-- Successful registration confirmation builds the claim profile snapshot from the resolved `RegistryPerson`, not browser-submitted profile fields.
-- `/app/device/register` redirects incomplete-profile confirmation to `/app/requester/profile/setup`.
-- R4 evidence is under `artifacts/browser_live_validation/web-first-registration-r4-20260615/`.
-
-Verification, 2026-06-15:
-
-- `python -m pytest server/tests/test_registration_api.py -q --tb=short` -> 33 passed.
-- `python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 20 passed.
-- `pnpm --dir webapp exec vitest run src/pages/device-pairing/device-pairing-page.test.tsx src/pages/requester/index.test.tsx --reporter=dot` -> 22 passed.
-- `pnpm --dir webapp run build` -> passed with existing Vite chunk-size warning.
-- Browser evidence report `device-link-browser-report.json` recorded 0 console errors, 0 page errors and 0 unhandled mocked API routes.
+- Normal requester forms can get primary device context without device picker.
+- Offline agent is represented as diagnostic evidence.
 
 ---
 
-## Phase R5 — Remove profile registration from GUI agent
+## Phase PA2 — Ticket context model: creator, affected person, target device
 
-Status: completed on 2026-06-15; tightened on 2026-06-16. Normal GUI agent registration is browser-first only; the legacy full-profile registration/confirm page and local form handlers are removed from the normal agent GUI. Backend legacy endpoints remain as compatibility surface for older deployed agents.
+Status: not started.
+
+Goal:
+
+Ticket creation distinguishes who created the ticket from who has the problem and where diagnostics should run.
 
 Tasks:
 
-1. Hide/disable legacy `Регистрация` button in agent account gate.
-2. Remove normal access to full registration form from agent navigation.
-3. Remove profile fields from agent UI:
-   - ФИО;
-   - login;
-   - email;
-   - phone;
-   - department/location;
-   - relationship type.
-4. Keep only device handoff actions:
-   - `Привязать через браузер`;
-   - `Скопировать код привязки`;
-   - `Открыть кабинет`;
-   - `Проверить статус`.
-5. Preserve emergency ticket and consent/remote-assist flows.
-6. Ensure old backend endpoints remain temporarily for compatibility but are no longer reachable from normal GUI.
-7. Legacy GUI re-enable is not part of the normal rollout. Compatibility stays server/API-side for old agents only.
+1. Add server-side ticket context builder.
+2. For normal ticket:
+   - creator = authenticated requester;
+   - affected = creator;
+   - target device = creator primary agent.
+3. For on-behalf ticket:
+   - creator = authenticated requester;
+   - affected = selected person;
+   - target device = affected person's primary agent.
+4. Store stable context snapshot in ticket custom fields or columns.
+5. Preserve compatibility with existing `requester_*` fields.
+6. Add explicit `created_on_behalf` marker.
+7. Add `diagnostic_target_source` with values:
+   - `creator_primary_agent`;
+   - `affected_user_primary_agent`;
+   - `no_primary_agent`;
+   - `ambiguous_primary_agent`;
+   - `manual_support_target` for support/admin only.
 
 Tests:
 
-- Unit/UI: account gate no longer exposes full registration button by default.
-- Unit/UI: browser linking still works.
-- Unit/UI: emergency ticket remains available.
-- Regression: account-state pending/approved/rejected rendering still works.
-- Static check: no normal GUI label contains old registration form prompts.
-
-Live evidence:
-
-- Screenshot agent unlinked state: only browser link/code/status actions.
-- Screenshot agent linked state: owner card + open cabinet + emergency ticket.
-- Screenshot no legacy profile form visible.
+- Normal requester ticket stores creator=affected and creator primary target.
+- On-behalf ticket stores creator != affected and affected primary target.
+- If affected agent offline, ticket still creates and stores offline target status.
+- If affected has no primary agent, ticket creates only if form/policy allows no-agent target.
+- Client-supplied target device cannot override server resolution.
 
 Acceptance:
 
-- Agent GUI is no longer a profile editor.
-- Agent remains useful as local status/handoff tool.
-
-Implementation, 2026-06-15:
-
-- `pc_agent/ui_gui/account_gate.py` no longer exposes local registration or pending-confirm actions, keeps browser device handoff as the only registration action, and exposes a copyable browser pairing code after handoff creation. `pc_agent/ui_gui/main_window.py` no longer builds `default_agent_registration_form()` or the legacy registration entry page.
-- `pc_agent/ui_gui/main_window.py` no longer builds or enters the full registration form in the normal path; accidental registration view names redirect to the account gate/browser handoff. There is no disabled legacy registration page in the normal GUI stack.
-- Existing backend registration endpoints remain unchanged for compatibility.
-- Documentation/catalog routing was updated in `pc_agent/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md` and `scripts/navigation_catalog.py`.
-- R5 visual evidence is under `artifacts/browser_live_validation/web-first-registration-r5-20260615-windows/`.
-
-Verification, 2026-06-15:
-
-- `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_main_window_runtime_windows.py -q --tb=short` -> 34 passed.
-- `python -m pytest pc_agent/tests/test_ui_api_server_shutdown.py pc_agent/tests/test_runtime_logging.py -q --tb=short` -> 13 passed.
-- `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q` -> 14 passed.
-- `python scripts/verify_workspace.py` -> passed.
-- Qt Windows-platform screenshots captured unlinked, pending and linked account-gate states; no default legacy full-profile registration button/form is visible.
+- Support can clearly see creator, affected user and diagnostic target.
+- Diagnostics never run on the creator's current PC just because they submitted the ticket there.
 
 ---
 
-## Phase R6 — Profile schema and controlled registry attributes
+## Phase PA3 — Request form policy: allow on-behalf creation
 
-Status: completed on 2026-06-15. R6 profile schema is implemented as controlled admin configuration, not as a free-form registry constructor. The requester profile flow now uses the active schema for visible optional fields, required controlled custom fields and completion gating.
+Status: not started.
+
+Goal:
+
+On-behalf creation is opt-in per request form/template, not global UI noise.
 
 Tasks:
 
-1. Add profile schema model or configuration service.
-2. Distinguish system fields and configurable fields.
-3. System fields cannot be deleted:
-   - ФИО;
-   - login identity;
-   - department;
-   - location;
-   - phone;
-   - active device links.
-4. Admin may configure optional fields:
-   - visible/hidden;
-   - required/optional;
-   - help text;
-   - validation;
-   - registry target.
-5. Admin may add custom fields only in a controlled block.
-6. Every custom field must have a storage target and audit behavior.
-7. Add profile schema preview for admin and requester.
+1. Extend request form schema with `on_behalf_policy`.
+2. Add form builder UI toggle:
+   - `Разрешить создание обращения за другого сотрудника`.
+3. Add helper text explaining diagnostic target behavior.
+4. Add policy settings:
+   - reason required;
+   - allowed scope;
+   - affected person required/optional;
+   - no-primary-agent behavior;
+   - support/admin override behavior.
+5. Default `allowed=false` for existing forms.
+6. Add migration/backfill if current form packs need explicit defaults.
 
 Tests:
 
-- API: cannot delete system fields.
-- API: invalid schema rejected.
-- API: required custom field enforced.
-- Frontend: admin schema editor shows safe explanations.
-- Frontend: requester form renders schema correctly.
-
-Live evidence:
-
-- Admin configures a profile field as required.
-- New user must fill it.
-- Admin disables optional field and it disappears from setup.
+- Form schema validation accepts valid on-behalf policy.
+- Invalid policy is rejected.
+- Existing forms without policy behave unchanged.
+- Form builder renders toggle and saves config.
+- Public/requester API returns policy only as safe requester-facing capability.
 
 Acceptance:
 
-- This is not an unrestricted registry constructor.
-- Admins can adapt profile forms without breaking core identity/binding logic.
-
-Implementation, 2026-06-15:
-
-- `server/registry/profile_schema_service.py` adds `RequesterProfileSchemaService` over `registry_admin_policies(policy_key=requester_profile_schema)` and `registry_admin_events`, so no database migration was required.
-- Admin APIs expose `GET|PUT /api/web/admin/registry/profile-schema` and `POST /api/web/admin/registry/profile-schema/preview`.
-- System fields are protected; optional built-ins can be hidden/required; custom fields are restricted to `registry_people.metadata_json.profile_custom_fields.<key>` with `profile_custom_field_change` audit behavior.
-- Requester bootstrap/profile responses return a safe schema projection with no storage targets, raw registry targets or `metadata_json` internals.
-- Requester profile update accepts `custom_fields`, stores controlled custom values under `RegistryPerson.metadata_json.profile_custom_fields`, and schema-aware profile completion blocks tickets/device confirmation while required custom values are missing.
-- React admin registry adds the profile schema tab; React requester setup renders schema custom fields and hides optional built-ins when the schema marks them invisible.
-
-Verification, 2026-06-15:
-
-- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 22 passed.
-- `pnpm --dir webapp run build` -> passed with the existing Vite large chunk warning.
-- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 23 passed.
-- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registration_api.py -q --tb=short` -> 33 passed.
-- Local Playwright browser fallback evidence is in `artifacts/browser_live_validation/web-first-registration-r6-20260615/`: report shows no console/network errors, no horizontal scroll at 1366/1920, hidden `position`, saved `cost_center` custom field, and requester save payload under `custom_fields`.
-
-Follow-up, 2026-06-16:
-
-- `/app/admin/access` user rows now expose an admin-only password reset dialog that asks only for the new password/repeat password and never displays or submits the current password.
-- The React action uses the web-session route `POST /api/web/admin/access/users/{user_login}/password`; the handler validates password policy, hashes server-side and updates `ui_users` through `UiUsersRepo`.
+- Ordinary forms do not show affected-user selector unless explicitly enabled.
+- Admin understands that diagnostics target affected user's primary agent.
 
 ---
 
-## Phase R7 — Registry extension for production context
+## Phase PA4 — Requester UI: affected user selector
 
-Status: completed on 2026-06-15. R7 extends the existing lightweight registry context without a database migration: the admin snapshot now projects production context from existing registry rows and controlled `metadata_json`, the admin person editor can update focused work-context fields, and data quality reports flag missing production context that affects routing/support diagnostics.
+Status: not started.
+
+Goal:
+
+Requester can create a ticket for another employee only when the form allows it.
 
 Tasks:
 
-1. Review current registry entities and identify missing production context.
-2. Add only context that is used by forms, knowledge, routing, reporting or support diagnostics.
-3. Recommended production entities/attributes:
-   - Person: position, phone, internal extension, manager/responsible.
-   - Department: hierarchy, code, status.
-   - Location: building, floor, room, office/workplace label.
-   - Device/Asset: type, owner/responsible, department, location, peripheral links.
-   - Peripheral: printer/MFU/scanner/monitor where needed.
-   - Service/System: owner, audience, criticality.
-   - Access/Audience groups: controlled membership.
-4. Add data quality checks:
-   - person without department;
-   - person without location;
-   - user account without person;
-   - device without active owner/responsible;
-   - duplicate identities;
-   - pending department/location suggestions.
+1. Add collapsed block in ticket form:
+   - `Проблема у другого сотрудника`.
+2. If enabled, show person search/select field:
+   - `Сотрудник, у которого проблема`.
+3. Require reason if policy says so.
+4. Show explanation after selection:
+   - creator;
+   - affected person;
+   - affected department/location;
+   - primary device status if allowed to display.
+5. Do not show device picker in normal on-behalf path.
+6. If affected person has no primary agent, show safe note:
+   - `У выбранного сотрудника нет привязанного устройства. Диагностика агента недоступна.`
+7. Respect allowed scope:
+   - ordinary user may search only allowed people;
+   - privileged roles may search broader scope.
 
 Tests:
 
-- Registry repo/service tests for new attributes.
-- Admin API tests for updates and validation.
-- Data quality tests.
-- Import/export tests if touched.
-
-Live evidence:
-
-- Admin registry shows person + department + location + device context.
-- Data quality dashboard flags incomplete profiles/devices.
+- Toggle hidden when form policy disabled.
+- Toggle visible when policy enabled.
+- Search only calls allowed endpoint.
+- Selected affected user included in preview/create payload.
+- UI says diagnostics will use affected user's primary device.
+- No raw ids or forbidden technical terms appear in normal UI.
 
 Acceptance:
 
-- Registry is strong enough for context, not bloated into a generic database builder.
-
-Implementation:
-
-- `server/registry/service.py` projects person `position`, `workplace_label`, `internal_extension`, `manager_person_id`, manager display name and `production_context` from `RegistryPerson.metadata_json`, plus department manager, service owner/criticality/audience and asset responsible-person context from existing registry rows.
-- `server/web_api/registry_handlers.py` accepts and audits controlled admin person metadata updates for `position`, `workplace_label`, `internal_extension` and `manager_person_id`.
-- Data-quality generation now includes `person_missing_department`, `person_missing_location`, `asset_missing_owner_or_responsible` and `department_pending_confirmation` so incomplete profiles/devices/departments surface in the admin registry quality queue.
-- `/app/admin/registry` shows compact person work context in the People tab and edits the controlled production fields through the person edit dialog.
-
-Verification:
-
-- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registry_registration_snapshot.py server/tests/test_registry_quality_remediation.py server/tests/test_registry_web_api.py -q --tb=short` -> 17 passed.
-- `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` -> 10 passed.
-- `python -m py_compile server\registry\service.py server\web_api\registry_handlers.py` -> passed.
-- `pnpm --dir webapp run build` -> passed with the existing Vite large chunk warning.
-- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r7-20260615/`: mocked admin registry payload verified person context rendering, edit-dialog submit payload, R7 quality issue labels, no body horizontal scroll at 1366/1920, and no console/network errors. Full real-stand admin confirmation remains part of R14 live validation.
+- User understands they are creating a ticket for another employee.
+- User does not choose or see confusing duplicated device fields.
 
 ---
 
-## Phase R8 — Request forms consume profile and registry context
+## Phase PA5 — Server-side authorization for affected person selection
 
-Status: completed on 2026-06-15. R8 connects requester request forms to the resolved registry-backed requester context: preview/create recompute context server-side from the authenticated web session, completed `RegistryPerson` and active binding, forms are prefilled from profile/device facts, registry-backed pickers include department/location/device options, ticket custom fields store a stable `requester_context_snapshot` plus routing aliases, and preview explains the resolved requester/form context.
+Status: not started.
+
+Goal:
+
+Users can create on-behalf tickets only within allowed policy scope.
+
+Recommended scopes:
+
+- `self_only` — default.
+- `same_department` — ordinary users may choose coworkers in same department.
+- `direct_reports` — managers may choose direct reports when manager relation exists.
+- `same_department_or_privileged` — ordinary same department, support/admin any.
+- `privileged_only` — support/admin only.
+- `exact_search_only` — ordinary user must enter exact login/full-name match and receives minimal result.
 
 Tasks:
 
-1. Add requester context resolver for form rendering.
-2. Prefill request forms from profile/device context.
-3. Add safe profile-context conditions.
-4. Add device picker based on active bindings.
-5. Add registry-backed pickers for service/device/department/location where relevant.
-6. Add ticket create `requester_context_snapshot` or equivalent stable snapshot.
-7. Ensure routing/priority/SLA/diagnostic policies can use resolved context.
-8. Add preview endpoint output that explains resolved profile and form context.
+1. Add person search endpoint for requester on-behalf selection or reuse safe registry options with scope filtering.
+2. Enforce scope server-side on preview and create.
+3. Never trust client-selected person without revalidation.
+4. Add audit reason when creator != affected.
+5. Add rate limiting for person search if endpoint is broad.
 
 Tests:
 
-- Form schema validation still passes.
-- Ticket create with completed profile stores profile context snapshot.
-- Ticket create without profile is blocked or allowed according to policy.
-- Routing can use department/location/device context.
-- Frontend prefill works and can be edited only where allowed.
-
-Live evidence:
-
-- User opens request form and sees prefilled department/location/device.
-- User creates ticket; support detail shows requester context.
-- Route preview shows why ticket went to queue.
+- Ordinary user cannot choose person outside allowed scope.
+- Support/admin can choose allowed broader scope.
+- Exact search does not expose full directory browsing when policy is restrictive.
+- Preview/create reject unauthorized affected_person_id.
+- Audit payload records creator, affected and reason.
 
 Acceptance:
 
-- Users do not repeatedly type cabinet/department/phone.
-- Support receives accurate context with every ticket.
-
-Implementation:
-
-- `server/requester/identity_service.py` now builds requester context v1 with safe profile, device, form prefill, routing facts, requester-safe preview projection and stable custom-field aliases.
-- `server/web_api/requester_handlers.py` uses that resolver for preview/create, ignores client-supplied requester context as authority, stores `requester_context_snapshot`, exposes alias fields such as `requester_department_id`, `requester_location_id`, `requester_device_id`, `requester_asset_id` and lets routing policies match resolved context.
-- `webapp/src/pages/requester/index.tsx` merges context prefill into untouched request-form fields, renders registry-backed picker options for department/location/device/service/user picker field types, shows a requester context summary in the form and renders preview context explanation.
-
-Verification:
-
-- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 23 passed.
-- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx --reporter=dot` -> 14 passed.
-- `python -m py_compile server\requester\identity_service.py server\web_api\requester_handlers.py` -> passed.
-- `pnpm --dir webapp run build` -> passed with the existing Vite large chunk warning.
-- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r8-20260615/`: mocked requester cabinet verified visible requester context, department/device picker prefill, preview context explanation, preview/create payloads with prefilled department/device ids, no body horizontal scroll at 1366/1920, and no console/network errors.
+- On-behalf feature does not become an employee directory leak.
 
 ---
 
-## Phase R9 — Knowledge access and recommendations from registry context
+## Phase PA6 — Diagnostics and module execution target
 
-Status: completed on 2026-06-15. R9 uses the existing Registry Visibility Foundation for actor -> person -> effective-audience enforcement across search, suggestions, requester portal, Ask/RAG and support ticket knowledge suggestions, and adds the R8 requester/form/device context as safe pre-submit suggestion signals. Ticket create continues to persist safe `knowledge_attempts` for support visibility.
+Status: not started.
+
+Goal:
+
+Diagnostics and modules use the ticket's server-resolved target device, not the submitter's current browser/agent.
 
 Tasks:
 
-1. Ensure requester knowledge search resolves actor -> person -> audience.
-2. Use department/location/groups/service context in knowledge filtering.
-3. Ensure RAG retrieval uses the same audience decision as search.
-4. Add pre-submit knowledge recommendations based on request form + profile + device/service context.
-5. Store knowledge attempts in ticket context.
-6. Add admin explain UI in Russian:
-   - why visible;
-   - why hidden;
-   - which audience rule matched.
+1. Update ticket diagnostic launch context to read `target_device_id` / diagnostic target snapshot.
+2. If target agent is offline, do not enqueue normal agent modules; record `target_agent_offline` evidence.
+3. If target device missing/ambiguous, route to manual support queue or require support selection.
+4. Ensure support/manual run tool UI clearly shows target device and affected user.
+5. Ensure request-form autorun/diagnostic policy uses server-resolved target.
+6. Add safety check: client cannot submit a different target device for requester ticket.
 
 Tests:
 
-- Department-restricted article visible only to matching department.
-- Location-restricted article visible only to matching location.
-- Service-restricted article appears only in matching service context.
-- RAG does not retrieve inaccessible content.
-- Ticket creation records knowledge attempts.
+- Normal ticket autorun targets creator primary agent.
+- On-behalf ticket autorun targets affected primary agent.
+- Offline target does not enqueue module and stores evidence.
+- Missing/ambiguous target prevents autorun and marks manual triage.
+- Support manual override is audited.
 
-Live evidence:
+Live diagnostics evidence:
 
-- Two users from different departments see different KB results.
-- Ask/RAG result respects audience restrictions.
-- Ticket detail shows which KB was suggested/tried.
+- Create ticket for self with online primary agent -> module enqueue target self primary device.
+- Create ticket for another user with offline primary agent -> no module enqueue, offline evidence visible.
+- Create ticket for another user with online primary agent -> module enqueue target affected user's device.
 
 Acceptance:
 
-- Knowledge is personalized by registry context without leaking restricted content.
-
-R9 completion checkpoint, 2026-06-15:
-
-- `server/knowledge/suggestion_service.py` now builds ordered candidate queries from explicit request text plus safe values in `form_payload`, `requester_context` and `device_metadata`, while skipping raw ids, token/secret/session fields, email/phone and other sensitive identifiers. Each candidate search still passes through `KnowledgeSearchService.search(..., effective_audience=...)`, so Registry audience rules remain the enforcement layer before projection.
-- `/app/requester` sends the server-owned R8 requester context and selected safe device metadata to `/api/knowledge/suggest`, refreshes suggestions when the selected device changes, and stores viewed/not-helpful knowledge attempts in the ticket create payload.
-- Existing `EffectiveIdentityService`, `KnowledgeAccessService`, `KnowledgeAudienceRulesService`, binding-surface aliases and Ask/RAG retrieval tests cover department/location/groups/service audience enforcement and keep `requester_portal` mapped to canonical `requester_pre_submit`.
-
-R9 verification:
-
-- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_suggestions.py -q --tb=short` -> 7 passed.
-- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_api.py::test_public_suggestions_apply_registry_audience_rules_before_projection server/tests/test_knowledge_api.py::test_public_search_applies_registry_audience_rules_before_projection -q --tb=short` -> 2 passed.
-- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 23 passed.
-- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py::test_public_knowledge_ask_applies_audience_rules_before_vector_retrieval_projection server/tests/test_knowledge_hybrid_retrieval.py::test_hybrid_retrieval_filters_disabled_rag_policy_before_citations server/tests/test_knowledge_hybrid_retrieval.py::test_hybrid_retrieval_requires_ai_rag_binding_surface -q --tb=short` -> 3 passed.
-- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx --reporter=dot` -> 14 passed.
-- `python -m py_compile server\knowledge\suggestion_service.py` -> passed.
-- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r9-20260615/`: the mocked requester cabinet verified requester-context/device-metadata suggestion input, feedback recording, persisted `knowledge_attempts`, prefilled department/device ids, no console/network errors and no horizontal overflow at 1366/1920.
+- No diagnostic operation is sent to the wrong user's agent.
 
 ---
 
-## Phase R10 — Admin registry and moderation workflow
+## Phase PA7 — Knowledge and RAG access separation
 
-Status: completed on 2026-06-15. R10 admin moderation is covered by the existing registry management center plus an explicit schema-aware requester profile-completion projection in the admin People tab. Admins can review pending device-link claims, person/UI-account identity links, duplicate people, department/location suggestions, device transfer previews, account-session revoke effects and timeline audit without raw JSON workflows.
+Status: not started.
+
+Goal:
+
+On-behalf context improves routing/diagnostics without leaking affected user's restricted Knowledge to creator.
 
 Tasks:
 
-1. Improve admin registry pages for:
+1. Keep requester pre-submit Knowledge filtered by creator audience.
+2. Allow affected context only as safe query signal where it does not reveal restricted content.
+3. Support workspace may show creator and affected context with support-role access.
+4. RAG/Ask must use creator audience in requester surface.
+5. Ticket metadata should record whether suggestions were creator-visible or support-only.
+
+Tests:
+
+- Creator outside affected department cannot see affected department restricted article.
+- Ticket still routes/targets affected department/device when allowed.
+- Support can see support-visible related articles.
+- RAG prompt contains no inaccessible affected-user restricted snippets for requester.
+- Suggestions skip raw ids, phone/email/token/session fields.
+
+Acceptance:
+
+- On-behalf ticket creation does not become a Knowledge access bypass.
+
+---
+
+## Phase PA8 — GUI agent login by login/password
+
+Status: not started.
+
+Goal:
+
+GUI can offer local login, but only the server validates credentials and issues a device-scoped GUI account session.
+
+Tasks:
+
+1. Add GUI login form with login/password only when agent is bound or when policy allows local GUI login.
+2. Add dedicated server endpoint `POST /api/registry/agent/account-sessions/login`.
+3. Server validates credentials through existing auth service.
+4. Server resolves `RegistryPerson` from account.
+5. Server verifies active binding to current `device_id`.
+6. If valid and bound, issue short-lived account session/token.
+7. If credentials valid but user not bound, return `AGENT_GUI_LOGIN_DEVICE_MISMATCH` with safe Russian message.
+8. GUI stores only session id/token, never password.
+9. GUI offers web cabinet / create ticket in web / temporary access request on mismatch.
+
+Tests:
+
+- Bound user can log into GUI and receives account session.
+- Wrong password rejected without leaking account info.
+- Valid user on another agent gets mismatch response and no account session.
+- GUI does not store password in config/session file.
+- Existing browser handoff still works.
+- Other-account temporary/admin approval remains separate.
+
+Live evidence:
+
+- Local GUI login as bound user succeeds.
+- Local GUI login as different user shows mismatch actions.
+- No automatic rebinding occurs.
+
+Acceptance:
+
+- GUI login is device-scoped and safe.
+
+---
+
+## Phase PA9 — Admin registration/ownership center
+
+Status: not started.
+
+Goal:
+
+Admin has one practical place to review registration, device ownership, password/user linkage, on-behalf context and data quality.
+
+Tasks:
+
+1. Improve `/app/admin/registry` as `Центр регистрации и привязок`.
+2. Add scenario-first queue cards:
    - pending device links;
-   - profile completion status;
-   - people/account/person identity links;
-   - duplicate person/identity resolution;
-   - department/location suggestions;
-   - device ownership transfer.
-2. Add clear Russian action labels:
-   - `Подтвердить привязку`;
-   - `Отклонить`;
-   - `Передать устройство другому пользователю`;
-   - `Оставить прежнего пользователя как общего`;
-   - `Отозвать привязку`.
-3. Admin should see destructive action preview before transfer/revoke.
-4. Add audit timeline for profile/device/account changes.
+   - ownership change requests;
+   - users without primary agent;
+   - devices without owner;
+   - users without completed profile;
+   - duplicate identities;
+   - active sessions on transferred devices.
+3. Add card/detail actions:
+   - reset/change UI password;
+   - link UI account to person;
+   - approve/reject device link;
+   - transfer owner;
+   - add shared/responsible user;
+   - revoke sessions;
+   - open user/device timeline.
+4. Add on-behalf ticket visibility to admin/support detail:
+   - created by;
+   - affected user;
+   - target device;
+   - reason;
+   - diagnostic target status.
 
 Tests:
 
-- Admin approve/reject link claim.
-- Admin transfer owner preview/commit.
-- Admin rejects conflicting claim with clear reason.
-- Admin links ui-user to registry person.
-- Audit events are written.
-
-Live evidence:
-
-- Pending link claim approved from admin UI.
-- Transfer owner preview shows sessions/bindings affected.
-- User/device state changes are visible in requester cabinet.
+- Registry overview shows new queues.
+- Admin can open device and person cards from queues.
+- Transfer owner preview remains mandatory before apply.
+- Password reset/admin user link actions remain role-restricted.
+- On-behalf ticket detail renders creator/affected/target context.
 
 Acceptance:
 
-- Admin can manage registry state without raw JSON or unsafe hidden side effects.
-
-R10 completion checkpoint, 2026-06-15:
-
-- `server/registry/service.py` now projects `people[].profile_completion` from the active requester profile schema, using the same completion rules as requester bootstrap. Admin rows expose only status and missing field labels, not requester-only storage internals.
-- `webapp/src/features/admin/registry/registry-people-tab.tsx` renders the profile-completion state in Russian (`Профиль заполнен`, `Нужно заполнить профиль`) and lists missing profile fields compactly for moderation.
-- Existing admin registry workflows already cover pending device-link approval/rejection, transfer-owner preview/commit, UI-user to person links, people merge preview/apply, account-session revoke, policy/quality suggestions and the timeline drawer for `device`, `person`, `binding`, `account_session` and `claim`.
-- Dangerous operations keep the preview/apply pattern with required reason and audited events; transfer, merge, bulk and import previews remain read-only and the UI requires preview before apply.
-
-R10 verification:
-
-- Red backend TDD: `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registry_registration_snapshot.py::test_registry_snapshot_projects_requester_profile_completion_status -q --tb=short` initially failed with missing `profile_completion`.
-- Red frontend TDD: `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` initially failed because the People tab did not render profile-completion status.
-- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registry_registration_snapshot.py::test_registry_snapshot_projects_requester_profile_completion_status -q --tb=short` -> 1 passed.
-- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registry_registration_snapshot.py server/tests/test_registry_web_api.py server/tests/test_registry_people_admin.py server/tests/test_registry_admin_previews.py server/tests/test_registry_timeline_admin.py server/tests/test_registration_api.py::test_admin_approve_and_reject_registration_claim server/tests/test_registration_api.py::test_other_account_login_request_and_admin_approval_endpoints server/tests/test_registration_api.py::test_admin_lists_and_revokes_device_account_sessions -q --tb=short` -> 23 passed.
-- `pnpm --dir webapp exec vitest run src/pages/admin/registry-page.test.tsx --reporter=dot` -> 11 passed.
-- `python -m py_compile server\registry\service.py` -> passed.
-- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r10-20260615/`: mocked `/app/admin/registry` verified People tab profile status/missing fields, no body/document horizontal overflow at 1366/1920, no console errors and no unexpected requests.
+- Admin does not need to jump between inventory and registry to solve registration issues.
 
 ---
 
-## Phase R11 — Russian localization and user guidance
+## Phase PA10 — Forms allowed without full registration/profile/agent
 
-Status: completed on 2026-06-15. R11 localized the remaining web-first registration/requester/admin moderation strings found in the R0-R10 touched surfaces, added a static mojibake/raw-label guard, repaired a corrupted Windows agent account-session message, and captured clean browser evidence for the major Russian-label flows.
+Status: not started.
+
+Goal:
+
+Support emergency/help scenarios without breaking normal profile/device discipline.
 
 Tasks:
 
-1. Audit all touched UI strings.
-2. Replace technical/internal text with Russian user-facing text.
-3. Add helper text to forms:
-   - account registration;
-   - profile setup;
-   - device linking;
-   - pending approval;
-   - rejection/conflict;
-   - emergency ticket.
-4. Add Russian error mapping for backend error codes.
-5. Remove mojibake and encoding corruption in touched files/tests/docs.
-6. Add UI labels for all statuses.
-
-Required normal-user wording examples:
-
-- `Привязать устройство` instead of `pair device`.
-- `Код привязки` instead of `pairing code`.
-- `Ожидает подтверждения администратора` instead of `pending_admin_review`.
-- `Устройство уже привязано к другому пользователю` instead of `active_primary_user_exists`.
-- `Профиль заполнен не полностью` instead of `profile incomplete`.
-- `Открыть кабинет пользователя` instead of `requester workspace`.
+1. Add form-level capabilities:
+   - `available_without_completed_profile`;
+   - `available_without_agent_binding`;
+   - `requires_manual_triage`;
+   - `contact_required`;
+   - `allowed_for_anonymous` only if explicitly needed later, default false.
+2. Use for forms such as:
+   - `Не могу войти`;
+   - `Не включается ПК`;
+   - `Помощь с регистрацией`;
+   - `Запросить смену владельца устройства`.
+3. Show clear warnings that diagnostics may be unavailable until profile/device context is resolved.
+4. Route these tickets to manual triage/support queue.
+5. Do not auto-run device diagnostics unless a valid target device is resolved.
 
 Tests:
 
-- Frontend tests for visible Russian labels.
-- Snapshot/DOM assertions for no old legacy registration labels in agent.
-- Static grep for common mojibake sequences in touched files.
-- Static grep for normal UI leaking raw statuses where mapped labels are required.
-
-Live evidence:
-
-- Screenshots of all major flows with Russian labels and hints.
+- Incomplete profile can see only allowed forms.
+- Incomplete profile cannot see normal forms.
+- No-agent user can create allowed emergency form.
+- Manual triage marker is stored.
+- Diagnostics autorun is suppressed when no valid target exists.
 
 Acceptance:
 
-- A non-technical user understands what to do next on every screen.
-
-R11 completion checkpoint, 2026-06-15:
-
-- `webapp/src/pages/requester/index.tsx` now uses Russian user-facing labels for Knowledge Ask prefill text, requester device agent/version/status/activity strings, requester form/message/feedback/attachment accessible labels, public ticket claim controls and ticket create/preview controls.
-- `webapp/src/features/admin/registry/registry-requests-tab.tsx` maps `active_primary_user_exists` to `уже есть активный основной пользователь` in the approval diff instead of rendering the raw backend code.
-- `pc_agent/ui_gui/main_window.py` repaired a mojibake account-session error string: `Сессия аккаунта недействительна. Войдите снова.`
-- `scripts/test_web_first_registration_localization.py` statically checks touched web-first registration docs/UI/agent files for common mojibake markers and the R11 forbidden normal-UI snippets (`Knowledge Ask`, Latin `agent unknown`, raw `status unknown`, raw blocker code).
-
-R11 verification:
-
-- Red frontend TDD: `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` initially failed on English Knowledge Ask/device/admin blocker expectations.
-- Red static TDD: `python -m pytest scripts/test_web_first_registration_localization.py -q` initially failed on the mojibake agent string and normal-UI forbidden snippets.
-- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 25 passed.
-- `python -m pytest scripts/test_web_first_registration_localization.py -q` -> 2 passed.
-- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r11-20260615/`: profile setup, Knowledge Ask prefill, requester device link, account registration and admin conflict screenshots; report `web-first-registration-r11-localization-report.json` shows no console messages, no unexpected requests, no horizontal overflow and no forbidden raw text.
+- Users are not stranded, but normal forms still require the right context.
 
 ---
 
-## Phase R12 — Compatibility, migration and cleanup
+## Phase PA11 — Documentation and localization
 
-Status: completed on 2026-06-15; tightened on 2026-06-16. R12 compatibility is implemented: legacy backend endpoints remain covered by existing registration tests for older agents, web self-registration stays controlled by `WEB_SELF_REGISTRATION_ENABLED`, normal agent GUI legacy registration was removed, and requester profile enforcement now has `PROFILE_COMPLETION_REQUIRED=true` by default with policy-aware `profile_completion.blocks` for rollout override.
+Status: not started.
 
 Tasks:
 
-1. Keep backend legacy endpoints temporarily if existing tests/clients depend on them.
-2. Add feature flags for transition:
-   - no normal GUI re-enable for legacy agent profile registration.
-   - `WEB_SELF_REGISTRATION_ENABLED=true` if deployed.
-   - `PROFILE_COMPLETION_REQUIRED=true` with admin override for rollout if needed.
-3. Migrate existing pending agent registration claims into web-visible pending profile/device link state.
-4. Ensure existing confirmed bindings remain valid.
-5. Ensure existing account sessions are not silently broken without user-facing recovery.
-6. Add cleanup job/follow-up for expired pairing/session rows if not already done.
-7. Document rollback path.
+1. Update product docs:
+   - web cabinet vs primary agent vs GUI agent;
+   - on-behalf ticket semantics;
+   - no self-rebinding rule;
+   - admin ownership transfer rule.
+2. Update user-facing help articles:
+   - `Как создать обращение за другого сотрудника`;
+   - `Что делать, если мой ПК не включается`;
+   - `Как запросить смену владельца устройства`;
+   - `Как привязать устройство к аккаунту`.
+3. Ensure all new UI strings are Russian.
+4. Add static localization guard for forbidden raw terms in normal requester/agent UI.
 
 Tests:
 
-- Existing active binding still works.
-- Existing pending claim is visible in new requester/admin UI.
-- Existing verified other-account session still validates until expiry/revoke.
-- Legacy backend registration remains API-compatible for old agents, but the normal GUI no longer exposes the local full-profile registration page or confirm action.
-
-Live evidence:
-
-- Use seeded old-style state and confirm new UI handles it.
+- Docs drift tests updated.
+- Localization guard passes.
+- No raw `affected_person_id`, `target_device_id`, `binding_id`, `claim_id` in normal requester UI.
 
 Acceptance:
 
-- Migration does not strand current users/devices.
-
-Completion notes:
-
-- `server/config.py` defines `PROFILE_COMPLETION_REQUIRED=true` by default. `server/requester/identity_service.py` keeps incomplete profile `missing_fields` visible but makes `blocks` and requester create feature flags policy-aware. `server/web_api/requester_handlers.py` follows `blocks.ticket_preview` / `blocks.ticket_create`, so disabling the flag makes profile completion advisory without losing setup guidance.
-- Existing old-style pending agent profile claims are visible through both `GET /api/web/requester/bootstrap` (`pending_registration_claims`) and `GET /api/web/admin/registry` (`registration_claims`). The requester UI renders them as Russian pending device-link requests without exposing raw `claim` terminology.
-- Existing confirmed bindings and verified other-account sessions continue through current `AccountSessionService.validate_session()` rules; expired/revoked/base-binding failures return explicit error codes for GUI recovery.
-- `BrowserPairingService.expire_stale_pairings()` and `AccountSessionService.expire_stale_sessions()` add explicit service-level cleanup for expired browser pairings and temporary sessions without deleting audit history.
-- Rollback path is documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`: disable new web accounts with `WEB_SELF_REGISTRATION_ENABLED=false`, make incomplete profiles advisory with `PROFILE_COMPLETION_REQUIRED=false`, and keep older agents on their existing legacy API compatibility while normal GUI releases stay browser-only.
-
-Evidence and verification:
-
-- Red R12 tests failed before implementation: `test_profile_completion_required_flag_can_disable_no_device_create_gate` saw `blocks.ticket_create=true`; requester UI optional-gate test kept create disabled; cleanup tests initially lacked explicit cleanup service methods.
-- Local browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r12-20260615/`: `requester-r12-pending-claim-rollout-1366x768.png`, `requester-r12-create-override-1366x768.png`, and `web-first-registration-r12-compatibility-report.json`. The report shows the pending request visible, profile setup gate not blocking, create enabled after description, no console messages, no unexpected requests, no horizontal overflow and no forbidden raw normal-UI text.
-- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_registration_api.py server/tests/test_account_session_service.py -q --tb=short` -> 76 passed.
-- `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 27 passed.
-- `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_main_window_runtime_windows.py -q --tb=short` -> 34 passed.
+- Non-technical user understands what to do.
+- Support/admin can explain why diagnostics target another user's primary agent.
 
 ---
 
-## Phase R13 — Automated test matrix
+## Automated test matrix
 
-Status: completed on 2026-06-15. The automated R13 matrix is covered by focused backend, frontend and agent test groups for all changed contracts.
+Backend required:
 
-Required backend tests:
+- primary-agent resolver;
+- ticket context builder;
+- on-behalf form policy validation;
+- affected person authorization scopes;
+- ticket preview/create normal path;
+- ticket preview/create on-behalf path;
+- diagnostic target selection;
+- offline/missing/ambiguous target behavior;
+- Knowledge/RAG no-leak tests;
+- GUI login endpoint;
+- admin registry queues/actions.
 
-- Account self-registration.
-- Profile setup/update/security.
-- Device pairing code/direct link.
-- Device registration claim creation/approval/reject/conflict.
-- Account session validation after binding changes.
-- Admin registry moderation.
-- Request form context/prefill/snapshot.
-- Knowledge audience filtering and RAG eligibility.
-- Data quality checks.
+Frontend required:
 
-Required frontend tests:
+- requester form policy disabled -> no on-behalf UI;
+- policy enabled -> toggle/search/reason UI;
+- affected user selected -> preview context summary;
+- no device picker in default one-user-one-agent flow;
+- incomplete profile emergency form visibility;
+- admin registry queue/card/detail visibility;
+- support ticket detail creator/affected/target context;
+- Russian labels and no raw ids in normal UI.
 
-- `/app/register`.
-- Profile setup gate.
-- Requester profile page.
-- Requester devices page and device linking flow.
-- Device pairing pages.
-- Admin registry moderation UI.
-- Request form prefill from profile.
-- Knowledge recommendations visibility.
-- Russian localization labels and error states.
+Agent required:
 
-Required agent tests:
+- no token state;
+- no binding state;
+- bound background/default state;
+- GUI login success for bound user;
+- GUI login mismatch for unbound user;
+- no auto-rebinding;
+- no password persistence;
+- browser cabinet open remains available.
 
-- Account gate has no local legacy registration controls.
-- Browser linking button still creates pairing.
-- Copy code/open browser works.
-- Pending/approved/rejected states render correctly.
-- Emergency ticket remains accessible.
-- Local account session invalidation still works.
+Integration/e2e required:
 
-Required integration/e2e tests:
-
-- New user -> profile -> create ticket without device.
-- New user -> profile -> link agent device -> admin approve -> create ticket with device context.
-- Existing user -> link second device.
-- Existing registered device -> other account admin approval.
-- Knowledge restricted by department/location.
-
-Acceptance:
-
-- No phase is considered done without tests for changed contracts.
-
-Completion notes:
-
-- Backend matrix:
-  - R12 compatibility/core path: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_registration_api.py server/tests/test_account_session_service.py -q --tb=short` -> 76 passed.
-  - Additional R13 backend coverage: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_web_session_api.py server/tests/test_registry_registration_snapshot.py server/tests/test_registry_web_api.py server/tests/test_registry_people_admin.py server/tests/test_registry_admin_previews.py server/tests/test_registry_timeline_admin.py server/tests/test_registry_quality_remediation.py server/tests/test_registry_registration_policy.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_api.py server/tests/test_knowledge_ask.py server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_ticket_account_access.py server/tests/test_ticket_registration_enrichment.py -q --tb=short` -> 113 passed, 26 existing aiohttp `NotAppKeyWarning` warnings in web-session test setup.
-- Frontend matrix: `pnpm --dir webapp exec vitest run src/features/auth/register-page.test.tsx src/pages/requester/index.test.tsx src/pages/device-pairing/device-pairing-page.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot` -> 38 passed.
-- Agent matrix: `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_main_window_runtime_windows.py pc_agent/tests/test_account_session_manager.py -q --tb=short` -> 47 passed.
-- Additional guards from R12/R13: docs/catalog/localization guard `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py scripts/test_web_first_registration_localization.py -q` -> 16 passed; `pnpm --dir webapp run build` passed with the existing large chunk warning.
+- normal user creates ticket -> target own primary agent;
+- user creates ticket for another user -> target affected primary agent;
+- affected primary agent offline -> no autorun, offline evidence stored;
+- wrong user logs into GUI on another PC -> mismatch, no rebind;
+- admin transfers ownership -> new primary target used in future tickets;
+- creator cannot see affected-only Knowledge.
 
 ---
 
-## Phase R14 — Live validation checklist
+## Live validation checklist
 
-Status: completed on 2026-06-15 for commit `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`.
+### LV-PA1 — Normal ticket target
 
-Live validation must run against a real local/dev stand with server, webapp, Postgres and at least one GUI agent.
+1. Seed/create user A with one primary bound online agent.
+2. Login as user A in web cabinet.
+3. Create normal ticket.
+4. Verify ticket creator=A, affected=A.
+5. Verify target device=A primary agent.
+6. Verify diagnostics enqueue to A device when policy allows.
 
-### LV1 — Web account and profile
+### LV-PA2 — On-behalf ticket target
 
-1. Start server and webapp.
-2. Create user through `/app/register`.
-3. Verify login/session.
-4. Verify profile setup gate appears.
-5. Fill profile with department/location.
-6. Verify requester cabinet opens.
-7. Verify admin registry person/identity exists.
+1. Seed/create user A and user B.
+2. User B has primary bound agent.
+3. Login as A.
+4. Use form with `allow_on_behalf=true`.
+5. Select B as affected person.
+6. Create ticket.
+7. Verify creator=A, affected=B, target=B primary agent.
+8. Verify no diagnostic operation targets A device.
 
-Evidence:
+### LV-PA3 — Affected agent offline
 
-- Browser screenshots.
-- API responses with sensitive data redacted.
-- DB/API confirmation of person/profile state.
+1. User B primary agent offline.
+2. User A creates ticket for B.
+3. Verify ticket creates.
+4. Verify no module enqueue to offline target.
+5. Verify offline evidence is visible to support.
 
-### LV2 — Agent device linking
+### LV-PA4 — Knowledge no-leak
 
-1. Start GUI agent with approved machine token.
-2. Confirm no full profile registration UI is visible.
-3. Click `Привязать через браузер`.
-4. Copy/open pairing code.
-5. Confirm device in web cabinet.
-6. Approve claim in admin UI.
-7. Refresh agent and requester cabinet.
-8. Verify linked device shown everywhere.
+1. User B has department-restricted Knowledge article.
+2. User A creates ticket for B but lacks B department access.
+3. Verify pre-submit suggestions/RAG for A do not expose B restricted article.
+4. Verify support/admin can see appropriate support-visible context.
 
-Evidence:
+### LV-PA5 — GUI login
 
-- Agent screenshots.
-- Web screenshots.
-- Admin screenshots.
-- API response for account-state.
+1. Start bound GUI agent for user B's device.
+2. Login to GUI as B -> success.
+3. Login to same GUI as A -> valid account but mismatch, no session.
+4. Verify no binding change occurred.
+5. Verify GUI offers open web cabinet / request temporary access / ownership change request.
 
-### LV3 — Ticket creation with registry context
+### LV-PA6 — Admin ownership transfer
 
-1. Use completed profile and linked device.
-2. Open requester ticket creation.
-3. Verify prefilled context.
-4. Create ticket.
-5. Open support/admin ticket detail.
-6. Verify requester profile/device/context snapshot.
-7. Verify routing/priority explain if applicable.
+1. Device initially bound to B.
+2. Admin transfers device to C through preview/apply.
+3. Verify B future tickets no longer target that device.
+4. Verify C future tickets target that device.
+5. Verify old sessions are revoked or marked according to policy.
 
-Evidence:
+Evidence folder format:
 
-- Requester create screenshots.
-- Support detail screenshots.
-- Ticket JSON excerpt with redacted context.
+`artifacts/browser_live_validation/primary-agent-on-behalf-<commit>-<YYYYMMDD>/`
 
-### LV4 — Knowledge access
+Each live run must include:
 
-1. Create or seed two users in different departments.
-2. Create/seed KB article restricted to one department.
-3. Search as both users.
-4. Verify allowed user sees it and denied user does not.
-5. Verify RAG/Ask does not leak restricted content.
-
-Evidence:
-
-- Search screenshots.
-- Access explain screenshots.
-- RAG/retrieval trace excerpt.
-
-### LV5 — Other-account exception
-
-1. Registered device owned by user A.
-2. User B requests temporary other-account login from agent.
-3. Admin approves.
-4. Agent creates ticket.
-5. Support ticket detail shows other-account warning.
-6. Binding remains owned by user A.
-
-Evidence:
-
-- Agent screenshots.
-- Admin approval screenshots.
-- Ticket warning screenshot.
-- Binding state confirmation.
-
-### LV6 — Localization pass
-
-1. Walk all new and changed pages.
-2. Capture screenshots for normal, empty, error and pending states.
-3. Verify no mojibake and no English placeholder copy.
-4. Verify no raw backend status leaks in normal user UI.
-
-Acceptance:
-
-- Each LV folder contains screenshots, command outputs and short notes.
-- Commit hash and environment details are recorded.
-
-Recommended evidence folder format:
-
-`artifacts/browser_live_validation/web-first-registration-<commit>-<YYYYMMDD>/`
-
-R14 completion checkpoint, 2026-06-15:
-
-- Environment: remote Linux stand `https://192.168.100.17:9443` with server, webapp and PostgreSQL deployed through `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --leave-running --smoke-insecure-tls --smoke-base-url https://192.168.100.17:9443`; local Windows GUI agent instance `r14-gui-20260615` was started through `python scripts/manage_local_agent.py start r14-gui-20260615 --gui --ui-port 8794`.
-- Candidate: `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`. The final R14 smoke run id is `webfirst-r14-c5be05b-20260615`.
-- HTTP/DB live smoke: `artifacts/browser_live_validation/web-first-registration-r14-20260615/registry_visibility_live_smoke.passed.json` -> `status=passed`. It covers confirmed owner binding, verified other-account session, pending registration blocking, revoked-session denial, owner ticket visibility, other-account ticket isolation/warning, support suggestions and registry-aware search/suggest/Ask/RAG slugs.
-- Browser live evidence: `artifacts/browser_live_validation/web-first-registration-r14-20260615/r14-live-browser-evidence-report.json` -> `status=passed`; screenshots `01-register-account-only.png` through `08-admin-registry-requests.png` cover account-only registration, requester cabinet/devices, owner/other requester knowledge filtering, support ticket warning, and admin registry overview/requests. Assertions: no forbidden raw status text, no horizontal overflow, no console/page/API failures, owner IT slug visible only to owner, finance slug visible only to other account.
-- Direct cookie-auth regression after the optional-auth fix confirmed `/api/knowledge/search` preserves web-session audience context: owner saw only `phase7-it-webfirst-r14-c5be05b-20260615` + public, other account saw only `phase7-finance-webfirst-r14-c5be05b-20260615` + public.
-- Local GUI-agent evidence: `artifacts/browser_live_validation/web-first-registration-r14-20260615/agent-gui-evidence-report.json` -> `status=passed`; supporting files are `agent-gui-status.json` and `agent-gui-connected-uia.json`. Assertions: real `Maria Agent v3.1.64` main window seen through pywinauto/UIA, `/ui/agent/status` reports `connection_state=connected`, `has_auth_token=true`, `ui_bridge_running=true`, and the captured UIA tree does not expose legacy full-profile registration controls.
-- Evidence limitations: the HTTP/DB smoke report still lists its built-in `real_agent_gui` and `browser_support_ui` fields as `not_collected`; those are superseded by the separate browser and GUI artifacts above. Windows bitmap capture for the local GUI returned invalid/black frames in the Codex desktop session, so GUI pass evidence uses canonical UIA plus `/ui/agent/status` rather than a PNG screenshot.
-- Local GUI cleanup: `POST http://127.0.0.1:8794/ui/agent/shutdown` returned `{status: "ok", accepted: true}`, and `python scripts/manage_local_agent.py status r14-gui-20260615` reported the instance stopped.
+- commit hash;
+- environment summary;
+- screenshots or UIA evidence for GUI;
+- browser screenshots;
+- API/DB excerpts with sensitive values redacted;
+- test command output;
+- clear pass/fail notes.
 
 ---
 
 ## Release gate
 
-Status: completed on 2026-06-15 at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06bf11`. Each gate item below has implementation, targeted automated tests and R14 live evidence.
+Do not mark this plan complete until all are true:
 
-Do not mark this refactor complete until all are true:
-
-1. Registration is browser-first.
-2. GUI agent full-profile registration is hidden/disabled by default.
-3. Web account creation is separate from profile completion.
-4. Profile completion is mandatory for normal requester work.
-5. Profile writes to registry-backed person/context.
-6. Device linking works from web and agent handoff.
-7. Request forms consume profile/registry context.
-8. Knowledge access and RAG respect registry audience.
-9. Admin can approve/reject/transfer device bindings safely.
-10. Full Russian localization is present for all touched user/admin/agent surfaces.
-11. Automated tests cover backend, frontend and agent behavior.
-12. Live evidence exists for account, profile, device linking, ticket context, knowledge access, other-account and localization flows.
-13. Existing confirmed bindings and current users are not broken.
-14. Rollback/feature-flag behavior is documented.
-
-Release gate completion checkpoint:
-
-- Items 1-6: R2-R5/R12 implement browser-first account/profile/device linking, separate account/profile flows, mandatory profile gate policy and hidden legacy GUI full-profile registration. R14 browser and UIA evidence confirms account-only `/app/register`, requester devices, connected GUI agent and no legacy full-profile controls.
-- Items 7-10: R8-R11 implement request-form context, registry-audience knowledge/RAG, admin registry moderation and Russian-localized touched surfaces. R14 smoke/browser evidence confirms ticket context visibility, other-account warning, owner/other knowledge isolation and no forbidden raw status text in captured browser flows.
-- Items 11-13: R13 automated matrix passed for backend, frontend and agent; R14 live smoke confirms confirmed bindings, verified other-account sessions, pending registrations and revoked sessions are not broken.
-- Item 14: rollback and feature flags are documented in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`; R12 records `WEB_SELF_REGISTRATION_ENABLED`, `PROFILE_COMPLETION_REQUIRED` and the 2026-06-16 decision that normal agent GUI stays browser-only while legacy backend compatibility remains for older agents.
-- Release mode note: the remote deploy used the documented quick gate for staging/live validation. A frozen production release would still require the explicit full CI artifact and full release gate before production publication.
+1. Normal requester does not choose a device in the default flow.
+2. Normal ticket targets creator's primary agent.
+3. On-behalf ticket targets affected user's primary agent.
+4. On-behalf capability is form-policy controlled and disabled by default.
+5. Creator and affected person are stored and visible to support/admin.
+6. Client cannot override target diagnostic device in requester flow.
+7. Offline/missing/ambiguous primary agent is handled as diagnostic/triage evidence.
+8. Knowledge/RAG cannot leak affected user's restricted articles to creator.
+9. GUI login by login/password is server-validated and device-scoped.
+10. GUI login mismatch never rebinds the agent.
+11. Device ownership transfer remains admin preview/apply with reason/audit.
+12. Emergency/no-profile/no-agent forms are explicitly allowed per form and routed to manual triage.
+13. Russian UI labels are clear and normal user UI does not show raw technical ids.
+14. Backend, frontend, agent and e2e tests pass.
+15. Live validation covers normal, on-behalf, offline, Knowledge no-leak, GUI mismatch and admin transfer scenarios.
 
 ---
 
-## Decisions locked in R1 before implementation
+## Open decisions before implementation
 
-1. Self-registration is controlled by `WEB_SELF_REGISTRATION_ENABLED`; production defaults fail-closed.
-2. Profile completion blocks normal requester actions, not every page. Setup, profile, device-link status, existing consents, logout and policy-controlled emergency ticket paths stay available.
-3. Device-link claims require admin approval by default. First-device auto-approval is a later explicit policy option, not the default.
-4. Department/location values must come from registry pickers in the first rollout. Free-text creation is disallowed in normal user UI; pending suggestions are a later audited policy option.
-5. `/app/device/register` remains a compatibility route only when a device-link id exists. Missing id shows safe Russian guidance to open the flow from the agent or enter the code at `/app/device/pair`.
-6. Emergency ticket without completed profile is allowed only by policy, with authenticated account, problem description, contact, and an explicit incomplete-profile marker.
-7. Mandatory first-rollout profile fields: full name, department, location, phone or internal extension.
-8. Required first-rollout registry entities: people, UI-login identities, departments, locations, devices and device-user bindings. Services and access/audience groups are consumed when present but are not mandatory for initial profile completion.
+1. What is the first rollout scope for ordinary users choosing affected people: same department, exact search, or privileged-only?
+2. Should managers be allowed to create tickets for direct reports before manager relations are fully reliable?
+3. Should on-behalf reason be always required for ordinary users?
+4. Should support/admin be able to manually choose diagnostic target when affected user's primary agent is missing?
+5. Should one-user-one-agent be enforced by data quality only, or by hard DB constraint for primary bindings?
+6. How should shared PCs be represented in requester UI: hidden by default, or separate `Общее устройство` context?
+7. Which forms should be enabled first for on-behalf creation?
+8. Which emergency forms are allowed before full profile completion?
 
 ---
 
-## Immediate implementation rule for Codex
+## Implementation discipline for Codex
 
-Work in small vertical slices. For every slice:
+Work in vertical slices. For every slice:
 
-1. Update backend contract.
-2. Add/adjust tests.
-3. Update frontend/agent UI.
-4. Add Russian labels and errors.
-5. Run targeted tests.
-6. Run one live check when the slice affects user-visible flow.
-7. Record evidence and status in this file before moving to the next slice.
-
-Do not do broad unrelated cleanup inside this refactor. Do not rename technical database concepts unless the migration and compatibility plan is explicit.
+1. Update server contract first.
+2. Add failing tests before implementation where practical.
+3. Implement backend.
+4. Implement frontend/agent UI.
+5. Add Russian labels and safe error mapping.
+6. Run targeted backend/frontend/agent tests.
+7. Run at least one live check for user-visible flow.
+8. Record evidence and status in this file.
+9. Do not mix unrelated UI redesign, registry broadening or Knowledge authoring work into this plan.
