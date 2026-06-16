@@ -1538,7 +1538,7 @@ class KnowledgeCorrectionRequest(Base):
     metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa.text("'{}'::jsonb"))
 
     __table_args__ = (
-        sa.CheckConstraint("status IN ('open', 'triaged', 'accepted', 'rejected', 'closed')", name="ck_knowledge_correction_requests_status"),
+        sa.CheckConstraint("status IN ('open', 'reviewing', 'accepted', 'rejected', 'closed')", name="ck_knowledge_correction_requests_status"),
         sa.CheckConstraint("length(trim(comment)) > 0", name="ck_knowledge_correction_requests_comment"),
         sa.CheckConstraint(
             "actor_role IS NULL OR actor_role IN ('public', 'requester', 'user', 'agent', 'support', 'admin', 'auditor', 'security')",

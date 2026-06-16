@@ -287,6 +287,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 - `111_knowledge_search_settings.py` — Knowledge vNext search settings table for AI-off keyword/full-text/hybrid mode controls.
 - `117_knowledge_ai_proposals.py` — governed Knowledge AI proposal queue with review status, safe payload, applied refs and Observer audit integration.
 - `121_knowledge_audience_rules.py` — Registry Visibility Foundation Knowledge audience rules table with subject/target/status indexes.
+- `123_knowledge_correction_reviewing_status.py` — updates `knowledge_correction_requests.status` from the ticket legacy alias `triaged` to Knowledge-local `reviewing` while preserving `open`, `accepted`, `rejected` and `closed`.
 - `088_quality_loop.py` — structured ticket feedback, reopen events, QA reviews, improvement actions, service quality snapshots and quality policies.
 - `089_quality_loop_production_hardening.py` — latest feedback partial unique index and quality snapshot scheduler metadata.
 - `090_problem_management_rca.py` — problem candidates, problem records, ticket links, versioned RCA, known-error/workaround links, affected objects, detection rules and problem activity events.
