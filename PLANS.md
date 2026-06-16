@@ -1028,7 +1028,7 @@ Verification:
 
 ## Phase PA11 — Documentation and localization
 
-Status: not started.
+Status: completed 2026-06-16 in `codex/helpdesk-process-model` at deployed commit `d2eb3217`.
 
 Tasks:
 
@@ -1055,6 +1055,37 @@ Acceptance:
 
 - Non-technical user understands what to do.
 - Support/admin can explain why diagnostics target another user's primary agent.
+
+Completed changes:
+
+- Product documentation now records the web cabinet vs server-resolved primary agent vs local GUI agent contract, on-behalf diagnostic-target semantics, no self-rebinding rule and admin-only ownership transfer rule in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`.
+- Added requester-safe Knowledge content pack `content_packs/knowledge/primary-agent-requester-guides.yaml` with the four PA11 help articles: creating a ticket for another employee, PC does not power on, requesting device owner change and linking a device to an account.
+- Extended localization/static guards so normal requester/agent UI string literals do not render raw internal ids such as `affected_person_id`, `target_device_id`, `binding_id` or `claim_id`; technical `.get("...")` key lookups remain allowed.
+- Updated CODEMAP/quick lookup/navigation catalog so the PA11 contract, content pack and tests are discoverable.
+- Fixed `scripts/knowledge_audience_live_smoke.py` so the live anti-leak smoke creates an RAG-eligible Knowledge space for its Ask checks instead of failing on its own validation fixture.
+
+Verification:
+
+- `python -m pytest scripts/test_web_first_registration_localization.py -q --tb=short` -> 4 passed.
+- `python -m py_compile scripts/test_web_first_registration_localization.py scripts/navigation_catalog.py scripts/knowledge_audience_live_smoke.py scripts/test_knowledge_audience_live_smoke.py` -> passed.
+- `python scripts/validate_knowledge_pack_bindings.py --pack primary-agent-requester-guides --strict` -> OK.
+- `python -m pytest server/tests/test_knowledge_content_packs.py::test_primary_agent_requester_guides_pack_contains_pa11_articles server/tests/test_knowledge_pack_bindings.py::test_all_baseline_content_pack_bindings_match_service_catalog_defaults -q --tb=short` -> 2 passed.
+- `python -m pytest scripts/test_knowledge_audience_live_smoke.py scripts/test_web_first_registration_localization.py -q --tb=short` -> 5 passed.
+- `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q --tb=short` -> 14 passed.
+- `python scripts/verify_workspace.py` -> passed.
+- `git diff --check` / `git diff --cached --check` for touched files -> passed; Git reported only existing CRLF normalization warnings.
+- `python scripts/release_server_to_remote.py --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls` -> deployed committed state to `192.168.100.17`; Alembic was already at head on the final deploy; remote `/api/health` returned 200. Quick gate intentionally skipped the full green CI artifact requirement.
+- Browser evidence at canonical `https://192.168.100.17:9443/admin`: `/app/admin/registry` rendered `Центр регистрации и привязок`, scenario queues including `Ожидают привязки устройства`, `Пользователи без основного агента`, `Устройства без владельца`, `Профиль не заполнен`; console errors were 0. Evidence: `artifacts/browser_live_validation/primary-agent-pa11-d2eb3217-20260616/admin-registry-center.png`, `admin-registry-center-snapshot.md`, `admin-registry-center-console-errors.json`.
+- Remote live smoke `scripts/web_first_registration_live_smoke.py --base-url https://192.168.100.17:9443 --run-id pa11-d2eb3217 --insecure-tls` -> passed; evidence `artifacts/browser_live_validation/primary-agent-pa11-d2eb3217-20260616/web-first-registration-live-smoke.json`.
+- Remote live smoke `scripts/knowledge_audience_live_smoke.py --base-url https://192.168.100.17:9443 --run-id pa11-d2eb3217 --insecure-tls` -> passed; requester search/suggest/Ask did not leak hidden Finance/support-internal articles, support suggestions kept support-visible context and admin explain denied Finance access. Evidence `artifacts/browser_live_validation/primary-agent-pa11-d2eb3217-20260616/knowledge-audience-live-smoke.json`.
+- Remote live smoke `scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --run-id pa11-d2eb3217 --insecure-tls` -> passed; covered Registry admin person/identity, binding/session, shared/responsible, transfer-owner, duplicate merge and department/location workflows. Evidence `artifacts/browser_live_validation/primary-agent-pa11-d2eb3217-20260616/registry-workflow-smoke.log`.
+- `python scripts/manage_remote_stack.py status server`, `status control`, `smoke server --insecure-tls` -> server/control running during validation and `/api/health` 200.
+- `python scripts/manage_remote_stack.py stop server; python scripts/manage_remote_stack.py stop control` -> remote services stopped after validation.
+
+Skipped checks / residual risk:
+
+- Full CI/full release gate was not run because this was not an explicit frozen release-candidate request; the deploy used the project quick gate.
+- A real Windows GUI manual login mismatch run remains outside this PA11 slice; PA8 has automated GUI/server coverage and PA11 live validation covered web/registry/Knowledge paths.
 
 ---
 
