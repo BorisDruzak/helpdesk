@@ -468,6 +468,20 @@ def _serialize_message(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     }
 
 
+def _requester_safe_message_metadata(
+    payload_metadata: Any,
+    projection: Any,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    if projection is not None and projection.payload.get("message_kind"):
+        metadata["message_kind"] = projection.payload["message_kind"]
+    if isinstance(payload_metadata, dict):
+        confirmation_request = payload_metadata.get("confirmation_request")
+        if isinstance(confirmation_request, dict):
+            metadata["confirmation_request"] = serialize_datetime_recursive(confirmation_request)
+    return metadata
+
+
 def _serialize_message_for_requester(event: Any, ticket: Any | None = None) -> Dict[str, Any]:
     payload = serialize_datetime_recursive(getattr(event, "payload", None) or {})
     if ticket is not None:
@@ -478,9 +492,7 @@ def _serialize_message_for_requester(event: Any, ticket: Any | None = None) -> D
     )
     sender_role = payload.get("sender_role") or payload.get("from") or "user"
     reply_to = _extract_reply_to_from_payload(payload)
-    metadata: dict[str, Any] = {}
-    if projection is not None and projection.payload.get("message_kind"):
-        metadata["message_kind"] = projection.payload["message_kind"]
+    metadata = _requester_safe_message_metadata(payload.get("metadata"), projection)
     return {
         "message_id": payload.get("message_id"),
         "from_role": sender_role,

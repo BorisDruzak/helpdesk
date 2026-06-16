@@ -188,6 +188,42 @@ def test_ticket_handler_requester_message_sanitizes_public_access_code():
     assert "RZ76RPDR" not in str(message["metadata"])
 
 
+def test_ticket_handler_requester_message_preserves_safe_confirmation_request_only():
+    from tickets.handlers import _serialize_message_for_requester
+
+    event = Event(
+        "chat_message",
+        {
+            "message_id": "msg-confirm",
+            "sender_role": "support",
+            "text": "Проблема решена. Используйте кнопки ниже.",
+            "visibility": "public",
+            "metadata": {
+                "confirmation_request": {
+                    "request_id": "req-1",
+                    "kind": "ticket_resolution",
+                    "message": "Нажмите кнопку.",
+                    "options": [{"option_id": "confirm", "label": "Подтверждаю"}],
+                },
+                "internal_debug": {"token": "secret"},
+            },
+        },
+    )
+
+    message = _serialize_message_for_requester(event)
+
+    assert message["metadata"] == {
+        "confirmation_request": {
+            "request_id": "req-1",
+            "kind": "ticket_resolution",
+            "message": "Нажмите кнопку.",
+            "options": [{"option_id": "confirm", "label": "Подтверждаю"}],
+        }
+    }
+    assert "internal_debug" not in str(message)
+    assert "secret" not in str(message)
+
+
 def test_ticket_handler_requester_visibility_uses_projection_rules():
     from tickets.handlers import _event_visible_to_requester
 
