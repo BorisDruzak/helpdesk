@@ -393,7 +393,7 @@ All destructive/admin actions require reason and audit.
 
 ## Phase PA0 — Baseline and current behavior check
 
-Status: not started.
+Status: completed on 2026-06-16. Baseline documented only; no PA1+ behavior changes were made in this phase.
 
 Tasks:
 
@@ -431,6 +431,25 @@ Acceptance:
 
 - Baseline behavior documented in this file before changes.
 - Existing tests pass or known failures are documented.
+
+PA0 baseline checkpoint, 2026-06-16:
+
+- Scope classification: cross-cutting baseline only. This checkpoint did not change runtime behavior.
+- Account-state/session/requester context: server account state already exposes `confirmed_binding`, `registration_pending`, and `verified_other_account` account modes; confirmed accounts are tied to active Registry bindings, and other-account sessions are tied to an active base binding. Requester web context currently builds `requester_context_v1` from the authenticated actor, optional owned device binding, profile, location, department, device, asset, and account mode; ticket preview/create persists `requester_context_snapshot` and requester-derived custom fields.
+- Form builder policy surface: request forms already support Registry-aware field types (`user_picker`, `department_picker`, `location_picker`, `device_picker`, `service_picker`), field roles/process mappings, template policy refs, and effective Registry policies. The inspected ticket/requester/admin/GUI surfaces have no current `on_behalf`, `affected_person`, `creator_person`, or `primary_agent` workflow tokens, so PA3-PA5 still need explicit on-behalf policy and context fields.
+- Knowledge/RAG access: suggestions collect safe text from `form_payload`, `requester_context`, and `device_metadata`, then call search with actor role, service/offering/template context, and `effective_audience`. Knowledge access gates currently enforce item/space lifecycle, coarse visibility, active audience rules, privileged-role override, and rule targets for role/person/department/department tree/location/access group/audience group/service. No creator-vs-affected access split exists yet.
+- Admin Registry surface: the admin registry page already exposes overview, devices, people, bindings, requests, account sessions, quality, locations, departments, access groups, audience groups, profile schema, and policies. Current actions include bind primary user, assign responsible, add shared user, transfer owner with preview, revoke binding/sessions with reason, registration claim approval/rejection, and other-account login request approval/rejection. There is no dedicated primary-agent resolver or ownership-change request workflow yet.
+- GUI agent gate/login: the Qt account gate is browser-first for registration/login, supports confirmed-binding login and approved other-account login, and hides ticket/profile/create workspace views unless the local session validates as `confirmed_binding` or `verified_other_account`. Browser login pairings create server account sessions for active bindings; browser registration pairings submit registration claims. Login/password-only local GUI behavior from PA8 is not implemented yet.
+- Verification baseline:
+  - `python scripts/build_context_index.py --force` rebuilt the stale context index.
+  - Two broad server pytest batches covering requester/registration/forms/Knowledge timed out at 304s when run as large combined commands; this is recorded as a batching/runtime limitation, not an observed test failure.
+  - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_account_session_service.py server/tests/test_browser_pairing_service.py -q --tb=short` -> 23 passed.
+  - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registration_api.py -q --tb=short` -> 34 passed.
+  - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short` -> 25 passed.
+  - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_ticket_form_packs.py -q --tb=short` -> 40 passed.
+  - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_knowledge_access_service.py server/tests/test_knowledge_api.py server/tests/test_knowledge_ask.py server/tests/test_knowledge_hybrid_retrieval.py server/tests/test_knowledge_suggestions.py server/tests/test_knowledge_rag_policy.py -q --tb=short` -> 47 passed.
+  - `python -m pytest pc_agent/tests/test_account_gate.py pc_agent/tests/test_main_window_runtime_windows.py -q --tb=short` -> 36 passed.
+- Known PA0 follow-up: live browser evidence was not collected because PA0 is documentation-only and made no browser-visible change; PA1+ browser-visible changes must use the project browser workflow.
 
 ---
 
