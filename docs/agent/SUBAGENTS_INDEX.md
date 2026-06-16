@@ -31,7 +31,7 @@ Subagents are helpers for parallel context gathering, checks, browser evidence, 
 Ask context-mapper to map the ticket lifecycle files, docs, tests, and risk boundaries for this change.
 Ask test-runner to run python scripts/verify_workspace.py and the targeted pytest for the changed server route.
 Ask reviewer to review the staged diff for regressions, missing tests, and project-rule violations.
-Ask browser-verifier to validate https://192.168.100.17:9443/admin in a real browser and capture evidence.
+Ask browser-verifier to validate the relevant route on https://192.168.100.17:9443 in a real browser and capture evidence.
 Ask docs-drift-auditor to check whether this route/contract change requires CODEMAP or workflow doc updates.
 ```
 

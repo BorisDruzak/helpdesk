@@ -78,11 +78,13 @@ pnpm --dir webapp run build
 pnpm --dir webapp run test:e2e -- admin-workspace.spec.ts
 ```
 
-Use the in-app browser for live UI checks on the canonical URL:
+Use the in-app browser for live UI checks on the canonical stand origin:
 
 ```text
-https://192.168.100.17:9443/admin
+https://192.168.100.17:9443
 ```
+
+Route selection must match the changed surface: `/admin` for admin/tech-panel, `/app/*` for React workspaces, and `/app/requester`, `/app/requester/devices`, or `/app/device/*` for web-first requester/web-agent checks.
 
 ## CI Diagnostics
 

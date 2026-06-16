@@ -156,6 +156,8 @@ For the Tech Panel business marker on a self-signed HTTPS stand, run `scripts/bu
 
 - [admin](https://192.168.100.17:9443/admin)
 - [help](https://192.168.100.17:9443/help)
+- React workspace routes under `https://192.168.100.17:9443/app/*` when that workspace is the changed surface.
+- Web-first requester/web-agent routes: `/app/requester`, `/app/requester/devices`, and compatible `/app/device/*` linking routes. These checks must verify browser-visible profile/device binding state, not only local agent GUI/UIA.
 - если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443` — helper проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и теперь ожидает полноценный webapp-mode как каноническое состояние после финального cutover
 - Для техпанели дополнительно проверить status/health/full logs и confirm-модалку для `stop/restart`.
 
@@ -212,7 +214,7 @@ git status --short
 9. Запускать и останавливать удалённый сервер только через `python scripts/manage_remote_stack.py start server` и `python scripts/manage_remote_stack.py stop server`.
 10. Перед server lifecycle-проверками держать поднятым внешний control-plane: `python scripts/manage_remote_stack.py start control` или `python scripts/release_server_to_remote.py`.
 11. Если `status server` показывает `failed`, но `smoke server` или браузерный GET на `:8666` живы, сначала смотреть строку `external_listener`: это признак ручного `python server.py` вне canonical lifecycle.
-12. Если менялся веб-интерфейс, обязательно открыть [admin](https://192.168.100.17:9443/admin) через браузерный MCP; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
+12. Если менялся веб-интерфейс, обязательно открыть канонический route на `https://192.168.100.17:9443` через браузерный MCP: `/admin` для admin/tech-panel, `/app/*` для React workspace, `/app/requester`, `/app/requester/devices` и `/app/device/*` для web-first requester/web-agent цепочек; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
 13. Для полного verified server-flow по явному запросу пользователя использовать `python scripts/release_server_to_remote.py` в дефолтном `--gate full`; для итерационного стенда использовать `--gate quick`, а emergency bypass CI gate через `--skip-ci-check` использовать только как совместимый аварийный алиас.
 14. GitHub push выполняется сразу после каждого локального commit. Green CI artifact и full gate обязательны не для самого dev-branch push, а для финального release/deploy-claim; Codex напоминает о них в конце блока изменений и уточняет запуск, если план выполняется частями.
 

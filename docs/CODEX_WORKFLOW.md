@@ -388,8 +388,10 @@ python scripts/release_server_to_remote.py --gate quick
 Если менялся web UI, проверить браузером каноничный адрес:
 
 ```text
-https://192.168.100.17:9443/admin
+https://192.168.100.17:9443
 ```
+
+Route selection depends on the browser-visible surface: `/admin` for admin/tech-panel, `/app/*` for React workspaces, and `/app/requester`, `/app/requester/devices`, or `/app/device/*` for web-first requester/web-agent flows.
 
 После проверок остановить сервер, если пользователь явно не попросил оставить его запущенным:
 

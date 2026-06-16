@@ -124,7 +124,9 @@ Before claiming completion:
 
 ## Browser canon
 
-- Use only `https://192.168.100.17:9443/admin` for project browser checks unless the user explicitly requests another target.
+- Use the deployed stand origin `https://192.168.100.17:9443` for project browser checks unless the user explicitly requests another target.
+- Use `/admin` for admin, tech panel, legacy admin/support checks.
+- Use the matching `/app/*` route for React workspace checks; web-first requester and web-agent cabinet checks use `/app/requester`, `/app/requester/devices`, and compatible `/app/device/*` linking routes.
 - Browser-visible server UI changes require MCP/browser evidence, not only smoke/API/DB checks.
 - If tech panel or server-control flow changes, verify status, health, full logs, and confirm behavior for `stop` or `restart`.
 

@@ -11,7 +11,8 @@ Do not mix validation modes.
 Every finding must explicitly state which path was tested:
 
 - real browser UI;
-- real local agent GUI via pywinauto/UIA;
+- real requester/web-agent cabinet in the browser (`/app/requester`, `/app/requester/devices`, `/app/device/*`);
+- real local native agent GUI via pywinauto/UIA for desktop/tray/launcher-only flows;
 - local GUI automation bridge `/ui/automation/run`;
 - direct HTTP/API;
 - raw WebSocket probe;
@@ -24,7 +25,8 @@ A scenario is not passed unless the required canonical path passes. A bridge/hel
 Examples:
 
 - Browser support workflow must be verified in the real browser, not only via direct HTTP.
-- Agent-facing GUI workflow must be verified through pywinauto/UIA when the plan requires GUI evidence.
+- Web-first requester or web-agent cabinet workflow must be verified in the authenticated browser cabinet, with the target device resolved from the user's Registry binding, not inferred from the browser host.
+- Native desktop agent workflow must be verified through pywinauto/UIA when the plan requires tray, launcher, Qt window, or local desktop evidence.
 - `/ui/automation/run` is not automatically equivalent to GUI until the same account/session/context behavior is verified.
 - Raw WS probe is not equivalent to a full agent and must not receive live pending commands unless this is part of the test.
 
@@ -87,6 +89,7 @@ Every bug must be classified into one primary layer and optional secondary layer
 - agent SQLite/idempotency;
 - operation lifecycle;
 - UI projection;
+- requester web cabinet / device binding;
 - local GUI/UIA;
 - automation bridge;
 - module runtime;
@@ -125,6 +128,8 @@ Protocol-negative invalid handshake may not need browser evidence, but it must s
 
 If a result is visible to support/admin/requester, verify it in a real browser.
 
+For web-first requester and web-agent cabinet scenarios, the browser path is the canonical UI path. The evidence must show the authenticated web account, the relevant requester profile/device-link state, and the server-resolved target device or primary agent. Do not treat the computer running the browser as the diagnostic target unless the Registry binding says it is that user's selected or primary device.
+
 Required browser evidence:
 
 - URL;
@@ -134,9 +139,9 @@ Required browser evidence:
 
 Do not replace browser confirmation with DB/API success.
 
-## 6. pywinauto/UIA evidence is mandatory for local GUI flows
+## 6. UIA evidence is mandatory only for native local GUI flows
 
-For local Windows agent GUI scenarios:
+For native Windows agent GUI scenarios that depend on the desktop application, tray, launcher, Qt windows, or local-only controls:
 
 - use `pywinauto==0.6.9`;
 - use `Application(backend="uia")`;
@@ -147,7 +152,9 @@ For local Windows agent GUI scenarios:
 - set timeouts for child traversal to avoid hangs;
 - record window title, process id and control evidence.
 
-A GUI scenario is not green if it passed only through `/ui/automation/run`.
+UIA is not the canonical proof for web-first requester/device-link/ticket-create flows when those flows are available in the web cabinet. In that model, the canonical proof is browser evidence from the appropriate `/app/*` route plus server/agent state. UIA may support local runtime evidence, but it cannot replace the browser cabinet check.
+
+A native GUI scenario is not green if it passed only through `/ui/automation/run`.
 
 ## 7. Automation bridge is a test surface, not the product UI
 
