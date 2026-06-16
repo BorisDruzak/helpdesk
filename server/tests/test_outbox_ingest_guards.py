@@ -29,6 +29,15 @@ class _BatchAckRecorder:
         self.flush_calls.append(device_id)
 
 
+def _valid_device_outbox_payload(outbox_id: str, device_seq: int) -> dict:
+    return {
+        "outbox_id": outbox_id,
+        "item_type": "job_event",
+        "device_seq": device_seq,
+        "event": {"event": "tools_changed"},
+    }
+
+
 @pytest.mark.asyncio
 async def test_outbox_ingest_guard_returns_unauthorized_nack():
     called = {"legacy": 0}
@@ -51,7 +60,7 @@ async def test_outbox_ingest_guard_returns_unauthorized_nack():
             "type": "outbox_item",
             "trace_id": "trace-1",
             "meta": {"actor_role": "user"},
-            "payload": {"outbox_id": "10", "item_type": "job_event"},
+            "payload": _valid_device_outbox_payload("10", 1),
         },
         ctx,
     )
@@ -92,7 +101,7 @@ async def test_outbox_ingest_guard_returns_rate_limited_nack():
             "type": "outbox_item",
             "trace_id": "trace-2",
             "meta": {"actor_role": "agent"},
-            "payload": {"outbox_id": "11", "item_type": "job_event"},
+            "payload": _valid_device_outbox_payload("11", 2),
         },
         ctx,
     )
