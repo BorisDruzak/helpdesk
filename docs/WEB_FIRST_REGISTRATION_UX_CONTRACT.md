@@ -284,6 +284,7 @@ Requester-facing errors must be Russian and action-oriented:
 | Manual device-link code not found or expired | Код подключения не найден или истёк. |
 | Department id rejected | Выберите подразделение из справочника. |
 | Location id rejected | Выберите локацию из справочника. |
+| Current web account is not linked to the pairing device | Текущий веб-аккаунт не привязан к этому компьютеру. Выйдите и войдите под привязанным пользователем или привяжите устройство через регистрацию. |
 | Generic device-link load failure | Не удалось загрузить привязку устройства. |
 | Generic device-link confirmation failure | Не удалось подтвердить устройство. |
 | Profile incomplete gate | Заполните профиль, чтобы продолжить работу в кабинете пользователя. |
@@ -317,7 +318,7 @@ R4 device-link slice:
 - `server/web_api/registry_handlers.py` blocks registration confirmation with `REQUESTER_PROFILE_INCOMPLETE` until the web requester profile is complete.
 - `server/registry/browser_pairing_service.py` builds the registration claim profile snapshot from the resolved `RegistryPerson`, not browser-supplied profile fields.
 - `webapp/src/pages/requester/index.tsx` adds the `/app/requester/devices` manual-code/direct-link flow and maps link request statuses to Russian labels.
-- `webapp/src/pages/device-pairing/index.tsx` redirects incomplete-profile registration confirmation to `/app/requester/profile/setup`.
+- `webapp/src/pages/device-pairing/index.tsx` redirects incomplete-profile registration confirmation to `/app/requester/profile/setup` and explains `PAIRING_FORBIDDEN` without exposing backend wording.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r4-20260615/`.
 
 R6 profile-schema slice:

@@ -159,6 +159,52 @@ describe("DevicePairingPage", () => {
     expect(screen.queryByText(/session_token/i)).not.toBeInTheDocument();
   });
 
+  it("explains when the current web account is not linked to the paired device", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/registry/browser-pairings/pair-forbidden") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-forbidden",
+            purpose: "login",
+            status: "pending",
+            device: {
+              hostname: "ADMIN-2",
+              os: "Windows",
+              agent_version: "3.1.67",
+            },
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-forbidden/login/confirm") {
+        expect(init?.method).toBe("POST");
+        return jsonResponse(
+          {
+            status: "error",
+            error: "active binding not found for web user",
+            error_code: "PAIRING_FORBIDDEN",
+          },
+          403,
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderPage("/app/device/login?pairing_id=pair-forbidden");
+
+    expect(await screen.findByText("ADMIN-2")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить вход" }));
+
+    expect(
+      await screen.findByText(
+        "Текущий веб-аккаунт не привязан к этому компьютеру. Выйдите и войдите под привязанным пользователем или привяжите устройство через регистрацию.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("active binding not found for web user")).not.toBeInTheDocument();
+  });
+
   it("confirms registration pairing for the paired device", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

@@ -74,6 +74,9 @@ async function readJson<T>(response: Response): Promise<T | null> {
 
 function safePairingErrorMessage(errorPayload: ErrorResponse | null, fallbackMessage: string): string {
   const error = errorPayload?.error?.trim() ?? "";
+  if (errorPayload?.error_code === "PAIRING_FORBIDDEN") {
+    return "Текущий веб-аккаунт не привязан к этому компьютеру. Выйдите и войдите под привязанным пользователем или привяжите устройство через регистрацию.";
+  }
   const normalized = error.toLowerCase();
   if (normalized.includes("department_id")) {
     return "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u043e\u0434\u0440\u0430\u0437\u0434\u0435\u043b\u0435\u043d\u0438\u0435 \u0438\u0437 \u0441\u043f\u0440\u0430\u0432\u043e\u0447\u043d\u0438\u043a\u0430.";
