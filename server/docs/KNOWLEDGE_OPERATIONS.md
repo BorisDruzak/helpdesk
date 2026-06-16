@@ -252,6 +252,8 @@ Requester `/app/help` and the Qt agent GUI continue to call `POST /api/knowledge
 
 If rollout is disabled or the knowledge API is unavailable, ticket creation continues. The agent must not cache support-internal content locally and must not display internal/source metadata. Safe `knowledge_attempts` can still be attached to ticket creation when the user continues after failed self-service.
 
+2026-06-16 PA7 operational rule: requester and agent suggestions may send safe `affected_context` for on-behalf forms only as a query signal. The server must still evaluate requester-visible content with the creator/requester `EffectiveAudience`; affected user department, location, service or primary-agent facts cannot grant requester access to restricted Knowledge, Ask snippets, citations or RAG prompts. Stored requester/agent `knowledge_attempts` are scoped as `creator_visible` / `creator`; support-only attempt metadata is allowed only from support workspace code paths.
+
 P2.2.1 requester and agent flows consume the effective rollout decision from `POST /api/knowledge/suggest`. `/app/help` applies `show_before_form`, `require_suggestions_before_submit`, `allow_skip`, `min_suggestions`, no-suggestions/API-unavailable behavior, known-error hiding, quality/freshness label toggles, urgent/high-impact bypass and `max_suggestions`. The Qt agent GUI sends urgency/impact context, reads the returned rollout, applies the same submit gate at wizard state level, and uses safe default `allow_submit` if the API is unavailable before a policy is known. Both surfaces keep create-ticket flow available by default when rollout disables suggestions, rollout bucket excludes the context, no suggestions are returned or the API is temporarily unavailable.
 
 ## Search Analytics

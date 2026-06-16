@@ -3430,15 +3430,24 @@ async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) 
     kb_links = await TicketEventsRepo(session).list_kb_links(ticket_id)
     suggestions = await build_knowledge_suggestions(session, ticket, kb_links)
     custom_fields = getattr(ticket, "custom_fields", None) if isinstance(getattr(ticket, "custom_fields", None), dict) else {}
+    raw_attempts = custom_fields.get("knowledge_attempts")
+    requester_raw_attempts = [
+        attempt
+        for attempt in (raw_attempts if isinstance(raw_attempts, list) else [])
+        if isinstance(attempt, dict)
+        and str(attempt.get("surface") or "requester_portal").strip() == "requester_portal"
+    ]
     requester_attempts = [
         SupportKnowledgeRequesterAttempt(
             item_id=str(attempt.get("item_id") or ""),
             version_id=str(attempt.get("version_id") or "").strip() or None,
             result=str(attempt.get("result") or "viewed"),
             surface=str(attempt.get("surface") or "requester_portal"),
+            visibility_scope=str(attempt.get("visibility_scope") or "creator_visible"),
+            audience_scope=str(attempt.get("audience_scope") or "creator"),
             occurred_at=str(attempt.get("occurred_at") or ""),
         )
-        for attempt in sanitize_knowledge_attempts(custom_fields.get("knowledge_attempts"), surface="requester_portal")
+        for attempt in sanitize_knowledge_attempts(requester_raw_attempts, surface="requester_portal")
         if attempt.get("surface") == "requester_portal"
     ]
     request_template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}

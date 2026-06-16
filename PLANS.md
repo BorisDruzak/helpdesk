@@ -802,7 +802,7 @@ Acceptance:
 
 ## Phase PA7 — Knowledge and RAG access separation
 
-Status: not started.
+Status: completed.
 
 Goal:
 
@@ -816,6 +816,14 @@ Tasks:
 4. RAG/Ask must use creator audience in requester surface.
 5. Ticket metadata should record whether suggestions were creator-visible or support-only.
 
+Changes:
+
+- `KnowledgeSuggestionService` accepts `affected_context` only as an additional sanitized query source; raw ids, email, phone, token, cookie, password and session-like fields remain excluded from candidate queries.
+- Requester/agent `knowledge_attempts` are server-scoped to `visibility_scope=creator_visible` and `audience_scope=creator`; `support_workspace` attempts may record `support_only` / `affected_context` metadata.
+- Support ticket knowledge payloads expose sanitized `visibility_scope` and `audience_scope` for requester attempts and filter raw attempts by original `requester_portal` surface before sanitizing.
+- Requester Ask/RAG continues to pass the creator `EffectiveAudience` through retrieval and prompt construction, so inaccessible affected-user snippets cannot enter the prompt.
+- Support ticket suggestions still merge creator-audience requester-safe articles with support-role internal runbooks.
+
 Tests:
 
 - Creator outside affected department cannot see affected department restricted article.
@@ -823,6 +831,15 @@ Tests:
 - Support can see support-visible related articles.
 - RAG prompt contains no inaccessible affected-user restricted snippets for requester.
 - Suggestions skip raw ids, phone/email/token/session fields.
+
+Verification:
+
+- `python -m pytest server/tests/test_knowledge_feedback.py::test_knowledge_attempts_are_sanitized_for_ticket_custom_fields -q --tb=short` -> 1 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_knowledge_suggestions.py::test_knowledge_suggestions_use_requester_context_as_pre_submit_query server/tests/test_knowledge_suggestions.py::test_on_behalf_affected_context_is_safe_query_signal_not_audience_bypass server/tests/test_knowledge_suggestions.py::test_knowledge_suggestions_use_binding_context_before_audience_projection -q --tb=short` -> 3 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_knowledge_ask.py::test_public_knowledge_ask_applies_audience_rules_before_vector_retrieval_projection server/tests/test_knowledge_ask.py::test_requester_ask_prompt_uses_creator_audience_before_answer_generation -q --tb=short` -> 2 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_requester_create_ticket_accepts_catalog_form_payload server/tests/test_requester_workspace_api.py::test_requester_on_behalf_create_stores_authorized_ticket_context -q --tb=short` -> 2 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_returns_sources_and_workspace_payload server/tests/test_web_support_api.py::test_web_support_ticket_knowledge_suggestions_apply_requester_audience_rules -q --tb=short` -> 2 passed.
+- `pnpm --dir webapp exec vitest run src/features/queues/support-workspace-mappers.test.ts --reporter=dot` -> 1 file / 19 tests passed.
 
 Acceptance:
 

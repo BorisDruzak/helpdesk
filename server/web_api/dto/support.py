@@ -1222,6 +1222,8 @@ class SupportKnowledgeRequesterAttempt(BaseModel):
     version_id: str | None = None
     result: str
     surface: str
+    visibility_scope: str = "creator_visible"
+    audience_scope: str = "creator"
     occurred_at: str
 
 

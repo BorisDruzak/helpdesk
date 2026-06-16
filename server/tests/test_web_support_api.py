@@ -2285,6 +2285,8 @@ async def test_web_support_ticket_knowledge_suggestions_returns_sources_and_work
             "version_id": "version-502",
             "result": "viewed",
             "surface": "requester_portal",
+            "visibility_scope": "creator_visible",
+            "audience_scope": "creator",
             "occurred_at": "2026-06-12T08:15:00+00:00",
         }
     ]

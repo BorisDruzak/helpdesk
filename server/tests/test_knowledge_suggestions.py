@@ -124,6 +124,106 @@ async def test_knowledge_suggestions_use_requester_context_as_pre_submit_query(t
 
 
 @pytest.mark.asyncio
+async def test_on_behalf_affected_context_is_safe_query_signal_not_audience_bypass(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        repo = KnowledgeRepo(session)
+        await repo.upsert_space(
+            {"code": "pa7-on-behalf", "title": "PA7 On Behalf", "visibility": "requester", "lifecycle_status": "active"},
+            actor_id="admin",
+        )
+        creator_visible = await repo.create_item_draft(
+            {
+                "space_code": "pa7-on-behalf",
+                "slug": "creator-visible-affected-context",
+                "item_type": "article",
+                "title": "Creator visible affected context",
+                "summary": "General requester-safe Finance guidance for payroll-pa7-marker",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        creator_visible_version = await repo.create_version(
+            creator_visible["item_id"],
+            {
+                "title": "Creator visible affected context",
+                "body_format": "markdown",
+                "body": "Finance payroll-pa7-marker general requester-safe guidance.",
+            },
+            actor_id="support",
+        )
+        await repo.publish_item(creator_visible["item_id"], creator_visible_version["version_id"], actor_id="admin")
+
+        finance_only = await repo.create_item_draft(
+            {
+                "space_code": "pa7-on-behalf",
+                "slug": "finance-only-affected-context",
+                "item_type": "article",
+                "title": "Finance only affected context",
+                "summary": "Finance-only restricted guidance for payroll-pa7-marker",
+                "visibility": "requester",
+                "owner_actor_id": "owner",
+                "reviewer_actor_id": "reviewer",
+            },
+            actor_id="support",
+        )
+        finance_only_version = await repo.create_version(
+            finance_only["item_id"],
+            {
+                "title": "Finance only affected context",
+                "body_format": "markdown",
+                "body": "payroll-pa7-marker restricted finance-only instructions.",
+            },
+            actor_id="support",
+        )
+        await repo.publish_item(finance_only["item_id"], finance_only_version["version_id"], actor_id="admin")
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id="pa7-finance-only-context",
+                subject_type="item",
+                subject_id=finance_only["item_id"],
+                target_type="department",
+                target_id="finance",
+                effect="allow",
+                status="active",
+            )
+        )
+        await session.commit()
+
+    creator_audience = EffectiveAudience(
+        person_id="creator-it-pa7",
+        actor_id="creator-it-pa7@example.test",
+        actor_role="requester",
+        department_path=[{"department_id": "it", "code": "it"}],
+    )
+    async with session_maker() as session:
+        suggestions = await KnowledgeSuggestionService(session).suggest(
+            {
+                "surface": "requester_portal",
+                "affected_context": {
+                    "department_name": "Finance payroll-pa7-marker",
+                    "person_id": "raw-affected-person",
+                    "phone": "+7 900 111-22-33",
+                    "email": "affected@example.test",
+                    "session_token": "secret-session-token",
+                },
+            },
+            actor_role="requester",
+            effective_audience=creator_audience,
+        )
+
+    slugs = [item["slug"] for item in suggestions["suggestions"]]
+    assert slugs == ["creator-visible-affected-context"]
+    assert "finance-only-affected-context" not in str(suggestions)
+    assert "Finance only affected context" not in str(suggestions)
+    assert "raw-affected-person" not in str(suggestions)
+    assert "affected@example.test" not in str(suggestions)
+    assert "secret-session-token" not in str(suggestions)
+
+
+@pytest.mark.asyncio
 async def test_knowledge_suggestions_use_binding_context_before_audience_projection(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:

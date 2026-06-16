@@ -307,6 +307,8 @@ export type SupportWorkspaceKnowledge = {
     result: string;
     resultLabel: string;
     surface: string;
+    visibilityScope: string;
+    audienceScope: string;
     occurredAt: string;
     occurredAtLabel: string;
   }>;

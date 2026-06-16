@@ -89,7 +89,7 @@ def _candidate_queries(context: dict[str, Any]) -> list[str | None]:
     seen: set[str] = set()
     for key in ("query", "title", "description"):
         _append_query_candidate(candidates, seen, context.get(key))
-    for key in ("form_payload", "requester_context", "device_metadata"):
+    for key in ("form_payload", "requester_context", "affected_context", "device_metadata"):
         for value in _collect_safe_context_values(context.get(key), key=key):
             _append_query_candidate(candidates, seen, value)
     return candidates or [None]

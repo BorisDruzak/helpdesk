@@ -12,6 +12,7 @@ from app.db.models import KnowledgeAudienceRule, RegistryDepartment, RegistryPer
 from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.ask_service import KnowledgeAskService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
+from registry.audience_contracts import EffectiveAudience
 
 
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
@@ -326,6 +327,69 @@ async def test_public_knowledge_ask_applies_audience_rules_before_vector_retriev
     assert "finance-ask-vector-scoped" not in slugs
     assert "Finance scoped" not in str(payload)
     assert "finance body" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_requester_ask_prompt_uses_creator_audience_before_answer_generation(test_engine, monkeypatch) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        visible = await _published_item(
+            session,
+            slug="pa7-ask-creator-visible",
+            title="PA7 creator visible Ask",
+            body="pa7-rag-payroll creator-visible snippet for ordinary requesters.",
+        )
+        hidden = await _published_item(
+            session,
+            slug="pa7-ask-finance-hidden",
+            title="PA7 Finance hidden Ask",
+            body="pa7-rag-payroll restricted finance snippet must never enter requester prompt.",
+        )
+        session.add(
+            KnowledgeAudienceRule(
+                rule_id="pa7-ask-finance-hidden",
+                subject_type="item",
+                subject_id=hidden["item_id"],
+                target_type="department",
+                target_id="finance",
+                effect="allow",
+                status="active",
+            )
+        )
+        await _enable_rag(session)
+        await _enable_answer_ai(session)
+        await session.commit()
+
+    monkeypatch.setenv("OPENROUTER_ANSWER_TEST_KEY", "test-answer-secret")
+    prompts: list[str] = []
+
+    async def fake_transport(**kwargs):
+        prompt = kwargs["json"]["messages"][1]["content"]
+        prompts.append(prompt)
+        return {"choices": [{"message": {"content": "Используйте доступную инструкцию. [1]"}}]}
+
+    creator_audience = EffectiveAudience(
+        person_id="creator-it-pa7-ask",
+        actor_id="creator-it-pa7-ask@example.test",
+        actor_role="requester",
+        department_path=[{"department_id": "it", "code": "it"}],
+    )
+    async with session_maker() as session:
+        result = await KnowledgeAskService(session, transport=fake_transport).ask(
+            query="pa7-rag-payroll",
+            actor_role="requester",
+            surface="requester_portal",
+            effective_audience=creator_audience,
+        )
+        await session.commit()
+
+    assert result["answer_status"] == "answered"
+    assert prompts
+    assert "PA7 creator visible Ask" in prompts[0]
+    assert "creator-visible snippet" in prompts[0]
+    assert "PA7 Finance hidden Ask" not in prompts[0]
+    assert "restricted finance snippet" not in prompts[0]
+    assert [item["item"]["slug"] for item in result["retrieval_results"]] == [visible["slug"]]
 
 
 @pytest.mark.asyncio

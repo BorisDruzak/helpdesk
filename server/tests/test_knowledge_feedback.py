@@ -50,6 +50,7 @@ async def test_knowledge_feedback_records_deflection_without_ticket(test_engine)
     assert event["source_surface"] == "requester_portal"
 
 
+@pytest.mark.no_db
 def test_knowledge_attempts_are_sanitized_for_ticket_custom_fields() -> None:
     attempts = sanitize_knowledge_attempts(
         [
@@ -57,6 +58,9 @@ def test_knowledge_attempts_are_sanitized_for_ticket_custom_fields() -> None:
                 "item_id": "item-1",
                 "version_id": "version-1",
                 "result": "not_helpful",
+                "surface": "support_workspace",
+                "visibility_scope": "support_only",
+                "audience_scope": "affected_context",
                 "device_id": "secret-device",
                 "requester_id": "secret-user",
                 "custom_fields": {"raw": True},
@@ -73,6 +77,8 @@ def test_knowledge_attempts_are_sanitized_for_ticket_custom_fields() -> None:
             "version_id": "version-1",
             "result": "not_helpful",
             "surface": "requester_portal",
+            "visibility_scope": "creator_visible",
+            "audience_scope": "creator",
             "occurred_at": attempts[0]["occurred_at"],
         },
         {
@@ -80,6 +86,8 @@ def test_knowledge_attempts_are_sanitized_for_ticket_custom_fields() -> None:
             "version_id": None,
             "result": "viewed",
             "surface": "requester_portal",
+            "visibility_scope": "creator_visible",
+            "audience_scope": "creator",
             "occurred_at": attempts[1]["occurred_at"],
         },
     ]
@@ -87,6 +95,29 @@ def test_knowledge_attempts_are_sanitized_for_ticket_custom_fields() -> None:
     assert stored["knowledge_attempts"] == attempts
     assert "device_id" not in str(stored)
     assert "requester_id" not in str(stored)
+
+    support_attempts = sanitize_knowledge_attempts(
+        [
+            {
+                "item_id": "item-support",
+                "result": "suggested",
+                "visibility_scope": "support_only",
+                "audience_scope": "affected_context",
+            }
+        ],
+        surface="support_workspace",
+    )
+    assert support_attempts == [
+        {
+            "item_id": "item-support",
+            "version_id": None,
+            "result": "suggested",
+            "surface": "support_workspace",
+            "visibility_scope": "support_only",
+            "audience_scope": "affected_context",
+            "occurred_at": support_attempts[0]["occurred_at"],
+        }
+    ]
 
 
 @pytest.mark.asyncio

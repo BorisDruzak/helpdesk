@@ -1170,6 +1170,8 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
                     "version_id": "kb-version-1",
                     "result": "not_helpful",
                     "surface": "requester_portal",
+                    "visibility_scope": "creator_visible",
+                    "audience_scope": "creator",
                     "timestamp": "2026-06-08T08:00:00Z",
                 }
             ],
@@ -1208,6 +1210,8 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
             "version_id": "kb-version-1",
             "result": "not_helpful",
             "surface": "requester_portal",
+            "visibility_scope": "creator_visible",
+            "audience_scope": "creator",
             "occurred_at": "2026-06-08T08:00:00Z",
         }
     ]

@@ -952,6 +952,8 @@ export type SupportTicketKnowledgeSuggestionsPayload = {
     version_id?: string | null;
     result: string;
     surface: string;
+    visibility_scope?: string;
+    audience_scope?: string;
     occurred_at: string;
   }>;
   similar_tickets: Array<{

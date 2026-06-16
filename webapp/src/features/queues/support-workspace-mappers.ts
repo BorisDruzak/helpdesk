@@ -1019,6 +1019,8 @@ export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestio
       result: attempt.result,
       resultLabel: KNOWLEDGE_ATTEMPT_RESULT_LABELS[attempt.result] ?? attempt.result,
       surface: attempt.surface,
+      visibilityScope: attempt.visibility_scope ?? "creator_visible",
+      audienceScope: attempt.audience_scope ?? "creator",
       occurredAt: attempt.occurred_at,
       occurredAtLabel: formatKnowledgeAttemptDate(attempt.occurred_at),
     })),
