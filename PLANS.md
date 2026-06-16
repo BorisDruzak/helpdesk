@@ -7,6 +7,7 @@ Previous completed baseline:
 - Web-first registration/profile/device-linking refactor is treated as completed baseline at candidate `c5be05b90cb991903b08cee7cd88c7ecbe06bf11` plus follow-up agent cleanup noted in the previous PLANS history.
 - The old active plan established: account != profile, profile != device, device != user; browser-first registration; GUI agent no longer owns requester profile; request forms and Knowledge consume Registry context.
 - This new plan does not revert that architecture. It clarifies how normal requester ticket context and diagnostic target selection work after registration.
+- 2026-06-16 follow-up audit closed source-level drift in the 3.1.67 agent contract: `/ui/automation/run` no longer exposes an active-profile status flag or locally rejects `ticket.create` on a profile gate before the server account-session contract runs; `ChatPanel` no longer keeps a `requester_profiles.json` path or `has_active_profile` gate. Verification: focused red/green tests -> 2 passed, targeted agent/docs tests -> 194 + 14 passed, `python scripts/verify_workspace.py` -> passed, `python scripts/run_ci_suite.py --layer verify_workspace --layer pc_agent_pytest` -> green with 455 selected pc_agent tests passed.
 
 ---
 

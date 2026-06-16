@@ -34,6 +34,7 @@ class GuiAutomationController:
     async def get_status(self) -> dict[str, Any]:
         chat_panel = self.window.chat_panel
         current_widget = self.window.main_content_stack.currentWidget()
+        account_session = chat_panel._current_account_session()
         return {
             "window_visible": self.window.isVisible(),
             "window_minimized": self.window.isMinimized(),
@@ -44,7 +45,7 @@ class GuiAutomationController:
             "connection_state": str(getattr(self.window, "_server_connection_state", "unknown")),
             "connection_detail": str(getattr(self.window, "_server_connection_detail", "")),
             "tray_available": bool(self.tray_manager and self.tray_manager.available),
-            "has_active_profile": chat_panel.has_active_profile(),
+            "has_account_session": bool(account_session and account_session.get("account_mode")),
             "active_ticket_id": chat_panel.active_ticket_id,
             "ticket_count": len(chat_panel.tickets_cache),
             "ticket_ids": [
@@ -197,8 +198,6 @@ class GuiAutomationController:
 
     async def _create_ticket(self, payload: dict[str, Any], *, trace_parent_action_id: Optional[str] = None) -> dict[str, Any]:
         chat_panel = self.window.chat_panel
-        if not chat_panel.has_active_profile():
-            raise ValueError("active requester profile is required before ticket.create")
 
         description = str(payload.get("description") or "").strip()
         if not description:

@@ -617,7 +617,7 @@ def test_ticket_create_wizard_refreshes_catalog_cards_after_catalog_only_update(
         def _profiles(self):
             return self._profiles_data["profiles"]
 
-        def has_active_profile(self):
+        def has_account_session(self):
             return True
 
         def current_requester_profile_summary(self):
@@ -734,7 +734,7 @@ def test_ticket_create_wizard_first_step_combines_type_and_profile():
     assert "Тип обращения" in form_step_source
     assert "profile_selector" in form_step_source
     assert "manage_profiles_btn" in form_step_source
-    assert "return self._panel.has_active_profile()" not in ready_source
+    assert "return self._panel.has_account_session()" not in ready_source
     assert "bool(self._selected_form())" in ready_source
     assert "Выберите раздел и тип обращения" in caption_source
 
@@ -827,7 +827,7 @@ def test_ticket_create_wizard_hides_legacy_profile_selector_when_account_session
                 "display_name": "Server Account",
             }
 
-        def has_active_profile(self):
+        def has_account_session(self):
             return True
 
         def current_requester_profile_summary(self):
@@ -851,6 +851,8 @@ def test_chat_panel_has_no_local_profile_manager_form_or_registry_sync():
     manager_source = inspect.getsource(ChatPanel.open_profile_manager)
 
     assert "_profiles_data" not in source
+    assert "requester_profiles.json" not in source
+    assert "has_active_profile" not in source
     assert "QFormLayout" not in manager_source
     assert "QLineEdit" not in manager_source
     assert "QListWidget" not in manager_source
@@ -888,7 +890,7 @@ async def test_ticket_create_wizard_submit_click_calls_create_when_ready():
         def _profiles(self):
             return self._profiles_data["profiles"]
 
-        def has_active_profile(self):
+        def has_account_session(self):
             return True
 
         def current_requester_profile_summary(self):
@@ -961,7 +963,7 @@ def test_ticket_create_wizard_exposes_stable_uia_ids():
         def _profiles(self):
             return self._profiles_data["profiles"]
 
-        def has_active_profile(self):
+        def has_account_session(self):
             return True
 
         def current_requester_profile_summary(self):
@@ -1017,7 +1019,7 @@ async def test_ticket_create_wizard_submit_confirmation_can_cancel_create():
         def _profiles(self):
             return self._profiles_data["profiles"]
 
-        def has_active_profile(self):
+        def has_account_session(self):
             return True
 
         def current_requester_profile_summary(self):

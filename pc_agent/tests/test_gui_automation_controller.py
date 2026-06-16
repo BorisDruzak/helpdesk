@@ -19,6 +19,8 @@ def test_automation_controller_has_no_local_profile_mutation_actions():
     assert "profile.select" not in source
     assert "_upsert_profile" not in source
     assert "_select_profile" not in source
+    assert "has_active_profile" not in source
+    assert "active requester profile is required" not in source
     assert "active_profile_id" not in source
     assert "profile_count" not in source
 
@@ -92,7 +94,7 @@ class _ChatPanel:
         self.attach_calls: list[dict] = []
         self.detail_refresh_account_sessions: list[dict | None] = []
 
-    def has_active_profile(self) -> bool:
+    def has_account_session(self) -> bool:
         return True
 
     def _profiles(self) -> list[dict]:

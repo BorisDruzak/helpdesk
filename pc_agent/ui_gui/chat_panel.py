@@ -2099,7 +2099,7 @@ class TicketCreateDialog(QDialog):
         self._refresh_profiles()
 
     def _on_accept(self) -> None:
-        if not self.panel.has_active_profile():
+        if not self.panel.has_account_session():
             QMessageBox.warning(self, "Аккаунт обязателен", "Сначала войдите в аккаунт на этом устройстве.")
             return
         if not self.description_input.toPlainText().strip():
@@ -3347,7 +3347,7 @@ class TicketCreateWizardWidget(QFrame):
     def _step_ready(self, step: int) -> bool:
         if step == 0:
             return (
-                self._panel.has_active_profile()
+                self._panel.has_account_session()
                 and bool(self._selected_form())
             )
         if step == 1:
@@ -3415,7 +3415,7 @@ class TicketCreateWizardWidget(QFrame):
 
     def _step_validation_error(self, step: int) -> str:
         if step == 0:
-            if not self._panel.has_active_profile():
+            if not self._panel.has_account_session():
                 return "Выберите аккаунт обращения перед переходом дальше."
             return "Выберите тип обращения."
         if step == 1:
@@ -3903,12 +3903,12 @@ class ChatPanel(QWidget):
         self._tickets_model: Optional[TicketsListModel] = None
         self._account_session_provider = account_session_provider
 
-        self._profiles_path = resolve_data_root() / "requester_profiles.json"
-        self._ticket_form_pack_path = resolve_data_root() / "ticket_form_pack.json"
+        self._data_root = resolve_data_root()
+        self._ticket_form_pack_path = self._data_root / "ticket_form_pack.json"
         self._ticket_form_pack = self._load_ticket_form_pack()
-        self._service_catalog_path = resolve_data_root() / "service_catalog.json"
+        self._service_catalog_path = self._data_root / "service_catalog.json"
         self._service_catalog = self._load_service_catalog()
-        self._registry_options_path = resolve_data_root() / "registry_options.json"
+        self._registry_options_path = self._data_root / "registry_options.json"
         self._registry_options = self._load_registry_options()
 
         self._ticket_list_timer = QTimer(self)
@@ -4232,8 +4232,8 @@ class ChatPanel(QWidget):
             p.setColor(QPalette.ColorRole.Window, tl)
             self.timeline_container.setPalette(p)
 
-    def _profiles_dir_ready(self) -> None:
-        self._profiles_path.parent.mkdir(parents=True, exist_ok=True)
+    def _data_dir_ready(self) -> None:
+        self._data_root.mkdir(parents=True, exist_ok=True)
 
     def _load_profiles(self) -> dict:
         return {"active_profile_id": None, "profiles": []}
@@ -4251,7 +4251,7 @@ class ChatPanel(QWidget):
         return build_default_ticket_form_pack()
 
     def _save_ticket_form_pack(self) -> None:
-        self._profiles_dir_ready()
+        self._data_dir_ready()
         self._ticket_form_pack_path.write_text(
             json.dumps(self._ticket_form_pack, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -4270,7 +4270,7 @@ class ChatPanel(QWidget):
         return normalize_service_catalog({})
 
     def _save_service_catalog(self) -> None:
-        self._profiles_dir_ready()
+        self._data_dir_ready()
         self._service_catalog_path.write_text(
             json.dumps(self._service_catalog, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -4297,7 +4297,7 @@ class ChatPanel(QWidget):
         return {}
 
     def _save_registry_options(self) -> None:
-        self._profiles_dir_ready()
+        self._data_dir_ready()
         self._registry_options_path.write_text(
             json.dumps(self._registry_options, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -4426,7 +4426,7 @@ class ChatPanel(QWidget):
             return " | ".join(parts)
         return f"Аккаунт не выбран | {self.user_display_name}"
 
-    def has_active_profile(self) -> bool:
+    def has_account_session(self) -> bool:
         return self._has_account_session()
 
     def open_profile_manager(self, *, start_new: bool = False) -> None:
