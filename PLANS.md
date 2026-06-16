@@ -902,7 +902,7 @@ PA8 checkpoint, 2026-06-16:
 
 ## Phase PA9 — Admin registration/ownership center
 
-Status: not started.
+Status: completed in `codex/helpdesk-process-model`.
 
 Goal:
 
@@ -945,6 +945,24 @@ Tests:
 Acceptance:
 
 - Admin does not need to jump between inventory and registry to solve registration issues.
+
+Completed changes:
+
+- `/app/admin/registry` is titled `Центр регистрации и привязок`.
+- The overview tab now has scenario-first queue cards for pending device links, ownership conflicts, users without primary agent, devices without owner, incomplete profiles, duplicate identities, active sessions tied to transferred/inactive bindings, and unlinked UI accounts.
+- Queue cards open the existing claim, device, person, session or quality/timeline drawers and route password reset/change to the existing RBAC user surface instead of creating a second password flow.
+- Support ticket detail now renders `Контекст обращения от имени`: creator, affected user, target device, reason and diagnostic target source/status from `ticket_context`/diagnostic target payloads.
+
+Verification:
+
+- Red before implementation: `pnpm --dir webapp exec vitest run src/features/admin/registry/registry-overview-tab.test.tsx --reporter=dot` -> 2 failed because the scenario queues did not exist.
+- Red before implementation: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx --reporter=dot` -> 1 failed because `TicketOnBehalfContextCard` was not exported.
+- `pnpm --dir webapp exec vitest run src/features/admin/registry/registry-overview-tab.test.tsx src/pages/admin/registry-page.test.tsx src/pages/tickets/detail-page.test.tsx --reporter=dot` -> 31 passed.
+- `pnpm --dir webapp run build` -> passed; Vite reported only existing large chunk warnings.
+- `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q --tb=short` -> 14 passed.
+- `python scripts/test_web_first_registration_localization.py` -> passed.
+- `python scripts/verify_workspace.py` -> passed.
+- Live browser evidence for the canonical `https://192.168.100.17:9443/admin` is deferred to PA11/final validation because this PA9 checkpoint is local source state and the remote deployed mirror has not been updated in this slice.
 
 ---
 

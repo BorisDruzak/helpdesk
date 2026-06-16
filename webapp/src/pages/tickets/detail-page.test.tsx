@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   TicketApprovalsPanel,
   TicketAutomationPanel,
+  TicketOnBehalfContextCard,
   TicketPassportPanel,
   TicketRequestFormCard,
   TicketStatusActionPanel,
@@ -33,6 +34,48 @@ describe("TicketRequestFormCard", () => {
     expect(screen.getAllByText("printer").length).toBeGreaterThan(0);
     expect(screen.getByText("HP LaserJet Pro M404")).toBeInTheDocument();
     expect(screen.getByText("PRN-214-01")).toBeInTheDocument();
+  });
+});
+
+describe("TicketOnBehalfContextCard", () => {
+  it("renders creator, affected user, target device, reason and diagnostic target status", () => {
+    render(
+      <TicketOnBehalfContextCard
+        diagnosticTarget={{
+          target_device_id: "affected-device",
+          source: "affected_user_primary_agent",
+          agent_status: "online",
+          created_on_behalf: true,
+          creator_person_id: "creator-person",
+          affected_person_id: "affected-person",
+          affected_display_name: "Affected User",
+        }}
+        ticket={{
+          device_id: "creator-device",
+          requester_account_context: {
+            declared_account: {
+              reason: "Shift replacement",
+            },
+          },
+          requester_account_warning: "ticket_created_from_other_account_on_registered_device",
+          ticket_context: {
+            created_on_behalf: true,
+            creator: { person_id: "creator-person", actor_id: "support-test", display_name: "Support Operator" },
+            affected: { person_id: "affected-person", display_name: "Affected User" },
+            target_device: { device_id: "affected-device", agent_status: "online" },
+            diagnostic_target_source: "affected_user_primary_agent",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Контекст обращения от имени")).toBeInTheDocument();
+    expect(screen.getByText("Support Operator · support-test · creator-person")).toBeInTheDocument();
+    expect(screen.getByText("Affected User · affected-person")).toBeInTheDocument();
+    expect(screen.getByText("affected-device")).toBeInTheDocument();
+    expect(screen.getByText("Shift replacement")).toBeInTheDocument();
+    expect(screen.getByText("affected-device · Affected User")).toBeInTheDocument();
+    expect(screen.getByText("affected_user_primary_agent · online")).toBeInTheDocument();
   });
 });
 

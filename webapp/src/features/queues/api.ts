@@ -69,6 +69,7 @@ export type SupportQueuePayload = {
     requester_account_session_id?: string | null;
     requester_account_mode?: string | null;
     requester_account_context?: Record<string, unknown> | null;
+    ticket_context?: Record<string, unknown> | null;
     requester_account_warning?: string | null;
     device_id: string | null;
     updated_at: string | null;
@@ -195,6 +196,7 @@ export type SupportTicketDetailPayload = {
     requester_account_session_id?: string | null;
     requester_account_mode?: string | null;
     requester_account_context?: Record<string, unknown> | null;
+    ticket_context?: Record<string, unknown> | null;
     requester_account_warning?: string | null;
     device_id: string | null;
     ticket_type?: string | null;
