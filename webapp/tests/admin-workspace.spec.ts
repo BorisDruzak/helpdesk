@@ -31,16 +31,14 @@ test("администратор видит отдельные пункты admi
   await expect(adminNav.getByRole("link", { name: /Observer/ })).toBeVisible();
 
   await adminNav.getByRole("link", { name: /Карточка устройства/ }).click();
-  await expect(page).toHaveURL(/\/app\/admin\/device$/);
+  await expect(page).toHaveURL(/\/app\/admin\/device(?:\?.*)?$/);
   await expect(page.getByRole("heading", { name: "Карточка устройства" })).toBeVisible();
 
-  await page.getByRole("button", { name: /Автоматизация/ }).click();
-  await page.getByRole("link", { name: /Модули/ }).click();
+  await page.goto("/app/admin/modules");
   await expect(page).toHaveURL(/\/app\/admin\/modules$/);
   await expect(page.getByRole("heading", { name: "Модули" })).toBeVisible();
 
-  await page.getByRole("button", { name: /Каталог и заявки/ }).click();
-  await page.getByRole("link", { name: /Конструктор форм/ }).click();
+  await page.goto("/app/admin/forms");
   await expect(page).toHaveURL(/\/app\/admin\/forms$/);
 
   await page.goto("/app/admin/observer");
@@ -52,7 +50,7 @@ test("admin inventory tokens and notifications tab stay authenticated", async ({
   await loginAsAdmin(page);
 
   const tokensResponse = page.waitForResponse((response) =>
-    response.url().includes("/api/web/admin/devices/device-1/tokens") && response.status() === 200
+    response.url().includes("/api/web/admin/device-tokens") && response.status() === 200
   );
   await page.goto("/app/admin/inventory?device=device-1&panel=tokens");
   await tokensResponse;

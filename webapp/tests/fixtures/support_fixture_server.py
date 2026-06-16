@@ -928,6 +928,42 @@ def build_admin_device_tokens_payload(state: dict, device_id: str) -> dict:
     }
 
 
+def build_admin_agent_tokens_payload(state: dict, *, query: str = "", status_filter: str = "all") -> dict:
+    normalized_query = query.strip().lower()
+    visible_tokens = []
+    devices_by_id = {device["device_id"]: device for device in state["admin"]["devices"]}
+    for device_id, device in devices_by_id.items():
+        if status_filter == "online" and not device.get("online"):
+            continue
+        if status_filter == "offline" and device.get("online"):
+            continue
+        for token in build_admin_device_tokens_payload(state, device_id)["tokens"]:
+            token_payload = {
+                **token,
+                "device_id": device_id,
+                "hostname": device.get("hostname"),
+                "online": bool(device.get("online")),
+            }
+            haystack = " ".join(
+                str(token_payload.get(key) or "")
+                for key in ("token_hash", "token_prefix", "device_id", "hostname")
+            ).lower()
+            if normalized_query and normalized_query not in haystack:
+                continue
+            visible_tokens.append(token_payload)
+
+    return {
+        "query": query,
+        "status_filter": status_filter if status_filter in {"all", "online", "offline"} else "all",
+        "summary": {
+            "total_count": len(visible_tokens),
+            "active_count": sum(1 for item in visible_tokens if item["is_active"]),
+            "revoked_count": sum(1 for item in visible_tokens if not item["is_active"]),
+        },
+        "tokens": visible_tokens,
+    }
+
+
 def admin_module_rollout_mode_label(mode: str) -> str:
     if mode == "installed_devices":
         return "Обновлять установленные устройства"
@@ -2549,6 +2585,20 @@ async def handle_admin_device_tokens(request: web.Request) -> web.Response:
     return json_success(build_admin_device_tokens_payload(state, request.match_info["device_id"]))
 
 
+async def handle_admin_agent_tokens(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    state = request.app["fixture_state"]
+    return json_success(
+        build_admin_agent_tokens_payload(
+            state,
+            query=str(request.query.get("query") or ""),
+            status_filter=str(request.query.get("status") or "all"),
+        )
+    )
+
+
 async def handle_admin_device_token_revoke(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -2975,6 +3025,7 @@ def build_app() -> web.Application:
             web.patch("/api/web/admin/modules/rollout_settings", handle_admin_modules_rollout_settings_patch),
             web.patch("/api/web/admin/modules/{module_name}/preferred", handle_admin_module_preferred_patch),
             web.get("/api/web/admin/devices", handle_admin_devices),
+            web.get("/api/web/admin/device-tokens", handle_admin_agent_tokens),
             web.get("/api/web/admin/devices/{device_id}/tokens", handle_admin_device_tokens),
             web.post("/api/web/admin/devices/{device_id}/tokens/revoke", handle_admin_device_token_revoke),
             web.get("/api/web/admin/devices/{device_id}/updates", handle_admin_device_updates),
