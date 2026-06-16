@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 _DB_STARTED = False
+_DB_OWNED = False
 
 
 def repo_root() -> Path:
@@ -25,27 +26,41 @@ def configure_paths() -> tuple[Path, Path]:
 
 
 async def ensure_db_started() -> dict[str, Any]:
-    global _DB_STARTED
+    global _DB_STARTED, _DB_OWNED
     configure_paths()
     if _DB_STARTED:
         return {"started": False, "already_started": True}
+    from app.db import get_engine
+
+    try:
+        get_engine()
+    except RuntimeError:
+        pass
+    else:
+        _DB_STARTED = True
+        _DB_OWNED = False
+        return {"started": False, "already_started": True, "external": True}
+
     import config
     from app.db import init_db
 
     await init_db(config.DATABASE_URL)
     _DB_STARTED = True
+    _DB_OWNED = True
     return {"started": True, "already_started": False}
 
 
 async def shutdown_db_if_started() -> None:
-    global _DB_STARTED
+    global _DB_STARTED, _DB_OWNED
     if not _DB_STARTED:
         return
     configure_paths()
-    from app.db import shutdown_db
+    if _DB_OWNED:
+        from app.db import shutdown_db
 
-    await shutdown_db()
+        await shutdown_db()
     _DB_STARTED = False
+    _DB_OWNED = False
 
 
 def db_started() -> bool:

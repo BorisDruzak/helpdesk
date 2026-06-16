@@ -33,6 +33,8 @@ It exposes Observer, Tech locator, Context Index, DB health and persisted runtim
 
 The React admin route `/app/admin/ai-integration` shows the MCP server status, DB health, Context Index freshness, latest persisted runtime snapshot and the reload-after-deploy instruction. The backing endpoint is `GET /api/web/admin/ai-integration/mcp` and stays read-only.
 
+When the admin status endpoint invokes MCP DB health inside the already running aiohttp process, the MCP bootstrap reuses the existing app DB engine. The standalone stdio MCP process starts and owns its DB engine, so shutdown only closes engines started by that bootstrap path.
+
 After deploy, restart or reload the Codex MCP connection so the stdio process imports the new server code instead of keeping an old Python import graph.
 
 ## Codex Config Example
