@@ -276,6 +276,81 @@ async def test_diagnostic_policy_auto_run_starts_suggested_playbook_when_safe(te
 
 
 @pytest.mark.asyncio
+async def test_diagnostic_policy_auto_run_uses_ticket_context_target_device(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    current_device_id = str(uuid.uuid4())
+    target_device_id = str(uuid.uuid4())
+    playbook_key = f"diagnose_target_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "priority_class": "P1",
+        "target_device_id": target_device_id,
+        "target_agent_status": "online",
+        "diagnostic_target_source": "affected_user_primary_agent",
+        "ticket_context": {
+            "schema": "ticket_context_v1",
+            "created_on_behalf": True,
+            "affected": {"person_id": "affected-person", "display_name": "Affected User"},
+            "target_device": {
+                "device_id": target_device_id,
+                "agent_status": "online",
+                "hostname": "AFFECTED-PC",
+            },
+            "diagnostic_target_source": "affected_user_primary_agent",
+        },
+        "request_template": {
+            "key": "website_unavailable",
+            "diagnostic_policy": {
+                "id": "website_diagnostics",
+                "suggested_playbooks": [playbook_key],
+                "auto_run": {"enabled": True, "only_if_agent_online": True},
+            },
+        },
+    }
+
+    async with session_maker() as session:
+        await _seed_published_playbook(session, key=playbook_key)
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=current_device_id,
+            title="Coworker website unavailable",
+            description="Diagnostics must target affected primary agent",
+            status="in_progress",
+            priority="P1",
+            requester_id="creator-user",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda checked_device_id: checked_device_id == target_device_id),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        run = (await session.execute(select(PlaybookRun))).scalar_one()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "playbook_started",
+                )
+            )
+        ).scalar_one()
+
+        assert started == [run.id]
+        assert run.device_id == target_device_id
+        assert run.context_json["device"]["device_id"] == target_device_id
+        assert run.context_json["diagnostic_target"]["source"] == "affected_user_primary_agent"
+        assert run.context_json["diagnostic_target"]["affected_person_id"] == "affected-person"
+        assert event.device_id == target_device_id
+        assert event.payload["diagnostic_target"]["target_device_id"] == target_device_id
+
+
+@pytest.mark.asyncio
 async def test_diagnostic_policy_auto_run_skips_high_risk_playbook_without_explicit_consent(test_engine):
     session_maker = async_sessionmaker(test_engine)
     ticket_id = str(uuid.uuid4())
@@ -427,7 +502,7 @@ async def test_diagnostic_policy_auto_run_starts_high_risk_playbook_with_explici
     [
         ({"diagnostic_consent": {"required": True, "granted": False, "scope": "requester_device"}}, True, "consent_required"),
         ({"priority_class": "P3"}, True, "priority_not_allowed"),
-        ({}, False, "agent_offline"),
+        ({}, False, "target_agent_offline"),
     ],
 )
 async def test_diagnostic_policy_auto_run_skips_when_safety_gate_blocks(
@@ -501,3 +576,213 @@ async def test_diagnostic_policy_auto_run_skips_when_safety_gate_blocks(
         assert runs == []
         assert event.payload["reason"] == expected_reason
         assert event.payload["playbook_key"] == playbook_key
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_policy_auto_run_skips_offline_ticket_context_target(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    current_device_id = str(uuid.uuid4())
+    target_device_id = str(uuid.uuid4())
+    playbook_key = f"diagnose_offline_target_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "priority_class": "P1",
+        "target_device_id": target_device_id,
+        "target_agent_status": "offline",
+        "diagnostic_target_source": "affected_user_primary_agent",
+        "ticket_context": {
+            "schema": "ticket_context_v1",
+            "created_on_behalf": True,
+            "affected": {"person_id": "affected-person", "display_name": "Affected User"},
+            "target_device": {"device_id": target_device_id, "agent_status": "offline"},
+            "diagnostic_target_source": "affected_user_primary_agent",
+        },
+        "request_template": {
+            "key": "website_unavailable",
+            "diagnostic_policy": {
+                "id": "website_diagnostics",
+                "suggested_playbooks": [playbook_key],
+                "auto_run": {"enabled": True},
+            },
+        },
+    }
+
+    async with session_maker() as session:
+        await _seed_published_playbook(session, key=playbook_key)
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=current_device_id,
+            title="Coworker website unavailable",
+            description="Target is offline",
+            status="in_progress",
+            priority="P1",
+            requester_id="creator-user",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda _device_id: False),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        runs = (await session.execute(select(PlaybookRun))).scalars().all()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "diagnostic_autorun_skipped",
+                )
+            )
+        ).scalar_one()
+        updated_ticket = await session.get(Ticket, ticket_id)
+
+        assert started == []
+        assert runs == []
+        assert event.payload["reason"] == "target_agent_offline"
+        assert event.payload["diagnostic_target"]["target_device_id"] == target_device_id
+        assert updated_ticket.custom_fields["diagnostics"]["autorun_skips"][0]["reason"] == "target_agent_offline"
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_policy_auto_run_skips_missing_ticket_context_target(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    current_device_id = str(uuid.uuid4())
+    playbook_key = f"diagnose_missing_target_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "priority_class": "P1",
+        "target_agent_status": "missing",
+        "diagnostic_target_source": "no_primary_agent",
+        "ticket_context": {
+            "schema": "ticket_context_v1",
+            "created_on_behalf": True,
+            "affected": {"person_id": "affected-person", "display_name": "Affected User"},
+            "target_device": {
+                "device_id": None,
+                "agent_status": "missing",
+                "reason_code": "primary_device_missing",
+            },
+            "diagnostic_target_source": "no_primary_agent",
+        },
+        "request_template": {
+            "key": "website_unavailable",
+            "diagnostic_policy": {
+                "id": "website_diagnostics",
+                "suggested_playbooks": [playbook_key],
+                "auto_run": {"enabled": True},
+            },
+        },
+    }
+
+    async with session_maker() as session:
+        await _seed_published_playbook(session, key=playbook_key)
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=current_device_id,
+            title="Coworker website unavailable",
+            description="No target primary agent",
+            status="in_progress",
+            priority="P1",
+            requester_id="creator-user",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda checked_device_id: checked_device_id == current_device_id),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        runs = (await session.execute(select(PlaybookRun))).scalars().all()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "diagnostic_autorun_skipped",
+                )
+            )
+        ).scalar_one()
+
+        assert started == []
+        assert runs == []
+        assert event.payload["reason"] == "target_device_missing"
+        assert event.payload["diagnostic_target"]["reason_code"] == "primary_device_missing"
+
+
+@pytest.mark.asyncio
+async def test_request_form_playbook_trigger_skips_missing_ticket_context_target(test_engine):
+    session_maker = async_sessionmaker(test_engine)
+    ticket_id = str(uuid.uuid4())
+    current_device_id = str(uuid.uuid4())
+    playbook_key = f"request_form_missing_target_{uuid.uuid4().hex[:8]}"
+    custom_fields = {
+        "target_agent_status": "missing",
+        "diagnostic_target_source": "no_primary_agent",
+        "ticket_context": {
+            "schema": "ticket_context_v1",
+            "created_on_behalf": True,
+            "affected": {"person_id": "affected-person", "display_name": "Affected User"},
+            "target_device": {
+                "device_id": None,
+                "agent_status": "missing",
+                "reason_code": "primary_device_missing",
+            },
+            "diagnostic_target_source": "no_primary_agent",
+        },
+        "request_form_playbook_triggers": [
+            {
+                "event": "ticket_created",
+                "playbook_key": playbook_key,
+                "module_kind": "diagnostic",
+                "enabled": True,
+            }
+        ],
+    }
+
+    async with session_maker() as session:
+        await _seed_published_playbook(session, key=playbook_key)
+        ticket = Ticket(
+            ticket_id=ticket_id,
+            device_id=current_device_id,
+            title="Coworker website unavailable",
+            description="Request-form trigger must not use creator current device",
+            status="in_progress",
+            priority="P1",
+            requester_id="creator-user",
+            custom_fields=custom_fields,
+        )
+        session.add(ticket)
+        await session.flush()
+
+        started = await start_ticket_created_playbooks(
+            session=session,
+            state=SimpleNamespace(is_agent_online=lambda checked_device_id: checked_device_id == current_device_id),
+            ticket=ticket,
+            custom_fields=custom_fields,
+        )
+        await session.flush()
+
+        runs = (await session.execute(select(PlaybookRun))).scalars().all()
+        event = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "diagnostic_autorun_skipped",
+                )
+            )
+        ).scalar_one()
+
+        assert started == []
+        assert runs == []
+        assert event.payload["reason"] == "target_device_missing"
+        assert event.payload["source"] == "request_form"
+        assert event.payload["diagnostic_target"]["reason_code"] == "primary_device_missing"

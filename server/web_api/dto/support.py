@@ -789,6 +789,7 @@ class SupportTicketToolsPayload(BaseModel):
 
     ticket_id: str
     device_id: str | None = None
+    diagnostic_target: dict[str, Any] | None = None
     tools: list[SupportToolItem] = Field(default_factory=list)
 
 
@@ -855,6 +856,7 @@ class SupportTicketPlaybooksPayload(BaseModel):
 
     ticket_id: str
     device_id: str | None = None
+    diagnostic_target: dict[str, Any] | None = None
     diagnostic_policy: SupportDiagnosticPolicyPayload | None = None
     playbooks: list[SupportPlaybookItem] = Field(default_factory=list)
     recent_runs: list[SupportPlaybookRecentRun] = Field(default_factory=list)
@@ -1103,6 +1105,7 @@ class SupportToolActionResult(BaseModel):
 
     ticket_id: str
     device_id: str
+    diagnostic_target: dict[str, Any] | None = None
     tool_name: str
     dispatch_status: str
     operation_id: str
@@ -1116,6 +1119,7 @@ class SupportPlaybookRunActionResult(BaseModel):
 
     ticket_id: str
     device_id: str
+    diagnostic_target: dict[str, Any] | None = None
     playbook_version_id: int
     playbook_run_id: int
     status: str

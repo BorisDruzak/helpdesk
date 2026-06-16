@@ -978,9 +978,25 @@ export function TicketApprovalsPanel({
 
 type TicketAutomationPlaybook = SupportTicketPlaybooksPayload["playbooks"][number];
 type TicketDiagnosticPolicy = NonNullable<SupportTicketPlaybooksPayload["diagnostic_policy"]>;
+type TicketDiagnosticTarget = NonNullable<SupportTicketPlaybooksPayload["diagnostic_target"]>;
 
 function formatDiagnosticPolicyList(items: string[], fallback: string) {
   return items.length ? items.join(", ") : fallback;
+}
+
+function formatDiagnosticTarget(target: TicketDiagnosticTarget | null | undefined, fallbackDeviceId?: string | null) {
+  const targetDeviceId = target?.target_device_id ?? fallbackDeviceId ?? null;
+  const person = target?.affected_display_name ?? target?.affected_person_id ?? null;
+  if (targetDeviceId && person) {
+    return `${targetDeviceId} · ${person}`;
+  }
+  if (targetDeviceId) {
+    return targetDeviceId;
+  }
+  if (target?.reason_code) {
+    return `нет цели (${target.reason_code})`;
+  }
+  return "цель не определена";
 }
 
 function diagnosticPolicyBadges(policy: TicketDiagnosticPolicy) {
@@ -1004,7 +1020,9 @@ function diagnosticPolicyBadges(policy: TicketDiagnosticPolicy) {
 
 export function TicketAutomationPanel({
   autoPlaybookEvents,
+  diagnosticDeviceId = null,
   diagnosticPolicy = null,
+  diagnosticTarget = null,
   disabledReason = null,
   latestOperations,
   onRunPlaybook,
@@ -1019,7 +1037,9 @@ export function TicketAutomationPanel({
   setSelectedPlaybookVersionId,
 }: {
   autoPlaybookEvents: SupportTicketDetailPayload["timeline"];
+  diagnosticDeviceId?: string | null;
   diagnosticPolicy?: TicketDiagnosticPolicy | null;
+  diagnosticTarget?: TicketDiagnosticTarget | null;
   disabledReason?: string | null;
   latestOperations: SupportTicketDetailPayload["snapshot"]["latest_operations"];
   onRunPlaybook: (playbookVersionId: number) => void;
@@ -1062,6 +1082,16 @@ export function TicketAutomationPanel({
         </div>
 
         {playbooksLoading ? <p className="text-sm text-slate-500">Загружаем опубликованные плейбуки...</p> : null}
+        <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Цель диагностики</p>
+          <p className="mt-2 font-semibold text-slate-950">
+            {formatDiagnosticTarget(diagnosticTarget, diagnosticDeviceId)}
+          </p>
+          {diagnosticTarget?.source ? (
+            <p className="mt-1 text-xs text-slate-500">source: {diagnosticTarget.source}</p>
+          ) : null}
+        </div>
+
         {playbooksErrorMessage ? <p className="text-sm text-rose-700">{playbooksErrorMessage}</p> : null}
 
         {diagnosticPolicy ? (
@@ -3011,7 +3041,9 @@ export function TicketDetailPage() {
 
           <TicketAutomationPanel
             autoPlaybookEvents={autoPlaybookEvents}
+            diagnosticDeviceId={playbooksQuery.data?.device_id ?? toolsQuery.data?.device_id ?? null}
             diagnosticPolicy={playbooksQuery.data?.diagnostic_policy ?? null}
+            diagnosticTarget={playbooksQuery.data?.diagnostic_target ?? toolsQuery.data?.diagnostic_target ?? null}
             disabledReason={playbookAccess.allowed ? null : playbookAccess.reason}
             latestOperations={latestOperations}
             onRunPlaybook={(playbookVersionId) => {
@@ -3059,6 +3091,16 @@ export function TicketDetailPage() {
                     : "Не удалось загрузить инструменты."}
                 </p>
               ) : null}
+
+              <div className="rounded-[1rem] border border-border bg-surface-subtle px-4 py-3 text-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Цель запуска</p>
+                <p className="mt-2 font-semibold text-slate-950">
+                  {formatDiagnosticTarget(toolsQuery.data?.diagnostic_target, toolsQuery.data?.device_id ?? null)}
+                </p>
+                {toolsQuery.data?.diagnostic_target?.source ? (
+                  <p className="mt-1 text-xs text-slate-500">source: {toolsQuery.data.diagnostic_target.source}</p>
+                ) : null}
+              </div>
 
               {toolList.length ? (
                 <>

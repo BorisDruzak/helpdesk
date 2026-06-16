@@ -86,3 +86,43 @@ async def test_ticket_device_match_guard_allows_matching_ticket(monkeypatch):
     )
 
     assert response is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_ticket_device_match_guard_uses_ticket_context_target(monkeypatch):
+    class _FakeTicketEventsRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_ticket(self, _ticket_id):
+            return SimpleNamespace(
+                device_id="creator-current-device",
+                custom_fields={
+                    "target_device_id": "affected-primary-device",
+                    "ticket_context": {
+                        "target_device": {"device_id": "affected-primary-device"},
+                        "diagnostic_target_source": "affected_user_primary_agent",
+                    },
+                },
+            )
+
+    monkeypatch.setattr("app.db.get_session", lambda: _FakeSessionContext())
+    monkeypatch.setattr("app.repos.ticket_events_repo.TicketEventsRepo", _FakeTicketEventsRepo)
+
+    rejected = await _require_ticket_device_match(
+        ticket_id="ticket-on-behalf",
+        device_id="creator-current-device",
+    )
+    accepted = await _require_ticket_device_match(
+        ticket_id="ticket-on-behalf",
+        device_id="affected-primary-device",
+    )
+
+    assert rejected is not None
+    assert rejected.status == 403
+    payload = json.loads(rejected.text)
+    assert payload["error_code"] == "DEVICE_MISMATCH"
+    assert payload["bound_device_id"] == "affected-primary-device"
+    assert payload["diagnostic_target_source"] == "affected_user_primary_agent"
+    assert accepted is None

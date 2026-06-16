@@ -70,6 +70,7 @@ async def _require_ticket_device_match(
 ) -> web.Response | None:
     from app.db import get_session
     from app.repos.ticket_events_repo import TicketEventsRepo
+    from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 
     async with get_session() as session:
         ticket = await TicketEventsRepo(session).get_ticket(ticket_id)
@@ -85,11 +86,14 @@ async def _require_ticket_device_match(
                 status=404,
             )
 
-        bound_device_id = str(getattr(ticket, "device_id", "") or "").strip()
+        diagnostic_target = resolve_ticket_diagnostic_target(ticket)
+        diagnostic_target_payload = diagnostic_target.payload()
+        bound_device_id = str(diagnostic_target.dispatch_device_id or "").strip()
         if bound_device_id != device_id:
             logger.warning(
                 "[handle_tools_run] Ticket/device mismatch rejected before dispatch: "
-                f"ticket_id={ticket_id!r} bound_device_id={bound_device_id!r} target_device_id={device_id!r}"
+                f"ticket_id={ticket_id!r} bound_device_id={bound_device_id!r} target_device_id={device_id!r} "
+                f"diagnostic_target_source={diagnostic_target.source!r}"
             )
             return web.json_response(
                 {
@@ -99,6 +103,8 @@ async def _require_ticket_device_match(
                     "ticket_id": ticket_id,
                     "device_id": device_id,
                     "bound_device_id": bound_device_id,
+                    "diagnostic_target_source": diagnostic_target.source,
+                    "diagnostic_target": diagnostic_target_payload,
                 },
                 status=403,
             )

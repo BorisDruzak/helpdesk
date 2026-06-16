@@ -3900,6 +3900,17 @@ async def test_web_support_tool_action_returns_typed_result_and_dispatches_run_t
     assert payload["data"] == {
         "ticket_id": ticket_id,
         "device_id": "device-tool-run",
+        "diagnostic_target": {
+            "target_device_id": "device-tool-run",
+            "legacy_ticket_device_id": "device-tool-run",
+            "source": "legacy_ticket_device",
+            "agent_status": None,
+            "reason_code": None,
+            "created_on_behalf": False,
+            "creator_person_id": None,
+            "affected_person_id": None,
+            "affected_display_name": None,
+        },
         "tool_name": "network.diagnostics",
         "dispatch_status": "accepted",
         "operation_id": operation_id,
@@ -3914,6 +3925,79 @@ async def test_web_support_tool_action_returns_typed_result_and_dispatches_run_t
     assert captured["actor_role"] == "support"
     assert captured["wait_for_result"] is False
     assert captured["params"] == {"target": "srv-gateway", "_operation_id": operation_id}
+
+
+@pytest.mark.asyncio
+async def test_web_support_tool_action_uses_ticket_context_target_device(test_client, test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine)
+    custom_fields = {
+        "target_device_id": "affected-primary-device",
+        "diagnostic_target_source": "affected_user_primary_agent",
+        "ticket_context": {
+            "schema": "ticket_context_v1",
+            "created_on_behalf": True,
+            "affected": {"person_id": "affected-person", "display_name": "Affected User"},
+            "target_device": {"device_id": "affected-primary-device", "agent_status": "online"},
+            "diagnostic_target_source": "affected_user_primary_agent",
+        },
+    }
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login="support-test", password_hash="test", actor_role="support", is_active=True))
+        queue = await _seed_queue(session, code="servicedesk_l1", name="ServiceDesk L1", members=["support-test"])
+        ticket = Ticket(
+            ticket_id=str(uuid.uuid4()),
+            device_id="creator-current-device",
+            title="Run diagnostics for affected user",
+            description="Manual tool dispatch must use affected user's target device.",
+            status="in_progress",
+            requester_id="creator-user",
+            queue_id=queue.id,
+            assignee_id="support-test",
+            custom_fields=custom_fields,
+        )
+        ticket_id = ticket.ticket_id
+        session.add(ticket)
+        await session.commit()
+
+    captured: dict[str, object] = {}
+
+    class FakeToolExecutionService:
+        def __init__(self, _state):
+            pass
+
+        async def run_tool(self, *, device_id, ticket_id, tool_name, params, call_id, auth_context, wait_for_result):
+            captured.update(
+                {
+                    "device_id": device_id,
+                    "ticket_id": ticket_id,
+                    "tool_name": tool_name,
+                    "params": params,
+                    "actor_id": auth_context.actor_id,
+                    "actor_role": auth_context.actor_role,
+                    "wait_for_result": wait_for_result,
+                }
+            )
+            return {
+                "status": "accepted",
+                "operation_id": params["_operation_id"],
+                "trace_id": "trace-tool-run-target",
+            }
+
+    monkeypatch.setattr(support_handlers_module, "ToolExecutionService", FakeToolExecutionService)
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/tools/run",
+        headers=_support_headers(),
+        json={"tool_name": "network.diagnostics", "params": {"target": "srv-gateway"}},
+    )
+
+    assert response.status == 202, await response.text()
+    payload = await response.json()
+    assert captured["device_id"] == "affected-primary-device"
+    assert payload["data"]["device_id"] == "affected-primary-device"
+    assert payload["data"]["diagnostic_target"]["source"] == "affected_user_primary_agent"
+    assert payload["data"]["diagnostic_target"]["affected_person_id"] == "affected-person"
 
 
 @pytest.mark.asyncio
@@ -4198,6 +4282,17 @@ async def test_web_support_playbook_action_starts_ticket_bound_run(test_client, 
     assert payload["data"] == {
         "ticket_id": ticket_id,
         "device_id": "device-playbook-run",
+        "diagnostic_target": {
+            "target_device_id": "device-playbook-run",
+            "legacy_ticket_device_id": "device-playbook-run",
+            "source": "legacy_ticket_device",
+            "agent_status": None,
+            "reason_code": None,
+            "created_on_behalf": False,
+            "creator_person_id": None,
+            "affected_person_id": None,
+            "affected_display_name": None,
+        },
         "playbook_version_id": version_id,
         "playbook_run_id": 42,
         "status": "running",
@@ -4209,4 +4304,5 @@ async def test_web_support_playbook_action_starts_ticket_bound_run(test_client, 
     assert captured["device_id"] == "device-playbook-run"
     assert captured["trigger_type"] == "support_ticket"
     assert captured["context_json"]["ticket_id"] == ticket_id
+    assert captured["context_json"]["diagnostic_target"]["target_device_id"] == "device-playbook-run"
     assert captured["context_json"]["triggered_by"] == "support-test"

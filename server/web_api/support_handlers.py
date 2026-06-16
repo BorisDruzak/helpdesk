@@ -88,6 +88,7 @@ from tickets.sla_service import TicketSlaService
 from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
 from tickets.evidence_service import TicketEvidenceService
+from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 from tickets.knowledge_provider import build_knowledge_suggestions
 from knowledge.suggestion_service import KnowledgeSuggestionService
 from knowledge.passport_draft_service import KnowledgePassportDraftService
@@ -662,6 +663,14 @@ def _tool_risk_permission(risk_level: str | None) -> str:
     if normalized in HIGH_RISK_TOOL_LEVELS:
         return "module.tool.run.high_risk"
     return "module.tool.run.low_risk"
+
+
+def _support_diagnostic_target_payload(ticket: object) -> dict[str, Any]:
+    return resolve_ticket_diagnostic_target(ticket).payload()
+
+
+def _support_dispatch_device_id(ticket: object) -> str:
+    return str(resolve_ticket_diagnostic_target(ticket).dispatch_device_id or "").strip()
 
 
 async def _resolve_tool_risk_level(
@@ -2779,7 +2788,8 @@ async def _build_support_playbooks_payload(
     ticket: object,
     state: object | None = None,
 ) -> SupportTicketPlaybooksPayload:
-    device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
+    diagnostic_target = _support_diagnostic_target_payload(ticket)
+    device_id = _support_dispatch_device_id(ticket) or None
     available_tool_names = await _playbook_available_tool_names(device_id, state)
     rows = await session.execute(
         select(Playbook, PlaybookVersion, func.count(PlaybookStep.id))
@@ -2822,6 +2832,7 @@ async def _build_support_playbooks_payload(
     return SupportTicketPlaybooksPayload(
         ticket_id=str(getattr(ticket, "ticket_id")),
         device_id=device_id,
+        diagnostic_target=diagnostic_target,
         diagnostic_policy=_support_diagnostic_policy_payload(ticket),
         playbooks=playbooks,
         recent_runs=recent_runs,
@@ -2829,11 +2840,13 @@ async def _build_support_playbooks_payload(
 
 
 async def _build_support_tools_payload(ticket: object, tool_service: ToolExecutionService) -> SupportTicketToolsPayload:
-    device_id = getattr(ticket, "device_id", None)
+    diagnostic_target = _support_diagnostic_target_payload(ticket)
+    device_id = _support_dispatch_device_id(ticket)
     if not device_id:
         return SupportTicketToolsPayload(
             ticket_id=str(getattr(ticket, "ticket_id", "") or ""),
             device_id=None,
+            diagnostic_target=diagnostic_target,
             tools=[],
         )
 
@@ -2853,6 +2866,7 @@ async def _build_support_tools_payload(ticket: object, tool_service: ToolExecuti
     return SupportTicketToolsPayload(
         ticket_id=str(getattr(ticket, "ticket_id", "") or ""),
         device_id=str(device_id),
+        diagnostic_target=diagnostic_target,
         tools=tools,
     )
 
@@ -4144,7 +4158,8 @@ async def handle_web_support_queue_mass_action(request: web.Request):
                         continue
 
                     if action == "run_diagnostics":
-                        device_id = str(getattr(ticket, "device_id", "") or "").strip()
+                        diagnostic_target = _support_diagnostic_target_payload(ticket)
+                        device_id = _support_dispatch_device_id(ticket)
                         if not device_id:
                             results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="skipped", message="Тикет не привязан к устройству"))
                             continue
@@ -4179,6 +4194,7 @@ async def handle_web_support_queue_mass_action(request: web.Request):
                         tool_result = SupportToolActionResult(
                             ticket_id=ticket.ticket_id,
                             device_id=device_id,
+                            diagnostic_target=diagnostic_target,
                             tool_name=tool_name,
                             dispatch_status=dispatch_status,
                             operation_id=resolved_operation_id,
@@ -6308,13 +6324,15 @@ async def handle_web_support_run_tool(request: web.Request):
             if denied:
                 return denied
 
-            device_id = str(getattr(ticket, "device_id", "") or "").strip()
+            diagnostic_target = _support_diagnostic_target_payload(ticket)
+            device_id = _support_dispatch_device_id(ticket)
             if not device_id:
                 return web.json_response(
                     {
                         "status": "error",
                         "error": "Тикет не привязан к устройству, инструмент не запустить",
                         "error_code": "DEVICE_REQUIRED",
+                        "diagnostic_target": diagnostic_target,
                     },
                     status=400,
                 )
@@ -6435,6 +6453,7 @@ async def handle_web_support_run_tool(request: web.Request):
     payload = SupportToolActionResult(
         ticket_id=ticket.ticket_id,
         device_id=device_id,
+        diagnostic_target=diagnostic_target,
         tool_name=tool_name,
         dispatch_status=dispatch_status,
         operation_id=resolved_operation_id,
@@ -6486,13 +6505,15 @@ async def handle_web_support_run_playbook(request: web.Request):
             denied = await _require_permission(session, auth_context, "ticket.playbook.run")
             if denied:
                 return denied
-            device_id = str(getattr(ticket, "device_id", "") or "").strip()
+            diagnostic_target = _support_diagnostic_target_payload(ticket)
+            device_id = _support_dispatch_device_id(ticket)
             if not device_id:
                 return web.json_response(
                     {
                         "status": "error",
                         "error": "Тикет не привязан к устройству, плейбук нельзя запустить",
                         "error_code": "DEVICE_REQUIRED",
+                        "diagnostic_target": diagnostic_target,
                     },
                     status=400,
                 )
@@ -6526,6 +6547,7 @@ async def handle_web_support_run_playbook(request: web.Request):
                 "ticket_id": str(getattr(ticket, "ticket_id")),
                 "ticket_code": getattr(ticket, "ticket_code", None),
                 "requester_id": getattr(ticket, "requester_id", None),
+                "diagnostic_target": diagnostic_target,
                 "triggered_by": auth_context.actor_id,
                 "triggered_from": "support_ticket_detail",
             }
@@ -6542,6 +6564,7 @@ async def handle_web_support_run_playbook(request: web.Request):
             payload = SupportPlaybookRunActionResult(
                 ticket_id=str(getattr(ticket, "ticket_id")),
                 device_id=device_id,
+                diagnostic_target=diagnostic_target,
                 playbook_version_id=playbook_version_id,
                 playbook_run_id=int(run_id),
                 status="running",

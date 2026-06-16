@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.db.models import Operation, TicketEvidenceItem
+from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 from tickets.statuses import extract_priority_class
 
 TERMINAL_OPERATION_STATUSES = {"succeeded", "failed", "denied", "timed_out", "canceled"}
@@ -199,23 +200,26 @@ def collect_diagnostic_policy_auto_run_triggers(
     if not playbooks:
         return [], []
 
-    device_id = str(getattr(ticket, "device_id", "") or "")
+    diagnostic_target = resolve_ticket_diagnostic_target(ticket, fields)
+    device_id = diagnostic_target.dispatch_device_id or ""
     priority_class = extract_priority_class(ticket)
     allowed_priorities = _normalize_priority_list(auto_run.get("only_for_priorities"))
     consent_required = _policy_requires_requester_device_consent(policy)
     high_risk_consent_required = policy_requires_high_risk_tool_consent(policy)
     consent_granted = _has_granted_requester_device_consent(fields)
-    online_required = _bool_from_policy(auto_run.get("only_if_agent_online"), default=False)
     agent_online = _state_reports_agent_online(state, device_id)
 
     triggers: list[dict[str, Any]] = []
     skips: list[dict[str, Any]] = []
     for playbook_key in playbooks:
         reason: str | None = None
-        if allowed_priorities and priority_class not in allowed_priorities:
+        target_skip_reason = diagnostic_target.skip_reason
+        if target_skip_reason:
+            reason = target_skip_reason
+        elif not agent_online:
+            reason = "target_agent_offline"
+        elif allowed_priorities and priority_class not in allowed_priorities:
             reason = "priority_not_allowed"
-        elif online_required and not agent_online:
-            reason = "agent_offline"
         elif consent_required and not consent_granted:
             reason = "consent_required"
 
@@ -228,6 +232,7 @@ def collect_diagnostic_policy_auto_run_triggers(
                     "agent_online": agent_online,
                     "consent_required": consent_required,
                     "consent_granted": consent_granted,
+                    "diagnostic_target": diagnostic_target.payload(),
                     "source": "diagnostic_policy",
                 }
             )
@@ -250,6 +255,7 @@ def collect_diagnostic_policy_auto_run_triggers(
                     "consent_required": consent_required,
                     "high_risk_consent_required": high_risk_consent_required,
                 },
+                "diagnostic_target": diagnostic_target.payload(),
             }
         )
     return triggers, skips
@@ -484,9 +490,10 @@ async def apply_diagnostic_result_policy(
         "rerouted": rerouted,
         "ticket_status": getattr(ticket, "status", None),
     }
+    event_device_id = str(getattr(operation, "device_id", "") or resolve_ticket_diagnostic_target(ticket).dispatch_device_id or "")
     await ticket_repo.add_event(
         ticket_id=str(ticket.ticket_id),
-        device_id=str(ticket.device_id),
+        device_id=event_device_id,
         agent_seq=None,
         event_type="diagnostic_result_classified",
         payload=event_payload,
@@ -497,7 +504,7 @@ async def apply_diagnostic_result_policy(
     if target_queue_id is not None and not routing_locked:
         await ticket_repo.add_event(
             ticket_id=str(ticket.ticket_id),
-            device_id=str(ticket.device_id),
+            device_id=event_device_id,
             agent_seq=None,
             event_type="routing_applied",
             payload={
@@ -513,7 +520,7 @@ async def apply_diagnostic_result_policy(
         if rerouted:
             await ticket_repo.add_event(
                 ticket_id=str(ticket.ticket_id),
-                device_id=str(ticket.device_id),
+                device_id=event_device_id,
                 agent_seq=None,
                 event_type="queue_changed",
                 payload={

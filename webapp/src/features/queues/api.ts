@@ -646,9 +646,22 @@ export type SupportWorkspaceCleanupResult = {
   skipped_ticket_ids: string[];
 };
 
+export type SupportDiagnosticTarget = {
+  target_device_id?: string | null;
+  legacy_ticket_device_id?: string | null;
+  source?: string | null;
+  agent_status?: string | null;
+  reason_code?: string | null;
+  created_on_behalf?: boolean;
+  creator_person_id?: string | null;
+  affected_person_id?: string | null;
+  affected_display_name?: string | null;
+};
+
 export type SupportTicketToolsPayload = {
   ticket_id: string;
   device_id: string | null;
+  diagnostic_target?: SupportDiagnosticTarget | null;
   tools: Array<{
     tool_name: string;
     module_name: string | null;
@@ -682,6 +695,7 @@ export type SupportTicketToolsPayload = {
 export type SupportTicketPlaybooksPayload = {
   ticket_id: string;
   device_id: string | null;
+  diagnostic_target?: SupportDiagnosticTarget | null;
   diagnostic_policy?: {
     suggested_playbooks: string[];
     auto_run_enabled: boolean;
@@ -1087,6 +1101,7 @@ export type SupportTicketWorkspacePayload = {
 export type SupportToolActionResult = {
   ticket_id: string;
   device_id: string;
+  diagnostic_target?: SupportDiagnosticTarget | null;
   tool_name: string;
   dispatch_status: string;
   operation_id: string;
@@ -1098,6 +1113,7 @@ export type SupportToolActionResult = {
 export type SupportPlaybookRunActionResult = {
   ticket_id: string;
   device_id: string;
+  diagnostic_target?: SupportDiagnosticTarget | null;
   playbook_version_id: number;
   playbook_run_id: number;
   status: string;

@@ -742,7 +742,7 @@ Acceptance:
 
 ## Phase PA6 — Diagnostics and module execution target
 
-Status: not started.
+Status: completed.
 
 Goal:
 
@@ -756,6 +756,29 @@ Tasks:
 4. Ensure support/manual run tool UI clearly shows target device and affected user.
 5. Ensure request-form autorun/diagnostic policy uses server-resolved target.
 6. Add safety check: client cannot submit a different target device for requester ticket.
+
+Changes:
+
+- Added `server/tickets/diagnostic_target.py` as the runtime resolver for diagnostic/module execution target.
+- Request-form playbook triggers and diagnostic-policy auto-run now use `target_device_id` / `ticket_context.target_device` ahead of legacy `ticket.device_id`.
+- Auto-run skip evidence now records `target_agent_offline`, `target_device_missing` or `target_device_ambiguous` and persists the safe `diagnostic_target` payload.
+- Support manual tools/playbooks and bulk diagnostics resolve the same target before risk lookup, preflight and `run_tool`/`start_run`.
+- Legacy `/api/tools/run` rejects ticket/device mismatch against the resolved diagnostic target, so clients cannot force execution on the creator's current device for on-behalf tickets.
+- Support tools/playbooks DTOs and `/app/tickets/:ticketId` show the diagnostic target device/source before manual launch.
+- Diagnostic result classification/routing events use the operation device/resolved target instead of returning to the legacy ticket device.
+
+Verification:
+
+- Red before implementation: `python -m pytest server/tests/test_tools_run_device_binding.py::test_ticket_device_match_guard_uses_ticket_context_target -q --tb=short` -> failed because the guard still accepted the creator device and rejected the affected target.
+- Targeted green: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_ticket_diagnostic_policy.py -q --tb=short` -> 12 passed.
+- Targeted green: `python -m pytest server/tests/test_tools_run_device_binding.py -q --tb=short` -> 4 passed.
+- Targeted green: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_tools_returns_typed_inventory server/tests/test_web_support_api.py::test_web_support_tool_action_returns_typed_result_and_dispatches_run_tool server/tests/test_web_support_api.py::test_web_support_tool_action_uses_ticket_context_target_device server/tests/test_web_support_api.py::test_web_support_ticket_playbooks_returns_published_playbooks_for_ticket server/tests/test_web_support_api.py::test_web_support_playbook_action_starts_ticket_bound_run -q --tb=short` -> 5 passed.
+- Targeted green: `pnpm --dir webapp exec vitest run src/pages/tickets/detail-page.test.tsx src/features/queues/api.test.ts --reporter=dot` -> 2 files / 21 tests passed.
+- Workspace sanity: `python scripts/verify_workspace.py` -> passed.
+- Docs/catalog drift: `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q --tb=short` -> 14 passed.
+- Whitespace: `git diff --check` -> passed with existing CRLF warnings only.
+- Web build: `pnpm --dir webapp run build` -> passed with existing Vite chunk-size warnings.
+- Browser evidence: `python scripts/manage_remote_stack.py status control`, `python scripts/manage_remote_stack.py status server` -> both running; Browser opened `https://192.168.100.17:9443/app/tickets/...`, Tools tab rendered, console errors 0, workspace/timeline API calls 200. Evidence saved under `artifacts/browser_live_validation/pa6-diagnostic-target-tools*`.
 
 Tests:
 

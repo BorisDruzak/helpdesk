@@ -13,6 +13,7 @@ from app.db.models import Playbook, PlaybookVersion
 from app.repos import TicketEventsRepo
 from app.repos.playbook_repo import PlaybookRepo
 from app.services.playbook_engine import start_run
+from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 from tickets.diagnostic_policy import (
     HIGH_RISK_TOOL_LEVELS,
     collect_diagnostic_policy_auto_run_triggers,
@@ -68,9 +69,11 @@ def build_ticket_playbook_context(
     custom_fields: dict[str, Any] | None,
 ) -> dict[str, Any]:
     fields = custom_fields or {}
+    diagnostic_target = trigger.get("diagnostic_target") if isinstance(trigger.get("diagnostic_target"), dict) else {}
     return {
         "ticket": {"ticket_id": ticket_id},
         "device": {"device_id": device_id},
+        "diagnostic_target": deepcopy(diagnostic_target),
         "scenario": {
             "playbook_key": trigger.get("playbook_key"),
             "class": trigger.get("module_kind") or "diagnostic",
@@ -156,8 +159,10 @@ async def start_ticket_created_playbooks(
     if state is None or ticket is None:
         return []
     ticket_id = str(getattr(ticket, "ticket_id", "") or "")
-    device_id = str(getattr(ticket, "device_id", "") or "")
-    if not ticket_id or not device_id:
+    target = resolve_ticket_diagnostic_target(ticket, custom_fields)
+    fallback_device_id = str(getattr(ticket, "device_id", "") or "")
+    device_id = target.dispatch_device_id or ""
+    if not ticket_id:
         return []
     started: list[int] = []
     ticket_repo = TicketEventsRepo(session)
@@ -167,10 +172,33 @@ async def start_ticket_created_playbooks(
         custom_fields=custom_fields,
         state=state,
     )
+    if policy_skips:
+        fields = dict(custom_fields or getattr(ticket, "custom_fields", None) or {})
+        diagnostics = dict(fields.get("diagnostics") if isinstance(fields.get("diagnostics"), dict) else {})
+        existing_skips = diagnostics.get("autorun_skips")
+        autorun_skips = list(existing_skips) if isinstance(existing_skips, list) else []
+        for skip in policy_skips:
+            autorun_skips.append(
+                {
+                    "playbook_key": skip.get("playbook_key"),
+                    "reason": skip.get("reason"),
+                    "source": skip.get("source") or "diagnostic_policy",
+                    "diagnostic_target": deepcopy(skip.get("diagnostic_target") or target.payload()),
+                }
+            )
+        diagnostics["autorun_skips"] = autorun_skips[-20:]
+        diagnostics["last_autorun_skip_reason"] = policy_skips[-1].get("reason")
+        diagnostics["diagnostic_target"] = deepcopy(policy_skips[-1].get("diagnostic_target") or target.payload())
+        fields["diagnostics"] = diagnostics
+        await ticket_repo.update_ticket(ticket_id, custom_fields=fields)
+        custom_fields = fields
+
     for skip in policy_skips:
+        skip_target = skip.get("diagnostic_target") if isinstance(skip.get("diagnostic_target"), dict) else target.payload()
+        event_device_id = str(skip_target.get("target_device_id") or fallback_device_id or device_id)
         await ticket_repo.add_event(
             ticket_id=ticket_id,
-            device_id=device_id,
+            device_id=event_device_id,
             agent_seq=None,
             event_type="diagnostic_autorun_skipped",
             payload={
@@ -180,17 +208,37 @@ async def start_ticket_created_playbooks(
             trace_id=str(uuid.uuid4()),
         )
     triggers.extend(policy_triggers)
+    if not device_id and triggers:
+        skip_reason = target.skip_reason or "target_device_missing"
+        for trigger in triggers:
+            await ticket_repo.add_event(
+                ticket_id=ticket_id,
+                device_id=fallback_device_id,
+                agent_seq=None,
+                event_type="diagnostic_autorun_skipped",
+                payload={
+                    "trigger": trigger.get("trigger_type") or trigger.get("event") or "ticket_created",
+                    "playbook_key": trigger.get("playbook_key"),
+                    "reason": skip_reason,
+                    "source": trigger.get("source") or "request_form",
+                    "diagnostic_target": target.payload(),
+                },
+                trace_id=str(uuid.uuid4()),
+            )
+        return []
     if not triggers:
         return []
 
     for trigger in triggers:
         playbook_key = str(trigger.get("playbook_key") or "")
+        trigger_target = trigger.get("diagnostic_target") if isinstance(trigger.get("diagnostic_target"), dict) else target.payload()
+        trigger_device_id = str(trigger_target.get("target_device_id") or device_id)
         version = await _latest_published_playbook_version(session, playbook_key)
         if version is None:
             logger.warning(f"[playbook_form_trigger] published playbook not found key={playbook_key}")
             await ticket_repo.add_event(
                 ticket_id=ticket_id,
-                device_id=device_id,
+                device_id=trigger_device_id,
                 agent_seq=None,
                 event_type="diagnostic_autorun_skipped",
                 payload={
@@ -198,6 +246,7 @@ async def start_ticket_created_playbooks(
                     "playbook_key": playbook_key,
                     "reason": "playbook_not_published",
                     "source": trigger.get("source") or "request_form",
+                    "diagnostic_target": trigger_target,
                 },
                 trace_id=str(uuid.uuid4()),
             )
@@ -210,7 +259,7 @@ async def start_ticket_created_playbooks(
         ):
             await ticket_repo.add_event(
                 ticket_id=ticket_id,
-                device_id=device_id,
+                device_id=trigger_device_id,
                 agent_seq=None,
                 event_type="diagnostic_autorun_skipped",
                 payload={
@@ -221,13 +270,14 @@ async def start_ticket_created_playbooks(
                     "source": "diagnostic_policy",
                     "high_risk_tools": [item["tool"] for item in high_risk_tools],
                     "high_risk_levels": [item["risk_level"] for item in high_risk_tools],
+                    "diagnostic_target": trigger_target,
                 },
                 trace_id=str(uuid.uuid4()),
             )
             continue
         context = build_ticket_playbook_context(
             ticket_id=ticket_id,
-            device_id=device_id,
+            device_id=trigger_device_id,
             trigger=trigger,
             custom_fields=custom_fields,
         )
@@ -242,7 +292,7 @@ async def start_ticket_created_playbooks(
                 session,
                 state,
                 playbook_version_id=int(version.id),
-                device_id=device_id,
+                device_id=trigger_device_id,
                 trigger_type=trigger_type,
                 context_json=context,
                 idempotency_key=idempotency_key,
@@ -255,7 +305,7 @@ async def start_ticket_created_playbooks(
         started.append(int(run_id))
         await ticket_repo.add_event(
             ticket_id=ticket_id,
-            device_id=device_id,
+            device_id=trigger_device_id,
             agent_seq=None,
             event_type="playbook_started",
             payload={
@@ -265,6 +315,7 @@ async def start_ticket_created_playbooks(
                 "source": trigger.get("source") or "request_form",
                 "facts_package": context["facts_package"],
                 "diagnostic_policy": context["diagnostic_policy"],
+                "diagnostic_target": trigger_target,
             },
             trace_id=str(uuid.uuid4()),
         )
