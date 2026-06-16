@@ -66,6 +66,26 @@ Normal requester UI must not display these technical words: `pairing`, `binding`
 
 Admin/debug surfaces may display technical identifiers when needed for operations.
 
+## Primary Agent And Request Semantics
+
+- The web cabinet is the requester's main workspace. It works from any browser and must not assume that the current physical computer is the diagnostic target.
+- The primary agent is a server-resolved technical target from Registry device bindings. Normal requester tickets use the creator's primary device for diagnostics.
+- The GUI agent is a local connection/status tool and may help with login, device linking and local actions. It must not own the requester profile or silently rebind the device.
+- On-behalf tickets are allowed only by request-form policy. They store both creator and affected employee context, and diagnostics target the affected employee's primary device when one exists.
+- Missing, offline or ambiguous primary device context is evidence for support and manual triage, not permission to run checks on the creator's current browser computer.
+- Device ownership changes are admin-controlled preview/apply actions with reason and audit. A requester can ask for a change, but cannot self-rebind ownership by creating a ticket or logging in from the agent.
+
+## Requester Help Articles
+
+The requester-safe Knowledge seed must include these PA11 articles:
+
+- `Как создать обращение за другого сотрудника`;
+- `Что делать, если мой ПК не включается`;
+- `Как запросить смену владельца устройства`;
+- `Как привязать устройство к аккаунту`.
+
+These articles live in `content_packs/knowledge/primary-agent-requester-guides.yaml`. They must use product terms such as `аккаунт`, `профиль`, `устройство`, `привязка устройства`, `кабинет пользователя`, `обращение` and must not expose raw internal ids such as `affected_person_id`, `target_device_id`, `binding_id` or `claim_id`.
+
 ## Route Contract
 
 Target routes:

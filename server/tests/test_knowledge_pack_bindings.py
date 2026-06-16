@@ -15,6 +15,8 @@ from scripts.validate_knowledge_pack_bindings import (
 
 PACK_DIR = Path("content_packs/knowledge")
 
+pytestmark = pytest.mark.no_db
+
 
 def test_all_baseline_content_pack_bindings_match_service_catalog_defaults() -> None:
     baseline = build_catalog_baseline()
