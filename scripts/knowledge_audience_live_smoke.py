@@ -48,6 +48,16 @@ def _run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
 
 
+def knowledge_space_payload(space_code: str, title: str) -> dict[str, Any]:
+    return {
+        "code": space_code,
+        "title": title,
+        "visibility": "requester",
+        "lifecycle_status": "active",
+        "allow_rag": True,
+    }
+
+
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise SmokeFailure(message)
@@ -232,12 +242,7 @@ class KnowledgeAudienceLiveSmoke:
             repo = KnowledgeRepo(session)
             space_code = f"phase5-knowledge-{suffix}"
             await repo.upsert_space(
-                {
-                    "code": space_code,
-                    "title": f"Phase 5 Knowledge {suffix}",
-                    "visibility": "requester",
-                    "lifecycle_status": "active",
-                },
+                knowledge_space_payload(space_code, f"Phase 5 Knowledge {suffix}"),
                 actor_id=admin_login,
             )
             public = await self._published_item(
