@@ -2011,6 +2011,14 @@ async def test_build_support_detail_payload_projects_requester_account_context(m
             "reason": "Shift replacement",
         },
     }
+    ticket_context = {
+        "schema": "ticket_context_v1",
+        "created_on_behalf": True,
+        "creator": {"person_id": "creator-person", "actor_id": "support-test"},
+        "affected": {"person_id": "affected-person", "display_name": "Affected User"},
+        "target_device": {"device_id": "affected-device", "agent_status": "online"},
+        "diagnostic_target_source": "affected_user_primary_agent",
+    }
     ticket = SimpleNamespace(
         ticket_id="ticket-account-context",
         device_id="device-account-context",
@@ -2063,7 +2071,7 @@ async def test_build_support_detail_payload_projects_requester_account_context(m
         "requester_visible_fields": [],
         "support_visible_fields": [],
         "queue_members": [],
-        "custom_fields": {"requester_account_context": account_context},
+        "custom_fields": {"requester_account_context": account_context, "ticket_context": ticket_context},
         "requester_registration_status": "other_account_verified",
         "requester_account_session_id": "session-other",
         "requester_account_mode": "verified_other_account",
@@ -2117,6 +2125,7 @@ async def test_build_support_detail_payload_projects_requester_account_context(m
     assert payload.ticket.requester_account_mode == "verified_other_account"
     assert payload.ticket.requester_account_warning == "ticket_created_from_other_account_on_registered_device"
     assert payload.ticket.requester_account_context == account_context
+    assert payload.ticket.ticket_context == ticket_context
 
 
 @pytest.mark.asyncio

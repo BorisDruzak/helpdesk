@@ -106,6 +106,7 @@ REQUESTER_FORBIDDEN_CUSTOM_FIELD_ROOTS = {
     "requester_account_context",
     "resolution_confirmation_policy",
     "routing_decision",
+    "ticket_context",
 }
 
 

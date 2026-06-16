@@ -3125,6 +3125,9 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
     requester_account_warning = ticket_data.get("requester_account_warning")
     if requester_account_warning is None and isinstance(requester_account_context, dict):
         requester_account_warning = requester_account_context.get("warning")
+    ticket_context = custom_fields.get("ticket_context")
+    if not isinstance(ticket_context, dict):
+        ticket_context = None
     approval_summary = await build_approval_summary(session, ticket, requester_safe=False)
     quality = await _build_support_quality_payload(session, ticket.ticket_id)
 
@@ -3149,6 +3152,7 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             requester_account_mode=ticket_data.get("requester_account_mode"),
             requester_account_context=requester_account_context,
             requester_account_warning=requester_account_warning,
+            ticket_context=ticket_context,
             device_id=ticket_data.get("device_id"),
             ticket_type=ticket_data.get("ticket_type"),
             category_id=ticket_data.get("category_id"),

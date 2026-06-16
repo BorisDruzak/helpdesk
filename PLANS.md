@@ -508,7 +508,7 @@ Completed PA1 checkpoint:
 
 ## Phase PA2 — Ticket context model: creator, affected person, target device
 
-Status: not started.
+Status: completed.
 
 Goal:
 
@@ -547,6 +547,23 @@ Acceptance:
 
 - Support can clearly see creator, affected user and diagnostic target.
 - Diagnostics never run on the creator's current PC just because they submitted the ticket there.
+
+Changes completed:
+
+- Added `server/tickets/ticket_context.py` with `TicketContextBuilder`.
+- `create_ticket_with_side_effects()` now builds a server-owned `ticket_context_v1` snapshot from the verified requester person and optional affected person input.
+- Stored `custom_fields.ticket_context` plus flat aliases: `created_on_behalf`, `creator_person_id`, `creator_actor_id`, `affected_person_id`, `affected_department_id`, `affected_location_id`, `target_device_id`, `target_binding_id`, `target_agent_status`, `diagnostic_target_source`, and target reason/count fields.
+- Preserved legacy `ticket.device_id` and existing `requester_*` fields; client-supplied `target_device_id` in context input is ignored.
+- Hid raw ticket context from requester/public projections and exposed it to support detail through typed `SupportTicketDetail.ticket_context`.
+- Updated CODEMAP/Quick Lookup/navigation/Ticket System docs for the new context builder.
+
+PA2 verification:
+
+- Red test before implementation: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_ticket_context_builder.py -q --tb=short` -> failed on `ModuleNotFoundError: tickets.ticket_context`.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_ticket_context_builder.py -q --tb=short` -> 5 passed.
+- `python -m pytest server/tests/test_web_support_api.py::test_build_support_detail_payload_projects_requester_account_context -q --tb=short` -> 1 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_requester_can_create_ticket_for_owned_device_and_not_foreign_device server/tests/test_requester_workspace_api.py::test_requester_can_create_no_device_ticket_and_preview_without_device server/tests/test_requester_workspace_api.py::test_requester_create_ticket_accepts_catalog_form_payload -q --tb=short` -> 3 passed.
+- `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_ticket_context_builder.py server/tests/test_primary_agent_resolver.py -q --tb=short` -> 11 passed.
 
 ---
 

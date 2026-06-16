@@ -24,6 +24,7 @@ from tickets.form_catalog import attach_request_template_computed_snapshot
 from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import merge_requester_custom_fields, normalize_ticket_priority_inputs
+from tickets.ticket_context import TicketContextBuilder
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.workflow_service import TicketWorkflowService
 from playbooks.form_triggers import start_ticket_created_playbooks
@@ -290,6 +291,7 @@ async def create_ticket_with_side_effects(
     support_group_code: Optional[str] = None,
     extra_custom_fields: Optional[dict[str, Any]] = None,
     requester_account: Optional[dict[str, Any]] = None,
+    ticket_context: Optional[dict[str, Any]] = None,
     state: Any | None = None,
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
@@ -550,6 +552,22 @@ async def create_ticket_with_side_effects(
         requester_account_mode = str(requester_account_context.get("account_mode") or "").strip() or None
         requester_account_warning = str(requester_account_context.get("warning") or "").strip() or None
 
+    ticket_context_snapshot: dict[str, Any] | None = None
+    if requester_person_id:
+        try:
+            context_input = ticket_context if isinstance(ticket_context, dict) else {}
+            ticket_context_snapshot = await TicketContextBuilder(session, state=state).build(
+                creator_person_id=str(requester_person_id),
+                creator_actor_id=requester_id,
+                affected_person_id=str(context_input.get("affected_person_id") or "").strip() or None,
+                on_behalf_reason=str(
+                    context_input.get("on_behalf_reason") or context_input.get("reason") or ""
+                ).strip()
+                or None,
+            )
+        except Exception as exc:
+            logger.warning(f"[create] ticket context build failed ticket_id={ticket_id} err={exc}")
+
     ticket = await ticket_repo.create_ticket(
         ticket_id=ticket_id,
         device_id=device_id,
@@ -609,6 +627,8 @@ async def create_ticket_with_side_effects(
     custom_fields["priority_decision"] = priority_decision
     if extra_custom_fields:
         custom_fields.update(extra_custom_fields)
+    if ticket_context_snapshot:
+        custom_fields.update(TicketContextBuilder.custom_fields(ticket_context_snapshot))
     custom_fields["requester_registration"] = requester_registration_context
     custom_fields["requester_account_context"] = requester_account_context
     if registry_context:

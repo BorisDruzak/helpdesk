@@ -400,6 +400,7 @@ class SupportTicketDetail(BaseModel):
     requester_account_mode: str | None = None
     requester_account_context: dict[str, Any] | None = None
     requester_account_warning: str | None = None
+    ticket_context: dict[str, Any] | None = None
     device_id: str | None
     ticket_type: str | None = None
     category_id: int | None = None
