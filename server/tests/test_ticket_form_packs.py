@@ -40,6 +40,98 @@ from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.form_catalog import validate_form_pack_schema, validate_form_submission
 
 
+@pytest.mark.no_db
+def test_validate_form_pack_schema_normalizes_on_behalf_policy():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "version": "1.0.0",
+            "title": "Catalog",
+            "forms": [
+                {
+                    "key": "workplace_help",
+                    "request_kind": "workplace_help",
+                    "title": "Workplace help",
+                    "on_behalf_policy": {
+                        "allowed": True,
+                        "reason_required": True,
+                        "affected_person_required": True,
+                        "allowed_scope": "same_department_or_privileged",
+                        "no_primary_agent_behavior": "manual_support_review",
+                        "support_override_allowed": True,
+                    },
+                    "fields": [
+                        {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                    ],
+                }
+            ],
+        }
+    )
+
+    policy = pack["forms"][0]["on_behalf_policy"]
+    assert policy == {
+        "allowed": True,
+        "label": "Проблема у другого сотрудника",
+        "affected_person_required": True,
+        "reason_required": True,
+        "allowed_scope": "same_department_or_privileged",
+        "diagnostic_target": "affected_person_primary_agent",
+        "knowledge_visibility": "creator_only",
+        "support_visibility": "creator_and_affected",
+        "no_primary_agent_behavior": "manual_support_review",
+        "support_override_allowed": True,
+    }
+
+
+@pytest.mark.no_db
+def test_validate_form_pack_schema_omits_absent_on_behalf_policy():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "version": "1.0.0",
+            "title": "Catalog",
+            "forms": [
+                {
+                    "key": "workplace_help",
+                    "request_kind": "workplace_help",
+                    "title": "Workplace help",
+                    "fields": [
+                        {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                    ],
+                }
+            ],
+        }
+    )
+
+    assert "on_behalf_policy" not in pack["forms"][0]
+
+
+@pytest.mark.no_db
+def test_validate_form_pack_schema_rejects_invalid_on_behalf_policy_choice():
+    with pytest.raises(ValueError, match="on_behalf_policy.allowed_scope"):
+        validate_form_pack_schema(
+            {
+                "pack_key": "request_forms",
+                "version": "1.0.0",
+                "title": "Catalog",
+                "forms": [
+                    {
+                        "key": "workplace_help",
+                        "request_kind": "workplace_help",
+                        "title": "Workplace help",
+                        "on_behalf_policy": {
+                            "allowed": True,
+                            "allowed_scope": "external_company",
+                        },
+                        "fields": [
+                            {"key": "summary", "label": "Summary", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            }
+        )
+
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 

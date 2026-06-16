@@ -285,6 +285,11 @@ def _build_request_template_items(pack: dict[str, Any] | None) -> list[WebSettin
         closure_policy = form.get("closure_policy") if isinstance(form.get("closure_policy"), dict) else {}
         visibility_policy = form.get("visibility_policy") if isinstance(form.get("visibility_policy"), dict) else {}
         notification_policy = form.get("notification_policy") if isinstance(form.get("notification_policy"), dict) else {}
+        on_behalf_policy = (
+            form.get("on_behalf_policy")
+            if isinstance(form.get("on_behalf_policy"), dict)
+            else {"allowed": False}
+        )
         before_resolved = (
             closure_policy.get("before_resolved")
             if isinstance(closure_policy.get("before_resolved"), dict)
@@ -332,6 +337,7 @@ def _build_request_template_items(pack: dict[str, Any] | None) -> list[WebSettin
                     "fields_count": len(fields),
                     "required_fields_count": sum(1 for field in fields if bool(field.get("required"))),
                     "priority_fields_count": len(priority_fields),
+                    "on_behalf_policy": on_behalf_policy,
                 },
                 workflow={
                     "workflow_profile_id": ticket_type,

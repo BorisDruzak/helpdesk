@@ -569,7 +569,7 @@ PA2 verification:
 
 ## Phase PA3 — Request form policy: allow on-behalf creation
 
-Status: not started.
+Status: completed on 2026-06-16.
 
 Goal:
 
@@ -597,6 +597,29 @@ Tests:
 - Existing forms without policy behave unchanged.
 - Form builder renders toggle and saves config.
 - Public/requester API returns policy only as safe requester-facing capability.
+
+Changes:
+
+- `server/tickets/form_catalog.py` normalizes form-level `on_behalf_policy`, keeps absent/empty legacy forms disabled, and carries the policy into `custom_fields.request_template`.
+- `server/web_api/dto/admin.py` and `server/web_api/admin_handlers.py` accept, serialize and return `on_behalf_policy` through the typed admin forms boundary.
+- `server/web_api/settings_handlers.py` projects safe `form.on_behalf_policy`, defaulting to `{"allowed": false}` for forms without an explicit policy.
+- `webapp/src/features/forms-builder/forms-builder-workspace.tsx` exposes the `Разрешить создание обращения за другого сотрудника` toggle and process settings in the template `Процесс` step, then saves the normalized policy draft.
+- `webapp/src/features/forms-builder/api.ts` and `webapp/src/features/requester/types.ts` define the policy shape for admin/requester-facing form payloads.
+
+Verification:
+
+- Red before implementation: `python -m pytest server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context -q --tb=short` -> failed with `400 VALIDATION_ERROR` because the admin DTO rejected the new policy.
+- Red before implementation: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-workspace.test.tsx -t "saves on-behalf policy"` -> failed because the process-step toggle did not exist.
+- Green after implementation: `python -m pytest server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_normalizes_on_behalf_policy server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_omits_absent_on_behalf_policy server/tests/test_ticket_form_packs.py::test_validate_form_pack_schema_rejects_invalid_on_behalf_policy_choice server/tests/test_web_admin_api.py::test_web_admin_forms_save_accepts_request_template_process_context -q --tb=short` -> 4 passed.
+- Green after implementation: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_web_settings_api.py::test_web_settings_returns_aggregated_real_payload -q --tb=short` -> 1 passed.
+- Green after implementation: `pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-workspace.test.tsx` -> 4 passed.
+- Green after implementation: `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q --tb=short` -> 14 passed.
+- Green after implementation: `pnpm --dir webapp run build` -> passed (`tsc --noEmit` + Vite build; Vite reported existing large-chunk warnings only).
+- Green after implementation: `python scripts/verify_workspace.py` -> passed.
+
+Handoff:
+
+- PA3 adds the policy surface only. PA4 still needs requester UI/submit handling for selecting the affected person, enforcing `reason_required`/`allowed_scope`, and wiring no-primary-agent UX to `ticket_context_v1`.
 
 Acceptance:
 

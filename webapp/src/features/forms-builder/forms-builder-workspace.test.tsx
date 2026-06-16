@@ -318,4 +318,63 @@ describe("FormsBuilderWorkspace", () => {
     expect(await screen.findByRole("heading", { name: "Редактор шаблона обращения: Печать / принтер v4" })).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/app/admin/forms?mode=template&version=1.0.4&template=printer");
   });
+
+  it("saves on-behalf policy from the template process step", async () => {
+    const draftCalls: unknown[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url === "/api/web/admin/forms/current") {
+        return jsonResponse({ status: "success", data: createFormsPayload() });
+      }
+      if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+        return jsonResponse(packListPayload());
+      }
+      if (url === "/api/web/admin/helpdesk-model/policies") {
+        return jsonResponse({ status: "success", data: createRegistryPayload() });
+      }
+      if (url === "/api/web/admin/forms/save-draft" && method === "POST") {
+        draftCalls.push(JSON.parse(String(init?.body ?? "{}")));
+        return jsonResponse({
+          status: "success",
+          data: {
+            draft_id: "draft-on-behalf",
+            pack_key: "request_forms",
+            base_version: "1.0.3",
+            status: "draft",
+            summary: createFormsPayload().summary,
+            published_version: null,
+            preferred_version: "1.0.3",
+            message: "Черновик сохранён.",
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkspace("/app/admin/forms?mode=template&template=printer");
+
+    expect(await screen.findByRole("heading", { name: "Редактор шаблона обращения: Печать / принтер" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Процесс/ }));
+    fireEvent.click(await screen.findByLabelText("Разрешить создание обращения за другого сотрудника"));
+    fireEvent.click(screen.getByLabelText("Требовать причину обращения за другого сотрудника"));
+    fireEvent.click(screen.getByLabelText("Сотрудник с проблемой обязателен"));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить черновик" }));
+
+    await waitFor(() => {
+      expect(draftCalls).toHaveLength(1);
+    });
+    const savedPrinter = (
+      draftCalls[0] as {
+        forms: Array<{ key: string; on_behalf_policy?: Record<string, unknown> }>;
+      }
+    ).forms.find((form) => form.key === "printer");
+    expect(savedPrinter?.on_behalf_policy).toMatchObject({
+      allowed: true,
+      reason_required: true,
+      affected_person_required: true,
+      diagnostic_target: "affected_person_primary_agent",
+    });
+  });
 });

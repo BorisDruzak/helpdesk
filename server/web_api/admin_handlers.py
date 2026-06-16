@@ -552,6 +552,8 @@ def _map_admin_form_item(raw_form: dict | None) -> AdminFormsFormItem:
         closure_policy=form.get("closure_policy") if isinstance(form.get("closure_policy"), dict) else {},
         visibility_policy=form.get("visibility_policy") if isinstance(form.get("visibility_policy"), dict) else {},
         notification_policy=form.get("notification_policy") if isinstance(form.get("notification_policy"), dict) else {},
+        reporting_policy=form.get("reporting_policy") if isinstance(form.get("reporting_policy"), dict) else {},
+        on_behalf_policy=form.get("on_behalf_policy") if isinstance(form.get("on_behalf_policy"), dict) else {},
         fields=[
             _map_admin_form_field(field)
             for field in (form.get("fields") or [])
@@ -738,6 +740,7 @@ def _serialize_admin_form_request(payload) -> dict[str, object]:
         "visibility_policy",
         "notification_policy",
         "reporting_policy",
+        "on_behalf_policy",
         "field_aliases",
     ):
         value = getattr(payload, key, None)

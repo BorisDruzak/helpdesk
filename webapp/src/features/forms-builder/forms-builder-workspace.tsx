@@ -45,6 +45,7 @@ import {
   type AdminFormsFieldOption,
   type AdminFormsFieldType,
   type AdminFormsFormItem,
+  type AdminFormsOnBehalfPolicy,
   type AdminFormsPayload,
   type AdminFormsPlaybookTrigger,
   type AdminFormsProcessPreviewResult,
@@ -217,6 +218,32 @@ const POLICY_JSON_FIELDS = [
   ["reporting_policy", "Reporting JSON"],
 ] as const;
 
+const DEFAULT_ON_BEHALF_POLICY: Required<AdminFormsOnBehalfPolicy> = {
+  allowed: false,
+  label: "Проблема у другого сотрудника",
+  affected_person_required: false,
+  reason_required: false,
+  allowed_scope: "same_department_or_privileged",
+  diagnostic_target: "affected_person_primary_agent",
+  knowledge_visibility: "creator_only",
+  support_visibility: "creator_and_affected",
+  no_primary_agent_behavior: "allow_ticket_no_diagnostics",
+  support_override_allowed: false,
+};
+
+const ON_BEHALF_SCOPE_OPTIONS = [
+  ["same_department_or_privileged", "Свой отдел или support/admin"],
+  ["same_department", "Только свой отдел"],
+  ["privileged_only", "Только support/admin"],
+  ["any_employee", "Любой сотрудник"],
+] as const;
+
+const ON_BEHALF_NO_AGENT_OPTIONS = [
+  ["allow_ticket_no_diagnostics", "Создать без диагностики"],
+  ["manual_support_review", "Передать в ручной разбор"],
+  ["block_create", "Запретить отправку"],
+] as const;
+
 function parseBuilderMode(value: string | null): FormsBuilderMode {
   return value ? MODE_QUERY_TO_STATE[value] ?? "overview" : "overview";
 }
@@ -249,6 +276,7 @@ function cloneDraft(payload: AdminFormsPayload): CatalogDraft {
     forms: payload.forms.map((form) => ({
       ...form,
       description: form.description ?? "",
+      on_behalf_policy: asRecord(form.on_behalf_policy),
       fields: form.fields.map((field) => ({
         ...field,
         placeholder: field.placeholder ?? "",
@@ -278,12 +306,62 @@ function asNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function asBoolean(value: unknown, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "off", ""].includes(normalized)) {
+      return false;
+    }
+  }
+  return fallback;
+}
+
 function asNumberOrNull(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
+}
+
+function asOptionValue<T extends readonly (readonly [string, string])[]>(
+  value: unknown,
+  options: T,
+  fallback: T[number][0]
+) {
+  const normalized = asString(value, fallback);
+  return options.some(([option]) => option === normalized) ? normalized : fallback;
+}
+
+function getOnBehalfPolicy(form: AdminFormsFormItem): Required<AdminFormsOnBehalfPolicy> {
+  const rawPolicy = asRecord(form.on_behalf_policy);
+  return {
+    ...DEFAULT_ON_BEHALF_POLICY,
+    allowed: asBoolean(rawPolicy.allowed),
+    label: asString(rawPolicy.label, DEFAULT_ON_BEHALF_POLICY.label),
+    affected_person_required: asBoolean(rawPolicy.affected_person_required),
+    reason_required: asBoolean(rawPolicy.reason_required),
+    allowed_scope: asOptionValue(
+      rawPolicy.allowed_scope,
+      ON_BEHALF_SCOPE_OPTIONS,
+      DEFAULT_ON_BEHALF_POLICY.allowed_scope as (typeof ON_BEHALF_SCOPE_OPTIONS)[number][0]
+    ),
+    diagnostic_target: "affected_person_primary_agent",
+    knowledge_visibility: "creator_only",
+    support_visibility: "creator_and_affected",
+    no_primary_agent_behavior: asOptionValue(
+      rawPolicy.no_primary_agent_behavior,
+      ON_BEHALF_NO_AGENT_OPTIONS,
+      DEFAULT_ON_BEHALF_POLICY.no_primary_agent_behavior as (typeof ON_BEHALF_NO_AGENT_OPTIONS)[number][0]
+    ),
+    support_override_allowed: asBoolean(rawPolicy.support_override_allowed),
+  };
 }
 
 function asFieldOptions(value: unknown): AdminFormsFieldOption[] {
@@ -341,6 +419,7 @@ function normalizePackDraft(rawPack: Record<string, unknown>, fallbackSummary?: 
         visibility_policy: asRecord(form.visibility_policy),
         notification_policy: asRecord(form.notification_policy),
         reporting_policy: asRecord(form.reporting_policy),
+        on_behalf_policy: asRecord(form.on_behalf_policy),
         priority_policy_ref: asNullableString(form.priority_policy_ref),
         routing_policy_ref: asNullableString(form.routing_policy_ref),
         sla_policy_ref: asNullableString(form.sla_policy_ref),
@@ -426,6 +505,7 @@ function toSaveForm(form: AdminFormsFormItem): AdminFormsSaveRequest["forms"][nu
     visibility_policy: form.visibility_policy ?? {},
     notification_policy: form.notification_policy ?? {},
     reporting_policy: form.reporting_policy ?? {},
+    on_behalf_policy: form.on_behalf_policy ?? {},
     priority_policy_ref: form.priority_policy_ref ?? null,
     routing_policy_ref: form.routing_policy_ref ?? null,
     sla_policy_ref: form.sla_policy_ref ?? null,
@@ -995,6 +1075,19 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     updateSelectedForm((form) => ({ ...form, [key]: value || null }));
   }
 
+  function updateOnBehalfPolicy(patch: Partial<AdminFormsOnBehalfPolicy>) {
+    updateSelectedForm((form) => {
+      const nextPolicy = {
+        ...getOnBehalfPolicy(form),
+        ...patch,
+      };
+      return {
+        ...form,
+        on_behalf_policy: nextPolicy.allowed ? nextPolicy : { allowed: false },
+      };
+    });
+  }
+
   return (
     <section className="space-y-5">
       <div className="flex flex-col gap-4 border-b border-border pb-4 xl:flex-row xl:items-end xl:justify-between">
@@ -1356,6 +1449,89 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     );
   }
 
+  function renderOnBehalfPolicyControls() {
+    if (!selectedForm) {
+      return null;
+    }
+    const policy = getOnBehalfPolicy(selectedForm);
+    return (
+      <div className="space-y-4 border-b border-border pb-4">
+        <div className="space-y-2">
+          <label className="flex items-start gap-3 text-sm font-semibold text-slate-900">
+            <input
+              checked={policy.allowed}
+              className="mt-1 h-4 w-4 rounded border-border text-brand-600 focus:ring-brand-500"
+              onChange={(event) => updateOnBehalfPolicy({ allowed: event.currentTarget.checked })}
+              type="checkbox"
+            />
+            <span>Разрешить создание обращения за другого сотрудника</span>
+          </label>
+          <p className="max-w-3xl text-sm leading-6 text-slate-500">
+            Если включено, заявитель сможет выбрать сотрудника, у которого проблема. Диагностика будет выполняться по основному устройству выбранного сотрудника, а не по ПК заявителя.
+          </p>
+        </div>
+
+        {policy.allowed ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex items-start gap-3 text-sm font-medium text-slate-800">
+              <input
+                checked={policy.reason_required}
+                className="mt-1 h-4 w-4 rounded border-border text-brand-600 focus:ring-brand-500"
+                onChange={(event) => updateOnBehalfPolicy({ reason_required: event.currentTarget.checked })}
+                type="checkbox"
+              />
+              <span>Требовать причину обращения за другого сотрудника</span>
+            </label>
+            <label className="flex items-start gap-3 text-sm font-medium text-slate-800">
+              <input
+                checked={policy.affected_person_required}
+                className="mt-1 h-4 w-4 rounded border-border text-brand-600 focus:ring-brand-500"
+                onChange={(event) => updateOnBehalfPolicy({ affected_person_required: event.currentTarget.checked })}
+                type="checkbox"
+              />
+              <span>Сотрудник с проблемой обязателен</span>
+            </label>
+            <label className="space-y-2 text-sm font-medium text-slate-800">
+              <span>Кто может выбрать другого сотрудника</span>
+              <Select
+                onChange={(event) => updateOnBehalfPolicy({ allowed_scope: event.currentTarget.value })}
+                value={policy.allowed_scope}
+              >
+                {ON_BEHALF_SCOPE_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="space-y-2 text-sm font-medium text-slate-800">
+              <span>Если нет основного агента</span>
+              <Select
+                onChange={(event) => updateOnBehalfPolicy({ no_primary_agent_behavior: event.currentTarget.value })}
+                value={policy.no_primary_agent_behavior}
+              >
+                {ON_BEHALF_NO_AGENT_OPTIONS.map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="flex items-start gap-3 text-sm font-medium text-slate-800 md:col-span-2">
+              <input
+                checked={policy.support_override_allowed}
+                className="mt-1 h-4 w-4 rounded border-border text-brand-600 focus:ring-brand-500"
+                onChange={(event) => updateOnBehalfPolicy({ support_override_allowed: event.currentTarget.checked })}
+                type="checkbox"
+              />
+              <span>Разрешить support/admin указать цель вручную</span>
+            </label>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderTemplateMetaStep(step: TemplateStepKey) {
     if (!selectedForm) {
       return null;
@@ -1388,6 +1564,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
     if (["process", "priority", "routing", "sla", "approvals", "diagnostics", "closure", "visibility", "passport"].includes(step)) {
       return (
         <div className="space-y-4">
+          {step === "process" ? renderOnBehalfPolicyControls() : null}
           <div className="grid gap-4 md:grid-cols-2">
             {POLICY_REFS.map(([key, label]) => (
               <TextField

@@ -408,6 +408,7 @@ class AdminFormsFormItem(BaseModel):
     visibility_policy: dict[str, Any] = Field(default_factory=dict)
     notification_policy: dict[str, Any] = Field(default_factory=dict)
     reporting_policy: dict[str, Any] = Field(default_factory=dict)
+    on_behalf_policy: dict[str, Any] = Field(default_factory=dict)
     priority_policy_ref: str | None = None
     routing_policy_ref: str | None = None
     sla_policy_ref: str | None = None
@@ -514,6 +515,7 @@ class AdminFormsSaveFormRequest(BaseModel):
     visibility_policy: dict[str, Any] = Field(default_factory=dict)
     notification_policy: dict[str, Any] = Field(default_factory=dict)
     reporting_policy: dict[str, Any] = Field(default_factory=dict)
+    on_behalf_policy: dict[str, Any] = Field(default_factory=dict)
     priority_policy_ref: str | None = None
     routing_policy_ref: str | None = None
     sla_policy_ref: str | None = None

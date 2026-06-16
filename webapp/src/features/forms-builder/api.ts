@@ -49,6 +49,19 @@ export type AdminFormsPlaybookTrigger = {
   enabled: boolean;
 };
 
+export type AdminFormsOnBehalfPolicy = {
+  allowed?: boolean;
+  label?: string;
+  affected_person_required?: boolean;
+  reason_required?: boolean;
+  allowed_scope?: string;
+  diagnostic_target?: string;
+  knowledge_visibility?: string;
+  support_visibility?: string;
+  no_primary_agent_behavior?: string;
+  support_override_allowed?: boolean;
+};
+
 export type AdminFormsFormItem = {
   key: string;
   request_kind: string;
@@ -71,6 +84,7 @@ export type AdminFormsFormItem = {
   visibility_policy?: Record<string, unknown>;
   notification_policy?: Record<string, unknown>;
   reporting_policy?: Record<string, unknown>;
+  on_behalf_policy?: AdminFormsOnBehalfPolicy | null;
   priority_policy_ref?: string | null;
   routing_policy_ref?: string | null;
   sla_policy_ref?: string | null;
@@ -147,6 +161,7 @@ export type AdminFormsSaveRequest = {
     visibility_policy?: Record<string, unknown>;
     notification_policy?: Record<string, unknown>;
     reporting_policy?: Record<string, unknown>;
+    on_behalf_policy?: AdminFormsOnBehalfPolicy | null;
     priority_policy_ref?: string | null;
     routing_policy_ref?: string | null;
     sla_policy_ref?: string | null;

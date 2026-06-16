@@ -308,6 +308,7 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
     assert request_templates["breakage"]["classification"]["ticket_type"] == "incident"
     assert request_templates["breakage"]["form"]["form_schema_id"] == "breakage_form"
     assert request_templates["breakage"]["form"]["required_fields_count"] >= 1
+    assert request_templates["breakage"]["form"]["on_behalf_policy"]["allowed"] is False
     assert request_templates["breakage"]["workflow"]["workflow_profile_id"] == "incident"
     assert request_templates["breakage"]["priority"]["policy_id"] == "inline:breakage:priority_policy"
     assert request_templates["breakage"]["sla"]["policy_id"] is None

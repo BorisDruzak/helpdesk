@@ -36,11 +36,25 @@ export type RequestFormField = {
   } | null;
 };
 
+export type RequestFormOnBehalfPolicy = {
+  allowed?: boolean;
+  label?: string;
+  affected_person_required?: boolean;
+  reason_required?: boolean;
+  allowed_scope?: string;
+  diagnostic_target?: string;
+  knowledge_visibility?: string;
+  support_visibility?: string;
+  no_primary_agent_behavior?: string;
+  support_override_allowed?: boolean;
+};
+
 export type RequestFormDefinition = {
   key: string;
   title: string;
   description?: string | null;
   request_kind?: string | null;
+  on_behalf_policy?: RequestFormOnBehalfPolicy | null;
   fields: RequestFormField[];
 };
 

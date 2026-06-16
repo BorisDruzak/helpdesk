@@ -171,6 +171,25 @@ _TEMPLATE_LIST_FIELDS = (
     "process_preview_examples",
     "preview_samples",
 )
+_ON_BEHALF_DEFAULT_LABEL = "Проблема у другого сотрудника"
+_ON_BEHALF_ALLOWED_SCOPES = frozenset(
+    {
+        "same_department_or_privileged",
+        "same_department",
+        "privileged_only",
+        "any_employee",
+    }
+)
+_ON_BEHALF_DIAGNOSTIC_TARGETS = frozenset({"affected_person_primary_agent"})
+_ON_BEHALF_KNOWLEDGE_VISIBILITY = frozenset({"creator_only"})
+_ON_BEHALF_SUPPORT_VISIBILITY = frozenset({"creator_and_affected"})
+_ON_BEHALF_NO_PRIMARY_AGENT_BEHAVIORS = frozenset(
+    {
+        "allow_ticket_no_diagnostics",
+        "manual_support_review",
+        "block_create",
+    }
+)
 FIELD_ROLE_OPTIONS = (
     {"value": "routing_field", "label": "Routing field"},
     {"value": "priority_impact", "label": "Priority impact"},
@@ -474,6 +493,91 @@ def _normalize_optional_dict(raw_value: Any, field_name: str) -> dict[str, Any]:
     return deepcopy(raw_value)
 
 
+def _normalize_policy_bool(raw_value: Any, *, default: bool = False) -> bool:
+    if raw_value is None:
+        return default
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off", ""}:
+            return False
+    return bool(raw_value)
+
+
+def _normalize_policy_choice(
+    raw_value: Any,
+    *,
+    field_name: str,
+    allowed_values: frozenset[str],
+    default: str,
+) -> str:
+    value = str(raw_value or default).strip() or default
+    if value not in allowed_values:
+        raise ValueError(f"on_behalf_policy.{field_name} has unsupported value {value!r}")
+    return value
+
+
+def _normalize_on_behalf_policy(raw_value: Any) -> dict[str, Any] | None:
+    if raw_value in (None, ""):
+        return None
+    if not isinstance(raw_value, dict):
+        raise ValueError("on_behalf_policy must be an object")
+    if not raw_value:
+        return None
+
+    allowed = _normalize_policy_bool(raw_value.get("allowed"))
+    if not allowed:
+        return {"allowed": False}
+
+    label = str(raw_value.get("label") or _ON_BEHALF_DEFAULT_LABEL).strip() or _ON_BEHALF_DEFAULT_LABEL
+    return {
+        "allowed": True,
+        "label": label,
+        "affected_person_required": _normalize_policy_bool(
+            raw_value.get("affected_person_required"),
+            default=False,
+        ),
+        "reason_required": _normalize_policy_bool(raw_value.get("reason_required"), default=False),
+        "allowed_scope": _normalize_policy_choice(
+            raw_value.get("allowed_scope"),
+            field_name="allowed_scope",
+            allowed_values=_ON_BEHALF_ALLOWED_SCOPES,
+            default="same_department_or_privileged",
+        ),
+        "diagnostic_target": _normalize_policy_choice(
+            raw_value.get("diagnostic_target"),
+            field_name="diagnostic_target",
+            allowed_values=_ON_BEHALF_DIAGNOSTIC_TARGETS,
+            default="affected_person_primary_agent",
+        ),
+        "knowledge_visibility": _normalize_policy_choice(
+            raw_value.get("knowledge_visibility"),
+            field_name="knowledge_visibility",
+            allowed_values=_ON_BEHALF_KNOWLEDGE_VISIBILITY,
+            default="creator_only",
+        ),
+        "support_visibility": _normalize_policy_choice(
+            raw_value.get("support_visibility"),
+            field_name="support_visibility",
+            allowed_values=_ON_BEHALF_SUPPORT_VISIBILITY,
+            default="creator_and_affected",
+        ),
+        "no_primary_agent_behavior": _normalize_policy_choice(
+            raw_value.get("no_primary_agent_behavior"),
+            field_name="no_primary_agent_behavior",
+            allowed_values=_ON_BEHALF_NO_PRIMARY_AGENT_BEHAVIORS,
+            default="allow_ticket_no_diagnostics",
+        ),
+        "support_override_allowed": _normalize_policy_bool(
+            raw_value.get("support_override_allowed"),
+            default=False,
+        ),
+    }
+
+
 def _normalize_process_mapping(raw_value: Any, *, roles: list[str] | None = None) -> dict[str, Any]:
     mapping = _normalize_optional_dict(raw_value, "process_mapping")
     normalized_roles: list[str] = []
@@ -722,6 +826,10 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
             template_context["suggested_playbook_id"] = suggested_playbook_id
         if "priority_policy" not in raw_form:
             raw_form["priority_policy"] = deepcopy(DEFAULT_PRIORITY_POLICY)
+
+        on_behalf_policy = _normalize_on_behalf_policy(raw_form.get("on_behalf_policy"))
+        if on_behalf_policy is not None:
+            template_context["on_behalf_policy"] = on_behalf_policy
 
         for dict_field in _TEMPLATE_DICT_FIELDS:
             value = _normalize_optional_dict(raw_form.get(dict_field), dict_field)
@@ -978,6 +1086,7 @@ def validate_form_submission(
             "visibility_policy": deepcopy(form.get("visibility_policy") or {}),
             "notification_policy": deepcopy(form.get("notification_policy") or {}),
             "reporting_policy": deepcopy(form.get("reporting_policy") or {}),
+            "on_behalf_policy": deepcopy(form.get("on_behalf_policy") or {}),
         },
     }
 

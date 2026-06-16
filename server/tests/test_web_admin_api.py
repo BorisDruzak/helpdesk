@@ -1051,6 +1051,14 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
         assert form.priority_policy == {"impact_field": "affected_scope", "urgency_field": "work_continuity"}
         assert form.routing_policy == {"default_queue_id": 40}
         assert form.approval_policy == {"required": False}
+        assert form.on_behalf_policy == {
+            "allowed": True,
+            "reason_required": True,
+            "affected_person_required": True,
+            "allowed_scope": "same_department_or_privileged",
+            "no_primary_agent_behavior": "manual_support_review",
+            "support_override_allowed": True,
+        }
         assert form.closure_policy == {"require_resolution_code": True}
         assert form.visibility_policy == {"operator_fields": ["url"]}
         assert form.notification_policy == {"on_status_changed": {"requester": True}}
@@ -1084,6 +1092,18 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
                     priority_policy={"impact_field": "affected_scope", "urgency_field": "work_continuity"},
                     routing_policy={"default_queue_id": 40},
                     approval_policy={"required": False},
+                    on_behalf_policy={
+                        "allowed": True,
+                        "label": "Проблема у другого сотрудника",
+                        "affected_person_required": True,
+                        "reason_required": True,
+                        "allowed_scope": "same_department_or_privileged",
+                        "diagnostic_target": "affected_person_primary_agent",
+                        "knowledge_visibility": "creator_only",
+                        "support_visibility": "creator_and_affected",
+                        "no_primary_agent_behavior": "manual_support_review",
+                        "support_override_allowed": True,
+                    },
                     closure_policy={"require_resolution_code": True},
                     visibility_policy={"operator_fields": ["url"]},
                     notification_policy={"on_status_changed": {"requester": True}},
@@ -1126,6 +1146,14 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
                     "priority_policy": {"impact_field": "affected_scope", "urgency_field": "work_continuity"},
                     "routing_policy": {"default_queue_id": 40},
                     "approval_policy": {"required": False},
+                    "on_behalf_policy": {
+                        "allowed": True,
+                        "reason_required": True,
+                        "affected_person_required": True,
+                        "allowed_scope": "same_department_or_privileged",
+                        "no_primary_agent_behavior": "manual_support_review",
+                        "support_override_allowed": True,
+                    },
                     "closure_policy": {"require_resolution_code": True},
                     "visibility_policy": {"operator_fields": ["url"]},
                     "notification_policy": {"on_status_changed": {"requester": True}},
@@ -1143,6 +1171,8 @@ async def test_web_admin_forms_save_accepts_request_template_process_context(web
     assert form["ticket_type"] == "incident"
     assert form["field_roles"]["url"] == ["routing_field", "diagnostic_input"]
     assert form["priority_policy"]["impact_field"] == "affected_scope"
+    assert form["on_behalf_policy"]["allowed"] is True
+    assert form["on_behalf_policy"]["diagnostic_target"] == "affected_person_primary_agent"
     assert form["notification_policy"]["on_status_changed"]["requester"] is True
 
 
