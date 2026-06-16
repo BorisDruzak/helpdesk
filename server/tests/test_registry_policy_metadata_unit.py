@@ -39,3 +39,18 @@ def test_policy_response_exposes_validation_and_default_drift():
         "maximum": 8760,
         "nullable": False,
     }
+
+
+def test_policy_response_exposes_diagnostic_target_fallback_policy():
+    response = build_registry_policy_response(
+        {"diagnostic_target": {"allow_single_active_binding_fallback": True}}
+    )
+
+    assert response["defaults"]["diagnostic_target"]["allow_single_active_binding_fallback"] is False
+    assert response["effective"]["diagnostic_target"]["allow_single_active_binding_fallback"] is True
+    assert response["changed_from_defaults"] == {
+        "diagnostic_target.allow_single_active_binding_fallback": {
+            "default": False,
+            "effective": True,
+        }
+    }

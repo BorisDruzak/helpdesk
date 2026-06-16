@@ -311,6 +311,9 @@ const registryPoliciesPayload = {
       owner_can_see_historical_tickets: true,
       other_account_only_own_session_tickets: true,
     },
+    diagnostic_target: {
+      allow_single_active_binding_fallback: false,
+    },
   },
   effective: {
     registration: {
@@ -337,6 +340,9 @@ const registryPoliciesPayload = {
       owner_can_see_historical_tickets: true,
       other_account_only_own_session_tickets: true,
     },
+    diagnostic_target: {
+      allow_single_active_binding_fallback: false,
+    },
   },
   changed_from_defaults: {},
   warnings: [],
@@ -348,6 +354,7 @@ const registryPoliciesPayload = {
     "account_sessions.confirmed_binding_ttl_hours": { type: "integer", minimum: 1, maximum: 87600, nullable: true },
     "account_sessions.verified_other_account_ttl_hours": { type: "integer", minimum: 1, maximum: 8760, nullable: false },
     "account_sessions.registration_pending_ttl_hours": { type: "integer", minimum: 1, maximum: 8760, nullable: false },
+    "diagnostic_target.allow_single_active_binding_fallback": { type: "boolean", nullable: false },
   },
   requires_restart: false,
   restart_required_fields: [],

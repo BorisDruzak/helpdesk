@@ -855,6 +855,9 @@ export type AdminRegistryPolicyPayload = {
       owner_can_see_historical_tickets: boolean;
       other_account_only_own_session_tickets: boolean;
     };
+    diagnostic_target: {
+      allow_single_active_binding_fallback: boolean;
+    };
   };
   changed_from_defaults: Record<string, { default: unknown; effective: unknown }>;
   warnings: Array<{ field: string; severity: "warning" | "error" | string; message: string }>;

@@ -36,6 +36,9 @@ DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
         "owner_can_see_historical_tickets": True,
         "other_account_only_own_session_tickets": True,
     },
+    "diagnostic_target": {
+        "allow_single_active_binding_fallback": False,
+    },
 }
 
 REGISTRY_POLICY_VALIDATION: dict[str, dict[str, Any]] = {
@@ -46,6 +49,7 @@ REGISTRY_POLICY_VALIDATION: dict[str, dict[str, Any]] = {
     "account_sessions.confirmed_binding_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 87600, "nullable": True},
     "account_sessions.verified_other_account_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
     "account_sessions.registration_pending_ttl_hours": {"type": "integer", "minimum": 1, "maximum": 8760, "nullable": False},
+    "diagnostic_target.allow_single_active_binding_fallback": {"type": "boolean", "nullable": False},
 }
 
 REGISTRY_POLICY_REQUIRES_RESTART_FIELDS: set[str] = set()
@@ -99,6 +103,7 @@ def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
     registration = merged["registration"]
     account_sessions = merged["account_sessions"]
     ticket_visibility = merged["ticket_visibility"]
+    diagnostic_target = merged["diagnostic_target"]
 
     for field in (
         "require_user_confirmation",
@@ -158,6 +163,10 @@ def validate_registry_policies(value: dict[str, Any]) -> dict[str, Any]:
 
     for field in ("owner_can_see_historical_tickets", "other_account_only_own_session_tickets"):
         ticket_visibility[field] = _validate_bool(ticket_visibility.get(field), field=f"ticket_visibility.{field}")
+    diagnostic_target["allow_single_active_binding_fallback"] = _validate_bool(
+        diagnostic_target.get("allow_single_active_binding_fallback"),
+        field="diagnostic_target.allow_single_active_binding_fallback",
+    )
     return merged
 
 

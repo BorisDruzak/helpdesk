@@ -455,7 +455,7 @@ PA0 baseline checkpoint, 2026-06-16:
 
 ## Phase PA1 — Primary agent resolver
 
-Status: not started.
+Status: completed.
 
 Goal:
 
@@ -490,6 +490,19 @@ Acceptance:
 
 - Normal requester forms can get primary device context without device picker.
 - Offline agent is represented as diagnostic evidence.
+
+Completed PA1 checkpoint:
+
+- Added `server/registry/primary_agent_resolver.py` with `PrimaryAgentResolver.resolve_for_person(person_id)`.
+- Resolution order: one active `primary_user` binding wins; multiple primary bindings return `ambiguous_primary_device`; missing primary returns `primary_device_missing`; a single shared/responsible active binding is allowed only when `diagnostic_target.allow_single_active_binding_fallback=true`.
+- Resolved payload is diagnostic-safe: device id, binding id, asset id, relationship, hostname, online/connection state, last seen/handshake and agent version; it does not return tokens, capabilities or raw device metadata.
+- Added registry policy default/validation for `diagnostic_target.allow_single_active_binding_fallback` and aligned the typed admin policy payload.
+- Updated navigation/docs: `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`.
+- PA1 verification:
+  - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_primary_agent_resolver.py server/tests/test_registry_policy_metadata_unit.py -q --tb=short` -> 9 passed.
+  - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registry_policies_admin.py -q --tb=short` -> 3 passed.
+  - `pnpm vitest run src/pages/admin/registry-page.test.tsx` from `webapp/` -> 11 passed.
+  - `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q --tb=short` -> 14 passed.
 
 ---
 
