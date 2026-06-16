@@ -128,6 +128,49 @@ async def _person_for_login(session, *, login: str) -> RegistryPerson:
     return person
 
 
+async def _publish_on_behalf_form(
+    session,
+    *,
+    template_code: str,
+    version: str,
+    allowed_scope: str = "same_department_or_privileged",
+    reason_required: bool = True,
+) -> None:
+    forms_repo = TicketFormPacksRepo(session)
+    await forms_repo.upsert_pack(
+        pack_key="request_forms",
+        version=version,
+        schema_json={
+            "pack_key": "request_forms",
+            "version": version,
+            "forms": [
+                {
+                    "key": template_code,
+                    "request_template_key": template_code,
+                    "title": "On behalf incident",
+                    "request_kind": "incident",
+                    "ticket_type": "incident",
+                    "on_behalf_policy": {
+                        "allowed": True,
+                        "reason_required": reason_required,
+                        "affected_person_required": True,
+                        "allowed_scope": allowed_scope,
+                        "diagnostic_target": "affected_person_primary_agent",
+                        "knowledge_visibility": "creator_only",
+                        "support_visibility": "creator_and_affected",
+                        "no_primary_agent_behavior": "allow_ticket_no_diagnostics",
+                    },
+                    "fields": [
+                        {"key": "summary", "label": "Summary", "type": "text", "required": False},
+                    ],
+                }
+            ],
+        },
+        created_by="test",
+    )
+    await forms_repo.set_preferred(pack_key="request_forms", version=version, updated_by="test")
+
+
 @pytest.mark.asyncio
 async def test_requester_profile_returns_safe_identities_and_devices(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -1296,6 +1339,259 @@ async def test_requester_preview_ticket_accepts_catalog_form_payload(test_client
         json={"service_code": service_code, "offering_code": "laptop_broken", "form_payload": {"summary": "No boot"}},
     )
     assert agent_denied.status == 403
+
+
+@pytest.mark.asyncio
+async def test_requester_on_behalf_people_search_filters_by_policy_scope(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    template_code = f"on_behalf_search_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = f"requester-on-behalf-search-{suffix}@example.test"
+    async with session_maker() as session:
+        requester = await _person_for_login(session, login=login)
+        same_department = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Affected Same Department",
+            full_name="Affected Same Department",
+            email=f"affected-same-{suffix}@example.test",
+            department_id=requester.department_id,
+            location_id=requester.location_id,
+            source="manual",
+            status="active",
+        )
+        outside_department = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Affected Outside Department",
+            full_name="Affected Outside Department",
+            email=f"affected-outside-{suffix}@example.test",
+            source="manual",
+            status="active",
+        )
+        await _seed_profile_context(session, outside_department, marker=f"outside-{suffix}")
+        session.add_all([same_department, outside_department])
+        await _publish_on_behalf_form(session, template_code=template_code, version=f"test-{suffix}")
+        await session.commit()
+
+    response = await test_client.get(
+        f"/api/web/requester/on-behalf/people?form_key={template_code}&q=Affected",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    people = payload["data"]["people"]
+    assert [item["display_name"] for item in people] == ["Affected Same Department"]
+    assert people[0]["department"]["id"] == requester.department_id
+    assert people[0]["primary_agent"]["status"] == "missing"
+    assert "Affected Outside Department" not in str(payload)
+
+
+@pytest.mark.asyncio
+async def test_requester_on_behalf_preview_and_create_reject_out_of_scope_person(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    template_code = f"on_behalf_reject_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"requester-on-behalf-reject-{suffix}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "on-behalf-reject-owned"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        requester = await session.get(RegistryPerson, approved["person"]["person_id"])
+        assert requester is not None
+        outside_person = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Out Of Scope Person",
+            full_name="Out Of Scope Person",
+            email=f"out-of-scope-{suffix}@example.test",
+            source="manual",
+            status="active",
+        )
+        await _seed_profile_context(session, outside_person, marker=f"outside-reject-{suffix}")
+        session.add(outside_person)
+        await _publish_on_behalf_form(session, template_code=template_code, version=f"test-{suffix}")
+        await session.commit()
+
+    ticket_context = {"affected_person_id": outside_person.person_id, "on_behalf_reason": "phone call"}
+    preview = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": device_id,
+            "form_key": template_code,
+            "request_template_key": template_code,
+            "ticket_context": ticket_context,
+            "form_payload": {"summary": "Cannot start"},
+            "description": "Cannot start",
+        },
+    )
+    preview_payload = await preview.json()
+    assert preview.status == 403, preview_payload
+    assert preview_payload["error_code"] == "ON_BEHALF_SCOPE_DENIED"
+
+    created = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": device_id,
+            "title": "Out of scope on-behalf ticket",
+            "description": "Should be rejected",
+            "form_key": template_code,
+            "request_template_key": template_code,
+            "ticket_context": ticket_context,
+            "form_payload": {"summary": "Cannot start"},
+            "ticket_type": "incident",
+        },
+    )
+    created_payload = await created.json()
+    assert created.status == 403, created_payload
+    assert created_payload["error_code"] == "ON_BEHALF_SCOPE_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_requester_on_behalf_exact_search_requires_exact_lookup(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    template_code = f"on_behalf_exact_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"requester-on-behalf-exact-{suffix}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "on-behalf-exact-owned"))
+        await _approved_binding(session, device_id=device_id, login=login)
+        affected = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Exact Search Person",
+            full_name="Exact Search Person",
+            email=f"exact-search-{suffix}@example.test",
+            source="manual",
+            status="active",
+        )
+        await _seed_profile_context(session, affected, marker=f"outside-exact-{suffix}")
+        session.add(affected)
+        await _publish_on_behalf_form(
+            session,
+            template_code=template_code,
+            version=f"test-{suffix}",
+            allowed_scope="exact_search_only",
+        )
+        await session.commit()
+
+    partial = await test_client.get(
+        f"/api/web/requester/on-behalf/people?form_key={template_code}&q=Exact",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    partial_payload = await partial.json()
+    assert partial.status == 200, partial_payload
+    assert partial_payload["data"]["people"] == []
+
+    exact = await test_client.get(
+        f"/api/web/requester/on-behalf/people?form_key={template_code}&q=Exact%20Search%20Person",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    exact_payload = await exact.json()
+    assert exact.status == 200, exact_payload
+    assert [item["person_id"] for item in exact_payload["data"]["people"]] == [affected.person_id]
+
+    rejected = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": device_id,
+            "form_key": template_code,
+            "request_template_key": template_code,
+            "ticket_context": {
+                "affected_person_id": affected.person_id,
+                "on_behalf_reason": "phone call",
+                "affected_person_lookup": "Exact",
+            },
+            "form_payload": {"summary": "Cannot start"},
+            "description": "Cannot start",
+        },
+    )
+    rejected_payload = await rejected.json()
+    assert rejected.status == 403, rejected_payload
+    assert rejected_payload["error_code"] == "ON_BEHALF_SCOPE_DENIED"
+
+    accepted = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": device_id,
+            "title": "Exact on-behalf ticket",
+            "description": "Cannot start",
+            "form_key": template_code,
+            "request_template_key": template_code,
+            "ticket_context": {
+                "affected_person_id": affected.person_id,
+                "on_behalf_reason": "phone call",
+                "affected_person_lookup": "Exact Search Person",
+            },
+            "form_payload": {"summary": "Cannot start"},
+            "ticket_type": "incident",
+        },
+    )
+    accepted_payload = await accepted.json()
+    assert accepted.status == 200, accepted_payload
+
+
+@pytest.mark.asyncio
+async def test_requester_on_behalf_create_stores_authorized_ticket_context(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    template_code = f"on_behalf_create_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    requester_device_id = str(uuid.uuid4())
+    affected_device_id = str(uuid.uuid4())
+    login = f"requester-on-behalf-create-{suffix}@example.test"
+    affected_login = f"affected-on-behalf-create-{suffix}@example.test"
+    async with session_maker() as session:
+        session.add_all([
+            _device(requester_device_id, "creator-owned-device"),
+            _device(affected_device_id, "affected-primary-device"),
+        ])
+        requester_approved = await _approved_binding(session, device_id=requester_device_id, login=login)
+        affected_approved = await _approved_binding(session, device_id=affected_device_id, login=affected_login)
+        requester = await session.get(RegistryPerson, requester_approved["person"]["person_id"])
+        affected = await session.get(RegistryPerson, affected_approved["person"]["person_id"])
+        assert requester is not None
+        assert affected is not None
+        affected.department_id = requester.department_id
+        affected.location_id = requester.location_id
+        assert affected.department_id == requester.department_id
+        await session.flush()
+        await _publish_on_behalf_form(session, template_code=template_code, version=f"test-{suffix}")
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": requester_device_id,
+            "title": "Laptop broken for coworker",
+            "description": "Coworker laptop does not boot",
+            "form_key": template_code,
+            "request_template_key": template_code,
+            "ticket_context": {
+                "affected_person_id": affected_approved["person"]["person_id"],
+                "on_behalf_reason": "phone call from coworker",
+            },
+            "form_payload": {"summary": "No boot"},
+            "ticket_type": "incident",
+        },
+    )
+    payload = await response.json()
+    assert response.status == 200, payload
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, payload["data"]["ticket_id"])
+
+    assert ticket is not None
+    custom_fields = ticket.custom_fields or {}
+    assert custom_fields["created_on_behalf"] is True
+    assert custom_fields["creator_person_id"] == requester_approved["person"]["person_id"]
+    assert custom_fields["affected_person_id"] == affected_approved["person"]["person_id"]
+    assert custom_fields["on_behalf_reason"] == "phone call from coworker"
+    assert custom_fields["target_device_id"] == affected_device_id
+    assert custom_fields["target_binding_id"] == affected_approved["binding"]["binding_id"]
+    assert custom_fields["diagnostic_target_source"] == "affected_user_primary_agent"
 
 
 @pytest.mark.asyncio

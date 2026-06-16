@@ -232,8 +232,11 @@ const DEFAULT_ON_BEHALF_POLICY: Required<AdminFormsOnBehalfPolicy> = {
 };
 
 const ON_BEHALF_SCOPE_OPTIONS = [
+  ["self_only", "Только сам заявитель"],
   ["same_department_or_privileged", "Свой отдел или support/admin"],
   ["same_department", "Только свой отдел"],
+  ["direct_reports", "Прямые подчиненные"],
+  ["exact_search_only", "Только точный поиск"],
   ["privileged_only", "Только support/admin"],
   ["any_employee", "Любой сотрудник"],
 ] as const;

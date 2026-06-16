@@ -106,6 +106,7 @@ export type ServiceCatalogPreviewPayload = {
   device_metadata?: Record<string, unknown>;
   description?: string;
   diagnostic_consent?: Record<string, unknown>;
+  ticket_context?: RequesterOnBehalfTicketContext;
 };
 
 export type RequesterTicketPreviewPayload = ServiceCatalogPreviewPayload & {
@@ -431,6 +432,35 @@ export type RequesterRegistryOptionsPayload = {
   locations?: RequesterRegistryOption[];
 };
 
+export type RequesterOnBehalfTicketContext = {
+  affected_person_id?: string;
+  on_behalf_reason?: string;
+  affected_person_lookup?: string;
+};
+
+export type RequesterOnBehalfPerson = {
+  person_id: string;
+  display_name: string;
+  full_name?: string | null;
+  email?: string | null;
+  department?: {
+    id?: string | null;
+    name?: string | null;
+  } | null;
+  location?: {
+    id?: string | null;
+    display_name?: string | null;
+  } | null;
+  primary_agent?: {
+    status?: "available" | "missing" | "ambiguous" | string;
+    online?: boolean | null;
+  } | null;
+};
+
+export type RequesterOnBehalfPeopleSearchResult = {
+  people: RequesterOnBehalfPerson[];
+};
+
 export type RequesterIdentity = {
   identity_id?: string | null;
   provider: string;
@@ -525,6 +555,7 @@ export type RequesterTicketCreatePayload = {
   offering_full_code?: string;
   request_template_key?: string;
   diagnostic_consent?: Record<string, unknown>;
+  ticket_context?: RequesterOnBehalfTicketContext;
   knowledge_attempts?: KnowledgeAttempt[];
 };
 

@@ -5,10 +5,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
+from sqlalchemy import func, or_, select
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
+from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson
 from app.repos import ArtifactsRepo
+from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
 from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
@@ -17,6 +20,7 @@ from knowledge.feedback_service import KnowledgeFeedbackService
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
 from requester.identity_service import RequesterIdentityResolver, RequesterProfileValidationError
+from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
 from tickets.handlers import (
     _event_visible_to_requester,
@@ -30,7 +34,7 @@ from tickets.handlers import (
 )
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
-from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom_fields
+from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom_fields, resolve_ticket_form_pack
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
 from tickets.public_access import verify_public_access_code
@@ -39,6 +43,8 @@ from tickets.service_catalog_preview import ServiceCatalogPreviewError, build_re
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 from tickets.statuses import enrich_chat_payload_with_requester_name
 from tickets.workflow_service import TicketWorkflowService
+
+_ON_BEHALF_EXCLUDED_PERSON_STATUSES = frozenset({"archived", "deleted", "disabled", "inactive", "merged"})
 
 
 def _success(data: dict[str, Any]) -> web.Response:
@@ -75,6 +81,194 @@ def _profile_completion_blocks(completion: dict[str, Any], key: str) -> bool:
 
 def _clean(value: object, *, max_length: int = 500) -> str:
     return str(value or "").strip()[:max_length]
+
+
+class _OnBehalfRequestError(ValueError):
+    def __init__(self, message: str, *, status: int = 400, error_code: str = "ON_BEHALF_VALIDATION_ERROR"):
+        super().__init__(message)
+        self.status = status
+        self.error_code = error_code
+
+
+def _raw_on_behalf_context(data: dict[str, Any]) -> dict[str, str]:
+    raw_context = data.get("ticket_context") if isinstance(data.get("ticket_context"), dict) else {}
+    affected_person_id = _clean(raw_context.get("affected_person_id"), max_length=120)
+    reason = _clean(raw_context.get("on_behalf_reason") or raw_context.get("reason"), max_length=1000)
+    lookup = _clean(raw_context.get("affected_person_lookup"), max_length=240)
+    payload: dict[str, str] = {}
+    if affected_person_id:
+        payload["affected_person_id"] = affected_person_id
+    if reason:
+        payload["on_behalf_reason"] = reason
+    if lookup:
+        payload["affected_person_lookup"] = lookup
+    return payload
+
+
+async def _resolve_on_behalf_policy(
+    session,
+    *,
+    pack_key: str,
+    pack_version: str | None,
+    form_key: str,
+    request_template_key: str,
+) -> dict[str, Any]:
+    lookup_keys = {key for key in (form_key, request_template_key) if key}
+    if not lookup_keys:
+        return {"allowed": False}
+
+    pack = await resolve_ticket_form_pack(
+        TicketFormPacksRepo(session),
+        pack_key=pack_key or DEFAULT_TICKET_FORM_PACK_KEY,
+        version=pack_version or None,
+    )
+    forms = pack.get("forms") if isinstance(pack.get("forms"), list) else []
+    for item in forms:
+        if not isinstance(item, dict):
+            continue
+        keys = {
+            str(item.get("key") or "").strip(),
+            str(item.get("request_template_key") or "").strip(),
+        }
+        if not lookup_keys.intersection({key for key in keys if key}):
+            continue
+        policy = item.get("on_behalf_policy") if isinstance(item.get("on_behalf_policy"), dict) else {}
+        return policy if policy.get("allowed") else {"allowed": False}
+    return {"allowed": False}
+
+
+def _metadata_value(person: RegistryPerson, *keys: str) -> str:
+    metadata = person.metadata_json if isinstance(person.metadata_json, dict) else {}
+    for key in keys:
+        value = _clean(metadata.get(key), max_length=120)
+        if value:
+            return value
+    return ""
+
+
+def _person_selectable_for_on_behalf(person: RegistryPerson | None) -> bool:
+    if person is None:
+        return False
+    status = str(getattr(person, "status", "") or "active").strip().lower()
+    return status not in _ON_BEHALF_EXCLUDED_PERSON_STATUSES
+
+
+def _on_behalf_scope_allows(
+    *,
+    creator: RegistryPerson,
+    affected: RegistryPerson,
+    scope: str,
+) -> bool:
+    if affected.person_id == creator.person_id:
+        return True
+    if scope == "any_employee":
+        return True
+    if scope in {"same_department", "same_department_or_privileged"}:
+        return bool(creator.department_id and creator.department_id == affected.department_id)
+    if scope == "direct_reports":
+        manager_id = _metadata_value(affected, "manager_person_id", "manager_id", "reports_to_person_id")
+        return bool(manager_id and manager_id == creator.person_id)
+    if scope in {"self_only", "privileged_only", "exact_search_only"}:
+        return False
+    return False
+
+
+def _person_matches_exact_lookup(person: RegistryPerson, lookup: str) -> bool:
+    normalized = lookup.strip().lower()
+    if not normalized:
+        return False
+    candidates = [
+        getattr(person, "display_name", None),
+        getattr(person, "full_name", None),
+        getattr(person, "email", None),
+    ]
+    return any(str(candidate or "").strip().lower() == normalized for candidate in candidates)
+
+
+async def _authorize_on_behalf_context(
+    session,
+    *,
+    creator: RegistryPerson | None,
+    policy: dict[str, Any],
+    data: dict[str, Any],
+) -> dict[str, str] | None:
+    raw_context = _raw_on_behalf_context(data)
+    affected_person_id = raw_context.get("affected_person_id")
+    if not affected_person_id:
+        return None
+    if creator is None:
+        raise _OnBehalfRequestError(
+            "Requester identity is required for on-behalf tickets",
+            status=403,
+            error_code="REQUESTER_IDENTITY_REQUIRED",
+        )
+    if affected_person_id == creator.person_id:
+        return None
+    if not policy.get("allowed"):
+        raise _OnBehalfRequestError(
+            "On-behalf ticket creation is not allowed for this form",
+            status=403,
+            error_code="ON_BEHALF_NOT_ALLOWED",
+        )
+    reason = raw_context.get("on_behalf_reason", "")
+    if policy.get("reason_required") and not reason:
+        raise _OnBehalfRequestError(
+            "On-behalf reason is required",
+            status=400,
+            error_code="ON_BEHALF_REASON_REQUIRED",
+        )
+
+    affected = await session.get(RegistryPerson, affected_person_id)
+    if not _person_selectable_for_on_behalf(affected):
+        raise _OnBehalfRequestError(
+            "Affected person is outside the allowed scope",
+            status=403,
+            error_code="ON_BEHALF_SCOPE_DENIED",
+        )
+    scope = _clean(policy.get("allowed_scope"), max_length=80) or "same_department_or_privileged"
+    if scope == "exact_search_only":
+        allowed = _person_matches_exact_lookup(affected, raw_context.get("affected_person_lookup", ""))
+    else:
+        allowed = _on_behalf_scope_allows(creator=creator, affected=affected, scope=scope)
+    if not allowed:
+        raise _OnBehalfRequestError(
+            "Affected person is outside the allowed scope",
+            status=403,
+            error_code="ON_BEHALF_SCOPE_DENIED",
+        )
+    context = {"affected_person_id": affected.person_id}
+    if reason:
+        context["on_behalf_reason"] = reason
+    if raw_context.get("affected_person_lookup"):
+        context["affected_person_lookup"] = raw_context["affected_person_lookup"]
+    return context
+
+
+async def _serialize_on_behalf_person(session, person: RegistryPerson, *, state: Any | None = None) -> dict[str, Any]:
+    department = await session.get(RegistryDepartment, person.department_id) if person.department_id else None
+    location = await session.get(RegistryLocation, person.location_id) if person.location_id else None
+    resolved = await PrimaryAgentResolver(session, state=state).resolve_for_person(person.person_id)
+    primary_status = "available" if resolved.get("resolved") else "missing"
+    if not resolved.get("resolved") and resolved.get("reason_code") == "ambiguous_primary_device":
+        primary_status = "ambiguous"
+    return {
+        "person_id": person.person_id,
+        "display_name": person.display_name,
+        "full_name": person.full_name,
+        "email": person.email,
+        "department": {
+            "id": person.department_id,
+            "name": getattr(department, "name", None),
+        },
+        "location": {
+            "id": person.location_id,
+            "display_name": getattr(location, "display_name", None),
+        },
+        "primary_agent": {
+            "status": primary_status,
+            "online": resolved.get("online") if resolved.get("resolved") else None,
+        },
+    }
 
 
 def _has_catalog_selection(data: dict[str, Any]) -> bool:
@@ -138,6 +332,78 @@ async def handle_web_requester_profile(request: web.Request) -> web.Response:
     async with get_session() as session:
         payload = await RequesterIdentityResolver(session).build_profile(actor_id=auth_context.actor_id)
     return _success(payload)
+
+
+@require_auth("user")
+async def handle_web_requester_on_behalf_people(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    query = _clean(request.query.get("q"), max_length=120)
+    form_key = _clean(request.query.get("form_key"), max_length=120)
+    request_template_key = _clean(request.query.get("request_template_key"), max_length=120)
+    pack_key = _clean(request.query.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
+    pack_version = _clean(request.query.get("form_pack_version"), max_length=120) or None
+    if len(query) < 2:
+        return _success({"people": []})
+
+    async with get_session() as session:
+        resolver = RequesterIdentityResolver(session)
+        creator = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        if creator is None:
+            return _error(
+                "Requester identity is required for on-behalf search",
+                status=403,
+                error_code="REQUESTER_IDENTITY_REQUIRED",
+            )
+        policy = await _resolve_on_behalf_policy(
+            session,
+            pack_key=pack_key,
+            pack_version=pack_version,
+            form_key=form_key,
+            request_template_key=request_template_key,
+        )
+        if not policy.get("allowed"):
+            return _success({"people": []})
+
+        scope = _clean(policy.get("allowed_scope"), max_length=80) or "same_department_or_privileged"
+        lowered_query = query.lower()
+        stmt = select(RegistryPerson).where(
+            ~RegistryPerson.status.in_(sorted(_ON_BEHALF_EXCLUDED_PERSON_STATUSES)),
+            RegistryPerson.person_id != creator.person_id,
+        )
+        if scope == "exact_search_only":
+            stmt = stmt.where(
+                or_(
+                    func.lower(RegistryPerson.display_name) == lowered_query,
+                    func.lower(RegistryPerson.full_name) == lowered_query,
+                    func.lower(RegistryPerson.email) == lowered_query,
+                )
+            )
+        else:
+            pattern = f"%{lowered_query}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(RegistryPerson.display_name).like(pattern),
+                    func.lower(RegistryPerson.full_name).like(pattern),
+                    func.lower(RegistryPerson.email).like(pattern),
+                )
+            )
+        stmt = stmt.order_by(RegistryPerson.display_name.asc()).limit(20)
+        result = await session.execute(stmt)
+        matched_people = result.scalars().all()
+        scoped_people = (
+            matched_people[:10]
+            if scope == "exact_search_only"
+            else [
+                person
+                for person in matched_people
+                if _on_behalf_scope_allows(creator=creator, affected=person, scope=scope)
+            ][:10]
+        )
+        people = [
+            await _serialize_on_behalf_person(session, person, state=request.app.get("state"))
+            for person in scoped_people
+        ]
+    return _success({"people": people})
 
 
 @require_auth("user")
@@ -607,7 +873,29 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         if _profile_completion_blocks(completion, "ticket_preview"):
             return _profile_incomplete_error(completion)
 
+        pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
+        pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
+        form_key = _clean(data.get("form_key") or data.get("request_template_key"), max_length=120)
+        request_template_key = _clean(data.get("request_template_key"), max_length=120)
+        try:
+            on_behalf_context = await _authorize_on_behalf_context(
+                session,
+                creator=person,
+                policy=await _resolve_on_behalf_policy(
+                    session,
+                    pack_key=pack_key,
+                    pack_version=pack_version,
+                    form_key=form_key,
+                    request_template_key=request_template_key,
+                ),
+                data=data,
+            )
+        except _OnBehalfRequestError as exc:
+            return _error(str(exc), status=exc.status, error_code=exc.error_code)
+
         preview_payload = dict(data)
+        if on_behalf_context:
+            preview_payload["ticket_context"] = on_behalf_context
         account_mode = "confirmed_binding" if binding is not None else "browser_no_device"
         requester_context = await resolver.build_requester_context(
             actor_id=auth_context.actor_id,
@@ -734,6 +1022,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             "request_context": request_context,
             **RequesterIdentityResolver.requester_context_custom_fields(requester_context_snapshot),
         }
+        on_behalf_context: dict[str, str] | None = None
         if account_mode == "browser_no_device":
             extra_custom_fields["no_device"] = {
                 "created_from": "requester_portal",
@@ -807,6 +1096,24 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             except ValueError as exc:
                 details = exc.args[0] if exc.args else "invalid form payload"
                 return _validation_error({"form_payload": details})
+        policy = template_context.get("on_behalf_policy") if isinstance(template_context.get("on_behalf_policy"), dict) else {}
+        if not policy and _raw_on_behalf_context(data).get("affected_person_id"):
+            policy = await _resolve_on_behalf_policy(
+                session,
+                pack_key=pack_key,
+                pack_version=pack_version,
+                form_key=form_key,
+                request_template_key=request_template_key,
+            )
+        try:
+            on_behalf_context = await _authorize_on_behalf_context(
+                session,
+                creator=person,
+                policy=policy,
+                data=data,
+            )
+        except _OnBehalfRequestError as exc:
+            return _error(str(exc), status=exc.status, error_code=exc.error_code)
         extra_custom_fields = attach_knowledge_attempts(extra_custom_fields, knowledge_attempts)
         created = await create_ticket_with_side_effects(
             session,
@@ -839,6 +1146,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             support_group_code=catalog_process_fields.get("support_group_code"),
             extra_custom_fields=extra_custom_fields,
             requester_account=requester_account,
+            ticket_context=on_behalf_context,
             state=request.app.get("state"),
         )
         if knowledge_attempts:

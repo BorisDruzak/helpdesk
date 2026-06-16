@@ -20,6 +20,7 @@ import {
   recordKnowledgeFeedback,
   reopenRequesterTicket,
   RequesterApiError,
+  searchRequesterOnBehalfPeople,
   sendRequesterTicketMessage,
   suggestKnowledge,
   submitRequesterTicketFeedback,
@@ -45,6 +46,7 @@ import type {
   RequesterContextPreview,
   RequesterDevice,
   RequesterDeviceDetail,
+  RequesterOnBehalfPerson,
   RequesterPendingRegistrationClaim,
   RequesterProfile,
   RequesterProfileDetail,
@@ -561,6 +563,15 @@ function collectVisiblePayload(form: RequestFormDefinition | null, values: Field
   return payload;
 }
 
+function onBehalfPersonLabel(person: RequesterOnBehalfPerson): string {
+  return person.display_name || person.full_name || person.email || "Сотрудник";
+}
+
+function onBehalfPrimaryAgentMissing(person: RequesterOnBehalfPerson | null): boolean {
+  const status = String(person?.primary_agent?.status || "").trim();
+  return status === "missing" || status === "ambiguous";
+}
+
 function missingRequiredFields(form: RequestFormDefinition | null, values: FieldValues): string[] {
   return (form?.fields ?? [])
     .filter((field) => field.required && isFieldVisible(field, values))
@@ -778,6 +789,13 @@ export function RequesterWorkspacePage() {
   const [selectedOfferingFullCode, setSelectedOfferingFullCode] = useState("");
   const [selectedFormKey, setSelectedFormKey] = useState("");
   const [fieldValues, setFieldValues] = useState<FieldValues>({});
+  const [onBehalfEnabled, setOnBehalfEnabled] = useState(false);
+  const [onBehalfQuery, setOnBehalfQuery] = useState("");
+  const [onBehalfPeople, setOnBehalfPeople] = useState<RequesterOnBehalfPerson[]>([]);
+  const [onBehalfSelectedPersonId, setOnBehalfSelectedPersonId] = useState("");
+  const [onBehalfReason, setOnBehalfReason] = useState("");
+  const [onBehalfSearchLoading, setOnBehalfSearchLoading] = useState(false);
+  const [onBehalfSearchError, setOnBehalfSearchError] = useState<string | null>(null);
   const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
   const [previewResult, setPreviewResult] = useState<ServiceCatalogSafePreview | null>(null);
   const [previewKey, setPreviewKey] = useState("");
@@ -890,7 +908,6 @@ export function RequesterWorkspacePage() {
     () => devices.find((device) => device.device_id === selectedDeviceId) ?? devices[0] ?? null,
     [devices, selectedDeviceId],
   );
-  const canCreateForCurrentScope = !profileGateActive && (Boolean(selectedDevice) || noDeviceCreateEnabled);
 
   useEffect(() => {
     if (!directDevicePairingId || directPairingLoadedRef.current || loading) {
@@ -935,6 +952,46 @@ export function RequesterWorkspacePage() {
     () => forms.find((form) => form.key === selectedFormKey) ?? forms[0] ?? null,
     [forms, selectedFormKey],
   );
+  const selectedOnBehalfPolicy = selectedForm?.on_behalf_policy?.allowed ? selectedForm.on_behalf_policy : null;
+  const onBehalfActive = Boolean(selectedOnBehalfPolicy?.allowed && onBehalfEnabled);
+  const selectedOnBehalfPerson = useMemo(
+    () => onBehalfPeople.find((person) => person.person_id === onBehalfSelectedPersonId) ?? null,
+    [onBehalfPeople, onBehalfSelectedPersonId],
+  );
+  const onBehalfTicketContext = useMemo(
+    () => {
+      if (!onBehalfActive || !selectedOnBehalfPerson) {
+        return undefined;
+      }
+      const reason = onBehalfReason.trim();
+      const lookup = onBehalfQuery.trim();
+      return {
+        affected_person_id: selectedOnBehalfPerson.person_id,
+        ...(reason ? { on_behalf_reason: reason } : {}),
+        ...(lookup ? { affected_person_lookup: lookup } : {}),
+      };
+    },
+    [onBehalfActive, onBehalfQuery, onBehalfReason, selectedOnBehalfPerson],
+  );
+  const onBehalfMissingRequired = Boolean(
+    onBehalfActive && (!selectedOnBehalfPerson || (selectedOnBehalfPolicy?.reason_required && !onBehalfReason.trim())),
+  );
+  const canCreateForCurrentScope = !profileGateActive && (Boolean(selectedDevice) || noDeviceCreateEnabled || onBehalfActive);
+
+  useEffect(() => {
+    setOnBehalfEnabled(false);
+    setOnBehalfQuery("");
+    setOnBehalfPeople([]);
+    setOnBehalfSelectedPersonId("");
+    setOnBehalfReason("");
+    setOnBehalfSearchError(null);
+  }, [selectedForm?.key]);
+
+  useEffect(() => {
+    setPreviewKey("");
+    setPreviewResult(null);
+  }, [onBehalfEnabled, onBehalfReason, onBehalfSelectedPersonId]);
+
   const requestFormContextPrefill = useMemo(
     () =>
       requesterFormPrefillFromContext(
@@ -995,9 +1052,18 @@ export function RequesterWorkspacePage() {
         offering_full_code: selectedOffering?.full_code,
         form_key: selectedForm?.key,
         form_payload: visiblePayload,
+        ticket_context: onBehalfTicketContext,
         description,
       }),
-    [description, selectedDevice?.device_id, selectedForm?.key, selectedOffering?.full_code, selectedService?.service_code, visiblePayload],
+    [
+      description,
+      onBehalfTicketContext,
+      selectedDevice?.device_id,
+      selectedForm?.key,
+      selectedOffering?.full_code,
+      selectedService?.service_code,
+      visiblePayload,
+    ],
   );
   const selectedTicket = selectedTicketDetail?.ticket ?? null;
   const selectedTicketStatus = selectedTicket?.status ?? "";
@@ -1335,6 +1401,41 @@ export function RequesterWorkspacePage() {
     });
   }
 
+  async function handleOnBehalfSearch() {
+    const query = onBehalfQuery.trim();
+    if (!selectedForm || query.length < 2) {
+      setOnBehalfPeople([]);
+      setOnBehalfSelectedPersonId("");
+      setOnBehalfSearchError("Введите минимум 2 символа для поиска сотрудника.");
+      return;
+    }
+    setOnBehalfSearchLoading(true);
+    setOnBehalfSearchError(null);
+    try {
+      const result = await searchRequesterOnBehalfPeople({
+        form_key: selectedForm.key,
+        request_template_key: selectedOffering?.request_template_key ?? selectedForm.key,
+        form_pack_key: formPackMeta?.pack_key,
+        form_pack_version: formPackMeta?.version,
+        q: query,
+      });
+      const people = result.people ?? [];
+      setOnBehalfPeople(people);
+      setOnBehalfSelectedPersonId((current) =>
+        people.some((person) => person.person_id === current) ? current : "",
+      );
+      if (!people.length) {
+        setOnBehalfSearchError("Подходящих сотрудников в доступной области не найдено.");
+      }
+    } catch (exc) {
+      setOnBehalfPeople([]);
+      setOnBehalfSelectedPersonId("");
+      setOnBehalfSearchError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось найти сотрудника.");
+    } finally {
+      setOnBehalfSearchLoading(false);
+    }
+  }
+
   function buildCreatePayload(): RequesterTicketCreatePayload {
     if (profileGateActive) {
       throw new Error("Заполните профиль, чтобы продолжить работу в кабинете пользователя.");
@@ -1348,6 +1449,12 @@ export function RequesterWorkspacePage() {
     const missing = missingRequiredFields(selectedForm, fieldValues);
     if (missing.length) {
       throw new Error(`Заполните обязательные поля: ${missing.join(", ")}`);
+    }
+    if (onBehalfActive && !selectedOnBehalfPerson) {
+      throw new Error("Выберите сотрудника, у которого проблема");
+    }
+    if (onBehalfActive && selectedOnBehalfPolicy?.reason_required && !onBehalfReason.trim()) {
+      throw new Error("Укажите причину обращения за другого сотрудника");
     }
     const payload: RequesterTicketCreatePayload = {
       title: title.trim() || selectedForm?.title || selectedOffering?.title || "Проверка рабочего места",
@@ -1373,6 +1480,9 @@ export function RequesterWorkspacePage() {
     };
     if (selectedDevice?.device_id) {
       payload.device_id = selectedDevice.device_id;
+    }
+    if (onBehalfTicketContext) {
+      payload.ticket_context = onBehalfTicketContext;
     }
     if (knowledgeAttempts.length) {
       payload.knowledge_attempts = knowledgeAttempts;
@@ -1503,6 +1613,7 @@ export function RequesterWorkspacePage() {
         form_pack_key: createPayload.form_pack_key,
         form_pack_version: createPayload.form_pack_version,
         form_payload: createPayload.form_payload,
+        ticket_context: createPayload.ticket_context,
         description: createPayload.description,
         requester_context: {
           requester_profile: {
@@ -2740,6 +2851,119 @@ export function RequesterWorkspacePage() {
                     ))}
                   </select>
                 </label>
+                {selectedOnBehalfPolicy?.allowed ? (
+                  <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+                    <label className="flex items-center gap-2 font-semibold text-slate-800">
+                      <input
+                        aria-label="Проблема у другого сотрудника"
+                        checked={onBehalfEnabled}
+                        onChange={(event) => {
+                          setOnBehalfEnabled(event.currentTarget.checked);
+                          if (!event.currentTarget.checked) {
+                            setOnBehalfSelectedPersonId("");
+                            setOnBehalfReason("");
+                          }
+                        }}
+                        type="checkbox"
+                      />
+                      <span>{selectedOnBehalfPolicy.label || "Проблема у другого сотрудника"}</span>
+                    </label>
+                    {onBehalfActive ? (
+                      <div className="mt-3 grid gap-3">
+                        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                          <label className="block text-sm font-semibold text-slate-700">
+                            Поиск сотрудника, у которого проблема
+                            <input
+                              aria-label="Поиск сотрудника, у которого проблема"
+                              className="mt-1 w-full rounded-panel border border-slate-200 bg-white px-3 py-2 font-normal"
+                              onChange={(event) => {
+                                setOnBehalfQuery(event.currentTarget.value);
+                                setOnBehalfSelectedPersonId("");
+                                setOnBehalfSearchError(null);
+                              }}
+                              value={onBehalfQuery}
+                            />
+                          </label>
+                          <button
+                            className="self-end rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+                            disabled={onBehalfSearchLoading}
+                            onClick={() => void handleOnBehalfSearch()}
+                            type="button"
+                          >
+                            {onBehalfSearchLoading ? "Ищем..." : "Найти сотрудника"}
+                          </button>
+                        </div>
+                        {onBehalfPeople.length ? (
+                          <label className="block text-sm font-semibold text-slate-700">
+                            Сотрудник, у которого проблема
+                            <select
+                              aria-label="Сотрудник, у которого проблема"
+                              className="mt-1 w-full rounded-panel border border-slate-200 bg-white px-3 py-2 font-normal"
+                              onChange={(event) => setOnBehalfSelectedPersonId(event.currentTarget.value)}
+                              value={onBehalfSelectedPersonId}
+                            >
+                              <option value="">Выберите сотрудника...</option>
+                              {onBehalfPeople.map((person) => (
+                                <option key={person.person_id} value={person.person_id}>
+                                  {onBehalfPersonLabel(person)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : null}
+                        {selectedOnBehalfPolicy.reason_required ? (
+                          <label className="block text-sm font-semibold text-slate-700">
+                            Причина обращения за другого сотрудника
+                            <textarea
+                              aria-label="Причина обращения за другого сотрудника"
+                              className="mt-1 min-h-20 w-full rounded-panel border border-slate-200 bg-white px-3 py-2 font-normal"
+                              onChange={(event) => setOnBehalfReason(event.currentTarget.value)}
+                              value={onBehalfReason}
+                            />
+                          </label>
+                        ) : null}
+                        {onBehalfSearchError ? <p className="text-xs text-amber-700">{onBehalfSearchError}</p> : null}
+                        {selectedOnBehalfPerson ? (
+                          <div
+                            aria-label="Контекст обращения за другого сотрудника"
+                            className="rounded-panel border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                          >
+                            <dl className="grid gap-2 sm:grid-cols-2">
+                              <div>
+                                <dt className="font-semibold text-slate-500">Заявитель</dt>
+                                <dd className="text-slate-900">{profileName}</dd>
+                              </div>
+                              <div>
+                                <dt className="font-semibold text-slate-500">Сотрудник</dt>
+                                <dd className="text-slate-900">{onBehalfPersonLabel(selectedOnBehalfPerson)}</dd>
+                              </div>
+                              {selectedOnBehalfPerson.department?.name ? (
+                                <div>
+                                  <dt className="font-semibold text-slate-500">Подразделение</dt>
+                                  <dd className="text-slate-900">{selectedOnBehalfPerson.department.name}</dd>
+                                </div>
+                              ) : null}
+                              {selectedOnBehalfPerson.location?.display_name ? (
+                                <div>
+                                  <dt className="font-semibold text-slate-500">Локация</dt>
+                                  <dd className="text-slate-900">{selectedOnBehalfPerson.location.display_name}</dd>
+                                </div>
+                              ) : null}
+                            </dl>
+                            <p className="mt-2 text-slate-800">
+                              Диагностика будет выполняться по основному устройству выбранного сотрудника.
+                            </p>
+                            {onBehalfPrimaryAgentMissing(selectedOnBehalfPerson) ? (
+                              <p className="mt-1 text-amber-700">
+                                У выбранного сотрудника нет привязанного устройства. Диагностика агента недоступна.
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {contextualVisibleFields.map((field) => (
                   <RequestFormFieldControl
                     field={field}
@@ -2791,7 +3015,7 @@ export function RequesterWorkspacePage() {
               <button
                 aria-label="Проверить обращение перед отправкой"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
-                disabled={previewSubmitting || !canCreateForCurrentScope || !description.trim() || !selectedOffering}
+                disabled={previewSubmitting || !canCreateForCurrentScope || !description.trim() || !selectedOffering || onBehalfMissingRequired}
                 onClick={() => void handlePreview()}
                 type="button"
               >
@@ -2800,7 +3024,13 @@ export function RequesterWorkspacePage() {
               <button
                 aria-label="Создать обращение в кабинете пользователя"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={submitting || !canCreateForCurrentScope || !description.trim() || Boolean(selectedOffering && !previewIsFresh)}
+                disabled={
+                  submitting ||
+                  !canCreateForCurrentScope ||
+                  !description.trim() ||
+                  onBehalfMissingRequired ||
+                  Boolean(selectedOffering && !previewIsFresh)
+                }
                 type="submit"
               >
                 <Send className="h-4 w-4" />

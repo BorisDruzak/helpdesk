@@ -17,6 +17,7 @@ import {
   previewRequesterTicket,
   reopenRequesterTicket,
   reopenPublicTicket,
+  searchRequesterOnBehalfPeople,
   sendRequesterTicketMessage,
   sendPublicTicketMessage,
   submitRequesterTicketFeedback,
@@ -334,6 +335,7 @@ describe("authenticated requester api", () => {
       request_template_key: "breakage",
       form_key: "breakage",
       form_payload: { summary: "No boot" },
+      ticket_context: { affected_person_id: "person-affected", on_behalf_reason: "phone call" },
       description: "Laptop does not boot",
     });
 
@@ -351,9 +353,38 @@ describe("authenticated requester api", () => {
           request_template_key: "breakage",
           form_key: "breakage",
           form_payload: { summary: "No boot" },
+          ticket_context: { affected_person_id: "person-affected", on_behalf_reason: "phone call" },
           description: "Laptop does not boot",
         }),
       }),
+    );
+  });
+
+  it("searches on-behalf people through the requester boundary", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        status: "success",
+        data: {
+          people: [
+            {
+              person_id: "person-affected",
+              display_name: "Affected One",
+              department: { name: "IT" },
+              location: { display_name: "HQ / 201" },
+              primary_agent: { status: "missing" },
+            },
+          ],
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    const result = await searchRequesterOnBehalfPeople({ form_key: "breakage", q: "Affected" });
+
+    expect(result.people[0].display_name).toBe("Affected One");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/web/requester/on-behalf/people?form_key=breakage&q=Affected",
+      expect.objectContaining({ credentials: "same-origin", cache: "no-store" }),
     );
   });
 
@@ -382,6 +413,7 @@ describe("authenticated requester api", () => {
       form_pack_key: "request_forms",
       form_pack_version: "2026.06",
       form_payload: { summary: "No boot" },
+      ticket_context: { affected_person_id: "person-affected", on_behalf_reason: "phone call" },
       ticket_type: "incident",
     });
 
@@ -404,6 +436,7 @@ describe("authenticated requester api", () => {
           form_pack_key: "request_forms",
           form_pack_version: "2026.06",
           form_payload: { summary: "No boot" },
+          ticket_context: { affected_person_id: "person-affected", on_behalf_reason: "phone call" },
           ticket_type: "incident",
         }),
       }),

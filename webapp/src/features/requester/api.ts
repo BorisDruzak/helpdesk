@@ -19,6 +19,7 @@ import type {
   RequesterProfileUpdatePayload,
   RequesterProfileUpdateResult,
   RequesterRegistryOptionsPayload,
+  RequesterOnBehalfPeopleSearchResult,
   RequesterTicketCreatePayload,
   RequesterTicketCreateResult,
   RequesterConsent,
@@ -232,6 +233,32 @@ export async function fetchRequesterRegistryOptions(): Promise<RequesterRegistry
     cache: "no-store",
   });
   return readSuccess<RequesterRegistryOptionsPayload>(response, "Не удалось загрузить справочники профиля");
+}
+
+export async function searchRequesterOnBehalfPeople(params: {
+  form_key: string;
+  q: string;
+  request_template_key?: string;
+  form_pack_key?: string;
+  form_pack_version?: string;
+}): Promise<RequesterOnBehalfPeopleSearchResult> {
+  const search = new URLSearchParams();
+  search.set("form_key", params.form_key);
+  search.set("q", params.q);
+  if (params.request_template_key) {
+    search.set("request_template_key", params.request_template_key);
+  }
+  if (params.form_pack_key) {
+    search.set("form_pack_key", params.form_pack_key);
+  }
+  if (params.form_pack_version) {
+    search.set("form_pack_version", params.form_pack_version);
+  }
+  const response = await fetch(`/api/web/requester/on-behalf/people?${search.toString()}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+  });
+  return readSuccess<RequesterOnBehalfPeopleSearchResult>(response, "Не удалось найти сотрудника");
 }
 
 export async function createRequesterTicket(

@@ -967,6 +967,189 @@ describe("RequesterWorkspacePage", () => {
     });
   });
 
+  it("selects an affected employee only when on-behalf policy is enabled", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            workspace: "requester",
+            profile: {
+              person_id: "person-requester",
+              display_name: "Requester One",
+              full_name: "Requester One",
+              email: "requester@example.test",
+              phone: "1001",
+              department_id: "dept-1",
+              location_id: "loc-1",
+            },
+            requester_context: {
+              profile: { full_name: "Requester One", department: "IT", location: "HQ / 101", phone: "1001" },
+              form_prefill: { phone: "1001" },
+            },
+            devices: [
+              {
+                device_id: "device-1",
+                hostname: "desk-1",
+                os: "Windows",
+                agent_version: "3.1.61",
+              },
+            ],
+            active_bindings: [],
+            pending_registration_claims: [],
+            open_ticket_count: 0,
+            tickets_requiring_user_action_count: 0,
+            pending_consent_count: 0,
+            recent_tickets: [],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({
+          status: "ok",
+          pack: {
+            pack_key: "request_forms",
+            version: "2026.06",
+            forms: [
+              {
+                key: "ordinary",
+                title: "Обычная форма",
+                request_kind: "incident",
+                on_behalf_policy: { allowed: false },
+                fields: [],
+              },
+              {
+                key: "breakage",
+                title: "Проблема у сотрудника",
+                request_kind: "incident",
+                on_behalf_policy: {
+                  allowed: true,
+                  label: "Проблема у другого сотрудника",
+                  affected_person_required: true,
+                  reason_required: true,
+                  allowed_scope: "same_department_or_privileged",
+                  no_primary_agent_behavior: "allow_ticket_no_diagnostics",
+                },
+                fields: [{ key: "summary", label: "Кратко", type: "text", required: true }],
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({
+          status: "ok",
+          catalog_version: "runtime",
+          services: [
+            {
+              service_code: "workplace",
+              title: "Рабочее место",
+              offerings: [
+                {
+                  offering_code: "laptop_broken",
+                  full_code: "workplace.laptop_broken",
+                  title: "Сломался ноутбук",
+                  request_template_key: "breakage",
+                },
+              ],
+            },
+          ],
+        });
+      }
+      if (url === "/api/knowledge/suggest") {
+        return jsonResponse({ status: "ok", suggestions: [], rollout: { enabled: true, show_before_form: true } });
+      }
+      if (url.startsWith("/api/web/requester/on-behalf/people?")) {
+        const parsed = new URL(url, "http://localhost");
+        expect(parsed.searchParams.get("form_key")).toBe("breakage");
+        expect(parsed.searchParams.get("q")).toBe("Affected");
+        return jsonResponse({
+          status: "success",
+          data: {
+            people: [
+              {
+                person_id: "person-affected",
+                display_name: "Affected One",
+                department: { name: "IT" },
+                location: { display_name: "HQ / 201" },
+                primary_agent: { status: "missing" },
+              },
+            ],
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets/preview") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ok: true,
+            service: { code: "workplace", title: "Workplace" },
+            offering: { code: "laptop_broken", full_code: "workplace.laptop_broken", title: "Laptop broken" },
+            approval: { required: false, text: "Approval is not required" },
+            diagnostics: { required: false, consent_required: false, text: "Diagnostics use affected employee primary device" },
+            warnings: [],
+            blockers: [],
+            would_create_ticket: false,
+          },
+        });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "T-ON-BEHALF",
+            ticket: { ticket_id: "T-ON-BEHALF", title: "Проблема у сотрудника", status: "new" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByLabelText("Форма обращения заявителя");
+    expect(screen.queryByLabelText("Проблема у другого сотрудника")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Форма обращения заявителя"), { target: { value: "breakage" } });
+    fireEvent.click(await screen.findByLabelText("Проблема у другого сотрудника"));
+    fireEvent.change(screen.getByLabelText("Поиск сотрудника, у которого проблема"), { target: { value: "Affected" } });
+    fireEvent.click(screen.getByRole("button", { name: "Найти сотрудника" }));
+    await screen.findByText("Affected One");
+    fireEvent.change(screen.getByLabelText("Сотрудник, у которого проблема"), { target: { value: "person-affected" } });
+    fireEvent.change(screen.getByLabelText("Причина обращения за другого сотрудника"), { target: { value: "phone call" } });
+    expect(screen.getByText("Диагностика будет выполняться по основному устройству выбранного сотрудника.")).toBeInTheDocument();
+    expect(screen.getByText("У выбранного сотрудника нет привязанного устройства. Диагностика агента недоступна.")).toBeInTheDocument();
+    expect(screen.queryByText("person-affected")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Поле формы обращения summary"), { target: { value: "Не включается" } });
+    fireEvent.change(screen.getByLabelText("Описание"), { target: { value: "Ноутбук не загружается" } });
+    fireEvent.click(screen.getByLabelText("Проверить обращение перед отправкой"));
+
+    await screen.findByText("Безопасный preview");
+    const previewCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/web/requester/tickets/preview");
+    expect(JSON.parse(String((previewCall?.[1] as RequestInit).body))).toMatchObject({
+      ticket_context: { affected_person_id: "person-affected", on_behalf_reason: "phone call" },
+    });
+
+    fireEvent.click(screen.getByLabelText("Создать обращение в кабинете пользователя"));
+    await screen.findByText("Создано обращение T-ON-BEHALF");
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/web/requester/tickets" && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(JSON.parse(String((createCall?.[1] as RequestInit).body))).toMatchObject({
+      ticket_context: { affected_person_id: "person-affected", on_behalf_reason: "phone call" },
+    });
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/registry/options")).toBe(false);
+  });
+
   it("creates a requester ticket without a registered device", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

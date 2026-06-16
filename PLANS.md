@@ -630,7 +630,7 @@ Acceptance:
 
 ## Phase PA4 — Requester UI: affected user selector
 
-Status: not started.
+Status: completed.
 
 Goal:
 
@@ -664,6 +664,21 @@ Tests:
 - UI says diagnostics will use affected user's primary device.
 - No raw ids or forbidden technical terms appear in normal UI.
 
+Changes:
+
+- `/app/requester` now shows the `Проблема у другого сотрудника` block only when the selected form has enabled `on_behalf_policy`.
+- The requester can search/select `Сотрудник, у которого проблема`, enter the required reason, and sees creator/affected/department/location context plus the safe no-primary-agent note.
+- Preview/create payloads now include `ticket_context.affected_person_id`, `on_behalf_reason` and the exact lookup string used for restrictive policies.
+- Knowledge suggestion signals remain creator/requester-context only; affected employee selection is sent only to the requester preview/create boundary.
+
+Verification:
+
+- Red before implementation: `pnpm --dir webapp exec vitest run src/features/requester/api.test.ts -t "on-behalf"` -> failed because `searchRequesterOnBehalfPeople` did not exist.
+- Red before implementation: `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx -t "affected employee"` -> failed because the on-behalf toggle was absent.
+- Green after implementation: `pnpm --dir webapp exec vitest run src/features/requester/api.test.ts -t "on-behalf"` -> 1 passed.
+- Green after implementation: `pnpm --dir webapp exec vitest run src/pages/requester/index.test.tsx -t "affected employee"` -> 1 passed.
+- Final verification also covered full requester API React tests and production webapp build.
+
 Acceptance:
 
 - User understands they are creating a ticket for another employee.
@@ -673,7 +688,7 @@ Acceptance:
 
 ## Phase PA5 — Server-side authorization for affected person selection
 
-Status: not started.
+Status: completed.
 
 Goal:
 
@@ -703,6 +718,21 @@ Tests:
 - Exact search does not expose full directory browsing when policy is restrictive.
 - Preview/create reject unauthorized affected_person_id.
 - Audit payload records creator, affected and reason.
+
+Changes:
+
+- Added authenticated requester endpoint `GET /api/web/requester/on-behalf/people` for scoped affected-person search.
+- Search resolves the form `on_behalf_policy`, filters by allowed scope and returns only requester-safe person, department/location and primary-agent availability fields.
+- Requester preview/create now revalidate `ticket_context.affected_person_id` server-side and reject disabled/out-of-scope selections with `ON_BEHALF_*` errors.
+- Authorized create passes the normalized context into `create_ticket_with_side_effects()`, which stores `ticket_context_v1` and flat aliases through the PA2 builder.
+- Form schema/admin scope options now include `self_only`, `same_department`, `direct_reports`, `same_department_or_privileged`, `privileged_only`, `exact_search_only` and `any_employee`; `exact_search_only` requires the submitted exact lookup to match the selected person.
+
+Verification:
+
+- Red before implementation: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_requester_on_behalf_people_search_filters_by_policy_scope server/tests/test_requester_workspace_api.py::test_requester_on_behalf_preview_and_create_reject_out_of_scope_person server/tests/test_requester_workspace_api.py::test_requester_on_behalf_create_stores_authorized_ticket_context -q --tb=short` -> failed on missing route, missing preview/create authorization and ignored ticket context.
+- Green after implementation: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_requester_on_behalf_people_search_filters_by_policy_scope server/tests/test_requester_workspace_api.py::test_requester_on_behalf_preview_and_create_reject_out_of_scope_person server/tests/test_requester_workspace_api.py::test_requester_on_behalf_create_stores_authorized_ticket_context -q --tb=short` -> 3 passed.
+- Post-review regression: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py::test_requester_on_behalf_exact_search_requires_exact_lookup server/tests/test_requester_workspace_api.py::test_requester_on_behalf_people_search_filters_by_policy_scope server/tests/test_requester_workspace_api.py::test_requester_on_behalf_preview_and_create_reject_out_of_scope_person server/tests/test_requester_workspace_api.py::test_requester_on_behalf_create_stores_authorized_ticket_context -q --tb=short` -> 4 passed.
+- Final verification: `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short --durations=20` -> 29 passed.
 
 Acceptance:
 

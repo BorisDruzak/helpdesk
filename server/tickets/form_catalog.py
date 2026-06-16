@@ -176,7 +176,10 @@ _ON_BEHALF_ALLOWED_SCOPES = frozenset(
     {
         "same_department_or_privileged",
         "same_department",
+        "direct_reports",
+        "exact_search_only",
         "privileged_only",
+        "self_only",
         "any_employee",
     }
 )
