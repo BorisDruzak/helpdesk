@@ -172,6 +172,18 @@ export async function fetchAccessAudit(): Promise<AccessAuditPayload> {
   return readSuccessResponse(response, "Не удалось загрузить журнал RBAC");
 }
 
+export async function changeAdminUserPassword(userLogin: string, password: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/access/users/${encodeURIComponent(userLogin)}/password`, {
+    body: JSON.stringify({ password }),
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    method: "POST",
+  });
+  await readSuccessResponse<{ updated: boolean }>(response, "Не удалось сменить пароль пользователя");
+}
+
 async function sendJson<T>(url: string, method: string, body: unknown, fallbackMessage: string): Promise<T> {
   const response = await fetch(url, {
     body: JSON.stringify(body),

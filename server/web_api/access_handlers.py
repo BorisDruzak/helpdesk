@@ -16,6 +16,7 @@ from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ui_users_repo import UiUsersRepo
+from auth.password_service import PasswordPolicyError, hash_password, validate_password_policy
 from auth.middleware import require_auth
 from web_api.dto.access_control import (
     AccessAuditItem,
@@ -169,6 +170,35 @@ async def handle_web_admin_access_catalog(_request: web.Request):
 async def handle_web_admin_access_summary(_request: web.Request):
     payload = await _summary_payload()
     return json_model_response(SuccessResponse[AccessSummaryPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_access_user_password(request: web.Request):
+    user_login = str(request.match_info.get("user_login") or "").strip()
+    if not user_login:
+        return _bad_request("Не указан пользователь")
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response(
+            {"status": "error", "error": "Некорректный JSON", "error_code": "INVALID_JSON"},
+            status=400,
+        )
+    password = str(data.get("password") or "")
+    if not password:
+        return _bad_request("Введите новый пароль")
+    try:
+        validate_password_policy(password, login=user_login)
+    except PasswordPolicyError as exc:
+        return _bad_request(str(exc), "PASSWORD_POLICY_ERROR")
+
+    actor_id, _actor_role = _actor(request)
+    async with get_session() as session:
+        repo = UiUsersRepo(session)
+        updated = await repo.set_password(user_login, hash_password(password), actor_id=actor_id)
+    if not updated:
+        return _not_found("Пользователь не найден", "USER_NOT_FOUND")
+    return json_model_response(SuccessResponse[dict[str, bool]](data={"updated": True}))
 
 
 @require_auth("admin")

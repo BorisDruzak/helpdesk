@@ -316,6 +316,7 @@ from web_api.access_handlers import (
     handle_web_admin_access_group_queues,
     handle_web_admin_access_summary,
     handle_web_admin_access_update_group,
+    handle_web_admin_access_user_password,
 )
 from web_api.support_handlers import (
     handle_web_admin_ticket_purge,
@@ -952,6 +953,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/access/summary', handle_web_admin_access_summary),
         web.get('/api/web/admin/access/effective', handle_web_admin_access_effective),
         web.get('/api/web/admin/access/audit', handle_web_admin_access_audit),
+        web.post('/api/web/admin/access/users/{user_login}/password', handle_web_admin_access_user_password),
         web.post('/api/web/admin/access/groups', handle_web_admin_access_create_group),
         web.patch('/api/web/admin/access/groups/{group_id}', handle_web_admin_access_update_group),
         web.put('/api/web/admin/access/groups/{group_id}/permissions', handle_web_admin_access_group_permissions),

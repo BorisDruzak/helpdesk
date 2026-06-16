@@ -302,6 +302,10 @@ function installAccessFetchMock() {
       });
     }
 
+    if (url === "/api/web/admin/access/users/support1/password" && init?.method === "POST") {
+      return jsonResponse({ data: { updated: true }, status: "success" });
+    }
+
     return jsonResponse({ error: `Unhandled ${url}`, status: "error" }, 500);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -367,6 +371,40 @@ describe("AdminAccessPage", () => {
     expect(screen.getByText("Открывать поддержку")).toBeInTheDocument();
     expect(screen.getByText("workspace.support.view")).toBeInTheDocument();
     expect(screen.getByText("Источник: роль + группа")).toBeInTheDocument();
+  });
+
+  it("changes a user password without requesting or showing the current password", async () => {
+    const fetchMock = installAccessFetchMock();
+
+    renderAccessPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: /Пользователи/ }));
+    fireEvent.change(screen.getByPlaceholderText("Логин, имя, email или роль"), { target: { value: "support1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сменить пароль support1" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Сменить пароль" });
+    expect(within(dialog).getByText("support1")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/Текущий пароль/i)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/Текущий пароль/i)).not.toBeInTheDocument();
+
+    fireEvent.change(within(dialog).getByLabelText("Новый пароль"), { target: { value: "StrongReset123!" } });
+    fireEvent.change(within(dialog).getByLabelText("Повторите пароль"), { target: { value: "StrongReset123!" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Сохранить пароль" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/admin/access/users/support1/password",
+        expect.objectContaining({
+          body: JSON.stringify({ password: "StrongReset123!" }),
+          credentials: "same-origin",
+          method: "POST",
+        }),
+      );
+    });
+
+    const passwordRequest = fetchMock.mock.calls.find(([url]) => String(url) === "/api/web/admin/access/users/support1/password");
+    expect(String(passwordRequest?.[1]?.body ?? "")).not.toContain("current_password");
+    expect(await screen.findByText("Пароль обновлён")).toBeInTheDocument();
   });
 
   it("groups permissions, tracks pending group edits, previews diff and requires high-risk confirmation before save", async () => {

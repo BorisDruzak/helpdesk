@@ -267,6 +267,7 @@ Security update 2026-06-15:
 - Access-control API:
   - `GET /api/web/admin/access/catalog` — роли и grouped permission catalog;
   - `GET /api/web/admin/access/summary` — пользователи из `ui_users`, очереди, access groups и membership counts;
+  - `POST /api/web/admin/access/users/{user_login}/password` — admin-only смена пароля существующего UI-пользователя; request body принимает только новый `password`, политика пароля проверяется сервером, пароль хешируется, текущий пароль не читается и не возвращается;
   - `GET /api/web/admin/access/effective?actor_id=...&actor_role=...` — effective permissions, workspaces, direct/group queue memberships и источники прав;
   - `POST/PATCH /api/web/admin/access/groups*` — controlled CRUD группы доступа;
   - `PUT /api/web/admin/access/groups/{group_id}/permissions|members|queues` — explicit apply для permission grants, group members и queue grants;

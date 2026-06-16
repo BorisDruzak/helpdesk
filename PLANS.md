@@ -828,6 +828,11 @@ Verification, 2026-06-15:
 - `$env:PC_CLIENT_ALLOW_SHARED_TEST_DB='1'; python -m pytest server/tests/test_registration_api.py -q --tb=short` -> 33 passed.
 - Local Playwright browser fallback evidence is in `artifacts/browser_live_validation/web-first-registration-r6-20260615/`: report shows no console/network errors, no horizontal scroll at 1366/1920, hidden `position`, saved `cost_center` custom field, and requester save payload under `custom_fields`.
 
+Follow-up, 2026-06-16:
+
+- `/app/admin/access` user rows now expose an admin-only password reset dialog that asks only for the new password/repeat password and never displays or submits the current password.
+- The React action uses the web-session route `POST /api/web/admin/access/users/{user_login}/password`; the handler validates password policy, hashes server-side and updates `ui_users` through `UiUsersRepo`.
+
 ---
 
 ## Phase R7 — Registry extension for production context

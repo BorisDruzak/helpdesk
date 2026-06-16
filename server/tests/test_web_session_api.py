@@ -10,6 +10,7 @@ from auth.rate_limit import reset_rate_limits
 from access_control.catalog import CATALOG_VERSION
 from routes import setup_routes
 import auth.middleware as auth_middleware_module
+import web_api.access_handlers as access_handlers_module
 import web_api.session_handlers as session_handlers_module
 
 
@@ -694,6 +695,116 @@ async def test_web_session_cookie_auth_unsafe_requests_require_same_origin(monke
     assert wrong_payload["error_code"] == "CSRF_ORIGIN_MISMATCH"
     assert same_origin.status == 200
     assert same_payload == {"status": "ok", "actor_id": "requester-cookie"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_cookie_auth_bridges_access_password_alias_with_same_origin(monkeypatch):
+    async def fake_verify_ui_token(_self, token: str):
+        if token != "cookie-token":
+            return None
+        return {
+            "user_login": "admin-cookie",
+            "actor_role": "admin",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "type": "ui",
+        }
+
+    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
+
+    async def protected_handler(request: web.Request):
+        auth_context = request["auth_context"]
+        return web.json_response(
+            {
+                "status": "ok",
+                "actor_id": auth_context.actor_id,
+                "actor_role": auth_context.actor_role,
+                "path": request.path,
+            }
+        )
+
+    app = web.Application(middlewares=[auth_middleware])
+    app["state"] = SimpleNamespace(users={})
+    app.router.add_post("/api/web/admin/access/users/support1/password", protected_handler)
+
+    async with TestClient(TestServer(app)) as client:
+        missing_origin = await client.post(
+            "/api/web/admin/access/users/support1/password",
+            headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
+            json={"password": "StrongReset123!"},
+        )
+        missing_payload = await missing_origin.json()
+        same_origin = await client.post(
+            "/api/web/admin/access/users/support1/password",
+            headers={
+                "Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token",
+                "Origin": str(client.make_url("/")).rstrip("/"),
+            },
+            json={"password": "StrongReset123!"},
+        )
+        same_payload = await same_origin.json()
+
+    assert missing_origin.status == 403
+    assert missing_payload["error_code"] == "CSRF_ORIGIN_REQUIRED"
+    assert same_origin.status == 200
+    assert same_payload == {
+        "status": "ok",
+        "actor_id": "admin-cookie",
+        "actor_role": "admin",
+        "path": "/api/web/admin/access/users/support1/password",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_access_password_alias_updates_only_new_password(monkeypatch):
+    calls: dict[str, object] = {}
+
+    class FakeSession:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeUiUsersRepo:
+        def __init__(self, _session):
+            pass
+
+        async def set_password(self, user_login, password_hash, *, actor_id=None):
+            calls["user_login"] = user_login
+            calls["password_hash"] = password_hash
+            calls["actor_id"] = actor_id
+            return True
+
+    monkeypatch.setattr(access_handlers_module, "get_session", lambda: FakeSession())
+    monkeypatch.setattr(access_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
+
+    @web.middleware
+    async def auth_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id="admin-cookie",
+            actor_role="admin",
+            auth_type=AuthType.UI_TOKEN,
+            token="cookie-token",
+        )
+        return await handler(request)
+
+    app = web.Application(middlewares=[auth_context_middleware])
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/admin/access/users/support1/password",
+            json={"password": "StrongReset123!"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {"status": "success", "data": {"updated": True}}
+    assert calls["user_login"] == "support1"
+    assert calls["actor_id"] == "admin-cookie"
+    assert "StrongReset123!" not in str(calls["password_hash"])
 
 
 @pytest.mark.asyncio

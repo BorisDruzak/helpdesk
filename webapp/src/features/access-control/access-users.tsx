@@ -1,12 +1,19 @@
 import { Activity, KeyRound, Layers3, UsersRound } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Input } from "../../components/ui/input";
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
-import type { AccessCatalogPayload, AccessEffectivePayload, AccessGroupItem, AccessUserItem } from "./api";
+import {
+  changeAdminUserPassword,
+  type AccessCatalogPayload,
+  type AccessEffectivePayload,
+  type AccessGroupItem,
+  type AccessUserItem,
+} from "./api";
 import { buildEffectivePermissionRows, filterUsers, riskLabel, riskTone, statusLabel, workspaceLabel } from "./model";
 
 type UsersAccessTableProps = {
@@ -33,6 +40,7 @@ export function UsersAccessTable({
   const [statusFilter, setStatusFilter] = useState("all");
   const [flagFilter, setFlagFilter] = useState("all");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [passwordTarget, setPasswordTarget] = useState<AccessUserItem | null>(null);
   const roleOptions = useMemo(() => Array.from(new Set(users.map((user) => user.actor_role))).sort(), [users]);
   const roleLabelByCode = useMemo(() => new Map(catalog.roles.map((role) => [role.code, role.label])), [catalog.roles]);
   const filteredUsers = useMemo(
@@ -155,9 +163,19 @@ export function UsersAccessTable({
                         </Badge>
                       </td>
                       <td className="px-5 py-4">
-                        <Button onClick={() => onSelectUser(user)} size="sm" variant="outline">
-                          {`Открыть доступ ${user.user_login}`}
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          <Button onClick={() => onSelectUser(user)} size="sm" variant="outline">
+                            {`Открыть доступ ${user.user_login}`}
+                          </Button>
+                          <Button
+                            aria-label={`Сменить пароль ${user.user_login}`}
+                            onClick={() => setPasswordTarget(user)}
+                            size="sm"
+                            variant="outline"
+                          >
+                            Сменить пароль
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -175,6 +193,109 @@ export function UsersAccessTable({
         loading={effectiveLoading}
         user={selectedUser}
       />
+      {passwordTarget ? (
+        <PasswordResetDialog
+          onClose={() => setPasswordTarget(null)}
+          user={passwordTarget}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PasswordResetDialog({ onClose, user }: { onClose: () => void; user: AccessUserItem }) {
+  const [password, setPassword] = useState("");
+  const [passwordRepeat, setPasswordRepeat] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!password) {
+      setErrorMessage("Введите новый пароль.");
+      return;
+    }
+    if (password !== passwordRepeat) {
+      setErrorMessage("Пароли не совпадают.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await changeAdminUserPassword(user.user_login, password);
+      setPassword("");
+      setPasswordRepeat("");
+      setSuccessMessage("Пароль обновлён");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Не удалось сменить пароль.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6">
+      <form
+        aria-label="Сменить пароль"
+        aria-modal="true"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg bg-white shadow-xl"
+        onSubmit={handleSubmit}
+        role="dialog"
+      >
+        <div className="border-b border-border px-5 py-4">
+          <h2 className="text-lg font-semibold text-slate-950">Сменить пароль</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Новый пароль будет установлен для пользователя <span className="font-semibold text-slate-900">{user.user_login}</span>.
+          </p>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          <label className="block text-sm font-medium text-slate-800">
+            Новый пароль
+            <Input
+              autoComplete="new-password"
+              className="mt-2 w-full"
+              name="new_password"
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              value={password}
+            />
+          </label>
+          <label className="block text-sm font-medium text-slate-800">
+            Повторите пароль
+            <Input
+              autoComplete="new-password"
+              className="mt-2 w-full"
+              name="password_repeat"
+              onChange={(event) => setPasswordRepeat(event.target.value)}
+              type="password"
+              value={passwordRepeat}
+            />
+          </label>
+          <p className="text-sm text-slate-500">Введите только новое значение. Старое значение в системе не раскрывается.</p>
+          {errorMessage ? (
+            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700" role="alert">
+              {errorMessage}
+            </p>
+          ) : null}
+          {successMessage ? (
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-700" role="status">
+              {successMessage}
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-4">
+          <Button onClick={onClose} variant="outline">
+            Закрыть
+          </Button>
+          <Button disabled={isSubmitting} type="submit">
+            {isSubmitting ? "Сохраняем..." : "Сохранить пароль"}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
