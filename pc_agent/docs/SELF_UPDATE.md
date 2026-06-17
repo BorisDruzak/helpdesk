@@ -10,6 +10,8 @@ PC Agent поддерживает удалённое обновление чер
 
 Startup auto-update не обходит серверную авторизацию: `ws_agent.py` пропускает запуск, если уже есть `pending_update.json`, получает verdict через update recommendation endpoint и вызывает обычный `POST /api/devices/{device_id}/agent/update` с reason `agent_startup_auto_update`. Сервер по-прежнему разрешает agent-role self-update только для собственного `device_id` и только для текущего recommended build.
 
+Server handshake can also enqueue the same `update` command for older installed agents that do not yet contain agent-side startup auto-update code. That fallback runs only for a newer assigned rollout, skips active update operations, skips the same version after a launcher-reported failure, and uses reason `agent_handshake_auto_update`.
+
 2026-06-10 Stage 3 consent GUI changes are ordinary application code inside the distributed agent artifact. They do not alter the self-update command, launcher staging, rollback or assigned rollout protocol.
 
 ## Layout (per-user)

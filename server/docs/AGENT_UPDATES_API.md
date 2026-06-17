@@ -267,6 +267,8 @@ GUI агента использует этот endpoint перед локаль�
 }
 ```
 
+Server handshake has a compatibility auto-update path for older installed agents: after `handshake_ack`, if the current agent version is older than the assigned rollout and there is no active `agent_update`, the server enqueues `update` with reason `agent_handshake_auto_update`. The agent-side startup request path still uses the same endpoint and reason `agent_startup_auto_update`.
+
 ## WS command: `update`
 
 Сервер ставит в очередь команду `update` с параметрами:

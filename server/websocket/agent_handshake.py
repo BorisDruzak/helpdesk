@@ -70,6 +70,115 @@ def _default_registration_payload() -> dict[str, Any]:
     }
 
 
+async def _maybe_enqueue_startup_agent_update(
+    *,
+    state,
+    auth_context: AuthContext,
+    device_id: str,
+    current_version: str | None,
+) -> bool:
+    if not DB_AVAILABLE or not ENABLE_DB_PERSISTENCE:
+        return False
+    if not current_version or current_version == "unknown":
+        return False
+
+    try:
+        from agents.agent_builds_handlers import (
+            _resolve_recommended_build,
+            _resolve_target_for_device,
+            enqueue_device_agent_update,
+        )
+        from app.repos import DevicesRepo, OperationsRepo
+        from utils.versioning import compare_versions
+
+        async with get_session() as session:
+            devices_repo = DevicesRepo(session)
+            device = await devices_repo.get_by_device_id(device_id)
+            target = _resolve_target_for_device(device)
+            if not target:
+                logger.debug(
+                    "[handshake] startup agent update skipped: "
+                    f"device_id={device_id} target=unknown"
+                )
+                return False
+
+            op_repo = OperationsRepo(session)
+            recent_updates = await op_repo.get_recent_operations(
+                device_id,
+                kinds=["agent_update"],
+                limit=10,
+            )
+            active_statuses = set(getattr(OperationsRepo, "PENDING_STATUSES", ()))
+            active_update = next(
+                (op for op in recent_updates if getattr(op, "status", None) in active_statuses),
+                None,
+            )
+            if active_update:
+                logger.info(
+                    "[handshake] startup agent update skipped: "
+                    f"device_id={device_id} active_operation={active_update.operation_id} "
+                    f"status={active_update.status}"
+                )
+                return False
+
+            recommended, recommendation_source, _assignment = await _resolve_recommended_build(
+                session,
+                target=target,
+            )
+            if not recommended:
+                return False
+
+            comparison = compare_versions(recommended.version, current_version)
+            if comparison <= 0:
+                logger.debug(
+                    "[handshake] startup agent update skipped: "
+                    f"device_id={device_id} current={current_version} "
+                    f"recommended={recommended.version} comparison={comparison}"
+                )
+                return False
+
+            device_metadata = device.device_metadata if device and isinstance(device.device_metadata, dict) else {}
+            if device_metadata.get("last_failed_update_version") == recommended.version:
+                logger.info(
+                    "[handshake] startup agent update skipped after failed attempt: "
+                    f"device_id={device_id} version={recommended.version} "
+                    f"operation_id={device_metadata.get('last_failed_update_operation_id') or 'unknown'}"
+                )
+                return False
+
+            update_request = {
+                "target": recommended.target,
+                "channel": recommended.channel,
+                "version": recommended.version,
+                "source": recommendation_source,
+            }
+
+        result = await enqueue_device_agent_update(
+            state=state,
+            auth_context=auth_context,
+            device_id=device_id,
+            target=update_request["target"],
+            channel=update_request["channel"],
+            version=update_request["version"],
+            reason="agent_handshake_auto_update",
+        )
+        logger.info(
+            "[handshake] startup agent update enqueued: "
+            f"device_id={device_id} current={current_version} "
+            f"target={update_request['target']} channel={update_request['channel']} "
+            f"version={update_request['version']} source={update_request['source']} "
+            f"operation_id={result.get('operation_id')}"
+        )
+        return True
+    except Exception as exc:
+        logger.warning(
+            "[handshake] startup agent update enqueue failed: "
+            f"device_id={device_id} current={current_version} error={exc}",
+            exc_info=True,
+        )
+        return False
+
+
 async def build_registration_payload_for_handshake(
     device_id: str,
     *,
@@ -891,6 +1000,17 @@ async def handle_handshake(
         )
     
     # Enqueue list_tools if needed (с debounce: не ставим, если уже есть pending list_tools)
+    startup_update_enqueued = False
+    if client_kind == "agent_runtime":
+        startup_update_enqueued = await _maybe_enqueue_startup_agent_update(
+            state=state,
+            auth_context=auth_context,
+            device_id=device_id,
+            current_version=str(payload_pre.get("agent_version") or metadata.get("agent_version") or "unknown"),
+        )
+        if startup_update_enqueued:
+            should_request_toolset = False
+
     if client_kind == "agent_runtime" and should_request_toolset and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
         try:
             from websocket.protocol import enqueue_command_async

@@ -302,6 +302,139 @@ async def test_agent_can_request_self_update_only_for_recommended_build(test_cli
 
 
 @pytest.mark.asyncio
+async def test_handshake_enqueues_startup_agent_update_for_newer_rollout(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows", metadata={"os_type": "windows"})
+    assigned_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.68")
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    policy_resp = await test_client.patch(
+        "/api/admin/connection_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"policy": "accept_all"},
+    )
+    assert policy_resp.status == 200
+    req_resp = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "agent_version": "3.1.67", "os_type": "windows"},
+    )
+    assert req_resp.status == 200
+    token = (await req_resp.json())["token"]
+
+    async def _noop(**kwargs):
+        return "queued-update"
+
+    ws = _HandshakeWsStub()
+    request = SimpleNamespace(remote="127.0.0.1", headers={"User-Agent": "pytest"})
+    handshake_message = {
+        "type": "handshake",
+        "protocol_version": "ws_ticket_v3",
+        "token": token,
+        "meta": {"capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]},
+        "payload": {
+            "device_id": device_id,
+            "agent_version": "3.1.67",
+            "os": "Windows",
+            "os_type": "windows",
+            "modules": [],
+            "modules_inventory": [],
+        },
+    }
+
+    with patch("agents.agent_builds_handlers.enqueue_command_async") as mocked_enqueue:
+        mocked_enqueue.side_effect = _noop
+        _, _, _, authenticated = await handle_handshake(
+            ws=ws,
+            data=handshake_message,
+            request=request,
+            state=test_client.app["state"],
+        )
+
+    assert authenticated is True
+    assert ws.sent_payloads[0]["type"] == "handshake_ack"
+    assert mocked_enqueue.call_count == 1
+    enqueue_kwargs = mocked_enqueue.call_args.kwargs
+    assert enqueue_kwargs["command"] == "update"
+    assert enqueue_kwargs["params"]["version"] == assigned_version
+    assert enqueue_kwargs["params"]["reason"] == "agent_handshake_auto_update"
+    assert enqueue_kwargs["params"]["requested_by"] == "agent"
+
+
+@pytest.mark.asyncio
+async def test_handshake_startup_agent_update_skips_when_update_active(test_client):
+    device_id = str(uuid.uuid4())
+    await _insert_device(device_id, os_name="Windows", metadata={"os_type": "windows"})
+    assigned_version = await _insert_build(target="windows_amd64", channel="stable", version="3.1.68")
+
+    async with get_session() as session:
+        op_repo = OperationsRepo(session)
+        await op_repo.create_operation(
+            operation_id=str(uuid.uuid4()),
+            device_id=device_id,
+            kind="agent_update",
+            actor_role="agent",
+            trace_id=str(uuid.uuid4()),
+            tool_name="update",
+            status="running",
+        )
+        await session.commit()
+
+    rollout_resp = await test_client.patch(
+        "/api/agent_updates/rollout_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"target": "windows_amd64", "channel": "stable", "version": assigned_version},
+    )
+    assert rollout_resp.status == 200, await rollout_resp.text()
+
+    policy_resp = await test_client.patch(
+        "/api/admin/connection_policy",
+        headers={**_admin_headers(), "Content-Type": "application/json"},
+        json={"policy": "accept_all"},
+    )
+    assert policy_resp.status == 200
+    req_resp = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "agent_version": "3.1.67", "os_type": "windows"},
+    )
+    assert req_resp.status == 200
+    token = (await req_resp.json())["token"]
+
+    ws = _HandshakeWsStub()
+    request = SimpleNamespace(remote="127.0.0.1", headers={"User-Agent": "pytest"})
+    handshake_message = {
+        "type": "handshake",
+        "protocol_version": "ws_ticket_v3",
+        "token": token,
+        "meta": {"capabilities": ["protocol_v3", "envelope_v3", "outbox_ack_v3"]},
+        "payload": {
+            "device_id": device_id,
+            "agent_version": "3.1.67",
+            "os": "Windows",
+            "os_type": "windows",
+            "modules": [],
+            "modules_inventory": [],
+        },
+    }
+
+    with patch("agents.agent_builds_handlers.enqueue_command_async") as mocked_enqueue:
+        _, _, _, authenticated = await handle_handshake(
+            ws=ws,
+            data=handshake_message,
+            request=request,
+            state=test_client.app["state"],
+        )
+
+    assert authenticated is True
+    assert mocked_enqueue.call_count == 0
+
+
+@pytest.mark.asyncio
 async def test_agent_self_update_rejects_non_recommended_build(test_client):
     device_id = str(uuid.uuid4())
     await _insert_device(device_id, os_name="Windows")
