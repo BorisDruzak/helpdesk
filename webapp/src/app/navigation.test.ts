@@ -229,4 +229,18 @@ describe("navigation helpers", () => {
       resolveNextWorkspacePath("https://example.test/app/device/register?pairing_id=pair-1", fullSession),
     ).toBe(ADMIN_HOME_PATH);
   });
+
+  it("keeps requester profile setup next path after account registration", () => {
+    expect(
+      resolveNextWorkspacePath(
+        "/app/requester/profile/setup?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-1",
+        {
+          ...fullSession,
+          default_workspace: "requester",
+          available_workspaces: ["requester"],
+          permissions: ["workspace.requester.view"],
+        },
+      ),
+    ).toBe("/app/requester/profile/setup?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-1");
+  });
 });

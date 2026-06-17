@@ -49,6 +49,10 @@ function isAuthenticatedAppPath(path: string) {
   return pathname === "/app/device/pair" || pathname === "/app/device/register" || pathname === "/app/device/login";
 }
 
+function isRequesterProfileSetupPath(path: string) {
+  return normalizePath(path) === "/app/requester/profile/setup";
+}
+
 export function getWorkspacePath(workspace: AppWorkspace): string {
   return WORKSPACE_PATHS[workspace];
 }
@@ -85,6 +89,10 @@ export function resolveNextWorkspacePath(
   session: WebSession | null
 ): string | null {
   if (nextPath && isAuthenticatedAppPath(nextPath)) {
+    return nextPath;
+  }
+
+  if (nextPath && isRequesterProfileSetupPath(nextPath) && hasWorkspaceAccess(session, "requester")) {
     return nextPath;
   }
 
