@@ -145,7 +145,9 @@ Normal requester ticket preview/create returns `403 REQUESTER_PROFILE_INCOMPLETE
 
 The device preview may show only requester-safe facts: hostname, OS, agent version, pairing status and expiry. It must not expose tokens, raw pairing code hashes, session tokens, internal binding ids, or registry-person identifiers.
 
-Registration confirmation requires a completed requester profile when `PROFILE_COMPLETION_REQUIRED=true`. If the authenticated web user has no completed registry-backed `RegistryPerson`, the server returns `403 REQUESTER_PROFILE_INCOMPLETE` with `setup_path=/app/requester/profile/setup`, and no `device_registration_claim` is created. The React direct confirmation route redirects that user to profile setup; the requester cabinet disables confirmation and points to the setup form.
+Registration confirmation requires a completed requester profile when `PROFILE_COMPLETION_REQUIRED=true`. If the authenticated web user has no completed registry-backed `RegistryPerson`, the server returns `403 REQUESTER_PROFILE_INCOMPLETE` with `setup_path=/app/requester/profile/setup`, and no `device_registration_claim` is created. The React direct confirmation route redirects that user to profile setup while preserving the original `/app/device/register?...` route in `next`; the requester cabinet disables confirmation and points to the setup form.
+
+If the user reached profile setup before creating the correct requester account, the setup form exposes a normal-user CTA to `/app/register?switch_account=1&next=...`. Account registration preserves the same `next` value through the post-registration login screen so the user can return to profile setup or device-link confirmation after creating and signing into the web account.
 
 When the profile is complete, confirmation creates the registration claim from the caller-owned registry person profile snapshot. Browser-submitted person, binding, account-session, token or free-text profile fields are ignored. The first rollout continues to require administrator approval by default, so the requester UI shows `Ожидает проверки администратора` after a successful link request.
 
@@ -333,7 +335,7 @@ R3 profile-setup slice:
 
 - `server/requester/identity_service.py` returns profile completion status and writes the authenticated user's profile to registry-backed person and identity records.
 - `server/web_api/requester_handlers.py` exposes `PUT /api/web/requester/profile` and blocks normal requester ticket preview/create with `REQUESTER_PROFILE_INCOMPLETE` until completion.
-- `webapp/src/pages/requester/index.tsx` renders the web-first profile setup gate with registry department/location pickers and disables normal ticket creation before completion.
+- `webapp/src/pages/requester/index.tsx` renders the web-first profile setup gate with registry department/location pickers, disables normal ticket creation before completion, exposes the account-registration CTA for users who need to create the web account first, and returns to a safe `next` route after profile save.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r3-20260615/`.
 
 R4 device-link slice:

@@ -159,4 +159,60 @@ describe("RegisterPage", () => {
     await waitFor(() => expect(getRegisterCalls(fetchMock)).toHaveLength(1));
     expect(screen.getByTestId("location")).toHaveTextContent("/app/register");
   });
+
+  it("preserves the device registration return path after account creation", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/session/me") {
+        return jsonResponse({ status: "error" }, 401);
+      }
+      if (url === "/api/web/session/register") {
+        expect(init?.method).toBe("POST");
+        return jsonResponse(
+          {
+            status: "success",
+            data: {
+              user_login: "new.device.user",
+              actor_role: "user",
+              next_path: "/app/login?registered=1",
+            },
+          },
+          201
+        );
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderRegisterPage("/app/register?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-next");
+
+    fireEvent.change(await screen.findByLabelText("Логин"), { target: { value: "new.device.user" } });
+    fireEvent.change(screen.getByLabelText("Пароль"), { target: { value: "StrongPass123!" } });
+    fireEvent.change(screen.getByLabelText("Повторите пароль"), { target: { value: "StrongPass123!" } });
+    fireEvent.click(screen.getByRole("button", { name: /Создать аккаунт/ }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/app/login?registered=1&next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-next"
+      )
+    );
+  });
+
+  it("offers account registration from the login page while preserving the return path", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/web/session/me") {
+        return jsonResponse({ status: "error" }, 401);
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderRegisterPage("/app/login?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-login");
+
+    const registerLink = await screen.findByRole("link", { name: "Создать аккаунт" });
+    expect(registerLink).toHaveAttribute(
+      "href",
+      "/app/register?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-login"
+    );
+  });
 });

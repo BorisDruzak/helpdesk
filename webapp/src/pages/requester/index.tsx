@@ -265,6 +265,33 @@ function formatSubmittedAt(value?: string | null): string | null {
   return date.toLocaleString("ru-RU", { dateStyle: "short", timeStyle: "short" });
 }
 
+function isSafeAppNextPath(value: string | null) {
+  return Boolean(value && (value === "/app" || value.startsWith("/app/")) && !value.startsWith("//"));
+}
+
+function currentBrowserAppPath() {
+  if (typeof window === "undefined") {
+    return "/app/requester";
+  }
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function profileSetupNextPath(fallbackPath = "/app/requester") {
+  if (typeof window === "undefined") {
+    return fallbackPath;
+  }
+  const nextParam = new URLSearchParams(window.location.search).get("next");
+  return isSafeAppNextPath(nextParam) ? (nextParam as string) : fallbackPath;
+}
+
+function profileSetupRegisterPath() {
+  const params = new URLSearchParams({
+    switch_account: "1",
+    next: profileSetupNextPath(currentBrowserAppPath()),
+  });
+  return `/app/register?${params.toString()}`;
+}
+
 function agentVersionLabel(value?: string | null): string {
   const version = String(value ?? "").trim();
   return version ? `Агент ${version}` : "Версия агента не указана";
@@ -1622,7 +1649,8 @@ export function RequesterWorkspacePage() {
           : current,
       );
       if (typeof window !== "undefined" && window.location.pathname.endsWith("/requester/profile/setup")) {
-        window.history.pushState({}, "", "/app/requester");
+        const nextPath = profileSetupNextPath();
+        window.history.pushState({}, "", isSafeAppNextPath(nextPath) ? nextPath : "/app/requester");
       }
       setProfileSetupNotice("Профиль сохранен. Теперь можно продолжить работу в кабинете пользователя.");
     } catch (exc) {
@@ -1951,6 +1979,14 @@ export function RequesterWorkspacePage() {
               <p className="mt-1 text-sm text-slate-600">
                 Эти данные нужны для маршрутизации обращений, доступа к базе знаний и привязки устройств.
               </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a
+                  className="inline-flex items-center justify-center rounded-panel border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 hover:bg-brand-100"
+                  href={profileSetupRegisterPath()}
+                >
+                  Создать аккаунт
+                </a>
+              </div>
             </div>
             {profileGateActive ? (
               <span className="rounded-panel bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800">

@@ -1,6 +1,6 @@
 import { LockKeyhole, ShieldCheck, Ticket } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -10,6 +10,18 @@ import { resolveNextWorkspacePath } from "./workspace-access";
 
 function resolveNextPath(nextParam: string | null, session: ReturnType<typeof useSession>["session"]) {
   return resolveNextWorkspacePath(nextParam, session) ?? "/app";
+}
+
+function isSafeAppNextPath(value: string | null) {
+  return Boolean(value && (value === "/app" || value.startsWith("/app/")) && !value.startsWith("//"));
+}
+
+function registerPath(nextParam: string | null) {
+  if (!isSafeAppNextPath(nextParam)) {
+    return "/app/register";
+  }
+  const params = new URLSearchParams({ next: nextParam as string });
+  return `/app/register?${params.toString()}`;
 }
 
 export function LoginPage() {
@@ -161,7 +173,12 @@ export function LoginPage() {
             </form>
 
             <div className="rounded-[1.2rem] bg-surface-subtle px-4 py-4 text-sm text-slate-500">
-              Для локальной проверки фикстур используйте `op1 / 1.Abcdef` или `admin / admin123`.
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span>Еще нет аккаунта?</span>
+                <Link className="font-semibold text-brand-700 hover:text-brand-900" to={registerPath(searchParams.get("next"))}>
+                  Создать аккаунт
+                </Link>
+              </div>
             </div>
           </div>
         </div>

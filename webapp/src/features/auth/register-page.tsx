@@ -12,10 +12,23 @@ function initialDeviceCode(searchParams: URLSearchParams) {
   return searchParams.get("device_link_code") ?? searchParams.get("pairing_code") ?? "";
 }
 
+function isSafeAppNextPath(value: string | null) {
+  return Boolean(value && (value === "/app" || value.startsWith("/app/")) && !value.startsWith("//"));
+}
+
+function withPreservedNext(path: string, nextPath: string | null) {
+  if (!isSafeAppNextPath(nextPath)) {
+    return path;
+  }
+  const url = new URL(path, "https://pc-client.local");
+  url.searchParams.set("next", nextPath as string);
+  return `${url.pathname}${url.search}`;
+}
+
 export function RegisterPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { session, status } = useSession();
+  const { logout, session, status } = useSession();
   const [loginValue, setLoginValue] = useState("");
   const [passwordValue, setPasswordValue] = useState("");
   const [passwordRepeatValue, setPasswordRepeatValue] = useState("");
@@ -24,8 +37,9 @@ export function RegisterPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const authenticatedNextPath = resolveNextWorkspacePath(searchParams.get("next"), session) ?? "/app";
+  const switchAccount = searchParams.get("switch_account") === "1";
 
-  if (status === "authenticated") {
+  if (status === "authenticated" && !switchAccount) {
     return <Navigate replace to={authenticatedNextPath} />;
   }
 
@@ -49,6 +63,9 @@ export function RegisterPage() {
 
     setIsSubmitting(true);
     try {
+      if (status === "authenticated" && switchAccount) {
+        await logout();
+      }
       const result = await registerWebSessionAccount({
         login,
         password: passwordValue,
@@ -56,7 +73,7 @@ export function RegisterPage() {
         deviceLinkCode
       });
 
-      navigate(result.next_path || "/app/login?registered=1", { replace: true });
+      navigate(withPreservedNext(result.next_path || "/app/login?registered=1", searchParams.get("next")), { replace: true });
     } catch (error) {
       if (error instanceof WebSessionApiError) {
         setErrorMessage(error.message);
@@ -136,6 +153,11 @@ export function RegisterPage() {
               <p className="mt-3 text-sm leading-7 text-slate-500">
                 После создания войдите с новым логином и продолжите настройку доступа.
               </p>
+              {switchAccount ? (
+                <p className="mt-3 rounded-[1rem] bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
+                  Текущая сессия будет закрыта перед созданием нового аккаунта.
+                </p>
+              ) : null}
             </div>
 
             <form className="space-y-5" onSubmit={handleSubmit}>

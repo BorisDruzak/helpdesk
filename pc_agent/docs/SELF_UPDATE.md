@@ -6,7 +6,9 @@ PC Agent поддерживает удалённое обновление чер
 
 Для операционного сценария "что менять, как версионировать, что проверять и как катить rollout" используйте канонический playbook: [AGENT_UPDATE_WORKFLOW.md](AGENT_UPDATE_WORKFLOW.md).
 
-Важно: server-side assigned rollout является source of truth и может указывать как на upgrade, так и на controlled rollback. Для агента это один и тот же self-update flow: если рекомендованная release-версия с сервера отличается от текущей, GUI должен показывать action-кнопку, а launcher после restart применяет запрошенный архив и переключает `current.json` на указанную версию.
+Важно: server-side assigned rollout является source of truth и может указывать как на upgrade, так и на controlled rollback. Для агента это один и тот же self-update flow: если рекомендованная release-версия с сервера отличается от текущей, агент после успешного startup handshake один раз автоматически запрашивает recommended build, GUI показывает action/state для ручного контроля, а launcher после restart применяет запрошенный архив и переключает `current.json` на указанную версию.
+
+Startup auto-update не обходит серверную авторизацию: `ws_agent.py` пропускает запуск, если уже есть `pending_update.json`, получает verdict через update recommendation endpoint и вызывает обычный `POST /api/devices/{device_id}/agent/update` с reason `agent_startup_auto_update`. Сервер по-прежнему разрешает agent-role self-update только для собственного `device_id` и только для текущего recommended build.
 
 2026-06-10 Stage 3 consent GUI changes are ordinary application code inside the distributed agent artifact. They do not alter the self-update command, launcher staging, rollback or assigned rollout protocol.
 

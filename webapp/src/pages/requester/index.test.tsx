@@ -1682,6 +1682,12 @@ describe("RequesterWorkspacePage", () => {
 
     render(<RequesterWorkspacePage />);
 
+    const registerLink = await screen.findByRole("link", { name: "Создать аккаунт" });
+    expect(registerLink).toHaveAttribute(
+      "href",
+      "/app/register?switch_account=1&next=%2Fapp%2Frequester%2Fprofile%2Fsetup",
+    );
+
     fireEvent.change(await screen.findByLabelText("ФИО"), { target: { value: "Иван Петров" } });
     fireEvent.change(screen.getByLabelText("Телефон или внутренний номер"), { target: { value: "1234" } });
     await screen.findByRole("option", { name: "ИТ" });

@@ -217,6 +217,8 @@ class WSAgent:
         self._last_connection_changed_at: Optional[str] = None
         self._cached_update_status: Dict[str, Any] = {}
         self._cached_update_checked_at: Optional[str] = None
+        self._startup_recommended_update_checked = False
+        self._startup_recommended_update_task: Optional[asyncio.Task] = None
         
         # Очередь и задача для публикации логов в EventBus
         # Используем обычную queue.Queue для синхронного sink
@@ -881,6 +883,47 @@ class WSAgent:
             if created_session:
                 await session.close()
 
+    async def _maybe_trigger_startup_recommended_update(self) -> Optional[Dict[str, Any]]:
+        if self._startup_recommended_update_checked:
+            return None
+        self._startup_recommended_update_checked = True
+
+        local_update_state = self._read_local_update_state()
+        if local_update_state.get("pending_update_version"):
+            logger.info(
+                "[update] startup auto-update skipped: "
+                f"pending_version={local_update_state.get('pending_update_version')} "
+                f"operation_id={local_update_state.get('pending_update_operation_id') or 'unknown'}"
+            )
+            return None
+
+        recommendation = await self._fetch_update_status(force=True)
+        recommended_build = recommendation.get("recommended_build")
+        if not recommendation.get("update_available") or not isinstance(recommended_build, dict):
+            logger.info(
+                "[update] startup auto-update skipped: "
+                f"available={bool(recommendation.get('update_available'))} "
+                f"recommended={recommendation.get('recommended_version') or 'none'} "
+                f"comparison={recommendation.get('comparison') or 'unknown'}"
+            )
+            return recommendation
+
+        try:
+            logger.info(
+                "[update] startup auto-update requesting recommended build: "
+                f"target={recommended_build.get('target')} "
+                f"channel={recommended_build.get('channel')} "
+                f"version={recommended_build.get('version')}"
+            )
+            return await self.trigger_recommended_update({"reason": "agent_startup_auto_update"})
+        except Exception as exc:
+            logger.error(f"[update] startup auto-update request failed: {exc!r}")
+            return {
+                "status": "error",
+                "error": str(exc),
+                "recommendation": recommendation,
+            }
+
     def get_runtime_logs(self, source: str = "agent", lines: int = 120) -> Dict[str, Any]:
         normalized_source = str(source or "agent").strip().lower()
         max_lines = max(1, min(int(lines), 400))
@@ -1369,6 +1412,16 @@ class WSAgent:
                 await asyncio.gather(*list(self._background_command_tasks), return_exceptions=True)
                 self._background_command_tasks.clear()
                 logger.info("✅ Фоновые задачи command dispatch остановлены")
+
+            if self._startup_recommended_update_task:
+                logger.info("🛑 Останавливаю startup update task...")
+                self._startup_recommended_update_task.cancel()
+                try:
+                    await self._startup_recommended_update_task
+                except asyncio.CancelledError:
+                    pass
+                self._startup_recommended_update_task = None
+                logger.info("✅ Startup update task остановлен")
              
             # Останавливаем UI API сервер
             if self.ui_api_server and self.ui_api_task:
@@ -3189,6 +3242,14 @@ class WSAgent:
                                 await self.recover_in_progress_commands_on_startup(ws)
                             except Exception as e:
                                 logger.error(f"[command_restart_recovery] failed: {e}")
+
+                            if (
+                                self._startup_recommended_update_task is None
+                                or self._startup_recommended_update_task.done()
+                            ):
+                                self._startup_recommended_update_task = asyncio.create_task(
+                                    self._maybe_trigger_startup_recommended_update()
+                                )
 
                             connection_closed_auth_error = False
                             first_msg_processed = False

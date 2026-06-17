@@ -1,6 +1,6 @@
 import { CheckCircle2, KeyRound, Monitor, ShieldCheck, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button } from "../../components/ui/button";
 import {
@@ -71,6 +71,12 @@ function deviceLinkStatusLabel(status: string | null | undefined) {
 
 function registrationStatusLabel(status: string | null | undefined) {
   return productStatusLabel(status, REGISTRATION_STATUS_LABELS);
+}
+
+function withNextPath(path: string, nextPath: string) {
+  const url = new URL(path, "https://pc-client.local");
+  url.searchParams.set("next", nextPath);
+  return `${url.pathname}${url.search}`;
 }
 
 export function DevicePairCodePage() {
@@ -154,6 +160,7 @@ export function DevicePairCodePage() {
 
 export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const pairingId = searchParams.get("pairing_id") ?? "";
   const [pairing, setPairing] = useState<DevicePairingPayload | null>(null);
@@ -237,7 +244,8 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
       setPairing(nextPayload);
     } catch (err) {
       if (err instanceof DevicePairingApiError && err.errorCode === "REQUESTER_PROFILE_INCOMPLETE") {
-        navigate("/app/requester/profile/setup", { replace: true });
+        const nextPath = `${location.pathname}${location.search}${location.hash}`;
+        navigate(withNextPath("/app/requester/profile/setup", nextPath), { replace: true });
         return;
       }
       setError(err instanceof Error ? err.message : "Не удалось подтвердить устройство");

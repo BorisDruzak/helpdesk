@@ -20,6 +20,7 @@
 - Если assigned rollout отличается от текущей версии агента, это actionable mismatch в обе стороны:
   - upgrade на более новую rollout-версию;
   - controlled rollback на более старую rollout-версию.
+- После успешного startup handshake агент может один раз автоматически запросить текущий recommended build через обычный self-update endpoint. Это не меняет source of truth: сервер всё равно проверяет target/channel/version и разрешает agent-role запрос только для собственного устройства.
 - `scheduled` не считается подтверждённым успехом обновления.
 - Успешное обновление подтверждается только следующим handshake новой версии (`applied_update_version` + `last_update_operation_id`).
 - Launcher-side failure подтверждается следующим handshake с `failed_update_*`.

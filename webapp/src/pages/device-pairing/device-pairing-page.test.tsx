@@ -305,7 +305,9 @@ describe("DevicePairingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Подтвердить регистрацию" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/profile/setup");
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        "/app/requester/profile/setup?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-profile",
+      );
     });
   });
 

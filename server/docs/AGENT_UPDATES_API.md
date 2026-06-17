@@ -256,7 +256,7 @@ React admin surface: `/app/admin/agent-updates` uses web-session aliases `/api/w
 - `newer_release_available`
 - `non_release_current_version`
 
-GUI агента использует этот endpoint перед локальным `POST /ui/agent/update`, а сам trigger update по-прежнему делает обычный `POST /api/devices/{device_id}/agent/update` с выбранным сервером build.
+GUI агента использует этот endpoint перед локальным `POST /ui/agent/update`, а startup auto-update в `ws_agent.py` использует тот же verdict после успешного handshake. Сам trigger update по-прежнему делает обычный `POST /api/devices/{device_id}/agent/update` с выбранным сервером build; сервер авторизует agent-role запрос только для собственного устройства и текущего recommended build.
 
 Ответ (202):
 ```json
@@ -287,7 +287,7 @@ GUI агента использует этот endpoint перед локаль�
 
 Агент по этим параметрам скачивает артефакт, проверяет sha256, пишет `pending_update.json` и завершается с кодом 42. Дальнейшим управлением занимается launcher.
 
-Важно: сама WS-команда `update` теперь считается server-authorized privileged action. Помимо обычного `admin/system` запроса сервер может поставить такой update и после локального self-update trigger из GUI агента, если `POST /api/devices/{device_id}/agent/update` уже подтвердил, что агент запрашивает ровно рекомендованный build для собственного `device_id`.
+Важно: сама WS-команда `update` теперь считается server-authorized privileged action. Помимо обычного `admin/system` запроса сервер может поставить такой update после локального self-update trigger из GUI агента или startup auto-update агента, если `POST /api/devices/{device_id}/agent/update` уже подтвердил, что агент запрашивает ровно рекомендованный build для собственного `device_id`.
 
 Для backward-compatibility сервер отправляет WS `update` с privileged `actor_role=admin`, а исходного инициатора (`admin` или `agent`) кладёт в `params.requested_by`. Это позволяет старым release-агентам, которые ещё проверяют `update` как admin-only команду, тоже принимать сервером уже авторизованный self-update.
 

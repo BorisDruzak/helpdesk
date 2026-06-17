@@ -717,6 +717,67 @@ async def test_runtime_status_async_preserves_cached_requested_update_state(tmp_
     assert status["update_request_reason"] == "agent_gui_self_update"
 
 
+@pytest.mark.asyncio
+async def test_startup_recommended_update_triggers_once_when_new_release_is_available(tmp_path, monkeypatch):
+    agent = WSAgent(data_root=tmp_path / "data", install_root=tmp_path / "install")
+    trigger_payloads = []
+
+    async def fake_fetch_update_status(*, force: bool = False):
+        assert force is True
+        return {
+            "update_available": True,
+            "recommended_version": "3.1.68",
+            "recommended_build": {
+                "target": "windows_amd64",
+                "channel": "stable",
+                "version": "3.1.68",
+            },
+        }
+
+    async def fake_trigger_recommended_update(payload=None):
+        trigger_payloads.append(payload)
+        return {"status": "accepted", "server_response": {"operation_id": "op-startup-update"}}
+
+    monkeypatch.setattr(agent, "_fetch_update_status", fake_fetch_update_status)
+    monkeypatch.setattr(agent, "trigger_recommended_update", fake_trigger_recommended_update)
+
+    result = await agent._maybe_trigger_startup_recommended_update()
+    repeat = await agent._maybe_trigger_startup_recommended_update()
+
+    assert result == {"status": "accepted", "server_response": {"operation_id": "op-startup-update"}}
+    assert repeat is None
+    assert trigger_payloads == [{"reason": "agent_startup_auto_update"}]
+
+
+@pytest.mark.asyncio
+async def test_startup_recommended_update_skips_when_pending_update_exists(tmp_path, monkeypatch):
+    updates_dir = tmp_path / "data" / "updates"
+    updates_dir.mkdir(parents=True, exist_ok=True)
+    (updates_dir / "pending_update.json").write_text(
+        json.dumps(
+            {
+                "version": "3.1.68",
+                "operation_id": "op-pending",
+                "received_at": "2026-06-17T10:00:00+00:00",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    agent = WSAgent(data_root=tmp_path / "data", install_root=tmp_path / "install")
+
+    async def fail_fetch_update_status(*, force: bool = False):
+        raise AssertionError("startup update check must not hit server while pending update exists")
+
+    async def fail_trigger_recommended_update(payload=None):
+        raise AssertionError("startup update trigger must not run while pending update exists")
+
+    monkeypatch.setattr(agent, "_fetch_update_status", fail_fetch_update_status)
+    monkeypatch.setattr(agent, "trigger_recommended_update", fail_trigger_recommended_update)
+
+    assert await agent._maybe_trigger_startup_recommended_update() is None
+
+
 def test_apply_update_failure_records_launcher_action_trace(tmp_path):
     install_root = tmp_path / "install"
     data_root = tmp_path / "data"
