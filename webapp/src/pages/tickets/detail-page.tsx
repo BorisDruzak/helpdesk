@@ -77,6 +77,8 @@ type NormalizedAttachment = {
   sourceTimestamp: string | null;
 };
 
+type CustomerHistoryEventForDetail = NonNullable<SupportTicketDetailPayload["customer_history"]>["events"][number];
+
 function formatDateTime(value: string | null | undefined) {
   if (!value) {
     return "Нет данных";
@@ -1010,6 +1012,20 @@ function textValue(value: unknown): string | null {
 
 function compactParts(parts: Array<string | null | undefined>): string {
   return parts.filter(Boolean).join(" · ");
+}
+
+function customerHistorySummary(event: CustomerHistoryEventForDetail): string {
+  if (event.summary) {
+    return event.summary;
+  }
+  const payload = asRecord(event.payload);
+  for (const key of ["text", "title", "status", "result", "result_summary"]) {
+    const value = payload?.[key];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return event.event_type;
 }
 
 function personContextLabel(record: Record<string, unknown> | null, fallbackPersonId?: string | null): string {
@@ -2287,6 +2303,8 @@ export function TicketDetailPage() {
   const toolAccess = requireToolRunPermission(session, selectedTool?.risk_level);
   const canSendInternal = Boolean(detail?.actions.can_send_internal_note) && internalCommentAccess.allowed;
   const latestOperations = detail?.snapshot.latest_operations ?? [];
+  const customerHistoryEvents = detail?.customer_history?.events?.slice(0, 10) ?? [];
+  const contextPreviewEvents = detail?.llm_context_preview?.events?.slice(0, 10) ?? [];
   const priorityDecision = detail?.ticket.priority_decision ?? {};
   const requestRows = detail?.request_form?.rows ?? [];
   const findRequestValue = (keys: string[]): string => {
@@ -2378,7 +2396,11 @@ export function TicketDetailPage() {
     { value: "diagnostics", label: "Диагностика" },
     { value: "info", label: "Информация" },
     { value: "files", label: "Файлы", count: attachments.length },
-    { value: "history", label: "История", count: historyItems.length + latestOperations.length },
+    {
+      value: "history",
+      label: "История",
+      count: historyItems.length + latestOperations.length + customerHistoryEvents.length,
+    },
     { value: "passport", label: "Паспорт", count: passport?.passport ? passport.passport.version : undefined },
   ];
 
@@ -2852,6 +2874,63 @@ export function TicketDetailPage() {
 
               {detail && activeTab === "history" ? (
                 <div className="space-y-6">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <History className="h-4 w-4 text-brand-700" />
+                      <p className="text-sm font-semibold text-slate-900">История клиента</p>
+                    </div>
+                    {customerHistoryEvents.length ? (
+                      customerHistoryEvents.map((event, index) => (
+                        <div
+                          key={`${event.event_id ?? event.source}-${event.occurred_at ?? index}`}
+                          className="rounded-[1.1rem] border border-border bg-white px-4 py-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-950">{event.title}</p>
+                              <p className="mt-1 text-sm text-slate-600">{customerHistorySummary(event)}</p>
+                            </div>
+                            <Badge tone="neutral">{event.source}</Badge>
+                          </div>
+                          <p className="mt-3 text-xs text-slate-400">{formatDateTime(event.occurred_at)}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
+                        История клиента пока не передана.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-4 w-4 text-brand-700" />
+                      <p className="text-sm font-semibold text-slate-900">Контекст для ассистента - preview</p>
+                    </div>
+                    {contextPreviewEvents.length ? (
+                      <div className="rounded-[1.1rem] border border-border bg-white px-4 py-4">
+                        <div className="space-y-3">
+                          {contextPreviewEvents.map((event, index) => (
+                            <div
+                              key={`${event.source}-${event.occurred_at ?? index}`}
+                              className="border-b border-border pb-3 last:border-0 last:pb-0"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="font-semibold text-slate-950">{event.title}</p>
+                                <span className="text-xs text-slate-400">{formatDateTime(event.occurred_at)}</span>
+                              </div>
+                              <p className="mt-1 text-sm text-slate-600">{customerHistorySummary(event)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-[1.1rem] border border-dashed border-border bg-surface-subtle px-5 py-10 text-center text-sm text-slate-500">
+                        Preview контекста пока не передан.
+                      </div>
+                    )}
+                  </div>
+
                   <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <History className="h-4 w-4 text-brand-700" />

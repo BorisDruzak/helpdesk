@@ -1401,6 +1401,8 @@ class SupportTicketDetailPayload(BaseModel):
     snapshot: SupportTicketSnapshot
     actions: SupportTicketActions
     quality: SupportTicketQualityPayload | None = None
+    customer_history: dict[str, Any] | None = None
+    llm_context_preview: dict[str, Any] | None = None
 
 
 class SupportTicketTimelinePayload(BaseModel):

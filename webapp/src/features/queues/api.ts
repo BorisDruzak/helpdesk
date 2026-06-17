@@ -178,6 +178,45 @@ export type SupportQueueSavedViewDeletePayload = {
   id: string;
 };
 
+export type CustomerHistoryEvent = {
+  event_id?: string;
+  source: string;
+  group: string;
+  event_type: string;
+  title: string;
+  summary?: string | null;
+  occurred_at?: string | null;
+  ticket_ref?: string | null;
+  payload?: Record<string, unknown>;
+  refs?: Record<string, unknown>;
+};
+
+export type CustomerHistoryPayload = {
+  ticket_id?: string;
+  ticket_ref?: string | null;
+  person_id?: string | null;
+  events: CustomerHistoryEvent[];
+  count: number;
+  redaction_report?: {
+    removed_count?: number;
+    role?: string;
+  };
+  sources?: string[];
+};
+
+export type CustomerHistoryContextPack = {
+  mode: string;
+  preview_only: boolean;
+  llm_api_called: boolean;
+  ticket_ref?: string | null;
+  events: CustomerHistoryEvent[];
+  redaction_report?: {
+    removed_count?: number;
+    role?: string;
+  };
+  sources?: string[];
+};
+
 export type SupportTicketDetailPayload = {
   ticket: {
     ticket_id: string;
@@ -587,6 +626,8 @@ export type SupportTicketDetailPayload = {
     }>;
     indicators: string[];
   } | null;
+  customer_history?: CustomerHistoryPayload | null;
+  llm_context_preview?: CustomerHistoryContextPack | null;
 };
 
 export type SupportTicketTimelineFilter = "all" | "messages" | "internal" | "diagnostics" | "history";

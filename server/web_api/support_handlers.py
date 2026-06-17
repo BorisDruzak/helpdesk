@@ -50,6 +50,8 @@ from consent.operation_consent import create_operation_user_consent
 from consent.service import ConsentAccessError
 from core.policy_engine import PolicyDecision, PolicyEngine
 from core.tool_metadata import ToolMetadata
+from customer_history.context_builder import CustomerHistoryContextBuilder
+from customer_history.projection_service import CustomerHistoryProjectionService
 from observer.service import ObserverOverlayService
 from playbooks.tool_catalog import expand_preset_params, normalize_tool_catalog_entry
 from shared.tool_contracts import normalize_risk_level
@@ -3144,6 +3146,23 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         ticket_context = None
     approval_summary = await build_approval_summary(session, ticket, requester_safe=False)
     quality = await _build_support_quality_payload(session, ticket.ticket_id)
+    customer_history: dict[str, Any] | None = None
+    llm_context_preview: dict[str, Any] | None = None
+    try:
+        actor_context = {"actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role}
+        customer_history = await CustomerHistoryProjectionService(session).history_for_ticket(
+            ticket.ticket_id,
+            actor_context=actor_context,
+            limit=10,
+        )
+        llm_context_preview = await CustomerHistoryContextBuilder(session).build_ticket_context_pack(
+            ticket.ticket_id,
+            actor_context=actor_context,
+            mode="llm_preview",
+            limit=10,
+        )
+    except Exception as exc:
+        logger.warning(f"[web_support_ticket_detail] customer history unavailable: ticket_id={ticket.ticket_id}, error={exc}")
 
     return SupportTicketDetailPayload(
         ticket=SupportTicketDetail(
@@ -3247,6 +3266,8 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
         snapshot=snapshot,
         actions=actions,
         quality=quality,
+        customer_history=customer_history,
+        llm_context_preview=llm_context_preview,
     )
 
 
