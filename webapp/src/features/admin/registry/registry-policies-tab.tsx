@@ -16,12 +16,10 @@ import {
 
 type PolicyEffective = AdminRegistryPolicyPayload["effective"];
 
-const AUTO_APPROVE_WARNING = "Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.";
-
 const FIELD_LABELS: Record<string, string> = {
   "registration.require_user_confirmation": "Требовать подтверждение пользователя",
-  "registration.require_admin_confirmation": "Требовать подтверждение администратора",
-  "registration.auto_approve_first_binding": "Автоподтверждать первую привязку",
+  "registration.require_admin_confirmation": "Ручное одобрение администратором",
+  "registration.auto_approve_first_binding": "Автоматически подтверждать первую привязку",
   "registration.allow_shared_devices": "Разрешить совместные устройства",
   "registration.allow_responsible_binding": "Разрешить ответственного",
   "registration.max_primary_devices_per_person": "Максимум основных устройств",
@@ -74,9 +72,7 @@ function buildChangedFromDefaults(draft: PolicyEffective, defaults: AdminRegistr
 }
 
 function buildWarnings(draft: PolicyEffective): AdminRegistryPolicyPayload["warnings"] {
-  return draft.registration.auto_approve_first_binding
-    ? [{ field: "registration.auto_approve_first_binding", severity: "warning", message: AUTO_APPROVE_WARNING }]
-    : [];
+  return [];
 }
 
 export function RegistryPoliciesTab() {
@@ -142,6 +138,17 @@ export function RegistryPoliciesTab() {
     setDraft({ ...draft, registration: { ...draft.registration, [key]: value } });
     setServerPreview(null);
   };
+  const setRegistrationApprovalMode = (mode: "automatic" | "manual") => {
+    setDraft({
+      ...draft,
+      registration: {
+        ...draft.registration,
+        require_admin_confirmation: mode === "manual",
+        auto_approve_first_binding: mode === "automatic",
+      },
+    });
+    setServerPreview(null);
+  };
   const setAccount = (key: keyof typeof draft.account_sessions, value: boolean | number | null) => {
     setDraft({ ...draft, account_sessions: { ...draft.account_sessions, [key]: value } });
     setServerPreview(null);
@@ -173,9 +180,14 @@ export function RegistryPoliciesTab() {
       ) : null}
       <div className="grid gap-4 xl:grid-cols-3">
         <PolicyCard title="Регистрация">
+          <ApprovalModeRow
+            defaultRequireAdmin={query.data.defaults.registration.require_admin_confirmation}
+            defaultAutoApprove={query.data.defaults.registration.auto_approve_first_binding}
+            requireAdmin={draft.registration.require_admin_confirmation}
+            autoApprove={draft.registration.auto_approve_first_binding}
+            onChange={setRegistrationApprovalMode}
+          />
           <CheckRow defaultValue={query.data.defaults.registration.require_user_confirmation} label={FIELD_LABELS["registration.require_user_confirmation"]} value={draft.registration.require_user_confirmation} onChange={(value) => setRegistration("require_user_confirmation", value)} />
-          <CheckRow defaultValue={query.data.defaults.registration.require_admin_confirmation} label={FIELD_LABELS["registration.require_admin_confirmation"]} value={draft.registration.require_admin_confirmation} onChange={(value) => setRegistration("require_admin_confirmation", value)} />
-          <CheckRow defaultValue={query.data.defaults.registration.auto_approve_first_binding} label={FIELD_LABELS["registration.auto_approve_first_binding"]} value={draft.registration.auto_approve_first_binding} onChange={(value) => setRegistration("auto_approve_first_binding", value)} warning />
           <CheckRow defaultValue={query.data.defaults.registration.allow_shared_devices} label={FIELD_LABELS["registration.allow_shared_devices"]} value={draft.registration.allow_shared_devices} onChange={(value) => setRegistration("allow_shared_devices", value)} />
           <CheckRow defaultValue={query.data.defaults.registration.allow_responsible_binding} label={FIELD_LABELS["registration.allow_responsible_binding"]} value={draft.registration.allow_responsible_binding} onChange={(value) => setRegistration("allow_responsible_binding", value)} />
           <NumberRow defaultValue={query.data.defaults.registration.max_primary_devices_per_person} label={FIELD_LABELS["registration.max_primary_devices_per_person"]} rules={validation["registration.max_primary_devices_per_person"]} value={draft.registration.max_primary_devices_per_person} onChange={(value) => setRegistration("max_primary_devices_per_person", value)} />
@@ -246,6 +258,52 @@ function PolicyCard({ children, title }: { children: ReactNode; title: string })
 
 function DefaultHint({ value }: { value: unknown }) {
   return <span className="text-xs font-normal text-slate-500">по умолчанию: {formatValue(value)}</span>;
+}
+
+function ApprovalModeRow({
+  autoApprove,
+  defaultAutoApprove,
+  defaultRequireAdmin,
+  onChange,
+  requireAdmin,
+}: {
+  autoApprove: boolean;
+  defaultAutoApprove: boolean;
+  defaultRequireAdmin: boolean;
+  onChange: (mode: "automatic" | "manual") => void;
+  requireAdmin: boolean;
+}) {
+  const mode = !requireAdmin && autoApprove ? "automatic" : "manual";
+  const defaultMode = !defaultRequireAdmin && defaultAutoApprove ? "автоматически" : "ручное одобрение";
+  return (
+    <div className="rounded-md border border-border px-3 py-2 text-sm">
+      <div className="flex flex-col gap-2">
+        <div>
+          <p className="font-semibold text-slate-900">Подтверждение привязки устройства</p>
+          <p className="text-xs text-slate-500">по умолчанию: {defaultMode}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className={`rounded-md border px-3 py-2 font-semibold transition-colors ${mode === "automatic" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-700"}`}
+            onClick={() => onChange("automatic")}
+            type="button"
+          >
+            Автоматически
+          </button>
+          <button
+            className={`rounded-md border px-3 py-2 font-semibold transition-colors ${mode === "manual" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-white text-slate-700"}`}
+            onClick={() => onChange("manual")}
+            type="button"
+          >
+            Ручное одобрение
+          </button>
+        </div>
+        <p className="text-xs text-slate-500">
+          Автоматический режим сразу подтверждает первую неконфликтную привязку. Ручной режим оставляет заявку на проверке администратора.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function CheckRow({ defaultValue, label, onChange, value, warning }: { defaultValue: unknown; label: string; value: boolean; onChange: (value: boolean) => void; warning?: boolean }) {

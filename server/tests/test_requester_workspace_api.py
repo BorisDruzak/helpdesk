@@ -320,6 +320,9 @@ async def test_requester_bootstrap_reports_profile_completion_gate_for_new_user(
         "location_id",
         "phone",
     }
+    assert completion["blocks"]["ticket_create"] is True
+    assert completion["blocks"]["ticket_preview"] is True
+    assert completion["blocks"]["device_binding_confirmation"] is False
     assert payload["data"]["feature_flags"]["requester_ticket_create"] is False
 
 

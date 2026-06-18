@@ -233,7 +233,7 @@ class RequesterIdentityResolver:
                 "ticket_create": blocked,
                 "ticket_preview": blocked,
                 "knowledge_requester_actions": blocked,
-                "device_binding_confirmation": blocked,
+                "device_binding_confirmation": False,
             },
         }
 
@@ -241,7 +241,7 @@ class RequesterIdentityResolver:
         person = await self.resolve_person_for_web_user(actor_id)
         profile_schema = await RequesterProfileSchemaService(self.session).get_schema()
         completion = self.build_profile_completion(person, profile_schema=profile_schema)
-        if person is None or completion.get("blocks", {}).get("device_binding_confirmation", True):
+        if person is None or completion.get("blocks", {}).get("ticket_create", True):
             raise PermissionError("Заполните профиль, чтобы продолжить работу в кабинете пользователя.")
         return person
 

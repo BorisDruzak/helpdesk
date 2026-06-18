@@ -289,8 +289,8 @@ const registryPoliciesPayload = {
   defaults: {
     registration: {
       require_user_confirmation: true,
-      require_admin_confirmation: true,
-      auto_approve_first_binding: false,
+      require_admin_confirmation: false,
+      auto_approve_first_binding: true,
       allow_shared_devices: true,
       allow_responsible_binding: true,
       max_primary_devices_per_person: 3,
@@ -318,8 +318,8 @@ const registryPoliciesPayload = {
   effective: {
     registration: {
       require_user_confirmation: true,
-      require_admin_confirmation: true,
-      auto_approve_first_binding: false,
+      require_admin_confirmation: false,
+      auto_approve_first_binding: true,
       allow_shared_devices: true,
       allow_responsible_binding: true,
       max_primary_devices_per_person: 3,

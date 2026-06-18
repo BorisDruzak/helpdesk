@@ -133,7 +133,7 @@ Response on success is `201` with `user_login`, `actor_role=user`, `next_path=/a
 - `required`: current rollout policy from `PROFILE_COMPLETION_REQUIRED`.
 - `setup_path`: `/app/requester/profile/setup`.
 - `required_fields` and `missing_fields` with requester-facing Russian labels.
-- `blocks`: booleans for normal ticket create/preview, requester knowledge actions and device-binding confirmation while the profile is incomplete and the policy requires completion.
+- `blocks`: booleans for normal ticket create/preview and requester knowledge actions while the profile is incomplete and the policy requires completion. Device-link confirmation is a separate lifecycle step and is not blocked by requester profile completion by default.
 
 `PUT /api/web/requester/profile` is the authenticated requester profile update endpoint. It writes to `RegistryPerson`, creates or refreshes the verified `ui_login` `RegistryPersonIdentity`, and accepts only the controlled editable fields: `full_name`, `department_id`, `location_id`, `phone`, `position`, `workplace_label`, `preferred_contact_method`, `custom_fields`, plus the caller-owned `person_id` when editing an existing profile.
 
@@ -151,11 +151,11 @@ Normal requester ticket preview/create returns `403 REQUESTER_PROFILE_INCOMPLETE
 
 The device preview may show only requester-safe facts: hostname, OS, agent version, pairing status and expiry. It must not expose tokens, raw pairing code hashes, session tokens, internal binding ids, or registry-person identifiers.
 
-Registration confirmation requires a completed requester profile when `PROFILE_COMPLETION_REQUIRED=true`. If the authenticated web user has no completed registry-backed `RegistryPerson`, the server returns `403 REQUESTER_PROFILE_INCOMPLETE` with `setup_path=/app/requester/profile/setup`, and no `device_registration_claim` is created. The React direct confirmation route redirects that user to profile setup while preserving the original `/app/device/register?...` route in `next`; the requester cabinet disables confirmation and points to the setup form.
+Registration confirmation does not require a completed requester profile. If the authenticated web user has no completed registry-backed `RegistryPerson`, the server creates or reuses a minimal account-owned person snapshot from the verified web account, creates the registration claim, and keeps normal requester ticket actions gated by `profile_completion.blocks.ticket_*`.
 
 If the user reached profile setup before creating the correct requester account, the setup form exposes a normal-user CTA to `/app/register?switch_account=1&next=...`. Account registration preserves the same `next` value through the post-registration login screen so the user can return to profile setup or device-link confirmation after creating and signing into the web account.
 
-When the profile is complete, confirmation creates the registration claim from the caller-owned registry person profile snapshot. Browser-submitted person, binding, account-session, token or free-text profile fields are ignored. The first rollout continues to require administrator approval by default, so the requester UI shows `Ожидает проверки администратора` after a successful link request.
+Confirmation creates the registration claim from the caller-owned registry person profile snapshot when available, or from the authenticated web account when the profile is still incomplete. Browser-submitted person, binding, account-session, token or free-text profile fields are ignored. The default policy automatically approves the first non-conflicting device binding; when admin policy switches to manual approval, the requester UI shows `Ожидает проверки администратора` after a successful link request.
 
 ## R6 Profile Schema Contract
 
@@ -346,8 +346,8 @@ R3 profile-setup slice:
 
 R4 device-link slice:
 
-- `server/web_api/registry_handlers.py` blocks registration confirmation with `REQUESTER_PROFILE_INCOMPLETE` until the web requester profile is complete.
-- `server/registry/browser_pairing_service.py` builds the registration claim profile snapshot from the resolved `RegistryPerson`, not browser-supplied profile fields.
+- `server/web_api/registry_handlers.py` allows registration confirmation for authenticated requester accounts even when the requester profile is incomplete.
+- `server/registry/browser_pairing_service.py` builds the registration claim profile snapshot from the resolved `RegistryPerson` when available, otherwise from the authenticated web account, not browser-supplied profile fields.
 - `webapp/src/pages/requester/index.tsx` adds the `/app/requester/devices` manual-code/direct-link flow and maps link request statuses to Russian labels.
 - `webapp/src/pages/device-pairing/index.tsx` redirects incomplete-profile registration confirmation to `/app/requester/profile/setup` and explains `PAIRING_FORBIDDEN` without exposing backend wording.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r4-20260615/`.

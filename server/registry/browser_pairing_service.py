@@ -361,6 +361,8 @@ class BrowserPairingService:
         registration["device_id"] = row.device_id
         payload["registration"] = registration
         payload["person"] = result.get("person")
+        if result.get("binding"):
+            payload["binding"] = result.get("binding")
         payload["claim_id"] = claim_id
         return payload
 

@@ -175,6 +175,29 @@ GUI Agent must not:
 - Registry admin gap: the people tab has edit/link/merge operations but lacks an explicit archive/delete action for a person such as the test user `test_agent_win`; the implementation must be soft-archive, audited, and must revoke active bindings/sessions where applicable.
 - Live evidence required before closing: local GUI agent interaction plus browser evidence on `https://192.168.100.17:9443`; test data created for this checkpoint must be cleaned or archived deliberately.
 
+### Active checkpoint: split device linking from profile completion, 2026-06-18
+
+- New product decision: device linking and requester profile completion are separate lifecycle steps. A user may link the local agent first and then complete the profile; profile completion must not block browser device-link confirmation.
+- Registration policy decision: automatic first-device approval is the default. Admin UI keeps a configurable switch between automatic and manual admin approval, using the existing `registration.require_admin_confirmation` and `registration.auto_approve_first_binding` policy fields instead of adding a parallel approval system.
+- Requester gate decision: incomplete users may access profile setup, device linking, requester-safe Knowledge help for profile/device-link setup, and explicitly opted-in help forms. Normal request forms remain blocked unless their `availability_policy` allows incomplete profile and/or missing agent.
+- Server plan:
+  - change `/api/web/registry/browser-pairings/{pairing_id}/registration/confirm` so it does not return `REQUESTER_PROFILE_INCOMPLETE` for device linking;
+  - build a safe minimal claim/person snapshot from the authenticated web account when the registry profile is missing or incomplete;
+  - auto-approve the first non-conflicting binding when policy says automatic approval, while preserving manual `pending_admin_review` behavior when policy requires admin confirmation;
+  - keep normal requester ticket preview/create profile gates in `server/web_api/requester_handlers.py`.
+- Web plan:
+  - update `/app/device/register` and `/app/requester/devices` copy/actions so profile completion is a following step, not a prerequisite for agent linking;
+  - keep normal ticket creation disabled for incomplete profile except allowed help forms;
+  - expose the existing admin policy controls as an explicit automatic/manual confirmation choice.
+- Knowledge/content plan:
+  - update `primary-agent-requester-guides.yaml` so device-link instructions no longer require profile completion first;
+  - add a requester-safe article for completing the web profile.
+- Verification plan:
+  - red/green targeted server tests for account-only device linking, auto approval default, and manual approval policy;
+  - red/green webapp tests for device linking while profile is incomplete and profile gate still blocking normal forms;
+  - docs/localization guard tests;
+  - clean local agent/browser registration path, then remote browser evidence on `https://192.168.100.17:9443`.
+
 ---
 
 ## File Map

@@ -596,7 +596,7 @@ async def test_web_user_confirms_registration_pairing_for_pairing_device(test_cl
 
 
 @pytest.mark.asyncio
-async def test_registration_pairing_confirmation_requires_completed_profile(test_client, test_engine):
+async def test_registration_pairing_confirmation_links_account_only_user_by_default(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
     async with session_maker() as session:
@@ -611,19 +611,42 @@ async def test_registration_pairing_confirmation_requires_completed_profile(test
     )
     payload = await response.json()
 
-    assert response.status == 403, payload
-    assert payload["error_code"] == "REQUESTER_PROFILE_INCOMPLETE"
-    assert payload["details"]["setup_path"] == "/app/requester/profile/setup"
+    assert response.status == 200, payload
+    assert payload["data"]["status"] == "confirmed"
+    assert payload["data"]["claim_id"]
+    assert payload["data"]["registration"]["status"] == "approved"
+    assert payload["data"]["binding"]["status"] == "active"
 
     async with session_maker() as session:
         row = await session.get(DeviceBrowserPairing, pairing["pairing_id"])
-        claims = (await session.execute(
-            DeviceRegistrationClaim.__table__.select().where(DeviceRegistrationClaim.device_id == device_id)
-        )).all()
+        claim = await session.get(DeviceRegistrationClaim, payload["data"]["claim_id"])
+        binding = await session.get(DeviceUserBinding, payload["data"]["binding"]["binding_id"])
+        person = await session.get(RegistryPerson, claim.person_id)
 
     assert row is not None
-    assert row.status == "pending"
-    assert claims == []
+    assert row.status == "confirmed"
+    assert claim is not None
+    assert claim.status == "approved"
+    assert binding is not None
+    assert binding.status == "active"
+    assert person is not None
+    assert person.email == "account-only@example.test"
+
+    picked_up = await test_client.get(
+        f"/api/registry/agent/browser-pairings/{pairing['pairing_id']}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert picked_up.status == 200, await picked_up.text()
+    assert (await picked_up.json())["data"]["status"] == "consumed"
+
+    account_state = await test_client.get(
+        "/api/registry/agent/account-state",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert account_state.status == 200, await account_state.text()
+    account_payload = await account_state.json()
+    assert account_payload["data"]["accounts"][0]["account_mode"] == "confirmed_binding"
+    assert account_payload["data"]["accounts"][0]["email"] == "account-only@example.test"
 
 
 @pytest.mark.asyncio
@@ -632,6 +655,15 @@ async def test_registration_pairing_approval_surfaces_confirmed_binding_to_agent
     device_id = str(uuid.uuid4())
     async with session_maker() as session:
         session.add(_device(device_id))
+        await RegistryPolicyService(session).update_policies(
+            {
+                "registration": {
+                    "require_admin_confirmation": True,
+                    "auto_approve_first_binding": False,
+                }
+            },
+            actor_id="admin",
+        )
         await _completed_requester_profile(session, login="stage1-new-user@example.test")
         await session.commit()
 

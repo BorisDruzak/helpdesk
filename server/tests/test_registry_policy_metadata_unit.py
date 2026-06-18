@@ -3,21 +3,18 @@ from __future__ import annotations
 from registry.policy_service import build_registry_policy_response
 
 
-def test_policy_response_warns_for_auto_approve_first_binding():
+def test_policy_response_defaults_to_automatic_first_binding_without_warning():
     response = build_registry_policy_response(
         {"registration": {"auto_approve_first_binding": True}}
     )
 
+    assert response["defaults"]["registration"]["require_admin_confirmation"] is False
+    assert response["defaults"]["registration"]["auto_approve_first_binding"] is True
+    assert response["effective"]["registration"]["require_admin_confirmation"] is False
     assert response["effective"]["registration"]["auto_approve_first_binding"] is True
     assert "warnings" not in response["effective"]
     assert response["requires_restart"] is False
-    assert response["warnings"] == [
-        {
-            "field": "registration.auto_approve_first_binding",
-            "severity": "warning",
-            "message": "Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.",
-        }
-    ]
+    assert response["warnings"] == []
 
 
 def test_policy_response_exposes_validation_and_default_drift():

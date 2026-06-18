@@ -933,8 +933,9 @@ export function RequesterWorkspacePage() {
   const profileCompletion = bootstrap?.profile_completion;
   const profileBlocks = profileCompletion?.blocks;
   const profileGateActive = profileBlocks
-    ? Boolean(profileBlocks.ticket_create || profileBlocks.ticket_preview || profileBlocks.device_binding_confirmation)
+    ? Boolean(profileBlocks.ticket_create || profileBlocks.ticket_preview)
     : profileCompletion?.complete === false;
+  const deviceLinkBlocked = Boolean(profileBlocks?.device_binding_confirmation);
   const profileSetupRoute =
     typeof window !== "undefined" && window.location.pathname.endsWith("/requester/profile/setup");
   const profileSetupVisible = profileGateActive || profileSetupRoute;
@@ -970,7 +971,7 @@ export function RequesterWorkspacePage() {
     if (!directDevicePairingId || directPairingLoadedRef.current || loading) {
       return;
     }
-    if (profileGateActive) {
+    if (deviceLinkBlocked) {
       directPairingLoadedRef.current = true;
       setDeviceLinkError("Сначала заполните профиль, затем привяжите устройство.");
       return;
@@ -992,7 +993,7 @@ export function RequesterWorkspacePage() {
         setDeviceLinkError(exc instanceof Error ? exc.message : "Не удалось загрузить привязку устройства.");
       })
       .finally(() => setDeviceLinkLoading(false));
-  }, [directDevicePairingId, loading, profileGateActive]);
+  }, [deviceLinkBlocked, directDevicePairingId, loading]);
 
   const selectedService = useMemo(
     () => services.find((service) => service.service_code === selectedServiceCode) ?? services[0] ?? null,
@@ -1388,7 +1389,7 @@ export function RequesterWorkspacePage() {
     setDeviceLinkNotice(null);
     setDeviceLinkError(null);
     setDeviceLinkPairing(null);
-    if (profileGateActive) {
+    if (deviceLinkBlocked) {
       setDeviceLinkError("Сначала заполните профиль, затем привяжите устройство.");
       return;
     }
@@ -1420,7 +1421,7 @@ export function RequesterWorkspacePage() {
     }
     setDeviceLinkNotice(null);
     setDeviceLinkError(null);
-    if (profileGateActive) {
+    if (deviceLinkBlocked) {
       setDeviceLinkError("Сначала заполните профиль, затем привяжите устройство.");
       return;
     }
@@ -1982,7 +1983,7 @@ export function RequesterWorkspacePage() {
               <p className="workspace-boot__eyebrow">Профиль пользователя</p>
               <h2 className="text-lg font-semibold text-slate-950">Заполните профиль</h2>
               <p className="mt-1 text-sm text-slate-600">
-                Эти данные нужны для маршрутизации обращений, доступа к базе знаний и привязки устройств.
+              Эти данные нужны для маршрутизации обращений, доступа к базе знаний и поддержки рабочих устройств.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <a
@@ -2618,7 +2619,7 @@ export function RequesterWorkspacePage() {
                   Введите код из локального агента. Перед отправкой заявки вы увидите имя устройства и версию агента.
                 </p>
               </div>
-              {profileGateActive ? (
+              {deviceLinkBlocked ? (
                 <a className="rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900" href="/app/requester/profile/setup">
                   Сначала заполните профиль
                 </a>
@@ -2628,7 +2629,7 @@ export function RequesterWorkspacePage() {
                 <input
                   autoComplete="one-time-code"
                   className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-mono font-semibold uppercase"
-                  disabled={profileGateActive || deviceLinkLoading || deviceLinkConfirming}
+                  disabled={deviceLinkBlocked || deviceLinkLoading || deviceLinkConfirming}
                   maxLength={16}
                   onChange={(event) => setDeviceLinkCode(event.target.value.toUpperCase())}
                   placeholder="ABCD-1234"
@@ -2638,7 +2639,7 @@ export function RequesterWorkspacePage() {
               <button
                 aria-label="Проверить код привязки"
                 className="inline-flex w-full items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
-                disabled={profileGateActive || deviceLinkLoading || deviceLinkConfirming}
+                disabled={deviceLinkBlocked || deviceLinkLoading || deviceLinkConfirming}
                 type="submit"
               >
                 <KeyRound className="h-4 w-4" />

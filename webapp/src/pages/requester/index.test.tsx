@@ -1438,6 +1438,124 @@ describe("RequesterWorkspacePage", () => {
     ).toBe(false);
   });
 
+  it("allows device linking while requester profile is incomplete", async () => {
+    const incompleteBootstrap = {
+      workspace: "requester",
+      profile: null,
+      profile_completion: {
+        complete: false,
+        status: "required",
+        setup_path: "/app/requester/profile/setup",
+        required_fields: [],
+        missing_fields: [{ key: "full_name", label: "ФИО" }],
+        blocks: {
+          ticket_create: true,
+          ticket_preview: true,
+          knowledge_requester_actions: true,
+          device_binding_confirmation: false,
+        },
+      },
+      profile_schema: {
+        schema_key: "requester_profile",
+        fields: [],
+        custom_fields: [],
+        required_fields: [],
+      },
+      devices: [],
+      active_bindings: [],
+      pending_registration_claims: [],
+      open_ticket_count: 0,
+      tickets_requiring_user_action_count: 0,
+      pending_consent_count: 0,
+      recent_tickets: [],
+      feature_flags: { requester_no_device_create: false, requester_ticket_create: false },
+      policies: { device_selection_required: false },
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({ status: "success", data: incompleteBootstrap });
+      }
+      if (url === "/api/web/requester/tickets" && init?.method !== "POST") {
+        return jsonResponse({ status: "success", data: { tickets: [] } });
+      }
+      if (url === "/api/web/requester/consents?status=pending") {
+        return jsonResponse({ status: "success", data: { consents: [] } });
+      }
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({ status: "ok", pack: { pack_key: "request_forms", version: "test", forms: [] } });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
+      }
+      if (url === "/api/web/registry/browser-pairings/lookup" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-incomplete-profile",
+            purpose: "registration",
+            expires_at: "2026-06-18T23:59:59Z",
+            next_url: "/app/device/register?pairing_id=pair-incomplete-profile",
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-incomplete-profile" && !init?.method) {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-incomplete-profile",
+            purpose: "registration",
+            status: "pending",
+            device: {
+              device_id: "device-incomplete-profile",
+              hostname: "WIN-INCOMPLETE",
+              os: "Windows",
+              agent_version: "3.1.70",
+            },
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-incomplete-profile/registration/confirm" && init?.method === "POST") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-incomplete-profile",
+            purpose: "registration",
+            status: "confirmed",
+            device: {
+              device_id: "device-incomplete-profile",
+              hostname: "WIN-INCOMPLETE",
+              os: "Windows",
+              agent_version: "3.1.70",
+            },
+            registration: { status: "approved", device_id: "device-incomplete-profile" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("Заполните профиль");
+    const codeInput = screen.getByLabelText("Код привязки");
+    expect(codeInput).not.toBeDisabled();
+    fireEvent.change(codeInput, { target: { value: "ABCD-1234" } });
+    fireEvent.click(screen.getByRole("button", { name: "Проверить код привязки" }));
+
+    expect(await screen.findByText("WIN-INCOMPLETE")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку устройства" }));
+
+    expect(await screen.findAllByText("Устройство привязано")).not.toHaveLength(0);
+    expect(
+      fetchMock.mock.calls.some(([input, init]) => String(input) === "/api/web/requester/tickets" && init?.method === "POST"),
+    ).toBe(false);
+  });
+
   it("shows only emergency forms when profile and agent context are incomplete", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

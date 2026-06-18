@@ -14,8 +14,8 @@ REGISTRY_POLICY_KEY = "registry_management"
 DEFAULT_REGISTRY_POLICIES: dict[str, dict[str, Any]] = {
     "registration": {
         "require_user_confirmation": True,
-        "require_admin_confirmation": True,
-        "auto_approve_first_binding": False,
+        "require_admin_confirmation": False,
+        "auto_approve_first_binding": True,
         "allow_shared_devices": True,
         "allow_responsible_binding": True,
         "max_primary_devices_per_person": 3,
@@ -55,12 +55,7 @@ REGISTRY_POLICY_VALIDATION: dict[str, dict[str, Any]] = {
 REGISTRY_POLICY_REQUIRES_RESTART_FIELDS: set[str] = set()
 REGISTRATION_ENTITY_MODES = {"optional", "required_existing", "allow_pending_request"}
 
-DANGEROUS_POLICY_WARNINGS: dict[str, dict[str, str]] = {
-    "registration.auto_approve_first_binding": {
-        "severity": "warning",
-        "message": "Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.",
-    }
-}
+DANGEROUS_POLICY_WARNINGS: dict[str, dict[str, str]] = {}
 
 
 def _deep_merge_defaults(value: dict[str, Any] | None) -> dict[str, Any]:
@@ -190,17 +185,7 @@ def _changed_from_defaults(effective: dict[str, Any]) -> dict[str, dict[str, Any
 
 
 def _policy_warnings(effective: dict[str, Any]) -> list[dict[str, str]]:
-    warnings: list[dict[str, str]] = []
-    if effective["registration"]["auto_approve_first_binding"]:
-        warning = DANGEROUS_POLICY_WARNINGS["registration.auto_approve_first_binding"]
-        warnings.append(
-            {
-                "field": "registration.auto_approve_first_binding",
-                "severity": warning["severity"],
-                "message": warning["message"],
-            }
-        )
-    return warnings
+    return []
 
 
 def build_registry_policy_response(value: dict[str, Any] | None = None, *, dry_run: bool = False) -> dict[str, Any]:

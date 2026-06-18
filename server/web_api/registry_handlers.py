@@ -840,12 +840,6 @@ async def handle_web_registry_browser_pairing_registration_confirm(request: web.
     if not isinstance(data, dict):
         data = {}
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
-        profile_schema = await RequesterProfileSchemaService(session).get_schema()
-        person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
-        completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
-        if not completion["complete"]:
-            return _requester_profile_incomplete_response(completion)
         service = BrowserPairingService(session)
         try:
             payload = await service.confirm_registration_pairing_for_web_user(

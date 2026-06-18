@@ -36,7 +36,8 @@ async def test_registry_policy_api_reads_defaults_and_rejects_invalid_values(tes
     assert response.status == 200
     payload = await response.json()
     assert payload["data"]["effective"]["account_sessions"]["verified_other_account_ttl_hours"] == 24
-    assert payload["data"]["defaults"]["registration"]["auto_approve_first_binding"] is False
+    assert payload["data"]["defaults"]["registration"]["require_admin_confirmation"] is False
+    assert payload["data"]["defaults"]["registration"]["auto_approve_first_binding"] is True
     assert payload["data"]["requires_restart"] is False
     assert payload["data"]["validation"]["registration.stale_after_days"] == {
         "type": "integer",
@@ -57,25 +58,30 @@ async def test_registry_policy_api_reads_defaults_and_rejects_invalid_values(tes
 async def test_registry_policy_preview_and_reset_are_audited(test_client, test_engine):
     preview = await test_client.post(
         "/api/web/admin/registry/policies/preview",
-        json={"policies": {"registration": {"auto_approve_first_binding": True}}},
+        json={"policies": {"registration": {"require_admin_confirmation": True, "auto_approve_first_binding": False}}},
         headers=ADMIN_HEADERS,
     )
     assert preview.status == 200
     preview_payload = await preview.json()
     assert preview_payload["data"]["dry_run"] is True
-    assert preview_payload["data"]["warnings"][0]["field"] == "registration.auto_approve_first_binding"
+    assert preview_payload["data"]["warnings"] == []
+    assert preview_payload["data"]["changed_from_defaults"]["registration.require_admin_confirmation"] == {
+        "default": False,
+        "effective": True,
+    }
 
     saved = await test_client.patch(
         "/api/web/admin/registry/policies",
         json={
-            "reason": "enable test stand policy",
-            "policies": {"registration": {"auto_approve_first_binding": True}},
+            "reason": "enable manual approval policy",
+            "policies": {"registration": {"require_admin_confirmation": True, "auto_approve_first_binding": False}},
         },
         headers=ADMIN_HEADERS,
     )
     assert saved.status == 200
     saved_payload = await saved.json()
-    assert saved_payload["data"]["effective"]["registration"]["auto_approve_first_binding"] is True
+    assert saved_payload["data"]["effective"]["registration"]["require_admin_confirmation"] is True
+    assert saved_payload["data"]["effective"]["registration"]["auto_approve_first_binding"] is False
     assert "warnings" not in saved_payload["data"]["effective"]
 
     reset = await test_client.post(
@@ -85,7 +91,8 @@ async def test_registry_policy_preview_and_reset_are_audited(test_client, test_e
     )
     assert reset.status == 200
     reset_payload = await reset.json()
-    assert reset_payload["data"]["effective"]["registration"]["auto_approve_first_binding"] is False
+    assert reset_payload["data"]["effective"]["registration"]["require_admin_confirmation"] is False
+    assert reset_payload["data"]["effective"]["registration"]["auto_approve_first_binding"] is True
     assert reset_payload["data"]["changed_from_defaults"] == {}
 
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

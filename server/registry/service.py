@@ -771,7 +771,7 @@ class RegistrySnapshotService:
                     "ticket_create": not complete,
                     "ticket_preview": not complete,
                     "knowledge_requester_actions": not complete,
-                    "device_binding_confirmation": not complete,
+                    "device_binding_confirmation": False,
                 },
             }
 

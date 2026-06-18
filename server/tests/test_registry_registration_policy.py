@@ -143,7 +143,7 @@ async def test_required_existing_policy_rejects_free_text_and_invalid_registry_i
 
     assert pending_departments == []
     assert pending_locations == []
-    assert accepted["registration"]["status"] == "pending_admin_review"
+    assert accepted["registration"]["status"] == "approved"
     assert accepted["person"]["department_id"] == department.department_id
     assert accepted["person"]["location_id"] == location.location_id
 

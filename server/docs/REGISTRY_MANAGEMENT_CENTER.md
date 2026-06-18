@@ -170,7 +170,7 @@ Transfer owner, people merge, location merge, department merge, bulk actions and
 - `defaults`: server defaults for every registration, account-session and ticket-visibility policy.
 - `effective`: validated effective policy after applying defaults.
 - `changed_from_defaults`: field-level default/effective drift.
-- `warnings`: dangerous-setting warnings. Enabling `registration.auto_approve_first_binding` returns: `Это позволит автоматически подтверждать первую регистрацию устройства. Рекомендуется только для тестового стенда.`
+- `warnings`: non-default policy warnings. Automatic first-device approval is the default and does not emit a dangerous-setting warning.
 - `validation`: numeric ranges and nullable flags for bounded policy fields.
 - `requires_restart` and `restart_required_fields`: currently `false` / empty for registry policies because the services read effective values at runtime.
 - `dry_run`: `true` only for preview.

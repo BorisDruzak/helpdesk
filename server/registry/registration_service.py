@@ -27,8 +27,8 @@ from registry.policy_service import RegistryPolicyService
 
 REGISTRATION_POLICY = {
     "require_user_confirmation": True,
-    "require_admin_confirmation": True,
-    "auto_approve_first_binding": False,
+    "require_admin_confirmation": False,
+    "auto_approve_first_binding": True,
     "allow_shared_devices": True,
     "max_primary_devices_per_person": 3,
     "stale_after_days": 90,
@@ -1217,6 +1217,18 @@ class RegistrationService:
             )
         except Exception:
             pass
+
+        if (
+            not conflict_reason
+            and user_confirmed
+            and policy["auto_approve_first_binding"]
+            and not policy["require_admin_confirmation"]
+        ):
+            return await self.approve_claim(
+                claim.claim_id,
+                reviewed_by=actor_id or requester_id or "system",
+                actor_role="system",
+            )
 
         return self._build_submit_payload(person=person, asset=asset, claim=claim)
 
