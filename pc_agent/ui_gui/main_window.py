@@ -1510,6 +1510,54 @@ class MainWindow(QMainWindow):
                 refreshed = await self.chat_panel.ticket_client.get_account_state()
                 if isinstance(refreshed, dict) and refreshed.get("status") != "error":
                     self._account_state = refreshed
+                confirmed_account = next(
+                    (
+                        account
+                        for account in self._account_state.get("accounts", [])
+                        if isinstance(account, dict)
+                        and str(account.get("account_mode") or "") == "confirmed_binding"
+                        and str(account.get("binding_id") or "").strip()
+                    ),
+                    None,
+                )
+                if confirmed_account is not None:
+                    payload = await self.chat_panel.ticket_client.create_confirmed_binding_account_session(
+                        str(confirmed_account.get("binding_id") or "")
+                    )
+                    if not isinstance(payload, dict) or payload.get("status") == "error":
+                        message = (
+                            payload.get("error")
+                            if isinstance(payload, dict)
+                            else "Не удалось создать локальную сессию подтвержденной привязки."
+                        )
+                        self.account_gate_page.render(
+                            self._account_state,
+                            local_session=self._account_session,
+                            error=str(message or "Не удалось создать локальную сессию подтвержденной привязки."),
+                        )
+                        return
+                    else:
+                        session_payload = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+                        token = str(payload.get("session_token") or "").strip()
+                        if session_payload and token:
+                            session_payload = {**session_payload, "session_token": token}
+                            self._account_session = self._account_session_manager.save(
+                                self._account_session_manager.build_confirmed_binding_session(
+                                    session_payload,
+                                    device_id=self.chat_panel.device_id,
+                                )
+                            )
+                            self.account_gate_page.render(self._account_state, local_session=self._account_session)
+                            self._set_account_entry_mode(False)
+                            self._render_profile_status()
+                            self._select_sidebar_view("tickets", expand=True)
+                            return
+                        self.account_gate_page.render(
+                            self._account_state,
+                            local_session=self._account_session,
+                            error="Сервер не вернул данные локальной сессии подтвержденной привязки.",
+                        )
+                        return
                 registration_payload = result.get("registration") if isinstance(result.get("registration"), dict) else {}
                 registration_state = (
                     self._account_state.get("registration") if isinstance(self._account_state.get("registration"), dict) else {}
