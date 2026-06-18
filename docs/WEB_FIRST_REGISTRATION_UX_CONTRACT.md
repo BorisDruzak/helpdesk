@@ -15,9 +15,10 @@ This is the Phase R1 contract for `PLANS.md`: web account registration, profile 
    - Allowed while incomplete: `/app/requester/profile/setup`, profile view/edit, device-link status, consents that are already pending, logout, and an explicit emergency ticket path when policy allows it.
    - Blocked while incomplete: normal ticket creation, requester knowledge actions that depend on audience context, device ownership confirmation, feedback/reopen actions, and saved profile-dependent preferences.
 
-3. Device-link claims require admin approval by default.
-   - First-device auto-approval may be added later behind an explicit registry policy flag.
-   - The default copy says the request is waiting for administrator approval.
+3. Device-link confirmation is separate from profile completion.
+   - The default registry policy auto-approves the first non-conflicting binding.
+   - Administrators can switch device-link claims to manual approval in registry policies.
+   - Browser and agent copy must reflect the returned registration status: linked for approved bindings, waiting for administrator only for manual-review statuses.
 
 4. Department and location values must come from registry pickers in the first rollout.
    - Free-text creation is not allowed in normal user UI.

@@ -987,7 +987,7 @@ export function RequesterWorkspacePage() {
           return;
         }
         setDeviceLinkPairing(pairing);
-        setDeviceLinkNotice("Проверьте устройство и отправьте заявку на привязку.");
+        setDeviceLinkNotice("Проверьте устройство и подтвердите привязку.");
       })
       .catch((exc) => {
         setDeviceLinkError(exc instanceof Error ? exc.message : "Не удалось загрузить привязку устройства.");
@@ -1407,7 +1407,7 @@ export function RequesterWorkspacePage() {
       }
       const pairing = await fetchDevicePairing(lookup.pairing_id);
       setDeviceLinkPairing(pairing);
-      setDeviceLinkNotice("Проверьте устройство и отправьте заявку на привязку.");
+      setDeviceLinkNotice("Проверьте устройство и подтвердите привязку.");
     } catch (exc) {
       setDeviceLinkError(exc instanceof Error ? exc.message : "Код привязки не найден или истек.");
     } finally {
@@ -1433,7 +1433,7 @@ export function RequesterWorkspacePage() {
       setDeviceLinkNotice(
         result.registration?.status
           ? registrationStatusLabel(result.registration.status)
-          : "Заявка на привязку отправлена администратору.",
+          : "Привязка устройства подтверждена.",
       );
       await load();
     } catch (exc) {
@@ -2663,14 +2663,14 @@ export function RequesterWorkspacePage() {
                   </div>
                 </div>
                 <button
-                  aria-label="Отправить заявку на привязку устройства"
+                  aria-label="Подтвердить привязку устройства"
                   className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                   disabled={deviceLinkConfirming || deviceLinkPairing.status === "confirmed"}
                   onClick={() => void handleDeviceLinkConfirm()}
                   type="button"
                 >
                   <CheckCircle2 className="h-4 w-4" />
-                  {deviceLinkConfirming ? "Отправляем..." : "Отправить заявку на привязку"}
+                  {deviceLinkConfirming ? "Подтверждаем..." : "Подтвердить привязку"}
                 </button>
               </div>
             ) : null}

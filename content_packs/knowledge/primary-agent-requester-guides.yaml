@@ -25,7 +25,7 @@ items:
     bindings:
       - service_code: other
         offering_code: other.unknown
-        request_template_key: agent_binding_help
+        request_template_key: general_request
         weight: 1.0
     body_format: markdown
     body: |
@@ -93,7 +93,7 @@ items:
     bindings:
       - service_code: other
         offering_code: other.unknown
-        request_template_key: profile_completion_help
+        request_template_key: general_request
         weight: 1.0
     body_format: markdown
     body: |
@@ -126,7 +126,7 @@ items:
     bindings:
       - service_code: other
         offering_code: other.unknown
-        request_template_key: general_request
+        request_template_key: agent_binding_help
         weight: 1.0
     body_format: markdown
     body: |
@@ -160,7 +160,7 @@ items:
     bindings:
       - service_code: other
         offering_code: other.unknown
-        request_template_key: general_request
+        request_template_key: profile_completion_help
         weight: 1.0
     body_format: markdown
     body: |

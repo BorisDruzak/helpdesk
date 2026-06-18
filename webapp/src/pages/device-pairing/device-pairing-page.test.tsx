@@ -242,7 +242,7 @@ describe("DevicePairingPage", () => {
     renderPage("/app/device/register?pairing_id=pair-2");
 
     expect(await screen.findByRole("heading", { name: "Регистрация устройства" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку" }));
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку" }));
 
     expect(await screen.findByText("Заявка на привязку отправлена")).toBeInTheDocument();
     expect(screen.getByText("Ожидает проверки администратора")).toBeInTheDocument();
@@ -303,7 +303,7 @@ describe("DevicePairingPage", () => {
     );
 
     expect(await screen.findByText("PROFILE-PC")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку" }));
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("location")).toHaveTextContent(
@@ -378,9 +378,53 @@ describe("DevicePairingPage", () => {
     expect(await screen.findByText("STRICT-PC")).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText("Подразделение"), { target: { value: "dept-1" } });
     fireEvent.change(screen.getByLabelText("Локация"), { target: { value: "loc-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку" }));
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку" }));
 
     expect(await screen.findByText("Заявка на привязку отправлена")).toBeInTheDocument();
+  });
+
+  it("shows a linked-device result when registration is auto-approved", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/registry/browser-pairings/pair-auto") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-auto",
+            purpose: "registration",
+            status: "pending",
+            device: { hostname: "AUTO-PC", os: "Windows", agent_version: "3.1.70" },
+          },
+        });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-auto/registration/confirm") {
+        expect(init?.method).toBe("POST");
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-auto",
+            purpose: "registration",
+            status: "confirmed",
+            claim_id: "claim-auto",
+            registration: { status: "approved", device_id: "device-auto" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderPage("/app/device/register?pairing_id=pair-auto");
+
+    expect(await screen.findByText("AUTO-PC")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку" }));
+
+    expect((await screen.findAllByText("Устройство привязано")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Вернитесь в локальный агент и нажмите «Обновить», чтобы войти под привязанным пользователем.")).toBeInTheDocument();
+    expect(screen.queryByText("Ожидает проверки администратора")).not.toBeInTheDocument();
   });
 
   it("shows a safe Russian error when strict registration ids are rejected", async () => {

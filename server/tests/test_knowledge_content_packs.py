@@ -161,13 +161,14 @@ def test_primary_agent_requester_guides_pack_contains_pa11_articles() -> None:
         "Что делать, если мой ПК не включается",
         "Как запросить смену владельца устройства",
         "Как привязать устройство к аккаунту",
+        "Как заполнить профиль пользователя",
     }
     forbidden_terms = {"affected_person_id", "target_device_id", "binding_id", "claim_id"}
 
     assert pack["code"] == "primary-agent-requester-guides"
     titles = {item["title"] for item in pack["items"]}
     assert expected_titles <= titles
-    assert len(pack["items"]) == 4
+    assert len(pack["items"]) == 5
     for item in pack["items"]:
         assert item["visibility"] == "requester"
         article_text = "\n".join(str(item.get(key) or "") for key in ("title", "summary", "body"))

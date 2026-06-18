@@ -25,10 +25,11 @@ function formatValue(value?: string | null) {
 function purposeText(purpose: DevicePairingPurpose) {
   if (purpose === "registration") {
     return {
-      action: "Отправить заявку на привязку",
-      done: "Заявка на привязку отправлена",
+      action: "Подтвердить привязку",
+      done: "Привязка устройства подтверждена",
       heading: "Регистрация устройства",
-      intro: "Подтвердите компьютер и отправьте заявку администратору. Устройство появится в профиле после одобрения.",
+      intro:
+        "Подтвердите, что этот компьютер можно связать с вашим аккаунтом. Если политика требует проверки, заявка уйдет администратору.",
     };
   }
   return {
@@ -82,6 +83,17 @@ function registrationDoneHint(status: string | null | undefined) {
     return "Вернитесь в локальный агент и нажмите «Обновить», чтобы войти под привязанным пользователем.";
   }
   return "Вернитесь в локальный агент и нажмите «Обновить», чтобы увидеть актуальный статус.";
+}
+
+function registrationDoneTitle(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "approved" || normalized === "admin_confirmed" || normalized === "active") {
+    return "Устройство привязано";
+  }
+  if (normalized === "pending_admin_review" || normalized === "user_confirmed" || normalized === "conflict") {
+    return "Заявка на привязку отправлена";
+  }
+  return "Привязка устройства подтверждена";
 }
 
 function withNextPath(path: string, nextPath: string) {
@@ -318,7 +330,9 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
                 <div className="flex items-start gap-3 rounded-[0.5rem] bg-emerald-50 px-4 py-3 text-emerald-800">
                   <CheckCircle2 className="mt-0.5 h-5 w-5" />
                   <div>
-                    <p className="font-semibold">{copy.done}</p>
+                    <p className="font-semibold">
+                      {purpose === "registration" ? registrationDoneTitle(confirmed?.registration?.status) : copy.done}
+                    </p>
                     {confirmed?.registration?.status ? (
                       <>
                         <p className="mt-1 text-sm">{registrationStatusLabel(confirmed.registration.status)}</p>

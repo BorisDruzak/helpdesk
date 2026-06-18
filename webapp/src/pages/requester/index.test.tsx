@@ -1548,7 +1548,7 @@ describe("RequesterWorkspacePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Проверить код привязки" }));
 
     expect(await screen.findByText("WIN-INCOMPLETE")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку устройства" }));
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку устройства" }));
 
     expect(await screen.findAllByText("Устройство привязано")).not.toHaveLength(0);
     expect(
@@ -1948,7 +1948,7 @@ describe("RequesterWorkspacePage", () => {
     expect(await screen.findByText("R4-PC")).toBeInTheDocument();
     expect(screen.getByText("Windows · Агент 3.1.64")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку устройства" }));
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку устройства" }));
 
     expect((await screen.findAllByText("Ожидает проверки администратора")).length).toBeGreaterThan(0);
     await waitFor(() => {
@@ -2027,6 +2027,6 @@ describe("RequesterWorkspacePage", () => {
     render(<RequesterWorkspacePage />);
 
     expect(await screen.findByText("DIRECT-PC")).toBeInTheDocument();
-    expect(screen.getByText("Проверьте устройство и отправьте заявку на привязку.")).toBeInTheDocument();
+    expect(screen.getByText("Проверьте устройство и подтвердите привязку.")).toBeInTheDocument();
   });
 });
