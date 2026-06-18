@@ -1608,9 +1608,24 @@ describe("RequesterWorkspacePage", () => {
             version: "pa10",
             forms: [
               {
-                key: "emergency_registration_help",
-                title: "Помощь с регистрацией или входом",
-                request_kind: "incident",
+                key: "profile_completion_help",
+                title: "Помощь с заполнением профиля",
+                request_kind: "profile_completion_help",
+                availability_policy: {
+                  available_without_completed_profile: true,
+                  available_without_agent_binding: true,
+                  requires_manual_triage: true,
+                  contact_required: true,
+                  allowed_for_anonymous: false,
+                },
+                fields: [
+                  { key: "contact_phone", label: "Телефон для связи", type: "phone", required: true },
+                ],
+              },
+              {
+                key: "agent_binding_help",
+                title: "Помощь с привязкой агента",
+                request_kind: "agent_binding_help",
                 availability_policy: {
                   available_without_completed_profile: true,
                   available_without_agent_binding: true,
@@ -1650,7 +1665,7 @@ describe("RequesterWorkspacePage", () => {
           status: "success",
           data: {
             ticket_id: "T-EMERGENCY",
-            ticket: { ticket_id: "T-EMERGENCY", title: "Помощь с регистрацией или входом", status: "new" },
+            ticket: { ticket_id: "T-EMERGENCY", title: "Помощь с заполнением профиля", status: "new" },
           },
         });
       }
@@ -1661,9 +1676,10 @@ describe("RequesterWorkspacePage", () => {
     render(<RequesterWorkspacePage />);
 
     const formSelect = await screen.findByLabelText("Форма обращения заявителя");
-    expect(screen.getByRole("option", { name: "Помощь с регистрацией или входом" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Помощь с заполнением профиля" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Помощь с привязкой агента" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Обычный доступ" })).not.toBeInTheDocument();
-    expect(formSelect).toHaveValue("emergency_registration_help");
+    expect(formSelect).toHaveValue("profile_completion_help");
     expect(screen.getByText("Диагностика может быть недоступна, пока поддержка не уточнит профиль и основное устройство.")).toBeInTheDocument();
     expect(screen.getByText("Обращение попадет на ручную обработку поддержки.")).toBeInTheDocument();
 
@@ -1678,7 +1694,7 @@ describe("RequesterWorkspacePage", () => {
       ([input, init]) => String(input) === "/api/web/requester/tickets" && (init as RequestInit | undefined)?.method === "POST",
     );
     expect(JSON.parse(String((createCall?.[1] as RequestInit).body))).toMatchObject({
-      form_key: "emergency_registration_help",
+      form_key: "profile_completion_help",
       form_payload: { contact_phone: "+7 000 555-55-55" },
     });
   });

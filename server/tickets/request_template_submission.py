@@ -153,6 +153,7 @@ async def resolve_create_form_submission(
     form_key: str,
     request_template_key: str,
     raw_values: Any,
+    include_setup_assistance: bool = False,
 ) -> dict[str, Any]:
     """Validate a ticket creation form payload from either legacy packs or standalone registry templates."""
 
@@ -161,6 +162,7 @@ async def resolve_create_form_submission(
             TicketFormPacksRepo(session),
             pack_key=pack_key,
             version=pack_version,
+            include_setup_assistance=include_setup_assistance,
         )
         validated_submission = validate_form_submission(
             form_pack,

@@ -209,6 +209,7 @@ async def _resolve_form_availability_policy(
         TicketFormPacksRepo(session),
         pack_key=pack_key or DEFAULT_TICKET_FORM_PACK_KEY,
         version=pack_version or None,
+        include_setup_assistance=True,
     )
     forms = pack.get("forms") if isinstance(pack.get("forms"), list) else []
     for item in forms:
@@ -348,6 +349,7 @@ async def _resolve_on_behalf_policy(
         TicketFormPacksRepo(session),
         pack_key=pack_key or DEFAULT_TICKET_FORM_PACK_KEY,
         version=pack_version or None,
+        include_setup_assistance=True,
     )
     forms = pack.get("forms") if isinstance(pack.get("forms"), list) else []
     for item in forms:
@@ -1676,6 +1678,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                     form_key=form_key,
                     request_template_key=request_template_key,
                     raw_values=form_payload,
+                    include_setup_assistance=True,
                 )
                 if catalog_selection is not None:
                     validated_submission = await ServiceCatalogRuntimeResolver(session).apply_to_validated_submission(

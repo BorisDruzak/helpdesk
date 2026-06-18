@@ -370,7 +370,18 @@ async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, 
     pack = data["pack"]
     assert pack["pack_key"] == "request_forms"
     form_keys = {form["key"] for form in pack.get("forms") or []}
-    assert {"breakage", "access", "printer", "site_system"} <= form_keys
+    assert {"profile_completion_help", "agent_binding_help", "breakage", "access", "printer", "site_system"} <= form_keys
+    profile_help = next(form for form in pack["forms"] if form["key"] == "profile_completion_help")
+    agent_help = next(form for form in pack["forms"] if form["key"] == "agent_binding_help")
+    for form in (profile_help, agent_help):
+        assert form["availability_policy"] == {
+            "available_without_completed_profile": True,
+            "available_without_agent_binding": True,
+            "requires_manual_triage": True,
+            "contact_required": True,
+            "allowed_for_anonymous": False,
+        }
+        assert form["ticket_type"] == "service_request"
     site_form = next(form for form in pack["forms"] if form["key"] == "site_system")
     assert site_form["priority_policy"]["impact_field"] == "impact_scope"
     assert site_form["priority_policy"]["urgency_field"] == "work_continuity"
@@ -423,6 +434,14 @@ async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_c
     assert current_data["pack"]["version"] == "1.0.1"
     assert current_data["pack"]["forms"][0]["fields"][0]["key"] == "room"
     assert current_data["pack"]["forms"][0]["ticket_type"] == "incident"
+    assert "profile_completion_help" not in {form["key"] for form in current_data["pack"]["forms"]}
+
+    public_current_response = await test_client.get("/public_api/ticket_forms/current?pack_key=request_forms")
+    assert public_current_response.status == 200, await public_current_response.text()
+    public_current_data = await public_current_response.json()
+    public_form_keys = [form["key"] for form in public_current_data["pack"]["forms"]]
+    assert public_form_keys[:2] == ["profile_completion_help", "agent_binding_help"]
+    assert "printer" in public_form_keys
 
 
 @pytest.mark.asyncio

@@ -45,7 +45,10 @@ _TICKET_TYPE_BY_FORM_KIND = {
     "new_account": "access_request",
     "software_install": "service_request",
     "hardware_replacement": "service_request",
+    "profile_completion_help": "service_request",
+    "agent_binding_help": "service_request",
 }
+_SETUP_ASSISTANCE_FORM_KEYS = ("profile_completion_help", "agent_binding_help")
 DEFAULT_PRIORITY_POLICY = {
     "impact_field": "impact_scope",
     "urgency_field": "work_continuity",
@@ -303,6 +306,38 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
     """Built-in baseline catalog used until admins publish their own versions."""
     forms = [
         {
+            "key": "profile_completion_help",
+            "request_kind": "profile_completion_help",
+            "title": "Помощь с заполнением профиля",
+            "description": "Обращение в поддержку, если не получается заполнить профиль пользователя.",
+            "availability_policy": {
+                "available_without_completed_profile": True,
+                "available_without_agent_binding": True,
+                "requires_manual_triage": True,
+                "contact_required": True,
+            },
+            "fields": [
+                {"key": "contact_phone", "label": "Телефон для связи", "type": "phone", "required": True},
+                {"key": "problem_details", "label": "Что не получается заполнить", "type": "textarea", "required": False},
+            ],
+        },
+        {
+            "key": "agent_binding_help",
+            "request_kind": "agent_binding_help",
+            "title": "Помощь с привязкой агента",
+            "description": "Обращение в поддержку, если агент не привязывается к аккаунту или не показывает код.",
+            "availability_policy": {
+                "available_without_completed_profile": True,
+                "available_without_agent_binding": True,
+                "requires_manual_triage": True,
+                "contact_required": True,
+            },
+            "fields": [
+                {"key": "contact_phone", "label": "Телефон для связи", "type": "phone", "required": True},
+                {"key": "agent_problem", "label": "Что происходит в агенте", "type": "textarea", "required": False},
+            ],
+        },
+        {
             "key": "breakage",
             "request_kind": "breakage",
             "title": "Поломка",
@@ -447,7 +482,11 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
     ]
     for form in forms:
         form["ticket_type"] = infer_ticket_type_for_form(form.get("key"), form.get("request_kind"))
-        _attach_default_priority_context(form)
+        if form.get("key") in _SETUP_ASSISTANCE_FORM_KEYS:
+            form["priority_policy"] = {}
+            form["field_roles"] = {}
+        else:
+            _attach_default_priority_context(form)
 
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
@@ -901,6 +940,33 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
     }
 
 
+def ensure_setup_assistance_forms(pack: dict[str, Any]) -> dict[str, Any]:
+    """Expose mandatory setup-help forms even when an older pack is preferred."""
+    normalized = validate_form_pack_schema(pack)
+    if normalized.get("pack_key") != DEFAULT_TICKET_FORM_PACK_KEY:
+        return normalized
+
+    forms = normalized.get("forms") if isinstance(normalized.get("forms"), list) else []
+    existing_keys = {str(form.get("key") or "").strip() for form in forms if isinstance(form, dict)}
+    missing_keys = [key for key in _SETUP_ASSISTANCE_FORM_KEYS if key not in existing_keys]
+    if not missing_keys:
+        return normalized
+
+    builtin = validate_form_pack_schema(build_default_ticket_form_pack())
+    builtin_by_key = {
+        str(form.get("key") or "").strip(): form
+        for form in builtin.get("forms") or []
+        if isinstance(form, dict)
+    }
+    setup_forms = [deepcopy(builtin_by_key[key]) for key in missing_keys if key in builtin_by_key]
+    if not setup_forms:
+        return normalized
+
+    augmented = deepcopy(normalized)
+    augmented["forms"] = setup_forms + [deepcopy(form) for form in forms if isinstance(form, dict)]
+    return validate_form_pack_schema(augmented)
+
+
 def pack_summary(pack: dict[str, Any]) -> dict[str, Any]:
     forms = pack.get("forms") or []
     return {
@@ -1338,26 +1404,30 @@ async def resolve_ticket_form_pack(
     *,
     pack_key: str = DEFAULT_TICKET_FORM_PACK_KEY,
     version: Optional[str] = None,
+    include_setup_assistance: bool = False,
 ) -> dict[str, Any]:
+    def _finalize(pack: dict[str, Any]) -> dict[str, Any]:
+        return ensure_setup_assistance_forms(pack) if include_setup_assistance else pack
+
     builtin = validate_form_pack_schema(build_default_ticket_form_pack())
     if version:
         pack = await repo.get_pack(pack_key, version)
         if pack is not None and isinstance(pack.schema_json, dict):
-            return validate_form_pack_schema(pack.schema_json)
+            return _finalize(validate_form_pack_schema(pack.schema_json))
         if version == builtin.get("version") and pack_key == builtin.get("pack_key"):
-            return builtin
+            return _finalize(builtin)
         raise ValueError(f"ticket form pack not found: {pack_key}@{version}")
 
     preferred = await repo.get_preferred(pack_key)
     if preferred:
         preferred_pack = await repo.get_pack(pack_key, str(preferred.get("version") or ""))
         if preferred_pack is not None and isinstance(preferred_pack.schema_json, dict):
-            return validate_form_pack_schema(preferred_pack.schema_json)
+            return _finalize(validate_form_pack_schema(preferred_pack.schema_json))
     if pack_key == builtin.get("pack_key"):
-        return builtin
+        return _finalize(builtin)
 
     packs = await repo.list_packs(pack_key=pack_key)
     for pack in packs:
         if isinstance(pack.schema_json, dict):
-            return validate_form_pack_schema(pack.schema_json)
-    return builtin
+            return _finalize(validate_form_pack_schema(pack.schema_json))
+    return _finalize(builtin)

@@ -723,8 +723,27 @@ async def test_incomplete_profile_can_create_only_allowed_emergency_form(test_cl
     created_payload = await created.json()
     assert created.status == 200, created_payload
 
+    setup_created = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "Need profile help",
+            "description": "Profile setup is blocked",
+            "form_pack_version": f"availability-{suffix}",
+            "form_key": "profile_completion_help",
+            "request_template_key": "profile_completion_help",
+            "form_payload": {
+                "contact_phone": "+7 000 765-43-21",
+                "problem_details": "Department picker is unclear",
+            },
+        },
+    )
+    setup_created_payload = await setup_created.json()
+    assert setup_created.status == 200, setup_created_payload
+
     async with session_maker() as session:
         ticket = await session.get(Ticket, created_payload["data"]["ticket_id"])
+        setup_ticket = await session.get(Ticket, setup_created_payload["data"]["ticket_id"])
         triage_queue = (await session.execute(select(TicketQueue).where(TicketQueue.code == "servicedesk_l1"))).scalar_one()
         events = (
             await session.execute(
@@ -736,8 +755,11 @@ async def test_incomplete_profile_can_create_only_allowed_emergency_form(test_cl
         ).scalars().all()
 
     assert ticket is not None
+    assert setup_ticket is not None
     assert ticket.queue_id == triage_queue.id
+    assert setup_ticket.queue_id == triage_queue.id
     assert ticket.requester_registration_status == "no_device"
+    assert setup_ticket.requester_registration_status == "no_device"
     custom_fields = ticket.custom_fields or {}
     assert custom_fields["requires_manual_triage"] is True
     assert custom_fields["manual_triage_reason"] == "request_form_availability_policy"

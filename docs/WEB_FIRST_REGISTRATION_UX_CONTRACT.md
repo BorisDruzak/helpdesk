@@ -141,6 +141,8 @@ Department and location values must come from registry picker options. Invalid o
 
 Normal requester ticket preview/create returns `403 REQUESTER_PROFILE_INCOMPLETE` while the profile is incomplete and `profile_completion.blocks.ticket_*` is true. The React requester workspace follows `blocks`, not only `complete`, so a temporary rollout override can leave missing-field guidance visible without stranding users. After a successful profile save it returns to `/app/requester`.
 
+The built-in `request_forms` fallback exposes only setup assistance forms when the requester profile is incomplete or no agent binding exists: `profile_completion_help` and `agent_binding_help`. Both opt into `available_without_completed_profile`, `available_without_agent_binding`, `requires_manual_triage` and `contact_required`; normal request forms stay hidden and remain rejected by the requester create/preview APIs until the relevant gates are complete.
+
 ## R4 Device Linking Contract
 
 `/app/requester/devices` is the primary web-cabinet entrypoint for linking a new agent device. The user can paste a device-link code from the agent or open a direct link with `pairing_id`; both paths reuse the existing authenticated browser-pairing endpoints:

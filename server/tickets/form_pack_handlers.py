@@ -10,6 +10,7 @@ from app.db import get_session
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
+    ensure_setup_assistance_forms,
     next_form_pack_version,
     pack_summary,
     resolve_ticket_form_pack,
@@ -85,6 +86,8 @@ async def handle_ticket_form_pack_current(request: web.Request) -> web.Response:
     async with get_session() as session:
         repo = TicketFormPacksRepo(session)
         pack = await resolve_ticket_form_pack(repo, pack_key=pack_key)
+        if request.path.startswith("/public_api/"):
+            pack = ensure_setup_assistance_forms(pack)
         has_update = bool(current_version and current_version != pack.get("version"))
     return _json_ok(pack=pack, has_update=has_update, current_version=pack.get("version"))
 
