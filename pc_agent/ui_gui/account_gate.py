@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 from typing import Any, Optional
 
 from PySide6.QtCore import QTimer, Qt, Signal
@@ -125,6 +126,8 @@ def account_gate_view_state(
     if approved_other is not None:
         can_login_other = True
     browser_pairing_code = str(account_state.get("browser_pairing_code") or "").strip()
+    browser_pairing_url = str(account_state.get("browser_pairing_url") or "").strip()
+    browser_pairing_active = bool(browser_pairing_code or browser_pairing_url)
     return {
         "mode": mode,
         "title": {
@@ -134,8 +137,10 @@ def account_gate_view_state(
         }.get(mode, "Проверяем регистрацию устройства..."),
         "message": str(account_state.get("message") or ""),
         "show_register": False,
-        "show_browser_register": can_register and confirmed is None,
+        "show_browser_register": can_register and confirmed is None and not browser_pairing_active,
         "browser_pairing_code": browser_pairing_code,
+        "browser_pairing_url": browser_pairing_url,
+        "show_browser_pairing_url": bool(browser_pairing_url),
         "show_copy_pairing_code": bool(browser_pairing_code),
         "show_login_confirmed": confirmed is not None,
         "show_gui_password_login": confirmed is not None,
@@ -169,6 +174,7 @@ class AccountGateWidget(QFrame):
         self._approved_other_account: dict[str, Any] | None = None
         self._pending_request_id: str | None = None
         self._browser_pairing_code: str = ""
+        self._browser_pairing_url: str = ""
         self._showing_other_form = False
         self._pending_poll_timer = QTimer(self)
         self._pending_poll_timer.setInterval(20000)
@@ -211,6 +217,16 @@ class AccountGateWidget(QFrame):
         self.pairing_code_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.pairing_code_label.setWordWrap(True)
         layout.addWidget(self.pairing_code_label)
+
+        self.pairing_url_label = QLabel("")
+        self.pairing_url_label.setObjectName("CardMeta")
+        self.pairing_url_label.setTextFormat(Qt.TextFormat.RichText)
+        self.pairing_url_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.pairing_url_label.setOpenExternalLinks(True)
+        self.pairing_url_label.setWordWrap(True)
+        layout.addWidget(self.pairing_url_label)
 
         self.gui_login_frame = QFrame()
         self.gui_login_frame.setObjectName("ProfileCard")
@@ -312,9 +328,18 @@ class AccountGateWidget(QFrame):
         self.message_label.setText(state.get("message") or "")
         self.message_label.setVisible(bool(self.message_label.text()))
         self._browser_pairing_code = str(state.get("browser_pairing_code") or "").strip()
+        self._browser_pairing_url = str(state.get("browser_pairing_url") or "").strip()
         self.pairing_code_label.setVisible(bool(self._browser_pairing_code))
+        self.pairing_url_label.setVisible(bool(self._browser_pairing_url))
         self.gui_login_frame.setVisible(bool(state.get("show_gui_password_login")))
         self.pairing_code_label.setText(f"Код привязки: {self._browser_pairing_code}" if self._browser_pairing_code else "")
+        if self._browser_pairing_url:
+            safe_url = escape(self._browser_pairing_url, quote=True)
+            self.pairing_url_label.setText(
+                f'Если браузер не открылся, откройте ссылку: <a href="{safe_url}">{safe_url}</a>'
+            )
+        else:
+            self.pairing_url_label.setText("")
         account = state.get("primary_account") or state.get("pending_account")
         self.account_card.setVisible(isinstance(account, dict))
         if isinstance(account, dict):

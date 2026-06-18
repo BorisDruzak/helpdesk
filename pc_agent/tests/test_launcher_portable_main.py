@@ -10,6 +10,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from pc_agent import launcher_portable_main
 
 
+def test_portable_launcher_loads_current_json_with_utf8_bom(monkeypatch, tmp_path):
+    install_root = tmp_path / "install"
+    versions_dir = install_root / "versions"
+    version_dir = versions_dir / "3.1.68"
+    version_dir.mkdir(parents=True)
+    current_path = install_root / "current.json"
+    current_path.write_bytes(
+        b"\xef\xbb\xbf" + json.dumps({"version": "3.1.68", "previous": "3.1.67"}).encode("utf-8")
+    )
+
+    monkeypatch.setattr(launcher_portable_main, "_find_agent_binary", lambda path: path / "pc_agent.exe")
+
+    _, version, previous, binary_path = launcher_portable_main._load_current_state(current_path, versions_dir)
+
+    assert version == "3.1.68"
+    assert previous == "3.1.67"
+    assert binary_path == version_dir / "pc_agent.exe"
+
+
 def test_seed_auth_token_from_primary_install_uses_primary_data_dir(monkeypatch, tmp_path):
     portable_data = tmp_path / "portable-data"
     primary_data = tmp_path / "primary-data"

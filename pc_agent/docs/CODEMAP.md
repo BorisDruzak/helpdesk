@@ -111,6 +111,8 @@
 
 2026-06-15: `main_window.py` normalizes browser-pairing handoff URLs for the pilot HTTPS web boundary: relative `/app/device/*` links and legacy absolute `http://<remote>:8666/app/device/*` links opened from the GUI are sent to `https://<remote>:9443/...` for non-local hosts, so the browser keeps the secure `pc_client_web_session` cookie while the agent can still use its configured API transport for polling.
 
+2026-06-18: Browser registration pairing in `main_window.py` now converts the consumed `claim_id` into a server-issued `registration_pending` account session through `TicketApiClient.create_registration_pending_account_session()`, clears the transient pairing code/link from the gate, and keeps the user on the pending registration gate until admin approval. `account_gate.py` also shows the browser handoff URL directly in the gate for Linux/no-browser fallback and hides the repeat browser-registration action while a pairing is active.
+
 New requester-detail slice: `pc_agent/ui_gui/ticket_detail_widgets.py` contains focused Qt Widgets for the redesigned ticket detail page, currently `TicketHeaderWidget`, compact `NextActionCard`, `TicketRightInfoPanel`, `TimelineItemWidget` and `TicketComposerWidget` wired to view models with ticket title/status/actions, resolved-ticket confirm/reject actions in the header menu, requester next action, requester facts, a single visual SLA/deadline block with `SlaProgressBar` rows, access code, optional real device facts, requester-safe system/diagnostic/attachment/user/support timeline events and terminal-status composer disabled states. Mapped requester and specialist message events render as dedicated `TimelineUserMessage` / `TimelineSupportMessage` bubbles instead of centered system cards. The old `ChatPanel` left meta panel and raw access-code/link strip remain only as hidden compatibility objects and are not added to the visible detail layout; missing device/inventory payloads must not be shown as an offline device. Create-ticket wizard result widgets live in `pc_agent/ui_gui/ticket_create_wizard_widgets.py`.
 
 Account-session validation note: `pc_agent/ui_gui/server_api.py::validate_account_session()` sends the session token in a POST JSON body or account headers and must never place the token in URL query parameters; isolated local-agent instances must receive their own `PC_AGENT_DATA_DIR` / `PC_AGENT_INSTALL_ROOT` so GUI profile/session caches do not bleed across Live runs.
@@ -135,7 +137,7 @@ Account-session validation note: `pc_agent/ui_gui/server_api.py::validate_accoun
 | `pc_agent/ui_gui/tray_notifications.py` | Maps auth-block events (`TOKEN_LIMIT_EXCEEDED`, `DEVICE_FINGERPRINT_MISMATCH`, `DEVICE_ARCHIVED`) to tray/system notifications |
 | `pc_agent/ui_gui/consent_dialog.py` | Диалог согласия на операцию |
 | `pc_agent/ui_gui/token_dialog.py` | Диалог токена |
-| `pc_agent/ui_gui/wait_for_auth_dialog.py` | Диалог ожидания авторизации; читает `connection_request_error.json` и показывает пользователю `TOKEN_LIMIT_EXCEEDED`, когда сервер отказал в выпуске третьего активного токена |
+| `pc_agent/ui_gui/wait_for_auth_dialog.py` | Диалог ожидания авторизации; читает `connection_request_error.json` и показывает пользователю `TOKEN_LIMIT_EXCEEDED`, когда сервер отказал в выпуске третьего активного токена, и `DEVICE_ARCHIVED`, когда администратор архивировал устройство и новые pending-запросы больше не появляются в очереди |
 
 ### 2.6 Конфигурация
 

@@ -9,6 +9,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from pc_agent.launcher import launcher_main
 
 
+def test_launcher_loads_current_json_with_utf8_bom(monkeypatch, tmp_path):
+    install_root = tmp_path / "install"
+    versions_dir = install_root / "versions"
+    version_dir = versions_dir / "3.1.68"
+    version_dir.mkdir(parents=True)
+    current_path = install_root / "current.json"
+    current_path.write_bytes(
+        b"\xef\xbb\xbf" + json.dumps({"version": "3.1.68", "previous": "3.1.67"}).encode("utf-8")
+    )
+
+    monkeypatch.setattr(launcher_main, "_find_agent_binary", lambda path: path / "pc_agent")
+
+    _, version, previous, binary_path = launcher_main._load_current_state(current_path, versions_dir)
+
+    assert version == "3.1.68"
+    assert previous == "3.1.67"
+    assert binary_path == version_dir / "pc_agent"
+
+
 def test_launcher_rolls_back_after_repeated_immediate_crash(monkeypatch, tmp_path):
     install_root = tmp_path / "install"
     versions_dir = install_root / "versions"

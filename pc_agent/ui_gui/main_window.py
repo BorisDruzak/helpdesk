@@ -1463,7 +1463,12 @@ class MainWindow(QMainWindow):
         if pairing_code:
             message = f"{message} Код привязки: {pairing_code}."
         self.account_gate_page.render(
-            {**self._account_state, "message": message, "browser_pairing_code": pairing_code},
+            {
+                **self._account_state,
+                "message": message,
+                "browser_pairing_code": pairing_code,
+                "browser_pairing_url": browser_url,
+            },
             local_session=self._account_session,
         )
         for attempt in range(max(1, int(max_polls))):
@@ -1502,10 +1507,57 @@ class MainWindow(QMainWindow):
                 refreshed = await self.chat_panel.ticket_client.get_account_state()
                 if isinstance(refreshed, dict) and refreshed.get("status") != "error":
                     self._account_state = refreshed
+                registration_payload = result.get("registration") if isinstance(result.get("registration"), dict) else {}
+                registration_state = (
+                    self._account_state.get("registration") if isinstance(self._account_state.get("registration"), dict) else {}
+                )
+                pending_claim = (
+                    registration_state.get("pending_claim") if isinstance(registration_state.get("pending_claim"), dict) else {}
+                )
+                claim_id = (
+                    str(result.get("claim_id") or "").strip()
+                    or str(registration_payload.get("claim_id") or "").strip()
+                    or str(registration_state.get("claim_id") or "").strip()
+                    or str(pending_claim.get("claim_id") or "").strip()
+                )
+                if claim_id:
+                    pending_payload = await self.chat_panel.ticket_client.create_registration_pending_account_session(claim_id)
+                    if isinstance(pending_payload, dict) and pending_payload.get("status") != "error":
+                        server_session = (
+                            pending_payload.get("session") if isinstance(pending_payload.get("session"), dict) else {}
+                        )
+                        if server_session:
+                            declared = (
+                                server_session.get("declared_account")
+                                if isinstance(server_session.get("declared_account"), dict)
+                                else {}
+                            )
+                            profile = {
+                                **declared,
+                                "display_name": server_session.get("display_name") or declared.get("display_name"),
+                                "full_name": server_session.get("full_name") or declared.get("full_name"),
+                                "login": server_session.get("login") or declared.get("login"),
+                                "email": server_session.get("email") or declared.get("email"),
+                                "phone": server_session.get("phone") or declared.get("phone"),
+                            }
+                            if pending_payload.get("session_token"):
+                                server_session = {**server_session, "session_token": pending_payload.get("session_token")}
+                            self._account_session = self._account_session_manager.save(
+                                self._account_session_manager.build_registration_pending_session(
+                                    profile,
+                                    {**registration_state, **registration_payload, "claim_id": claim_id},
+                                    device_id=self.chat_panel.device_id,
+                                    server_session=server_session,
+                                )
+                            )
+                            refreshed_after_session = await self.chat_panel.ticket_client.get_account_state()
+                            if isinstance(refreshed_after_session, dict) and refreshed_after_session.get("status") != "error":
+                                self._account_state = refreshed_after_session
                 self.account_gate_page.render(
                     {**self._account_state, "message": "Регистрация подтверждена через браузер."},
                     local_session=self._account_session,
                 )
+                self._render_profile_status()
                 return
             if status in {"expired", "superseded"}:
                 self.account_gate_page.render(
@@ -2248,9 +2300,6 @@ class MainWindow(QMainWindow):
             target_version = assigned_version or recommended_version
             meta_text = f"Доступно действие для версии {target_version or version}"
 
-        if request_operation_id and request_state in {"requested", "pending_restart"}:
-            meta_text = f"{meta_text} (op {request_operation_id})"
-
         self.update_agent_btn.setText(self._repair_text(button_text))
         self.update_agent_btn.setEnabled(button_enabled)
         if button_text:
@@ -2346,7 +2395,7 @@ class MainWindow(QMainWindow):
         ]
         if runtime.get("pending_update_version"):
             summary_lines.append(
-                f"Pending update: {runtime.get('pending_update_version')} / op {runtime.get('pending_update_operation_id') or '—'}"
+                f"Pending update: {runtime.get('pending_update_version')}"
             )
         if runtime.get("pending_update_received_at"):
             summary_lines.append(f"Pending received: {runtime.get('pending_update_received_at')}")
@@ -3250,7 +3299,7 @@ class MainWindow(QMainWindow):
         """Отправляет запрос на досрочную остановку записи (POST /ui/stop_recording)."""
         op_id = self._recording_operation_id
         if not op_id:
-            logger.warning("STOP нажата, но operation_id записи неизвестен")
+            logger.warning("STOP нажата, но идентификатор записи неизвестен")
             return
         try:
             loop = asyncio.get_event_loop()

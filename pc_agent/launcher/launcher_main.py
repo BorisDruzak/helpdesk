@@ -28,7 +28,7 @@ def _log(msg: str) -> None:
 
 
 def _load_current_state(current_path: Path, versions_dir: Path) -> tuple[dict[str, Any], str, str | None, Path]:
-    current = json.loads(current_path.read_text(encoding="utf-8"))
+    current = json.loads(current_path.read_text(encoding="utf-8-sig"))
     version = str(current.get("version") or "").strip()
     if not version:
         raise RuntimeError("current.json missing 'version'")

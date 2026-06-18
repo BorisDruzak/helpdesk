@@ -107,7 +107,7 @@ def _seed_auth_token_from_primary_install(data_root: Path) -> bool:
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _load_current_state(current_path: Path, versions_dir: Path) -> tuple[dict[str, Any], str, str | None, Path]:

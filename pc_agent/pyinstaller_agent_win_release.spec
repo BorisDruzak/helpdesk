@@ -38,6 +38,7 @@ a = Analysis(
     ] + remote_assist_hiddenimports,
     datas=[
         (str(pc_agent_root / "config" / "settings.default.yaml"), "pc_agent/config"),
+        (str(pc_agent_root / "ui_gui" / "assets"), "pc_agent/ui_gui/assets"),
     ],
     hookspath=[],
     hooksconfig={},

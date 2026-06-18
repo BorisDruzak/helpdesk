@@ -135,11 +135,30 @@ def test_account_gate_browser_pairing_code_can_be_copied():
             "can_login_other_account": False,
             "registration": {"status": "unregistered"},
             "browser_pairing_code": "ABCD-1234",
+            "browser_pairing_url": "https://example.test/app/device/register?pairing_id=pair-1",
         }
     )
 
     assert state["browser_pairing_code"] == "ABCD-1234"
+    assert state["browser_pairing_url"] == "https://example.test/app/device/register?pairing_id=pair-1"
     assert state["show_copy_pairing_code"] is True
+    assert state["show_browser_pairing_url"] is True
+    assert state["show_browser_register"] is False
+
+
+def test_account_gate_browser_pairing_url_hides_repeat_registration_action():
+    state = account_gate_view_state(
+        {
+            "accounts": [],
+            "can_register": True,
+            "can_login_other_account": False,
+            "registration": {"status": "unregistered"},
+            "browser_pairing_url": "https://example.test/app/device/register?pairing_id=pair-1",
+        }
+    )
+
+    assert state["show_browser_register"] is False
+    assert state["show_browser_pairing_url"] is True
 
 
 def test_account_gate_unregistered_fallback_shows_browser_registration_only():
@@ -450,6 +469,7 @@ async def test_main_window_gui_password_login_error_keeps_gate_actions_available
 @pytest.mark.asyncio
 async def test_main_window_browser_registration_pairing_refreshes_account_state():
     rendered: list[dict] = []
+    saved_sessions: list[dict] = []
 
     class FakeClient:
         base_url = "https://example.test/api"
@@ -468,18 +488,76 @@ async def test_main_window_browser_registration_pairing_refreshes_account_state(
             return {"status": "consumed", "claim_id": "claim-1"}
 
         async def get_account_state(self) -> dict:
-            return {"accounts": [], "registration": {"status": "pending_user_confirmation"}}
+            return {
+                "accounts": [
+                    {
+                        "account_mode": "registration_pending",
+                        "claim_id": "claim-1",
+                        "display_name": "Pending User",
+                        "registration_status": "pending_user_confirmation",
+                    }
+                ],
+                "registration": {"status": "pending_user_confirmation", "claim_id": "claim-1"},
+                "server_sessions": [
+                    {
+                        "account_mode": "registration_pending",
+                        "session_id": "pending-session-1",
+                        "verification_status": "pending_verification",
+                    }
+                ],
+            }
+
+        async def create_registration_pending_account_session(self, claim_id: str) -> dict:
+            assert claim_id == "claim-1"
+            return {
+                "session_token": "pending-token-1",
+                "session": {
+                    "session_id": "pending-session-1",
+                    "account_mode": "registration_pending",
+                    "claim_id": "claim-1",
+                    "verification_status": "pending_verification",
+                    "verification_method": "registration_claim",
+                    "declared_account": {"full_name": "Pending User", "login": "pending"},
+                },
+            }
+
+    class FakeSessionManager:
+        def build_registration_pending_session(
+            self,
+            profile: dict,
+            registration: dict,
+            *,
+            device_id: str,
+            server_session: dict | None = None,
+        ) -> dict:
+            return {
+                **profile,
+                "device_id": device_id,
+                "account_mode": "registration_pending",
+                "account_session_id": (server_session or {}).get("session_id"),
+                "session_token": (server_session or {}).get("session_token"),
+                "claim_id": registration.get("claim_id"),
+            }
+
+        def save(self, session: dict) -> dict:
+            saved_sessions.append(session)
+            return session
 
     window = MainWindow.__new__(MainWindow)
     window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
     window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
     window._account_session = {"account_mode": "none"}
     window._account_state = {}
+    window._account_session_manager = FakeSessionManager()
     window._browser_pairing_open_url = lambda url: None
+    window._render_profile_status = lambda: None
 
     await window._async_browser_pairing("registration", poll_interval_seconds=0.0, max_polls=1)
 
     assert any(item["state"].get("browser_pairing_code") == "ABCD-1234" for item in rendered)
+    assert any(item["state"].get("browser_pairing_url") == "https://example.test/app/device/register?pairing_id=pair-2" for item in rendered)
+    assert saved_sessions[0]["account_mode"] == "registration_pending"
+    assert saved_sessions[0]["session_token"] == "pending-token-1"
     assert rendered[-1]["state"]["registration"]["status"] == "pending_user_confirmation"
 
 

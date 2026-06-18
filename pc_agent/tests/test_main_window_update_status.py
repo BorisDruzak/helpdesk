@@ -74,7 +74,7 @@ def test_render_update_status_shows_requested_state_while_waiting_for_delivery()
     assert window.update_agent_btn.enabled is False
     assert "3.1.21" in window.update_agent_btn.text()
     assert "3.1.21" in window.agent_footer_meta.text()
-    assert "op-1" in window.agent_footer_meta.text()
+    assert "op-1" not in window.agent_footer_meta.text()
 
 
 def test_render_update_status_shows_pending_restart_state():
@@ -97,7 +97,7 @@ def test_render_update_status_shows_pending_restart_state():
     assert window.update_agent_btn.enabled is False
     assert "3.1.21" in window.update_agent_btn.text()
     assert "3.1.21" in window.agent_footer_meta.text()
-    assert "op-2" in window.agent_footer_meta.text()
+    assert "op-2" not in window.agent_footer_meta.text()
 
 
 @pytest.mark.asyncio
@@ -138,6 +138,7 @@ async def test_async_trigger_update_sets_requested_state_and_starts_refresh_burs
     assert window._update_status_snapshot["update_request_version"] == "3.1.21"
     assert window._update_status_snapshot["update_request_operation_id"] == "op-accepted"
     assert window.update_agent_btn.enabled is False
+    assert "op-accepted" not in window.agent_footer_meta.text()
     assert burst_calls == [True]
     assert refresh_calls == [False]
     assert messages

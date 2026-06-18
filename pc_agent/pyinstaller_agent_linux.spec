@@ -11,6 +11,7 @@ sys.path.insert(0, str(project_root))
 # Если GUI не отображается при запуске из dist, задайте QT_PLUGIN_PATH вручную (см. BUILD_AND_RUN_LINUX.md).
 _datas = [
     (str(pc_agent_root / "config" / "settings.default.yaml"), "pc_agent/config"),
+    (str(pc_agent_root / "ui_gui" / "assets"), "pc_agent/ui_gui/assets"),
 ]
 
 a = Analysis(

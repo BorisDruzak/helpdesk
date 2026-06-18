@@ -80,18 +80,29 @@ class WaitForAuthDialog(QDialog):
             logger.debug(f"Ошибка чтения connection_request_error.json: {exc}")
             return False
         error_code = str(data.get("error_code") or "")
-        if error_code != "TOKEN_LIMIT_EXCEEDED":
+        if error_code not in {"TOKEN_LIMIT_EXCEEDED", "DEVICE_ARCHIVED"}:
             return False
         message = str(
             data.get("message")
-            or "На сервере уже есть 2 активных токена для этого устройства."
+            or (
+                "Устройство архивировано администратором."
+                if error_code == "DEVICE_ARCHIVED"
+                else "На сервере уже есть 2 активных токена для этого устройства."
+            )
         )
         self._poll_timer.stop()
-        self._label.setText(
-            f"{message}\n\n"
-            "Агент не сможет получить новый токен автоматически, пока старый активный токен "
-            "не будет отозван администратором или восстановлен в локальном хранилище."
-        )
+        if error_code == "DEVICE_ARCHIVED":
+            self._label.setText(
+                f"{message}\n\n"
+                "Новый запрос на подключение не появится в очереди, пока устройство архивировано. "
+                "Восстановите устройство в админ-панели или создайте новую установку агента."
+            )
+        else:
+            self._label.setText(
+                f"{message}\n\n"
+                "Агент не сможет получить новый токен автоматически, пока старый активный токен "
+                "не будет отозван администратором или восстановлен в локальном хранилище."
+            )
         return True
 
     def start_polling(self) -> None:

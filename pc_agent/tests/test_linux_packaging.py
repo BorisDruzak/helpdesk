@@ -8,6 +8,8 @@ def _assert_agent_spec_collects_core_builtin_modules(spec_name: str) -> None:
     for module_name in ("system", "screen", "diag_logs", "inventory", "presence"):
         assert f'"pc_agent.modules.impl.{module_name}"' in text
 
+    assert "pc_agent/ui_gui/assets" in text
+
 
 def test_linux_agent_spec_collects_core_builtin_modules() -> None:
     _assert_agent_spec_collects_core_builtin_modules("pyinstaller_agent_linux.spec")
