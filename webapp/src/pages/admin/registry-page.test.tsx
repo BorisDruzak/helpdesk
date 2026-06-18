@@ -451,6 +451,13 @@ describe("AdminRegistryPage", () => {
       if (url === "/api/web/admin/registry/people/person-1" && init?.method === "PATCH") {
         return jsonResponse({ person: { person_id: "person-1", display_name: "Иван Петров", status: "active" } });
       }
+      if (url === "/api/web/admin/registry/people/person-1/archive" && init?.method === "POST") {
+        return jsonResponse({
+          person: { person_id: "person-1", display_name: "Иван Петров", status: "archived" },
+          revoked_bindings: [],
+          revoked_sessions: [],
+        });
+      }
       if (url === "/api/web/admin/registry/audience-groups") {
         if (init?.method === "POST") {
           return jsonResponse({ group: audienceGroupsPayload.groups[0] });
@@ -590,6 +597,25 @@ describe("AdminRegistryPage", () => {
       workplace_label: "Desk 12",
       internal_extension: "4567",
       manager_person_id: "manager-1",
+    });
+  });
+
+  it("archives a registry person through an explicit reason dialog", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Пользователи" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "Архив" }))[0]);
+
+    fireEvent.change(await screen.findByLabelText("Причина"), { target: { value: "Тестовая архивация" } });
+    fireEvent.click(screen.getByRole("button", { name: "Применить" }));
+
+    const archiveCall = await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url, init]) => url === "/api/web/admin/registry/people/person-1/archive" && init?.method === "POST");
+      expect(call).toBeTruthy();
+      return call;
+    });
+    expect(JSON.parse(String(archiveCall?.[1]?.body))).toMatchObject({
+      reason: "Тестовая архивация",
     });
   });
 

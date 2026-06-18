@@ -1248,6 +1248,16 @@ export async function updateAdminRegistryPerson(personId: string, payload: {
   await readSuccessResponse(response, "Не удалось обновить пользователя");
 }
 
+export async function archiveAdminRegistryPerson(personId: string, reason: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/people/${encodeURIComponent(personId)}/archive`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  await readSuccessResponse(response, "Не удалось архивировать пользователя");
+}
+
 export async function createAdminRegistryPersonIdentity(personId: string, payload: {
   provider: string;
   identifier: string;

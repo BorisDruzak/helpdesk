@@ -1462,13 +1462,14 @@ class MainWindow(QMainWindow):
         message = "Открылся браузер. Подтвердите действие на веб-странице."
         if pairing_code:
             message = f"{message} Код привязки: {pairing_code}."
+        active_pairing_state = {
+            **self._account_state,
+            "message": message,
+            "browser_pairing_code": pairing_code,
+            "browser_pairing_url": browser_url,
+        }
         self.account_gate_page.render(
-            {
-                **self._account_state,
-                "message": message,
-                "browser_pairing_code": pairing_code,
-                "browser_pairing_url": browser_url,
-            },
+            active_pairing_state,
             local_session=self._account_session,
         )
         for attempt in range(max(1, int(max_polls))):
@@ -1553,8 +1554,23 @@ class MainWindow(QMainWindow):
                             refreshed_after_session = await self.chat_panel.ticket_client.get_account_state()
                             if isinstance(refreshed_after_session, dict) and refreshed_after_session.get("status") != "error":
                                 self._account_state = refreshed_after_session
+                registration_summary = {
+                    **registration_state,
+                    **registration_payload,
+                }
+                if claim_id and not registration_summary.get("claim_id"):
+                    registration_summary["claim_id"] = claim_id
+                if registration_summary and not registration_summary.get("status"):
+                    registration_summary["status"] = "pending_admin_review"
                 self.account_gate_page.render(
-                    {**self._account_state, "message": "Регистрация подтверждена через браузер."},
+                    {
+                        **active_pairing_state,
+                        **self._account_state,
+                        "registration": registration_summary or self._account_state.get("registration") or {},
+                        "message": "Регистрация подтверждена через браузер.",
+                        "browser_pairing_code": pairing_code,
+                        "browser_pairing_url": browser_url,
+                    },
                     local_session=self._account_session,
                 )
                 self._render_profile_status()

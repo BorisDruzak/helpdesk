@@ -168,6 +168,13 @@ GUI Agent must not:
 - Phase D web-cabinet Observer slice is in progress locally: requester profile/preview/create, requester chat send/closure confirm/feedback/reopen, support chat/status/confirmation hooks, web form runtime preview/create, account-session login/register/logout/role-mismatch, Knowledge suggest/ask/attempt guard, device-linking browser-pairing lookup/request/approve/reject/transfer observer events, web-cabinet writer, seven integrity checks, admin trace filters and support detail compact projection are implemented; remaining Phase D work is focused on any still-missing web-first integrity invariants and broader validation.
 - Phase E test data pack is defined locally in `test_data_packs/web_first_phase_e.json` and guarded by `server/tests/test_phase_e_test_data_pack.py`; this defines required users, KB/forms, Windows/Linux VM-agent prerequisites and validation matrix only. `scripts/collect_phase_e_vm_snapshot.py` can collect a read-only live DB/runtime snapshot, `scripts/check_phase_e_vm_snapshot.py` can validate it, and `scripts/check_phase_e_live_gate.py` blocks broad-live pass claims without a passing VM check plus required browser artifacts; these helper scripts do not prove VM cleanliness or broad live gate readiness until the required lab VM agents are registered and the collected snapshot passes.
 
+### Active checkpoint: registry user archive and web-first registration live-debug, 2026-06-18
+
+- Reported live defect: local GUI agent `v3.1.69` opens `/app/device/register`, the browser confirmation page accepts department/location, but after confirmation the agent falls back to `Could not verify account` and then returns to `Bind this device through browser`; the visible code/link state is also lost.
+- Required regression scope: browser-open registration, manual code registration, pending-registration account session, confirmed binding after admin approval, profile-completion status sync from web cabinet to GUI agent, and requester topic availability while the profile/device state is incomplete.
+- Registry admin gap: the people tab has edit/link/merge operations but lacks an explicit archive/delete action for a person such as the test user `test_agent_win`; the implementation must be soft-archive, audited, and must revoke active bindings/sessions where applicable.
+- Live evidence required before closing: local GUI agent interaction plus browser evidence on `https://192.168.100.17:9443`; test data created for this checkpoint must be cleaned or archived deliberately.
+
 ---
 
 ## File Map

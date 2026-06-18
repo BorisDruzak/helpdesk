@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from aiohttp import web
 from loguru import logger
 from sqlalchemy import select
@@ -1846,6 +1848,101 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
                     "status": person.status,
                 },
                 "revoked_binding_ids": [row.get("binding_id") for row in revoked_bindings],
+            },
+        )
+        await session.commit()
+    return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_person_archive(request: web.Request) -> web.Response:
+    person_id = str(request.match_info.get("person_id") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    auth_context = request["auth_context"]
+    reason = _text(data.get("reason"), max_length=1000)
+    if not reason:
+        return web.json_response({"status": "error", "error": "reason is required", "error_code": "VALIDATION_ERROR"}, status=400)
+    async with get_session() as session:
+        person = await session.get(RegistryPerson, person_id)
+        if person is None:
+            return web.json_response({"status": "error", "error": "person not found", "error_code": "NOT_FOUND"}, status=404)
+        before = {
+            "display_name": person.display_name,
+            "full_name": person.full_name,
+            "status": person.status,
+        }
+        if person.status != "archived":
+            person.status = "archived"
+        metadata = dict(person.metadata_json or {})
+        metadata["archived_at"] = datetime.now(timezone.utc).isoformat()
+        metadata["archived_by"] = auth_context.actor_id
+        metadata["archive_reason"] = reason
+        person.metadata_json = metadata
+        revoked_bindings: list[dict[str, object]] = []
+        service = RegistrationService(session)
+        active_bindings = (
+            await session.execute(
+                select(DeviceUserBinding).where(
+                    DeviceUserBinding.person_id == person.person_id,
+                    DeviceUserBinding.status == "active",
+                )
+            )
+        ).scalars().all()
+        revoked_sessions: list[dict[str, object]] = []
+        for binding in active_bindings:
+            result = await service.revoke_binding(
+                binding.binding_id,
+                revoked_by=auth_context.actor_id,
+                reason=reason,
+            )
+            revoked_bindings.append(result["binding"])
+            events = result.get("events") if isinstance(result.get("events"), dict) else {}
+            for revoked_session in events.get("revoked_sessions") or []:
+                if isinstance(revoked_session, dict):
+                    revoked_sessions.append(revoked_session)
+
+        account_service = AccountSessionService(session)
+        revoked_session_ids = {str(row.get("session_id")) for row in revoked_sessions if row.get("session_id")}
+        active_sessions = (
+            await session.execute(
+                select(DeviceAccountSession).where(
+                    DeviceAccountSession.person_id == person.person_id,
+                    DeviceAccountSession.verification_status.in_(["verified", "pending_verification"]),
+                    ~DeviceAccountSession.session_id.in_(revoked_session_ids or [""]),
+                )
+            )
+        ).scalars().all()
+        for account_session in active_sessions:
+            revoked = await account_service.revoke_session(
+                session_id=account_session.session_id,
+                revoked_by=auth_context.actor_id,
+                reason=reason,
+            )
+            revoked_sessions.append(revoked)
+
+        payload = {
+            "person": {"person_id": person.person_id, "display_name": person.display_name, "status": person.status},
+            "revoked_bindings": revoked_bindings,
+            "revoked_sessions": revoked_sessions,
+        }
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="person",
+            object_id=person.person_id,
+            event_type="person_archived",
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=reason,
+            related_person_id=person.person_id,
+            payload={
+                "person_id": person.person_id,
+                "before": before,
+                "after": {
+                    "display_name": person.display_name,
+                    "full_name": person.full_name,
+                    "status": person.status,
+                },
+                "revoked_binding_ids": [row.get("binding_id") for row in revoked_bindings],
+                "revoked_session_ids": [row.get("session_id") for row in revoked_sessions],
             },
         )
         await session.commit()

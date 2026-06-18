@@ -13,6 +13,7 @@ import {
   archiveAdminRegistryAudienceGroup,
   archiveAdminRegistryDepartment,
   archiveAdminRegistryLocation,
+  archiveAdminRegistryPerson,
   approveAdminAccountLoginRequest,
   approveAdminRegistrationClaim,
   assignAdminRegistryResponsible,
@@ -381,6 +382,15 @@ export function AdminRegistryPage() {
     setLinkUiUserDialog({ person });
   };
 
+  const archivePerson = (person: AdminRegistryPayload["people"][number]) => {
+    runWithReason(
+      "Причина архивации пользователя",
+      "Пользователь больше не работает с системой",
+      (reason) => archiveAdminRegistryPerson(person.person_id, reason),
+      "danger",
+    );
+  };
+
   const exportType =
     tab === "people" ? "people" :
     tab === "bindings" ? "bindings" :
@@ -492,6 +502,7 @@ export function AdminRegistryPage() {
             <RegistryPeopleTab
               people={visibleRegistry.people}
               onAddIdentity={(person) => setIdentityDialog({ personId: person.person_id, personName: person.display_name })}
+              onArchive={archivePerson}
               onBindToDevice={bindPersonToKnownDevice}
               onEdit={(person) => setPersonDialog({ person })}
               onLinkUiUser={linkUiUserToPerson}

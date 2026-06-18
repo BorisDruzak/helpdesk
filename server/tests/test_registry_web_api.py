@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import uuid
 
-from app.db.models import Device, RegistryAdminEvent, RegistryPerson
+from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryAdminEvent, RegistryPerson
 from registry.service import RegistryIngestionService
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
@@ -127,6 +127,85 @@ async def test_web_admin_registry_person_update_writes_production_context_metada
     assert row.metadata_json["internal_extension"] == "4567"
     assert row.metadata_json["manager_person_id"] == manager_id
     assert event.payload["after"]["position"] == "Lead Engineer"
+
+
+@pytest.mark.asyncio
+async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    person_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    binding_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+
+    async with session_maker() as session:
+        session.add(
+            Device(
+                device_id=device_id,
+                protocol_version="ws_ticket_v3",
+                agent_version="3.1.70",
+                hostname="ARCHIVE-PC",
+                os="Windows",
+                last_seen_at=datetime.now(timezone.utc),
+                last_handshake_at=datetime.now(timezone.utc),
+                capabilities={},
+                device_metadata={},
+            )
+        )
+        session.add(RegistryPerson(person_id=person_id, display_name="Archive User", source="manual", status="active"))
+        session.add(
+            DeviceUserBinding(
+                binding_id=binding_id,
+                device_id=device_id,
+                person_id=person_id,
+                relationship_type="primary_user",
+                status="active",
+                source="manual",
+            )
+        )
+        session.add(
+            DeviceAccountSession(
+                session_id=session_id,
+                device_id=device_id,
+                person_id=person_id,
+                binding_id=binding_id,
+                account_mode="confirmed_binding",
+                verification_status="verified",
+                declared_account={},
+                metadata_json={},
+            )
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/admin/registry/people/{person_id}/archive",
+        headers=_admin_headers(),
+        json={"reason": "test archive"},
+    )
+    assert response.status == 200, await response.text()
+    payload = (await response.json())["data"]
+    assert payload["person"]["status"] == "archived"
+    assert payload["revoked_bindings"][0]["binding_id"] == binding_id
+    assert payload["revoked_sessions"][0]["session_id"] == session_id
+
+    async with session_maker() as session:
+        person = await session.get(RegistryPerson, person_id)
+        binding = await session.get(DeviceUserBinding, binding_id)
+        account_session = await session.get(DeviceAccountSession, session_id)
+        event = (
+            await session.execute(
+                select(RegistryAdminEvent).where(
+                    RegistryAdminEvent.object_id == person_id,
+                    RegistryAdminEvent.event_type == "person_archived",
+                )
+            )
+        ).scalar_one()
+
+    assert person.status == "archived"
+    assert binding.status == "revoked"
+    assert account_session.verification_status == "revoked"
+    assert event.reason == "test archive"
+    assert event.payload["revoked_binding_ids"] == [binding_id]
+    assert event.payload["revoked_session_ids"] == [session_id]
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-import { Edit3, Fingerprint, GitMerge, Link2, UserCheck, UserRoundPlus } from "lucide-react";
+import { Archive, Edit3, Fingerprint, GitMerge, Link2, UserCheck, UserRoundPlus } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -10,6 +10,7 @@ type PersonRow = AdminRegistryPayload["people"][number];
 type Props = {
   people: AdminRegistryPayload["people"];
   onAddIdentity: (person: PersonRow) => void;
+  onArchive: (person: PersonRow) => void;
   onBindToDevice: (person: PersonRow) => void;
   onEdit: (person: PersonRow) => void;
   onLinkUiUser: (person: PersonRow) => void;
@@ -52,6 +53,7 @@ function ProfileCompletionCell({ person }: { person: PersonRow }) {
 
 export function RegistryPeopleTab({
   onAddIdentity,
+  onArchive,
   onBindToDevice,
   onEdit,
   onLinkUiUser,
@@ -105,6 +107,7 @@ export function RegistryPeopleTab({
               <Button leadingIcon={<UserRoundPlus className="h-4 w-4" />} onClick={() => onLinkUiUser(person)} size="sm" title="Связать UI-аккаунт входа с этой карточкой человека" variant="ghost">UI-аккаунт</Button>
               <Button leadingIcon={<GitMerge className="h-4 w-4" />} onClick={() => onMerge(person)} size="sm" title="Объединить дубль пользователя через предпросмотр" variant="ghost">Слияние</Button>
               <Button leadingIcon={<Link2 className="h-4 w-4" />} onClick={() => onBindToDevice(person)} size="sm" title="Назначить пользователя основным владельцем устройства" variant="ghost">К устройству</Button>
+              <Button disabled={person.status === "archived"} leadingIcon={<Archive className="h-4 w-4" />} onClick={() => onArchive(person)} size="sm" title="Архивировать пользователя, отозвать активные привязки и account-сессии" variant="ghost">Архив</Button>
             </div>
           </div>
         );

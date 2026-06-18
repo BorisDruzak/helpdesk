@@ -562,6 +562,55 @@ async def test_main_window_browser_registration_pairing_refreshes_account_state(
 
 
 @pytest.mark.asyncio
+async def test_main_window_browser_registration_keeps_pairing_state_when_account_state_refresh_fails():
+    rendered: list[dict] = []
+
+    class FakeClient:
+        base_url = "https://example.test/api"
+        device_id = "device-1"
+
+        async def create_browser_pairing(self, purpose: str) -> dict:
+            assert purpose == "registration"
+            return {
+                "pairing_id": "pair-2",
+                "pairing_code": "ABCD-1234",
+                "browser_url": "/app/device/register?pairing_id=pair-2",
+            }
+
+        async def get_browser_pairing(self, pairing_id: str) -> dict:
+            assert pairing_id == "pair-2"
+            return {"status": "consumed", "claim_id": "claim-1", "registration": {"status": "pending_admin_review"}}
+
+        async def get_account_state(self) -> dict:
+            return {"status": "error", "error": "temporary account-state failure"}
+
+        async def create_registration_pending_account_session(self, claim_id: str) -> dict:
+            assert claim_id == "claim-1"
+            return {"status": "error", "error": "temporary pending-session failure"}
+
+    class FakeSessionManager:
+        def save(self, session: dict) -> dict:
+            raise AssertionError("failed pending session must not be saved")
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session = {"account_mode": "none"}
+    window._account_state = {}
+    window._account_session_manager = FakeSessionManager()
+    window._browser_pairing_open_url = lambda url: None
+    window._render_profile_status = lambda: None
+
+    await window._async_browser_pairing("registration", poll_interval_seconds=0.0, max_polls=1)
+
+    final_state = rendered[-1]["state"]
+    assert final_state["browser_pairing_code"] == "ABCD-1234"
+    assert final_state["browser_pairing_url"] == "https://example.test/app/device/register?pairing_id=pair-2"
+    assert final_state["registration"]["status"] == "pending_admin_review"
+    assert "Не удалось проверить аккаунт" not in str(final_state)
+
+
+@pytest.mark.asyncio
 async def test_main_window_refresh_clears_revoked_session_and_returns_to_account_gate():
     rendered: list[dict] = []
     selected_views: list[str] = []
