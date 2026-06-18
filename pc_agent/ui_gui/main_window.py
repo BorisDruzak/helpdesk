@@ -1382,6 +1382,11 @@ class MainWindow(QMainWindow):
         if not local_session_valid:
             self._account_session = {"schema_version": 1, "account_mode": "none"}
             self._account_session_manager.clear()
+            confirmed_account = self._confirmed_binding_account_from_state(self._account_state)
+            if confirmed_account is not None:
+                activated = await self._activate_confirmed_binding_account(confirmed_account)
+                if activated:
+                    return
         else:
             enriched = self._account_session_manager.enrich_from_account_state(self._account_session, self._account_state)
             if enriched != self._account_session:
@@ -1408,6 +1413,52 @@ class MainWindow(QMainWindow):
             session_token=str(session.get("session_token") or "").strip() or None,
         )
         return isinstance(validated, dict) and validated.get("valid") is True
+
+    def _confirmed_binding_account_from_state(self, state: dict[str, Any]) -> dict[str, Any] | None:
+        accounts = state.get("accounts") if isinstance(state, dict) else []
+        for account in accounts if isinstance(accounts, list) else []:
+            if (
+                isinstance(account, dict)
+                and str(account.get("account_mode") or "") == "confirmed_binding"
+                and str(account.get("binding_id") or "").strip()
+                and account.get("can_login", True)
+            ):
+                return account
+        return None
+
+    async def _activate_confirmed_binding_account(self, account: dict[str, Any]) -> bool:
+        binding_id = str(account.get("binding_id") or "").strip()
+        if not binding_id:
+            return False
+        payload = await self.chat_panel.ticket_client.create_confirmed_binding_account_session(binding_id)
+        if isinstance(payload, dict) and payload.get("status") == "error":
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error=str(payload.get("error") or "Не удалось войти под подтвержденным пользователем."),
+            )
+            return False
+        session_payload = payload.get("session") if isinstance(payload.get("session"), dict) else {}
+        token = str(payload.get("session_token") or "").strip()
+        if not session_payload or not token:
+            self.account_gate_page.render(
+                self._account_state,
+                local_session=self._account_session,
+                error="Сервер не вернул данные локальной сессии подтвержденной привязки.",
+            )
+            return False
+        session_payload = {**session_payload, "session_token": token}
+        self._account_session = self._account_session_manager.save(
+            self._account_session_manager.build_confirmed_binding_session(
+                session_payload,
+                device_id=self.chat_panel.device_id,
+            )
+        )
+        self.account_gate_page.render(self._account_state, local_session=self._account_session)
+        self._set_account_entry_mode(False)
+        self._render_profile_status()
+        self._select_sidebar_view("tickets", expand=True)
+        return True
 
     def _on_browser_login_requested(self) -> None:
         self._spawn_gui_task(self._async_browser_pairing("login"), name="account.browser_login")

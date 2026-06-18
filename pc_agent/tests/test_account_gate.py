@@ -796,6 +796,93 @@ async def test_main_window_browser_registration_timeout_keeps_pairing_state():
 
 
 @pytest.mark.asyncio
+async def test_main_window_refresh_auto_activates_confirmed_binding():
+    rendered: list[dict] = []
+    selected_views: list[str] = []
+    entry_modes: list[bool] = []
+    cleared: list[bool] = []
+    saved_sessions: list[dict] = []
+    created_sessions: list[str] = []
+    profile_refreshes: list[bool] = []
+
+    class FakeClient:
+        async def get_account_state(self) -> dict:
+            return {
+                "accounts": [
+                    {
+                        "account_mode": "confirmed_binding",
+                        "binding_id": "binding-1",
+                        "login": "requester@example.test",
+                        "display_name": "Requester",
+                        "can_login": True,
+                    }
+                ],
+                "registration": {"status": "admin_confirmed"},
+                "can_register": False,
+            }
+
+        async def create_confirmed_binding_account_session(self, binding_id: str) -> dict:
+            created_sessions.append(binding_id)
+            return {
+                "session": {
+                    "session_id": "session-1",
+                    "binding_id": binding_id,
+                    "login": "requester@example.test",
+                    "display_name": "Requester",
+                    "account_mode": "confirmed_binding",
+                },
+                "session_token": "session-token-1",
+            }
+
+    class FakeSessionManager:
+        def clear(self) -> None:
+            cleared.append(True)
+
+        def build_confirmed_binding_session(self, payload: dict, *, device_id: str) -> dict:
+            return {
+                "schema_version": 1,
+                "account_mode": "confirmed_binding",
+                "account_session_id": payload["session_id"],
+                "session_token": payload["session_token"],
+                "binding_id": payload["binding_id"],
+                "device_id": device_id,
+                "login": payload["login"],
+            }
+
+        def save(self, session: dict) -> dict:
+            saved_sessions.append(dict(session))
+            return session
+
+        def enrich_from_account_state(self, session: dict, state: dict) -> dict:
+            raise AssertionError("missing local session must be activated, not enriched")
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session_manager = FakeSessionManager()
+    window._account_session = {"schema_version": 1, "account_mode": "none"}
+    window._account_state = {}
+    window._active_sidebar_view = "account_gate"
+    window._set_account_entry_mode = lambda enabled: entry_modes.append(enabled)
+    window._render_profile_status = lambda: profile_refreshes.append(True)
+    window._select_sidebar_view = lambda view, **kwargs: selected_views.append(view)
+
+    await window._async_refresh_account_state()
+
+    assert cleared == [True]
+    assert created_sessions == ["binding-1"]
+    assert saved_sessions[0]["account_mode"] == "confirmed_binding"
+    assert saved_sessions[0]["account_session_id"] == "session-1"
+    assert saved_sessions[0]["session_token"] == "session-token-1"
+    assert saved_sessions[0]["device_id"] == "device-1"
+    assert window._account_session["account_mode"] == "confirmed_binding"
+    assert rendered[-1]["local_session"]["account_mode"] == "confirmed_binding"
+    assert entry_modes == [False]
+    assert selected_views == ["tickets"]
+    assert profile_refreshes == [True]
+
+
+@pytest.mark.asyncio
 async def test_main_window_refresh_clears_revoked_session_and_returns_to_account_gate():
     rendered: list[dict] = []
     selected_views: list[str] = []
