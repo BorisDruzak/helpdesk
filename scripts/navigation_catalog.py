@@ -1893,6 +1893,7 @@ TOPICS: tuple[Topic, ...] = (
             "active_binding_confirmed",
             "browser pairing",
             "pairing code",
+            "browser pairing timeout",
             "manual pairing code",
             "device pair",
             "invalid account session",

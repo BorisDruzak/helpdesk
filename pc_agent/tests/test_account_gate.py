@@ -611,6 +611,45 @@ async def test_main_window_browser_registration_keeps_pairing_state_when_account
 
 
 @pytest.mark.asyncio
+async def test_main_window_browser_registration_timeout_keeps_pairing_state():
+    rendered: list[dict] = []
+
+    class FakeClient:
+        base_url = "https://example.test/api"
+        device_id = "device-1"
+
+        async def create_browser_pairing(self, purpose: str) -> dict:
+            assert purpose == "registration"
+            return {
+                "pairing_id": "pair-2",
+                "pairing_code": "ABCD-1234",
+                "browser_url": "/app/device/register?pairing_id=pair-2",
+            }
+
+        async def get_browser_pairing(self, pairing_id: str) -> dict:
+            assert pairing_id == "pair-2"
+            return {"status": "pending"}
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session = {"account_mode": "none"}
+    window._account_state = {}
+    window._browser_pairing_open_url = lambda url: None
+
+    await window._async_browser_pairing("registration", poll_interval_seconds=0.0, max_polls=1)
+
+    final_state = rendered[-1]["state"]
+    view_state = account_gate_view_state(final_state, local_session=rendered[-1]["local_session"])
+    assert final_state["browser_pairing_code"] == "ABCD-1234"
+    assert final_state["browser_pairing_url"] == "https://example.test/app/device/register?pairing_id=pair-2"
+    assert "error" not in rendered[-1]
+    assert view_state["show_copy_pairing_code"] is True
+    assert view_state["show_browser_pairing_url"] is True
+    assert view_state["show_browser_register"] is False
+
+
+@pytest.mark.asyncio
 async def test_main_window_refresh_clears_revoked_session_and_returns_to_account_gate():
     rendered: list[dict] = []
     selected_views: list[str] = []

@@ -1476,9 +1476,11 @@ class MainWindow(QMainWindow):
             result = await self.chat_panel.ticket_client.get_browser_pairing(pairing_id)
             if isinstance(result, dict) and result.get("status") == "error":
                 self.account_gate_page.render(
-                    self._account_state,
+                    {
+                        **active_pairing_state,
+                        "message": str(result.get("error") or f"Не удалось проверить {action_label} через браузер"),
+                    },
                     local_session=self._account_session,
-                    error=str(result.get("error") or f"Не удалось проверить {action_label} через браузер"),
                 )
                 return
             status = str((result or {}).get("status") or "").strip().lower()
@@ -1585,9 +1587,14 @@ class MainWindow(QMainWindow):
             if attempt + 1 < max_polls:
                 await asyncio.sleep(max(0.0, float(poll_interval_seconds)))
         self.account_gate_page.render(
-            self._account_state,
+            {
+                **active_pairing_state,
+                "message": (
+                    f"Подтверждение {action_label} через браузер ещё не получено. "
+                    "Если вы уже подтвердили действие, нажмите «Обновить»."
+                ),
+            },
             local_session=self._account_session,
-            error=f"Не дождались подтверждения {action_label} через браузер.",
         )
 
     def _on_account_login_confirmed(self, account: dict[str, Any]) -> None:
