@@ -84,7 +84,8 @@ The requester-safe Knowledge seed must include these PA11 articles:
 - `Как создать обращение за другого сотрудника`;
 - `Что делать, если мой ПК не включается`;
 - `Как запросить смену владельца устройства`;
-- `Как привязать устройство к аккаунту`.
+- `Как привязать устройство к аккаунту`;
+- `Как заполнить профиль пользователя`.
 
 These articles live in `content_packs/knowledge/primary-agent-requester-guides.yaml`. They must use product terms such as `аккаунт`, `профиль`, `устройство`, `привязка устройства`, `кабинет пользователя`, `обращение` and must not expose raw internal ids such as `affected_person_id`, `target_device_id`, `binding_id` or `claim_id`.
 

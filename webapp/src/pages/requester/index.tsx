@@ -614,6 +614,13 @@ function formAvailabilityPolicy(form: RequestFormDefinition | null | undefined):
 }
 
 function formVisibleForRequester(form: RequestFormDefinition, profileGateActive: boolean, hasAgentContext: boolean): boolean {
+  const formKind = String(form.request_kind || form.key || "").trim();
+  if (formKind === "profile_completion_help") {
+    return profileGateActive;
+  }
+  if (formKind === "agent_binding_help") {
+    return !hasAgentContext;
+  }
   const availability = formAvailabilityPolicy(form);
   if (profileGateActive && !availability.available_without_completed_profile) {
     return false;

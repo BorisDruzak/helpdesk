@@ -1507,6 +1507,21 @@ class MainWindow(QMainWindow):
                 self._select_sidebar_view("tickets", expand=True)
                 return
             if purpose == "registration" and status in {"confirmed", "consumed"}:
+                session_payload = result.get("session") if isinstance(result.get("session"), dict) else {}
+                token = str(result.get("session_token") or "").strip()
+                if session_payload and token:
+                    session_payload = {**session_payload, "session_token": token}
+                    self._account_session = self._account_session_manager.save(
+                        self._account_session_manager.build_confirmed_binding_session(
+                            session_payload,
+                            device_id=self.chat_panel.device_id,
+                        )
+                    )
+                    self.account_gate_page.render(self._account_state, local_session=self._account_session)
+                    self._set_account_entry_mode(False)
+                    self._render_profile_status()
+                    self._select_sidebar_view("tickets", expand=True)
+                    return
                 refreshed = await self.chat_panel.ticket_client.get_account_state()
                 if isinstance(refreshed, dict) and refreshed.get("status") != "error":
                     self._account_state = refreshed

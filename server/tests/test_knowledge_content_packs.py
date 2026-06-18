@@ -169,6 +169,16 @@ def test_primary_agent_requester_guides_pack_contains_pa11_articles() -> None:
     titles = {item["title"] for item in pack["items"]}
     assert expected_titles <= titles
     assert len(pack["items"]) == 5
+    bindings_by_title = {
+        item["title"]: {
+            binding.get("request_template_key")
+            for binding in item.get("bindings", [])
+            if isinstance(binding, dict)
+        }
+        for item in pack["items"]
+    }
+    assert "agent_binding_help" in bindings_by_title["Как привязать устройство к аккаунту"]
+    assert "profile_completion_help" in bindings_by_title["Как заполнить профиль пользователя"]
     for item in pack["items"]:
         assert item["visibility"] == "requester"
         article_text = "\n".join(str(item.get(key) or "") for key in ("title", "summary", "body"))

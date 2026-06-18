@@ -467,6 +467,70 @@ async def test_main_window_gui_password_login_error_keeps_gate_actions_available
 
 
 @pytest.mark.asyncio
+async def test_main_window_browser_registration_uses_session_from_pairing_pickup():
+    selected_views: list[str] = []
+    rendered: list[dict] = []
+    saved_sessions: list[dict] = []
+
+    class FakeClient:
+        base_url = "https://example.test/api"
+        device_id = "device-1"
+
+        async def create_browser_pairing(self, purpose: str) -> dict:
+            assert purpose == "registration"
+            return {
+                "pairing_id": "pair-2",
+                "pairing_code": "ABCD-1234",
+                "browser_url": "/app/device/register?pairing_id=pair-2",
+            }
+
+        async def get_browser_pairing(self, pairing_id: str) -> dict:
+            assert pairing_id == "pair-2"
+            return {
+                "status": "consumed",
+                "session_token": "pairing-token-1",
+                "session": {
+                    "session_id": "pairing-session-1",
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "display_name": "Linked User",
+                },
+            }
+
+        async def get_account_state(self) -> dict:
+            raise AssertionError("registration pickup session must not require account-state refresh")
+
+        async def create_confirmed_binding_account_session(self, binding_id: str) -> dict:
+            raise AssertionError("registration pickup session must not require a second session request")
+
+    class FakeSessionManager:
+        def build_confirmed_binding_session(self, account: dict, *, device_id: str) -> dict:
+            return {**account, "device_id": device_id, "account_mode": "confirmed_binding"}
+
+        def save(self, session: dict) -> dict:
+            saved_sessions.append(session)
+            return session
+
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=FakeClient(), device_id="device-1")
+    window.account_gate_page = SimpleNamespace(render=lambda state, **kwargs: rendered.append({"state": state, **kwargs}))
+    window._account_session = {"account_mode": "none"}
+    window._account_state = {}
+    window._account_session_manager = FakeSessionManager()
+    window._browser_pairing_open_url = lambda url: None
+    window._set_account_entry_mode = lambda value: None
+    window._render_profile_status = lambda: None
+    window._select_sidebar_view = lambda view, **kwargs: selected_views.append(view)
+
+    await window._async_browser_pairing("registration", poll_interval_seconds=0.0, max_polls=1)
+
+    assert saved_sessions[0]["account_mode"] == "confirmed_binding"
+    assert saved_sessions[0]["session_token"] == "pairing-token-1"
+    assert rendered[-1]["local_session"]["account_mode"] == "confirmed_binding"
+    assert selected_views == ["tickets"]
+
+
+@pytest.mark.asyncio
 async def test_main_window_browser_registration_auto_approved_binding_saves_confirmed_session():
     selected_views: list[str] = []
     rendered: list[dict] = []

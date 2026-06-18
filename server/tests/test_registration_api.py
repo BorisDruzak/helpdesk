@@ -637,7 +637,11 @@ async def test_registration_pairing_confirmation_links_account_only_user_by_defa
         headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
     )
     assert picked_up.status == 200, await picked_up.text()
-    assert (await picked_up.json())["data"]["status"] == "consumed"
+    picked_up_payload = await picked_up.json()
+    assert picked_up_payload["data"]["status"] == "consumed"
+    assert picked_up_payload["data"]["session"]["account_mode"] == "confirmed_binding"
+    assert picked_up_payload["data"]["session_token"]
+    assert picked_up_payload["data"]["resulting_account_session_id"] == picked_up_payload["data"]["session"]["session_id"]
 
     account_state = await test_client.get(
         "/api/registry/agent/account-state",

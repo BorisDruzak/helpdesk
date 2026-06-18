@@ -384,18 +384,44 @@ class BrowserPairingService:
         if row.status != "confirmed":
             return await self.serialize_pairing(row)
         if row.purpose == "registration":
+            created_session: dict[str, Any] | None = None
+            if row.claim_id:
+                claim = await self.registration_repo.get_claim(row.claim_id)
+                if claim is not None and claim.status == "approved":
+                    active_bindings = await self.registration_repo.list_active_bindings_for_device(row.device_id)
+                    binding = next(
+                        (
+                            item
+                            for item in active_bindings
+                            if item.person_id == claim.person_id
+                            and item.relationship_type in {"primary_user", "shared_user", "responsible"}
+                        ),
+                        None,
+                    )
+                    if binding is not None:
+                        created_session = await AccountSessionService(self.session).create_confirmed_binding_session(
+                            device_id=row.device_id,
+                            binding_id=binding.binding_id,
+                        )
+                        row.binding_id = binding.binding_id
+                        row.resulting_account_session_id = created_session["session"]["session_id"]
             row.status = "consumed"
             row.consumed_at = _now()
             row.completed_at = row.consumed_at
             await self.session.flush()
             await self.account_session_repo.append_event(
                 device_id=row.device_id,
+                session_id=row.resulting_account_session_id,
                 event_type="browser_pairing_consumed",
                 actor_id=row.device_id,
                 actor_role="agent",
                 payload={"pairing_id": row.pairing_id, "purpose": row.purpose, "claim_id": row.claim_id},
             )
-            return await self.serialize_pairing(row)
+            payload = await self.serialize_pairing(row)
+            if created_session is not None:
+                payload["session"] = created_session["session"]
+                payload["session_token"] = created_session["session_token"]
+            return payload
         if row.purpose != "login" or not row.binding_id:
             raise ValueError("browser pairing result is incomplete")
         created = await AccountSessionService(self.session).create_confirmed_binding_session(

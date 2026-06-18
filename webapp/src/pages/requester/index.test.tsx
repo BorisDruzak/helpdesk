@@ -18,6 +18,123 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function installSetupAssistanceFormsMock({
+  devices = [],
+  profileComplete,
+}: {
+  devices?: Array<{ device_id: string; hostname: string; os?: string; agent_version?: string }>;
+  profileComplete: boolean;
+}) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "/api/web/requester/bootstrap") {
+      return jsonResponse({
+        status: "success",
+        data: {
+          workspace: "requester",
+          profile: profileComplete ? { person_id: "person-setup", display_name: "Setup User" } : null,
+          profile_completion: {
+            complete: profileComplete,
+            status: profileComplete ? "complete" : "required",
+            setup_path: "/app/requester/profile/setup",
+            required_fields: [],
+            missing_fields: profileComplete ? [] : [{ key: "full_name", label: "ФИО" }],
+            blocks: {
+              ticket_create: !profileComplete,
+              ticket_preview: !profileComplete,
+              device_binding_confirmation: false,
+            },
+          },
+          profile_schema: {
+            schema_key: "requester_profile",
+            fields: [],
+            custom_fields: [],
+            required_fields: [],
+          },
+          devices,
+          active_bindings: devices.map((device) => ({
+            binding_id: `binding-${device.device_id}`,
+            device,
+            relationship_type: "primary_user",
+            status: "active",
+          })),
+          pending_registration_claims: [],
+          open_ticket_count: 0,
+          tickets_requiring_user_action_count: 0,
+          pending_consent_count: 0,
+          recent_tickets: [],
+          feature_flags: { requester_no_device_create: false, requester_ticket_create: profileComplete },
+        },
+      });
+    }
+    if (url === "/api/web/requester/tickets") {
+      return jsonResponse({ status: "success", data: { tickets: [] } });
+    }
+    if (url === "/api/web/requester/consents?status=pending") {
+      return jsonResponse({ status: "success", data: { consents: [] } });
+    }
+    if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+      return jsonResponse({
+        status: "ok",
+        pack: {
+          pack_key: "request_forms",
+          version: "setup-visibility",
+          forms: [
+            {
+              key: "profile_completion_help",
+              title: "Помощь с заполнением профиля",
+              request_kind: "profile_completion_help",
+              availability_policy: {
+                available_without_completed_profile: true,
+                available_without_agent_binding: true,
+                requires_manual_triage: true,
+                contact_required: true,
+                allowed_for_anonymous: false,
+              },
+              fields: [{ key: "contact_phone", label: "Телефон для связи", type: "phone", required: true }],
+            },
+            {
+              key: "agent_binding_help",
+              title: "Помощь с привязкой агента",
+              request_kind: "agent_binding_help",
+              availability_policy: {
+                available_without_completed_profile: true,
+                available_without_agent_binding: true,
+                requires_manual_triage: true,
+                contact_required: true,
+                allowed_for_anonymous: false,
+              },
+              fields: [{ key: "contact_phone", label: "Телефон для связи", type: "phone", required: true }],
+            },
+            {
+              key: "normal_access",
+              title: "Обычный доступ",
+              request_kind: "request",
+              availability_policy: {
+                available_without_completed_profile: false,
+                available_without_agent_binding: false,
+                requires_manual_triage: false,
+                contact_required: false,
+                allowed_for_anonymous: false,
+              },
+              fields: [{ key: "summary", label: "Кратко", type: "text", required: false }],
+            },
+          ],
+        },
+      });
+    }
+    if (url === "/api/service-catalog/current") {
+      return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
+    }
+    if (url === "/api/registry/options") {
+      return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock as typeof fetch);
+  return fetchMock;
+}
+
 describe("RequesterWorkspacePage", () => {
   it("prefills requester ticket draft from Knowledge Ask context and submits knowledge attempts", async () => {
     window.history.pushState({}, "", "/app/requester/new");
@@ -1697,6 +1814,33 @@ describe("RequesterWorkspacePage", () => {
       form_key: "profile_completion_help",
       form_payload: { contact_phone: "+7 000 555-55-55" },
     });
+  });
+
+  it("shows only agent binding help when the profile is complete but no agent is linked", async () => {
+    installSetupAssistanceFormsMock({ profileComplete: true });
+
+    render(<RequesterWorkspacePage />);
+
+    const formSelect = await screen.findByLabelText("Форма обращения заявителя");
+    expect(screen.queryByRole("option", { name: "Помощь с заполнением профиля" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Помощь с привязкой агента" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Обычный доступ" })).not.toBeInTheDocument();
+    expect(formSelect).toHaveValue("agent_binding_help");
+  });
+
+  it("shows only profile completion help when an agent is linked but the profile is incomplete", async () => {
+    installSetupAssistanceFormsMock({
+      profileComplete: false,
+      devices: [{ device_id: "device-linked", hostname: "LINKED-PC", os: "Windows", agent_version: "3.1.71" }],
+    });
+
+    render(<RequesterWorkspacePage />);
+
+    const formSelect = await screen.findByLabelText("Форма обращения заявителя");
+    expect(screen.getByRole("option", { name: "Помощь с заполнением профиля" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Помощь с привязкой агента" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Обычный доступ" })).not.toBeInTheDocument();
+    expect(formSelect).toHaveValue("profile_completion_help");
   });
 
   it("saves requester profile from registry pickers and unlocks the workspace", async () => {
