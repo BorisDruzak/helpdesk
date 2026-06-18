@@ -37,6 +37,7 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
     const method = init?.method ?? "GET";
 
     if (url.startsWith("/api/web/admin/devices?") || url === "/api/web/admin/devices") {
+      const includeArchived = url.includes("include_archived=1");
       return jsonResponse({
         status: "success",
         data: {
@@ -51,9 +52,11 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
                   rollout_targets: 1,
                   duplicate_hosts: 0,
                   cleanup_candidates: 0,
+                  archived_count: includeArchived ? 1 : 0,
                 },
               }),
           filters: {
+            include_archived: includeArchived,
             status_options: [
               { value: "all", label: "Все устройства" },
               { value: "online", label: "Только онлайн" },
@@ -78,6 +81,10 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
               target: "linux_alt_x86_64",
               online: true,
               last_seen_at: "2026-04-27T10:00:00Z",
+              is_deleted: false,
+              deleted_at: null,
+              deleted_by: null,
+              delete_reason: null,
               connection_status_label: "Онлайн",
               latest_update: {
                 status: "ok",
@@ -102,6 +109,10 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
               target: "windows_amd64",
               online: false,
               last_seen_at: "2026-04-27T09:00:00Z",
+              is_deleted: false,
+              deleted_at: null,
+              deleted_by: null,
+              delete_reason: null,
               connection_status_label: "Офлайн",
               latest_update: {
                 status: "failed",
@@ -118,6 +129,38 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
               },
               duplicate_warning: null,
             },
+            ...(includeArchived
+              ? [
+                  {
+                    device_id: "44444444-4444-4444-8444-444444444444",
+                    hostname: "archived-agent-01",
+                    os: "Windows 11",
+                    agent_version: "1.2.1",
+                    target: "windows_amd64",
+                    online: false,
+                    last_seen_at: "2026-04-26T09:00:00Z",
+                    is_deleted: true,
+                    deleted_at: "2026-04-27T11:00:00Z",
+                    deleted_by: "admin-test",
+                    delete_reason: "archived by mistake",
+                    connection_status_label: "Архив",
+                    latest_update: {
+                      status: "offline",
+                      label: "Офлайн",
+                      summary: null,
+                    },
+                    identity_summary: {
+                      machine_id: "44444444-4444-4444-8444-444444444444",
+                      install_id: null,
+                      machine_id_source: "windows_machine_guid",
+                      identity_scheme: "machine_id",
+                      source_label: "Windows MachineGuid",
+                      is_stable: true,
+                    },
+                    duplicate_warning: null,
+                  },
+                ]
+              : []),
           ],
         },
       });
@@ -290,6 +333,20 @@ function installFetchMock(options: { omitSummary?: boolean } = {}) {
       });
     }
 
+    if (url.includes("/api/web/admin/devices/") && url.endsWith("/restore") && method === "POST") {
+      return jsonResponse({
+        status: "success",
+        data: {
+          device_id: "44444444-4444-4444-8444-444444444444",
+          is_deleted: false,
+          restored_by: "admin-test",
+          restore_reason: "Восстановление агента из архива inventory",
+          tokens_restored: false,
+          sessions_restored: false,
+        },
+      });
+    }
+
     return jsonResponse({ status: "error", error: `Unhandled test request ${method} ${url}` }, 500);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -374,6 +431,35 @@ describe("AdminInventoryPage", () => {
       );
     });
     expect(await screen.findByText("Агент архивирован и скрыт из активного inventory.")).toBeInTheDocument();
+  });
+
+  it("shows archived agents behind the archive toggle and restores the selected agent", async () => {
+    const fetchMock = installFetchMock();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderInventory();
+
+    expect((await screen.findAllByText("web-server-01")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("archived-agent-01")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Архив"));
+
+    expect(await screen.findByText("archived-agent-01")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("archived-agent-01"));
+    fireEvent.click(screen.getByRole("button", { name: /Восстановить агента/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/web/admin/devices/44444444-4444-4444-8444-444444444444/restore",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ reason: "Восстановление агента из архива inventory" }),
+        })
+      );
+    });
+    expect(
+      await screen.findByText("Агент восстановлен. Старые токены не возвращены, подключение нужно подтвердить заново.")
+    ).toBeInTheDocument();
   });
 
   it("renders fleet inventory dashboard and dry-run import preview", async () => {

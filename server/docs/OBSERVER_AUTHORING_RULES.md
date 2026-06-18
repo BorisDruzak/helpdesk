@@ -69,6 +69,8 @@ Agent telemetry, playbook local steps, module reconcile, web-auth/API boundary f
 
 Passport evidence writes are ticket-bound observer sources. Any evidence add/link/verify/reject/archive endpoint must write a `passport_evidence_*` `ticket_events` row with a repo-resolved ticket-root `trace_id`, `source_ref`, `section_key`, verification/export metadata and an `observer_provenance` object (`domain=passport_evidence`, action, source_ref, required_fact). Do not make evidence provenance support-visible only through raw `ticket_evidence_items`.
 
+Web-first requester cabinet events must use `server/observer/web_event_writer.py::write_web_cabinet_observer_event()`. These traces use `root_kind=requester_web` and stable source values such as `account_session`, `requester_profile`, `requester_ticket_preview`, `requester_ticket_create`, `requester_knowledge`, `requester_chat`, `requester_closure`, `support_chat`, `support_status`, `web_form_runtime`, `device_linking` and `registry_binding`. Requester ticket-create diagnostic target traces may use `event_type=diagnostic_target_missing|diagnostic_target_offline|diagnostic_target_ambiguous`; payloads may include only diagnostic target source/status/reason and boolean evidence flags, not raw requester text, person ids, target ids or tokens. Requester Knowledge traces include suggest, Ask and ticket-create attempt guard outcomes; attempt guard payloads may include only sanitized counts/results/surface/scope summaries, not raw query text or item/version ids. Requester chat/closure traces may include only message/attachment/status/reason/feedback/reopen flags and counts, not raw message text, metadata, closure/reopen reason text, requester comments, feedback ids or Knowledge item ids. Support chat/status traces may include only visibility/status/present/confirmation flags and counts, not raw support message text, resolution text, root-cause text, internal/public comments, actor ids, tokens or raw confirmation prompt content. The writer stores technical observer rows only; it must not create a parallel business table or become the ticket source of truth. Actor ids, emails, phones, cookies, auth headers, passwords, tokens, pairing/access codes, raw query text, raw form values and raw request/response bodies must be redacted or hashed before persistence.
+
 ### 3.4 Материализовать диагностически полезные spans
 
 Spans нужны не “для галочки”, а чтобы человек видел этапы.
@@ -128,6 +130,8 @@ Spans нужны не “для галочки”, а чтобы человек 
 
 `observer_integrity_events` are for runtime invariant violations, not generic logs. Each event must include stable `dedupe_key`, severity, source, expected/actual, redacted evidence, runbook and correlation ids when available. The only product-side mutation allowed is writing or resolving the observer event itself. Do not store raw tokens, cookies, requester message text, public access hashes, raw artifact paths or unrestricted result payloads.
 
+Web-cabinet integrity checks live in `server/observer/checks/web_cabinet.py` with source `observer.web_cabinet`. They should detect missing immutable `ticket_context_v1`, missing requester ticket-create observer coverage, on-behalf creator-target fallback, forged requester target acceptance, profile gate bypass, requester-side on-behalf Knowledge audience leakage and missing Customer History projection from existing ticket/observer/Registry/Customer History state, then surface through `/api/web/admin/observer/integrity` and support ticket detail. They must not auto-fix ticket context, mutate requester data, synthesize Customer History rows or enqueue diagnostics.
+
 Known historical contamination belongs in `observer_known_contamination` with exact entity scope. Broad suppression by phase, device or timestamp is not acceptable unless explicitly documented and time-boxed.
 
 ### 3.8 Зафиксировать canary
@@ -165,6 +169,7 @@ Known historical contamination belongs in `observer_known_contamination` with ex
 - ответ должен быть компактным и redacted;
 - диагностический API для прод-тестирования должен иметь Codex-friendly форму: один запрос по `trace_id`/`ticket_id`/`operation_id`/`device_id`/`q`, redacted payload, links и recommended next checks;
 - ticket-bound observer summary должен быть пригоден для support UI;
+- web-cabinet trace filters (`root_kind`, `source`, `person_id`, `error_code`, `event_type`, `route`, `ticket_id`, `device_id`) must be supported by typed admin observer search before relying on them in runbooks or support handoffs;
 - tech API должен поддерживать быстрый drilldown, а не только сырой dump.
 - web bootstrap contracts (`/api/web/support/bootstrap`, `/api/web/admin/bootstrap`) должны отдавать capability links для observer surfaces, а не заставлять frontend разбрасывать raw trace URLs по коду.
 - stdio MCP debug surfaces such as `helpdesk-server-debug` must use a pure service/facade layer (`server/observer/debug_facade.py`) instead of importing HTTP handlers or `aiohttp request.app`; they must stay read-only, bounded and redacted, and must not call `run_tool`, DeviceOutbox, approvals, WS RPC or observer rebuild.

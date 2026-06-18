@@ -29,6 +29,7 @@ from app.db.models import (
 )
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
+from customer_history.projection_service import CustomerHistoryProjectionService
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
@@ -1058,10 +1059,80 @@ async def test_requester_can_create_ticket_for_owned_device_and_not_foreign_devi
     assert created_payload["data"]["ticket"]["ticket_id"]
     async with session_maker() as session:
         ticket = await session.get(Ticket, created_payload["data"]["ticket"]["ticket_id"])
-    assert ticket is not None
-    assert ticket.device_id == owned_device_id
-    assert ticket.requester_person_id == approved["person"]["person_id"]
-    assert ticket.requester_binding_id == approved["binding"]["binding_id"]
+        assert ticket is not None
+        assert ticket.device_id == owned_device_id
+        assert ticket.requester_person_id == approved["person"]["person_id"]
+        assert ticket.requester_binding_id == approved["binding"]["binding_id"]
+        event_rows = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket.ticket_id,
+                    TicketEvent.event_type.in_(
+                        [
+                            "customer_history_ticket_created",
+                            "requester_ticket_create_audit",
+                        ]
+                    ),
+                )
+            )
+        ).scalars().all()
+        events_by_type = {row.event_type: row for row in event_rows}
+        assert set(events_by_type) == {
+            "customer_history_ticket_created",
+            "requester_ticket_create_audit",
+        }
+        history_payload = events_by_type["customer_history_ticket_created"].payload
+        assert history_payload["source"] == "requester_ticket_create"
+        assert history_payload["history_event_type"] == "ticket_created"
+        assert history_payload["requester_account_mode"] == "confirmed_binding"
+        assert history_payload["has_ticket_context"] is True
+        assert history_payload["created_on_behalf"] is False
+        assert history_payload["has_request_form_snapshot"] is False
+        assert history_payload["has_policy_snapshot"] is False
+
+        audit_payload = events_by_type["requester_ticket_create_audit"].payload
+        assert audit_payload["source"] == "requester_ticket_create"
+        assert audit_payload["visibility"] == "internal"
+        assert audit_payload["requester_account_mode"] == "confirmed_binding"
+        assert audit_payload["request_context"] == "authenticated_requester_workspace"
+        assert audit_payload["has_ticket_context"] is True
+        assert audit_payload["has_request_form_snapshot"] is False
+        assert audit_payload["has_policy_snapshot"] is False
+        assert login not in str(history_payload)
+        assert owned_device_id not in str(history_payload)
+        assert body["title"] not in str(history_payload)
+        assert body["description"] not in str(history_payload)
+        assert login not in str(audit_payload)
+        assert owned_device_id not in str(audit_payload)
+        assert body["title"] not in str(audit_payload)
+        assert body["description"] not in str(audit_payload)
+
+        support_history = await CustomerHistoryProjectionService(session).history_for_ticket(
+            ticket.ticket_id,
+            role="support",
+            limit=20,
+        )
+        requester_history = await CustomerHistoryProjectionService(session).history_for_ticket(
+            ticket.ticket_id,
+            role="requester",
+            limit=20,
+        )
+        assert any(
+            event["event_type"] == "customer_history_ticket_created"
+            for event in support_history["events"]
+        )
+        assert any(
+            event["event_type"] == "customer_history_ticket_created"
+            for event in requester_history["events"]
+        )
+        assert any(
+            event["event_type"] == "requester_ticket_create_audit"
+            for event in support_history["events"]
+        )
+        assert not any(
+            event["event_type"] == "requester_ticket_create_audit"
+            for event in requester_history["events"]
+        )
 
     denied = await test_client.post(
         "/api/web/requester/tickets",
@@ -1538,6 +1609,13 @@ async def test_requester_preview_ticket_accepts_catalog_form_payload(test_client
     assert payload["data"]["requester_context"]["device"]["device_id"] == device_id
     assert payload["data"]["requester_context"]["form_prefill"]["device_id"] == device_id
     assert payload["data"]["requester_context"]["routing_facts"]["account_mode"] == "confirmed_binding"
+    assert payload["data"]["ticket_context"]["summary"]["created_on_behalf"] is False
+    assert payload["data"]["ticket_context"]["summary"]["affected"]
+    assert payload["data"]["ticket_context"]["diagnostic_target"]["available"] is False
+    assert payload["data"]["ticket_context"]["diagnostic_target"]["status"] == "offline"
+    assert payload["data"]["ticket_context"]["diagnostic_target"]["label"] == "preview-owned-device"
+    assert "person_id" not in str(payload["data"]["ticket_context"])
+    assert device_id not in str(payload["data"]["ticket_context"])
 
     async with session_maker() as session:
         ticket_count = await session.scalar(select(func.count()).select_from(Ticket))

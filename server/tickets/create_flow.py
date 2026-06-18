@@ -24,7 +24,7 @@ from tickets.form_catalog import attach_request_template_computed_snapshot
 from tickets.routing_service import TicketRoutingService
 from tickets.sla_service import TicketSlaService
 from tickets.statuses import merge_requester_custom_fields, normalize_ticket_priority_inputs
-from tickets.ticket_context import TicketContextBuilder
+from tickets.ticket_context import TicketContextBuilder, ticket_context_resolved_event_payload
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 from tickets.workflow_service import TicketWorkflowService
 from playbooks.form_triggers import start_ticket_created_playbooks
@@ -105,6 +105,57 @@ def _declared_account_payload(account: dict[str, Any]) -> dict[str, Any]:
         for key, value in _safe_account_payload(account).items()
         if key in {"display_name", "full_name", "login", "email", "phone", "reason", "account_session_id", "session_id"}
     }
+
+
+def _requester_create_marker_payload(
+    *,
+    custom_fields: dict[str, Any],
+    requester_account_mode: str | None,
+    ticket_context_snapshot: dict[str, Any],
+    internal: bool = False,
+) -> dict[str, Any]:
+    ticket_context = (
+        custom_fields.get("ticket_context")
+        if isinstance(custom_fields.get("ticket_context"), dict)
+        else ticket_context_snapshot
+    )
+    request_context = str(custom_fields.get("request_context") or "web_requester").strip() or "web_requester"
+    request_form = custom_fields.get("request_form") if isinstance(custom_fields.get("request_form"), dict) else {}
+    policy_refs = custom_fields.get("policy_refs") if isinstance(custom_fields.get("policy_refs"), dict) else {}
+    effective_policy_snapshots = (
+        custom_fields.get("effective_policy_snapshots")
+        if isinstance(custom_fields.get("effective_policy_snapshots"), dict)
+        else {}
+    )
+    diagnostic_target = (
+        ticket_context.get("diagnostic_target")
+        if isinstance(ticket_context, dict) and isinstance(ticket_context.get("diagnostic_target"), dict)
+        else {}
+    )
+    payload: dict[str, Any] = {
+        "source": "requester_ticket_create",
+        "request_context": request_context,
+        "requester_account_mode": requester_account_mode or "unknown",
+        "has_ticket_context": bool(ticket_context),
+        "created_on_behalf": bool(
+            ticket_context.get("created_on_behalf")
+            if isinstance(ticket_context, dict)
+            else False
+        ),
+        "has_request_form_snapshot": bool(request_form),
+        "has_policy_snapshot": bool(policy_refs or effective_policy_snapshots),
+        "diagnostic_target_available": bool(diagnostic_target.get("available")),
+        "diagnostic_target_status": str(
+            diagnostic_target.get("status")
+            or diagnostic_target.get("agent_status")
+            or "unknown"
+        ).strip()[:80],
+    }
+    if internal:
+        payload["visibility"] = "internal"
+    else:
+        payload["history_event_type"] = "ticket_created"
+    return payload
 
 
 async def _find_declared_requester_person_id(session: Any, account: dict[str, Any]) -> str | None:
@@ -298,6 +349,7 @@ async def create_ticket_with_side_effects(
     ticket_id = new_ticket_id()
     asset_id = None
     registry_context: dict[str, Any] | None = None
+    has_requester_account = isinstance(requester_account, dict)
     existing_active_binding = None
     try:
         from app.repos.registration_repo import RegistrationRepo
@@ -319,7 +371,7 @@ async def create_ticket_with_side_effects(
         logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
     account_mode = ""
     requester_account_session_validation: dict[str, Any] | None = None
-    if isinstance(requester_account, dict):
+    if has_requester_account:
         session_id = str(requester_account.get("session_id") or requester_account.get("account_session_id") or "").strip()
         if session_id:
             try:
@@ -382,7 +434,10 @@ async def create_ticket_with_side_effects(
     requester_binding_id = None
     requester_registration_status = "unregistered"
     requester_registration_context: dict[str, Any] = {"status": "unregistered"}
-    requester_account_context: dict[str, Any] = {"account_mode": account_mode or "none"}
+    legacy_agent_only = not has_requester_account
+    requester_account_context: dict[str, Any] = {
+        "account_mode": "agent_legacy_or_device_only" if legacy_agent_only else (account_mode or "none")
+    }
     requester_account_session_id: str | None = None
     requester_account_mode: str | None = None
     requester_account_warning: str | None = None
@@ -533,6 +588,13 @@ async def create_ticket_with_side_effects(
             requester_binding_id = active_binding.get("binding_id")
             asset_id = active_binding.get("asset_id") or asset_id
             requester_registration_status = "admin_confirmed"
+            if legacy_agent_only:
+                requester_account_context = {
+                    "account_mode": "agent_legacy_or_device_only",
+                    "validation": "agent_token_without_account_session",
+                    "context_scope": "limited",
+                    "profile_completion_evidence": False,
+                }
         else:
             pending_claim = registration_status.get("pending_claim") if isinstance(registration_status, dict) else None
             requester_registration_status = str(
@@ -540,6 +602,13 @@ async def create_ticket_with_side_effects(
                 or (registration_status or {}).get("status")
                 or "unregistered"
             )
+            if legacy_agent_only:
+                requester_account_context = {
+                    "account_mode": "agent_legacy_or_device_only",
+                    "validation": "agent_token_without_account_session",
+                    "context_scope": "limited",
+                    "profile_completion_evidence": False,
+                }
         if account_mode != "browser_no_device":
             requester_registration_context = registration_status if isinstance(registration_status, dict) else requester_registration_context
     except Exception as exc:
@@ -556,6 +625,22 @@ async def create_ticket_with_side_effects(
     if requester_person_id:
         try:
             context_input = ticket_context if isinstance(ticket_context, dict) else {}
+            context_custom_fields = extra_custom_fields if isinstance(extra_custom_fields, dict) else {}
+            requester_context_snapshot = (
+                context_custom_fields.get("requester_context_snapshot")
+                if isinstance(context_custom_fields.get("requester_context_snapshot"), dict)
+                else requester_account_context
+            )
+            request_form_snapshot = (
+                context_custom_fields.get("request_form")
+                if isinstance(context_custom_fields.get("request_form"), dict)
+                else {}
+            )
+            policy_refs_snapshot = (
+                context_custom_fields.get("policy_refs")
+                if isinstance(context_custom_fields.get("policy_refs"), dict)
+                else {}
+            )
             ticket_context_snapshot = await TicketContextBuilder(session, state=state).build(
                 creator_person_id=str(requester_person_id),
                 creator_actor_id=requester_id,
@@ -564,6 +649,9 @@ async def create_ticket_with_side_effects(
                     context_input.get("on_behalf_reason") or context_input.get("reason") or ""
                 ).strip()
                 or None,
+                requester_context=requester_context_snapshot,
+                form=request_form_snapshot,
+                policy_refs=policy_refs_snapshot,
             )
         except Exception as exc:
             logger.warning(f"[create] ticket context build failed ticket_id={ticket_id} err={exc}")
@@ -659,6 +747,43 @@ async def create_ticket_with_side_effects(
                 "priority_decision": priority_decision,
                 "override": priority_decision["manual_override_event"],
             },
+            trace_id=str(uuid.uuid4()),
+            event_id=str(uuid.uuid4()),
+        )
+    if ticket_context_snapshot:
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="ticket_context_resolved",
+            payload=ticket_context_resolved_event_payload(ticket_context_snapshot),
+            trace_id=str(uuid.uuid4()),
+            event_id=str(uuid.uuid4()),
+        )
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="customer_history_ticket_created",
+            payload=_requester_create_marker_payload(
+                custom_fields=custom_fields,
+                requester_account_mode=requester_account_mode,
+                ticket_context_snapshot=ticket_context_snapshot,
+            ),
+            trace_id=str(uuid.uuid4()),
+            event_id=str(uuid.uuid4()),
+        )
+        await ticket_repo.add_event(
+            ticket_id=ticket_id,
+            device_id=device_id,
+            agent_seq=None,
+            event_type="requester_ticket_create_audit",
+            payload=_requester_create_marker_payload(
+                custom_fields=custom_fields,
+                requester_account_mode=requester_account_mode,
+                ticket_context_snapshot=ticket_context_snapshot,
+                internal=True,
+            ),
             trace_id=str(uuid.uuid4()),
             event_id=str(uuid.uuid4()),
         )

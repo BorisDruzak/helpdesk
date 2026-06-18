@@ -45,6 +45,7 @@ async def handle_web_admin_observer_integrity(request: web.Request) -> web.Respo
                 ticket_id=_str_query(request.query.get("ticket_id")),
                 operation_id=_str_query(request.query.get("operation_id")),
                 event_type=_str_query(request.query.get("event_type")),
+                source=_str_query(request.query.get("source")),
                 since=_dt_query(request.query.get("since")),
                 limit=_int_query(request.query.get("limit"), default=100, minimum=1, maximum=500),
             )

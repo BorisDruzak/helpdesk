@@ -189,6 +189,10 @@ class AdminObserverTracesQuery(BaseModel):
     playbook_run_id: int | None = None
     step_run_id: int | None = None
     route: str | None = None
+    source: str | None = None
+    person_id: str | None = None
+    error_code: str | None = None
+    event_type: str | None = None
 
 
 class AdminObserverTracesSummary(BaseModel):
@@ -1700,6 +1704,10 @@ class AdminDeviceItem(BaseModel):
     target: str | None = None
     online: bool
     last_seen_at: str | None = None
+    is_deleted: bool = False
+    deleted_at: str | None = None
+    deleted_by: str | None = None
+    delete_reason: str | None = None
     connection_status_label: str
     latest_update: AdminDeviceUpdateSummary
     identity_summary: AdminDeviceIdentitySummary
@@ -1714,12 +1722,14 @@ class AdminDevicesSummary(BaseModel):
     rollout_targets: int
     duplicate_hosts: int = 0
     cleanup_candidates: int = 0
+    archived_count: int = 0
 
 
 class AdminDevicesFilters(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status_options: list[AdminFilterOption]
+    include_archived: bool = False
 
 
 class AdminDevicesPayload(BaseModel):
@@ -1752,6 +1762,17 @@ class AdminDeviceCleanupPayload(BaseModel):
     archived_count: int
     candidates: list[AdminDeviceCleanupCandidate]
     kept_device_ids: list[str]
+
+
+class AdminDeviceRestorePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    device_id: str
+    is_deleted: bool
+    restored_by: str | None = None
+    restore_reason: str | None = None
+    tokens_restored: bool = False
+    sessions_restored: bool = False
 
 
 class AdminDeviceTokenItem(BaseModel):

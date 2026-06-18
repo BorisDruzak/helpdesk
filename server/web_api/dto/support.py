@@ -499,6 +499,39 @@ class SupportTicketObserverSummary(BaseModel):
     health_label: str = "empty"
 
 
+class SupportTicketObserverWebFlow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_gate: str | None = None
+    ticket_preview: str | None = None
+    ticket_create: str | None = None
+    target_resolution: str | None = None
+    knowledge_guard: str | None = None
+    chat: str | None = None
+    closure: str | None = None
+    support_chat: str | None = None
+    support_status: str | None = None
+    latest_event_type: str | None = None
+    latest_error_code: str | None = None
+    latest_trace_url: str | None = None
+
+
+class SupportTicketObserverIntegrityEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    event_type: str
+    severity: str
+    status: str
+    source: str | None = None
+    dedupe_key: str | None = None
+    last_seen_at: str | None = None
+    occurrence_count: int = 0
+    runbook: str | None = None
+    trace_id: str | None = None
+    trace_url: str | None = None
+
+
 class SupportTicketObserverPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -510,6 +543,8 @@ class SupportTicketObserverPayload(BaseModel):
     error_traces: list[SupportTicketObserverTraceCompact] = Field(default_factory=list)
     signatures: list[SupportTicketObserverSignature] = Field(default_factory=list)
     recent_occurrences: list[SupportTicketObserverOccurrenceCompact] = Field(default_factory=list)
+    web_flow: SupportTicketObserverWebFlow = Field(default_factory=SupportTicketObserverWebFlow)
+    integrity_events: list[SupportTicketObserverIntegrityEvent] = Field(default_factory=list)
 
 
 class SupportTicketRequestFormRow(BaseModel):

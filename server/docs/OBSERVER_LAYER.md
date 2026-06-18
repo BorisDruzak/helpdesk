@@ -34,6 +34,7 @@ Observer сейчас проецируется поверх:
 - `ticket_events`
 - `device_events`
 - `agent_runtime_audit`
+- direct web-cabinet observer writes in `server/observer/web_event_writer.py`
 - agent-side `action_trace`
 
 Runtime-audit-only auth/provisioning events are first-class projection sources too. When an audit row has no `operation_id` or `ticket_id`, observer assigns a stable synthetic trace id and projects nearby same-device lifecycle audit rows into a trace so Codex/API/UI searches can still drill into the failing step.
@@ -75,6 +76,7 @@ Ticket-root anchor:
 | Passport evidence add/link/verify/reject/archive | `ticket_events` (`passport_evidence_*`) | ticket-root trace | yes | no | `ticket_id`, `q=passport_evidence`, `source_ref`, `evidence_id` |
 | Web auth/API boundary failure | rate-limited `agent_runtime_audit` with `source=web_auth` | `web_auth` | yes | yes | `route=/api/...`, `q=AUTH_REQUIRED`, `q=FORBIDDEN` |
 | Observer projector degraded health | bounded `agent_runtime_audit` with `source=observer_runtime` | `observer_runtime` | yes | yes | `root_kind=observer_runtime`, runtime endpoint |
+| Web-first requester cabinet preview/create/profile gate/chat/closure/feedback/reopen/support chat/support status/support confirmation/form runtime preview/create/account-session login/register/logout/role-mismatch/Knowledge suggest/ask/attempt guard/device-linking lookup/request/approve/reject/transfer/registry binding | `observer_traces` / `observer_spans` from `write_web_cabinet_observer_event()` | `requester_web` | yes | warning/error only | `source`, `route`, `person_id`, `ticket_id`, `device_id`, `error_code`, `event_type` |
 
 ## 5. Runtime и проекция
 
@@ -113,6 +115,7 @@ Observer runtime:
 - `playbook_run`
 - `web_auth`
 - `observer_runtime`
+- `requester_web`
 - `capability_run`
 - `server_connector_query`
 - `observer_query`
@@ -154,11 +157,13 @@ Ticket-scoped API:
 - `GET /api/web/admin/observer/traces`
 - `GET /api/web/admin/observer/traces/{trace_id}`
 
-`GET /api/web/admin/observer/integrity` is admin/support/auditor readable and supports filters by `severity`, `status`, `device_id`, `ticket_id`, `operation_id`, `event_type`, `since` and `limit`. `POST /api/web/admin/observer/integrity/scan` is admin/support and runs the OBS1 checkers. Requester/public/agent tokens must be denied.
+`GET /api/web/admin/observer/integrity` is admin/support/auditor readable and supports filters by `severity`, `status`, `device_id`, `ticket_id`, `operation_id`, `event_type`, `source`, `since` and `limit`. `POST /api/web/admin/observer/integrity/scan` is admin/support and runs the OBS1 checkers. Requester/public/agent tokens must be denied.
 
-OBS1 checkers live under `server/observer/checks/*` and are orchestrated by `server/observer/integrity_service.py`. The first runtime set covers operation/outbox lifecycle, Protocol V3 ACK persistence audit and repeated NACK patterns, runtime presence stale-last-seen mismatch, account-boundary anomaly audit, module/toolset/artifact drift and governance invariants. ACK integrity uses durable v2 `agent_runtime_audit` rows from outbox ingest; every ACK must carry a persisted event id, duplicate proof, or a documented no-op, otherwise Observer raises `protocol_ack_without_persistence`. Legacy audit rows with only `persisted=true` are telemetry, not proof. Admin Tech exposes counts in `observer_integrity`; Device Operations embeds device-scoped active integrity events.
+OBS1 checkers live under `server/observer/checks/*` and are orchestrated by `server/observer/integrity_service.py`. The first runtime set covers operation/outbox lifecycle, Protocol V3 ACK persistence audit and repeated NACK patterns, runtime presence stale-last-seen mismatch, account-boundary anomaly audit, module/toolset/artifact drift and governance invariants. Phase D adds `server/observer/checks/web_cabinet.py` with source `observer.web_cabinet` for web-first ticket context, missing web-ticket-create observer coverage, on-behalf creator-target fallback, forged requester target acceptance, profile gate bypass, requester-side on-behalf Knowledge audience leakage and missing Customer History projection. Profile gate bypass detection uses saved profile-completion evidence when present and recomputes from Registry profile state when the ticket does not carry a completion snapshot. Knowledge audience leakage detection uses saved ticket `knowledge_attempts` scopes and emits safe item refs only; Customer History projection detection validates support-safe projection shape without becoming the Customer History source of truth. ACK integrity uses durable v2 `agent_runtime_audit` rows from outbox ingest; every ACK must carry a persisted event id, duplicate proof, or a documented no-op, otherwise Observer raises `protocol_ack_without_persistence`. Legacy audit rows with only `persisted=true` are telemetry, not proof. Admin Tech exposes counts in `observer_integrity`; Device Operations embeds device-scoped active integrity events.
 
 Typed admin observer trace rows expose operator-readable context in addition to raw identifiers: `ticket_code`, `ticket_title`, ticket status/priority/queue, requester label, `device_hostname`, `device_label`, operation/tool labels, latest error label/stage and `display_title` / `display_subtitle`. Raw `trace_id`, `ticket_id`, `operation_id`, `device_id`, `span_id` and `error_signature` stay available for diagnostics and deep links, but UI must treat them as secondary metadata.
+
+Typed admin observer trace search supports web-cabinet filters in addition to the existing runtime filters: `root_kind=requester_web`, `source`, `person_id`, `error_code`, `event_type`, `route`, `ticket_id` and `device_id`. These filters search redacted trace/span attrs and keep requester web diagnostics out of ticket business state.
 
 Typed admin observer trace detail also exposes an explanation projection through `explanation` on `GET /api/web/admin/observer/traces/{trace_id}` and the compatibility alias `GET /api/web/admin/observer/trace-detail/{trace_id}`. This projection is the operator-facing layer above raw spans: `launch_source` / `launch_source_label`, actor fields, tool/module labels, preset label/description, `error_code`, human diagnosis, launch path, next actions, agent online label and debug refs. The raw `spans`, `span_links`, `error_occurrences`, agent actions and attrs remain present for debug mode.
 
@@ -179,7 +184,7 @@ Codex/live debugging entrypoints:
 
 Ticket observer summary нужен для support/ticket UI и не должен требовать похода в raw tech traces.
 
-Typed support detail (`GET /api/web/support/tickets/{ticket_id}`) embeds a compact observer payload for `/app/tickets`: root trace status/url, root kind, health label (`empty`, `ok`, `running`, `error`), latest error label/stage/time, top ticket-local signature, compact related/active/error trace rows and compact recent occurrences. Full spans, span links and raw occurrence detail stay in `/app/admin/observer`.
+Typed support detail (`GET /api/web/support/tickets/{ticket_id}`) embeds a compact observer payload for `/app/tickets`: root trace status/url, root kind, health label (`empty`, `ok`, `running`, `error`), latest error label/stage/time, top ticket-local signature, compact related/active/error trace rows, compact recent occurrences, `web_flow` status for profile gate / preview / create / target / knowledge guard / requester chat / requester closure / support chat / support status, and active `observer.web_cabinet` integrity events with safe trace URLs. Requester ticket-create diagnostic target events (`diagnostic_target_missing|diagnostic_target_offline|diagnostic_target_ambiguous`) feed the compact target web-flow status while full trace/span payloads stay in `/app/admin/observer`. Full spans, span links, raw occurrence detail and raw integrity evidence stay in `/app/admin/observer`.
 
 Latest operation snapshots in the same typed support detail payload carry trace relation metadata for the support workspace: `ticket_root`, `operation_child`, `retry_child`, `playbook_child` or `unknown`, plus operation trace URL, ticket root trace URL and retry lineage (`retry_of_operation_id`, `retry_source_trace_id`). The support UI should use these fields to label links as root trace, operation trace, retry trace or playbook trace instead of showing a raw `Trace: <id>` chip.
 

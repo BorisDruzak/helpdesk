@@ -18,12 +18,14 @@ export type AdminDevicesPayload = {
     rollout_targets: number;
     duplicate_hosts: number;
     cleanup_candidates: number;
+    archived_count: number;
   };
   filters: {
     status_options: Array<{
       value: AdminStatusFilter;
       label: string;
     }>;
+    include_archived: boolean;
   };
   rollout: Array<{
     target: string;
@@ -40,6 +42,10 @@ export type AdminDevicesPayload = {
     target: string | null;
     online: boolean;
     last_seen_at: string | null;
+    is_deleted: boolean;
+    deleted_at: string | null;
+    deleted_by: string | null;
+    delete_reason: string | null;
     connection_status_label: string;
     latest_update: {
       status: string | null;
@@ -86,6 +92,15 @@ export type AdminDeviceArchivePayload = {
   is_deleted: boolean;
   deleted_by: string | null;
   delete_reason: string | null;
+};
+
+export type AdminDeviceRestorePayload = {
+  device_id: string;
+  is_deleted: boolean;
+  restored_by: string | null;
+  restore_reason: string | null;
+  tokens_restored: boolean;
+  sessions_restored: boolean;
 };
 
 export type AdminDeviceTokensPayload = {
@@ -1721,6 +1736,7 @@ export async function fetchAdminBootstrap(): Promise<AdminBootstrapPayload> {
 type AdminDevicesParams = {
   statusFilter: AdminStatusFilter;
   query: string;
+  includeArchived?: boolean;
 };
 
 function buildAdminDevicesUrl(params: AdminDevicesParams): string {
@@ -1730,6 +1746,9 @@ function buildAdminDevicesUrl(params: AdminDevicesParams): string {
   }
   if (params.query.trim()) {
     searchParams.set("query", params.query.trim());
+  }
+  if (params.includeArchived) {
+    searchParams.set("include_archived", "1");
   }
   const queryString = searchParams.toString();
   return queryString ? `/api/web/admin/devices?${queryString}` : "/api/web/admin/devices";
@@ -1772,6 +1791,18 @@ export async function archiveAdminDevice(deviceId: string, reason: string): Prom
     body: JSON.stringify({ reason }),
   });
   return readOkResponse(response, "Не удалось архивировать агента");
+}
+
+export async function restoreAdminDevice(deviceId: string, reason: string): Promise<AdminDeviceRestorePayload> {
+  const response = await fetch(`/api/web/admin/devices/${encodeURIComponent(deviceId)}/restore`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ reason }),
+  });
+  return readSuccessResponse(response, "Не удалось восстановить агента из архива");
 }
 
 export async function fetchAdminDeviceTokens(deviceId: string): Promise<AdminDeviceTokensPayload> {

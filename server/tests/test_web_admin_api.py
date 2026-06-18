@@ -269,12 +269,16 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
         playbook_run_id: int | None,
         step_run_id: int | None,
         route: str | None,
+        source: str | None,
+        person_id: str | None,
+        error_code: str | None,
+        event_type: str | None,
     ):
         assert request.path == "/api/web/admin/observer/traces"
         assert device_id == "device-1"
         assert lookback_hours == 72
         assert status_filter == "failed"
-        assert root_kind_filter == "agent_update"
+        assert root_kind_filter == "requester_web"
         assert limit == 25
         assert query == "op-1"
         assert trace_id == "trace-1"
@@ -286,7 +290,11 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
         assert min_duration_ms == 1200
         assert playbook_run_id is None
         assert step_run_id is None
-        assert route is None
+        assert route == "/api/web/requester/tickets"
+        assert source == "requester_ticket_create"
+        assert person_id == "person-1"
+        assert error_code == "REQUESTER_PROFILE_INCOMPLETE"
+        assert event_type == "ticket_create_blocked"
         return AdminObserverTracesPayload(
             query=AdminObserverTracesQuery(
                 device_id=device_id,
@@ -302,6 +310,13 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
                 module_name=module_name,
                 error_signature=error_signature,
                 min_duration_ms=min_duration_ms,
+                playbook_run_id=playbook_run_id,
+                step_run_id=step_run_id,
+                route=route,
+                source=source,
+                person_id=person_id,
+                error_code=error_code,
+                event_type=event_type,
             ),
             summary=AdminObserverTracesSummary(
                 visible_count=2,
@@ -316,15 +331,15 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
                 ],
                 root_kind_options=[
                     AdminFilterOption(value="all", label="Все потоки"),
-                    AdminFilterOption(value="agent_update", label="Обновление агента"),
+                    AdminFilterOption(value="requester_web", label="Кабинет пользователя"),
                 ],
             ),
             traces=[
                 AdminObserverTraceItem(
                     trace_id="trace-1",
                     root_span_id="span-root-1",
-                    root_kind="agent_update",
-                    root_kind_label="Обновление агента",
+                    root_kind="requester_web",
+                    root_kind_label="Кабинет пользователя",
                     status="failed",
                     status_label="Ошибка",
                     ticket_id="ticket-1",
@@ -336,13 +351,13 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
                     span_count=6,
                     started_at="2026-04-20T11:40:00+05:00",
                     finished_at="2026-04-20T11:40:06+05:00",
-                    attrs_json={"flow": "agent_update"},
+                    attrs_json={"flow": "requester_web"},
                 ),
                 AdminObserverTraceItem(
                     trace_id="trace-2",
                     root_span_id="span-root-2",
-                    root_kind="agent_update",
-                    root_kind_label="Обновление агента",
+                    root_kind="requester_web",
+                    root_kind_label="Кабинет пользователя",
                     status="succeeded",
                     status_label="Успешно",
                     ticket_id="ticket-2",
@@ -366,9 +381,11 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
     monkeypatch.setattr(admin_handlers, "_build_admin_observer_traces_payload", fake_build_payload)
 
     response = await web_admin_client.get(
-        "/api/web/admin/observer/traces?device_id=device-1&lookback_hours=72&status=failed&root_kind=agent_update&limit=25"
+        "/api/web/admin/observer/traces?device_id=device-1&lookback_hours=72&status=failed&root_kind=requester_web&limit=25"
         "&q=op-1&trace_id=trace-1&ticket_id=ticket-1&operation_id=op-1&tool_name=system.collect"
-        "&module_name=system&error_signature=sig-1&min_duration_ms=1200"
+        "&module_name=system&error_signature=sig-1&min_duration_ms=1200&route=/api/web/requester/tickets"
+        "&source=requester_ticket_create&person_id=person-1&error_code=REQUESTER_PROFILE_INCOMPLETE"
+        "&event_type=ticket_create_blocked"
     )
 
     assert response.status == 200
@@ -378,9 +395,15 @@ async def test_web_admin_observer_traces_returns_typed_payload(web_admin_client,
     assert payload["data"]["summary"]["visible_count"] == 2
     assert payload["data"]["summary"]["selected_trace_id"] == "trace-1"
     assert payload["data"]["traces"][0]["operation_id"] == "op-1"
-    assert payload["data"]["traces"][0]["attrs_json"]["flow"] == "agent_update"
+    assert payload["data"]["traces"][0]["attrs_json"]["flow"] == "requester_web"
     assert payload["data"]["query"]["operation_id"] == "op-1"
     assert payload["data"]["query"]["tool_name"] == "system.collect"
+    assert payload["data"]["query"]["root_kind_filter"] == "requester_web"
+    assert payload["data"]["query"]["route"] == "/api/web/requester/tickets"
+    assert payload["data"]["query"]["source"] == "requester_ticket_create"
+    assert payload["data"]["query"]["person_id"] == "person-1"
+    assert payload["data"]["query"]["error_code"] == "REQUESTER_PROFILE_INCOMPLETE"
+    assert payload["data"]["query"]["event_type"] == "ticket_create_blocked"
 
 
 @pytest.mark.asyncio

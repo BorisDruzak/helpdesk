@@ -163,6 +163,10 @@ class TraceOverlayFilters:
     playbook_run_id: Optional[int] = None
     step_run_id: Optional[int] = None
     route: Optional[str] = None
+    source: Optional[str] = None
+    person_id: Optional[str] = None
+    error_code: Optional[str] = None
+    event_type: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -463,6 +467,10 @@ class ObserverOverlayService:
                     filters.status,
                     filters.min_duration_ms,
                     filters.min_retry_count,
+                    filters.source,
+                    filters.person_id,
+                    filters.error_code,
+                    filters.event_type,
                 ]
             )
         )
@@ -519,6 +527,63 @@ class ObserverOverlayService:
                         ObserverSpan.trace_id == ObserverTrace.trace_id,
                         ObserverSpan.attrs_json.cast(sa.Text).ilike(route_pattern),
                     )
+                )
+            )
+        if filters.source:
+            stmt = stmt.where(
+                or_(
+                    ObserverTrace.attrs_json["source"].astext == filters.source,
+                    exists(
+                        select(ObserverSpan.span_id).where(
+                            ObserverSpan.trace_id == ObserverTrace.trace_id,
+                            ObserverSpan.attrs_json["source"].astext == filters.source,
+                        )
+                    ),
+                )
+            )
+        if filters.person_id:
+            stmt = stmt.where(
+                or_(
+                    ObserverTrace.attrs_json["person_id"].astext == filters.person_id,
+                    exists(
+                        select(ObserverSpan.span_id).where(
+                            ObserverSpan.trace_id == ObserverTrace.trace_id,
+                            ObserverSpan.attrs_json["person_id"].astext == filters.person_id,
+                        )
+                    ),
+                )
+            )
+        if filters.error_code:
+            stmt = stmt.where(
+                or_(
+                    ObserverTrace.attrs_json["error_code"].astext == filters.error_code,
+                    exists(
+                        select(ObserverSpan.span_id).where(
+                            ObserverSpan.trace_id == ObserverTrace.trace_id,
+                            ObserverSpan.attrs_json["error_code"].astext == filters.error_code,
+                        )
+                    ),
+                    exists(
+                        select(ObserverErrorOccurrence.occurrence_id).where(
+                            ObserverErrorOccurrence.trace_id == ObserverTrace.trace_id,
+                            ObserverErrorOccurrence.error_kind == filters.error_code,
+                        )
+                    ),
+                )
+            )
+        if filters.event_type:
+            stmt = stmt.where(
+                or_(
+                    ObserverTrace.attrs_json["event_type"].astext == filters.event_type,
+                    exists(
+                        select(ObserverSpan.span_id).where(
+                            ObserverSpan.trace_id == ObserverTrace.trace_id,
+                            or_(
+                                ObserverSpan.event_type == filters.event_type,
+                                ObserverSpan.attrs_json["event_type"].astext == filters.event_type,
+                            ),
+                        )
+                    ),
                 )
             )
         if filters.status:

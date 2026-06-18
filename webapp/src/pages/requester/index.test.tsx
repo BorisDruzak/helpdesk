@@ -270,6 +270,7 @@ describe("RequesterWorkspacePage", () => {
 
     render(<RequesterWorkspacePage />);
 
+    await screen.findByText("Привязано устройств: 1");
     const profileButton = await screen.findByLabelText("Открыть профиль заявителя");
     fireEvent.click(profileButton);
 

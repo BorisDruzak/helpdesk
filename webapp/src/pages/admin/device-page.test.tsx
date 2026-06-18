@@ -61,8 +61,10 @@ describe("AdminDevicePage", () => {
         rollout_targets: 1,
         duplicate_hosts: 0,
         cleanup_candidates: 0,
+        archived_count: 0,
       },
       filters: {
+        include_archived: false,
         status_options: [
           { value: "all", label: "Все" },
           { value: "online", label: "Онлайн" },
@@ -80,6 +82,10 @@ describe("AdminDevicePage", () => {
           online: false,
           connection_status_label: "Оффлайн",
           last_seen_at: "2026-06-02T13:26:00+05:00",
+          is_deleted: false,
+          deleted_at: null,
+          deleted_by: null,
+          delete_reason: null,
           latest_update: {
             status: "waiting",
             label: "Ждёт связи",

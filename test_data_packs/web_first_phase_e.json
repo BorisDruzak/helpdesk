@@ -1,0 +1,301 @@
+{
+  "schema": "web_first_phase_e_test_data_pack_v1",
+  "purpose": "pre_broad_live_testing_gate",
+  "version": 1,
+  "run_id_prefix": "web-first-phase-e",
+  "users": [
+    {
+      "key": "admin_test",
+      "role": "admin",
+      "credential_source": "environment_or_secret_store",
+      "required_capabilities": [
+        "admin",
+        "observer",
+        "registry",
+        "forms",
+        "knowledge"
+      ]
+    },
+    {
+      "key": "support_test",
+      "role": "support",
+      "credential_source": "environment_or_secret_store",
+      "required_capabilities": [
+        "support_queue",
+        "ticket_detail",
+        "customer_history",
+        "observer_summary"
+      ]
+    },
+    {
+      "key": "requester_a_completed_profile_windows_agent",
+      "role": "requester",
+      "credential_source": "environment_or_secret_store",
+      "profile_state": "complete",
+      "expected_primary_agent": "lab-win-primary-agent",
+      "department": "it",
+      "knowledge_audience": [
+        "public",
+        "it"
+      ]
+    },
+    {
+      "key": "requester_b_completed_profile_linux_agent",
+      "role": "requester",
+      "credential_source": "environment_or_secret_store",
+      "profile_state": "complete",
+      "expected_primary_agent": "lab-lin-primary-agent",
+      "department": "it",
+      "knowledge_audience": [
+        "public",
+        "it"
+      ]
+    },
+    {
+      "key": "requester_c_incomplete_profile",
+      "role": "requester",
+      "credential_source": "environment_or_secret_store",
+      "profile_state": "incomplete",
+      "expected_primary_agent": null,
+      "missing_profile_fields": [
+        "department_id",
+        "phone"
+      ]
+    },
+    {
+      "key": "requester_d_no_primary_agent",
+      "role": "requester",
+      "credential_source": "environment_or_secret_store",
+      "profile_state": "complete",
+      "expected_primary_agent": null,
+      "expected_target_state": "no_primary_agent"
+    },
+    {
+      "key": "requester_e_same_department",
+      "role": "requester",
+      "credential_source": "environment_or_secret_store",
+      "profile_state": "complete",
+      "department": "it",
+      "on_behalf_scope": "same_department"
+    },
+    {
+      "key": "requester_f_restricted_department",
+      "role": "requester",
+      "credential_source": "environment_or_secret_store",
+      "profile_state": "complete",
+      "department": "finance",
+      "knowledge_audience": [
+        "public",
+        "finance_restricted_negative"
+      ]
+    }
+  ],
+  "vm_agents": [
+    {
+      "key": "lab-win-primary-agent",
+      "os": "windows",
+      "ssh_required": true,
+      "agent_installed_required": true,
+      "device_id_source": "live_registry",
+      "unique_device_id_required": true,
+      "manual_contamination_check_required": true,
+      "bound_requester": "requester_a_completed_profile_windows_agent",
+      "primary_active_binding_required": true,
+      "module_snapshot_required": true,
+      "evidence": [
+        "registry_device",
+        "binding",
+        "agent_online",
+        "module_snapshot"
+      ]
+    },
+    {
+      "key": "lab-lin-primary-agent",
+      "os": "linux",
+      "ssh_required": true,
+      "agent_installed_required": true,
+      "device_id_source": "live_registry",
+      "unique_device_id_required": true,
+      "manual_contamination_check_required": true,
+      "bound_requester": "requester_b_completed_profile_linux_agent",
+      "primary_active_binding_required": true,
+      "module_snapshot_required": true,
+      "evidence": [
+        "registry_device",
+        "binding",
+        "agent_online",
+        "module_snapshot"
+      ]
+    }
+  ],
+  "knowledge": [
+    {
+      "scenario": "public_requester_article",
+      "visibility": "requester",
+      "audience": "public",
+      "pack_hint": "it-self-service-baseline"
+    },
+    {
+      "scenario": "department_restricted_article",
+      "visibility": "requester",
+      "audience": "department_it"
+    },
+    {
+      "scenario": "support_only_article",
+      "visibility": "support",
+      "audience": "support"
+    },
+    {
+      "scenario": "on_behalf_help_article",
+      "visibility": "requester",
+      "audience": "creator",
+      "pack_hint": "primary-agent-requester-guides"
+    },
+    {
+      "scenario": "device_linking_help_article",
+      "visibility": "requester",
+      "audience": "public",
+      "pack_hint": "primary-agent-requester-guides"
+    },
+    {
+      "scenario": "pc_offline_power_failure_article",
+      "visibility": "requester",
+      "audience": "public",
+      "pack_hint": "primary-agent-requester-guides"
+    }
+  ],
+  "forms": [
+    {
+      "scenario": "normal_incident",
+      "template_key": "phase_e_normal_incident",
+      "availability_policy": {
+        "available_without_completed_profile": false,
+        "available_without_agent_binding": false
+      },
+      "on_behalf_policy": {
+        "enabled": false
+      }
+    },
+    {
+      "scenario": "emergency_no_profile_no_agent",
+      "template_key": "phase_e_emergency_manual_triage",
+      "availability_policy": {
+        "available_without_completed_profile": true,
+        "available_without_agent_binding": true,
+        "requires_manual_triage": true,
+        "contact_required": true
+      },
+      "on_behalf_policy": {
+        "enabled": false
+      }
+    },
+    {
+      "scenario": "on_behalf_enabled",
+      "template_key": "phase_e_on_behalf_enabled",
+      "availability_policy": {
+        "available_without_completed_profile": false,
+        "available_without_agent_binding": false
+      },
+      "on_behalf_policy": {
+        "enabled": true,
+        "allowed_scope": "same_department",
+        "reason_required": true,
+        "diagnostic_target": "affected_person_primary_agent"
+      }
+    },
+    {
+      "scenario": "on_behalf_disabled",
+      "template_key": "phase_e_on_behalf_disabled",
+      "availability_policy": {
+        "available_without_completed_profile": false,
+        "available_without_agent_binding": false
+      },
+      "on_behalf_policy": {
+        "enabled": false
+      }
+    },
+    {
+      "scenario": "access_request_with_approval",
+      "template_key": "phase_e_access_request",
+      "availability_policy": {
+        "available_without_completed_profile": false,
+        "available_without_agent_binding": false
+      },
+      "approval_policy": {
+        "required": true,
+        "mode": "any_one"
+      }
+    },
+    {
+      "scenario": "sla_policy",
+      "template_key": "phase_e_sla_policy",
+      "availability_policy": {
+        "available_without_completed_profile": false,
+        "available_without_agent_binding": false
+      },
+      "sla_policy": {
+        "required": true
+      }
+    },
+    {
+      "scenario": "diagnostic_policy",
+      "template_key": "phase_e_diagnostic_policy",
+      "availability_policy": {
+        "available_without_completed_profile": false,
+        "available_without_agent_binding": false
+      },
+      "diagnostic_policy": {
+        "required": true,
+        "autorun_allowed": true
+      }
+    }
+  ],
+  "validation_matrix": [
+    {
+      "gate": "ticket_context_v1",
+      "evidence": [
+        "pytest",
+        "support_detail",
+        "browser_ticket_create"
+      ]
+    },
+    {
+      "gate": "customer_history",
+      "evidence": [
+        "pytest",
+        "support_history",
+        "llm_preview_no_call"
+      ]
+    },
+    {
+      "gate": "observer_web_cabinet",
+      "evidence": [
+        "pytest",
+        "admin_observer_trace",
+        "support_web_flow"
+      ]
+    },
+    {
+      "gate": "support_detail_context",
+      "evidence": [
+        "pytest",
+        "browser_support_ticket_detail"
+      ]
+    },
+    {
+      "gate": "requester_raw_id_guard",
+      "evidence": [
+        "static_guard",
+        "browser_requester_dom"
+      ]
+    },
+    {
+      "gate": "vm_agent_cleanliness",
+      "evidence": [
+        "registry_device_snapshot",
+        "agent_online_snapshot",
+        "manual_contamination_review"
+      ]
+    }
+  ]
+}

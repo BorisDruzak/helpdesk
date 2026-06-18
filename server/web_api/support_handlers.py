@@ -52,7 +52,9 @@ from core.policy_engine import PolicyDecision, PolicyEngine
 from core.tool_metadata import ToolMetadata
 from customer_history.context_builder import CustomerHistoryContextBuilder
 from customer_history.projection_service import CustomerHistoryProjectionService
+from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService
+from observer.web_event_writer import write_web_cabinet_observer_event
 from playbooks.tool_catalog import expand_preset_params, normalize_tool_catalog_entry
 from shared.tool_contracts import normalize_risk_level
 from tickets.handlers import (
@@ -153,11 +155,13 @@ from web_api.dto.support import (
     SupportTicketMessage,
     SupportTicketMutationActionResult,
     SupportTicketEvidenceCandidatesPayload,
+    SupportTicketObserverIntegrityEvent,
     SupportTicketObserverPayload,
     SupportTicketObserverOccurrenceCompact,
     SupportTicketObserverSignature,
     SupportTicketObserverSummary,
     SupportTicketObserverTraceCompact,
+    SupportTicketObserverWebFlow,
     SupportTicketOperationSnapshot,
     SupportTicketPassportDetailPayload,
     SupportTicketPassportEvidenceLinkRequest,
@@ -2592,6 +2596,222 @@ def _observer_trace_url(trace_id: object) -> str | None:
     return f"/app/admin/observer?trace_id={value}" if value else None
 
 
+def _support_observer_clean(value: object, *, max_length: int = 500) -> str:
+    return str(value or "").strip()[:max_length]
+
+
+def _support_observer_actor_context(request: web.Request, auth_context: Any) -> dict[str, Any]:
+    correlation_id = (
+        _support_observer_clean(request.headers.get("X-Request-ID"), max_length=120)
+        or _support_observer_clean(request.headers.get("X-Correlation-ID"), max_length=120)
+        or None
+    )
+    return {
+        "actor_id": getattr(auth_context, "actor_id", None),
+        "actor_role": getattr(auth_context, "actor_role", None),
+        "method": request.method,
+        "correlation_id": correlation_id,
+    }
+
+
+async def _write_support_web_observer_event(
+    session,
+    *,
+    request: web.Request,
+    auth_context: Any,
+    source: str,
+    event_type: str,
+    severity: str,
+    result: str,
+    ticket_id: str | None = None,
+    device_id: str | None = None,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    try:
+        async with session.begin_nested():
+            await write_web_cabinet_observer_event(
+                session,
+                source=source,
+                event_type=event_type,
+                severity=severity,
+                route=request.path,
+                actor_context=_support_observer_actor_context(request, auth_context),
+                ticket_id=ticket_id,
+                device_id=device_id,
+                person_id=person_id,
+                result=result,
+                error_code=error_code,
+                payload=payload,
+            )
+    except Exception as exc:
+        logger.warning(f"[support_observer] failed to write {source}.{event_type}: {exc}")
+
+
+def _support_observer_ticket_person_id(ticket: Any) -> str | None:
+    custom_fields = getattr(ticket, "custom_fields", None)
+    if not isinstance(custom_fields, dict):
+        return None
+    for key in ("affected_person_id", "creator_person_id"):
+        value = _support_observer_clean(custom_fields.get(key), max_length=36)
+        if value:
+            return value
+    ticket_context = custom_fields.get("ticket_context")
+    if isinstance(ticket_context, dict):
+        for section in ("affected", "creator"):
+            person = ticket_context.get(section)
+            if isinstance(person, dict):
+                value = _support_observer_clean(person.get("person_id"), max_length=36)
+                if value:
+                    return value
+    return None
+
+
+def _support_chat_observer_payload(
+    *,
+    message_payload: dict[str, Any],
+    attachments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "message_present": bool(_support_observer_clean(message_payload.get("text"), max_length=200)),
+        "attachment_count": len(attachments),
+        "visibility": str(message_payload.get("visibility") or "public"),
+        "sender_role": str(message_payload.get("sender_role") or message_payload.get("from") or "support"),
+        "public_reply": is_public_support_reply_payload(message_payload),
+    }
+
+
+def _support_status_observer_payload(
+    *,
+    from_status: str | None,
+    to_status: str,
+    data: dict[str, Any],
+    requester_confirmation_requested: bool,
+    confirmation_message_created: bool,
+    confirmation_pending_cleared: bool,
+) -> dict[str, Any]:
+    return {
+        "from_status": from_status,
+        "to_status": to_status,
+        "reason_present": bool(_support_observer_clean(data.get("reason"), max_length=200)),
+        "resolution_code_present": bool(_support_observer_clean(data.get("resolution_code"), max_length=120)),
+        "resolution_summary_present": bool(_support_observer_clean(data.get("resolution_summary"), max_length=200)),
+        "requester_resolution_summary_present": bool(
+            _support_observer_clean(data.get("requester_resolution_summary"), max_length=200)
+        ),
+        "root_cause_present": bool(_support_observer_clean(data.get("root_cause"), max_length=200)),
+        "public_comment_present": bool(_support_observer_clean(data.get("public_comment"), max_length=200)),
+        "internal_comment_present": bool(_support_observer_clean(data.get("internal_comment"), max_length=200)),
+        "requester_confirmation_requested": requester_confirmation_requested,
+        "confirmation_message_created": confirmation_message_created,
+        "confirmation_pending_cleared": confirmation_pending_cleared,
+    }
+
+
+def _support_confirmation_observer_payload(
+    *,
+    to_status: str,
+    confirmation_request: dict[str, Any] | None,
+) -> dict[str, Any]:
+    policy = confirmation_request.get("policy") if isinstance(confirmation_request, dict) else None
+    policy = policy if isinstance(policy, dict) else {}
+    return {
+        "to_status": to_status,
+        "confirmation_request_present": isinstance(confirmation_request, dict) and bool(confirmation_request),
+        "auto_close_policy_present": policy.get("auto_close_after_days") is not None,
+        "reopen_on_negative_feedback_policy_present": policy.get("reopen_on_negative_feedback") is not None,
+    }
+
+
+_WEB_OBSERVER_FLOW_SOURCES = {
+    "requester_profile": "profile_gate",
+    "requester_ticket_preview": "ticket_preview",
+    "requester_ticket_create": "ticket_create",
+    "requester_knowledge": "knowledge_guard",
+    "requester_chat": "chat",
+    "requester_closure": "closure",
+    "support_chat": "support_chat",
+    "support_status": "support_status",
+}
+
+
+def _support_observer_web_flow(observer_data: dict[str, Any]) -> dict[str, Any]:
+    traces: list[dict[str, Any]] = []
+    for key in ("related_traces", "active_traces", "error_traces"):
+        for item in observer_data.get(key, []) or []:
+            if isinstance(item, dict) and item not in traces:
+                traces.append(item)
+
+    flow: dict[str, Any] = {
+        "profile_gate": None,
+        "ticket_preview": None,
+        "ticket_create": None,
+        "target_resolution": None,
+        "knowledge_guard": None,
+        "chat": None,
+        "closure": None,
+        "support_chat": None,
+        "support_status": None,
+        "latest_event_type": None,
+        "latest_error_code": None,
+        "latest_trace_url": None,
+    }
+    latest_at: str | None = None
+
+    for trace in traces:
+        attrs = trace.get("attrs_json") if isinstance(trace.get("attrs_json"), dict) else {}
+        source = str(attrs.get("source") or "").strip()
+        event_type = str(attrs.get("event_type") or trace.get("event_type") or "").strip()
+        status = str(trace.get("status") or attrs.get("result") or "").strip() or None
+        flow_key = _WEB_OBSERVER_FLOW_SOURCES.get(source)
+        if not flow_key and "diagnostic_target" in event_type:
+            flow_key = "target_resolution"
+        if flow_key and status and not flow.get(flow_key):
+            flow[flow_key] = status
+
+        started_at = str(trace.get("started_at") or "").strip()
+        is_web_trace = trace.get("root_kind") == "requester_web" or source.startswith(("requester_", "support_"))
+        if is_web_trace and (latest_at is None or started_at > latest_at):
+            latest_at = started_at
+            flow["latest_event_type"] = event_type or None
+            flow["latest_error_code"] = attrs.get("error_code")
+            flow["latest_trace_url"] = _observer_trace_url(trace.get("trace_id"))
+
+    return flow
+
+
+def _compact_support_integrity_event(item: dict[str, Any]) -> dict[str, Any]:
+    trace_id = str(item.get("trace_id") or "").strip() or None
+    return {
+        "event_id": str(item.get("event_id") or ""),
+        "event_type": str(item.get("event_type") or ""),
+        "severity": str(item.get("severity") or ""),
+        "status": str(item.get("status") or ""),
+        "source": item.get("source"),
+        "dedupe_key": item.get("dedupe_key"),
+        "last_seen_at": item.get("last_seen_at"),
+        "occurrence_count": int(item.get("occurrence_count") or 0),
+        "runbook": item.get("runbook"),
+        "trace_id": trace_id,
+        "trace_url": _observer_trace_url(trace_id),
+    }
+
+
+async def _support_observer_integrity_events(session, ticket_id: str) -> list[dict[str, Any]]:
+    try:
+        result = await ObserverIntegrityService(session).list_events(
+            source="observer.web_cabinet",
+            ticket_id=ticket_id,
+            status="active",
+            limit=10,
+        )
+    except Exception as exc:
+        logger.warning(f"[support_observer_integrity] degraded: ticket_id={ticket_id}, error={exc}")
+        return []
+    return [_compact_support_integrity_event(item) for item in result.get("items", []) if isinstance(item, dict)]
+
+
 def _operation_trace_relation(operation: Operation, *, ticket_root_trace_id: str | None, scope: str) -> str:
     trace_id = str(getattr(operation, "trace_id", None) or "").strip()
     retry_of_operation_id = str(getattr(operation, "retry_of_operation_id", None) or "").strip()
@@ -3261,6 +3481,11 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
                 SupportTicketObserverOccurrenceCompact.model_validate(item)
                 for item in observer_data.get("recent_occurrences_compact", [])
             ],
+            web_flow=SupportTicketObserverWebFlow.model_validate(observer_data.get("web_flow", {})),
+            integrity_events=[
+                SupportTicketObserverIntegrityEvent.model_validate(item)
+                for item in observer_data.get("integrity_events", [])
+            ],
         ),
         timeline=timeline,
         snapshot=snapshot,
@@ -3376,7 +3601,10 @@ async def _build_support_quality_payload(session, ticket_id: str) -> SupportTick
 
 async def _safe_support_observer_summary(session, ticket_id: str) -> dict[str, Any]:
     try:
-        return await ObserverOverlayService(session).get_ticket_observer_summary(ticket_id)
+        observer_data = await ObserverOverlayService(session).get_ticket_observer_summary(ticket_id)
+        observer_data["web_flow"] = _support_observer_web_flow(observer_data)
+        observer_data["integrity_events"] = await _support_observer_integrity_events(session, ticket_id)
+        return observer_data
     except Exception as exc:
         logger.warning(
             f"[support_observer_summary] degraded: ticket_id={ticket_id}, error={exc}"
@@ -3399,6 +3627,8 @@ async def _safe_support_observer_summary(session, ticket_id: str) -> dict[str, A
             "error_traces_compact": [],
             "signatures_compact": [],
             "recent_occurrences_compact": [],
+            "web_flow": {},
+            "integrity_events": [],
         }
 
 
@@ -5721,6 +5951,22 @@ async def handle_web_support_send_message(request: web.Request):
             )
             if is_public_support_reply_payload(payload):
                 await TicketSlaService(session, repo).close_frt(ticket.ticket_id)
+            await _write_support_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="support_chat",
+                event_type="support_message_sent",
+                severity="info",
+                result="succeeded",
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                person_id=_support_observer_ticket_person_id(ticket),
+                payload=_support_chat_observer_payload(
+                    message_payload=payload,
+                    attachments=attachments,
+                ),
+            )
             await session.commit()
 
         await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
@@ -5792,6 +6038,7 @@ async def handle_web_support_change_status(request: web.Request):
                 return denied
 
             is_staff = auth_context.actor_role in {"admin", "support"}
+            from_status = ticket.status
             if not await validate_transition_for_ticket(session, ticket, to_status, is_staff):
                 return web.json_response(
                     {
@@ -5806,7 +6053,7 @@ async def handle_web_support_change_status(request: web.Request):
             try:
                 result = await workflow.apply_status_transition(
                     ticket_id=ticket.ticket_id,
-                    from_status=ticket.status,
+                    from_status=from_status,
                     to_status=to_status,
                     actor_id=auth_context.actor_id,
                     actor_role=auth_context.actor_role,
@@ -5839,6 +6086,9 @@ async def handle_web_support_change_status(request: web.Request):
                 )
             followup_result = None
             followup_payload = None
+            confirmation_request_payload = None
+            requester_confirmation_requested = False
+            confirmation_pending_cleared = False
             ticket = await repo.get_ticket(ticket.ticket_id)
             if ticket is None:
                 return web.json_response(
@@ -5892,6 +6142,8 @@ async def handle_web_support_change_status(request: web.Request):
                         for key in ("auto_close_after_days", "reopen_on_negative_feedback")
                         if requester_confirmation_policy.get(key) is not None
                     }
+                confirmation_request_payload = confirmation_request
+                requester_confirmation_requested = True
                 ticket = await _store_resolution_confirmation_state(
                     repo,
                     ticket,
@@ -5916,6 +6168,45 @@ async def handle_web_support_change_status(request: web.Request):
                 )
             elif to_status == "closed" and _resolution_confirmation_pending(ticket):
                 ticket = await _store_resolution_confirmation_state(repo, ticket, pending=False)
+                confirmation_pending_cleared = True
+
+            await _write_support_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="support_status",
+                event_type="support_status_changed",
+                severity="info",
+                result="succeeded",
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                person_id=_support_observer_ticket_person_id(ticket),
+                payload=_support_status_observer_payload(
+                    from_status=from_status,
+                    to_status=to_status,
+                    data=data,
+                    requester_confirmation_requested=requester_confirmation_requested,
+                    confirmation_message_created=bool(followup_result and followup_payload),
+                    confirmation_pending_cleared=confirmation_pending_cleared,
+                ),
+            )
+            if confirmation_request_payload:
+                await _write_support_web_observer_event(
+                    session,
+                    request=request,
+                    auth_context=auth_context,
+                    source="support_status",
+                    event_type="resolution_confirmation_requested",
+                    severity="info",
+                    result="succeeded",
+                    ticket_id=ticket.ticket_id,
+                    device_id=ticket.device_id,
+                    person_id=_support_observer_ticket_person_id(ticket),
+                    payload=_support_confirmation_observer_payload(
+                        to_status=to_status,
+                        confirmation_request=confirmation_request_payload,
+                    ),
+                )
 
             await session.commit()
 

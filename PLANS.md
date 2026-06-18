@@ -163,8 +163,10 @@ GUI Agent must not:
 - This is a preparation plan only. No broad live product validation is claimed by this document.
 - The working tree may contain unrelated artifact/config changes from prior sessions; do not revert them while implementing this plan.
 - Phase A contract freeze completed locally on 2026-06-17 at `0b2ed284871d9bee928c171ec4c9dd7d0f7405b1`.
-- Phase B ticket-context slice is implemented and validated locally: canonical `ticket_context_v1` helpers, requester-safe preview context, nested diagnostic-target precedence and `ticket_context_resolved` event are in place.
-- Phase C Customer History v1 slice is implemented and focused validation is green locally: role-safe ticket/person history endpoints, requester-safe ticket history, support ticket detail compact history, redacted deterministic LLM preview, on-behalf creator/affected projections, chat/ObserverTrace adapters, time-window filters, related-history context packs and focused tests are in place. Phase D web-cabinet Observer events remain open.
+- Phase B ticket-context slice is implemented and validated locally for web requester context/create plus legacy/agent compatibility: canonical `ticket_context_v1` helpers, requester-safe preview context, nested diagnostic-target precedence, `ticket_context_resolved`, `customer_history_ticket_created`, internal `requester_ticket_create_audit`, and explicit `agent_legacy_or_device_only` account-mode markers are in place.
+- Phase C Customer History v1 slice is implemented and focused validation is green locally: role-safe ticket/person history endpoints, requester-safe ticket history, support ticket detail compact history, redacted deterministic LLM preview, on-behalf creator/affected projections, chat/ObserverTrace adapters, time-window filters, related-history context packs and focused tests are in place. Broader Phase D web-cabinet Observer coverage remains open.
+- Phase D web-cabinet Observer slice is in progress locally: requester profile/preview/create, requester chat send/closure confirm/feedback/reopen, support chat/status/confirmation hooks, web form runtime preview/create, account-session login/register/logout/role-mismatch, Knowledge suggest/ask/attempt guard, device-linking browser-pairing lookup/request/approve/reject/transfer observer events, web-cabinet writer, seven integrity checks, admin trace filters and support detail compact projection are implemented; remaining Phase D work is focused on any still-missing web-first integrity invariants and broader validation.
+- Phase E test data pack is defined locally in `test_data_packs/web_first_phase_e.json` and guarded by `server/tests/test_phase_e_test_data_pack.py`; this defines required users, KB/forms, Windows/Linux VM-agent prerequisites and validation matrix only. `scripts/collect_phase_e_vm_snapshot.py` can collect a read-only live DB/runtime snapshot, `scripts/check_phase_e_vm_snapshot.py` can validate it, and `scripts/check_phase_e_live_gate.py` blocks broad-live pass claims without a passing VM check plus required browser artifacts; these helper scripts do not prove VM cleanliness or broad live gate readiness until the required lab VM agents are registered and the collected snapshot passes.
 
 ---
 
@@ -465,18 +467,22 @@ Required flat aliases in `custom_fields`:
 - [x] Store request form snapshot.
 - [x] Store policy source snapshot.
 - [x] Write initial ticket event.
-- [ ] Write Customer History event.
-- [ ] Write Observer/audit event.
+- [x] Write Customer History event.
+- [x] Write Observer/audit event.
 - [x] Trigger routing/SLA/diagnostic policy using the target from ticket context.
+
+**Status 2026-06-17:** requester-created tickets with a server-owned `ticket_context_v1` now write durable `ticket_events` rows for `customer_history_ticket_created` and internal `requester_ticket_create_audit`. Payloads use `source=requester_ticket_create` and carry only safe request-context/account-mode/snapshot/diagnostic-target flags; they do not persist raw requester login, title, description, person ids or device ids. Customer History includes the requester-safe marker for requester/support roles and hides the internal audit marker from requester history.
 
 ### Task B4: Legacy/Agent Compatibility
 
 **Rules:**
 
-- [ ] If account session is present, resolve person/context when possible.
-- [ ] If only agent token is present, create compatibility ticket with limited context.
-- [ ] Mark `requester_account_mode=agent_legacy_or_device_only`.
-- [ ] Do not pretend profile is complete.
+- [x] If account session is present, resolve person/context when possible.
+- [x] If only agent token is present, create compatibility ticket with limited context.
+- [x] Mark `requester_account_mode=agent_legacy_or_device_only`.
+- [x] Do not pretend profile is complete.
+
+**Status 2026-06-17:** existing account-session paths continue to resolve confirmed binding / verified other-account person context through `AccountSessionService`. Legacy create paths without `requester_account` now mark `requester_account_mode=agent_legacy_or_device_only` and save `requester_account_context.context_scope=limited` plus `profile_completion_evidence=false`. When an active binding exists, the ticket keeps compatibility person/binding/diagnostic context but does not claim web profile-completion evidence; when no binding is confirmed, the ticket remains pending/unregistered without `ticket_context_v1`.
 
 ### Task B5: Diagnostic Target Resolver
 
@@ -492,9 +498,11 @@ If target is missing/offline/ambiguous:
 
 - [x] Write `diagnostic_autorun_skipped` event.
 - [x] Store manual triage evidence.
-- [ ] Write Observer event.
+- [x] Write Observer event.
 - [x] Show support-visible target explanation.
 - [x] Do not create `DeviceOutbox` command.
+
+**Status 2026-06-17:** requester-created tickets with missing/offline/ambiguous diagnostic targets now write redacted `root_kind=requester_web`, `source=requester_ticket_create`, `event_type=diagnostic_target_missing|diagnostic_target_offline|diagnostic_target_ambiguous` Observer traces through the technical web-cabinet writer. Payloads carry only diagnostic target source/status/reason and boolean evidence flags, not raw requester text, tokens, person ids or target ids.
 
 ### Task B6: Support and Requester Projections
 
@@ -597,6 +605,11 @@ pnpm --dir webapp run test -- tickets
 - `pnpm --dir webapp run test -- requester` - passed, 4 files / 38 tests.
 - `pnpm --dir webapp run test -- tickets` - passed, 7 files / 69 tests.
 - `python scripts/test_web_first_registration_localization.py -q --tb=short` - passed, 7 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_can_create_ticket_for_owned_device_and_not_foreign_device -q --tb=short` - RED before implementation on missing `customer_history_ticket_created` and `requester_ticket_create_audit`, then passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_can_create_ticket_for_owned_device_and_not_foreign_device server/tests/test_requester_workspace_api.py::test_requester_can_create_no_device_ticket_and_preview_without_device server/tests/test_requester_workspace_api.py::test_requester_create_ticket_accepts_catalog_form_payload -q --tb=short` - passed, 3 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_customer_history_projection.py -q --tb=short` - passed, 3 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ticket_registration_enrichment.py::test_ticket_with_active_binding_gets_requester_context_and_asset -q --tb=short` - RED before implementation on `requester_account_mode=none`, then passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ticket_registration_enrichment.py -q --tb=short` - passed, 10 tests.
 - Note: DB-backed pytest commands were run sequentially with `PC_CLIENT_ALLOW_SHARED_TEST_DB=1`; parallel shared-DB pytest runs intentionally conflict with the project cleanup fixture.
 
 Required scenarios:
@@ -611,6 +624,8 @@ Required scenarios:
 - [x] B-TC-08 forged `target_device_id` ignored.
 - [x] B-TC-09 requester projection redacts internal ids.
 - [x] B-TC-10 support projection shows creator/affected/target.
+- [x] B-TC-11 requester create writes safe Customer History marker and internal audit event.
+- [x] B-TC-12 legacy agent create uses limited `agent_legacy_or_device_only` account mode.
 
 ---
 
@@ -881,10 +896,12 @@ Add `write_web_cabinet_observer_event` with these keyword arguments:
 
 Writer rules:
 
-- [ ] Reuse existing durable audit/event source if possible.
-- [ ] Do not create a parallel Observer-only business table unless necessary.
-- [ ] Redact sensitive payload fields before write.
-- [ ] Include route/method/result/error/correlation fields.
+- [x] Reuse existing durable observer storage instead of a new business table.
+- [x] Do not create a parallel Observer-only business table unless necessary.
+- [x] Redact sensitive payload fields before write.
+- [x] Include route/method/result/error/correlation fields.
+
+**Status 2026-06-17:** `server/observer/web_event_writer.py` writes direct redacted `root_kind=requester_web` traces/spans and error signatures for web-cabinet events. It hashes actor ids and strips auth headers, cookies, passwords, tokens, pairing/access codes, raw request/response bodies, email and phone values.
 
 ### Task D2: Event Calls
 
@@ -914,17 +931,23 @@ Required event groups:
 - SLA/routing/form runtime: form/routing/SLA/priority resolution.
 - Chat/closure: message/support visibility/confirmation/reopen.
 
+**Status 2026-06-17:** first requester slice is wired in `server/web_api/requester_handlers.py` for profile incomplete blocks, ticket preview success and ticket create success. Web form runtime preview/create events are wired in `server/web_api/requester_handlers.py` as `source=web_form_runtime`, with `event_type=form_runtime_preview_succeeded` and `event_type=form_runtime_create_succeeded`, preserving safe form/catalog/policy flags plus computed priority/routing/SLA state while avoiding raw form payload values. Account-session login/register/logout/role-mismatch events are wired in `server/web_api/session_handlers.py` as `source=account_session`, with `event_type=login_succeeded`, `event_type=register_succeeded`, `event_type=logout_succeeded` and `event_type=role_mismatch`. Requester Knowledge suggest/ask events are wired in `server/web_api/knowledge_handlers.py` as `source=requester_knowledge`, with `event_type=knowledge_suggest_succeeded` and `event_type=knowledge_ask_succeeded`, preserving result counts/status and avoiding raw query/email/token values in Observer payloads. Requester ticket create with saved Knowledge attempts now also writes `source=requester_knowledge`, `event_type=knowledge_attempt_guard_succeeded`, preserving only sanitized attempt counts/results/surface/scope summaries and avoiding raw query/email/token/item/version ids. Requester chat send now writes `source=requester_chat`, `event_type=chat_message_sent`, preserving message/attachment/status flags without raw text/metadata; requester resolved-ticket close, feedback submit and reopen now write `source=requester_closure`, `event_type=closure_confirmed|feedback_submitted|ticket_reopened`, preserving status/reason-present/confirmation/feedback/reopen flags without raw reason, comment, metadata, feedback id or Knowledge item id values. Support message send now writes `source=support_chat`, `event_type=support_message_sent`, preserving only message/attachment/visibility/sender-role/public-reply flags; support status changes now write `source=support_status`, `event_type=support_status_changed`, and resolved-ticket requester confirmation prompt creation writes `event_type=resolution_confirmation_requested`, preserving only status/reason-present/resolution-present/comment-present/confirmation flags and not raw reason, resolution, root-cause or comment text. Device-linking browser-pairing lookup success, registration-confirm request creation, admin approve/reject and owner transfer are wired in `server/web_api/registry_handlers.py` as `source=device_linking`, with `event_type=browser_pairing_lookup_succeeded`, `event_type=device_link_request_created`, `event_type=device_link_request_approved`, `event_type=device_link_request_rejected` and `event_type=device_link_owner_transferred`. Registry binding admin bind/revoke/shared/responsible actions are wired in `server/web_api/registry_handlers.py` as `source=registry_binding`, with `event_type=registry_binding_created` and `event_type=registry_binding_revoked`, preserving minimal operation metadata and avoiding raw pairing code/token/pairing id/claim id/binding id/session id/login request id/reason/email/phone values in Observer payloads.
+
+**Status 2026-06-17 target-resolution update:** requester ticket create now writes `source=requester_ticket_create`, `event_type=diagnostic_target_missing|diagnostic_target_offline|diagnostic_target_ambiguous`, `error_code=DIAGNOSTIC_TARGET_MISSING|DIAGNOSTIC_TARGET_OFFLINE|DIAGNOSTIC_TARGET_AMBIGUOUS` when `resolve_ticket_diagnostic_target()` cannot produce a usable dispatch device or reports an offline/ambiguous primary agent.
+
 ### Task D3: Integrity Checks
 
 Add Observer checks for:
 
-- [ ] `web_ticket_missing_ticket_context_v1:{ticket_id}` - critical.
-- [ ] `diagnostic_target_creator_fallback_on_behalf:{ticket_id}` - critical.
-- [ ] `forged_target_device_accepted:{ticket_id}` - critical.
-- [ ] `profile_incomplete_normal_ticket_created:{ticket_id}` - high.
-- [ ] `knowledge_audience_leak_on_behalf:{ticket_id}` - critical.
-- [ ] `missing_customer_history_for_ticket:{ticket_id}` - medium.
-- [ ] `missing_observer_event_for_web_ticket_create:{ticket_id}` - medium.
+- [x] `web_ticket_missing_ticket_context_v1:{ticket_id}` - critical.
+- [x] `diagnostic_target_creator_fallback_on_behalf:{ticket_id}` - critical.
+- [x] `forged_target_device_accepted:{ticket_id}` - critical.
+- [x] `profile_incomplete_normal_ticket_created:{ticket_id}` - high.
+- [x] `knowledge_audience_leak_on_behalf:{ticket_id}` - critical.
+- [x] `missing_customer_history_for_ticket:{ticket_id}` - medium.
+- [x] `missing_observer_event_for_web_ticket_create:{ticket_id}` - medium.
+
+**Status 2026-06-17:** `server/observer/checks/web_cabinet.py` implements the checked web-cabinet checks under source `observer.web_cabinet` for missing `ticket_context_v1`, missing create trace, on-behalf creator-target fallback, forged requester target acceptance, profile gate bypass, requester-side on-behalf Knowledge audience leakage and missing Customer History projection. Profile gate bypass uses saved completion evidence when present and recomputes completion from Registry profile state when the ticket has no saved profile snapshot. The Knowledge leak checker emits safe item refs/scopes only; the Customer History checker validates support-safe projection shape without writing history rows.
 
 ### Task D4: API and UI Projection
 
@@ -955,6 +978,8 @@ Admin Observer filters:
 - `error_code=REQUESTER_PROFILE_INCOMPLETE`
 - `event_type=diagnostic_target_missing`
 
+**Status 2026-06-17:** typed admin trace search accepts `root_kind=requester_web`, `source`, `ticket_id`, `person_id`, `device_id`, `error_code`, `event_type` and route/query filters. Integrity list accepts `source`. Support ticket detail embeds `observer.web_flow` and active `observer.web_cabinet` integrity events; target resolution events project through the existing `web_flow.target` status. React UI rendering for these new fields remains a later slice.
+
 ### Task D5: Redaction
 
 Observer writer must remove:
@@ -974,17 +999,19 @@ Observer writer must remove:
 - email unless needed; prefer actor ref/hash
 - phone unless explicitly support-safe
 
+**Status 2026-06-17:** covered in `server/tests/test_observer_web_cabinet.py::test_web_cabinet_writer_persists_redacted_searchable_trace`.
+
 ### Phase D Acceptance
 
-- [ ] Web requester create/preview/profile/device-link actions generate Observer-visible events.
-- [ ] Observer can search web-cabinet failures by route/error_code/ticket/person/device.
-- [ ] Integrity scan detects missing ticket context.
-- [ ] Integrity scan detects wrong diagnostic fallback.
-- [ ] Integrity scan detects profile gate bypass.
-- [ ] Integrity scan detects missing Customer History event.
-- [ ] Support ticket detail shows compact Observer web-flow status.
-- [ ] Observer does not leak tokens/secrets/raw payloads.
-- [ ] Observer remains technical overlay, not ticket source of truth.
+- [x] Web requester create/preview/profile/device-link actions generate Observer-visible events.
+- [x] Observer can search web-cabinet failures by route/error_code/ticket/person/device.
+- [x] Integrity scan detects missing ticket context.
+- [x] Integrity scan detects wrong diagnostic fallback.
+- [x] Integrity scan detects profile gate bypass.
+- [x] Integrity scan detects missing Customer History event.
+- [x] Support ticket detail shows compact Observer web-flow status.
+- [x] Observer does not leak tokens/secrets/raw payloads.
+- [x] Observer remains technical overlay, not ticket source of truth.
 
 ### Phase D Validation
 
@@ -1002,16 +1029,101 @@ pnpm --dir webapp run test -- tickets
 
 Required scenarios:
 
-- [ ] D-OBS-01 profile incomplete block writes Observer event.
-- [ ] D-OBS-02 ticket preview success writes Observer event.
-- [ ] D-OBS-03 ticket create success writes Observer event.
-- [ ] D-OBS-04 ticket context missing integrity checker raises critical event.
-- [ ] D-OBS-05 on-behalf wrong-target checker detects invalid dispatch.
-- [ ] D-OBS-06 Knowledge audience leak checker detects invalid item.
-- [ ] D-OBS-07 Customer History missing checker raises event.
-- [ ] D-OBS-08 support ticket detail embeds compact Observer status.
-- [ ] D-OBS-09 admin Observer search filters requester web events.
-- [ ] D-OBS-10 event payload redacts secrets/tokens/cookies/passwords.
+- [x] D-OBS-01 profile incomplete block writes Observer event.
+- [x] D-OBS-02 ticket preview success writes Observer event.
+- [x] D-OBS-03 ticket create success writes Observer event.
+- [x] D-OBS-04 ticket context missing integrity checker raises critical event.
+- [x] D-OBS-05 on-behalf wrong-target checker detects invalid dispatch.
+- [x] D-OBS-06 Knowledge audience leak checker detects invalid item.
+- [x] D-OBS-07 Customer History missing checker raises event.
+- [x] D-OBS-08 support ticket detail embeds compact Observer status.
+- [x] D-OBS-09 admin Observer search filters requester web events.
+- [x] D-OBS-10 event payload redacts secrets/tokens/cookies/passwords.
+- [x] D-OBS-11 web account-session login success writes Observer event.
+- [x] D-OBS-12 web account-session register success writes Observer event.
+- [x] D-OBS-13 web account-session logout success writes Observer event.
+- [x] D-OBS-14 web account-session role mismatch writes Observer event.
+- [x] D-OBS-15 web device-linking browser-pairing lookup success writes Observer event.
+- [x] D-OBS-16 web device-linking registration confirm creates request Observer event.
+- [x] D-OBS-17 web device-linking admin approve writes Observer event.
+- [x] D-OBS-18 web device-linking admin reject writes Observer event.
+- [x] D-OBS-19 web device-linking owner transfer writes Observer event.
+- [x] D-OBS-20 web registry bind-person writes Observer event.
+- [x] D-OBS-21 web registry binding revoke writes Observer event.
+- [x] D-OBS-22 web registry shared-user binding writes Observer event.
+- [x] D-OBS-23 web registry responsible binding writes Observer event.
+- [x] D-OBS-24 web Knowledge suggest writes Observer event.
+- [x] D-OBS-25 web Knowledge Ask writes Observer event.
+- [x] D-OBS-26 web form runtime preview writes Observer event.
+- [x] D-OBS-27 web form runtime create writes Observer event with routing/SLA/priority state.
+- [x] D-OBS-28 web Knowledge attempt guard writes Observer event with sanitized scopes.
+- [x] D-OBS-29 web requester chat message writes Observer event without raw text/metadata.
+- [x] D-OBS-30 web requester closure confirmation writes Observer event without raw reason text.
+- [x] D-OBS-31 web requester feedback submit writes Observer event without raw comment/metadata.
+- [x] D-OBS-32 web requester reopen writes Observer event without raw reason, feedback id or Knowledge item id values.
+- [x] D-OBS-33 web support chat message writes Observer event without raw text/metadata.
+- [x] D-OBS-34 web support status change writes Observer event without raw reason/resolution/comment text.
+- [x] D-OBS-35 web support resolved-status requester confirmation prompt writes Observer event without raw prompt/policy ids.
+- [x] D-OBS-36 web requester create missing diagnostic target writes Observer event without raw requester login or token values.
+- [x] D-OBS-37 web-cabinet writer does not mutate ticket business state while writing Observer trace/span/signature rows.
+
+Partial implementation checkpoint 2026-06-17:
+
+- Added `server/observer/web_event_writer.py` for redacted direct `requester_web` Observer traces.
+- Added `server/observer/checks/web_cabinet.py` and runbook `docs/runbooks/observer_web_cabinet.md`.
+- Added requester profile/preview/create, requester diagnostic target missing/offline/ambiguous, requester chat send/closure confirm/feedback/reopen, support chat/status/confirmation, web form runtime preview/create, account-session login/register/logout/role-mismatch, Knowledge suggest/ask/attempt guard, device-linking browser-pairing lookup/request/approve/reject/transfer and registry bind-person/revoke/shared/responsible Observer hooks, admin trace filters, integrity `source` filter, and support detail web-flow/integrity projection.
+- Added web-cabinet integrity coverage for on-behalf wrong target fallback, forged requester target acceptance, profile-gate bypass including Registry recompute when profile completion evidence is absent from the ticket, on-behalf Knowledge audience leakage, and missing Customer History projection.
+- Remaining Phase D work: broader Phase D validation and final technical-overlay acceptance audit.
+
+Focused validation checkpoint 2026-06-17:
+
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py -q --tb=short` - passed, 24 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py server/tests/test_observer_integrity.py -q --tb=short` - passed, 35 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_session_login_writes_account_session_observer_event -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_session_register_writes_account_session_observer_event -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_session_logout_writes_account_session_observer_event server/tests/test_observer_web_cabinet.py::test_web_session_role_mismatch_writes_account_session_observer_event -q --tb=short` - passed, 2 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_device_linking_lookup_writes_observer_event -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_device_linking_registration_confirm_writes_observer_event -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_device_linking_admin_approve_reject_write_observer_events -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_device_linking_transfer_owner_writes_observer_event -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_registry_bind_person_writes_observer_event server/tests/test_observer_web_cabinet.py::test_web_registry_binding_revoke_writes_observer_event server/tests/test_observer_web_cabinet.py::test_web_registry_shared_and_responsible_bindings_write_observer_events -q --tb=short` - passed, 3 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_knowledge_suggest_writes_requester_observer_event server/tests/test_observer_web_cabinet.py::test_web_knowledge_ask_writes_requester_observer_event -q --tb=short` - passed, 2 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_knowledge_attempts_write_requester_guard_observer_event -q --tb=short` - RED before implementation on missing `requester_knowledge/knowledge_attempt_guard_succeeded` trace, then passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_knowledge_suggest_writes_requester_observer_event server/tests/test_observer_web_cabinet.py::test_web_knowledge_ask_writes_requester_observer_event server/tests/test_observer_web_cabinet.py::test_web_knowledge_attempts_write_requester_guard_observer_event server/tests/test_requester_workspace_api.py::test_requester_create_ticket_accepts_catalog_form_payload -q --tb=short` - passed, 4 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_feedback.py -q --tb=short` - passed, 4 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_requester_chat_message_writes_observer_event -q --tb=short` - RED before implementation on missing `requester_chat/chat_message_sent` trace, then passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_requester_closure_confirmed_writes_observer_event -q --tb=short` - RED before implementation on missing `requester_closure/closure_confirmed` trace, then passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_requester_chat_message_writes_observer_event server/tests/test_observer_web_cabinet.py::test_web_requester_closure_confirmed_writes_observer_event server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short` - passed, 3 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_can_close_owned_resolved_ticket_only server/tests/test_requester_workspace_api.py::test_requester_can_submit_feedback_and_reopen_owned_ticket_only -q --tb=short` - passed, 2 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_requester_feedback_writes_closure_observer_event server/tests/test_observer_web_cabinet.py::test_web_requester_reopen_writes_closure_observer_event -q --tb=short` - RED before implementation on missing `requester_closure/feedback_submitted|ticket_reopened` traces, then passed, 2 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_web_support_api.py::test_web_support_message_writes_observer_event_without_raw_text server/tests/test_web_support_api.py::test_web_support_resolve_writes_status_and_confirmation_observer_events_without_raw_reason -q --tb=short` - RED before implementation on missing `support_chat/support_message_sent` and `support_status/support_status_changed|resolution_confirmation_requested` traces, then passed, 2 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_requester_create_missing_diagnostic_target_writes_observer_event -q --tb=short` - RED before implementation on missing `requester_ticket_create/diagnostic_target_missing` trace, then passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_requester_profile_preview_and_create_write_web_observer_events server/tests/test_observer_web_cabinet.py::test_web_requester_create_missing_diagnostic_target_writes_observer_event server/tests/test_observer_web_cabinet.py::test_web_form_runtime_preview_and_create_write_observer_events server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short` - passed, 4 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py server/tests/test_observer_integrity.py -q --tb=short` - passed, 39 tests after diagnostic target Observer coverage and the technical-overlay acceptance test were added.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_cabinet_writer_does_not_mutate_ticket_business_state -q --tb=short` - passed immediately against current production code, 1 test, proving the Phase D technical-overlay/source-of-truth acceptance invariant for the web-cabinet writer.
+- `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py -q --tb=short` - passed, 21 tests after navigation alias updates.
+- `python scripts/docs_inventory.py --check-links` - passed.
+- `python scripts/build_context_index.py --force` - passed, context index rebuilt with 23361 items, 2272 tests.
+- `python scripts/verify_workspace.py` - passed.
+- `git diff --check` - exit 0 with existing CRLF normalization warnings only.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_form_runtime_preview_and_create_write_observer_events -q --tb=short` - RED before implementation on missing `web_form_runtime` preview trace, then passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_requester_profile_preview_and_create_write_web_observer_events server/tests/test_observer_web_cabinet.py::test_web_form_runtime_preview_and_create_write_observer_events -q --tb=short` - passed, 2 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_suggestions.py -q --tb=short; python -m pytest server/tests/test_knowledge_ask.py -q --tb=short; python -m pytest server/tests/test_knowledge_api.py::test_public_suggestions_apply_registry_audience_rules_before_projection server/tests/test_knowledge_api.py::test_knowledge_api_admin_crud_and_requester_safe_suggest -q --tb=short` - passed sequentially, 8 + 7 + 2 tests. A parallel attempt of these shared-DB suites produced asyncpg deadlock/connection errors and was rerun sequentially.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registration_api.py::test_web_user_lookup_browser_pairing_code_returns_minimal_redirect_payload server/tests/test_registration_api.py::test_web_user_lookup_browser_pairing_code_rejects_inactive_pairings server/tests/test_registration_api.py::test_web_user_lookup_browser_pairing_code_rate_limits_invalid_attempts -q --tb=short` - passed, 3 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registration_api.py::test_web_user_confirms_registration_pairing_for_pairing_device server/tests/test_registration_api.py::test_registration_pairing_confirmation_requires_completed_profile server/tests/test_registration_api.py::test_registration_pairing_approval_surfaces_confirmed_binding_to_agent -q --tb=short` - passed, 3 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registration_api.py::test_admin_approve_and_reject_registration_claim -q --tb=short` - passed, 1 test.
+- `python -m pytest server/tests/test_web_session_api.py -q --tb=short` - passed, 31 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_web_admin_api.py::test_web_admin_observer_traces_returns_typed_payload server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server/tests/test_web_support_api.py::test_build_support_detail_payload_projects_requester_account_context -q --tb=short` - passed, 3 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registry_admin_actions.py::test_admin_transfer_owner_revokes_dependent_account_sessions -q --tb=short` - passed, 1 test.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registry_admin_actions.py::test_admin_shared_and_responsible_bindings_follow_policy server/tests/test_registry_operation_invariants.py::test_revoke_primary_clears_asset_and_inventory_assignment -q --tb=short` - passed, 2 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_account_session_service.py::test_transfer_owner_cancels_pending_other_account_login_requests -q --tb=short` - passed, 1 test.
+- `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py -q --tb=short` - passed, 21 tests.
+- `python scripts/docs_inventory.py --check-links` - passed.
+- `python scripts/build_context_index.py --force` - passed, context index rebuilt with 23339 items, 2263 tests.
+- `python scripts/verify_workspace.py` - passed.
+- `git diff --check` - exit 0 with existing CRLF normalization warnings only.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest <all server/tests/test_observer_*.py files> -q --tb=short` - attempted for this checkpoint, stopped by command timeout after 304s with no useful pytest summary; targeted Observer suites above are the current verification evidence.
 
 ---
 
@@ -1073,20 +1185,48 @@ Create a strict entry gate before using two VM agents for broad live testing. Th
 - form with SLA policy;
 - form with diagnostic policy.
 
+### Data Pack Status
+
+`test_data_packs/web_first_phase_e.json` defines the Phase E pre-broad-live data requirements for test users, KB data, request forms, Windows/Linux VM-agent prerequisites and the validation matrix. `scripts/collect_phase_e_vm_snapshot.py` builds a read-only `web_first_phase_e_vm_snapshot_v1` JSON file from live DB/runtime evidence, `scripts/check_phase_e_vm_snapshot.py` validates that file against the VM-agent portion of this pack, and `scripts/check_phase_e_live_gate.py` blocks any broad-live pass claim unless the VM checker passes and the pack's browser-required evidence entries are present as `real_browser` artifacts. These are contract/checker artifacts only; live registry uniqueness, agent cleanliness, browser evidence and UIA evidence must still be collected in the later gate.
+
 ### Broad Live Testing Entry Criteria
 
 Do not start broad live testing until all are true:
 
-- [ ] Contract docs updated and static guard green.
-- [ ] Web-created tickets store `ticket_context_v1`.
-- [ ] Customer History endpoints/context preview exist.
-- [ ] Observer web-cabinet events exist.
-- [ ] Observer integrity checks include web-first invariants.
-- [ ] Support ticket detail shows creator/affected/target/Observer/history context.
-- [ ] Requester UI does not show raw ids.
-- [ ] Focused automated tests for Phases A-D are green.
-- [ ] Test data pack exists.
+- [x] Contract docs updated and static guard green.
+- [x] Web-created tickets store `ticket_context_v1`.
+- [x] Customer History endpoints/context preview exist.
+- [x] Observer web-cabinet events exist.
+- [x] Observer integrity checks include web-first invariants.
+- [x] Support ticket detail shows creator/affected/target/Observer/history context.
+- [x] Requester UI does not show raw ids.
+- [x] Focused automated tests for Phases A-D are green.
+- [x] Test data pack exists.
 - [ ] VM agents are uniquely registered and not contaminated by previous manual experiments.
+
+### Phase E Validation
+
+- `python -m pytest server/tests/test_phase_e_test_data_pack.py -q --tb=short` - RED before implementation on missing `test_data_packs/web_first_phase_e.json`, then passed, 1 test.
+- `python scripts/test_web_first_registration_localization.py -q --tb=short` - passed, 7 tests.
+- `python -m pytest scripts/test_navigation_catalog.py scripts/test_task_intake.py -q --tb=short` - passed, 21 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ticket_context_builder.py server/tests/test_requester_workspace_api.py server/tests/test_ticket_registration_enrichment.py server/tests/test_customer_history_projection.py server/tests/test_customer_history_redaction.py server/tests/test_customer_history_context_builder.py server/tests/test_knowledge_feedback.py server/tests/test_knowledge_suggestions.py server/tests/test_observer_web_cabinet.py server/tests/test_observer_integrity.py server/tests/test_web_admin_api.py::test_web_admin_observer_traces_returns_typed_payload server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary -q --tb=short` - passed, 111 tests.
+- `pnpm --dir webapp run test -- requester` - passed, 4 files / 38 tests.
+- `pnpm --dir webapp run test -- tickets` - passed, 7 files / 69 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_can_create_ticket_for_owned_device_and_not_foreign_device server/tests/test_requester_workspace_api.py::test_requester_on_behalf_create_stores_authorized_ticket_context server/tests/test_customer_history_projection.py server/tests/test_customer_history_context_builder.py server/tests/test_customer_history_redaction.py server/tests/test_observer_web_cabinet.py::test_requester_profile_preview_and_create_write_web_observer_events server/tests/test_observer_web_cabinet.py::test_web_requester_create_missing_diagnostic_target_writes_observer_event server/tests/test_observer_web_cabinet.py::test_web_cabinet_integrity_scan_detects_missing_context_and_create_event server/tests/test_observer_web_cabinet.py::test_web_cabinet_integrity_scan_detects_remaining_web_first_target_invariants server/tests/test_observer_web_cabinet.py::test_web_cabinet_integrity_scan_detects_on_behalf_knowledge_audience_leak server/tests/test_observer_web_cabinet.py::test_web_cabinet_integrity_scan_detects_missing_customer_history_projection server/tests/test_web_admin_api.py::test_web_admin_observer_traces_returns_typed_payload server/tests/test_web_support_api.py::test_web_support_ticket_detail_includes_observer_summary server/tests/test_web_support_api.py::test_build_support_detail_payload_projects_requester_account_context -q --tb=short` - passed, 19 tests.
+- `python scripts/test_web_first_registration_localization.py -q --tb=short` - rerun passed, 7 tests.
+- `pnpm --dir webapp run test -- requester` - rerun passed, 4 files / 38 tests.
+- `pnpm --dir webapp run test -- tickets` - rerun passed, 7 files / 69 tests.
+- `python -m pytest scripts/test_phase_e_vm_snapshot_check.py -q --tb=short` - RED first on missing `scripts.check_phase_e_vm_snapshot`, then passed, 4 tests. The checker is ready for a future collected live VM snapshot; it has not been run against real VM evidence yet.
+- `python -m pytest scripts/test_phase_e_vm_snapshot_collect.py -q --tb=short` - RED first on missing `scripts.collect_phase_e_vm_snapshot`, then passed, 3 tests. The collector builds checker-compatible `web_first_phase_e_vm_snapshot_v1` evidence from read-only DB/runtime inventory and accepts an explicit `--database-url` override for stand/live read-only collection.
+- `python -m pytest scripts/test_phase_e_live_gate.py -q --tb=short` - RED first on missing `scripts.check_phase_e_live_gate`, then passed, 5 tests. The gate checker rejects failed VM snapshot checks, rejects `status=pass` broad-live claims without required `real_browser` artifacts, and accepts PowerShell UTF-8 BOM JSON reports.
+- `python scripts/check_phase_e_vm_snapshot.py --snapshot artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-vm-live-intake-snapshot.json --json` - expected fail on 2026-06-18 live intake, report at `artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-vm-live-intake-check.json`; both required VM agents failed `agent_present` because read-only MCP/remote evidence found no `lab-win-primary-agent` or `lab-lin-primary-agent` rows. Remote server/control were running, remote Linux agent service was stopped, and the only observed live WS agent was `ADMIN-2` (`7a3429ec-1c0b-5495-9aad-b284f08ae965`), not a Phase E lab VM agent.
+- `python scripts/collect_phase_e_vm_snapshot.py --database-url <stand-db-url> --output artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-vm-live-collector-snapshot.json` - passed on 2026-06-18 against the stand DB in read-only mode, produced a `live_db_readonly` snapshot with 3 observed devices, 0 required Phase E agents and missing `lab-win-primary-agent`, `lab-lin-primary-agent`; `python scripts/check_phase_e_vm_snapshot.py --snapshot artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-vm-live-collector-snapshot.json --json` expected-failed with report `phase-e-vm-live-collector-check.json` because both required agents failed `agent_present`.
+- `python scripts/collect_phase_e_vm_snapshot.py --database-url <stand-db-url> --output artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-vm-live-collector-snapshot.json` - rerun on 2026-06-18 07:41 Asia/Yekaterinburg; collector still passed, observed 3 devices, 0 required Phase E agents, missing `lab-win-primary-agent`, `lab-lin-primary-agent`; VM checker still expected-failed with 2 `agent_present` failures.
+- `python scripts/check_phase_e_live_gate.py --vm-check artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-vm-live-collector-check.json --json` - expected fail on current evidence, report at `artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-live-gate-check.json`; failed `vm_snapshot_check` plus missing browser evidence for `ticket_context_v1/browser_ticket_create`, `support_detail_context/browser_support_ticket_detail` and `requester_raw_id_guard/browser_requester_dom`.
+- `python -m pytest scripts/test_phase_e_live_gate.py scripts/test_phase_e_vm_snapshot_collect.py scripts/test_phase_e_vm_snapshot_check.py server/tests/test_phase_e_test_data_pack.py scripts/test_navigation_catalog.py scripts/test_task_intake.py -q --tb=short` - passed after live-gate/docs/navigation updates, 34 tests.
+- `python scripts/docs_inventory.py` - exit 0; still reports only pre-existing broken links in archived `docs/archive/TICKET_CRM_GAP_ANALYSIS.md`.
+- `python scripts/build_context_index.py --force` - passed after docs/navigation updates, context index rebuilt with 23413 items and 2285 tests.
+- `python scripts/verify_workspace.py` - passed after live-gate/docs/navigation updates.
 
 ### Later Broad Live Matrix
 
@@ -1219,19 +1359,19 @@ Files:
 
 Broad live testing may start only when all are true:
 
-- [ ] Contract docs updated.
-- [ ] Static UI terminology guard green.
-- [ ] Web requester ticket create stores `ticket_context_v1`.
-- [ ] Ticket context visible to support and redacted for requester.
-- [ ] Diagnostic target resolver uses ticket_context before legacy `device_id`.
-- [ ] Customer History projection exists.
-- [ ] LLM context preview exists and is redacted.
-- [ ] Observer web-cabinet event writer exists.
-- [ ] Observer integrity checks cover web-first invariants.
-- [ ] Support detail includes compact history, Observer, and context blocks.
-- [ ] Test data pack for Windows/Linux VM agents is defined.
-- [ ] Focused automated tests for Phases A-D are green.
-- [ ] No broad live test has been marked green based only on API/DB without browser evidence.
+- [x] Contract docs updated.
+- [x] Static UI terminology guard green.
+- [x] Web requester ticket create stores `ticket_context_v1`.
+- [x] Ticket context visible to support and redacted for requester.
+- [x] Diagnostic target resolver uses ticket_context before legacy `device_id`.
+- [x] Customer History projection exists.
+- [x] LLM context preview exists and is redacted.
+- [x] Observer web-cabinet event writer exists.
+- [x] Observer integrity checks cover web-first invariants.
+- [x] Support detail includes compact history, Observer, and context blocks.
+- [x] Test data pack for Windows/Linux VM agents is defined.
+- [x] Focused automated tests for Phases A-D are green.
+- [x] No broad live test has been marked green based only on API/DB without browser evidence; `scripts/check_phase_e_live_gate.py` now enforces the required `real_browser` artifacts and currently fails the gate before any pass claim.
 
 ---
 
@@ -1239,7 +1379,14 @@ Broad live testing may start only when all are true:
 
 - Phase A is complete locally.
 - Phase B ticket context hardening is implemented and validation is green locally.
-- Phase C Customer History is implemented and focused validation is green locally; continue with Phase D web-cabinet Observer event writing and integrity checks.
+- Phase C Customer History is implemented and focused validation is green locally.
+- Phase D web-cabinet Observer slice is implemented locally through requester diagnostic target missing/offline/ambiguous and support chat/status confirmation coverage; account-session login/register/logout/role-mismatch, Knowledge suggest/ask/attempt guard, requester chat send/closure confirm/feedback/reopen, support chat/status/confirmation, web form runtime preview/create, device-linking browser-pairing lookup/request/approve/reject/transfer and registry bind-person/revoke/shared/responsible events are now covered, and work should continue with broader Phase D validation plus final technical-overlay acceptance audit.
+- Phase E test data pack is defined and pytest-guarded; non-mutating VM snapshot collector/checker/live-gate scripts now exist, but VM-agent uniqueness/cleanliness and broad-live browser/UIA evidence remain open until a real Windows/Linux snapshot is collected and passes.
+- Phase E live intake on 2026-06-18 produced `artifacts/browser_live_validation/web-first-phase-e-a10ab000-20260618/phase-e-vm-live-intake-snapshot.json` and checker report `phase-e-vm-live-intake-check.json`; it failed because the required `lab-win-primary-agent` and `lab-lin-primary-agent` were not found in read-only live evidence.
+- Phase E stand DB collector run on 2026-06-18 produced `phase-e-vm-live-collector-snapshot.json` and `phase-e-vm-live-collector-check.json` in the same evidence folder; rerun at 07:41 Asia/Yekaterinburg still observed 3 devices, 0 required Phase E agents, and checker still failed on missing required VM agents.
+- Phase E live-gate checker run on 2026-06-18 produced `phase-e-live-gate-check.json` in the same evidence folder; it failed as expected on the failed VM checker and missing required browser evidence, preventing any DB/API-only broad-live pass claim.
+- Focused automated A-D validation is green locally across static guards, server ticket context/history/Observer suites and requester/tickets React suites; this is not a substitute for Phase E live browser/UIA evidence.
+- Phase E pre-live automated entry criteria are green locally except VM-agent uniqueness/cleanliness. Broad live testing is still blocked until real Windows/Linux VM registry/binding/module snapshots are collected with `python scripts/collect_phase_e_vm_snapshot.py --database-url <stand-db-url> --output <snapshot.json>` when local DB defaults are not the stand DB, pass `python scripts/check_phase_e_vm_snapshot.py --snapshot <snapshot.json>`, pass `python scripts/check_phase_e_live_gate.py --vm-check <vm-check.json> --evidence-manifest <broad-live-evidence.json>`, and browser/UIA evidence is collected where required.
 - Do not jump directly to broad live testing.
 - Before implementation, verify current code and docs against `HEAD`; do not trust old completion text.
 - Use browser evidence as canonical proof for requester web flows.

@@ -487,3 +487,58 @@ class DevicesRepo:
         await self.session.flush()
         logger.info(f"[DevicesRepo] Archived device and preserved history: device_id={device_id}")
         return True
+
+    async def restore_device(
+        self,
+        device_id: str,
+        *,
+        restored_by: Optional[str],
+        restore_reason: Optional[str] = None,
+    ) -> bool:
+        """
+        Restore a previously archived device record without reviving revoked tokens,
+        account sessions, pending requests, outbox rows, or canceled operations.
+
+        Returns:
+            True when the device exists, False when it was not found.
+        """
+        device = await self.get_by_device_id(device_id, include_deleted=True)
+        if not device:
+            return False
+
+        if device.deleted_at is None:
+            return True
+
+        now = datetime.now(timezone.utc)
+        old_deleted_at = device.deleted_at.isoformat() if device.deleted_at else None
+        old_deleted_by = device.deleted_by
+        old_delete_reason = device.delete_reason
+
+        device.deleted_at = None
+        device.deleted_by = None
+        device.delete_reason = None
+
+        self.session.add(
+            AgentRuntimeAudit(
+                device_id=device_id,
+                event_type="device_restored_from_archive",
+                severity="info",
+                source="admin",
+                actor_id=restored_by,
+                actor_role="admin",
+                details_json={
+                    "restore_reason": restore_reason,
+                    "previous_deleted_at": old_deleted_at,
+                    "previous_deleted_by": old_deleted_by,
+                    "previous_delete_reason": old_delete_reason,
+                    "tokens_restored": False,
+                    "sessions_restored": False,
+                },
+                created_at=now,
+            )
+        )
+        await self.session.flush()
+        logger.info(
+            f"[DevicesRepo] Restored archived device record without reviving tokens: device_id={device_id}"
+        )
+        return True

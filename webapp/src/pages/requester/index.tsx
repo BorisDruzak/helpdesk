@@ -953,6 +953,11 @@ export function RequesterWorkspacePage() {
       ? new URLSearchParams(window.location.search).get("pairing_id") || ""
       : "";
   const pendingRegistrationClaims = bootstrap?.pending_registration_claims ?? [];
+  const profileDeviceStatus = devices.length
+    ? `Привязано устройств: ${devices.length}`
+    : pendingRegistrationClaims.length
+      ? `Заявок на привязку: ${pendingRegistrationClaims.length}`
+      : "Устройства не привязаны";
   const services = catalog?.services ?? [];
   const legacyNoDeviceCreateEnabled = !profileGateActive && bootstrap?.feature_flags?.requester_no_device_create === true;
 
@@ -2465,6 +2470,9 @@ export function RequesterWorkspacePage() {
               <div>
                 <p className="break-words font-semibold text-slate-950">{profileName}</p>
                 {bootstrap?.profile?.email ? <p className="break-words text-slate-500">{bootstrap.profile.email}</p> : null}
+                <p className="mt-2 rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                  {profileDeviceStatus}
+                </p>
               </div>
               <button
                 aria-label="Открыть профиль заявителя"
@@ -3082,6 +3090,15 @@ export function RequesterWorkspacePage() {
                 {previewResult.expected_resolution ? <p>Решение: {previewResult.expected_resolution}</p> : null}
                 {previewResult.approval?.text ? <p>{previewResult.approval.text}</p> : null}
                 {previewResult.diagnostics?.text ? <p>{previewResult.diagnostics.text}</p> : null}
+                {previewResult.ticket_context?.summary?.affected ? <p>Для: {previewResult.ticket_context.summary.affected}</p> : null}
+                {previewResult.ticket_context?.diagnostic_target?.text ? (
+                  <p>
+                    Устройство для диагностики:{" "}
+                    {[previewResult.ticket_context.diagnostic_target.label, previewResult.ticket_context.diagnostic_target.text]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                ) : null}
                 {previewResult.requester_context?.summary?.length ? (
                   <p>
                     Контекст:{" "}

@@ -149,6 +149,23 @@ export type RequesterContextPreview = {
   summary?: Array<{ label: string; value?: string | null }>;
 };
 
+export type RequesterTicketContextPreview = {
+  schema?: string | null;
+  summary?: {
+    created_on_behalf?: boolean;
+    affected?: string | null;
+    reason?: string | null;
+  };
+  diagnostic_target?: {
+    label?: string | null;
+    available?: boolean;
+    status?: string | null;
+    reason?: string | null;
+    text?: string | null;
+  };
+  form?: Record<string, string | number | boolean | null>;
+};
+
 export type ServiceCatalogSafePreview = {
   ok: boolean;
   service: { code?: string | null; title?: string | null };
@@ -164,6 +181,7 @@ export type ServiceCatalogSafePreview = {
   blockers: string[];
   would_create_ticket: false;
   requester_context?: RequesterContextPreview;
+  ticket_context?: RequesterTicketContextPreview;
 };
 
 export type KnowledgeSuggestionItem = {

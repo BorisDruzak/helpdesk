@@ -59,10 +59,11 @@ Normal requester UI must use these terms:
 | Registry-backed person details | Профиль | Full name, department, location, contact and work context. |
 | Agent machine | Устройство | PC or local agent device. |
 | User-device relationship | Привязка устройства | Connection between a profile and a device. |
+| Primary diagnostic agent | Основное устройство | Server-resolved primary active agent/PC for diagnostics. |
 | Requester workspace | Кабинет пользователя | Primary web workspace. |
 | Pending device relationship | Заявка на привязку | User-facing state waiting for administrator action. |
 
-Normal requester UI must not display these technical words: `pairing`, `binding`, `claim`, `session`, `registry person`, raw `*_id` field names, raw UUIDs, raw backend enum values, raw policy names, or raw server error text.
+Normal requester UI must not display these technical words: `pairing`, `binding`, `claim`, `session`, `registry person`, `pairing_id`, `binding_id`, `claim_id`, `account_session_id`, `affected_person_id`, `target_device_id`, `diagnostic_target_source`, `trace_id`, `operation_id`, raw `*_id` field names, raw UUIDs, raw backend enum values, raw policy names, or raw server error text.
 
 Admin/debug surfaces may display technical identifiers when needed for operations.
 
@@ -90,15 +91,20 @@ These articles live in `content_packs/knowledge/primary-agent-requester-guides.y
 
 Target routes:
 
-| Route | Purpose | Phase |
-| --- | --- | --- |
-| `/app/register` | Account self-registration with login/password/repeat password and optional device-link code. | R2 |
-| `/app/requester/profile/setup` | Required profile completion gate. | R3 |
-| `/app/requester/profile` | Profile view/edit after setup. | R3 |
-| `/app/requester/devices` | Device list and device-link entrypoint. | R4 |
-| `/app/device/pair` | Authenticated manual device-link code entry. | Existing/R1 |
-| `/app/device/login` | Existing authenticated login confirmation for a paired agent. | Existing/R1 |
-| `/app/device/register` | Compatibility confirmation route for an existing device-link id. | Existing/R1 |
+| Route | Purpose | Allowed roles | Canonical proof surface | Critical API calls | Expected Observer/audit events | Forbidden sensitive data |
+| --- | --- | --- | --- | --- | --- | --- |
+| `/app/register` | Account self-registration with login/password/repeat password and optional device-link code. | anonymous when `WEB_SELF_REGISTRATION_ENABLED=true`; authenticated users may switch account only through safe `next`. | Browser screenshot/DOM of account-only form and post-register login redirect. | `POST /api/web/session/register`. | UI user/account audit for registration; no device binding event. | Passwords, cookies, session tokens, raw device-link secrets, registry person ids. |
+| `/app/login` | Web account login and safe continuation to requester/admin/support workspaces. | anonymous. | Browser screenshot/DOM of login success or safe Russian error. | `POST /api/web/session/login`, `GET /api/web/session/me`. | Web session login/logout audit. | Passwords, cookies, auth headers, session ids in visible UI. |
+| `/app/requester` | Canonical requester workspace for profile-aware forms, Knowledge suggestions and ticket list/create. | authenticated requester/user. | Browser evidence from `/app/requester` with account/profile state and server-resolved context; API/DB supports but does not replace browser proof. | `GET /api/web/requester/bootstrap`, `POST /api/web/requester/tickets/preview`, `POST /api/web/requester/tickets`, `POST /api/knowledge/suggest`, `POST /api/knowledge/feedback`. | Ticket create, requester knowledge feedback/attempts, redacted web-cabinet Observer events for preview/create, diagnostic target missing/offline/ambiguous, Knowledge, chat, closure, feedback and reopen. | Raw person/device/binding ids, ticket context snapshot, policy JSON, trace ids, cookies, auth headers. |
+| `/app/requester/profile/setup` | Required profile completion gate for Registry-backed requester details. | authenticated requester/user. | Browser evidence of required fields, registry pickers and return to `/app/requester`. | `GET /api/web/requester/bootstrap`, `PUT /api/web/requester/profile`. | Registry person/profile update audit. | Raw registry storage paths, metadata JSON, person ids, session tokens. |
+| `/app/requester/profile` | Profile view/edit after setup. | authenticated requester/user. | Browser evidence of requester-safe profile projection. | `GET /api/web/requester/profile`, `PUT /api/web/requester/profile`. | Registry person/profile update audit when saved. | Raw metadata JSON, profile schema storage targets, person ids, session tokens. |
+| `/app/requester/devices` | Device list and device-link entrypoint from the web cabinet. | authenticated requester/user. | Browser evidence of manual code lookup/direct link preview and pending/admin-approved state. | `GET /api/web/requester/devices`, `POST /api/web/registry/browser-pairings/lookup`, `GET /api/web/registry/browser-pairings/{pairing_id}`, `POST /api/web/registry/browser-pairings/{pairing_id}/registration/confirm`. | Device-link claim/request audit; later admin approval/rejection audit. | Pairing secrets, pairing hashes, binding ids, claim ids, registry person ids, agent tokens. |
+| `/app/device/pair` | Authenticated manual device-link code entry. | authenticated requester/user. | Browser evidence of safe code entry and device preview. | `POST /api/web/registry/browser-pairings/lookup`. | Browser-pairing lookup audit when available. | Raw pairing id/hash, tokens, binding ids, claim ids. |
+| `/app/device/register` | Compatibility confirmation route for an existing device-link id. | authenticated requester/user. | Browser evidence of profile gate, safe preview, and preserved `next` return path. | `GET /api/web/registry/browser-pairings/{pairing_id}`, `POST /api/web/registry/browser-pairings/{pairing_id}/registration/confirm`. | Device registration claim audit. | Pairing secrets, session tokens, raw person/binding/claim ids in visible UI. |
+| `/app/device/login` | Existing authenticated login confirmation for a paired agent/device. | authenticated requester/user. | Browser evidence of device-scoped login confirmation/mismatch state. | `GET /api/web/registry/browser-pairings/{pairing_id}`, account-session confirmation endpoints used by the compatibility flow. | Account-session or login-confirmation audit. | Passwords, account-session tokens, binding ids, claim ids, pairing secrets. |
+| `/app/admin/registry` | Admin moderation center for people, devices, bindings, claims, sessions and ownership transfer. | admin/support with registry permissions. | Browser evidence of registry queues/actions and preview/apply dialogs. | `/api/web/admin/registry*`, `/api/web/admin/registry/profile-schema*`, account-session and registration admin routes. | Registry admin events for bind/transfer/revoke/merge/import/profile-schema/account-session actions. | Raw tokens, cookies, auth headers, password material, unredacted secrets. |
+| `/app/tickets` | Support ticket list/detail workspace, including creator/affected/diagnostic target context. | support/admin/auditor according to ticket permissions. | Browser evidence of support-visible ticket context without requester-only leakage. | `/api/web/support/queue`, `/api/web/support/tickets/{ticket_id}*`, support mutation routes. | Ticket events, workflow/audit events, diagnostic and knowledge attempt events, redacted support chat/status web-cabinet Observer events. | Raw requester-public access codes, cookies, auth headers, hidden Knowledge titles for unauthorized actors, unrestricted raw policy payloads, raw support message/status comment text in Observer payloads. |
+| `/app/admin/observer` | Technical Observer workbench for traces, integrity and runtime diagnostics. | admin/auditor or explicit observer permissions. | Browser evidence of observer search/filter/detail state when Observer UI changes. | `/api/web/admin/observer/*`. | Observer trace/runtime/integrity rows and access audit. | Tokens, cookies, auth headers, raw secrets, unredacted operation parameters. |
 
 `/app/device/register` without a device-link id must not show `pairing_id`; it must show: `Откройте эту страницу из агента или введите код подключения.`
 

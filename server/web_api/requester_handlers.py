@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
+from loguru import logger
 from sqlalchemy import func, or_, select
 
 from app.api.serializers import ticket_to_dict
@@ -17,6 +18,7 @@ from auth.middleware import require_auth
 from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
 from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
 from knowledge.feedback_service import KnowledgeFeedbackService
+from observer.web_event_writer import write_web_cabinet_observer_event
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
 from requester.identity_service import RequesterIdentityResolver, RequesterProfileValidationError
@@ -33,6 +35,7 @@ from tickets.handlers import (
     _store_resolution_confirmation_state,
 )
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+from tickets.diagnostic_target import resolve_ticket_diagnostic_target
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom_fields, resolve_ticket_form_pack
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
@@ -42,6 +45,7 @@ from tickets.request_template_submission import resolve_create_form_submission
 from tickets.service_catalog_preview import ServiceCatalogPreviewError, build_requester_service_catalog_preview
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 from tickets.statuses import enrich_chat_payload_with_requester_name
+from tickets.ticket_context import TicketContextBuilder, project_requester_ticket_context
 from tickets.workflow_service import TicketWorkflowService
 
 _ON_BEHALF_EXCLUDED_PERSON_STATUSES = frozenset({"archived", "deleted", "disabled", "inactive", "merged"})
@@ -79,6 +83,32 @@ def _validation_error(details: dict[str, Any]) -> web.Response:
     )
 
 
+async def _build_requester_ticket_context_preview(
+    session,
+    *,
+    state: Any | None,
+    person: RegistryPerson | None,
+    actor_id: str,
+    requester_context: dict[str, Any],
+    on_behalf_context: dict[str, str] | None = None,
+    form: dict[str, Any] | None = None,
+    policy_refs: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if person is None or not str(getattr(person, "person_id", "") or "").strip():
+        return None
+    raw_context = on_behalf_context if isinstance(on_behalf_context, dict) else {}
+    context = await TicketContextBuilder(session, state=state).build(
+        creator_person_id=str(person.person_id),
+        creator_actor_id=actor_id,
+        affected_person_id=str(raw_context.get("affected_person_id") or "").strip() or None,
+        on_behalf_reason=str(raw_context.get("on_behalf_reason") or raw_context.get("reason") or "").strip() or None,
+        requester_context=requester_context,
+        form=form or {},
+        policy_refs=policy_refs or {},
+    )
+    return project_requester_ticket_context(context, actor_context={"actor_id": actor_id, "actor_role": "user"})
+
+
 def _profile_incomplete_error(completion: dict[str, Any]) -> web.Response:
     return web.json_response(
         {
@@ -89,6 +119,55 @@ def _profile_incomplete_error(completion: dict[str, Any]) -> web.Response:
         },
         status=403,
     )
+
+
+def _web_observer_actor_context(request: web.Request, auth_context: Any) -> dict[str, Any]:
+    correlation_id = (
+        _clean(request.headers.get("X-Request-ID"), max_length=120)
+        or _clean(request.headers.get("X-Correlation-ID"), max_length=120)
+        or None
+    )
+    return {
+        "actor_id": getattr(auth_context, "actor_id", None),
+        "actor_role": getattr(auth_context, "actor_role", None),
+        "method": request.method,
+        "correlation_id": correlation_id,
+    }
+
+
+async def _write_requester_web_observer_event(
+    session,
+    *,
+    request: web.Request,
+    auth_context: Any,
+    source: str,
+    event_type: str,
+    severity: str,
+    result: str,
+    ticket_id: str | None = None,
+    device_id: str | None = None,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    try:
+        async with session.begin_nested():
+            await write_web_cabinet_observer_event(
+                session,
+                source=source,
+                event_type=event_type,
+                severity=severity,
+                route=request.path,
+                actor_context=_web_observer_actor_context(request, auth_context),
+                ticket_id=ticket_id,
+                device_id=device_id,
+                person_id=person_id,
+                result=result,
+                error_code=error_code,
+                payload=payload,
+            )
+    except Exception as exc:
+        logger.warning(f"[requester_observer] failed to write {source}.{event_type}: {exc}")
 
 
 def _profile_completion_blocks(completion: dict[str, Any], key: str) -> bool:
@@ -192,6 +271,43 @@ def _manual_triage_custom_fields(
             }
         )
     return fields
+
+
+def _diagnostic_target_observer_payload(ticket: Any, custom_fields: dict[str, Any]) -> dict[str, Any] | None:
+    target = resolve_ticket_diagnostic_target(ticket, custom_fields)
+    status = _clean(target.agent_status, max_length=80).lower() or None
+    source = _clean(target.source, max_length=120) or "unknown"
+    reason_code = _clean(target.reason_code, max_length=120) or None
+
+    if reason_code == "ambiguous_primary_device" or source == "ambiguous_primary_agent" or status == "ambiguous":
+        event_type = "diagnostic_target_ambiguous"
+        error_code = "DIAGNOSTIC_TARGET_AMBIGUOUS"
+        status = status or "ambiguous"
+    elif status == "offline":
+        event_type = "diagnostic_target_offline"
+        error_code = "DIAGNOSTIC_TARGET_OFFLINE"
+    elif not target.dispatch_device_id or status == "missing":
+        event_type = "diagnostic_target_missing"
+        error_code = "DIAGNOSTIC_TARGET_MISSING"
+        status = status or "missing"
+    else:
+        return None
+
+    diagnostics = custom_fields.get("diagnostics") if isinstance(custom_fields.get("diagnostics"), dict) else {}
+    return {
+        "event_type": event_type,
+        "error_code": error_code,
+        "device_id": target.dispatch_device_id,
+        "payload": {
+            "diagnostic_target_source": source,
+            "agent_status": status,
+            "reason_code": reason_code,
+            "created_on_behalf": bool(target.created_on_behalf),
+            "has_dispatch_device": bool(target.dispatch_device_id),
+            "manual_triage": bool(custom_fields.get("requires_manual_triage")),
+            "diagnostics_autorun_suppressed": bool(diagnostics.get("autorun_suppressed")),
+        },
+    }
 
 
 class _OnBehalfRequestError(ValueError):
@@ -387,6 +503,161 @@ def _has_catalog_selection(data: dict[str, Any]) -> bool:
         _clean(data.get(key), max_length=240)
         for key in ("service_code", "offering_code", "offering_full_code", "full_offering_code", "request_template_key", "form_key")
     )
+
+
+def _web_form_runtime_preview_payload(
+    data: dict[str, Any],
+    *,
+    preview: dict[str, Any],
+    form_key: str,
+    request_template_key: str,
+    account_mode: str,
+) -> dict[str, Any]:
+    approval = preview.get("approval") if isinstance(preview.get("approval"), dict) else {}
+    diagnostics = preview.get("diagnostics") if isinstance(preview.get("diagnostics"), dict) else {}
+    blockers = preview.get("blockers") if isinstance(preview.get("blockers"), list) else []
+    warnings = preview.get("warnings") if isinstance(preview.get("warnings"), list) else []
+    return {
+        "stage": "preview",
+        "has_catalog_selection": _has_catalog_selection(data),
+        "form_key": form_key,
+        "request_template_key": request_template_key,
+        "account_mode": account_mode,
+        "form_payload_present": isinstance(data.get("form_payload"), dict) and bool(data.get("form_payload")),
+        "preview_ok": bool(preview.get("ok")),
+        "service_selected": bool((preview.get("service") if isinstance(preview.get("service"), dict) else {}).get("code")),
+        "offering_selected": bool((preview.get("offering") if isinstance(preview.get("offering"), dict) else {}).get("code")),
+        "approval_required": bool(approval.get("required")),
+        "diagnostics_required": bool(diagnostics.get("required")),
+        "diagnostic_consent_required": bool(diagnostics.get("consent_required")),
+        "sla_expected": bool(preview.get("expected_first_response") or preview.get("expected_resolution")),
+        "blocker_count": len(blockers),
+        "warning_count": len(warnings),
+    }
+
+
+def _web_form_runtime_create_payload(
+    data: dict[str, Any],
+    *,
+    ticket: Any,
+    ticket_custom_fields: dict[str, Any],
+    form_key: str,
+    request_template_key: str,
+    account_mode: str,
+) -> dict[str, Any]:
+    priority = ticket_custom_fields.get("priority_decision")
+    priority = priority if isinstance(priority, dict) else {}
+    routing = ticket_custom_fields.get("routing_decision")
+    routing = routing if isinstance(routing, dict) else {}
+    request_template = ticket_custom_fields.get("request_template")
+    request_template = request_template if isinstance(request_template, dict) else {}
+    computed = request_template.get("computed") if isinstance(request_template.get("computed"), dict) else {}
+    policy_refs = request_template.get("policy_refs") if isinstance(request_template.get("policy_refs"), dict) else {}
+    queue_id = routing.get("to_queue_id") if routing.get("to_queue_id") is not None else routing.get("queue_id")
+    sla_configured = bool(
+        getattr(ticket, "sla_policy_id", None)
+        or request_template.get("sla_policy_id")
+        or request_template.get("sla_policy_code")
+        or request_template.get("sla_policy")
+        or policy_refs.get("sla")
+    )
+    sla_due_present = bool(getattr(ticket, "first_response_due_at", None) or getattr(ticket, "resolution_due_at", None))
+    return {
+        "stage": "create",
+        "has_catalog_selection": _has_catalog_selection(data),
+        "form_key": form_key,
+        "request_template_key": request_template_key,
+        "account_mode": account_mode,
+        "form_payload_present": isinstance(data.get("form_payload"), dict) and bool(data.get("form_payload")),
+        "resolved_from": ticket_custom_fields.get("resolved_from"),
+        "request_template_source": request_template.get("source"),
+        "priority_class": priority.get("effective_priority") or priority.get("priority_class") or computed.get("priority"),
+        "priority_source": priority.get("priority_source") or computed.get("priority_source"),
+        "routing_source": routing.get("source") or computed.get("routing_source"),
+        "queue_resolved": queue_id is not None or computed.get("queue_id") is not None,
+        "matched_routing_rule": bool(routing.get("matched_rule") or computed.get("matched_routing_rule")),
+        "sla_configured": sla_configured,
+        "sla_started": sla_due_present,
+        "sla_due_present": sla_due_present,
+        "approval_required": bool(computed.get("approval_required")),
+        "diagnostics_suggested": bool(computed.get("suggested_diagnostics")),
+        "manual_triage": bool(ticket_custom_fields.get("manual_triage_required")),
+    }
+
+
+def _knowledge_attempt_guard_payload(knowledge_attempts: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "surface": "requester_portal",
+        "attempt_count": len(knowledge_attempts),
+        "results": sorted({str(item.get("result") or "unknown") for item in knowledge_attempts}),
+        "attempt_surfaces": sorted({str(item.get("surface") or "unknown") for item in knowledge_attempts}),
+        "visibility_scopes": sorted({str(item.get("visibility_scope") or "unknown") for item in knowledge_attempts}),
+        "audience_scopes": sorted({str(item.get("audience_scope") or "unknown") for item in knowledge_attempts}),
+    }
+
+
+def _requester_chat_message_observer_payload(
+    *,
+    message_payload: dict[str, Any],
+    attachments: list[dict[str, Any]],
+    status_result: Any | None,
+) -> dict[str, Any]:
+    return {
+        "message_present": bool(str(message_payload.get("text") or "").strip()),
+        "attachment_count": len(attachments),
+        "visibility": str(message_payload.get("visibility") or "public"),
+        "status_transitioned": bool(status_result),
+    }
+
+
+def _requester_closure_observer_payload(
+    *,
+    from_status: str | None,
+    ticket: Any | None,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "from_status": from_status,
+        "to_status": getattr(ticket, "status", None),
+        "reason_present": bool(_clean(data.get("reason"), max_length=200)),
+        "confirmation_pending_cleared": bool(ticket is not None and not _resolution_confirmation_pending(ticket)),
+    }
+
+
+def _requester_feedback_observer_payload(
+    *,
+    data: dict[str, Any],
+    result: dict[str, Any],
+    request_metadata_present: bool,
+) -> dict[str, Any]:
+    reason_codes = data.get("reason_codes") if isinstance(data.get("reason_codes"), list) else []
+    return {
+        "rating_present": data.get("rating") is not None,
+        "problem_resolved": data.get("problem_resolved") if isinstance(data.get("problem_resolved"), bool) else None,
+        "resolution_confirmed": data.get("resolution_confirmed")
+        if isinstance(data.get("resolution_confirmed"), bool)
+        else None,
+        "reason_code_count": len([item for item in reason_codes if str(item or "").strip()]),
+        "comment_present": bool(_clean(data.get("comment"), max_length=200)),
+        "metadata_present": request_metadata_present,
+        "reopen_available": bool(result.get("reopen_available")),
+    }
+
+
+def _requester_reopen_observer_payload(
+    *,
+    from_status: str | None,
+    data: dict[str, Any],
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "from_status": from_status,
+        "to_status": result.get("status"),
+        "reason_code_present": bool(_clean(data.get("reason_code"), max_length=120)),
+        "reason_comment_present": bool(_clean(data.get("reason_comment"), max_length=200)),
+        "linked_feedback_present": bool(_clean(data.get("linked_feedback_id"), max_length=120)),
+        "linked_knowledge_item_present": bool(_clean(data.get("linked_knowledge_item_id"), max_length=120)),
+    }
 
 
 def _priority_policy_fallback(data: dict[str, Any]) -> dict[str, Any]:
@@ -818,6 +1089,23 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
             status_result = transition.get("event_result")
             status_payload = transition.get("event_payload") or {}
 
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_chat",
+            event_type="chat_message_sent",
+            severity="info",
+            result="succeeded",
+            ticket_id=ticket.ticket_id,
+            device_id=ticket.device_id,
+            person_id=getattr(ticket, "requester_person_id", None),
+            payload=_requester_chat_message_observer_payload(
+                message_payload=payload,
+                attachments=attachments,
+                status_result=status_result,
+            ),
+        )
         await session.commit()
 
     await _push_ticket_event(request, ticket_id, result, "chat_message", payload)
@@ -848,6 +1136,7 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
                 error_code="INVALID_TICKET_STATUS",
             )
 
+        from_status = str(getattr(ticket, "status", "") or "")
         workflow = TicketWorkflowService(session, repo)
         try:
             transition = await workflow.apply_status_transition(
@@ -870,6 +1159,23 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
                 pending=False,
                 responded_option_id="confirm",
             )
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_closure",
+            event_type="closure_confirmed",
+            severity="info",
+            result="succeeded",
+            ticket_id=ticket.ticket_id if ticket is not None else ticket_id,
+            device_id=getattr(ticket, "device_id", None),
+            person_id=getattr(ticket, "requester_person_id", None),
+            payload=_requester_closure_observer_payload(
+                from_status=from_status,
+                ticket=ticket,
+                data=data,
+            ),
+        )
         await session.commit()
 
     await _push_ticket_event(
@@ -894,7 +1200,8 @@ async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Resp
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
 
-        metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+        metadata = dict(data.get("metadata")) if isinstance(data.get("metadata"), dict) else {}
+        request_metadata_present = bool(metadata)
         metadata["web_actor_id"] = auth_context.actor_id
         data["metadata"] = metadata
         data["ticket_id"] = ticket.ticket_id
@@ -908,6 +1215,23 @@ async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Resp
             )
         except ValueError as exc:
             return _error(str(exc), status=400, error_code="QUALITY_FEEDBACK_ERROR")
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_closure",
+            event_type="feedback_submitted",
+            severity="info",
+            result="succeeded",
+            ticket_id=ticket.ticket_id,
+            device_id=getattr(ticket, "device_id", None),
+            person_id=getattr(ticket, "requester_person_id", None),
+            payload=_requester_feedback_observer_payload(
+                data=data,
+                result=result,
+                request_metadata_present=request_metadata_present,
+            ),
+        )
         await session.commit()
 
     return _success(
@@ -932,6 +1256,7 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
 
+        from_status = str(getattr(ticket, "status", "") or "")
         try:
             result = await TicketReopenService(session).reopen_ticket(
                 ticket.ticket_id,
@@ -944,6 +1269,23 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
             )
         except ValueError as exc:
             return _error(str(exc), status=400, error_code="QUALITY_REOPEN_ERROR")
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_closure",
+            event_type="ticket_reopened",
+            severity="info",
+            result="succeeded",
+            ticket_id=ticket.ticket_id,
+            device_id=getattr(ticket, "device_id", None),
+            person_id=getattr(ticket, "requester_person_id", None),
+            payload=_requester_reopen_observer_payload(
+                from_status=from_status,
+                data=data,
+                result=result,
+            ),
+        )
         await session.commit()
 
     return _success(
@@ -994,6 +1336,18 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             request_template_key=request_template_key,
         )
         if _profile_completion_blocks_for_form(completion, "ticket_preview", availability_policy):
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_profile",
+                event_type="profile_incomplete_blocked",
+                severity="warning",
+                result="blocked",
+                person_id=getattr(person, "person_id", None),
+                error_code="REQUESTER_PROFILE_INCOMPLETE",
+                payload={"action": "ticket_preview", "completion": completion},
+            )
             return _profile_incomplete_error(completion)
         if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
             return _error(
@@ -1060,27 +1414,60 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         preview_payload["requester_context"] = requester_context
         if isinstance(requester_context.get("device"), dict):
             preview_payload["device_metadata"] = dict(requester_context["device"])
+        ticket_context_preview = await _build_requester_ticket_context_preview(
+            session,
+            state=request.app.get("state"),
+            person=person,
+            actor_id=auth_context.actor_id,
+            requester_context=requester_context,
+            on_behalf_context=on_behalf_context,
+            form={
+                "key": form_key or request_template_key,
+                "title": form_key or request_template_key,
+            }
+            if (form_key or request_template_key)
+            else {},
+            policy_refs={},
+        )
         if not _has_catalog_selection(preview_payload):
-            return _success(
-                {
-                    "ok": True,
-                    "service": {"code": None, "title": None},
-                    "offering": {"code": None, "full_code": None, "title": None},
-                    "request_type_label": "Request",
-                    "public_status_after_create": "Новая заявка",
-                    "approval": {"required": False, "text": "Согласование не требуется"},
-                    "diagnostics": {
-                        "required": False,
-                        "consent_required": False,
-                        "text": "Диагностика не требуется до отправки",
-                    },
-                    "next_action": "После отправки заявка попадет в поддержку.",
-                    "warnings": [],
-                    "blockers": [],
-                    "would_create_ticket": False,
-                    "requester_context": RequesterIdentityResolver.requester_context_preview(requester_context),
-                }
+            response_payload = {
+                "ok": True,
+                "service": {"code": None, "title": None},
+                "offering": {"code": None, "full_code": None, "title": None},
+                "request_type_label": "Request",
+                "public_status_after_create": "Новая заявка",
+                "approval": {"required": False, "text": "Согласование не требуется"},
+                "diagnostics": {
+                    "required": False,
+                    "consent_required": False,
+                    "text": "Диагностика не требуется до отправки",
+                },
+                "next_action": "После отправки заявка попадет в поддержку.",
+                "warnings": [],
+                "blockers": [],
+                "would_create_ticket": False,
+                "requester_context": RequesterIdentityResolver.requester_context_preview(requester_context),
+            }
+            if ticket_context_preview is not None:
+                response_payload["ticket_context"] = ticket_context_preview
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_ticket_preview",
+                event_type="ticket_preview_succeeded",
+                severity="info",
+                result="previewed",
+                device_id=device_id or None,
+                person_id=getattr(person, "person_id", None),
+                payload={
+                    "has_catalog_selection": False,
+                    "form_key": form_key,
+                    "request_template_key": request_template_key,
+                    "account_mode": account_mode,
+                },
             )
+            return _success(response_payload)
         try:
             preview = await build_requester_service_catalog_preview(session, preview_payload)
         except ServiceCatalogPreviewError as exc:
@@ -1088,6 +1475,43 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         except ValueError as exc:
             return _validation_error({"preview": str(exc)})
         preview["requester_context"] = RequesterIdentityResolver.requester_context_preview(requester_context)
+        if ticket_context_preview is not None:
+            preview["ticket_context"] = ticket_context_preview
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_ticket_preview",
+            event_type="ticket_preview_succeeded",
+            severity="info",
+            result="previewed",
+            device_id=device_id or None,
+            person_id=getattr(person, "person_id", None),
+            payload={
+                "has_catalog_selection": True,
+                "form_key": form_key,
+                "request_template_key": request_template_key,
+                "account_mode": account_mode,
+            },
+        )
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="web_form_runtime",
+            event_type="form_runtime_preview_succeeded",
+            severity="info",
+            result="previewed",
+            device_id=device_id or None,
+            person_id=getattr(person, "person_id", None),
+            payload=_web_form_runtime_preview_payload(
+                preview_payload,
+                preview=preview,
+                form_key=form_key,
+                request_template_key=request_template_key,
+                account_mode=account_mode,
+            ),
+        )
 
     return _success(preview)
 
@@ -1143,6 +1567,18 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             request_template_key=request_template_key,
         )
         if _profile_completion_blocks_for_form(completion, "ticket_create", availability_policy):
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_profile",
+                event_type="profile_incomplete_blocked",
+                severity="warning",
+                result="blocked",
+                person_id=getattr(person, "person_id", None),
+                error_code="REQUESTER_PROFILE_INCOMPLETE",
+                payload={"action": "ticket_create", "completion": completion},
+            )
             return _profile_incomplete_error(completion)
         if availability_policy.get("contact_required") and not _has_contact_for_emergency(person, form_payload, data):
             return _error(
@@ -1345,6 +1781,77 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 actor_role="requester",
                 actor_id=auth_context.actor_id,
             )
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_knowledge",
+                event_type="knowledge_attempt_guard_succeeded",
+                severity="info",
+                result="succeeded",
+                ticket_id=created["ticket_id"],
+                device_id=getattr(ticket_row, "device_id", None) or device_id,
+                person_id=getattr(person, "person_id", None),
+                payload=_knowledge_attempt_guard_payload(knowledge_attempts),
+            )
+        ticket_row = created["ticket"]
+        ticket_custom_fields = ticket_row.custom_fields if isinstance(ticket_row.custom_fields, dict) else {}
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="requester_ticket_create",
+            event_type="ticket_create_succeeded",
+            severity="info",
+            result="created",
+            ticket_id=created["ticket_id"],
+            device_id=getattr(ticket_row, "device_id", None) or device_id,
+            person_id=getattr(person, "person_id", None),
+            payload={
+                "request_context": request_context,
+                "account_mode": account_mode,
+                "form_key": form_key,
+                "request_template_key": request_template_key,
+                "has_ticket_context": isinstance(ticket_custom_fields.get("ticket_context"), dict),
+                "diagnostic_target_source": ticket_custom_fields.get("diagnostic_target_source"),
+            },
+        )
+        target_observer = _diagnostic_target_observer_payload(ticket_row, ticket_custom_fields)
+        if target_observer is not None:
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_ticket_create",
+                event_type=target_observer["event_type"],
+                severity="warning",
+                result="skipped",
+                ticket_id=created["ticket_id"],
+                device_id=target_observer["device_id"],
+                person_id=getattr(person, "person_id", None),
+                error_code=target_observer["error_code"],
+                payload=target_observer["payload"],
+            )
+        await _write_requester_web_observer_event(
+            session,
+            request=request,
+            auth_context=auth_context,
+            source="web_form_runtime",
+            event_type="form_runtime_create_succeeded",
+            severity="info",
+            result="created",
+            ticket_id=created["ticket_id"],
+            device_id=getattr(ticket_row, "device_id", None) or device_id,
+            person_id=getattr(person, "person_id", None),
+            payload=_web_form_runtime_create_payload(
+                data,
+                ticket=ticket_row,
+                ticket_custom_fields=ticket_custom_fields,
+                form_key=form_key,
+                request_template_key=request_template_key,
+                account_mode=account_mode,
+            ),
+        )
         await session.commit()
         ticket = ticket_to_dict(created["ticket"], visibility="requester")
 

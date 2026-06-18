@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any
 
 from aiohttp import web
 from loguru import logger
@@ -40,6 +41,7 @@ from knowledge.search_service import KnowledgeSearchService
 from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from knowledge.segmentation_service import KnowledgeSegmentationPolicyBlockedError, KnowledgeSegmentationService
 from knowledge.suggestion_service import KnowledgeSuggestionService
+from observer.web_event_writer import write_web_cabinet_observer_event
 from registry.effective_identity_service import EffectiveIdentityService
 
 KNOWLEDGE_METADATA_MANAGE_PERMISSION = "knowledge.metadata.manage"
@@ -52,6 +54,58 @@ def _actor(request: web.Request) -> tuple[str | None, str]:
     if actor_role == "user":
         actor_role = "requester"
     return actor_id, actor_role
+
+
+def _clean_header(value: object, *, max_length: int = 120) -> str | None:
+    text = str(value or "").strip()
+    return text[:max_length] if text else None
+
+
+def _knowledge_observer_actor_context(request: web.Request, *, actor_id: str | None, actor_role: str | None) -> dict[str, str | None]:
+    return {
+        "actor_id": actor_id,
+        "actor_role": actor_role,
+        "method": request.method,
+        "correlation_id": (
+            _clean_header(request.headers.get("X-Request-ID"))
+            or _clean_header(request.headers.get("X-Correlation-ID"))
+        ),
+    }
+
+
+async def _write_requester_knowledge_observer_event(
+    session,
+    request: web.Request,
+    *,
+    actor_id: str | None,
+    actor_role: str | None,
+    event_type: str,
+    severity: str,
+    result: str,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    try:
+        async with session.begin_nested():
+            await write_web_cabinet_observer_event(
+                session,
+                source="requester_knowledge",
+                event_type=event_type,
+                severity=severity,
+                route=request.path,
+                actor_context=_knowledge_observer_actor_context(
+                    request,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                ),
+                person_id=person_id,
+                result=result,
+                error_code=error_code,
+                payload=payload,
+            )
+    except Exception as exc:
+        logger.warning(f"[knowledge_observer] failed to write {event_type}: {exc}")
 
 
 async def _portal_requester_audience(session, request: web.Request):
@@ -336,6 +390,24 @@ async def handle_knowledge_suggest(request: web.Request) -> web.Response:
                 actor_role=actor_role,
                 effective_audience=effective_audience,
             )
+            await _write_requester_knowledge_observer_event(
+                session,
+                request,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                event_type="knowledge_suggest_succeeded",
+                severity="info",
+                result="succeeded",
+                person_id=getattr(effective_audience, "person_id", None),
+                payload={
+                    "surface": str(payload.get("surface") or payload.get("source_surface") or "suggest"),
+                    "query_present": bool(str(payload.get("query") or "").strip()),
+                    "suggestion_count": len(result.get("suggestions") or []),
+                    "known_error_count": len(result.get("known_errors") or []),
+                    "workaround_count": len(result.get("workarounds") or []),
+                    "rollout_enabled": bool((result.get("rollout") or {}).get("enabled", True)),
+                },
+            )
         return web.json_response({"status": "ok", **result})
     except ValueError as exc:
         return web.json_response({"status": "error", "error": "validation_error", "details": str(exc)}, status=400)
@@ -421,6 +493,24 @@ async def _handle_knowledge_ask_response(request: web.Request, *, force_role: st
                 limit=payload.get("limit"),
                 query_vector=_safe_query_vector(payload.get("query_vector")),
                 effective_audience=effective_audience,
+            )
+            await _write_requester_knowledge_observer_event(
+                session,
+                request,
+                actor_id=actor_id,
+                actor_role=role,
+                event_type="knowledge_ask_succeeded",
+                severity="info",
+                result="succeeded",
+                person_id=getattr(effective_audience, "person_id", None),
+                payload={
+                    "surface": str(payload.get("surface") or "knowledge_ask"),
+                    "query_present": bool(str(payload.get("query") or "").strip()),
+                    "answer_status": str(result.get("answer_status") or "unknown"),
+                    "retrieval_result_count": len(result.get("retrieval_results") or []),
+                    "citation_count": len(result.get("citations") or []),
+                    "ai_used": bool(result.get("ai_used")),
+                },
             )
             await session.commit()
         return web.json_response({"status": "ok", **result})

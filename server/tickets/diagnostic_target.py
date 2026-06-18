@@ -56,24 +56,30 @@ class TicketDiagnosticTarget:
 def resolve_ticket_diagnostic_target(ticket: Any, custom_fields: dict[str, Any] | None = None) -> TicketDiagnosticTarget:
     fields = custom_fields if isinstance(custom_fields, dict) else _dict(getattr(ticket, "custom_fields", None))
     context = _dict(fields.get("ticket_context"))
+    diagnostic_target = _dict(context.get("diagnostic_target"))
     target_device = _dict(context.get("target_device"))
     affected = _dict(context.get("affected"))
     creator = _dict(context.get("creator"))
 
     flat_target = _clean(fields.get("target_device_id"))
-    context_target = _clean(target_device.get("device_id"))
+    context_target = _clean(diagnostic_target.get("device_id")) or _clean(target_device.get("device_id"))
     fallback_device_id = _clean(getattr(ticket, "device_id", None))
     has_context = bool(context or flat_target or fields.get("diagnostic_target_source") or fields.get("target_agent_status"))
     source = (
-        _clean(fields.get("diagnostic_target_source"))
+        _clean(diagnostic_target.get("source"))
         or _clean(context.get("diagnostic_target_source"))
+        or _clean(fields.get("diagnostic_target_source"))
         or ("legacy_ticket_device" if fallback_device_id and not has_context else "unknown")
     )
-    agent_status = _clean(fields.get("target_agent_status")) or _clean(target_device.get("agent_status"))
-    reason_code = _clean(target_device.get("reason_code"))
+    agent_status = (
+        _clean(diagnostic_target.get("agent_status"))
+        or _clean(target_device.get("agent_status"))
+        or _clean(fields.get("target_agent_status"))
+    )
+    reason_code = _clean(diagnostic_target.get("reason_code")) or _clean(target_device.get("reason_code"))
 
     return TicketDiagnosticTarget(
-        target_device_id=flat_target or context_target,
+        target_device_id=context_target or flat_target,
         fallback_device_id=fallback_device_id,
         source=source,
         agent_status=agent_status,

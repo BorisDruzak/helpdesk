@@ -1,6 +1,7 @@
 import re
 
 from aiohttp import web
+from loguru import logger
 from pydantic import ValidationError
 
 import config as config_module
@@ -14,6 +15,7 @@ from auth.password_service import PasswordPolicyError, hash_password, validate_p
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
+from observer.web_event_writer import write_web_cabinet_observer_event
 from registry.browser_pairing_service import BrowserPairingService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
@@ -66,6 +68,60 @@ def _build_session_payload(*, user_login: str, actor_role: str, auth_type: str) 
         permissions=permissions,
         permissions_version=permissions_version,
     )
+
+
+def _clean_header(value: object, *, max_length: int = 120) -> str | None:
+    text = str(value or "").strip()
+    return text[:max_length] if text else None
+
+
+def _account_session_observer_actor_context(
+    request: web.Request,
+    *,
+    actor_id: str | None,
+    actor_role: str | None,
+) -> dict[str, str | None]:
+    return {
+        "actor_id": actor_id,
+        "actor_role": actor_role,
+        "method": request.method,
+        "correlation_id": (
+            _clean_header(request.headers.get("X-Request-ID"))
+            or _clean_header(request.headers.get("X-Correlation-ID"))
+        ),
+    }
+
+
+async def _write_account_session_observer_event(
+    request: web.Request,
+    *,
+    event_type: str,
+    severity: str,
+    result: str,
+    actor_id: str | None = None,
+    actor_role: str | None = None,
+    error_code: str | None = None,
+    payload: dict | None = None,
+) -> None:
+    try:
+        async with get_session() as session:
+            await write_web_cabinet_observer_event(
+                session,
+                source="account_session",
+                event_type=event_type,
+                severity=severity,
+                route=request.path,
+                actor_context=_account_session_observer_actor_context(
+                    request,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                ),
+                result=result,
+                error_code=error_code,
+                payload=payload,
+            )
+    except Exception as exc:
+        logger.warning(f"[account_session_observer] failed to write {event_type}: {exc}")
 
 
 async def _build_effective_session_payload(*, user_login: str, actor_role: str, auth_type: str) -> WebSessionPayload:
@@ -136,6 +192,19 @@ async def handle_web_session_login(request):
         )
     expected_role = str(payload.expected_role or "").strip().lower()
     if expected_role and expected_role in VALID_ROLES and actor_role != expected_role:
+        await _write_account_session_observer_event(
+            request,
+            event_type="role_mismatch",
+            severity="warning",
+            result="failed",
+            actor_id=payload.login,
+            actor_role=actor_role,
+            error_code="ROLE_MISMATCH",
+            payload={
+                "expected_role": expected_role,
+                "actual_role": actor_role,
+            },
+        )
         return web.json_response(
             {
                 "status": "error",
@@ -161,13 +230,27 @@ async def handle_web_session_login(request):
             },
             status=503,
         )
+    session_payload = await _build_effective_session_payload(
+        user_login=payload.login,
+        actor_role=actor_role,
+        auth_type="ui_token",
+    )
+    await _write_account_session_observer_event(
+        request,
+        event_type="login_succeeded",
+        severity="info",
+        result="succeeded",
+        actor_id=payload.login,
+        actor_role=actor_role,
+        payload={
+            "auth_type": "ui_token",
+            "default_workspace": session_payload.default_workspace,
+            "available_workspace_count": len(session_payload.available_workspaces),
+        },
+    )
     response = json_model_response(
         SuccessResponse[WebSessionPayload](
-            data=await _build_effective_session_payload(
-                user_login=payload.login,
-                actor_role=actor_role,
-                auth_type="ui_token",
-            )
+            data=session_payload
         )
     )
     response.set_cookie(
@@ -237,6 +320,19 @@ async def handle_web_session_register(request):
                 return _error("Пользователь с таким логином уже существует.", "LOGIN_ALREADY_EXISTS", status=409)
             return _error("Не удалось создать аккаунт.", "VALIDATION_ERROR", status=400)
 
+    await _write_account_session_observer_event(
+        request,
+        event_type="register_succeeded",
+        severity="info",
+        result="succeeded",
+        actor_id=login,
+        actor_role="user",
+        payload={
+            "next_path": "/app/login?registered=1",
+            "device_link_accepted": bool(device_link_payload and device_link_payload.accepted),
+            "device_link_purpose": device_link_payload.purpose if device_link_payload else None,
+        },
+    )
     return json_model_response(
         SuccessResponse[WebSessionRegisterPayload](
             data=WebSessionRegisterPayload(
@@ -254,8 +350,23 @@ async def handle_web_session_register(request):
 async def handle_web_session_logout(request):
     auth_context = request["auth_context"]
     auth_service = AuthService(request.app["state"])
+    token_revoked = False
     if auth_context.token:
-        await auth_service.revoke_ui_token(auth_context.token)
+        token_revoked = await auth_service.revoke_ui_token(auth_context.token)
+    auth_type = getattr(auth_context.auth_type, "value", str(auth_context.auth_type))
+    await _write_account_session_observer_event(
+        request,
+        event_type="logout_succeeded",
+        severity="info",
+        result="succeeded",
+        actor_id=auth_context.actor_id,
+        actor_role=auth_context.actor_role,
+        payload={
+            "auth_type": auth_type,
+            "credential_seen": bool(auth_context.token),
+            "revoked": bool(token_revoked),
+        },
+    )
 
     response = json_model_response(
         SuccessResponse[WebSessionLogoutPayload](data=WebSessionLogoutPayload(cleared=True))

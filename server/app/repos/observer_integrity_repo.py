@@ -14,7 +14,7 @@ from shared.redaction import redact_sensitive_payload
 
 
 OBSERVER_INTEGRITY_NAMESPACE = uuid.UUID("94d71381-2f77-4ba1-810e-dce1fd70fb1c")
-ALLOWED_SEVERITIES = {"info", "warning", "error", "critical"}
+ALLOWED_SEVERITIES = {"info", "low", "medium", "warning", "error", "high", "critical"}
 ALLOWED_STATUSES = {"active", "acknowledged", "resolved", "suppressed"}
 
 
@@ -174,6 +174,7 @@ class ObserverIntegrityRepo:
         ticket_id: str | None = None,
         operation_id: str | None = None,
         event_type: str | None = None,
+        source: str | None = None,
         since: datetime | None = None,
         limit: int = 100,
     ) -> list[ObserverIntegrityEvent]:
@@ -190,6 +191,8 @@ class ObserverIntegrityRepo:
             stmt = stmt.where(ObserverIntegrityEvent.operation_id == operation_id)
         if event_type:
             stmt = stmt.where(ObserverIntegrityEvent.event_type == event_type)
+        if source:
+            stmt = stmt.where(ObserverIntegrityEvent.source == source)
         if since:
             stmt = stmt.where(ObserverIntegrityEvent.last_seen_at >= since)
         stmt = stmt.order_by(
@@ -210,7 +213,10 @@ class ObserverIntegrityRepo:
             )
         ).all()
         counts_by_status: dict[str, dict[str, int]] = {}
-        counts_by_severity = {severity: 0 for severity in ("critical", "error", "warning", "info")}
+        counts_by_severity = {
+            severity: 0
+            for severity in ("critical", "high", "error", "warning", "medium", "low", "info")
+        }
         for status, severity, count in counts_rows:
             status_key = str(status or "unknown")
             severity_key = str(severity or "unknown")

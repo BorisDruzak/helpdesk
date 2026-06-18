@@ -10,6 +10,7 @@ from auth.middleware import require_auth
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
+from observer.web_event_writer import write_web_cabinet_observer_event
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
@@ -35,6 +36,136 @@ def _success(data: dict) -> web.Response:
 def _text(value: object, *, max_length: int = 500) -> str | None:
     text = str(value or "").strip()
     return text[:max_length] if text else None
+
+
+def _observer_actor_context(
+    request: web.Request,
+    *,
+    actor_id: str | None,
+    actor_role: str | None,
+) -> dict[str, str | None]:
+    return {
+        "actor_id": actor_id,
+        "actor_role": actor_role,
+        "method": request.method,
+        "correlation_id": (
+            _text(request.headers.get("X-Request-ID"), max_length=120)
+            or _text(request.headers.get("X-Correlation-ID"), max_length=120)
+        ),
+    }
+
+
+async def _write_device_linking_observer_event(
+    session,
+    request: web.Request,
+    *,
+    event_type: str,
+    severity: str,
+    result: str,
+    device_id: str | None = None,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    payload: dict | None = None,
+    route: str | None = None,
+) -> None:
+    auth_context = request.get("auth_context")
+    try:
+        await write_web_cabinet_observer_event(
+            session,
+            source="device_linking",
+            event_type=event_type,
+            severity=severity,
+            route=route or request.path,
+            actor_context=_observer_actor_context(
+                request,
+                actor_id=getattr(auth_context, "actor_id", None),
+                actor_role=getattr(auth_context, "actor_role", None),
+            ),
+            result=result,
+            device_id=device_id,
+            person_id=person_id,
+            error_code=error_code,
+            payload=payload,
+        )
+    except Exception as exc:
+        logger.warning(f"[device_linking_observer] failed to write {event_type}: {exc}")
+
+
+async def _write_registry_binding_observer_event(
+    session,
+    request: web.Request,
+    *,
+    event_type: str,
+    severity: str,
+    result: str,
+    device_id: str | None = None,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    payload: dict | None = None,
+    route: str | None = None,
+) -> None:
+    auth_context = request.get("auth_context")
+    try:
+        await write_web_cabinet_observer_event(
+            session,
+            source="registry_binding",
+            event_type=event_type,
+            severity=severity,
+            route=route or request.path,
+            actor_context=_observer_actor_context(
+                request,
+                actor_id=getattr(auth_context, "actor_id", None),
+                actor_role=getattr(auth_context, "actor_role", None),
+            ),
+            result=result,
+            device_id=device_id,
+            person_id=person_id,
+            error_code=error_code,
+            payload=payload,
+        )
+    except Exception as exc:
+        logger.warning(f"[registry_binding_observer] failed to write {event_type}: {exc}")
+
+
+async def _write_registry_binding_created_observer_event(
+    session,
+    request: web.Request,
+    *,
+    response_payload: dict,
+    device_id: str,
+    person_id: str | None,
+    relationship_type: str,
+    replace_existing: bool,
+    reason: str | None,
+    route: str,
+) -> None:
+    binding = response_payload.get("binding") if isinstance(response_payload, dict) else {}
+    asset = response_payload.get("asset") if isinstance(response_payload, dict) else {}
+    events = response_payload.get("events") if isinstance(response_payload, dict) else {}
+    if not isinstance(binding, dict):
+        binding = {}
+    if not isinstance(asset, dict):
+        asset = {}
+    if not isinstance(events, dict):
+        events = {}
+    await _write_registry_binding_observer_event(
+        session,
+        request,
+        event_type="registry_binding_created",
+        severity="info",
+        result="succeeded",
+        device_id=str(binding.get("device_id") or asset.get("device_id") or device_id or "") or None,
+        person_id=str(binding.get("person_id") or person_id or "") or None,
+        payload={
+            "binding_status": binding.get("status"),
+            "relationship_type": binding.get("relationship_type") or relationship_type,
+            "replace_existing": replace_existing,
+            "reason_present": bool(reason),
+            "reused_existing_binding": bool(events.get("reused_existing_binding") or False),
+            "satisfied_pending_claim": bool(events.get("satisfied_pending_claim") or False),
+        },
+        route=route,
+    )
 
 
 def _validate_uuid_device_id(value: str | None) -> str | None:
@@ -626,6 +757,21 @@ async def handle_web_registry_browser_pairing_code_lookup(request: web.Request) 
     async with get_session() as session:
         service = BrowserPairingService(session)
         payload = await service.lookup_by_pairing_code(pairing_code)
+        if payload is not None:
+            await _write_device_linking_observer_event(
+                session,
+                request,
+                event_type="browser_pairing_lookup_succeeded",
+                severity="info",
+                result="succeeded",
+                device_id=payload.get("device_id"),
+                payload={
+                    "purpose": payload.get("purpose"),
+                    "status": payload.get("status"),
+                    "next_route": _browser_pairing_next_url(payload).split("?", 1)[0],
+                    "expires_at": payload.get("expires_at"),
+                },
+            )
         await session.commit()
     if payload is None:
         return web.json_response(
@@ -707,6 +853,23 @@ async def handle_web_registry_browser_pairing_registration_confirm(request: web.
                     "department_id": data.get("department_id"),
                     "location_id": data.get("location_id"),
                 },
+            )
+            registration = payload.get("registration") or {}
+            person_payload = payload.get("person") or {}
+            await _write_device_linking_observer_event(
+                session,
+                request,
+                event_type="device_link_request_created",
+                severity="info",
+                result="succeeded",
+                device_id=payload.get("device_id") or registration.get("device_id"),
+                person_id=person_payload.get("person_id"),
+                payload={
+                    "purpose": payload.get("purpose"),
+                    "pairing_status": payload.get("status"),
+                    "registration_status": registration.get("status"),
+                },
+                route="/api/web/registry/browser-pairings/{pairing_id}/registration/confirm",
             )
             await session.commit()
         except ValueError as exc:
@@ -1218,6 +1381,29 @@ async def handle_web_admin_registry_registration_approve(request: web.Request) -
                 admin_override_user_confirmation=bool(data.get("admin_override_user_confirmation") or data.get("force")),
                 override_reason=str(data.get("reason") or "").strip() or None,
             )
+            registration = payload.get("registration") or {}
+            binding = payload.get("binding") or {}
+            person = payload.get("person") or {}
+            asset = payload.get("asset") or {}
+            await _write_device_linking_observer_event(
+                session,
+                request,
+                event_type="device_link_request_approved",
+                severity="info",
+                result="succeeded",
+                device_id=binding.get("device_id") or asset.get("device_id"),
+                person_id=binding.get("person_id") or person.get("person_id"),
+                payload={
+                    "registration_status": registration.get("status"),
+                    "binding_status": binding.get("status"),
+                    "relationship_type": binding.get("relationship_type"),
+                    "replace_existing": bool(data.get("replace_existing")),
+                    "admin_override_user_confirmation": bool(
+                        data.get("admin_override_user_confirmation") or data.get("force")
+                    ),
+                },
+                route="/api/web/admin/registry/registrations/{claim_id}/approve",
+            )
             await session.commit()
     except RegistrationConflictError as exc:
         return web.json_response({"status": "error", "error": str(exc), "error_code": "REGISTRATION_CONFLICT"}, status=409)
@@ -1235,6 +1421,23 @@ async def handle_web_admin_registry_registration_reject(request: web.Request) ->
     try:
         async with get_session() as session:
             payload = await RegistrationService(session).reject_claim(claim_id, reviewed_by=auth_context.actor_id, reason=reason)
+            registration = payload.get("registration") or {}
+            person = payload.get("person") or {}
+            asset = payload.get("asset") or {}
+            await _write_device_linking_observer_event(
+                session,
+                request,
+                event_type="device_link_request_rejected",
+                severity="info",
+                result="succeeded",
+                device_id=asset.get("device_id"),
+                person_id=person.get("person_id"),
+                payload={
+                    "registration_status": registration.get("status"),
+                    "reason_present": bool(reason),
+                },
+                route="/api/web/admin/registry/registrations/{claim_id}/reject",
+            )
             await session.commit()
     except ValueError as exc:
         return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
@@ -1246,11 +1449,39 @@ async def handle_web_admin_registry_binding_revoke(request: web.Request) -> web.
     auth_context = request["auth_context"]
     binding_id = str(request.match_info.get("binding_id") or "").strip()
     data = await request.json() if request.can_read_body else {}
+    reason = _text(data.get("reason"), max_length=1000)
     async with get_session() as session:
+        current_binding = await session.get(DeviceUserBinding, binding_id)
         payload = await RegistrationService(session).revoke_binding(
             binding_id,
             revoked_by=auth_context.actor_id,
-            reason=str(data.get("reason") or "").strip() or None,
+            reason=reason,
+        )
+        events = payload.get("events") if isinstance(payload, dict) else {}
+        binding = payload.get("binding") if isinstance(payload, dict) else {}
+        if not isinstance(events, dict):
+            events = {}
+        if not isinstance(binding, dict):
+            binding = {}
+        revoked_sessions = events.get("revoked_sessions")
+        canceled_login_requests = events.get("canceled_login_requests")
+        await _write_registry_binding_observer_event(
+            session,
+            request,
+            event_type="registry_binding_revoked",
+            severity="info",
+            result="succeeded",
+            device_id=getattr(current_binding, "device_id", None),
+            person_id=getattr(current_binding, "person_id", None),
+            payload={
+                "binding_status": binding.get("status"),
+                "reason_present": bool(reason),
+                "revoked_session_count": len(revoked_sessions) if isinstance(revoked_sessions, list) else 0,
+                "canceled_login_request_count": len(canceled_login_requests)
+                if isinstance(canceled_login_requests, list)
+                else 0,
+            },
+            route="/api/web/admin/registry/bindings/{binding_id}/revoke",
         )
         await session.commit()
     return _success(payload)
@@ -1261,15 +1492,29 @@ async def handle_web_admin_registry_device_bind_person(request: web.Request) -> 
     auth_context = request["auth_context"]
     device_id = str(request.match_info.get("device_id") or "").strip()
     data = await request.json() if request.can_read_body else {}
+    relationship_type = str(data.get("relationship_type") or "primary_user").strip()
+    replace_existing = bool(data.get("replace_existing"))
+    reason = _text(data.get("reason"), max_length=1000)
     try:
         async with get_session() as session:
             payload = await RegistrationService(session).bind_person_to_device(
                 device_id=device_id,
                 person_id=str(data.get("person_id") or "").strip(),
-                relationship_type=str(data.get("relationship_type") or "primary_user").strip(),
-                replace_existing=bool(data.get("replace_existing")),
+                relationship_type=relationship_type,
+                replace_existing=replace_existing,
                 reviewed_by=auth_context.actor_id,
-                reason=_text(data.get("reason"), max_length=1000),
+                reason=reason,
+            )
+            await _write_registry_binding_created_observer_event(
+                session,
+                request,
+                response_payload=payload,
+                device_id=device_id,
+                person_id=str(data.get("person_id") or "").strip(),
+                relationship_type=relationship_type,
+                replace_existing=replace_existing,
+                reason=reason,
+                route="/api/web/admin/registry/devices/{device_id}/bind-person",
             )
             await session.commit()
     except RegistrationConflictError as exc:
@@ -1302,14 +1547,45 @@ async def handle_web_admin_registry_device_transfer_owner(request: web.Request) 
     auth_context = request["auth_context"]
     device_id = str(request.match_info.get("device_id") or "").strip()
     data = await request.json() if request.can_read_body else {}
+    old_binding_action = str(data.get("old_binding_action") or "transferred").strip()
+    reason = _text(data.get("reason"), max_length=1000)
     try:
         async with get_session() as session:
             payload = await RegistrationService(session).transfer_owner(
                 device_id=device_id,
                 new_person_id=str(data.get("new_person_id") or "").strip(),
-                old_binding_action=str(data.get("old_binding_action") or "transferred").strip(),
+                old_binding_action=old_binding_action,
                 reviewed_by=auth_context.actor_id,
-                reason=_text(data.get("reason"), max_length=1000),
+                reason=reason,
+            )
+            binding = payload.get("binding") if isinstance(payload, dict) else {}
+            asset = payload.get("asset") if isinstance(payload, dict) else {}
+            summary = payload.get("summary") if isinstance(payload, dict) else {}
+            if not isinstance(binding, dict):
+                binding = {}
+            if not isinstance(asset, dict):
+                asset = {}
+            if not isinstance(summary, dict):
+                summary = {}
+            await _write_device_linking_observer_event(
+                session,
+                request,
+                event_type="device_link_owner_transferred",
+                severity="info",
+                result="succeeded",
+                device_id=str(binding.get("device_id") or asset.get("device_id") or device_id or "") or None,
+                person_id=str(binding.get("person_id") or data.get("new_person_id") or "") or None,
+                payload={
+                    "operation": payload.get("operation"),
+                    "operation_status": payload.get("status"),
+                    "new_binding_status": binding.get("status"),
+                    "relationship_type": binding.get("relationship_type"),
+                    "old_binding_action": old_binding_action,
+                    "revoked_session_count": int(summary.get("revoked_sessions") or 0),
+                    "reason_present": bool(reason),
+                    "reused_existing_binding": bool(summary.get("reused") or False),
+                },
+                route="/api/web/admin/registry/devices/{device_id}/transfer-owner",
             )
             await session.commit()
     except (RegistrationConflictError, RegistrationValidationError, ValueError) as exc:
@@ -1324,13 +1600,25 @@ async def handle_web_admin_registry_device_shared_users(request: web.Request) ->
     auth_context = request["auth_context"]
     device_id = str(request.match_info.get("device_id") or "").strip()
     data = await request.json() if request.can_read_body else {}
+    reason = _text(data.get("reason"), max_length=1000)
     try:
         async with get_session() as session:
             payload = await RegistrationService(session).add_shared_user(
                 device_id=device_id,
                 person_id=str(data.get("person_id") or "").strip(),
                 reviewed_by=auth_context.actor_id,
-                reason=_text(data.get("reason"), max_length=1000),
+                reason=reason,
+            )
+            await _write_registry_binding_created_observer_event(
+                session,
+                request,
+                response_payload=payload,
+                device_id=device_id,
+                person_id=str(data.get("person_id") or "").strip(),
+                relationship_type="shared_user",
+                replace_existing=False,
+                reason=reason,
+                route="/api/web/admin/registry/devices/{device_id}/shared-users",
             )
             await session.commit()
     except (RegistrationConflictError, RegistrationValidationError, ValueError) as exc:
@@ -1345,14 +1633,27 @@ async def handle_web_admin_registry_device_responsible(request: web.Request) -> 
     auth_context = request["auth_context"]
     device_id = str(request.match_info.get("device_id") or "").strip()
     data = await request.json() if request.can_read_body else {}
+    replace_existing = bool(data.get("replace_existing", True))
+    reason = _text(data.get("reason"), max_length=1000)
     try:
         async with get_session() as session:
             payload = await RegistrationService(session).assign_responsible(
                 device_id=device_id,
                 person_id=str(data.get("person_id") or "").strip(),
-                replace_existing=bool(data.get("replace_existing", True)),
+                replace_existing=replace_existing,
                 reviewed_by=auth_context.actor_id,
-                reason=_text(data.get("reason"), max_length=1000),
+                reason=reason,
+            )
+            await _write_registry_binding_created_observer_event(
+                session,
+                request,
+                response_payload=payload,
+                device_id=device_id,
+                person_id=str(data.get("person_id") or "").strip(),
+                relationship_type="responsible",
+                replace_existing=replace_existing,
+                reason=reason,
+                route="/api/web/admin/registry/devices/{device_id}/responsible",
             )
             await session.commit()
     except (RegistrationConflictError, RegistrationValidationError, ValueError) as exc:

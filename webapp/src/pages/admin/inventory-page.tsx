@@ -12,6 +12,7 @@
   MonitorCog,
   MoreHorizontal,
   RefreshCcw,
+  RotateCcw,
   Rocket,
   ShieldCheck,
   ShieldQuestion,
@@ -40,6 +41,7 @@ import {
   fetchAdminDeviceTokens,
   fetchAdminDevices,
   rejectAdminConnectionRequest,
+  restoreAdminDevice,
   revokeAdminDeviceToken,
   updateAdminConnectionPolicy,
   type AdminConnectionPolicy,
@@ -76,6 +78,7 @@ const POLICY_LABELS: Record<AdminConnectionPolicy, string> = {
 };
 
 const ARCHIVE_AGENT_REASON = "Архивация тестового агента из inventory";
+const RESTORE_AGENT_REASON = "Восстановление агента из архива inventory";
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -140,6 +143,7 @@ export function AdminInventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdminStatusFilter>("all");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [activePanel, setActivePanel] = useState<InventoryPanel>(
     PANEL_OPTIONS.some((option) => option.id === searchParams.get("panel"))
       ? (searchParams.get("panel") as InventoryPanel)
@@ -157,8 +161,8 @@ export function AdminInventoryPage() {
   const deferredQuery = useDeferredValue(query);
 
   const devicesQuery = useQuery({
-    queryKey: ["admin-devices-page", deferredQuery, statusFilter],
-    queryFn: () => fetchAdminDevices({ query: deferredQuery, statusFilter }),
+    queryKey: ["admin-devices-page", deferredQuery, statusFilter, includeArchived],
+    queryFn: () => fetchAdminDevices({ query: deferredQuery, statusFilter, includeArchived }),
     retry: false,
     refetchInterval: 15_000,
   });
@@ -259,6 +263,26 @@ export function AdminInventoryPage() {
     },
     onError: (error) => {
       setArchiveFeedback(error instanceof Error ? error.message : "Не удалось архивировать агента.");
+    },
+  });
+
+  const restoreDeviceMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedDevice?.device_id) {
+        throw new Error("Не выбран агент.");
+      }
+      return restoreAdminDevice(selectedDevice.device_id, RESTORE_AGENT_REASON);
+    },
+    onSuccess: async () => {
+      setArchiveFeedback("Агент восстановлен. Старые токены не возвращены, подключение нужно подтвердить заново.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-devices-page"] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-device-tokens", selectedDevice?.device_id] }),
+        queryClient.invalidateQueries({ queryKey: ["admin-connection-requests"] }),
+      ]);
+    },
+    onError: (error) => {
+      setArchiveFeedback(error instanceof Error ? error.message : "Не удалось восстановить агента.");
     },
   });
 
@@ -496,6 +520,15 @@ export function AdminInventoryPage() {
                     </option>
                   ))}
                 </Select>
+                <label className="inline-flex h-10 items-center gap-2 rounded-lg border border-border px-3 text-sm font-semibold text-slate-600">
+                  <input
+                    checked={includeArchived}
+                    className="h-4 w-4 rounded border-slate-300 text-brand-600"
+                    onChange={(event) => setIncludeArchived(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Архив
+                </label>
               </div>
             </div>
           </div>
@@ -621,6 +654,17 @@ export function AdminInventoryPage() {
               archiveDeviceMutation.mutate();
             }
           }}
+          onRestore={() => {
+            if (!selectedDevice) {
+              return;
+            }
+            const confirmed = window.confirm(
+              `Восстановить агента ${selectedDevice.hostname || compactId(selectedDevice.device_id)} из архива? Старые токены и сессии не будут восстановлены.`
+            );
+            if (confirmed) {
+              restoreDeviceMutation.mutate();
+            }
+          }}
           onCleanupPreview={() => cleanupMutation.mutate(false)}
           onCleanupApply={() => cleanupMutation.mutate(true)}
           onOpenAgentUpdates={() => {
@@ -638,6 +682,7 @@ export function AdminInventoryPage() {
           onOpenPlaybooks={() => navigate("/app/admin/playbooks")}
           request={activePanel === "requests" ? selectedRequest : null}
           rolloutAssignments={rolloutAssignments}
+          restoreBusy={restoreDeviceMutation.isPending}
           tokenSummary={deviceTokensQuery.data?.summary ?? null}
         />
       </div>
@@ -682,7 +727,11 @@ function AgentsTable({
             const selected = selectedDeviceId === device.device_id;
             return (
               <tr
-                className={cn("cursor-pointer transition-colors hover:bg-brand-50/40", selected ? "bg-brand-50/70" : "")}
+                className={cn(
+                  "cursor-pointer transition-colors hover:bg-brand-50/40",
+                  selected ? "bg-brand-50/70" : "",
+                  device.is_deleted ? "bg-slate-50 text-slate-500" : ""
+                )}
                 key={device.device_id}
                 onClick={() => onSelect(device)}
               >
@@ -693,12 +742,15 @@ function AgentsTable({
                     </div>
                     <div>
                       <p className="font-semibold text-slate-950">{device.hostname || compactId(device.device_id)}</p>
-                      <p className="text-xs text-slate-500">{compactId(device.device_id)}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <p className="text-xs text-slate-500">{compactId(device.device_id)}</p>
+                        {device.is_deleted ? <Badge tone="warning">Архив</Badge> : null}
+                      </div>
                     </div>
                   </div>
                 </td>
                 <td className="px-5 py-4">
-                  <Badge tone={device.online ? "success" : "neutral"} withDot>
+                  <Badge tone={device.is_deleted ? "warning" : device.online ? "success" : "neutral"} withDot={!device.is_deleted}>
                     {device.connection_status_label}
                   </Badge>
                 </td>
@@ -1238,8 +1290,10 @@ function AgentDetailsPanel({
   onOpenDeviceCard,
   onOpenDeviceOperations,
   onOpenPlaybooks,
+  onRestore,
   request,
   rolloutAssignments,
+  restoreBusy,
   tokenSummary,
 }: {
   archiveBusy: boolean;
@@ -1254,8 +1308,10 @@ function AgentDetailsPanel({
   onOpenDeviceCard: () => void;
   onOpenDeviceOperations: () => void;
   onOpenPlaybooks: () => void;
+  onRestore: () => void;
   request: AdminConnectionRequestItem | null;
   rolloutAssignments: AdminDevicesPayload["rollout"];
+  restoreBusy: boolean;
   tokenSummary: { total_count: number; active_count: number; revoked_count: number } | null;
 }) {
   if (request) {
@@ -1308,8 +1364,8 @@ function AgentDetailsPanel({
             <p className="mt-1 text-sm text-slate-500">{device?.hostname || "Устройство не выбрано"}</p>
           </div>
           {device ? (
-            <Badge tone={device.online ? "success" : "neutral"} withDot>
-              {device.online ? "Онлайн" : "Офлайн"}
+            <Badge tone={device.is_deleted ? "warning" : device.online ? "success" : "neutral"} withDot={!device.is_deleted}>
+              {device.is_deleted ? "Архив" : device.online ? "Онлайн" : "Офлайн"}
             </Badge>
           ) : null}
         </div>
@@ -1325,6 +1381,12 @@ function AgentDetailsPanel({
                 ["Target", device.target || "n/a"],
                 ["Последняя активность", formatDateTime(device.last_seen_at)],
                 ["Идентификатор", device.identity_summary.source_label],
+                ...(device.is_deleted
+                  ? [
+                      ["Архивирован", formatDateTime(device.deleted_at)] as [string, string],
+                      ["Причина", device.delete_reason || "Не указана"] as [string, string],
+                    ]
+                  : []),
               ]}
             />
 
@@ -1334,7 +1396,11 @@ function AgentDetailsPanel({
               <MiniMetric label="Rollout" value={String(rolloutAssignments.length)} />
             </div>
 
-            {device.duplicate_warning ? (
+            {device.is_deleted ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Устройство в архиве. Старые токены и сессии уже отозваны; после восстановления агент должен заново отправить запрос на подключение.
+              </div>
+            ) : device.duplicate_warning ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <div className="flex gap-2">
                   <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600" />
@@ -1362,8 +1428,20 @@ function AgentDetailsPanel({
             {archiveFeedback ? <p className="text-sm text-slate-600">{archiveFeedback}</p> : null}
 
             <div className="space-y-2">
+              {device.is_deleted ? (
+                <Button
+                  className="w-full justify-start"
+                  disabled={restoreBusy}
+                  leadingIcon={<RotateCcw className="h-4 w-4" />}
+                  onClick={onRestore}
+                  size="sm"
+                >
+                  Восстановить агента
+                </Button>
+              ) : null}
               <Button
                 className="w-full justify-start"
+                disabled={device.is_deleted}
                 leadingIcon={<DownloadCloud className="h-4 w-4" />}
                 onClick={onOpenAgentUpdates}
                 size="sm"
@@ -1381,6 +1459,7 @@ function AgentDetailsPanel({
               </Button>
               <Button
                 className="w-full justify-start"
+                disabled={device.is_deleted}
                 leadingIcon={<MonitorCog className="h-4 w-4" />}
                 onClick={onOpenDeviceOperations}
                 size="sm"
@@ -1390,6 +1469,7 @@ function AgentDetailsPanel({
               </Button>
               <Button
                 className="w-full justify-start"
+                disabled={device.is_deleted}
                 leadingIcon={<ClipboardList className="h-4 w-4" />}
                 onClick={onOpenPlaybooks}
                 size="sm"
@@ -1397,16 +1477,18 @@ function AgentDetailsPanel({
               >
                 Запустить плейбук
               </Button>
-              <Button
-                className="w-full justify-start border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
-                disabled={archiveBusy}
-                leadingIcon={<Trash2 className="h-4 w-4" />}
-                onClick={onArchive}
-                size="sm"
-                variant="outline"
-              >
-                Архивировать агента
-              </Button>
+              {!device.is_deleted ? (
+                <Button
+                  className="w-full justify-start border-rose-200 text-rose-700 hover:bg-rose-50 hover:text-rose-800"
+                  disabled={archiveBusy}
+                  leadingIcon={<Trash2 className="h-4 w-4" />}
+                  onClick={onArchive}
+                  size="sm"
+                  variant="outline"
+                >
+                  Архивировать агента
+                </Button>
+              ) : null}
             </div>
           </>
         ) : (

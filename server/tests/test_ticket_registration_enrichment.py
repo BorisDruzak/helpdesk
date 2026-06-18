@@ -62,6 +62,13 @@ async def test_ticket_with_active_binding_gets_requester_context_and_asset(test_
     assert ticket.requester_binding_id == approved["binding"]["binding_id"]
     assert ticket.requester_registration_status == "admin_confirmed"
     assert ticket.asset_id == approved["binding"]["asset_id"]
+    assert ticket.requester_account_mode == "agent_legacy_or_device_only"
+    assert ticket.custom_fields["requester_account_context"]["account_mode"] == "agent_legacy_or_device_only"
+    assert ticket.custom_fields["requester_account_context"]["context_scope"] == "limited"
+    assert ticket.custom_fields["requester_account_context"]["profile_completion_evidence"] is False
+    assert ticket.custom_fields["ticket_context"]["requester_context"]["account_mode"] == "agent_legacy_or_device_only"
+    assert ticket.custom_fields["ticket_context"]["requester_context"]["context_scope"] == "limited"
+    assert "profile_completion" not in ticket.custom_fields["ticket_context"]["requester_context"]
 
 
 @pytest.mark.asyncio
@@ -132,6 +139,11 @@ async def test_ticket_with_requester_profile_creates_claim_and_pending_status(te
     assert ticket.requester_person_id is None
     assert ticket.requester_binding_id is None
     assert ticket.requester_registration_status == "pending_user_confirmation"
+    assert ticket.requester_account_mode == "agent_legacy_or_device_only"
+    assert ticket.custom_fields["requester_account_context"]["account_mode"] == "agent_legacy_or_device_only"
+    assert ticket.custom_fields["requester_account_context"]["context_scope"] == "limited"
+    assert ticket.custom_fields["requester_account_context"]["profile_completion_evidence"] is False
+    assert "ticket_context" not in ticket.custom_fields
     assert ticket.custom_fields["requester_registration"]["pending_claim"]["claim_id"] == claim.claim_id
 
 

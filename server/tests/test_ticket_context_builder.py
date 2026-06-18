@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, RegistryDepartment, RegistryLocation, RegistryPerson, Ticket
+from app.db.models import Device, RegistryDepartment, RegistryLocation, RegistryPerson, Ticket, TicketEvent
 from registry.registration_service import RegistrationService
 from tickets.create_flow import create_ticket_with_side_effects
-from tickets.ticket_context import TicketContextBuilder
+from tickets.diagnostic_target import resolve_ticket_diagnostic_target
+from tickets.ticket_context import (
+    TicketContextBuilder,
+    project_requester_ticket_context,
+    project_support_ticket_context,
+    validate_ticket_context_v1,
+)
 
 
 def _new_id() -> str:
@@ -138,6 +145,77 @@ async def test_ticket_context_builder_resolves_normal_creator_primary_agent(test
     assert context["diagnostic_target_source"] == "creator_primary_agent"
     assert "capabilities" not in str(context)
     assert "secret_hint" not in str(context)
+
+
+@pytest.mark.asyncio
+async def test_ticket_context_builder_emits_phase_b_canonical_sections(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = _new_id()
+
+    async with session_maker() as session:
+        session.add(_device(device_id, hostname="CANONICAL-TARGET"))
+        creator = _person("Canonical Creator")
+        session.add(creator)
+        await session.flush()
+        await RegistrationService(session).bind_person_to_device(
+            device_id=device_id,
+            person_id=creator.person_id,
+            relationship_type="primary_user",
+            reviewed_by="admin",
+            reason="canonical context target",
+        )
+
+        requester_context = _requester_account(creator)
+        context = await TicketContextBuilder(session, state=_State({device_id})).build(
+            creator_person_id=creator.person_id,
+            creator_actor_id="creator-login",
+            requester_context=requester_context,
+            form={"key": "hardware_help", "title": "Hardware help"},
+            policy_refs={"routing_policy": "default_triage", "diagnostic_policy": "hardware_diag"},
+        )
+        await session.commit()
+
+    assert validate_ticket_context_v1(context) == []
+    assert context["schema"] == "ticket_context_v1"
+    assert context["created_at"]
+    assert context["on_behalf"] == {"enabled": False, "reason": None}
+    assert context["requester_context"] == requester_context
+    assert context["diagnostic_target"]["device_id"] == device_id
+    assert context["diagnostic_target"]["source"] == "creator_primary_agent"
+    assert context["form"] == {"key": "hardware_help", "title": "Hardware help"}
+    assert context["policy_refs"] == {"routing_policy": "default_triage", "diagnostic_policy": "hardware_diag"}
+    assert context["redaction"]["requester_hidden_fields"]
+
+    requester_projection = project_requester_ticket_context(context, actor_context={"actor_id": "creator-login"})
+    assert requester_projection["summary"]["affected"] == "Canonical Creator"
+    assert requester_projection["diagnostic_target"]["label"] == "CANONICAL-TARGET"
+    assert "creator" not in requester_projection
+    assert "affected" not in requester_projection
+    assert "policy_refs" not in requester_projection
+    assert "diagnostic_target_source" not in str(requester_projection)
+    assert "person_id" not in str(requester_projection)
+    assert device_id not in str(requester_projection)
+
+    support_projection = project_support_ticket_context(context, actor_context={"actor_id": "support-test"})
+    assert support_projection["creator"]["person_id"] == creator.person_id
+    assert support_projection["affected"]["person_id"] == creator.person_id
+    assert support_projection["diagnostic_target"]["device_id"] == device_id
+    assert support_projection["diagnostic_target"]["source"] == "creator_primary_agent"
+
+
+@pytest.mark.no_db
+def test_validate_ticket_context_v1_reports_missing_required_sections():
+    errors = validate_ticket_context_v1(
+        {
+            "schema": "ticket_context_v1",
+            "creator": {"person_id": "creator"},
+        }
+    )
+
+    assert "created_at is required" in errors
+    assert "affected.person_id is required" in errors
+    assert "diagnostic_target section is required" in errors
+    assert "requester_context section is required" in errors
 
 
 @pytest.mark.asyncio
@@ -312,3 +390,81 @@ async def test_create_flow_stores_on_behalf_affected_target_context(test_engine)
     assert custom_fields["diagnostic_target_source"] == "affected_user_primary_agent"
     assert custom_fields["on_behalf_reason"] == "support phone intake"
     assert custom_fields["ticket_context"]["target_device"]["device_id"] == affected_device_id
+
+
+@pytest.mark.no_db
+def test_resolve_ticket_diagnostic_target_prefers_context_target_over_stale_flat_alias():
+    ticket = SimpleNamespace(
+        device_id="legacy-device",
+        custom_fields={
+            "target_device_id": "stale-flat-device",
+            "diagnostic_target_source": "creator_primary_agent",
+            "ticket_context": {
+                "schema": "ticket_context_v1",
+                "created_on_behalf": True,
+                "creator": {"person_id": "creator-person"},
+                "affected": {"person_id": "affected-person", "display_name": "Affected Person"},
+                "target_device": {"device_id": "canonical-context-device", "agent_status": "online"},
+                "diagnostic_target": {
+                    "device_id": "canonical-context-device",
+                    "source": "affected_user_primary_agent",
+                    "agent_status": "online",
+                },
+                "diagnostic_target_source": "affected_user_primary_agent",
+            },
+        },
+    )
+
+    target = resolve_ticket_diagnostic_target(ticket)
+
+    assert target.dispatch_device_id == "canonical-context-device"
+    assert target.source == "affected_user_primary_agent"
+    assert target.created_on_behalf is True
+    assert target.affected_person_id == "affected-person"
+
+
+@pytest.mark.asyncio
+async def test_create_flow_writes_ticket_context_resolved_event(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    target_device_id = _new_id()
+
+    async with session_maker() as session:
+        session.add(_device(target_device_id, hostname="EVENT-TARGET"))
+        creator = _person("Event Creator")
+        session.add(creator)
+        await session.flush()
+        await RegistrationService(session).bind_person_to_device(
+            device_id=target_device_id,
+            person_id=creator.person_id,
+            relationship_type="primary_user",
+            reviewed_by="admin",
+            reason="event target",
+        )
+
+        result = await create_ticket_with_side_effects(
+            session,
+            device_id=_new_id(),
+            requester_id="creator-login",
+            title="Need event",
+            description="Ticket context event should be written",
+            user_display_name=creator.display_name,
+            requester_account=_requester_account(creator),
+            state=_State({target_device_id}),
+        )
+        events = (
+            await session.execute(
+                TicketEvent.__table__.select().where(
+                    TicketEvent.ticket_id == result["ticket_id"],
+                    TicketEvent.event_type == "ticket_context_resolved",
+                )
+            )
+        ).all()
+        await session.commit()
+
+    assert len(events) == 1
+    payload = events[0]._mapping["payload"]
+    assert payload["schema"] == "ticket_context_v1"
+    assert payload["created_on_behalf"] is False
+    assert payload["diagnostic_target_source"] == "creator_primary_agent"
+    assert payload["target_available"] is True
+    assert payload["evidence_codes"] == []

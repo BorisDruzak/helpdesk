@@ -1,4 +1,5 @@
 import uuid
+import json
 from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
@@ -18,6 +19,9 @@ from app.db.models import (
     DeviceOutbox,
     KnowledgeAudienceRule,
     Operation,
+    ObserverIntegrityEvent,
+    ObserverSpan,
+    ObserverTrace,
     Playbook,
     PlaybookStep,
     PlaybookVersion,
@@ -40,6 +44,7 @@ from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.knowledge_repo import KnowledgeRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
+from observer.service import ObserverOverlayService, TraceOverlayFilters
 from registry.registration_service import RegistrationService
 from registry.service import RegistryIngestionService
 from routes import setup_routes
@@ -426,6 +431,205 @@ async def test_web_support_status_action_requires_status_permission(test_client,
     )
 
     await _assert_forbidden_permission(response, "ticket.status.change")
+
+
+@pytest.mark.asyncio
+async def test_web_support_message_writes_observer_event_without_raw_text(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    ticket_id = await _seed_support_ticket(
+        test_engine,
+        device_id=f"device-support-chat-{suffix}",
+    )
+    request_id = f"phase-d-support-message-{suffix}"
+    raw_message = f"raw support message {suffix}"
+    raw_metadata = f"raw support metadata {suffix}"
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/messages",
+        headers={**_support_headers(), "X-Request-ID": request_id},
+        json={
+            "text": raw_message,
+            "visibility": "public",
+            "metadata": {"raw_note": raw_metadata, "token": "raw-support-chat-token"},
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["message"]["message_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        traces = await ObserverOverlayService(session).search_traces(
+            TraceOverlayFilters(
+                root_kind="requester_web",
+                source="support_chat",
+                route=f"/api/web/support/tickets/{ticket_id}/messages",
+                event_type="support_message_sent",
+                ticket_id=ticket_id,
+                query=request_id,
+            ),
+            limit=10,
+        )
+        assert len(traces) == 1
+        trace = await session.get(ObserverTrace, traces[0]["trace_id"])
+        span = (
+            await session.execute(select(ObserverSpan).where(ObserverSpan.trace_id == traces[0]["trace_id"]))
+        ).scalar_one()
+
+    assert trace is not None
+    assert trace.status == "succeeded"
+    assert trace.ticket_id == ticket_id
+    assert trace.device_id == f"device-support-chat-{suffix}"
+    assert trace.attrs_json["source"] == "support_chat"
+    assert trace.attrs_json["event_type"] == "support_message_sent"
+    assert span.attrs_json["method"] == "POST"
+    assert span.attrs_json["payload"] == {
+        "message_present": True,
+        "attachment_count": 0,
+        "visibility": "public",
+        "sender_role": "support",
+        "public_reply": True,
+    }
+    serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
+    assert raw_message not in serialized
+    assert raw_metadata not in serialized
+    assert "support-test" not in serialized
+    assert "raw-support-chat-token" not in serialized
+
+    detail = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    assert detail.status == 200, await detail.text()
+    detail_payload = await detail.json()
+    assert detail_payload["data"]["observer"]["web_flow"]["support_chat"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_web_support_resolve_writes_status_and_confirmation_observer_events_without_raw_reason(
+    test_client,
+    test_engine,
+):
+    suffix = uuid.uuid4().hex[:8]
+    ticket_id = await _seed_support_ticket(
+        test_engine,
+        device_id=f"device-support-status-{suffix}",
+        status="in_progress",
+    )
+    request_id = f"phase-d-support-status-{suffix}"
+    raw_reason = f"raw resolve reason {suffix}"
+    raw_summary = f"raw operator summary {suffix}"
+    raw_requester_summary = f"raw requester summary {suffix}"
+    raw_root_cause = f"raw root cause {suffix}"
+    raw_public_comment = f"raw public comment {suffix}"
+    raw_internal_comment = f"raw internal comment {suffix}"
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/status",
+        headers={**_support_headers(), "X-Request-ID": request_id},
+        json={
+            "to_status": "resolved",
+            "reason": raw_reason,
+            "resolution_code": "fixed_remote",
+            "resolution_summary": raw_summary,
+            "requester_resolution_summary": raw_requester_summary,
+            "root_cause": raw_root_cause,
+            "public_comment": raw_public_comment,
+            "internal_comment": raw_internal_comment,
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["status"] == "resolved"
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        status_traces = await ObserverOverlayService(session).search_traces(
+            TraceOverlayFilters(
+                root_kind="requester_web",
+                source="support_status",
+                route=f"/api/web/support/tickets/{ticket_id}/status",
+                event_type="support_status_changed",
+                ticket_id=ticket_id,
+                query=request_id,
+            ),
+            limit=10,
+        )
+        assert len(status_traces) == 1
+        confirmation_traces = await ObserverOverlayService(session).search_traces(
+            TraceOverlayFilters(
+                root_kind="requester_web",
+                source="support_status",
+                route=f"/api/web/support/tickets/{ticket_id}/status",
+                event_type="resolution_confirmation_requested",
+                ticket_id=ticket_id,
+                query=request_id,
+            ),
+            limit=10,
+        )
+        assert len(confirmation_traces) == 1
+        status_trace = await session.get(ObserverTrace, status_traces[0]["trace_id"])
+        status_span = (
+            await session.execute(select(ObserverSpan).where(ObserverSpan.trace_id == status_traces[0]["trace_id"]))
+        ).scalar_one()
+        confirmation_trace = await session.get(ObserverTrace, confirmation_traces[0]["trace_id"])
+        confirmation_span = (
+            await session.execute(
+                select(ObserverSpan).where(ObserverSpan.trace_id == confirmation_traces[0]["trace_id"])
+            )
+        ).scalar_one()
+
+    assert status_trace is not None
+    assert status_trace.status == "succeeded"
+    assert status_trace.attrs_json["source"] == "support_status"
+    assert status_trace.attrs_json["event_type"] == "support_status_changed"
+    assert status_span.attrs_json["payload"] == {
+        "from_status": "in_progress",
+        "to_status": "resolved",
+        "reason_present": True,
+        "resolution_code_present": True,
+        "resolution_summary_present": True,
+        "requester_resolution_summary_present": True,
+        "root_cause_present": True,
+        "public_comment_present": True,
+        "internal_comment_present": True,
+        "requester_confirmation_requested": True,
+        "confirmation_message_created": True,
+        "confirmation_pending_cleared": False,
+    }
+    assert confirmation_trace is not None
+    assert confirmation_trace.status == "succeeded"
+    assert confirmation_span.attrs_json["payload"] == {
+        "to_status": "resolved",
+        "confirmation_request_present": True,
+        "auto_close_policy_present": False,
+        "reopen_on_negative_feedback_policy_present": False,
+    }
+    serialized = json.dumps(
+        {
+            "status_trace": status_trace.attrs_json,
+            "status_span": status_span.attrs_json,
+            "confirmation_trace": confirmation_trace.attrs_json,
+            "confirmation_span": confirmation_span.attrs_json,
+        },
+        sort_keys=True,
+    )
+    for raw_value in (
+        raw_reason,
+        raw_summary,
+        raw_requester_summary,
+        raw_root_cause,
+        raw_public_comment,
+        raw_internal_comment,
+        "support-test",
+        "fixed_remote",
+    ):
+        assert raw_value not in serialized
+
+    detail = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    assert detail.status == 200, await detail.text()
+    detail_payload = await detail.json()
+    assert detail_payload["data"]["observer"]["web_flow"]["support_status"] == "succeeded"
+    assert detail_payload["data"]["observer"]["web_flow"]["latest_event_type"] == "resolution_confirmation_requested"
 
 
 @pytest.mark.asyncio
@@ -1736,6 +1940,91 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
                 result_summary="Связность не подтверждена",
             )
         )
+        web_trace_started_at = operation_started_at + timedelta(seconds=1)
+        web_trace_id = str(uuid.uuid4())
+        chat_trace_id = str(uuid.uuid4())
+        closure_trace_id = str(uuid.uuid4())
+        session.add(
+            ObserverTrace(
+                trace_id=web_trace_id,
+                root_kind="requester_web",
+                ticket_id=ticket_id,
+                device_id=detail_device_id,
+                status="succeeded",
+                started_at=web_trace_started_at,
+                finished_at=web_trace_started_at,
+                duration_ms=0,
+                span_count=1,
+                error_count=0,
+                attrs_json={
+                    "source": "requester_ticket_create",
+                    "event_type": "ticket_create_succeeded",
+                    "person_id": "person-detail",
+                    "route": "/api/web/requester/tickets",
+                    "result": "created",
+                },
+            )
+        )
+        session.add(
+            ObserverTrace(
+                trace_id=chat_trace_id,
+                root_kind="requester_web",
+                ticket_id=ticket_id,
+                device_id=detail_device_id,
+                status="succeeded",
+                started_at=web_trace_started_at + timedelta(seconds=1),
+                finished_at=web_trace_started_at + timedelta(seconds=1),
+                duration_ms=0,
+                span_count=1,
+                error_count=0,
+                attrs_json={
+                    "source": "requester_chat",
+                    "event_type": "chat_message_sent",
+                    "person_id": "person-detail",
+                    "route": f"/api/web/requester/tickets/{ticket_id}/message",
+                    "result": "succeeded",
+                },
+            )
+        )
+        session.add(
+            ObserverTrace(
+                trace_id=closure_trace_id,
+                root_kind="requester_web",
+                ticket_id=ticket_id,
+                device_id=detail_device_id,
+                status="succeeded",
+                started_at=web_trace_started_at + timedelta(seconds=2),
+                finished_at=web_trace_started_at + timedelta(seconds=2),
+                duration_ms=0,
+                span_count=1,
+                error_count=0,
+                attrs_json={
+                    "source": "requester_closure",
+                    "event_type": "closure_confirmed",
+                    "person_id": "person-detail",
+                    "route": f"/api/web/requester/tickets/{ticket_id}/close",
+                    "result": "succeeded",
+                },
+            )
+        )
+        session.add(
+            ObserverIntegrityEvent(
+                event_id=str(uuid.uuid4()),
+                event_type="web_ticket_missing_ticket_context_v1",
+                severity="critical",
+                source="observer.web_cabinet",
+                status="active",
+                dedupe_key=f"web_ticket_missing_ticket_context_v1:{ticket_id}",
+                ticket_id=ticket_id,
+                device_id=detail_device_id,
+                trace_id=web_trace_id,
+                expected="web requester ticket keeps ticket_context_v1",
+                actual="ticket_context_v1 missing",
+                evidence_json={"ticket_id": ticket_id},
+                runbook="docs/runbooks/observer_web_cabinet.md",
+                last_seen_at=web_trace_started_at,
+            )
+        )
         await session.commit()
 
     response = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
@@ -1750,6 +2039,14 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["observer"]["ticket_summary_endpoint"] == f"/api/tickets/{ticket_id}/observer"
     observer_summary = payload["data"]["observer"]["summary"]
     assert observer_summary["health_label"] in {"empty", "ok", "running", "error"}
+    assert payload["data"]["observer"]["web_flow"]["ticket_create"] == "succeeded"
+    assert payload["data"]["observer"]["web_flow"]["chat"] == "succeeded"
+    assert payload["data"]["observer"]["web_flow"]["closure"] == "succeeded"
+    assert payload["data"]["observer"]["web_flow"]["latest_event_type"] == "closure_confirmed"
+    assert payload["data"]["observer"]["web_flow"]["latest_trace_url"] == f"/app/admin/observer?trace_id={closure_trace_id}"
+    assert payload["data"]["observer"]["integrity_events"][0]["event_type"] == "web_ticket_missing_ticket_context_v1"
+    assert payload["data"]["observer"]["integrity_events"][0]["severity"] == "critical"
+    assert payload["data"]["observer"]["integrity_events"][0]["trace_url"] == f"/app/admin/observer?trace_id={web_trace_id}"
     if observer_summary["root_trace_id"]:
         assert observer_summary["root_trace_url"] == f"/app/admin/observer?trace_id={observer_summary['root_trace_id']}"
         assert payload["data"]["observer"]["root_trace"]["trace_id"] == observer_summary["root_trace_id"]

@@ -191,6 +191,112 @@ async def test_web_admin_delete_device_alias_archives_device(test_client):
 
 
 @pytest.mark.asyncio
+async def test_web_admin_restore_device_requires_admin_role(test_client):
+    device_id = str(uuid.uuid4())
+    await _seed_device_with_related_rows(device_id)
+
+    archive_response = await test_client.delete(
+        f"/api/web/admin/devices/{device_id}",
+        headers=_admin_headers(),
+        json={"reason": "restore permission seed"},
+    )
+    assert archive_response.status == 200
+
+    response = await test_client.post(
+        f"/api/web/admin/devices/{device_id}/restore",
+        headers=_support_headers(),
+        json={"reason": "support must not restore"},
+    )
+
+    assert response.status == 403
+    payload = await response.json()
+    assert payload["error_code"] == "FORBIDDEN"
+
+    async with get_session() as session:
+        device = await session.get(Device, device_id)
+
+    assert device is not None
+    assert device.deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_web_admin_restore_device_reactivates_record_without_reviving_tokens(test_client):
+    device_id = str(uuid.uuid4())
+    await _seed_device_with_related_rows(device_id)
+
+    archive_response = await test_client.delete(
+        f"/api/web/admin/devices/{device_id}",
+        headers=_admin_headers(),
+        json={"reason": "archived by mistake"},
+    )
+    assert archive_response.status == 200
+
+    hidden_response = await test_client.get("/api/web/admin/devices", headers=_admin_headers())
+    hidden_payload = await hidden_response.json()
+    assert all(item["device_id"] != device_id for item in hidden_payload["data"]["devices"])
+
+    archived_response = await test_client.get(
+        "/api/web/admin/devices?include_archived=1",
+        headers=_admin_headers(),
+    )
+    archived_payload = await archived_response.json()
+    archived_item = next(item for item in archived_payload["data"]["devices"] if item["device_id"] == device_id)
+    assert archived_item["is_deleted"] is True
+    assert archived_item["deleted_at"]
+    assert archived_item["delete_reason"] == "archived by mistake"
+    assert archived_payload["data"]["summary"]["archived_count"] >= 1
+
+    restore_response = await test_client.post(
+        f"/api/web/admin/devices/{device_id}/restore",
+        headers=_admin_headers(),
+        json={"reason": "restore after accidental archive"},
+    )
+
+    assert restore_response.status == 200
+    restore_payload = await restore_response.json()
+    assert restore_payload["status"] == "success"
+    assert restore_payload["data"]["device_id"] == device_id
+    assert restore_payload["data"]["is_deleted"] is False
+    assert restore_payload["data"]["tokens_restored"] is False
+    assert restore_payload["data"]["sessions_restored"] is False
+
+    active_response = await test_client.get("/api/web/admin/devices", headers=_admin_headers())
+    active_payload = await active_response.json()
+    active_item = next(item for item in active_payload["data"]["devices"] if item["device_id"] == device_id)
+    assert active_item["is_deleted"] is False
+    assert active_item["deleted_at"] is None
+
+    async with get_session() as session:
+        device = await session.get(Device, device_id)
+        token_rows = (
+            await session.execute(select(AgentToken).where(AgentToken.device_id == device_id))
+        ).scalars().all()
+        request_rows = (
+            await session.execute(select(ConnectionRequest).where(ConnectionRequest.device_id == device_id))
+        ).scalars().all()
+        audit_rows = (
+            await session.execute(
+                select(AgentRuntimeAudit).where(
+                    AgentRuntimeAudit.device_id == device_id,
+                    AgentRuntimeAudit.event_type == "device_restored_from_archive",
+                )
+            )
+        ).scalars().all()
+
+    assert device is not None
+    assert device.deleted_at is None
+    assert device.deleted_by is None
+    assert device.delete_reason is None
+    assert len(token_rows) == 1
+    assert token_rows[0].revoked_at is not None
+    assert len(request_rows) == 1
+    assert request_rows[0].status == "rejected"
+    assert len(audit_rows) == 1
+    assert audit_rows[0].details_json["tokens_restored"] is False
+    assert audit_rows[0].details_json["sessions_restored"] is False
+
+
+@pytest.mark.asyncio
 async def test_delete_device_archives_device_and_preserves_history(test_client):
     device_id = str(uuid.uuid4())
     await _seed_device_with_related_rows(device_id)

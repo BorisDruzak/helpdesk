@@ -24,6 +24,8 @@ from observer.checks.protocol_integrity import SOURCE as PROTOCOL_SOURCE
 from observer.checks.protocol_integrity import check_protocol_integrity
 from observer.checks.runtime_presence import SOURCE as RUNTIME_SOURCE
 from observer.checks.runtime_presence import check_runtime_presence
+from observer.checks.web_cabinet import SOURCE as WEB_CABINET_SOURCE
+from observer.checks.web_cabinet import check_web_cabinet
 
 
 DEFAULT_KNOWN_CONTAMINATION: list[dict[str, Any]] = [
@@ -77,6 +79,7 @@ class ObserverIntegrityService:
         generated.extend(await check_account_boundary(self.session, run_id=run_id))
         generated.extend(await check_module_toolset(self.session, run_id=run_id))
         generated.extend(await check_governance(self.session, run_id=run_id))
+        generated.extend(await check_web_cabinet(self.session, run_id=run_id))
 
         active_dedupe_by_source: dict[str, set[str]] = {}
         event_ids: list[str] = []
@@ -103,6 +106,7 @@ class ObserverIntegrityService:
             ACCOUNT_SOURCE,
             MODULE_TOOLSET_SOURCE,
             GOVERNANCE_SOURCE,
+            WEB_CABINET_SOURCE,
         ):
             resolved += await self.repo.resolve_missing(
                 source=source,
@@ -128,6 +132,7 @@ class ObserverIntegrityService:
         ticket_id: str | None = None,
         operation_id: str | None = None,
         event_type: str | None = None,
+        source: str | None = None,
         since: datetime | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
@@ -138,6 +143,7 @@ class ObserverIntegrityService:
             ticket_id=ticket_id,
             operation_id=operation_id,
             event_type=event_type,
+            source=source,
             since=since,
             limit=limit,
         )

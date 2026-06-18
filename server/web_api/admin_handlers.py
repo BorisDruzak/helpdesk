@@ -102,6 +102,7 @@ from web_api.dto.admin import (
     AdminDeviceCleanupPayload,
     AdminDeviceDuplicateWarning,
     AdminDeviceIdentitySummary,
+    AdminDeviceRestorePayload,
     AdminDeviceTokenItem,
     AdminDeviceTokensPayload,
     AdminDeviceTokensSummary,
@@ -258,6 +259,7 @@ _UPDATE_REASON_LABELS = {
 _OBSERVER_ROOT_KIND_LABELS = {
     "ticket": "Тикет",
     "tool_call": "Инструмент",
+    "requester_web": "Кабинет пользователя",
     "agent_update": "Обновление агента",
     "module_install": "Установка модуля",
     "module_remove": "Удаление модуля",
@@ -311,6 +313,7 @@ _OBSERVER_TRACE_ROOT_KIND_OPTIONS = [
     AdminFilterOption(value="all", label="Все потоки"),
     AdminFilterOption(value="ticket", label="Тикет"),
     AdminFilterOption(value="tool_call", label="Инструмент"),
+    AdminFilterOption(value="requester_web", label="Кабинет пользователя"),
     AdminFilterOption(value="agent_update", label="Обновление агента"),
     AdminFilterOption(value="module_install", label="Установка модуля"),
     AdminFilterOption(value="module_remove", label="Удаление модуля"),
@@ -368,7 +371,11 @@ def _normalize_status_filter(value: str | None) -> str:
     return "all"
 
 
-def _empty_devices_payload(*, query: str, status_filter: str) -> AdminDevicesPayload:
+def _truthy_query_flag(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _empty_devices_payload(*, query: str, status_filter: str, include_archived: bool = False) -> AdminDevicesPayload:
     return AdminDevicesPayload(
         query=query,
         status_filter=status_filter,
@@ -378,8 +385,9 @@ def _empty_devices_payload(*, query: str, status_filter: str) -> AdminDevicesPay
             rollout_targets=0,
             duplicate_hosts=0,
             cleanup_candidates=0,
+            archived_count=0,
         ),
-        filters=AdminDevicesFilters(status_options=STATUS_OPTIONS),
+        filters=AdminDevicesFilters(status_options=STATUS_OPTIONS, include_archived=include_archived),
         rollout=[],
         devices=[],
     )
@@ -898,6 +906,7 @@ def _normalize_observer_root_kind_filter(value: str | None) -> str:
     allowed = {
         "ticket",
         "tool_call",
+        "requester_web",
         "agent_update",
         "module_install",
         "module_reconcile",
@@ -1795,6 +1804,8 @@ def _build_device_item(device, *, online: bool, duplicate_index: dict[str, dict[
     os_name = getattr(device, "os", None) or metadata.get("os_type")
     agent_version = getattr(device, "agent_version", None) or metadata.get("agent_version") or metadata.get("version")
     last_seen_at = getattr(device, "last_seen_at", None)
+    deleted_at = getattr(device, "deleted_at", None)
+    is_deleted = deleted_at is not None
     duplicate_index = duplicate_index or {}
     return AdminDeviceItem(
         device_id=str(getattr(device, "device_id", "") or ""),
@@ -1802,12 +1813,18 @@ def _build_device_item(device, *, online: bool, duplicate_index: dict[str, dict[
         os=str(os_name) if os_name else None,
         agent_version=str(agent_version) if agent_version else None,
         target=_resolve_target(device),
-        online=online,
+        online=False if is_deleted else online,
         last_seen_at=last_seen_at.isoformat() if last_seen_at else None,
-        connection_status_label="Онлайн" if online else "Оффлайн",
-        latest_update=_build_update_summary(online=online),
+        is_deleted=is_deleted,
+        deleted_at=deleted_at.isoformat() if deleted_at else None,
+        deleted_by=getattr(device, "deleted_by", None),
+        delete_reason=getattr(device, "delete_reason", None),
+        connection_status_label="Архив" if is_deleted else ("Онлайн" if online else "Оффлайн"),
+        latest_update=_build_update_summary(online=False if is_deleted else online),
         identity_summary=_device_identity_summary(device),
-        duplicate_warning=_build_duplicate_warning(device, duplicate_index=duplicate_index, online=online),
+        duplicate_warning=None
+        if is_deleted
+        else _build_duplicate_warning(device, duplicate_index=duplicate_index, online=online),
     )
 
 
@@ -1934,6 +1951,10 @@ def _build_observer_trace_filters(
     playbook_run_id: int | None = None,
     step_run_id: int | None = None,
     route: str | None = None,
+    source: str | None = None,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    event_type: str | None = None,
 ) -> TraceOverlayFilters:
     return TraceOverlayFilters(
         query=query,
@@ -1951,6 +1972,10 @@ def _build_observer_trace_filters(
         playbook_run_id=playbook_run_id,
         step_run_id=step_run_id,
         route=route,
+        source=source,
+        person_id=person_id,
+        error_code=error_code,
+        event_type=event_type,
     )
 
 
@@ -1972,6 +1997,10 @@ def _empty_admin_observer_traces_payload(
     playbook_run_id: int | None = None,
     step_run_id: int | None = None,
     route: str | None = None,
+    source: str | None = None,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    event_type: str | None = None,
 ) -> AdminObserverTracesPayload:
     return AdminObserverTracesPayload(
         query=AdminObserverTracesQuery(
@@ -1991,6 +2020,10 @@ def _empty_admin_observer_traces_payload(
             playbook_run_id=playbook_run_id,
             step_run_id=step_run_id,
             route=route,
+            source=source,
+            person_id=person_id,
+            error_code=error_code,
+            event_type=event_type,
         ),
         summary=AdminObserverTracesSummary(
             visible_count=0,
@@ -2029,6 +2062,10 @@ async def _build_admin_observer_traces_payload(
     playbook_run_id: int | None = None,
     step_run_id: int | None = None,
     route: str | None = None,
+    source: str | None = None,
+    person_id: str | None = None,
+    error_code: str | None = None,
+    event_type: str | None = None,
 ) -> AdminObserverTracesPayload:
     filters = _build_observer_trace_filters(
         device_id=device_id,
@@ -2046,6 +2083,10 @@ async def _build_admin_observer_traces_payload(
         playbook_run_id=playbook_run_id,
         step_run_id=step_run_id,
         route=route,
+        source=source,
+        person_id=person_id,
+        error_code=error_code,
+        event_type=event_type,
     )
     try:
         async with get_session() as session:
@@ -2076,6 +2117,13 @@ async def _build_admin_observer_traces_payload(
             module_name=module_name,
             error_signature=error_signature,
             min_duration_ms=min_duration_ms,
+            playbook_run_id=playbook_run_id,
+            step_run_id=step_run_id,
+            route=route,
+            source=source,
+            person_id=person_id,
+            error_code=error_code,
+            event_type=event_type,
         )
 
     traces = [
@@ -2104,6 +2152,13 @@ async def _build_admin_observer_traces_payload(
             module_name=module_name,
             error_signature=error_signature,
             min_duration_ms=min_duration_ms,
+            playbook_run_id=playbook_run_id,
+            step_run_id=step_run_id,
+            route=route,
+            source=source,
+            person_id=person_id,
+            error_code=error_code,
+            event_type=event_type,
         ),
         summary=AdminObserverTracesSummary(
             visible_count=len(traces),
@@ -3543,6 +3598,10 @@ async def handle_web_admin_observer_traces(request: web.Request):
     playbook_run_id = _parse_optional_positive_int(request.query.get("playbook_run_id"))
     step_run_id = _parse_optional_positive_int(request.query.get("step_run_id"))
     route = _compact_query_value(request.query.get("route"))
+    source = _compact_query_value(request.query.get("source"))
+    person_id = _compact_query_value(request.query.get("person_id"))
+    error_code = _compact_query_value(request.query.get("error_code"))
+    event_type = _compact_query_value(request.query.get("event_type"))
     payload = await _build_admin_observer_traces_payload(
         request=request,
         device_id=device_id,
@@ -3561,6 +3620,10 @@ async def handle_web_admin_observer_traces(request: web.Request):
         playbook_run_id=playbook_run_id,
         step_run_id=step_run_id,
         route=route,
+        source=source,
+        person_id=person_id,
+        error_code=error_code,
+        event_type=event_type,
     )
     return json_model_response(SuccessResponse[AdminObserverTracesPayload](data=payload))
 
@@ -3597,19 +3660,25 @@ async def handle_web_admin_observer_trace_detail(request: web.Request):
 async def handle_web_admin_devices(request: web.Request):
     query = str(request.query.get("query", "") or "").strip()
     status_filter = _normalize_status_filter(request.query.get("status"))
+    include_archived = _truthy_query_flag(request.query.get("include_archived"))
     state = request.app.get("state")
 
     try:
         async with get_session() as session:
-            devices = await DevicesRepo(session).list_all()
+            devices = await DevicesRepo(session).list_all(include_deleted=include_archived)
             rollout_assignments = await AgentRolloutRepo(session).list_assignments()
 
         typed_devices: list[AdminDeviceItem] = []
         online_count = 0
-        duplicate_index = _build_duplicate_index(devices, state=state)
+        active_devices = [device for device in devices if getattr(device, "deleted_at", None) is None]
+        archived_count = len(devices) - len(active_devices)
+        duplicate_index = _build_duplicate_index(active_devices, state=state)
         for device in devices:
             device_id = str(getattr(device, "device_id", "") or "")
+            is_deleted = getattr(device, "deleted_at", None) is not None
             is_online = bool(
+                not is_deleted
+                and
                 device_id
                 and state is not None
                 and hasattr(state, "is_agent_online")
@@ -3643,8 +3712,9 @@ async def handle_web_admin_devices(request: web.Request):
                 rollout_targets=len(typed_rollout),
                 duplicate_hosts=sum(1 for item in duplicate_index.values() if item.get("total", 0) > 1),
                 cleanup_candidates=sum(item.get("cleanup", 0) for item in duplicate_index.values()),
+                archived_count=archived_count,
             ),
-            filters=AdminDevicesFilters(status_options=STATUS_OPTIONS),
+            filters=AdminDevicesFilters(status_options=STATUS_OPTIONS, include_archived=include_archived),
             rollout=typed_rollout,
             devices=typed_devices,
         )
@@ -3653,9 +3723,66 @@ async def handle_web_admin_devices(request: web.Request):
             f"[web_admin_devices] DB unavailable, returning empty devices payload: "
             f"status_filter={status_filter}, error={exc}"
         )
-        payload = _empty_devices_payload(query=query, status_filter=status_filter)
+        payload = _empty_devices_payload(
+            query=query,
+            status_filter=status_filter,
+            include_archived=include_archived,
+        )
 
     return json_model_response(SuccessResponse[AdminDevicesPayload](data=payload))
+
+
+@require_auth("admin")
+async def handle_web_admin_device_restore(request: web.Request):
+    device_id = request.match_info["device_id"]
+    auth_context = request.get("auth_context")
+    actor_id = getattr(auth_context, "actor_id", None) or "admin"
+    try:
+        payload = await request.json() if request.can_read_body else {}
+    except Exception:
+        payload = {}
+    restore_reason = str(payload.get("reason") or "").strip() or None
+
+    try:
+        async with get_session() as session:
+            repo = DevicesRepo(session)
+            device = await repo.get_by_device_id(device_id, include_deleted=True)
+            if device is None:
+                return web.json_response(
+                    {
+                        "status": "error",
+                        "error": "Устройство не найдено",
+                        "error_code": "DEVICE_NOT_FOUND",
+                    },
+                    status=404,
+                )
+            restored = await repo.restore_device(
+                device_id,
+                restored_by=actor_id,
+                restore_reason=restore_reason,
+            )
+            if restored:
+                await session.commit()
+    except Exception as exc:
+        logger.warning(f"[web_admin_device_restore] failed: device_id={device_id} error={exc}")
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Не удалось восстановить устройство из архива",
+                "error_code": "ADMIN_DEVICE_RESTORE_FAILED",
+            },
+            status=500,
+        )
+
+    payload = AdminDeviceRestorePayload(
+        device_id=device_id,
+        is_deleted=False,
+        restored_by=actor_id,
+        restore_reason=restore_reason,
+        tokens_restored=False,
+        sessions_restored=False,
+    )
+    return json_model_response(SuccessResponse[AdminDeviceRestorePayload](data=payload))
 
 
 def _cleanup_candidate_from_device(device, *, online: bool) -> AdminDeviceCleanupCandidate:
