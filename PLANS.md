@@ -141,9 +141,9 @@ GUI Agent must not:
 
 ### Device Linking
 
-- Device link request from web cabinet creates a pending claim/request.
-- Admin approval remains default.
-- First-device auto-approval is out of scope unless explicitly added behind policy.
+- Device link request from the web cabinet creates a registration claim/request that is separate from requester profile completion.
+- First non-conflicting device binding is auto-approved by default.
+- Admin UI can switch registration to manual approval through `registration.require_admin_confirmation=true` and `registration.auto_approve_first_binding=false`.
 - Requester cannot self-rebind ownership.
 
 ### On-Behalf Tickets

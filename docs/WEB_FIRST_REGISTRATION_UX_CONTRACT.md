@@ -12,8 +12,8 @@ This is the Phase R1 contract for `PLANS.md`: web account registration, profile 
 2. Profile completion blocks normal requester work when `PROFILE_COMPLETION_REQUIRED=true`, not every route.
    - Default production behavior is blocking.
    - Rollout override may set `PROFILE_COMPLETION_REQUIRED=false`; the server still returns `missing_fields`, but `profile_completion.blocks.*` and requester feature flags become non-blocking.
-   - Allowed while incomplete: `/app/requester/profile/setup`, profile view/edit, device-link status, consents that are already pending, logout, and an explicit emergency ticket path when policy allows it.
-   - Blocked while incomplete: normal ticket creation, requester knowledge actions that depend on audience context, device ownership confirmation, feedback/reopen actions, and saved profile-dependent preferences.
+   - Allowed while incomplete: `/app/requester/profile/setup`, profile view/edit, device-link status and confirmation, consents that are already pending, logout, and an explicit emergency ticket path when policy allows it.
+   - Blocked while incomplete: normal ticket creation, requester knowledge actions that depend on audience context, ownership changes outside the device-link confirmation flow, feedback/reopen actions, and saved profile-dependent preferences.
 
 3. Device-link confirmation is separate from profile completion.
    - The default registry policy auto-approves the first non-conflicting binding.
@@ -353,7 +353,7 @@ R4 device-link slice:
 - `server/web_api/registry_handlers.py` allows registration confirmation for authenticated requester accounts even when the requester profile is incomplete.
 - `server/registry/browser_pairing_service.py` builds the registration claim profile snapshot from the resolved `RegistryPerson` when available, otherwise from the authenticated web account, not browser-supplied profile fields.
 - `webapp/src/pages/requester/index.tsx` adds the `/app/requester/devices` manual-code/direct-link flow and maps link request statuses to Russian labels.
-- `webapp/src/pages/device-pairing/index.tsx` redirects incomplete-profile registration confirmation to `/app/requester/profile/setup` and explains `PAIRING_FORBIDDEN` without exposing backend wording.
+- `webapp/src/pages/device-pairing/index.tsx` keeps incomplete-profile registration confirmation on the pairing page, treats `REQUESTER_PROFILE_INCOMPLETE` as a regression, and explains `PAIRING_FORBIDDEN` without exposing backend wording.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r4-20260615/`.
 
 R6 profile-schema slice:
