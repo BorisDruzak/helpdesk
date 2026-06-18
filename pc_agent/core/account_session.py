@@ -385,8 +385,20 @@ class AccountSessionManager:
         if not match:
             return sanitized
         merged = dict(sanitized)
-        for key in ("person_id", "binding_id", "display_name", "full_name", "login", "email", "phone", "reason", "base_binding_id", "base_person_id", "base_display_name"):
-            if not merged.get(key) and match.get(key):
+        for key in (
+            "person_id",
+            "binding_id",
+            "display_name",
+            "full_name",
+            "login",
+            "email",
+            "phone",
+            "reason",
+            "base_binding_id",
+            "base_person_id",
+            "base_display_name",
+        ):
+            if match.get(key):
                 merged[key] = match.get(key)
         if not merged.get("display_name"):
             merged["display_name"] = _first_text(merged.get("full_name"), merged.get("login"))

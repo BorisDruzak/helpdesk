@@ -149,6 +149,49 @@ def test_existing_confirmed_session_is_enriched_from_account_state(tmp_path):
     assert enriched["phone"] == "+10000000001"
 
 
+def test_existing_confirmed_session_refreshes_profile_fields_from_account_state(tmp_path):
+    manager = AccountSessionManager(data_root=tmp_path)
+    saved = manager.save(
+        {
+            "account_mode": "confirmed_binding",
+            "account_session_id": "session-1",
+            "device_id": "device-1",
+            "binding_id": "binding-1",
+            "person_id": "person-1",
+            "display_name": "owner@example.test",
+            "full_name": "owner@example.test",
+            "login": "owner@example.test",
+            "email": "owner@example.test",
+            "registration_status": "admin_confirmed",
+        }
+    )
+
+    enriched = manager.enrich_from_account_state(
+        saved,
+        {
+            "accounts": [
+                {
+                    "account_mode": "confirmed_binding",
+                    "binding_id": "binding-1",
+                    "person_id": "person-1",
+                    "display_name": "Registered User",
+                    "full_name": "Registered User Full",
+                    "login": "DOMAIN\\registered",
+                    "email": "registered@example.test",
+                    "phone": "+10000000002",
+                }
+            ]
+        },
+    )
+
+    assert enriched["account_session_id"] == "session-1"
+    assert enriched["display_name"] == "Registered User"
+    assert enriched["full_name"] == "Registered User Full"
+    assert enriched["login"] == "DOMAIN\\registered"
+    assert enriched["email"] == "registered@example.test"
+    assert enriched["phone"] == "+10000000002"
+
+
 def test_confirmed_session_requires_server_session_id_for_account_state_match(tmp_path):
     manager = AccountSessionManager(data_root=tmp_path)
     session = manager.save(
