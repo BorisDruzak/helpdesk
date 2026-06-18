@@ -1040,6 +1040,12 @@ export function RequesterWorkspacePage() {
       ? `Заявок на привязку: ${pendingRegistrationClaims.length}`
       : "Устройства не привязаны";
   const services = catalog?.services ?? [];
+  const hasAgentContext = devices.length > 0;
+  const setupAssistanceGateActive = profileGateActive || !hasAgentContext;
+  const visibleServices = useMemo(
+    () => (setupAssistanceGateActive ? [] : services),
+    [services, setupAssistanceGateActive],
+  );
   const legacyNoDeviceCreateEnabled = !profileGateActive && bootstrap?.feature_flags?.requester_no_device_create === true;
 
   const selectedDevice = useMemo(
@@ -1071,8 +1077,8 @@ export function RequesterWorkspacePage() {
   }, [directDevicePairingId, loading]);
 
   const selectedService = useMemo(
-    () => services.find((service) => service.service_code === selectedServiceCode) ?? services[0] ?? null,
-    [selectedServiceCode, services],
+    () => visibleServices.find((service) => service.service_code === selectedServiceCode) ?? visibleServices[0] ?? null,
+    [selectedServiceCode, visibleServices],
   );
   const selectedOffering = useMemo(
     () =>
@@ -1082,8 +1088,8 @@ export function RequesterWorkspacePage() {
     [selectedOfferingFullCode, selectedService],
   );
   const visibleForms = useMemo(
-    () => forms.filter((form) => formVisibleForRequester(form, profileGateActive, devices.length > 0)),
-    [devices.length, forms, profileGateActive],
+    () => forms.filter((form) => formVisibleForRequester(form, profileGateActive, hasAgentContext)),
+    [forms, hasAgentContext, profileGateActive],
   );
   const selectedForm = useMemo(
     () => visibleForms.find((form) => form.key === selectedFormKey) ?? visibleForms[0] ?? null,
@@ -1167,10 +1173,10 @@ export function RequesterWorkspacePage() {
           departments: departmentOptions,
           locations: locationOptions,
           devices,
-          services,
+          services: visibleServices,
         }),
       ),
-    [departmentOptions, devices, locationOptions, services, visibleFields],
+    [departmentOptions, devices, locationOptions, visibleFields, visibleServices],
   );
   const visiblePayload = useMemo(() => collectVisiblePayload(selectedForm, fieldValues), [fieldValues, selectedForm]);
   const knowledgeKey = useMemo(
@@ -1388,10 +1394,19 @@ export function RequesterWorkspacePage() {
   }, [profileSetupVisible, requestFormNeedsRegistryOptions]);
 
   useEffect(() => {
-    if (!selectedServiceCode && services[0]) {
-      setSelectedServiceCode(services[0].service_code);
+    if (!visibleServices.length) {
+      if (selectedServiceCode) {
+        setSelectedServiceCode("");
+      }
+      if (selectedOfferingFullCode) {
+        setSelectedOfferingFullCode("");
+      }
+      return;
     }
-  }, [selectedServiceCode, services]);
+    if (!selectedServiceCode) {
+      setSelectedServiceCode(visibleServices[0].service_code);
+    }
+  }, [selectedOfferingFullCode, selectedServiceCode, visibleServices]);
 
   useEffect(() => {
     if (selectedService?.offerings[0] && !selectedOfferingFullCode) {
@@ -2885,7 +2900,7 @@ export function RequesterWorkspacePage() {
                 ))}
               </dl>
             ) : null}
-            {services.length ? (
+            {visibleServices.length ? (
               <div className="grid gap-3">
                 <label className="block text-sm font-semibold text-slate-700">
                   Услуга
@@ -2895,14 +2910,14 @@ export function RequesterWorkspacePage() {
                     onChange={(event) => {
                       const nextCode = event.currentTarget.value;
                       setSelectedServiceCode(nextCode);
-                      const nextService = services.find((service) => service.service_code === nextCode);
+                      const nextService = visibleServices.find((service) => service.service_code === nextCode);
                       setSelectedOfferingFullCode(nextService?.offerings[0]?.full_code ?? "");
                       setPreviewKey("");
                       setPreviewResult(null);
                     }}
                     value={selectedService?.service_code ?? ""}
                   >
-                    {services.map((service) => (
+                    {visibleServices.map((service) => (
                       <option key={service.service_code} value={service.service_code}>
                         {service.title || service.service_code}
                       </option>
@@ -2961,7 +2976,7 @@ export function RequesterWorkspacePage() {
                 ) : null}
               </div>
             ) : null}
-            {!services.length && knowledgeVisible ? (
+            {!visibleServices.length && knowledgeVisible ? (
               <KnowledgeSuggestionsPanel
                 error={knowledgeError}
                 loading={knowledgeLoading}

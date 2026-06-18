@@ -1897,6 +1897,8 @@ describe("RequesterWorkspacePage", () => {
     render(<RequesterWorkspacePage />);
 
     await waitFor(() => {
+      expect(screen.queryByText("Workplace")).not.toBeInTheDocument();
+      expect(screen.queryByText("Laptop breakage")).not.toBeInTheDocument();
       const suggestCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/knowledge/suggest");
       expect(suggestCall).toBeTruthy();
       expect(JSON.parse(String((suggestCall?.[1] as RequestInit).body))).toMatchObject({
