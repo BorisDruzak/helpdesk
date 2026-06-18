@@ -242,10 +242,11 @@ describe("DevicePairingPage", () => {
     renderPage("/app/device/register?pairing_id=pair-2");
 
     expect(await screen.findByRole("heading", { name: "Регистрация устройства" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Подтвердить регистрацию" }));
+    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку" }));
 
-    expect(await screen.findByText("Регистрация подтверждена")).toBeInTheDocument();
+    expect(await screen.findByText("Заявка на привязку отправлена")).toBeInTheDocument();
     expect(screen.getByText("Ожидает проверки администратора")).toBeInTheDocument();
+    expect(screen.getByText("Администратор должен одобрить заявку. В локальном агенте нажмите «Обновить», чтобы увидеть статус ожидания.")).toBeInTheDocument();
     expect(screen.queryByText("pending_admin_review")).not.toBeInTheDocument();
     expect(screen.getByText("NEW-PC")).toBeInTheDocument();
     expect(screen.getByText("Windows")).toBeInTheDocument();
@@ -302,7 +303,7 @@ describe("DevicePairingPage", () => {
     );
 
     expect(await screen.findByText("PROFILE-PC")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Подтвердить регистрацию" }));
+    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку" }));
 
     await waitFor(() => {
       expect(screen.getByTestId("location")).toHaveTextContent(
@@ -377,9 +378,9 @@ describe("DevicePairingPage", () => {
     expect(await screen.findByText("STRICT-PC")).toBeInTheDocument();
     fireEvent.change(await screen.findByLabelText("Подразделение"), { target: { value: "dept-1" } });
     fireEvent.change(screen.getByLabelText("Локация"), { target: { value: "loc-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Подтвердить регистрацию" }));
+    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку на привязку" }));
 
-    expect(await screen.findByText("Регистрация подтверждена")).toBeInTheDocument();
+    expect(await screen.findByText("Заявка на привязку отправлена")).toBeInTheDocument();
   });
 
   it("shows a safe Russian error when strict registration ids are rejected", async () => {

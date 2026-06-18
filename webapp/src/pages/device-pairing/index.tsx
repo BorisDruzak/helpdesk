@@ -25,10 +25,10 @@ function formatValue(value?: string | null) {
 function purposeText(purpose: DevicePairingPurpose) {
   if (purpose === "registration") {
     return {
-      action: "Подтвердить регистрацию",
-      done: "Регистрация подтверждена",
+      action: "Отправить заявку на привязку",
+      done: "Заявка на привязку отправлена",
       heading: "Регистрация устройства",
-      intro: "Подтвердите, что этот компьютер можно связать с вашим аккаунтом.",
+      intro: "Подтвердите компьютер и отправьте заявку администратору. Устройство появится в профиле после одобрения.",
     };
   }
   return {
@@ -71,6 +71,17 @@ function deviceLinkStatusLabel(status: string | null | undefined) {
 
 function registrationStatusLabel(status: string | null | undefined) {
   return productStatusLabel(status, REGISTRATION_STATUS_LABELS);
+}
+
+function registrationDoneHint(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "pending_admin_review" || normalized === "user_confirmed" || normalized === "conflict") {
+    return "Администратор должен одобрить заявку. В локальном агенте нажмите «Обновить», чтобы увидеть статус ожидания.";
+  }
+  if (normalized === "approved" || normalized === "admin_confirmed" || normalized === "active") {
+    return "Вернитесь в локальный агент и нажмите «Обновить», чтобы войти под привязанным пользователем.";
+  }
+  return "Вернитесь в локальный агент и нажмите «Обновить», чтобы увидеть актуальный статус.";
 }
 
 function withNextPath(path: string, nextPath: string) {
@@ -296,7 +307,7 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
                   <dd className="mt-1 text-sm font-semibold text-slate-900">{formatValue(device?.agent_version)}</dd>
                 </div>
                 <div className="rounded-[0.5rem] bg-surface-subtle px-4 py-3">
-                  <dt className="text-xs font-medium text-slate-500">Статус</dt>
+                  <dt className="text-xs font-medium text-slate-500">{purpose === "registration" ? "Статус заявки" : "Статус"}</dt>
                   <dd className="mt-1 text-sm font-semibold text-slate-900">
                     {deviceLinkStatusLabel(confirmed?.status ?? pairing?.status)}
                   </dd>
@@ -309,7 +320,10 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
                   <div>
                     <p className="font-semibold">{copy.done}</p>
                     {confirmed?.registration?.status ? (
-                      <p className="mt-1 text-sm">{registrationStatusLabel(confirmed.registration.status)}</p>
+                      <>
+                        <p className="mt-1 text-sm">{registrationStatusLabel(confirmed.registration.status)}</p>
+                        <p className="mt-1 text-sm">{registrationDoneHint(confirmed.registration.status)}</p>
+                      </>
                     ) : (
                       <p className="mt-1 text-sm">Вернитесь в локальный агент, он получит результат автоматически.</p>
                     )}
