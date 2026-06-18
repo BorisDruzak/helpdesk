@@ -25,6 +25,8 @@
 - Успешное обновление подтверждается только следующим handshake новой версии (`applied_update_version` + `last_update_operation_id`).
 - Launcher-side failure подтверждается следующим handshake с `failed_update_*`.
 
+A stale `pending_update.json` whose version is not newer than the running `AGENT_VERSION` must be archived as `last_stale_pending_update.json`; it must not block a newer recommended build.
+
 Server handshake may also auto-enqueue an `agent_update` for already-installed older agents when the assigned rollout is a newer release, there is no active update operation, and the last failed update is not for the same recommended version. This compatibility path uses reason `agent_handshake_auto_update`; newer agents may still request the same recommended build themselves with reason `agent_startup_auto_update`.
 
 ## 4. Auth and command semantics

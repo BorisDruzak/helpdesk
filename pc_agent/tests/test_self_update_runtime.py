@@ -395,7 +395,7 @@ async def test_update_command_rejects_when_pending_update_already_exists(tmp_pat
     pending_path.write_text(
         json.dumps(
             {
-                "version": "3.1.18",
+                "version": "999.0.0",
                 "operation_id": "existing-op",
                 "received_at": "2026-04-22T10:00:00+00:00",
             },
@@ -433,6 +433,74 @@ async def test_update_command_rejects_when_pending_update_already_exists(tmp_pat
     assert "already pending" in result.error.message
     assert download_called["value"] is False
     assert json.loads(pending_path.read_text(encoding="utf-8"))["operation_id"] == "existing-op"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_update_command_replaces_stale_pending_update(tmp_path, monkeypatch):
+    ConfigLoader._instance = None
+    ConfigLoader._config = None
+    init_config(tmp_path)
+
+    orchestrator = AgentOrchestrator(enabled_modules=[], data_root=tmp_path)
+    await orchestrator.initialize()
+
+    updates_dir = tmp_path / "updates"
+    updates_dir.mkdir(parents=True, exist_ok=True)
+    pending_path = updates_dir / "pending_update.json"
+    pending_path.write_text(
+        json.dumps(
+            {
+                "version": "0.0.1",
+                "operation_id": "stale-op",
+                "received_at": "2026-04-22T10:00:00+00:00",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    artifact_bytes = b"new-agent-update"
+
+    async def fake_download_file_to_path(**kwargs):
+        dest_path = kwargs["dest_path"]
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        dest_path.write_bytes(artifact_bytes)
+        return ("deadbeef", len(artifact_bytes))
+
+    scheduled_payloads = []
+
+    async def fake_schedule_update_exit(payload):
+        scheduled_payloads.append(payload)
+        return {"status": "ok", "scheduled": True}
+
+    monkeypatch.setattr(orchestrator, "_download_file_to_path", fake_download_file_to_path)
+    orchestrator.schedule_update_exit = fake_schedule_update_exit
+
+    meta = _update_meta().model_copy(update={"request_id": "fresh-op"})
+    result = await orchestrator._handle_update(
+        {
+            "actor_role": "agent",
+            "version": "9.9.9",
+            "target": "windows_amd64",
+            "channel": "stable",
+            "download_url": "http://example.test/build.zip",
+            "sha256": "deadbeef",
+            "size": len(artifact_bytes),
+            "archive_type": "zip",
+        },
+        meta,
+    )
+
+    assert result.status == "success"
+    archived = json.loads((updates_dir / "last_stale_pending_update.json").read_text(encoding="utf-8"))
+    assert archived["version"] == "0.0.1"
+    assert archived["operation_id"] == "stale-op"
+    next_pending = json.loads(pending_path.read_text(encoding="utf-8"))
+    assert next_pending["version"] == "9.9.9"
+    assert next_pending["operation_id"] == "fresh-op"
+    assert scheduled_payloads and scheduled_payloads[0]["version"] == "9.9.9"
 
 
 @pytest.mark.asyncio

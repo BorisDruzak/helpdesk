@@ -53,7 +53,7 @@ Server handshake can also enqueue the same `update` command for older installed 
 ## Что делает агент (при команде update)
 
 1. Скачивает артефакт в `data_root/updates/downloads/build-<version>-<operation_id>.<ext>` с проверкой sha256/size.
-2. Если `data_root/updates/pending_update.json` уже существует, не перетирает его новым update: exact same `operation_id` считается idempotent retry, любая другая операция должна завершаться ошибкой.
+2. Если `data_root/updates/pending_update.json` уже существует, не перетирает его новым update: exact same `operation_id` считается idempotent retry, любая другая операция должна завершаться ошибкой. Исключение: pending с версией не новее текущего `AGENT_VERSION` архивируется в `last_stale_pending_update.json` и не блокирует новый recommended build.
 3. Пишет `data_root/updates/pending_update.json` (version, target, archive_type, artifact_path, received_at, operation_id, requested_by, requested_reason, sha256, size).
 4. Отправляет command_result со статусом "scheduled" только после успешной постановки controlled shutdown-for-update.
 5. Через короткую задержку выполняет **clean shutdown** и завершает процесс с **exit code 42** (`EXIT_UPDATE_PENDING`). Агент **не** запускает in-place updater и **не** меняет свои файлы.
@@ -83,6 +83,7 @@ Server handshake can also enqueue the same `update` command for older installed 
 - `data_root/updates/pending_update.json` — параметры ожидающего обновления.
 - `data_root/updates/update_history.json` — история применённых/неудачных обновлений.
 - `data_root/updates/last_failed_pending_update.json` — последний провалившийся pending payload и текст ошибки.
+- `data_root/updates/last_stale_pending_update.json` — последний устаревший pending payload, который не был новее текущего `AGENT_VERSION`.
 - `data_root/updates/last_failed_launch.json` — последний terminal startup crash новой версии после переключения launcher.
 - `data_root/logs/action_trace.jsonl` — полный update trail: `agent.update.request` (GUI/runtime), `agent.update.command` (orchestrator), `agent.update.shutdown` (runtime exit), `agent.update.apply` (launcher apply/verify/publish).
 - `data_root/updates/db_backups/` — бэкапы БД перед verify.

@@ -79,6 +79,45 @@ TOOL_EXECUTION_LANE_SERIAL = "serial"
 SAFE_READ_TOOL_CONCURRENCY = 2
 
 
+def _agent_version_compare(left: str | None, right: str | None) -> int:
+    def key(value: str | None) -> tuple[int, ...] | None:
+        parts = []
+        for part in str(value or "").strip().split("."):
+            if not part.isdigit():
+                return None
+            parts.append(int(part))
+        return tuple(parts) if parts else None
+
+    left_key = key(left)
+    right_key = key(right)
+    if left_key is not None and right_key is not None:
+        max_len = max(len(left_key), len(right_key))
+        padded_left = left_key + (0,) * (max_len - len(left_key))
+        padded_right = right_key + (0,) * (max_len - len(right_key))
+        if padded_left == padded_right:
+            return 0
+        return 1 if padded_left > padded_right else -1
+    left_text = str(left or "").strip().lower()
+    right_text = str(right or "").strip().lower()
+    if left_text == right_text:
+        return 0
+    return 1 if left_text > right_text else -1
+
+
+def _archive_stale_pending_update(pending_path: pathlib.Path, payload: Dict[str, Any], *, incoming_version: str) -> None:
+    updates_dir = pending_path.parent
+    archive_path = updates_dir / "last_stale_pending_update.json"
+    archived_payload = {
+        **payload,
+        "stale_pending_archived_at": datetime.now(timezone.utc).isoformat(),
+        "stale_pending_reason": "pending_version_not_newer_than_current_agent",
+        "current_version": AGENT_VERSION,
+        "incoming_version": incoming_version,
+    }
+    archive_path.write_text(json.dumps(archived_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    pending_path.unlink(missing_ok=True)
+
+
 class AgentOrchestrator:
     """
     Универсальный контроллер агента для обработки команд.
@@ -1580,21 +1619,35 @@ class AgentOrchestrator:
                         details=observations,
                     )
                     return ok(data=ToolData(observations=observations), meta=meta)
-                pending_message = (
-                    f"Update {existing_version or 'unknown'} is already pending"
-                    if existing_version
-                    else "Another update is already pending"
-                )
-                _record_update_trace(
-                    "response",
-                    status="error",
-                    summary=pending_message,
-                    details={
-                        "existing_operation_id": existing_operation_id or None,
-                        "existing_version": existing_version or None,
-                    },
-                )
-                return fail(code="UPDATE_FAILED", message=pending_message, meta=meta, retriable=True)
+                if existing_version and _agent_version_compare(existing_version, AGENT_VERSION) <= 0:
+                    _archive_stale_pending_update(pending_path, existing_pending, incoming_version=version)
+                    _record_update_trace(
+                        "stale_pending_archived",
+                        status="ok",
+                        summary="stale pending update was archived",
+                        details={
+                            "existing_operation_id": existing_operation_id or None,
+                            "existing_version": existing_version,
+                            "current_version": AGENT_VERSION,
+                            "incoming_version": version,
+                        },
+                    )
+                else:
+                    pending_message = (
+                        f"Update {existing_version or 'unknown'} is already pending"
+                        if existing_version
+                        else "Another update is already pending"
+                    )
+                    _record_update_trace(
+                        "response",
+                        status="error",
+                        summary=pending_message,
+                        details={
+                            "existing_operation_id": existing_operation_id or None,
+                            "existing_version": existing_version or None,
+                        },
+                    )
+                    return fail(code="UPDATE_FAILED", message=pending_message, meta=meta, retriable=True)
             ext = "zip" if archive_type == "zip" else "tar.gz"
             safe_version = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in str(version))
             safe_operation_id = "".join(
