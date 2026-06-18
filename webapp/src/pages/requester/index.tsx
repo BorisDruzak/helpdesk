@@ -659,6 +659,80 @@ function visibleKnowledgeSuggestions(
     });
 }
 
+function KnowledgeSuggestionsPanel({
+  error,
+  loading,
+  onRecordAttempt,
+  onToggleOpen,
+  openedKnowledgeId,
+  suggestions,
+}: {
+  error: boolean;
+  loading: boolean;
+  onRecordAttempt: (item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) => void;
+  onToggleOpen: (item: KnowledgeSuggestionItem) => void;
+  openedKnowledgeId: string | null;
+  suggestions: KnowledgeSuggestionItem[];
+}) {
+  return (
+    <div className="rounded-panel border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-semibold text-slate-900">Возможно, поможет</p>
+        {loading ? <span className="text-xs text-slate-500">Ищем...</span> : null}
+      </div>
+      {error ? (
+        <p className="mt-2 text-xs text-amber-700">Инструкции временно недоступны.</p>
+      ) : null}
+      {suggestions.length ? (
+        <div className="mt-2 grid gap-2">
+          {suggestions.map((item) => (
+            <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2" key={item.item_id}>
+              <p className="font-semibold text-slate-900">{item.title}</p>
+              {item.summary ? <p className="mt-1 text-xs text-slate-600">{item.summary}</p> : null}
+              {item.quality_label || item.freshness_label ? (
+                <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                  {[item.quality_label, item.freshness_label].filter(Boolean).join(" · ")}
+                </p>
+              ) : null}
+              {openedKnowledgeId === item.item_id && item.snippet ? (
+                <p className="mt-2 rounded-panel bg-white px-3 py-2 text-xs text-slate-700">{item.snippet}</p>
+              ) : null}
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  aria-label="Открыть рекомендацию из базы знаний"
+                  className="rounded-panel border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
+                  onClick={() => onToggleOpen(item)}
+                  type="button"
+                >
+                  {openedKnowledgeId === item.item_id ? "Скрыть" : "Открыть"}
+                </button>
+                <button
+                  aria-label="Отметить рекомендацию полезной"
+                  className="rounded-panel border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800"
+                  onClick={() => onRecordAttempt(item, "deflected")}
+                  type="button"
+                >
+                  Помогло
+                </button>
+                <button
+                  aria-label="Отметить рекомендацию бесполезной"
+                  className="rounded-panel border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
+                  onClick={() => onRecordAttempt(item, "not_helpful")}
+                  type="button"
+                >
+                  Не помогло
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : !loading && !error ? (
+        <p className="mt-2 text-xs text-slate-500">Подходящих опубликованных инструкций пока нет.</p>
+      ) : null}
+    </div>
+  );
+}
+
 function RequestFormFieldControl({
   field,
   onChange,
@@ -1111,6 +1185,52 @@ export function RequesterWorkspacePage() {
       }),
     [description, selectedDevice?.device_id, selectedForm?.key, selectedOffering?.full_code, selectedService?.service_code, visiblePayload],
   );
+  const knowledgeRequest = useMemo(() => {
+    if (!selectedOffering && !selectedForm) {
+      return null;
+    }
+    const fallbackQuery =
+      selectedForm?.title ||
+      selectedForm?.description ||
+      selectedForm?.request_kind ||
+      selectedForm?.key ||
+      "";
+    return {
+      service_code: selectedService?.service_code,
+      offering_code: selectedOffering?.full_code,
+      request_template_key: selectedOffering?.request_template_key ?? selectedForm?.key,
+      query: description || selectedOffering?.title || selectedService?.title || fallbackQuery,
+      form_payload: visiblePayload,
+      requester_context: bootstrap?.requester_context,
+      device_metadata: selectedDevice
+        ? {
+            device_id: selectedDevice.device_id,
+            hostname: selectedDevice.hostname,
+            os: selectedDevice.os,
+            agent_version: selectedDevice.agent_version,
+            asset_id: selectedDevice.asset_id,
+            asset_name: selectedDevice.asset_name,
+          }
+        : undefined,
+      surface: "requester_portal" as const,
+      urgency: "normal",
+      impact: "normal",
+    };
+  }, [
+    bootstrap?.requester_context,
+    description,
+    selectedDevice,
+    selectedForm?.description,
+    selectedForm?.key,
+    selectedForm?.request_kind,
+    selectedForm?.title,
+    selectedOffering?.full_code,
+    selectedOffering?.request_template_key,
+    selectedOffering?.title,
+    selectedService?.service_code,
+    selectedService?.title,
+    visiblePayload,
+  ]);
   const currentPreviewKey = useMemo(
     () =>
       JSON.stringify({
@@ -1143,7 +1263,7 @@ export function RequesterWorkspacePage() {
     Boolean(previewResult?.ok) &&
     !(previewResult?.blockers ?? []).length;
   const knowledgeRollout = knowledgeResult?.rollout;
-  const knowledgeVisible = Boolean(selectedOffering && knowledgeRollout?.enabled !== false && knowledgeRollout?.show_before_form !== false);
+  const knowledgeVisible = Boolean(knowledgeRequest && knowledgeRollout?.enabled !== false && knowledgeRollout?.show_before_form !== false);
   const knowledgeSuggestions = useMemo(
     () => visibleKnowledgeSuggestions(knowledgeResult?.suggestions ?? [], knowledgeRollout),
     [knowledgeResult?.suggestions, knowledgeRollout],
@@ -1305,7 +1425,7 @@ export function RequesterWorkspacePage() {
   }, [requestFormContextPrefill, requestFormContextPrefillKey, selectedForm]);
 
   useEffect(() => {
-    if (!selectedOffering) {
+    if (!knowledgeRequest) {
       setKnowledgeResult(null);
       setKnowledgeError(false);
       setKnowledgeLoading(false);
@@ -1314,27 +1434,7 @@ export function RequesterWorkspacePage() {
     let canceled = false;
     setKnowledgeLoading(true);
     setKnowledgeError(false);
-    void suggestKnowledge({
-      service_code: selectedService?.service_code,
-      offering_code: selectedOffering.full_code,
-      request_template_key: selectedOffering.request_template_key ?? selectedForm?.key,
-      query: description || selectedOffering.title || selectedService?.title || "",
-      form_payload: visiblePayload,
-      requester_context: bootstrap?.requester_context,
-      device_metadata: selectedDevice
-        ? {
-            device_id: selectedDevice.device_id,
-            hostname: selectedDevice.hostname,
-            os: selectedDevice.os,
-            agent_version: selectedDevice.agent_version,
-            asset_id: selectedDevice.asset_id,
-            asset_name: selectedDevice.asset_name,
-          }
-        : undefined,
-      surface: "requester_portal",
-      urgency: "normal",
-      impact: "normal",
-    })
+    void suggestKnowledge(knowledgeRequest)
       .then((result) => {
         if (!canceled) {
           setKnowledgeResult(result);
@@ -1354,7 +1454,7 @@ export function RequesterWorkspacePage() {
     return () => {
       canceled = true;
     };
-  }, [bootstrap?.requester_context, description, knowledgeKey, selectedDevice, selectedForm?.key, selectedOffering, selectedService?.service_code, selectedService?.title, visiblePayload]);
+  }, [knowledgeKey, knowledgeRequest]);
 
   function appendKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
     const attempt: KnowledgeAttempt = {
@@ -2841,66 +2941,32 @@ export function RequesterWorkspacePage() {
                   </div>
                 ) : null}
                 {knowledgeVisible ? (
-                  <div className="rounded-panel border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-slate-900">Возможно, поможет</p>
-                      {knowledgeLoading ? <span className="text-xs text-slate-500">Ищем...</span> : null}
-                    </div>
-                    {knowledgeError ? (
-                      <p className="mt-2 text-xs text-amber-700">Инструкции временно недоступны.</p>
-                    ) : null}
-                    {knowledgeSuggestions.length ? (
-                      <div className="mt-2 grid gap-2">
-                        {knowledgeSuggestions.map((item) => (
-                          <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2" key={item.item_id}>
-                            <p className="font-semibold text-slate-900">{item.title}</p>
-                            {item.summary ? <p className="mt-1 text-xs text-slate-600">{item.summary}</p> : null}
-                            {item.quality_label || item.freshness_label ? (
-                              <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                                {[item.quality_label, item.freshness_label].filter(Boolean).join(" · ")}
-                              </p>
-                            ) : null}
-                            {openedKnowledgeId === item.item_id && item.snippet ? (
-                              <p className="mt-2 rounded-panel bg-white px-3 py-2 text-xs text-slate-700">{item.snippet}</p>
-                            ) : null}
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <button
-                                aria-label="Открыть рекомендацию из базы знаний"
-                                className="rounded-panel border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
-                                onClick={() => {
-                                  setOpenedKnowledgeId((current) => (current === item.item_id ? null : item.item_id));
-                                  recordKnowledgeAttempt(item, "viewed");
-                                }}
-                                type="button"
-                              >
-                                {openedKnowledgeId === item.item_id ? "Скрыть" : "Открыть"}
-                              </button>
-                              <button
-                                aria-label="Отметить рекомендацию полезной"
-                                className="rounded-panel border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800"
-                                onClick={() => recordKnowledgeAttempt(item, "deflected")}
-                                type="button"
-                              >
-                                Помогло
-                              </button>
-                              <button
-                                aria-label="Отметить рекомендацию бесполезной"
-                                className="rounded-panel border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-800"
-                                onClick={() => recordKnowledgeAttempt(item, "not_helpful")}
-                                type="button"
-                              >
-                                Не помогло
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : !knowledgeLoading && !knowledgeError ? (
-                      <p className="mt-2 text-xs text-slate-500">Подходящих опубликованных инструкций пока нет.</p>
-                    ) : null}
-                  </div>
+                  <KnowledgeSuggestionsPanel
+                    error={knowledgeError}
+                    loading={knowledgeLoading}
+                    onRecordAttempt={recordKnowledgeAttempt}
+                    onToggleOpen={(item) => {
+                      setOpenedKnowledgeId((current) => (current === item.item_id ? null : item.item_id));
+                      recordKnowledgeAttempt(item, "viewed");
+                    }}
+                    openedKnowledgeId={openedKnowledgeId}
+                    suggestions={knowledgeSuggestions}
+                  />
                 ) : null}
               </div>
+            ) : null}
+            {!services.length && knowledgeVisible ? (
+              <KnowledgeSuggestionsPanel
+                error={knowledgeError}
+                loading={knowledgeLoading}
+                onRecordAttempt={recordKnowledgeAttempt}
+                onToggleOpen={(item) => {
+                  setOpenedKnowledgeId((current) => (current === item.item_id ? null : item.item_id));
+                  recordKnowledgeAttempt(item, "viewed");
+                }}
+                openedKnowledgeId={openedKnowledgeId}
+                suggestions={knowledgeSuggestions}
+              />
             ) : null}
             {visibleForms.length ? (
               <div className="grid gap-3">

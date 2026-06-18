@@ -239,7 +239,7 @@ export function RegistryPoliciesTab() {
             <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} title="Проверить черновик политик на сервере без сохранения" variant="outline">Предпросмотр</Button>
             <Button leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => query.data && setDraft(clonePolicies(query.data.effective))} variant="outline">Отменить</Button>
             <Button disabled={!reason.trim() || resetMutation.isPending} leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => resetMutation.mutate()} title="Сбросить политики к значениям по умолчанию; нужна причина" variant="outline">По умолчанию</Button>
-            <Button disabled={!reason.trim() || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()}>Сохранить</Button>
+            <Button aria-label="save-registry-policies" disabled={!reason.trim() || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()}>Сохранить</Button>
           </div>
         </CardContent>
       </Card>
@@ -284,6 +284,7 @@ function ApprovalModeRow({
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button
+            aria-label="registration-approval-automatic"
             className={`rounded-md border px-3 py-2 font-semibold transition-colors ${mode === "automatic" ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-700"}`}
             onClick={() => onChange("automatic")}
             type="button"
@@ -291,6 +292,7 @@ function ApprovalModeRow({
             Автоматически
           </button>
           <button
+            aria-label="registration-approval-manual"
             className={`rounded-md border px-3 py-2 font-semibold transition-colors ${mode === "manual" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-white text-slate-700"}`}
             onClick={() => onChange("manual")}
             type="button"

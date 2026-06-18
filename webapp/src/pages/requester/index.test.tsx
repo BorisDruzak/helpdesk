@@ -20,12 +20,14 @@ afterEach(() => {
 
 function installSetupAssistanceFormsMock({
   devices = [],
+  knowledgeSuggestions = [],
   profileComplete,
 }: {
   devices?: Array<{ device_id: string; hostname: string; os?: string; agent_version?: string }>;
+  knowledgeSuggestions?: Array<Record<string, unknown>>;
   profileComplete: boolean;
 }) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/web/requester/bootstrap") {
       return jsonResponse({
@@ -128,6 +130,13 @@ function installSetupAssistanceFormsMock({
     }
     if (url === "/api/registry/options") {
       return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
+    }
+    if (url === "/api/knowledge/suggest" && init?.method === "POST") {
+      return jsonResponse({
+        status: "ok",
+        suggestions: knowledgeSuggestions,
+        rollout: { enabled: true, show_before_form: true, show_quality_badge: true, show_review_freshness: true },
+      });
     }
     throw new Error(`Unexpected fetch: ${url}`);
   });
@@ -1691,7 +1700,7 @@ describe("RequesterWorkspacePage", () => {
               blocks: {
                 ticket_create: true,
                 ticket_preview: true,
-                device_binding_confirmation: true,
+                device_binding_confirmation: false,
               },
             },
             profile_schema: {
@@ -1826,6 +1835,35 @@ describe("RequesterWorkspacePage", () => {
     expect(screen.getByRole("option", { name: "Помощь с привязкой агента" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Обычный доступ" })).not.toBeInTheDocument();
     expect(formSelect).toHaveValue("agent_binding_help");
+  });
+
+  it("shows knowledge guidance for setup assistance forms without service catalog offerings", async () => {
+    const fetchMock = installSetupAssistanceFormsMock({
+      profileComplete: true,
+      knowledgeSuggestions: [
+        {
+          item_id: "kb-agent-binding-help",
+          version_id: "kb-agent-binding-help-v1",
+          slug: "agent-binding-help",
+          type: "article",
+          title: "Agent binding setup guide",
+          summary: "How to finish binding when the agent cannot confirm automatically.",
+          snippet: "Open the agent, copy the pairing code, then confirm it in the requester cabinet.",
+        },
+      ],
+    });
+
+    render(<RequesterWorkspacePage />);
+
+    await screen.findByText("Agent binding setup guide");
+    await waitFor(() => {
+      const suggestCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/knowledge/suggest");
+      expect(suggestCall).toBeTruthy();
+      expect(JSON.parse(String((suggestCall?.[1] as RequestInit).body))).toMatchObject({
+        request_template_key: "agent_binding_help",
+        surface: "requester_portal",
+      });
+    });
   });
 
   it("shows only profile completion help when an agent is linked but the profile is incomplete", async () => {
