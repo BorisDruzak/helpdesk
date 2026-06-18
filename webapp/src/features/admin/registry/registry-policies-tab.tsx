@@ -181,8 +181,8 @@ export function RegistryPoliciesTab() {
       <div className="grid gap-4 xl:grid-cols-3">
         <PolicyCard title="Регистрация">
           <ApprovalModeRow
-            defaultRequireAdmin={query.data.defaults.registration.require_admin_confirmation}
-            defaultAutoApprove={query.data.defaults.registration.auto_approve_first_binding}
+            defaultRequireAdmin={Boolean(query.data.defaults.registration.require_admin_confirmation)}
+            defaultAutoApprove={Boolean(query.data.defaults.registration.auto_approve_first_binding)}
             requireAdmin={draft.registration.require_admin_confirmation}
             autoApprove={draft.registration.auto_approve_first_binding}
             onChange={setRegistrationApprovalMode}
