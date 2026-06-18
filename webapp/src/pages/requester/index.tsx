@@ -1189,6 +1189,12 @@ export function RequesterWorkspacePage() {
     if (!selectedOffering && !selectedForm) {
       return null;
     }
+    const selectedOfferingMatchesForm =
+      Boolean(selectedOffering?.request_template_key) &&
+      Boolean(selectedForm?.key) &&
+      selectedOffering?.request_template_key === selectedForm?.key;
+    const knowledgeOffering = selectedOfferingMatchesForm ? selectedOffering : null;
+    const knowledgeService = selectedOfferingMatchesForm ? selectedService : null;
     const fallbackQuery =
       selectedForm?.title ||
       selectedForm?.description ||
@@ -1196,10 +1202,10 @@ export function RequesterWorkspacePage() {
       selectedForm?.key ||
       "";
     return {
-      service_code: selectedService?.service_code,
-      offering_code: selectedOffering?.full_code,
-      request_template_key: selectedOffering?.request_template_key ?? selectedForm?.key,
-      query: description || selectedOffering?.title || selectedService?.title || fallbackQuery,
+      service_code: knowledgeService?.service_code,
+      offering_code: knowledgeOffering?.full_code,
+      request_template_key: knowledgeOffering?.request_template_key ?? selectedForm?.key,
+      query: description || knowledgeOffering?.title || knowledgeService?.title || fallbackQuery,
       form_payload: visiblePayload,
       requester_context: bootstrap?.requester_context,
       device_metadata: selectedDevice

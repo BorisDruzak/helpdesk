@@ -22,10 +22,12 @@ function installSetupAssistanceFormsMock({
   devices = [],
   knowledgeSuggestions = [],
   profileComplete,
+  withServiceCatalog = false,
 }: {
   devices?: Array<{ device_id: string; hostname: string; os?: string; agent_version?: string }>;
   knowledgeSuggestions?: Array<Record<string, unknown>>;
   profileComplete: boolean;
+  withServiceCatalog?: boolean;
 }) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -126,6 +128,26 @@ function installSetupAssistanceFormsMock({
       });
     }
     if (url === "/api/service-catalog/current") {
+      if (withServiceCatalog) {
+        return jsonResponse({
+          status: "ok",
+          catalog_version: "test",
+          services: [
+            {
+              service_code: "workplace",
+              title: "Workplace",
+              offerings: [
+                {
+                  offering_code: "breakage",
+                  full_code: "workplace.breakage",
+                  title: "Laptop breakage",
+                  request_template_key: "normal_access",
+                },
+              ],
+            },
+          ],
+        });
+      }
       return jsonResponse({ status: "ok", catalog_version: "test", services: [] });
     }
     if (url === "/api/registry/options") {
@@ -1863,6 +1885,26 @@ describe("RequesterWorkspacePage", () => {
         request_template_key: "agent_binding_help",
         surface: "requester_portal",
       });
+    });
+  });
+
+  it("uses the setup assistance form key for knowledge even when service catalog is loaded", async () => {
+    const fetchMock = installSetupAssistanceFormsMock({
+      profileComplete: true,
+      withServiceCatalog: true,
+    });
+
+    render(<RequesterWorkspacePage />);
+
+    await waitFor(() => {
+      const suggestCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/knowledge/suggest");
+      expect(suggestCall).toBeTruthy();
+      expect(JSON.parse(String((suggestCall?.[1] as RequestInit).body))).toMatchObject({
+        request_template_key: "agent_binding_help",
+        surface: "requester_portal",
+      });
+      expect(JSON.parse(String((suggestCall?.[1] as RequestInit).body)).offering_code).toBeUndefined();
+      expect(JSON.parse(String((suggestCall?.[1] as RequestInit).body)).service_code).toBeUndefined();
     });
   });
 
