@@ -1,6 +1,6 @@
 import { CheckCircle2, KeyRound, Monitor, ShieldCheck, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button } from "../../components/ui/button";
 import {
@@ -96,12 +96,6 @@ function registrationDoneTitle(status: string | null | undefined) {
   return "Привязка устройства подтверждена";
 }
 
-function withNextPath(path: string, nextPath: string) {
-  const url = new URL(path, "https://pc-client.local");
-  url.searchParams.set("next", nextPath);
-  return `${url.pathname}${url.search}`;
-}
-
 export function DevicePairCodePage() {
   const navigate = useNavigate();
   const [pairingCode, setPairingCode] = useState("");
@@ -183,7 +177,6 @@ export function DevicePairCodePage() {
 
 export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams] = useSearchParams();
   const pairingId = searchParams.get("pairing_id") ?? "";
   const [pairing, setPairing] = useState<DevicePairingPayload | null>(null);
@@ -267,11 +260,10 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
       setPairing(nextPayload);
     } catch (err) {
       if (err instanceof DevicePairingApiError && err.errorCode === "REQUESTER_PROFILE_INCOMPLETE") {
-        const nextPath = `${location.pathname}${location.search}${location.hash}`;
-        navigate(withNextPath("/app/requester/profile/setup", nextPath), { replace: true });
-        return;
+        setError("Привязка устройства не должна требовать заполненный профиль. Обновите страницу и повторите привязку.");
+      } else {
+        setError(err instanceof Error ? err.message : "Не удалось подтвердить устройство");
       }
-      setError(err instanceof Error ? err.message : "Не удалось подтвердить устройство");
     } finally {
       setIsConfirming(false);
     }

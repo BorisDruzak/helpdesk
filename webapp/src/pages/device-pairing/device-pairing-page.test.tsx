@@ -252,7 +252,7 @@ describe("DevicePairingPage", () => {
     expect(screen.getByText("Windows")).toBeInTheDocument();
   });
 
-  it("redirects registration confirmation to profile setup when the profile is incomplete", async () => {
+  it("keeps registration confirmation on the device page when a stale profile-incomplete error is returned", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/web/registry/browser-pairings/pair-profile") {
@@ -306,10 +306,9 @@ describe("DevicePairingPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку" }));
 
     await waitFor(() => {
-      expect(screen.getByTestId("location")).toHaveTextContent(
-        "/app/requester/profile/setup?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-profile",
-      );
+      expect(screen.getByTestId("location")).toHaveTextContent("/app/device/register?pairing_id=pair-profile");
     });
+    expect(screen.getByText("Привязка устройства не должна требовать заполненный профиль. Обновите страницу и повторите привязку.")).toBeInTheDocument();
   });
 
   it("shows a product-safe Russian error when the device link id is missing", async () => {
