@@ -27,6 +27,22 @@ def test_all_baseline_content_pack_bindings_match_service_catalog_defaults() -> 
     assert [issue.as_dict() for issue in issues if issue.severity == "error"] == []
 
 
+def test_requester_setup_help_bindings_are_catalog_defaults() -> None:
+    baseline = build_catalog_baseline()
+
+    assert "requester_setup" in baseline.services
+    assert "agent_binding_help" in baseline.templates
+    assert "profile_completion_help" in baseline.templates
+    assert (
+        baseline.offerings["requester_setup.agent_binding_help"].request_template_key
+        == "agent_binding_help"
+    )
+    assert (
+        baseline.offerings["requester_setup.profile_completion_help"].request_template_key
+        == "profile_completion_help"
+    )
+
+
 def test_validator_detects_invalid_service_code() -> None:
     pack = {
         "code": "invalid-service",

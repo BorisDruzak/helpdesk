@@ -49,6 +49,15 @@ DEFAULT_SERVICE_CATALOG_SERVICES: tuple[dict[str, Any], ...] = (
         "sort_order": 40,
     },
     {
+        "code": "requester_setup",
+        "public_title": "Настройка кабинета",
+        "short_description": "Профиль пользователя, устройства и первичная привязка",
+        "visibility": "public",
+        "business_criticality": "medium",
+        "reporting_category": "requester_setup",
+        "sort_order": 50,
+    },
+    {
         "code": FALLBACK_SERVICE_CODE,
         "public_title": "Другое / Не знаю",
         "short_description": "Если вы не знаете, к какой услуге отнести обращение",
@@ -149,6 +158,28 @@ DEFAULT_SERVICE_CATALOG_OFFERINGS: tuple[dict[str, Any], ...] = (
         "sort_order": 10,
     },
     {
+        "service_code": "requester_setup",
+        "code": "profile_completion_help",
+        "public_title": "Помощь с заполнением профиля",
+        "short_description": "Заявка на помощь с обязательными полями профиля пользователя",
+        "request_type": "service_request",
+        "request_template_key": "profile_completion_help",
+        "visibility": "public",
+        "reporting_category": "requester_setup",
+        "sort_order": 960,
+    },
+    {
+        "service_code": "requester_setup",
+        "code": "agent_binding_help",
+        "public_title": "Помощь с привязкой устройства",
+        "short_description": "Заявка на помощь с привязкой устройства или агента к аккаунту",
+        "request_type": "service_request",
+        "request_template_key": "agent_binding_help",
+        "visibility": "public",
+        "reporting_category": "requester_setup",
+        "sort_order": 970,
+    },
+    {
         "service_code": FALLBACK_SERVICE_CODE,
         "code": FALLBACK_OFFERING_CODE,
         "public_title": "Не знаю, куда отнести обращение",
@@ -167,6 +198,13 @@ def fallback_service_dict() -> dict[str, Any]:
 
 
 def fallback_offering_dict() -> dict[str, Any]:
-    offering = deepcopy(next(item for item in DEFAULT_SERVICE_CATALOG_OFFERINGS if item["service_code"] == FALLBACK_SERVICE_CODE))
+    offering = deepcopy(
+        next(
+            item
+            for item in DEFAULT_SERVICE_CATALOG_OFFERINGS
+            if item["service_code"] == FALLBACK_SERVICE_CODE
+            and item["code"] == FALLBACK_OFFERING_CODE
+        )
+    )
     offering["full_code"] = FALLBACK_FULL_CODE
     return offering

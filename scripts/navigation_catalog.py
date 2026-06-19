@@ -906,7 +906,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="service_catalog",
         title="Service Catalog / Offerings",
-        summary="P1/P1.1 service desk process catalog: first-class helpdesk services and service offerings linked to request templates/form schemas, optional CMDB registry service links, fallback other.unknown, publication gates with runtime simulation, requester/agent-safe catalog projection and preview, catalog-aware ticket create/preview including unique-template inference from `form_key`, service/offering policy inheritance, Policy Health integration and service/offering reporting dimensions. `/app/admin/request-template-studio` is the primary admin workflow that orchestrates Service Catalog, Forms Builder and Policy Health; legacy screens remain expert/deep-link surfaces. Request Studio safe publish uses typed validate/preview/confirm endpoints, one-time HMAC/nonce confirmation tokens stored only as hashes in `request_studio_publish_tokens`, object diffs, and guarded publication of form schema, request template and offering in one transactional service layer.",
+        summary="P1/P1.1 service desk process catalog: first-class helpdesk services and service offerings linked to request templates/form schemas, optional CMDB registry service links, setup-help defaults under requester_setup.profile_completion_help and requester_setup.agent_binding_help, fallback other.unknown reserved for general_request, publication gates with runtime simulation, requester/agent-safe catalog projection and preview, catalog-aware ticket create/preview including unique-template inference from `form_key`, service/offering policy inheritance, Policy Health integration and service/offering reporting dimensions. `/app/admin/request-template-studio` is the primary admin workflow that orchestrates Service Catalog, Forms Builder and Policy Health; legacy screens remain expert/deep-link surfaces. Request Studio safe publish uses typed validate/preview/confirm endpoints, one-time HMAC/nonce confirmation tokens stored only as hashes in `request_studio_publish_tokens`, object diffs, and guarded publication of form schema, request template and offering in one transactional service layer.",
         aliases=(
             "service catalog",
             "service-catalog",
@@ -924,6 +924,9 @@ TOPICS: tuple[Topic, ...] = (
             "catalog snapshot",
             "requester catalog",
             "agent catalog",
+            "requester_setup",
+            "requester_setup.profile_completion_help",
+            "requester_setup.agent_binding_help",
             "/api/service-catalog/current",
             "/api/service-catalog/preview",
             "/api/web/admin/service-catalog",

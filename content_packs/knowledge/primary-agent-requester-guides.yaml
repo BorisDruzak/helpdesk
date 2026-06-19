@@ -124,8 +124,8 @@ items:
     review_due_days: 90
     tags: [device_link, account, registration]
     bindings:
-      - service_code: other
-        offering_code: other.unknown
+      - service_code: requester_setup
+        offering_code: requester_setup.agent_binding_help
         request_template_key: agent_binding_help
         weight: 1.0
     body_format: markdown
@@ -158,8 +158,8 @@ items:
     review_due_days: 90
     tags: [profile, account, requester]
     bindings:
-      - service_code: other
-        offering_code: other.unknown
+      - service_code: requester_setup
+        offering_code: requester_setup.profile_completion_help
         request_template_key: profile_completion_help
         weight: 1.0
     body_format: markdown

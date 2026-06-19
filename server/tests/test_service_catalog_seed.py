@@ -46,9 +46,11 @@ async def test_service_catalog_seed_is_idempotent_and_preserves_admin_edits(test
         await session.commit()
         repo = ServiceCatalogRepo(session)
         workplace = await repo.get_service_by_code("workplace")
-        catalog = await repo.list_offerings(service_code="other", published_only=False)
+        catalog = await repo.list_offerings(published_only=False)
 
     assert first["created"]["services"]
     assert second["skipped"]["services"]
     assert workplace["public_title"] == "Custom workplace title"
     assert any(offering["full_code"] == "other.unknown" for offering in catalog)
+    assert any(offering["full_code"] == "requester_setup.agent_binding_help" for offering in catalog)
+    assert any(offering["full_code"] == "requester_setup.profile_completion_help" for offering in catalog)
