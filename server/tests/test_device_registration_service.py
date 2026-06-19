@@ -84,6 +84,10 @@ async def test_confirm_claim_moves_to_pending_admin_review(test_engine):
 
     async with session_maker() as session:
         session.add(_device(device_id))
+        await RegistryPolicyService(session).update_policies(
+            {"registration": {"require_admin_confirmation": True}},
+            actor_id="admin",
+        )
         service = RegistrationService(session)
         result = await service.submit_agent_profile_claim(
             device_id=device_id,
