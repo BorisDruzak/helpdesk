@@ -5,7 +5,7 @@ from typing import Any
 import re
 import uuid
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -24,6 +24,7 @@ PENDING_CLAIM_STATUSES = {
     "pending_admin_review",
     "conflict",
 }
+INACTIVE_PERSON_STATUSES = {"archived", "disabled", "inactive", "merged"}
 
 
 def new_id() -> str:
@@ -43,6 +44,16 @@ def normalize_identifier(provider: str, identifier: str | None) -> str:
     return text
 
 
+def is_person_active(person: RegistryPerson | None) -> bool:
+    if person is None:
+        return False
+    return str(getattr(person, "status", "") or "active").strip().lower() not in INACTIVE_PERSON_STATUSES
+
+
+def _active_person_condition():
+    return ~func.lower(func.coalesce(RegistryPerson.status, "active")).in_(INACTIVE_PERSON_STATUSES)
+
+
 class RegistrationRepo:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -50,10 +61,12 @@ class RegistrationRepo:
     async def get_active_primary_binding(self, device_id: str) -> DeviceUserBinding | None:
         result = await self.session.execute(
             select(DeviceUserBinding)
+            .join(RegistryPerson, RegistryPerson.person_id == DeviceUserBinding.person_id)
             .where(
                 DeviceUserBinding.device_id == str(device_id),
                 DeviceUserBinding.status == "active",
                 DeviceUserBinding.relationship_type == "primary_user",
+                _active_person_condition(),
             )
             .order_by(desc(DeviceUserBinding.confirmed_at), desc(DeviceUserBinding.created_at))
             .limit(1)
@@ -63,11 +76,13 @@ class RegistrationRepo:
     async def get_active_binding_for_device(self, device_id: str, binding_id: str) -> DeviceUserBinding | None:
         result = await self.session.execute(
             select(DeviceUserBinding)
+            .join(RegistryPerson, RegistryPerson.person_id == DeviceUserBinding.person_id)
             .where(
                 DeviceUserBinding.device_id == str(device_id),
                 DeviceUserBinding.binding_id == str(binding_id),
                 DeviceUserBinding.status == "active",
                 DeviceUserBinding.relationship_type.in_(["primary_user", "shared_user", "responsible"]),
+                _active_person_condition(),
             )
             .limit(1)
         )
@@ -76,7 +91,12 @@ class RegistrationRepo:
     async def list_active_bindings_for_device(self, device_id: str) -> list[DeviceUserBinding]:
         result = await self.session.execute(
             select(DeviceUserBinding)
-            .where(DeviceUserBinding.device_id == str(device_id), DeviceUserBinding.status == "active")
+            .join(RegistryPerson, RegistryPerson.person_id == DeviceUserBinding.person_id)
+            .where(
+                DeviceUserBinding.device_id == str(device_id),
+                DeviceUserBinding.status == "active",
+                _active_person_condition(),
+            )
             .order_by(desc(DeviceUserBinding.created_at))
         )
         return list(result.scalars().all())
@@ -91,7 +111,10 @@ class RegistrationRepo:
     async def list_bindings_for_person(self, person_id: str, active_only: bool = True) -> list[DeviceUserBinding]:
         stmt = select(DeviceUserBinding).where(DeviceUserBinding.person_id == str(person_id))
         if active_only:
-            stmt = stmt.where(DeviceUserBinding.status == "active")
+            stmt = (
+                stmt.join(RegistryPerson, RegistryPerson.person_id == DeviceUserBinding.person_id)
+                .where(DeviceUserBinding.status == "active", _active_person_condition())
+            )
         result = await self.session.execute(stmt.order_by(desc(DeviceUserBinding.created_at)))
         return list(result.scalars().all())
 
@@ -217,11 +240,17 @@ class RegistrationRepo:
         await self.session.flush()
         return row
 
-    async def find_person_by_identity(self, provider: str, identifier: str) -> RegistryPerson | None:
+    async def find_person_by_identity(
+        self,
+        provider: str,
+        identifier: str,
+        *,
+        include_inactive: bool = False,
+    ) -> RegistryPerson | None:
         normalized = normalize_identifier(provider, identifier)
         if not normalized:
             return None
-        result = await self.session.execute(
+        stmt = (
             select(RegistryPerson)
             .join(RegistryPersonIdentity, RegistryPersonIdentity.person_id == RegistryPerson.person_id)
             .where(
@@ -229,6 +258,11 @@ class RegistrationRepo:
                 RegistryPersonIdentity.normalized_identifier == normalized,
             )
             .limit(1)
+        )
+        if not include_inactive:
+            stmt = stmt.where(_active_person_condition())
+        result = await self.session.execute(
+            stmt
         )
         return result.scalar_one_or_none()
 

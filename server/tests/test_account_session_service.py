@@ -7,7 +7,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceAccountLoginRequest, DeviceAccountSession, DeviceUserBinding
+from app.db.models import Device, DeviceAccountLoginRequest, DeviceAccountSession, DeviceUserBinding, RegistryPerson
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
@@ -250,6 +250,56 @@ async def test_revoked_confirmed_binding_invalidates_session(test_engine):
     assert invalid["error_code"] == "ACCOUNT_SESSION_REVOKED"
     assert session_row.verification_status == "revoked"
     assert session_row.revoked_by == "admin"
+
+
+@pytest.mark.asyncio
+async def test_archived_person_cannot_create_confirmed_binding_session(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        person = await session.get(RegistryPerson, approved["binding"]["person_id"])
+        assert person is not None
+        person.status = "archived"
+
+        with pytest.raises(ValueError, match="active binding not found"):
+            await AccountSessionService(session).create_confirmed_binding_session(
+                device_id=device_id,
+                binding_id=approved["binding"]["binding_id"],
+            )
+
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_archived_person_invalidates_existing_confirmed_session(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        account_service = AccountSessionService(session)
+        created = await account_service.create_confirmed_binding_session(
+            device_id=device_id,
+            binding_id=approved["binding"]["binding_id"],
+        )
+        person = await session.get(RegistryPerson, approved["binding"]["person_id"])
+        assert person is not None
+        person.status = "archived"
+
+        invalid = await account_service.validate_session(
+            device_id=device_id,
+            session_id=created["session"]["session_id"],
+            session_token=created["session_token"],
+        )
+        session_row = await session.get(DeviceAccountSession, created["session"]["session_id"])
+        await session.commit()
+
+    assert invalid["valid"] is False
+    assert invalid["error_code"] == "ACCOUNT_SESSION_PERSON_INACTIVE"
+    assert session_row.verification_status == "revoked"
+    assert session_row.revoked_by == "system"
 
 
 @pytest.mark.asyncio

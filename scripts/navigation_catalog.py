@@ -321,7 +321,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="auth",
         title="Auth / token bootstrap",
-        summary="Token sources, AuthContext, admin-only manual `/api/login`, admin-only legacy device token list/revoke with device-scoped token-hash revoke, typed React fleet token list `GET /api/web/admin/device-tokens` plus per-device token revoke, protected connection-request polling with `request_id` + `poll_secret`, fresh no-token connection requests getting new polling credentials after undelivered approvals, manual approve without raw token storage and token generation only on valid poll, delivery marking scoped to `request_id + device_id + approved`, manual provisioning token delivery rotating old active tokens, deprecated raw-token approval helpers as no-op, missing connection policy defaulting to manual unless explicit insecure dev is enabled, trusted-proxy-only `X-Forwarded-For` rate-limit keys, active agent-token limits with explicit rotation, hardened UI role/password handling, `APP_ENV=pilot|prod` / legacy `PILOT_STAND_MODE=true` strict fail-closed security and DB-persistence validation, secure local config hygiene with tracked `server/.env` and `db_config.json` blocked by workspace verify, secure production defaults, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification/upload/artifact-download surfaces plus the narrow `/api/registry/options` picker bridge, with same-origin protection on unsafe cookie-auth requests including reverse-proxy public origins from Forwarded/X-Forwarded headers and configured trusted origins, no anonymous `ticket_id` download bypass, operation-bound agent artifact uploads authorized by matching operation/ticket/device context, public-ticket token auth on artifact downloads, RFC 5987 `filename*` artifact download names, typed notification preferences returning plain JSON payloads, requester-safe auth-whitelisted knowledge search/suggest/feedback for public help deflection with ACL filtering and preserved valid optional bearer/web-session AuthContext for Registry audience resolution, safe direct browser pairing visibility for only pending/confirmed non-expired pairings, and security invariants.",
+        summary="Token sources, AuthContext, admin-only manual `/api/login`, admin-only legacy device token list/revoke with device-scoped token-hash revoke, typed React fleet token list `GET /api/web/admin/device-tokens` plus per-device token revoke, protected connection-request polling with `request_id` + `poll_secret`, fresh no-token connection requests getting new polling credentials after undelivered approvals when no active agent token exists, manual no-token requests returning `already_authorized=true` and clearing pending rows when the device already has an active token, manual approve without raw token storage and token generation only on valid poll, delivery marking scoped to `request_id + device_id + approved`, explicit revoke-before-reprovision semantics, deprecated raw-token approval helpers as no-op, missing connection policy defaulting to manual unless explicit insecure dev is enabled, trusted-proxy-only `X-Forwarded-For` rate-limit keys, active agent-token limits with explicit rotation, hardened UI role/password handling, `APP_ENV=pilot|prod` / legacy `PILOT_STAND_MODE=true` strict fail-closed security and DB-persistence validation, secure local config hygiene with tracked `server/.env` and `db_config.json` blocked by workspace verify, secure production defaults, hardware device fingerprint proof, legacy TOKEN_LIMIT_EXCEEDED diagnostics, rate-limited web_auth observer audit rows, httpOnly web session bridging for React admin/notification/upload/artifact-download surfaces plus the narrow `/api/registry/options` picker bridge, with same-origin protection on unsafe cookie-auth requests including reverse-proxy public origins from Forwarded/X-Forwarded headers and configured trusted origins, no anonymous `ticket_id` download bypass, operation-bound agent artifact uploads authorized by matching operation/ticket/device context, public-ticket token auth on artifact downloads, RFC 5987 `filename*` artifact download names, typed notification preferences returning plain JSON payloads, requester-safe auth-whitelisted knowledge search/suggest/feedback for public help deflection with ACL filtering and preserved valid optional bearer/web-session AuthContext for Registry audience resolution, safe direct browser pairing visibility for only pending/confirmed non-expired pairings, and security invariants.",
         aliases=(
             "auth",
             "token",
@@ -334,6 +334,8 @@ TOPICS: tuple[Topic, ...] = (
             "authcontext",
             "connection request",
             "connection_request",
+            "already_authorized",
+            "connection_request_already_authorized",
             "poll_secret",
             "request_id",
             "legacy ui login",
@@ -1865,6 +1867,9 @@ TOPICS: tuple[Topic, ...] = (
             "department_pending_confirmation",
             "ui_user_unlinked_registry_person",
             "binding_inactive_person",
+            "archived person binding",
+            "archived requester identity",
+            "ACCOUNT_SESSION_PERSON_INACTIVE",
             "person_archived_department",
             "person_archived_location",
             "audience group import",

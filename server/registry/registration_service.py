@@ -20,7 +20,7 @@ from app.db.models import (
     RegistryPerson,
     Ticket,
 )
-from app.repos.registration_repo import RegistrationRepo, normalize_identifier
+from app.repos.registration_repo import RegistrationRepo, is_person_active, normalize_identifier
 from app.repos.registry_repo import RegistryRepo
 from registry.policy_service import RegistryPolicyService
 
@@ -166,6 +166,11 @@ def _asset_payload(asset: RegistryAsset | None) -> dict[str, Any] | None:
         "location_id": asset.location_id,
         "department_id": asset.department_id,
     }
+
+
+def _raise_if_person_inactive(person: RegistryPerson | None) -> None:
+    if not is_person_active(person):
+        raise RegistrationValidationError("registry person is archived or inactive")
 
 
 class RegistrationService:
@@ -987,6 +992,7 @@ class RegistrationService:
                 identity = await self.repo.find_identity(provider, str(identifier))
                 person = await self.registry_repo.get_person(identity.person_id) if identity else None
                 if person:
+                    _raise_if_person_inactive(person)
                     if not identity.verified:
                         person.display_name = display_name or person.display_name
                         person.full_name = profile.get("full_name") or person.full_name
@@ -1004,7 +1010,7 @@ class RegistrationService:
             or normalize_identifier("ui_login", str(requester_id or ""))
             or normalize_identifier("manual", str(display_name or full_name))
         )
-        return await self.registry_repo.upsert_person_from_profile(
+        person = await self.registry_repo.upsert_person_from_profile(
             profile_key=profile_key,
             display_name=display_name or full_name,
             full_name=full_name,
@@ -1014,6 +1020,8 @@ class RegistrationService:
             location_id=location_id,
             metadata={"profile": profile},
         )
+        _raise_if_person_inactive(person)
+        return person
 
     async def _upsert_identities(self, person: RegistryPerson, *, requester_id: str | None, profile: dict[str, Any]) -> None:
         await self.repo.create_or_update_person_identity(
@@ -1083,6 +1091,7 @@ class RegistrationService:
             department_id=department_id,
             location_id=location_id,
         )
+        _raise_if_person_inactive(person)
         await self._upsert_identities(person, requester_id=requester_id, profile=profile_snapshot)
 
         asset = await self.registry_repo.get_asset_by_device_id(device_id)
@@ -1254,10 +1263,11 @@ class RegistrationService:
         claim = await self.repo.get_claim(claim_id)
         if claim is None:
             raise ValueError("registration claim not found")
+        person_for_claim = await self.registry_repo.get_person(claim.person_id)
+        _raise_if_person_inactive(person_for_claim)
         if claim.status in {"approved", "rejected", "superseded"}:
-            person = await self.registry_repo.get_person(claim.person_id)
             asset = await self.registry_repo.get_asset(claim.asset_id)
-            return self._build_submit_payload(person=person, asset=asset, claim=claim)
+            return self._build_submit_payload(person=person_for_claim, asset=asset, claim=claim)
         if claim.status not in {"pending_user_confirmation", "self_reported", "user_confirmed", "pending_admin_review", "conflict"}:
             raise ValueError("claim cannot be confirmed")
         conflict_reason = await self.detect_conflicts(claim.device_id, claim.person_id, claim.relationship_type)
@@ -1277,12 +1287,11 @@ class RegistrationService:
             payload={"status": new_status},
         )
         await self.session.flush()
-        person = await self.registry_repo.get_person(claim.person_id)
         asset = await self.registry_repo.get_asset(claim.asset_id)
         policy = await self._registration_policy()
         if not conflict_reason and policy["auto_approve_first_binding"] and not policy["require_admin_confirmation"]:
             return await self.approve_claim(claim.claim_id, reviewed_by=actor_id or "system", actor_role="system")
-        return self._build_submit_payload(person=person, asset=asset, claim=claim)
+        return self._build_submit_payload(person=person_for_claim, asset=asset, claim=claim)
 
     def _normalized_actor_identities(self, actor_id: str | None) -> dict[str, set[str]]:
         raw = str(actor_id or "").strip()
@@ -1371,6 +1380,8 @@ class RegistrationService:
         claim = await self.repo.get_claim(claim_id)
         if claim is None:
             raise ValueError("registration claim not found")
+        person_for_claim = await self.registry_repo.get_person(claim.person_id)
+        _raise_if_person_inactive(person_for_claim)
         existing_for_claim = None
         if claim.status == "approved":
             rows = await self.repo.list_active_bindings_for_device(claim.device_id)
@@ -1746,7 +1757,7 @@ class RegistrationService:
         if active_primary and relationship_type == "primary_user" and active_primary.person_id != person_id:
             return "active_primary_user_exists"
         person = await self.registry_repo.get_person(person_id)
-        if person and str(person.status or "").lower() in {"inactive", "disabled"}:
+        if person and not is_person_active(person):
             return "person_inactive"
         primary_count = sum(
             1

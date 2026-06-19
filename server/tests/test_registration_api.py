@@ -28,7 +28,7 @@ from registry.browser_pairing_service import BrowserPairingService
 from registry.account_session_service import AccountSessionService
 from auth.service import AuthService
 from registry.policy_service import RegistryPolicyService
-from registry.registration_service import RegistrationService
+from registry.registration_service import RegistrationService, RegistrationValidationError
 from server import create_app
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
@@ -142,6 +142,42 @@ async def _seed_bound_ui_user(
     session.add(binding)
     await session.flush()
     return {"person": person, "binding": binding, "password": password}
+
+
+@pytest.mark.asyncio
+async def test_submit_agent_profile_claim_rejects_archived_ui_identity(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"archived-registration-{uuid.uuid4().hex[:8]}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        person = await _completed_requester_profile(session, login=login)
+        person.status = "archived"
+        await session.flush()
+
+        with pytest.raises(RegistrationValidationError, match="archived"):
+            await RegistrationService(session).submit_agent_profile_claim(
+                device_id=device_id,
+                requester_id=login,
+                display_name="Archived Requester",
+                profile={
+                    "full_name": "Archived Requester",
+                    "email": login,
+                    "login": login,
+                    "user_confirmed": True,
+                },
+                actor_id=login,
+                actor_role="user",
+            )
+
+        claims = (
+            await session.execute(
+                select(DeviceRegistrationClaim).where(DeviceRegistrationClaim.device_id == device_id)
+            )
+        ).scalars().all()
+        await session.commit()
+
+    assert claims == []
 
 
 @pytest.mark.asyncio

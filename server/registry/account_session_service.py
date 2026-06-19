@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeviceAccountLoginRequest, DeviceAccountSession
 from app.repos.account_session_repo import AccountSessionRepo
-from app.repos.registration_repo import RegistrationRepo
+from app.repos.registration_repo import RegistrationRepo, is_person_active
 from app.repos.registry_repo import RegistryRepo
 from registry.policy_service import RegistryPolicyService
 
@@ -81,6 +81,17 @@ class AccountSessionService:
         self.repo = AccountSessionRepo(session)
         self.registration_repo = RegistrationRepo(session)
         self.registry_repo = RegistryRepo(session)
+
+    async def _person_id_is_active(self, person_id: str | None) -> bool:
+        if not person_id:
+            return True
+        return is_person_active(await self.registry_repo.get_person(person_id))
+
+    async def _inactive_session_person_id(self, row: DeviceAccountSession) -> str | None:
+        for person_id in (row.person_id, row.base_person_id):
+            if person_id and not await self._person_id_is_active(person_id):
+                return str(person_id)
+        return None
 
     async def _account_session_policy(self) -> dict[str, Any]:
         try:
@@ -211,7 +222,7 @@ class AccountSessionService:
             raise ValueError("login is required")
         identity = await self.registration_repo.find_identity("ui_login", clean_login)
         person = await self.registry_repo.get_person(identity.person_id) if identity and identity.verified else None
-        if person is None:
+        if person is None or not is_person_active(person):
             raise PermissionError("account is not bound to this device")
         active_bindings = [
             binding
@@ -262,6 +273,8 @@ class AccountSessionService:
             raise ValueError("registration claim does not belong to device")
         if str(claim.status) not in PENDING_REGISTRATION_CLAIM_STATUSES:
             raise ValueError("registration claim is not pending")
+        if claim.person_id and not await self._person_id_is_active(claim.person_id):
+            raise PermissionError("registration claim person is archived or inactive")
         policy = await self._account_session_policy()
         token = secrets.token_urlsafe(32)
         row = await self.repo.create_session(
@@ -312,7 +325,7 @@ class AccountSessionService:
         phone = declared.get("phone")
         if phone:
             identity = await self.registration_repo.find_identity("phone", phone)
-            if identity and identity.verified:
+            if identity and identity.verified and await self._person_id_is_active(identity.person_id):
                 return identity.person_id
         return None
 
@@ -371,6 +384,9 @@ class AccountSessionService:
             raise ValueError("account login request base binding is no longer active")
         policy = await self._account_session_policy()
         declared = dict(request.requested_account or {})
+        matched_person_id = request.matched_person_id
+        if matched_person_id and not await self._person_id_is_active(matched_person_id):
+            matched_person_id = None
         token = secrets.token_urlsafe(32)
         row = await self.repo.create_session(
             session_token_hash=_token_hash(token),
@@ -378,7 +394,7 @@ class AccountSessionService:
             account_mode="verified_other_account",
             verification_status="verified",
             verification_method="admin_approval",
-            person_id=request.matched_person_id,
+            person_id=matched_person_id,
             base_binding_id=request.base_binding_id,
             base_person_id=request.base_person_id,
             declared_account=declared,
@@ -404,7 +420,7 @@ class AccountSessionService:
             event_type="other_account_login_approved",
             actor_id=reviewed_by,
             actor_role="admin",
-            payload={"matched_person_id": request.matched_person_id, "base_binding_id": request.base_binding_id},
+            payload={"matched_person_id": matched_person_id, "base_binding_id": request.base_binding_id},
         )
         return {
             "request": self.serialize_login_request(request),
@@ -648,6 +664,26 @@ class AccountSessionService:
             return {"valid": False, "error_code": "ACCOUNT_SESSION_TOKEN_INVALID", "session": await self.serialize_session(row)}
         if row.session_token_hash and not session_token:
             return {"valid": False, "error_code": "ACCOUNT_SESSION_TOKEN_REQUIRED", "session": await self.serialize_session(row)}
+        inactive_person_id = await self._inactive_session_person_id(row)
+        if inactive_person_id:
+            row = await self.repo.revoke_session(
+                row.session_id,
+                revoked_by="system",
+                reason="registry person archived or inactive",
+            )
+            await self.repo.append_event(
+                device_id=row.device_id,
+                session_id=row.session_id,
+                event_type="account_session_revoked_due_to_inactive_person",
+                actor_id="system",
+                actor_role="system",
+                payload={"person_id": inactive_person_id, "account_mode": row.account_mode},
+            )
+            return {
+                "valid": False,
+                "error_code": "ACCOUNT_SESSION_PERSON_INACTIVE",
+                "session": await self.serialize_session(row),
+            }
         if row.account_mode == "registration_pending":
             if row.verification_status != "pending_verification":
                 return {"valid": False, "error_code": "ACCOUNT_SESSION_NOT_PENDING", "session": await self.serialize_session(row)}

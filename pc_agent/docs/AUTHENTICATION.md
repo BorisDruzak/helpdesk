@@ -205,4 +205,5 @@ python ws_agent.py --no-gui
 Security update 2026-05-23:
 - Agents no longer obtain machine tokens through unauthenticated `POST /api/login`. That endpoint is admin-only server-side compatibility.
 - Automatic reprovisioning uses `POST /api/connection_request`. In manual policy mode the server returns `request_id` and one-time `poll_secret`; the agent keeps them in memory and sends both on heartbeat/status polling.
+- If the same `device_id` already has an active server-side agent token, manual no-token `POST /api/connection_request` is treated as already authorized and returns no raw token or poll credentials. The old token must be revoked before intentional reprovision.
 - If the server returns `POLL_SECRET_REQUIRED` or `INVALID_POLL_SECRET`, the agent treats the old pending request as unusable and creates a fresh request. Raw tokens and poll secrets must not be logged.

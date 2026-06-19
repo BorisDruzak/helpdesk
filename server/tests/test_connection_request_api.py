@@ -337,7 +337,7 @@ async def test_connection_request_manual_pending(test_client, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_connection_request_manual_does_not_block_on_old_token_count(test_client, test_engine):
+async def test_connection_request_manual_with_active_token_does_not_create_pending(test_client, test_engine):
     device_id = str(uuid.uuid4())
     await _set_policy(test_engine, "accept_all")
 
@@ -356,50 +356,41 @@ async def test_connection_request_manual_does_not_block_on_old_token_count(test_
     payload = await response.json()
 
     assert response.status == 200
-    assert payload["status"] == "pending"
-
-    status_response = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, payload))
-    status_payload = await status_response.json()
-
-    assert status_response.status == 200
-    assert status_payload["status"] == "pending"
+    assert payload["status"] == "approved"
+    assert payload["already_authorized"] is True
+    assert "token" not in payload
+    assert "request_id" not in payload
+    assert "poll_secret" not in payload
 
     list_response = await test_client.get("/api/admin/connection_requests", headers=_admin_headers())
     list_payload = await list_response.json()
-    request_row = next(req for req in list_payload.get("connection_requests") or [] if req.get("device_id") == device_id)
-    assert request_row["metadata"].get("reason") != "token_limit_exceeded"
+    assert not any(req.get("device_id") == device_id for req in list_payload.get("connection_requests") or [])
 
 
 @pytest.mark.asyncio
-async def test_connection_request_status_rotates_old_active_tokens(test_client, test_engine):
+async def test_connection_request_manual_active_token_clears_existing_pending(test_client, test_engine):
     await _set_policy(test_engine, "manual")
     device_id = str(uuid.uuid4())
-    auth_service = AuthService(test_client.app["state"])
-    old_tokens = [
-        await auth_service.generate_agent_token(device_id=device_id, expires_hours=24),
-        await auth_service.generate_agent_token(device_id=device_id, expires_hours=24),
-    ]
 
     created = await test_client.post(
         "/api/connection_request",
-        json={"device_id": device_id, "hostname": "rotate-pc"},
+        json={"device_id": device_id, "hostname": "authorized-pc"},
     )
     assert created.status == 200
-    created_payload = await created.json()
 
-    approved = await test_client.post(
-        f"/api/admin/connection_requests/{device_id}/approve",
-        headers=_admin_headers(),
-        json={},
+    auth_service = AuthService(test_client.app["state"])
+    raw_token = await auth_service.generate_agent_token(device_id=device_id, expires_hours=24)
+
+    repeated = await test_client.post(
+        "/api/connection_request",
+        json={"device_id": device_id, "hostname": "authorized-pc"},
     )
-    assert approved.status == 200
+    repeated_payload = await repeated.json()
 
-    status_response = await test_client.get("/api/connection_request/status", params=_poll_params(device_id, created_payload))
-    status_payload = await status_response.json()
-
-    assert status_response.status == 200
-    assert status_payload["status"] == "approved"
-    assert status_payload["token"]
+    assert repeated.status == 200
+    assert repeated_payload["status"] == "approved"
+    assert repeated_payload["already_authorized"] is True
+    assert "token" not in repeated_payload
 
     async with get_session() as session:
         rows = (
@@ -410,13 +401,15 @@ async def test_connection_request_status_rotates_old_active_tokens(test_client, 
             )
         ).scalars().all()
 
-    new_token_hash = AuthTokensRepo.hash_token(status_payload["token"])
-    old_token_hashes = {AuthTokensRepo.hash_token(token) for token in old_tokens}
+    token_hash = AuthTokensRepo.hash_token(raw_token)
     active_hashes = {row.token_hash for row in rows if row.revoked_at is None}
-    revoked_hashes = {row.token_hash for row in rows if row.revoked_at is not None}
+    pending = (
+        await test_client.get("/api/admin/connection_requests", headers=_admin_headers())
+    )
+    pending_payload = await pending.json()
 
-    assert active_hashes == {new_token_hash}
-    assert old_token_hashes <= revoked_hashes
+    assert active_hashes == {token_hash}
+    assert not any(req.get("device_id") == device_id for req in pending_payload.get("connection_requests") or [])
 
 
 @pytest.mark.asyncio

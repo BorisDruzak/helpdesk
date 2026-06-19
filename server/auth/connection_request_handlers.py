@@ -349,6 +349,33 @@ async def handle_connection_request(request: web.Request) -> web.Response:
                 "device_id": device_id,
             })
 
+        # POLICY_MANUAL: a device that already has an active server token must
+        # not re-enter the admin approval queue just because it posted no token.
+        active_token_count = await AuthTokensRepo(session).check_active_token_limit(device_id)
+        if active_token_count > 0:
+            await _remember_device_fingerprint(devices_repo, device_id=device_id, metadata=metadata)
+            await repo.set_approved(device_id)
+            await session.commit()
+            await write_agent_runtime_audit(
+                device_id=device_id,
+                event_type="connection_request_already_authorized",
+                severity="info",
+                source="connection_request",
+                details_json={
+                    "policy": "manual",
+                    "active_token_count": active_token_count,
+                    "reason": "active_agent_token_exists",
+                },
+            )
+            return web.json_response(
+                {
+                    "status": "approved",
+                    "device_id": device_id,
+                    "already_authorized": True,
+                    "message": "Device already has an active agent token",
+                }
+            )
+
         # POLICY_MANUAL: create pending request или обновить last_request_at (heartbeat)
         existing = await repo.get_pending_by_device_id(device_id)
         if existing and request_id and poll_secret and existing.request_id == request_id and existing.poll_secret_hash == ConnectionRequestService.hash_poll_secret(poll_secret):

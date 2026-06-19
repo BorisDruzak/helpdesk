@@ -301,6 +301,43 @@ async def test_requester_profile_returns_safe_identities_and_devices(test_client
 
 
 @pytest.mark.asyncio
+async def test_archived_requester_identity_is_not_usable_as_profile(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = f"requester-archived-{uuid.uuid4().hex[:8]}@example.test"
+    async with session_maker() as session:
+        person = await _person_for_login(session, login=login)
+        person.status = "archived"
+        department_id = person.department_id
+        location_id = person.location_id
+        await session.commit()
+
+    bootstrap = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    bootstrap_payload = await bootstrap.json()
+
+    assert bootstrap.status == 200, bootstrap_payload
+    assert bootstrap_payload["data"]["profile"] is None
+    assert bootstrap_payload["data"]["devices"] == []
+
+    update = await test_client.put(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "full_name": "Archived Requester",
+            "phone": "1001",
+            "department_id": department_id,
+            "location_id": location_id,
+        },
+    )
+    update_payload = await update.json()
+
+    assert update.status == 403, update_payload
+    assert update_payload["error_code"] == "REQUESTER_PROFILE_FORBIDDEN"
+
+
+@pytest.mark.asyncio
 async def test_requester_bootstrap_reports_profile_completion_gate_for_new_user(test_client):
     response = await test_client.get(
         "/api/web/requester/bootstrap",

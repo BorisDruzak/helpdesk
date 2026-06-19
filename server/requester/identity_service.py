@@ -19,7 +19,7 @@ from app.db.models import (
     RegistryPersonIdentity,
     Ticket,
 )
-from app.repos.registration_repo import RegistrationRepo
+from app.repos.registration_repo import RegistrationRepo, is_person_active
 from app.repos.registry_repo import RegistryRepo
 from registry.profile_schema_service import RequesterProfileSchemaService
 
@@ -251,6 +251,11 @@ class RequesterIdentityResolver:
             raise RequesterProfileValidationError("Не удалось определить пользователя", {"actor": "missing"})
 
         current = await self.resolve_person_for_web_user(actor_login)
+        existing_ui_identity = await self.registration_repo.find_identity("ui_login", actor_login)
+        if current is None and existing_ui_identity is not None:
+            existing_person = await self.registry_repo.get_person(existing_ui_identity.person_id)
+            if not is_person_active(existing_person):
+                raise PermissionError("requester profile is archived or inactive")
         supplied_person_id = _clean_text(payload.get("person_id"), max_length=80)
         if supplied_person_id and (current is None or supplied_person_id != current.person_id):
             raise PermissionError("Нельзя изменить чужой профиль.")
@@ -325,7 +330,7 @@ class RequesterIdentityResolver:
             )
             self.session.add(current)
             await self.session.flush()
-            await self.registration_repo.create_or_update_person_identity(
+            identity = await self.registration_repo.create_or_update_person_identity(
                 person_id=current.person_id,
                 provider="ui_login",
                 identifier=actor_login,
@@ -333,6 +338,8 @@ class RequesterIdentityResolver:
                 source="requester_web",
                 metadata={"profile_setup": True},
             )
+            if identity is None or identity.person_id != current.person_id:
+                raise PermissionError("ui login already belongs to another profile")
         else:
             metadata = current.metadata_json if isinstance(current.metadata_json, dict) else {}
             current.display_name = full_name
@@ -342,7 +349,7 @@ class RequesterIdentityResolver:
             current.location_id = location.location_id
             current.last_seen_at = now
             current.metadata_json = {**metadata, **metadata_patch}
-            await self.registration_repo.create_or_update_person_identity(
+            identity = await self.registration_repo.create_or_update_person_identity(
                 person_id=current.person_id,
                 provider="ui_login",
                 identifier=actor_login,
@@ -350,6 +357,8 @@ class RequesterIdentityResolver:
                 source="requester_web",
                 metadata={"profile_setup": True},
             )
+            if identity is None or identity.person_id != current.person_id:
+                raise PermissionError("ui login already belongs to another profile")
             await self.session.flush()
 
         return {
