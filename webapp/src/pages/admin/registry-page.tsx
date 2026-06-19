@@ -29,6 +29,7 @@ import {
   createAdminRegistryLocation,
   createAdminRegistryPerson,
   createAdminRegistryPersonIdentity,
+  disableAdminRegistryUiUser,
   fetchAdminAccountLoginRequests,
   fetchAdminPasswordResetRequests,
   fetchAdminRegistry,
@@ -394,6 +395,15 @@ export function AdminRegistryPage() {
     setLinkUiUserDialog({ person });
   };
 
+  const disableUiUser = (uiUser: NonNullable<AdminRegistryPayload["ui_users"]>[number]) => {
+    runWithReason(
+      "Причина отключения входа",
+      "UI аккаунт больше не должен иметь доступ",
+      (reason) => disableAdminRegistryUiUser(uiUser.user_login, reason),
+      "danger",
+    );
+  };
+
   const archivePerson = (person: AdminRegistryPayload["people"][number]) => {
     runWithReason(
       "Причина архивации пользователя",
@@ -516,6 +526,7 @@ export function AdminRegistryPage() {
               onAddIdentity={(person) => setIdentityDialog({ personId: person.person_id, personName: person.display_name })}
               onArchive={archivePerson}
               onBindToDevice={bindPersonToKnownDevice}
+              onDisableUiUser={disableUiUser}
               onEdit={(person) => setPersonDialog({ person })}
               onLinkUiUser={linkUiUserToPerson}
               onMerge={(person) => setMergePersonId(person.person_id)}

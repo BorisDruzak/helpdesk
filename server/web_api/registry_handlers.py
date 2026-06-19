@@ -7,7 +7,8 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser
+from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
+from app.repos.auth_tokens_repo import AuthTokensRepo
 from auth.middleware import require_auth
 from auth.password_service import PasswordPolicyError
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
@@ -40,6 +41,81 @@ def _success(data: dict) -> web.Response:
 def _text(value: object, *, max_length: int = 500) -> str | None:
     text = str(value or "").strip()
     return text[:max_length] if text else None
+
+
+async def _disable_ui_user_access(
+    session,
+    user: UiUser,
+    *,
+    actor_id: str | None,
+    reason: str | None,
+    action: str,
+    related_person_id: str | None = None,
+) -> dict[str, object]:
+    revoked_tokens = await AuthTokensRepo(session).revoke_active_ui_tokens_for_user(user.user_login, commit=False)
+    was_active = bool(user.is_active)
+    if was_active:
+        user.is_active = False
+    if was_active or revoked_tokens:
+        session.add(
+            UiUserAudit(
+                user_login=user.user_login,
+                action=action,
+                actor_id=actor_id,
+                details_json={
+                    "reason": reason,
+                    "related_person_id": related_person_id,
+                    "revoked_ui_tokens": revoked_tokens,
+                    "was_active": was_active,
+                },
+            )
+        )
+    return {
+        "user_login": user.user_login,
+        "actor_role": user.actor_role,
+        "was_active": was_active,
+        "is_active": False,
+        "revoked_ui_tokens": revoked_tokens,
+    }
+
+
+async def _disable_linked_requester_ui_users(
+    session,
+    *,
+    person_id: str,
+    actor_id: str | None,
+    reason: str | None,
+) -> list[dict[str, object]]:
+    identities = (
+        await session.execute(
+            select(RegistryPersonIdentity).where(
+                RegistryPersonIdentity.person_id == person_id,
+                RegistryPersonIdentity.provider == "ui_login",
+            )
+        )
+    ).scalars().all()
+
+    disabled: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for identity in identities:
+        user_login = str(identity.identifier or "").strip()
+        if not user_login or user_login.lower() in seen:
+            continue
+        seen.add(user_login.lower())
+        user = await session.get(UiUser, user_login)
+        if user is None or user.actor_role != "user":
+            continue
+        result = await _disable_ui_user_access(
+            session,
+            user,
+            actor_id=actor_id,
+            reason=reason,
+            action="disabled_by_person_archive",
+            related_person_id=person_id,
+        )
+        if result["was_active"] or result["revoked_ui_tokens"]:
+            disabled.append(result)
+    return disabled
 
 
 def _observer_actor_context(
@@ -1840,6 +1916,8 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
         if not person.display_name:
             return web.json_response({"status": "error", "error": "display_name is required", "error_code": "VALIDATION_ERROR"}, status=400)
         revoked_bindings: list[dict[str, object]] = []
+        disabled_ui_users: list[dict[str, object]] = []
+        reason = _text(data.get("reason"), max_length=1000)
         if previous_status != person.status and person.status in {"archived", "inactive", "deactivated", "disabled"}:
             active_bindings = (
                 await session.execute(
@@ -1850,7 +1928,7 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
                 )
             ).scalars().all()
             service = RegistrationService(session)
-            reason = _text(data.get("reason"), max_length=1000) or f"person {person.status}"
+            reason = reason or f"person {person.status}"
             for binding in active_bindings:
                 result = await service.revoke_binding(
                     binding.binding_id,
@@ -1858,9 +1936,16 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
                     reason=reason,
                 )
                 revoked_bindings.append(result["binding"])
+            disabled_ui_users = await _disable_linked_requester_ui_users(
+                session,
+                person_id=person.person_id,
+                actor_id=auth_context.actor_id,
+                reason=reason,
+            )
         payload = {
             "person": {"person_id": person.person_id, "display_name": person.display_name, "status": person.status},
             "revoked_bindings": revoked_bindings,
+            "disabled_ui_users": disabled_ui_users,
         }
         await RegistryAdminOperationsService(session).append_event(
             object_type="person",
@@ -1868,7 +1953,7 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
             event_type="person_updated",
             actor_id=auth_context.actor_id,
             actor_role=auth_context.actor_role,
-            reason=_text(data.get("reason"), max_length=1000),
+            reason=reason,
             related_person_id=person.person_id,
             payload={
                 "person_id": person.person_id,
@@ -1887,6 +1972,7 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
                     "status": person.status,
                 },
                 "revoked_binding_ids": [row.get("binding_id") for row in revoked_bindings],
+                "disabled_ui_user_logins": [row.get("user_login") for row in disabled_ui_users],
             },
         )
         await session.commit()
@@ -1958,11 +2044,18 @@ async def handle_web_admin_registry_person_archive(request: web.Request) -> web.
                 reason=reason,
             )
             revoked_sessions.append(revoked)
+        disabled_ui_users = await _disable_linked_requester_ui_users(
+            session,
+            person_id=person.person_id,
+            actor_id=auth_context.actor_id,
+            reason=reason,
+        )
 
         payload = {
             "person": {"person_id": person.person_id, "display_name": person.display_name, "status": person.status},
             "revoked_bindings": revoked_bindings,
             "revoked_sessions": revoked_sessions,
+            "disabled_ui_users": disabled_ui_users,
         }
         await RegistryAdminOperationsService(session).append_event(
             object_type="person",
@@ -1982,6 +2075,7 @@ async def handle_web_admin_registry_person_archive(request: web.Request) -> web.
                 },
                 "revoked_binding_ids": [row.get("binding_id") for row in revoked_bindings],
                 "revoked_session_ids": [row.get("session_id") for row in revoked_sessions],
+                "disabled_ui_user_logins": [row.get("user_login") for row in disabled_ui_users],
             },
         )
         await session.commit()
@@ -2157,6 +2251,67 @@ async def handle_web_admin_registry_ui_user_link_person(request: web.Request) ->
         }
         await session.commit()
     return _success(payload)
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_ui_user_disable(request: web.Request) -> web.Response:
+    user_login = str(request.match_info.get("user_login") or "").strip()
+    data = await request.json() if request.can_read_body else {}
+    auth_context = request["auth_context"]
+    reason = _text(data.get("reason"), max_length=1000)
+    if not user_login:
+        return web.json_response({"status": "error", "error": "user_login is required", "error_code": "VALIDATION_ERROR"}, status=400)
+    if not reason:
+        return web.json_response({"status": "error", "error": "reason is required", "error_code": "VALIDATION_ERROR"}, status=400)
+
+    async with get_session() as session:
+        user = await session.get(UiUser, user_login)
+        if user is None:
+            return web.json_response({"status": "error", "error": "ui user not found", "error_code": "NOT_FOUND"}, status=404)
+        if user.actor_role != "user":
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": "only requester UI users can be disabled from registry",
+                    "error_code": "UNSUPPORTED_ROLE",
+                },
+                status=409,
+            )
+        identity = (
+            await session.execute(
+                select(RegistryPersonIdentity).where(
+                    RegistryPersonIdentity.provider == "ui_login",
+                    RegistryPersonIdentity.normalized_identifier == user.user_login.lower(),
+                )
+            )
+        ).scalar_one_or_none()
+        related_person_id = identity.person_id if identity is not None else None
+        result = await _disable_ui_user_access(
+            session,
+            user,
+            actor_id=auth_context.actor_id,
+            reason=reason,
+            action="disabled_by_admin",
+            related_person_id=related_person_id,
+        )
+        await RegistryAdminOperationsService(session).append_event(
+            object_type="ui_user",
+            object_id=user.user_login,
+            event_type="ui_user_disabled",
+            actor_id=auth_context.actor_id,
+            actor_role=auth_context.actor_role,
+            reason=reason,
+            related_person_id=related_person_id,
+            payload={
+                "ui_user_login": user.user_login,
+                "actor_role": user.actor_role,
+                "linked_person_id": related_person_id,
+                "was_active": result["was_active"],
+                "revoked_ui_tokens": result["revoked_ui_tokens"],
+            },
+        )
+        await session.commit()
+    return _success({"ui_user": result, "revoked_ui_tokens": result["revoked_ui_tokens"]})
 
 
 @require_auth("admin")

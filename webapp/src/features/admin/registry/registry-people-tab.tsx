@@ -1,4 +1,4 @@
-import { Archive, Edit3, Fingerprint, GitMerge, Link2, UserCheck, UserRoundPlus } from "lucide-react";
+import { Archive, Edit3, Fingerprint, GitMerge, Link2, UserCheck, UserRoundPlus, UserX } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -6,12 +6,14 @@ import type { AdminRegistryPayload } from "../api";
 import { formatDateTime, registryStatusLabel, statusTone, type RegistrySelection } from "./registry-utils";
 
 type PersonRow = AdminRegistryPayload["people"][number];
+type UiUserRow = NonNullable<AdminRegistryPayload["ui_users"]>[number];
 
 type Props = {
   people: AdminRegistryPayload["people"];
   onAddIdentity: (person: PersonRow) => void;
   onArchive: (person: PersonRow) => void;
   onBindToDevice: (person: PersonRow) => void;
+  onDisableUiUser: (uiUser: UiUserRow) => void;
   onEdit: (person: PersonRow) => void;
   onLinkUiUser: (person: PersonRow) => void;
   onMerge: (person: PersonRow) => void;
@@ -55,6 +57,7 @@ export function RegistryPeopleTab({
   onAddIdentity,
   onArchive,
   onBindToDevice,
+  onDisableUiUser,
   onEdit,
   onLinkUiUser,
   onMerge,
@@ -107,6 +110,18 @@ export function RegistryPeopleTab({
               <Button leadingIcon={<UserRoundPlus className="h-4 w-4" />} onClick={() => onLinkUiUser(person)} size="sm" title="Связать UI-аккаунт входа с этой карточкой человека" variant="ghost">UI-аккаунт</Button>
               <Button leadingIcon={<GitMerge className="h-4 w-4" />} onClick={() => onMerge(person)} size="sm" title="Объединить дубль пользователя через предпросмотр" variant="ghost">Слияние</Button>
               <Button leadingIcon={<Link2 className="h-4 w-4" />} onClick={() => onBindToDevice(person)} size="sm" title="Назначить пользователя основным владельцем устройства" variant="ghost">К устройству</Button>
+              {linkedUiUsers.filter((user) => user.is_active && user.actor_role === "user").map((user) => (
+                <Button
+                  key={user.user_login}
+                  leadingIcon={<UserX className="h-4 w-4" />}
+                  onClick={() => onDisableUiUser(user)}
+                  size="sm"
+                  title={`Отключить вход для UI аккаунта ${user.user_login} без архивации карточки пользователя`}
+                  variant="ghost"
+                >
+                  Отключить вход
+                </Button>
+              ))}
               <Button disabled={person.status === "archived"} leadingIcon={<Archive className="h-4 w-4" />} onClick={() => onArchive(person)} size="sm" title="Архивировать пользователя, отозвать активные привязки и account-сессии" variant="ghost">Архив</Button>
             </div>
           </div>

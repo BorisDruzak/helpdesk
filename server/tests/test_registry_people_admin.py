@@ -1,13 +1,24 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryAdminEvent, RegistryAsset, RegistryPerson, RegistryPersonIdentity, UiUser
+from app.db.models import (
+    Device,
+    DeviceAccountSession,
+    DeviceUserBinding,
+    RegistryAdminEvent,
+    RegistryAsset,
+    RegistryPerson,
+    RegistryPersonIdentity,
+    UiToken,
+    UiUser,
+)
+from app.repos.auth_tokens_repo import AuthTokensRepo
 from requester.identity_service import RequesterIdentityResolver
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
@@ -217,9 +228,13 @@ async def test_admin_ui_user_link_collision_does_not_steal_login(test_client, te
 async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_client, test_engine, target_status):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
+    user_login = f"status-user-{uuid.uuid4().hex[:8]}"
+    token = f"ui-token-{uuid.uuid4().hex}"
+    token_hash = AuthTokensRepo.hash_token(token)
 
     async with session_maker() as session:
         session.add(_device(device_id))
+        session.add(UiUser(user_login=user_login, password_hash="test", actor_role="user", is_active=True))
         person = RegistryPerson(
             person_id=str(uuid.uuid4()),
             display_name="Deactivated Owner",
@@ -228,6 +243,25 @@ async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_c
         )
         session.add(person)
         await session.flush()
+        session.add(
+            RegistryPersonIdentity(
+                person_id=person.person_id,
+                provider="ui_login",
+                identifier=user_login,
+                normalized_identifier=user_login.lower(),
+                verified=True,
+                source="admin_manual",
+            )
+        )
+        session.add(
+            UiToken(
+                token_hash=token_hash,
+                token_prefix=token[:8],
+                user_login=user_login,
+                actor_role="user",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
         result = await RegistrationService(session).bind_person_to_device(
             device_id=device_id,
             person_id=person.person_id,
@@ -253,13 +287,18 @@ async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_c
     assert response.status == 200
     payload = await response.json()
     assert payload["data"]["revoked_bindings"][0]["binding_id"] == binding_id
+    assert payload["data"]["disabled_ui_users"][0]["user_login"] == user_login
 
     async with session_maker() as session:
         binding = await session.get(DeviceUserBinding, binding_id)
         account_session = await session.get(DeviceAccountSession, session_id)
         asset = await session.get(RegistryAsset, result["asset"]["asset_id"])
+        ui_user = await session.get(UiUser, user_login)
+        ui_token = await session.get(UiToken, token_hash)
 
     assert binding.status == "revoked"
     assert account_session.verification_status == "revoked"
     assert account_session.revoked_by == "admin-test"
     assert asset.assigned_person_id is None
+    assert ui_user.is_active is False
+    assert ui_token.revoked_at is not None

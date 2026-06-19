@@ -413,6 +413,29 @@ class AuthTokensRepo:
             logger.info(f"[AuthTokensRepo] Revoked UI token: prefix={self.get_token_prefix(token)}")
             return True
         return False
+
+    async def revoke_active_ui_tokens_for_user(self, user_login: str, *, commit: bool = True) -> int:
+        """
+        Revoke every non-revoked UI token for one UI user.
+        """
+        login = (user_login or "").strip()
+        if not login:
+            return 0
+
+        stmt = (
+            update(UiToken)
+            .where(func.lower(UiToken.user_login) == login.lower())
+            .where(UiToken.revoked_at.is_(None))
+            .values(revoked_at=datetime.now(timezone.utc))
+        )
+        result = await self.session.execute(stmt)
+        if commit:
+            await self.session.commit()
+
+        count = int(result.rowcount or 0)
+        if count:
+            logger.info(f"[AuthTokensRepo] Revoked {count} active UI token(s): user_login={login}")
+        return count
     
     async def rotate_agent_token(
         self,

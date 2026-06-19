@@ -1,11 +1,22 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import uuid
 
-from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryAdminEvent, RegistryPerson
+from app.db.models import (
+    Device,
+    DeviceAccountSession,
+    DeviceUserBinding,
+    RegistryAdminEvent,
+    RegistryPerson,
+    RegistryPersonIdentity,
+    UiToken,
+    UiUser,
+)
+from app.repos.auth_tokens_repo import AuthTokensRepo
+from auth.password_service import hash_password
 from registry.service import RegistryIngestionService
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
@@ -136,6 +147,9 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
     device_id = str(uuid.uuid4())
     binding_id = str(uuid.uuid4())
     session_id = str(uuid.uuid4())
+    user_login = f"archive-user-{uuid.uuid4().hex[:8]}"
+    token = f"ui-token-{uuid.uuid4().hex}"
+    token_hash = AuthTokensRepo.hash_token(token)
 
     async with session_maker() as session:
         session.add(
@@ -151,8 +165,28 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
                 device_metadata={},
             )
         )
+        session.add(UiUser(user_login=user_login, password_hash="test", actor_role="user", is_active=True))
         session.add(RegistryPerson(person_id=person_id, display_name="Archive User", source="manual", status="active"))
         await session.flush()
+        session.add(
+            RegistryPersonIdentity(
+                person_id=person_id,
+                provider="ui_login",
+                identifier=user_login,
+                normalized_identifier=user_login.lower(),
+                verified=False,
+                source="agent_profile",
+            )
+        )
+        session.add(
+            UiToken(
+                token_hash=token_hash,
+                token_prefix=token[:8],
+                user_login=user_login,
+                actor_role="user",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
         session.add(
             DeviceUserBinding(
                 binding_id=binding_id,
@@ -188,11 +222,15 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
     assert payload["person"]["status"] == "archived"
     assert payload["revoked_bindings"][0]["binding_id"] == binding_id
     assert payload["revoked_sessions"][0]["session_id"] == session_id
+    assert payload["disabled_ui_users"][0]["user_login"] == user_login
+    assert payload["disabled_ui_users"][0]["revoked_ui_tokens"] == 1
 
     async with session_maker() as session:
         person = await session.get(RegistryPerson, person_id)
         binding = await session.get(DeviceUserBinding, binding_id)
         account_session = await session.get(DeviceAccountSession, session_id)
+        ui_user = await session.get(UiUser, user_login)
+        ui_token = await session.get(UiToken, token_hash)
         event = (
             await session.execute(
                 select(RegistryAdminEvent).where(
@@ -205,9 +243,131 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
     assert person.status == "archived"
     assert binding.status == "revoked"
     assert account_session.verification_status == "revoked"
+    assert ui_user.is_active is False
+    assert ui_token.revoked_at is not None
     assert event.reason == "test archive"
     assert event.payload["revoked_binding_ids"] == [binding_id]
     assert event.payload["revoked_session_ids"] == [session_id]
+    assert event.payload["disabled_ui_user_logins"] == [user_login]
+
+
+@pytest.mark.asyncio
+async def test_web_admin_registry_ui_user_disable_revokes_tokens_without_archiving_person(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    person_id = str(uuid.uuid4())
+    user_login = f"disable-user-{uuid.uuid4().hex[:8]}"
+    token = f"ui-token-{uuid.uuid4().hex}"
+    token_hash = AuthTokensRepo.hash_token(token)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login=user_login, password_hash="test", actor_role="user", is_active=True))
+        session.add(RegistryPerson(person_id=person_id, display_name="Disable Login User", source="manual", status="active"))
+        await session.flush()
+        session.add(
+            RegistryPersonIdentity(
+                person_id=person_id,
+                provider="ui_login",
+                identifier=user_login,
+                normalized_identifier=user_login.lower(),
+                verified=True,
+                source="admin_manual",
+            )
+        )
+        session.add(
+            UiToken(
+                token_hash=token_hash,
+                token_prefix=token[:8],
+                user_login=user_login,
+                actor_role="user",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+
+    response = await test_client.post(
+        f"/api/web/admin/registry/ui-users/{user_login}/disable",
+        headers=_admin_headers(),
+        json={"reason": "disable login only"},
+    )
+    assert response.status == 200, await response.text()
+    payload = (await response.json())["data"]
+    assert payload["ui_user"]["user_login"] == user_login
+    assert payload["ui_user"]["is_active"] is False
+    assert payload["revoked_ui_tokens"] == 1
+
+    async with session_maker() as session:
+        person = await session.get(RegistryPerson, person_id)
+        ui_user = await session.get(UiUser, user_login)
+        ui_token = await session.get(UiToken, token_hash)
+        event = (
+            await session.execute(
+                select(RegistryAdminEvent).where(
+                    RegistryAdminEvent.object_id == user_login,
+                    RegistryAdminEvent.event_type == "ui_user_disabled",
+                )
+            )
+        ).scalar_one()
+
+    assert person.status == "active"
+    assert ui_user.is_active is False
+    assert ui_token.revoked_at is not None
+    assert event.reason == "disable login only"
+
+
+@pytest.mark.parametrize("identity_verified", [True, False])
+@pytest.mark.asyncio
+async def test_archived_registry_person_blocks_existing_ui_session_and_future_login(test_client, test_engine, identity_verified):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    person_id = str(uuid.uuid4())
+    user_login = f"legacy-archived-user-{uuid.uuid4().hex[:8]}"
+    password = "StrongLegacyPass123!"
+    token = f"ui-token-{uuid.uuid4().hex}"
+    token_hash = AuthTokensRepo.hash_token(token)
+
+    async with session_maker() as session:
+        session.add(UiUser(user_login=user_login, password_hash=hash_password(password), actor_role="user", is_active=True))
+        session.add(RegistryPerson(person_id=person_id, display_name="Legacy Archived User", source="manual", status="archived"))
+        await session.flush()
+        session.add(
+            RegistryPersonIdentity(
+                person_id=person_id,
+                provider="ui_login",
+                identifier=user_login,
+                normalized_identifier=user_login.lower(),
+                verified=identity_verified,
+                source="admin_manual" if identity_verified else "agent_profile",
+            )
+        )
+        session.add(
+            UiToken(
+                token_hash=token_hash,
+                token_prefix=token[:8],
+                user_login=user_login,
+                actor_role="user",
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+            )
+        )
+        await session.commit()
+
+    me_response = await test_client.get("/api/web/session/me", headers={"Authorization": f"Bearer {token}"})
+    assert me_response.status == 200, await me_response.text()
+    me_payload = await me_response.json()
+    assert me_payload["data"] is None
+
+    login_response = await test_client.post(
+        "/api/web/session/login",
+        json={"login": user_login, "password": password},
+    )
+    assert login_response.status == 401, await login_response.text()
+
+    async with session_maker() as session:
+        person = await session.get(RegistryPerson, person_id)
+        ui_user = await session.get(UiUser, user_login)
+        ui_token = await session.get(UiToken, token_hash)
+
+    assert person.status == "archived"
+    assert ui_user.is_active is False
+    assert ui_token.revoked_at is not None
 
 
 @pytest.mark.asyncio

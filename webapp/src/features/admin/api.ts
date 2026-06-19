@@ -1334,6 +1334,16 @@ export async function linkAdminRegistryUiUserPerson(userLogin: string, payload: 
   await readSuccessResponse(response, "Не удалось привязать UI аккаунт");
 }
 
+export async function disableAdminRegistryUiUser(userLogin: string, reason: string): Promise<void> {
+  const response = await fetch(`/api/web/admin/registry/ui-users/${encodeURIComponent(userLogin)}/disable`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  await readSuccessResponse(response, "Не удалось отключить вход в UI аккаунт");
+}
+
 export async function deleteAdminRegistryPersonIdentity(identityId: string): Promise<void> {
   const response = await fetch(`/api/web/admin/registry/identities/${encodeURIComponent(identityId)}`, {
     method: "DELETE",

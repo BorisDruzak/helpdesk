@@ -7,8 +7,10 @@ import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple
 from loguru import logger
+from sqlalchemy import func, select
 
 from app.db import get_session
+from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
 from app.repos.ui_users_repo import DEFAULT_USER_ROLE, VALID_ROLES, UiUsersRepo
@@ -24,6 +26,9 @@ class AuthService:
     _LEGACY_TOKEN_STORE: dict[str, dict] = {}
     _UI_DB_FAILURE_COOLDOWN_SECONDS: float = 15.0
     _UI_DB_COOLDOWN_UNTIL: float = 0.0
+    _REGISTRY_LOGIN_BLOCKING_STATUSES: frozenset[str] = frozenset(
+        {"archived", "inactive", "deactivated", "disabled"}
+    )
     
     def __init__(self, state_manager):
         self.state = state_manager
@@ -39,6 +44,58 @@ class AuthService:
     @classmethod
     def _clear_ui_db_cooldown(cls) -> None:
         cls._UI_DB_COOLDOWN_UNTIL = 0.0
+
+    @classmethod
+    async def _registry_person_block_for_ui_user(cls, session, user_login: str) -> Optional[dict[str, str]]:
+        login = str(user_login or "").strip().lower()
+        if not login:
+            return None
+
+        stmt = (
+            select(RegistryPerson.person_id, RegistryPerson.status)
+            .join(RegistryPersonIdentity, RegistryPersonIdentity.person_id == RegistryPerson.person_id)
+            .where(RegistryPersonIdentity.provider == "ui_login")
+            .where(func.lower(RegistryPersonIdentity.normalized_identifier) == login)
+            .where(RegistryPerson.status.in_(cls._REGISTRY_LOGIN_BLOCKING_STATUSES))
+            .limit(1)
+        )
+        row = (await session.execute(stmt)).first()
+        if not row:
+            return None
+        person_id, status = row
+        return {"person_id": str(person_id), "status": str(status)}
+
+    @staticmethod
+    async def _disable_ui_user_for_registry_block(
+        session,
+        user: UiUser,
+        token_repo: AuthTokensRepo,
+        *,
+        reason: str,
+        block: dict[str, str],
+    ) -> int:
+        user.is_active = False
+        revoked_tokens = await token_repo.revoke_active_ui_tokens_for_user(user.user_login, commit=False)
+        session.add(
+            UiUserAudit(
+                user_login=user.user_login,
+                action="user_disabled_by_registry_status",
+                actor_id="auth_registry_status_guard",
+                details_json={
+                    "reason": reason,
+                    "person_id": block.get("person_id"),
+                    "person_status": block.get("status"),
+                    "revoked_ui_tokens": revoked_tokens,
+                },
+            )
+        )
+        await session.commit()
+        logger.warning(
+            "[AuthService] UI user disabled because linked registry person is not active: "
+            f"user_login={user.user_login}, person_id={block.get('person_id')}, "
+            f"person_status={block.get('status')}, revoked_ui_tokens={revoked_tokens}"
+        )
+        return revoked_tokens
 
     @classmethod
     def _store_legacy_ui_token(
@@ -91,12 +148,23 @@ class AuthService:
                             return False, ""
                         if repo.is_locked(user):
                             return False, ""
-                        if verify_password(password, user.password_hash):
-                            if user.actor_role not in VALID_ROLES:
-                                logger.warning(
-                                    f"[AuthService] UI login rejected due to invalid DB role: login={login}, role={user.actor_role}"
+                        if user.actor_role not in VALID_ROLES:
+                            logger.warning(
+                                f"[AuthService] UI login rejected due to invalid DB role: login={login}, role={user.actor_role}"
+                            )
+                            return False, "ROLE_INVALID"
+                        if user.actor_role == DEFAULT_USER_ROLE:
+                            block = await self._registry_person_block_for_ui_user(session, user.user_login)
+                            if block:
+                                await self._disable_ui_user_for_registry_block(
+                                    session,
+                                    user,
+                                    AuthTokensRepo(session),
+                                    reason="login_rejected_registry_person_inactive",
+                                    block=block,
                                 )
-                                return False, "ROLE_INVALID"
+                                return False, ""
+                        if verify_password(password, user.password_hash):
                             await repo.record_login_success(login)
                             return True, user.actor_role
                         await repo.increment_failed_attempts(
@@ -370,6 +438,22 @@ class AuthService:
                 token_record = await repo.verify_ui_token(token)
                  
                 if token_record:
+                    user_repo = UiUsersRepo(session)
+                    user = await user_repo.get_by_login(token_record.user_login)
+                    if user is None or not user.is_active:
+                        await repo.revoke_active_ui_tokens_for_user(token_record.user_login)
+                        return None
+                    if user.actor_role == DEFAULT_USER_ROLE:
+                        block = await self._registry_person_block_for_ui_user(session, token_record.user_login)
+                        if block:
+                            await self._disable_ui_user_for_registry_block(
+                                session,
+                                user,
+                                repo,
+                                reason="token_rejected_registry_person_inactive",
+                                block=block,
+                            )
+                            return None
                     self._clear_ui_db_cooldown()
                     return {
                         "user_login": token_record.user_login,
