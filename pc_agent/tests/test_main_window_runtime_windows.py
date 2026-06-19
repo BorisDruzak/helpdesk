@@ -110,6 +110,19 @@ def test_main_window_keeps_sidebar_agent_status_card_for_version_and_update_stat
     assert "set_connection_status" not in render_source
 
 
+def test_main_window_authenticated_sidebar_exposes_web_cabinet_action():
+    setup_source = inspect.getsource(MainWindow._setup_ui)
+    labels_source = inspect.getsource(MainWindow._refresh_sidebar_labels)
+    action_source = inspect.getsource(MainWindow._on_web_cabinet_requested)
+
+    assert "self.sidebar_web_cabinet_btn = QPushButton" in setup_source
+    assert "self.sidebar_web_cabinet_btn.clicked.connect(self._on_web_cabinet_requested)" in setup_source
+    assert '"agent.navigation.web_cabinet"' in setup_source
+    assert 'self.sidebar_web_cabinet_btn.setText("  Веб кабинет")' in labels_source
+    assert 'self.sidebar_web_cabinet_btn.setText("")' in labels_source
+    assert 'self._web_app_url("/app/requester")' in action_source
+
+
 def test_main_window_soft_shadows_are_opt_in_for_low_cpu_default(monkeypatch):
     monkeypatch.delenv("PC_AGENT_ENABLE_GUI_SHADOWS", raising=False)
     assert gui_soft_shadows_enabled() is False

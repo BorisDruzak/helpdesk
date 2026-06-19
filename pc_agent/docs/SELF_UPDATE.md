@@ -8,7 +8,7 @@ PC Agent поддерживает удалённое обновление чер
 
 Важно: server-side assigned rollout является source of truth и может указывать как на upgrade, так и на controlled rollback. Для агента это один и тот же self-update flow: если рекомендованная release-версия с сервера отличается от текущей, агент после успешного startup handshake один раз автоматически запрашивает recommended build, GUI показывает action/state для ручного контроля, а launcher после restart применяет запрошенный архив и переключает `current.json` на указанную версию.
 
-Startup auto-update не обходит серверную авторизацию: `ws_agent.py` пропускает запуск, если уже есть `pending_update.json`, получает verdict через update recommendation endpoint и вызывает обычный `POST /api/devices/{device_id}/agent/update` с reason `agent_startup_auto_update`. Сервер по-прежнему разрешает agent-role self-update только для собственного `device_id` и только для текущего recommended build.
+Startup auto-update не обходит серверную авторизацию: `ws_agent.py` пропускает запуск, если уже есть `pending_update.json`, получает verdict через update recommendation endpoint и вызывает обычный `POST /api/devices/{device_id}/agent/update` с reason `agent_startup_auto_update`. Сервер по-прежнему разрешает agent-role self-update только для собственного `device_id` и только для текущего recommended build. После постановки controlled shutdown агент отдаёт через локальный status `update_request_state=applying`, чтобы GUI успел показать пользователю, что идёт обновление и последует автоматический перезапуск.
 
 Server handshake can also enqueue the same `update` command for older installed agents that do not yet contain agent-side startup auto-update code. That fallback runs only for a newer assigned rollout, skips active update operations, skips the same version after a launcher-reported failure, and uses reason `agent_handshake_auto_update`.
 
@@ -89,7 +89,7 @@ Server handshake can also enqueue the same `update` command for older installed 
 - `data_root/updates/db_backups/` — бэкапы БД перед verify.
 - Устаревший in-place updater: `pc_agent/utils/agent_updater.py` (в v2 не вызывается).
 - Если update "успешен" по логам агента, но GUI показывает `Сервер: подключение...`, проверьте локальный `ui_bridge`: поздний SSE-подписчик должен сразу получать последнее `connection_state`; см. `pc_agent/ui_bridge/event_bus.py`, `pc_agent/ui_bridge/api_server.py`.
-- Runtime status GUI должен дополнительно показывать: `comparison`, `recommendation_source`, `assigned_rollout`, `pending_update_*`, `update_request_state`, `update_request_version`, `update_request_operation_id`, `last_applied_update_*`, `last_failed_update_*`, чтобы разбирать rollout/update состояние без ручного чтения файлов.
+- Runtime status GUI должен дополнительно показывать: `comparison`, `recommendation_source`, `assigned_rollout`, `pending_update_*`, `update_request_state`, `update_request_version`, `update_request_operation_id`, `last_applied_update_*`, `last_failed_update_*`, чтобы разбирать rollout/update состояние без ручного чтения файлов. Состояния `pending_restart`, `applying` и `restarting` должны отображаться как видимый progress/restart UX, а не как внезапное закрытие окна.
 
 ## Распространение (exe / rpm) и готовность к обновлению
 

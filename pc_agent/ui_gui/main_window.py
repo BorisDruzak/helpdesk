@@ -118,6 +118,7 @@ class MainWindow(QMainWindow):
         self._server_connection_detail: str = ""
         self._runtime_logs_dir: Optional[str] = None
         self._update_status_snapshot: Dict[str, Any] = {}
+        self._update_progress_dialog: Optional[QMessageBox] = None
         self._runtime_status_refresh_in_flight: bool = False
         self._sidebar_expanded: bool = True
         self._sidebar_content_width: int = 296
@@ -323,6 +324,20 @@ class MainWindow(QMainWindow):
         self.sidebar_tickets_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.sidebar_tickets_btn.clicked.connect(lambda: self._select_sidebar_view("tickets", expand=True))
         sidebar_shell_layout.addWidget(self.sidebar_tickets_btn)
+
+        self.sidebar_web_cabinet_btn = QPushButton()
+        self.sidebar_web_cabinet_btn.setObjectName("SidebarButton")
+        self.sidebar_web_cabinet_btn.setIcon(QIcon(theme.icon_path("chevron-right")))
+        self.sidebar_web_cabinet_btn.setIconSize(QSize(22, 22))
+        self.sidebar_web_cabinet_btn.setToolTip("Открыть веб кабинет")
+        self.sidebar_web_cabinet_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.sidebar_web_cabinet_btn.clicked.connect(self._on_web_cabinet_requested)
+        set_uia_metadata(
+            self.sidebar_web_cabinet_btn,
+            name="agent.navigation.web_cabinet",
+            description="id=agent.navigation.web_cabinet; action=open_web_cabinet",
+        )
+        sidebar_shell_layout.addWidget(self.sidebar_web_cabinet_btn)
 
         self.sidebar_settings_btn = QPushButton()
         self.sidebar_settings_btn.setObjectName("SidebarButton")
@@ -830,6 +845,7 @@ class MainWindow(QMainWindow):
         self._user_consent_timer.timeout.connect(self._refresh_user_consents)
         self._user_consent_timer.start()
         QTimer.singleShot(250, lambda: asyncio.create_task(self._async_refresh_runtime_snapshot(update_panel=False)))
+        QTimer.singleShot(500, self._schedule_update_refresh_burst)
         QTimer.singleShot(1000, self._refresh_user_consents)
 
     def _on_list_navigation_visibility_changed(self, list_mode: bool) -> None:
@@ -1968,11 +1984,13 @@ class MainWindow(QMainWindow):
             self.sidebar_dashboard_btn.setText("")
             self.sidebar_create_ticket_btn.setText("")
             self.sidebar_tickets_btn.setText("")
+            self.sidebar_web_cabinet_btn.setText("")
             self.sidebar_settings_btn.setText("")
             return
         self.sidebar_dashboard_btn.setText("  Рабочий стол")
         self.sidebar_create_ticket_btn.setText("  Создать обращение")
         self.sidebar_tickets_btn.setText("  Обращения")
+        self.sidebar_web_cabinet_btn.setText("  Веб кабинет")
         self.sidebar_settings_btn.setText("  Настройки")
         session = self._active_account_session_for_tickets()
         if session:
@@ -2005,7 +2023,13 @@ class MainWindow(QMainWindow):
             f"QFrame#ProfileCard {{ background: {theme.current_palette().bg_card_alt if theme.current_theme_mode() == 'dark' else theme.current_palette().bg_card}; "
             f"border: 1px solid {border}; border-radius: 16px; }}"
         )
-        for button in (self.sidebar_dashboard_btn, self.sidebar_settings_btn, self.sidebar_tickets_btn):
+        self.sidebar_web_cabinet_btn.setObjectName("SidebarButton")
+        for button in (
+            self.sidebar_dashboard_btn,
+            self.sidebar_settings_btn,
+            self.sidebar_tickets_btn,
+            self.sidebar_web_cabinet_btn,
+        ):
             button.setObjectName("SidebarButtonActive" if button.isChecked() else "SidebarButton")
             button.style().unpolish(button)
             button.style().polish(button)
@@ -2411,6 +2435,47 @@ class MainWindow(QMainWindow):
         for delay_ms in (400, 1200, 2500, 5000, 9000):
             QTimer.singleShot(delay_ms, lambda _delay=delay_ms: self._queue_runtime_status_refresh(update_panel=False))
 
+    def _show_update_progress_dialog(self, message: str) -> None:
+        if QApplication.instance() is None:
+            return
+        text = self._repair_text(
+            "Идёт обновление агента.\n\n"
+            f"{message}\n\n"
+            "Окно программы может закрыться и открыться снова автоматически."
+        )
+        if self._update_progress_dialog is None:
+            box = QMessageBox(self)
+            box.setWindowTitle("Обновление агента")
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setStandardButtons(QMessageBox.StandardButton.NoButton)
+            box.setModal(False)
+            box.destroyed.connect(lambda *_args: setattr(self, "_update_progress_dialog", None))
+            self._update_progress_dialog = box
+        self._update_progress_dialog.setText(text)
+        self._update_progress_dialog.show()
+        self._update_progress_dialog.raise_()
+        self._update_progress_dialog.activateWindow()
+
+    def _hide_update_progress_dialog(self) -> None:
+        dialog = getattr(self, "_update_progress_dialog", None)
+        if dialog is None:
+            return
+        try:
+            dialog.hide()
+        except RuntimeError:
+            self._update_progress_dialog = None
+
+    def _sync_update_progress_dialog(self, request_state: str, request_version: str, meta_text: str) -> None:
+        if request_state not in {"pending_restart", "applying", "restarting"}:
+            self._hide_update_progress_dialog()
+            return
+        version_text = f" до {request_version}" if request_version else ""
+        if request_state == "pending_restart":
+            message = meta_text or f"Пакет обновления{version_text} уже загружен, агент готовится к перезапуску."
+        else:
+            message = meta_text or f"Агент устанавливает обновление{version_text} и перезапустится."
+        self._show_update_progress_dialog(message)
+
     def _render_update_status(self) -> None:
         snapshot = self._update_status_snapshot or {}
         version = str(snapshot.get("agent_version") or AGENT_VERSION)
@@ -2433,7 +2498,14 @@ class MainWindow(QMainWindow):
         button_text = ""
         button_enabled = False
         meta_text = "Релиз актуален" if is_release else "Подключён тестовый билд"
-        if request_state == "pending_restart" and request_version:
+        if request_state in {"applying", "restarting"}:
+            button_text = f"Устанавливаем {request_version}" if request_version else "Идёт обновление"
+            meta_text = (
+                f"Агент устанавливает обновление до {request_version} и перезапустится"
+                if request_version
+                else "Агент устанавливает обновление и перезапустится"
+            )
+        elif request_state == "pending_restart" and request_version:
             button_text = f"Готовим {request_version}"
             meta_text = f"Пакет {request_version} уже загружен, ожидается перезапуск агента"
         elif request_state == "requested" and request_version:
@@ -2460,32 +2532,7 @@ class MainWindow(QMainWindow):
         else:
             self.update_agent_btn.hide()
         self.agent_footer_meta.setText(self._repair_text(meta_text))
-        return
-
-        if update_available and recommended_version:
-            if comparison == "recommended_release_is_older":
-                button_text = f"Откатить до {recommended_version}"
-            elif recommendation_source == "assigned_rollout":
-                button_text = f"Привести к {recommended_version}"
-            else:
-                button_text = f"Обновить до {recommended_version}"
-            self.update_agent_btn.setText(self._repair_text(button_text))
-            self.update_agent_btn.setEnabled(True)
-        else:
-            self.update_agent_btn.setText("")
-            self.update_agent_btn.setEnabled(False)
-
-        target_version = assigned_version or recommended_version
-        if self.update_agent_btn.text():
-            self.update_agent_btn.show()
-            self.agent_footer_meta.setText(
-                self._repair_text(f"Доступно действие для версии {target_version or version}")
-            )
-        else:
-            self.update_agent_btn.hide()
-            self.agent_footer_meta.setText(
-                self._repair_text("Релиз актуален" if is_release else "Подключён тестовый билд")
-            )
+        self._sync_update_progress_dialog(request_state, request_version, meta_text)
 
     def _apply_runtime_status_snapshot(self, runtime: Dict[str, Any], *, update_panel: bool) -> None:
         self._update_status_snapshot = {

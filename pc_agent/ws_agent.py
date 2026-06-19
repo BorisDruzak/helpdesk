@@ -520,7 +520,7 @@ class WSAgent:
             status["update_request_reason"] = pending_reason or status.get("update_request_reason")
 
         request_state = str(status.get("update_request_state") or "").strip().lower()
-        if request_state in {"requesting", "requested", "pending_restart"}:
+        if request_state in {"requesting", "requested", "pending_restart", "applying", "restarting"}:
             status["update_available"] = False
         return status
 
@@ -739,7 +739,7 @@ class WSAgent:
         if not cached:
             return status
         request_state = str(cached.get("update_request_state") or "").strip().lower()
-        if request_state not in {"requesting", "requested", "pending_restart"}:
+        if request_state not in {"requesting", "requested", "pending_restart", "applying", "restarting"}:
             return status
         for key in (
             "update_available",
@@ -753,6 +753,35 @@ class WSAgent:
             if key in cached:
                 status[key] = cached.get(key)
         return status
+
+    def _set_cached_update_request_state(
+        self,
+        state: str,
+        *,
+        version: str = "",
+        operation_id: str = "",
+        reason: str = "",
+    ) -> None:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        cached = dict(self._cached_update_status) if isinstance(self._cached_update_status, dict) else {}
+        cached.update(
+            {
+                "update_available": False,
+                "recommended_reason": f"update_{state}",
+                "update_checked_at": now_iso,
+                "update_request_state": state,
+                "update_request_requested_at": now_iso,
+            }
+        )
+        if version:
+            cached["recommended_version"] = version
+            cached["update_request_version"] = version
+        if operation_id:
+            cached["update_request_operation_id"] = operation_id
+        if reason:
+            cached["update_request_reason"] = reason
+        self._cached_update_checked_at = now_iso
+        self._cached_update_status = cached
 
     async def trigger_recommended_update(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         payload = payload or {}
@@ -1498,6 +1527,13 @@ class WSAgent:
         return await helper_schedule_restart(self, payload)
 
     async def schedule_update_shutdown(self, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = payload or {}
+        self._set_cached_update_request_state(
+            "applying",
+            version=str(payload.get("version") or ""),
+            operation_id=str(payload.get("operation_id") or ""),
+            reason=str(payload.get("reason") or "self_update"),
+        )
         return await helper_schedule_update_shutdown(self, payload)
 
     async def _shutdown_for_update(

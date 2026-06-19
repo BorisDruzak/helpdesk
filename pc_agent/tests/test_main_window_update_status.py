@@ -52,6 +52,8 @@ def _build_window(snapshot=None):
     window.agent_footer_meta = _FakeLabel()
     window.update_agent_btn = _FakeButton()
     window._update_status_snapshot = snapshot or {}
+    window._hide_update_progress_dialog = lambda: None
+    window._show_update_progress_dialog = lambda _message: None
     return window
 
 
@@ -98,6 +100,32 @@ def test_render_update_status_shows_pending_restart_state():
     assert "3.1.21" in window.update_agent_btn.text()
     assert "3.1.21" in window.agent_footer_meta.text()
     assert "op-2" not in window.agent_footer_meta.text()
+
+
+def test_render_update_status_shows_applying_state_and_progress_message():
+    window = _build_window(
+        {
+            "agent_version": "3.1.20",
+            "is_release": True,
+            "update_available": False,
+            "update_request_state": "applying",
+            "update_request_version": "3.1.21",
+            "update_request_operation_id": "op-3",
+        }
+    )
+    progress_messages = []
+    window._show_update_progress_dialog = lambda message: progress_messages.append(message)
+
+    window._render_update_status()
+
+    assert window.update_agent_btn.isVisible() is True
+    assert window.update_agent_btn.enabled is False
+    assert "Устанавливаем" in window.update_agent_btn.text()
+    assert "3.1.21" in window.agent_footer_meta.text()
+    assert "op-3" not in window.agent_footer_meta.text()
+    assert len(progress_messages) == 1
+    assert "3.1.21" in progress_messages[0]
+    assert "op-3" not in progress_messages[0]
 
 
 @pytest.mark.asyncio

@@ -786,6 +786,41 @@ async def test_runtime_status_async_preserves_cached_requested_update_state(tmp_
 
 
 @pytest.mark.asyncio
+async def test_schedule_update_shutdown_exposes_applying_state_before_exit(tmp_path, monkeypatch):
+    agent = WSAgent(data_root=tmp_path / "data", install_root=tmp_path / "install")
+
+    async def fake_schedule_update_shutdown(agent_arg, payload=None):
+        assert agent_arg is agent
+        return {
+            "status": "ok",
+            "scheduled": True,
+            "delay_sec": 2,
+            "reason": "agent_startup_auto_update",
+            "exit_code": 42,
+        }
+
+    monkeypatch.setattr("pc_agent.ws_agent.helper_schedule_update_shutdown", fake_schedule_update_shutdown)
+
+    result = await agent.schedule_update_shutdown(
+        {
+            "version": "3.1.76",
+            "operation_id": "op-applying",
+            "reason": "agent_startup_auto_update",
+        }
+    )
+    status = agent.get_runtime_status()
+
+    assert result["scheduled"] is True
+    assert status["update_available"] is False
+    assert status["recommended_version"] == "3.1.76"
+    assert status["recommended_reason"] == "update_applying"
+    assert status["update_request_state"] == "applying"
+    assert status["update_request_version"] == "3.1.76"
+    assert status["update_request_operation_id"] == "op-applying"
+    assert status["update_request_reason"] == "agent_startup_auto_update"
+
+
+@pytest.mark.asyncio
 async def test_startup_recommended_update_triggers_once_when_new_release_is_available(tmp_path, monkeypatch):
     agent = WSAgent(data_root=tmp_path / "data", install_root=tmp_path / "install")
     trigger_payloads = []
