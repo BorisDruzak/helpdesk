@@ -16,6 +16,7 @@ from app.db.models import (
     RegistryAsset,
 )
 from registry.account_session_service import AccountSessionService
+from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationConflictError, RegistrationService
 
 
@@ -42,6 +43,10 @@ async def _person_from_claim(
     requester_id: str,
     display_name: str,
 ) -> str:
+    await RegistryPolicyService(service.session).update_policies(
+        {"registration": {"require_admin_confirmation": True}},
+        actor_id="admin-test",
+    )
     result = await service.submit_agent_profile_claim(
         device_id=device_id,
         requester_id=requester_id,

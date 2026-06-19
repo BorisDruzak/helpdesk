@@ -2014,6 +2014,8 @@ async def test_create_ticket_stores_legacy_form_source_and_computed_snapshot(tes
         "pack_version": custom_fields["request_form_version"],
         "form_key": form_key,
         "form_title": "Проблема с сайтом",
+        "form_schema_version": custom_fields["request_form_version"],
+        "request_template_key": form_key,
     }
     assert custom_fields["resolved_from"] == "legacy_pack"
     computed = custom_fields["request_template"]["computed"]

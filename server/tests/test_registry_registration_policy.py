@@ -192,6 +192,7 @@ async def test_approval_applies_strict_department_location_to_verified_person_an
         await RegistryPolicyService(session).update_policies(
             {
                 "registration": {
+                    "require_admin_confirmation": True,
                     "department_mode": "required_existing",
                     "location_mode": "required_existing",
                 }
