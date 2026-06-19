@@ -11,6 +11,7 @@ from access_control.catalog import CATALOG_VERSION
 from routes import setup_routes
 import auth.middleware as auth_middleware_module
 import web_api.access_handlers as access_handlers_module
+import web_api.registry_handlers as registry_handlers_module
 import web_api.session_handlers as session_handlers_module
 
 
@@ -128,6 +129,11 @@ def test_web_session_register_is_auth_whitelisted():
     assert "/api/web/session/register" in AUTH_WHITELIST
 
 
+@pytest.mark.no_db
+def test_web_session_password_reset_request_is_auth_whitelisted():
+    assert "/api/web/session/password-reset-requests" in AUTH_WHITELIST
+
+
 @pytest.mark.asyncio
 @pytest.mark.no_db
 async def test_web_session_register_is_feature_flagged(monkeypatch):
@@ -174,6 +180,41 @@ async def test_web_session_register_validates_password_repeat(monkeypatch):
 
     assert response.status == 400
     assert payload["error_code"] == "PASSWORD_REPEAT_MISMATCH"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_session_password_reset_request_accepts_login_without_revealing_user(monkeypatch):
+    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
+    created: list[dict[str, str | None]] = []
+
+    class FakePasswordResetRequestService:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_request(self, *, login: str, client_ip: str | None = None, user_agent: str | None = None):
+            created.append({"login": login, "client_ip": client_ip, "user_agent": user_agent})
+            return {"request_id": "reset-1", "status": "pending"}
+
+    monkeypatch.setattr(session_handlers_module, "PasswordResetRequestService", FakePasswordResetRequestService, raising=False)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/password-reset-requests",
+            json={"login": " reset.user@example.test "},
+            headers={"User-Agent": "reset-test"},
+        )
+        payload = await response.json()
+
+    assert response.status == 200
+    assert payload == {"status": "success", "data": {"accepted": True}}
+    assert created == [
+        {"login": "reset.user@example.test", "client_ip": "127.0.0.1", "user_agent": "reset-test"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -225,6 +266,83 @@ async def test_web_session_register_creates_requester_user_without_cookie_or_rol
     assert created["password_hash"] != "VeryStrong123!"
     assert "full_name" not in payload["data"]
     assert "department" not in payload["data"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_admin_registry_password_reset_requests_can_be_listed_and_completed(monkeypatch):
+    listed: list[dict[str, object]] = []
+    completed: list[dict[str, str]] = []
+
+    class FakePasswordResetRequestService:
+        def __init__(self, session):
+            self.session = session
+
+        async def list_requests(self, *, status: str | None = None, limit: int = 100):
+            listed.append({"status": status, "limit": limit})
+            return [
+                {
+                    "request_id": "reset-1",
+                    "login": "reset.user@example.test",
+                    "status": "pending",
+                    "requested_at": "2026-06-19T10:00:00+05:00",
+                    "completed_at": None,
+                    "completed_by": None,
+                    "resolution_note": None,
+                }
+            ]
+
+        async def complete_request(self, *, request_id: str, password: str, actor_id: str, reason: str | None = None):
+            completed.append({"request_id": request_id, "password": password, "actor_id": actor_id, "reason": reason or ""})
+            return {
+                "request_id": request_id,
+                "login": "reset.user@example.test",
+                "status": "completed",
+                "requested_at": "2026-06-19T10:00:00+05:00",
+                "completed_at": "2026-06-19T10:05:00+05:00",
+                "completed_by": actor_id,
+                "resolution_note": reason,
+            }
+
+    @web.middleware
+    async def admin_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id="admin",
+            actor_role="admin",
+            auth_type=AuthType.UI_TOKEN,
+            token="admin-token",
+        )
+        return await handler(request)
+
+    monkeypatch.setattr(registry_handlers_module, "get_session", lambda: _FakeSessionContext())
+    monkeypatch.setattr(registry_handlers_module, "PasswordResetRequestService", FakePasswordResetRequestService, raising=False)
+
+    app = web.Application(middlewares=[admin_context_middleware])
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        list_response = await client.get("/api/web/admin/registry/password-reset-requests?status=pending")
+        list_payload = await list_response.json()
+        complete_response = await client.post(
+            "/api/web/admin/registry/password-reset-requests/reset-1/complete",
+            json={"password": "StrongReset123!", "reason": "Проверено администратором"},
+        )
+        complete_payload = await complete_response.json()
+
+    assert list_response.status == 200
+    assert list_payload["data"]["items"][0]["login"] == "reset.user@example.test"
+    assert listed == [{"status": "pending", "limit": 100}]
+    assert complete_response.status == 200
+    assert complete_payload["data"]["status"] == "completed"
+    assert completed == [
+        {
+            "request_id": "reset-1",
+            "password": "StrongReset123!",
+            "actor_id": "admin",
+            "reason": "Проверено администратором",
+        }
+    ]
 
 
 @pytest.mark.asyncio

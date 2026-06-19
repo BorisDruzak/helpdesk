@@ -117,7 +117,7 @@ describe("RegistryPoliciesTab", () => {
 
     fireEvent.click(await screen.findByLabelText("registration-approval-manual"));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "switch to manual approval" } });
-    fireEvent.click(screen.getByLabelText("save-registry-policies"));
+    fireEvent.click(screen.getByTestId("save-registry-policies"));
 
     await waitFor(() => {
       const saveCall = fetchMock.mock.calls.find(

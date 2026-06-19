@@ -445,6 +445,32 @@ describe("AdminRegistryPage", () => {
       if (url.startsWith("/api/web/admin/registry/account-login-requests")) {
         return jsonResponse({ items: [] });
       }
+      if (url.startsWith("/api/web/admin/registry/password-reset-requests")) {
+        if (url === "/api/web/admin/registry/password-reset-requests/reset-1/complete" && init?.method === "POST") {
+          return jsonResponse({
+            request_id: "reset-1",
+            login: "ivan@example.test",
+            status: "completed",
+            requested_at: "2026-06-19T10:00:00Z",
+            completed_at: "2026-06-19T10:05:00Z",
+            completed_by: "admin",
+            resolution_note: "Проверено по телефону",
+          });
+        }
+        return jsonResponse({
+          items: [
+            {
+              request_id: "reset-1",
+              login: "ivan@example.test",
+              status: "pending",
+              requested_at: "2026-06-19T10:00:00Z",
+              completed_at: null,
+              completed_by: null,
+              resolution_note: null,
+            },
+          ],
+        });
+      }
       if (url === "/api/web/admin/registry") {
         return jsonResponse(currentRegistryPayload);
       }
@@ -616,6 +642,29 @@ describe("AdminRegistryPage", () => {
     });
     expect(JSON.parse(String(archiveCall?.[1]?.body))).toMatchObject({
       reason: "Тестовая архивация",
+    });
+  });
+
+  it("shows password reset requests in the registry and completes one with a new password", async () => {
+    renderRegistry();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Смена пароля" }));
+
+    expect((await screen.findAllByText("ivan@example.test")).length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText("Новый пароль"), { target: { value: "StrongReset123!" } });
+    fireEvent.change(screen.getByLabelText("Причина"), { target: { value: "Проверено по телефону" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить пароль" }));
+
+    const completeCall = await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) => url === "/api/web/admin/registry/password-reset-requests/reset-1/complete" && init?.method === "POST",
+      );
+      expect(call).toBeTruthy();
+      return call;
+    });
+    expect(JSON.parse(String(completeCall?.[1]?.body))).toEqual({
+      password: "StrongReset123!",
+      reason: "Проверено по телефону",
     });
   });
 

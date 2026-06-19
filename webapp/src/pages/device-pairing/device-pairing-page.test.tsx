@@ -382,6 +382,83 @@ describe("DevicePairingPage", () => {
     expect(await screen.findByText("Заявка на привязку отправлена")).toBeInTheDocument();
   });
 
+  it("redirects to the requester devices cabinet after registration confirmation", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/registry/browser-pairings/pair-cabinet") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-cabinet",
+            purpose: "registration",
+            status: "pending",
+            device: { hostname: "CABINET-PC", os: "Windows", agent_version: "3.1.74" },
+          },
+        });
+      }
+      if (url === "/api/registry/options") {
+        return jsonResponse({
+          status: "success",
+          data: {
+            departments: [{ value: "dept-cabinet", label: "Service Desk" }],
+            locations: [{ value: "loc-cabinet", label: "HQ / 101" }],
+          },
+        });
+      }
+      if (url === "/api/web/registry/browser-pairings/pair-cabinet/registration/confirm") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({
+          department_id: "dept-cabinet",
+          location_id: "loc-cabinet",
+        });
+        return jsonResponse({
+          status: "success",
+          data: {
+            pairing_id: "pair-cabinet",
+            purpose: "registration",
+            status: "confirmed",
+            claim_id: "claim-cabinet",
+            registration: { status: "approved", device_id: "device-cabinet" },
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    render(
+      <MemoryRouter initialEntries={["/app/device/register?pairing_id=pair-cabinet"]}>
+        <Routes>
+          <Route
+            element={
+              <>
+                <DevicePairingPage purpose="registration" />
+                <LocationProbe />
+              </>
+            }
+            path="/app/device/register"
+          />
+          <Route element={<LocationProbe />} path="/app/requester/devices" />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("CABINET-PC")).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Подразделение"), { target: { value: "dept-cabinet" } });
+    fireEvent.change(screen.getByLabelText("Локация"), { target: { value: "loc-cabinet" } });
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить привязку" }));
+
+    expect((await screen.findAllByText("Устройство привязано")).length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Открыть веб кабинет" })).toHaveAttribute("href", "/app/requester/devices");
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/devices");
+      },
+      { timeout: 1200 },
+    );
+  });
+
   it("shows a linked-device result when registration is auto-approved", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

@@ -61,6 +61,8 @@ const REGISTRATION_STATUS_LABELS: Record<string, string> = {
   user_confirmed: "Ожидает проверки администратора",
 };
 
+const REQUESTER_DEVICES_PATH = "/app/requester/devices";
+
 function productStatusLabel(status: string | null | undefined, labels: Record<string, string>) {
   const normalized = status?.trim().toLowerCase();
   return normalized ? labels[normalized] ?? "Статус уточняется" : "Статус не указан";
@@ -189,6 +191,16 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
   const copy = useMemo(() => purposeText(purpose), [purpose]);
+
+  useEffect(() => {
+    if (!confirmed || purpose !== "registration") {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      navigate(REQUESTER_DEVICES_PATH, { replace: true });
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [confirmed, navigate, purpose]);
 
   useEffect(() => {
     let active = true;
@@ -333,6 +345,15 @@ export function DevicePairingPage({ purpose }: DevicePairingPageProps) {
                     ) : (
                       <p className="mt-1 text-sm">Вернитесь в локальный агент, он получит результат автоматически.</p>
                     )}
+                    {purpose === "registration" ? (
+                      <p className="mt-3 text-sm">
+                        Сейчас откроем веб кабинет. Если переход не сработал, откройте{" "}
+                        <a className="font-semibold text-brand-700 hover:text-brand-900" href={REQUESTER_DEVICES_PATH}>
+                          Открыть веб кабинет
+                        </a>
+                        .
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               ) : (

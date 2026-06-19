@@ -43,6 +43,7 @@ AUTH_WHITELIST = {
     "/api/ui_login",  # UI login endpoint
     "/api/web/session/login",
     "/api/web/session/register",
+    "/api/web/session/password-reset-requests",
     "/api/web/session/me",
     "/api/health",
     "/api/connection_request",

@@ -242,12 +242,14 @@ class MainWindow(QMainWindow):
         self.account_gate_page = AccountGateWidget()
         self.account_gate_page.browserLoginRequested.connect(self._on_browser_login_requested)
         self.account_gate_page.browserRegisterRequested.connect(self._on_browser_register_requested)
+        self.account_gate_page.webCabinetRequested.connect(self._on_web_cabinet_requested)
         self.account_gate_page.loginConfirmedRequested.connect(self._on_account_login_confirmed)
         self.account_gate_page.guiPasswordLoginRequested.connect(self._on_gui_password_login_requested)
         self.account_gate_page.loginOtherRequested.connect(self._on_account_login_other)
         self.account_gate_page.refreshRequested.connect(self._refresh_account_state)
         self.account_gate_page.settingsRequested.connect(self._show_settings_dialog)
         self.account_gate_page.checkOtherLoginRequestRequested.connect(self._on_check_other_login_request)
+        self._sync_account_gate_web_links()
         self.account_page = self._build_account_page()
 
         self.body_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1465,6 +1467,20 @@ class MainWindow(QMainWindow):
 
     def _on_browser_register_requested(self) -> None:
         self._spawn_gui_task(self._async_browser_pairing("registration"), name="account.browser_register")
+
+    def _on_web_cabinet_requested(self) -> None:
+        self._sync_account_gate_web_links()
+        self._browser_pairing_open_url(self._web_app_url("/app/requester"))
+
+    def _web_app_url(self, app_path: str = "/app/requester") -> str:
+        return self._browser_pairing_url(app_path)
+
+    def _sync_account_gate_web_links(self) -> None:
+        self.account_gate_page.set_web_links(
+            cabinet_url=self._web_app_url("/app/requester"),
+            login_url=self._web_app_url("/app/login"),
+            password_reset_url=self._web_app_url("/app/login?forgot_password=1"),
+        )
 
     def _browser_pairing_url(self, browser_url: str) -> str:
         browser_url = str(browser_url or "").strip()

@@ -54,6 +54,10 @@ def account_gate_view_state(
             "primary_account": None,
             "pending_account": None,
             "approved_other_account": None,
+            "show_web_cabinet": bool((account_state or {}).get("web_cabinet_url")) if isinstance(account_state, dict) else False,
+            "web_cabinet_url": str((account_state or {}).get("web_cabinet_url") or "").strip() if isinstance(account_state, dict) else "",
+            "web_login_url": str((account_state or {}).get("web_login_url") or "").strip() if isinstance(account_state, dict) else "",
+            "password_reset_url": str((account_state or {}).get("password_reset_url") or "").strip() if isinstance(account_state, dict) else "",
         }
     account_state = account_state or {}
     pending_request_status = str((local_session or {}).get("pending_login_request_status") or "").strip().lower()
@@ -84,6 +88,10 @@ def account_gate_view_state(
             },
             "approved_other_account": None,
             "pending_request_id": local_session.get("pending_login_request_id"),
+            "show_web_cabinet": bool(str(account_state.get("web_cabinet_url") or "").strip()),
+            "web_cabinet_url": str(account_state.get("web_cabinet_url") or "").strip(),
+            "web_login_url": str(account_state.get("web_login_url") or "").strip(),
+            "password_reset_url": str(account_state.get("password_reset_url") or "").strip(),
         }
     accounts = [item for item in account_state.get("accounts") or [] if isinstance(item, dict)]
     confirmed = next(
@@ -127,6 +135,9 @@ def account_gate_view_state(
         can_login_other = True
     browser_pairing_code = str(account_state.get("browser_pairing_code") or "").strip()
     browser_pairing_url = str(account_state.get("browser_pairing_url") or "").strip()
+    web_cabinet_url = str(account_state.get("web_cabinet_url") or "").strip()
+    web_login_url = str(account_state.get("web_login_url") or "").strip()
+    password_reset_url = str(account_state.get("password_reset_url") or "").strip()
     browser_pairing_active = bool(browser_pairing_code or browser_pairing_url)
     return {
         "mode": mode,
@@ -142,6 +153,10 @@ def account_gate_view_state(
         "browser_pairing_url": browser_pairing_url,
         "show_browser_pairing_url": bool(browser_pairing_url),
         "show_copy_pairing_code": bool(browser_pairing_code),
+        "show_web_cabinet": bool(web_cabinet_url),
+        "web_cabinet_url": web_cabinet_url,
+        "web_login_url": web_login_url,
+        "password_reset_url": password_reset_url,
         "show_login_confirmed": confirmed is not None,
         "show_gui_password_login": confirmed is not None,
         "show_browser_login": confirmed is not None,
@@ -158,6 +173,7 @@ def account_gate_view_state(
 class AccountGateWidget(QFrame):
     browserLoginRequested = Signal()
     browserRegisterRequested = Signal()
+    webCabinetRequested = Signal()
     loginConfirmedRequested = Signal(dict)
     guiPasswordLoginRequested = Signal(str, str)
     loginOtherRequested = Signal(dict)
@@ -175,6 +191,9 @@ class AccountGateWidget(QFrame):
         self._pending_request_id: str | None = None
         self._browser_pairing_code: str = ""
         self._browser_pairing_url: str = ""
+        self._web_cabinet_url: str = ""
+        self._web_login_url: str = ""
+        self._password_reset_url: str = ""
         self._showing_other_form = False
         self._pending_poll_timer = QTimer(self)
         self._pending_poll_timer.setInterval(20000)
@@ -228,6 +247,36 @@ class AccountGateWidget(QFrame):
         self.pairing_url_label.setWordWrap(True)
         layout.addWidget(self.pairing_url_label)
 
+        self.web_cabinet_url_label = QLabel("")
+        self.web_cabinet_url_label.setObjectName("CardMeta")
+        self.web_cabinet_url_label.setTextFormat(Qt.TextFormat.RichText)
+        self.web_cabinet_url_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.web_cabinet_url_label.setOpenExternalLinks(True)
+        self.web_cabinet_url_label.setWordWrap(True)
+        layout.addWidget(self.web_cabinet_url_label)
+
+        self.web_login_url_label = QLabel("")
+        self.web_login_url_label.setObjectName("CardMeta")
+        self.web_login_url_label.setTextFormat(Qt.TextFormat.RichText)
+        self.web_login_url_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.web_login_url_label.setOpenExternalLinks(True)
+        self.web_login_url_label.setWordWrap(True)
+        layout.addWidget(self.web_login_url_label)
+
+        self.password_reset_url_label = QLabel("")
+        self.password_reset_url_label.setObjectName("CardMeta")
+        self.password_reset_url_label.setTextFormat(Qt.TextFormat.RichText)
+        self.password_reset_url_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextBrowserInteraction | Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.password_reset_url_label.setOpenExternalLinks(True)
+        self.password_reset_url_label.setWordWrap(True)
+        layout.addWidget(self.password_reset_url_label)
+
         self.gui_login_frame = QFrame()
         self.gui_login_frame.setObjectName("ProfileCard")
         gui_login_layout = QVBoxLayout(self.gui_login_frame)
@@ -268,6 +317,9 @@ class AccountGateWidget(QFrame):
         self.browser_register_button = QPushButton("Привязать через браузер")
         self.browser_register_button.setObjectName("PrimaryButton")
         self.browser_register_button.clicked.connect(self.browserRegisterRequested.emit)
+        self.web_cabinet_button = QPushButton("Веб кабинет")
+        self.web_cabinet_button.setObjectName("SecondaryButton")
+        self.web_cabinet_button.clicked.connect(self.webCabinetRequested.emit)
         self.copy_pairing_code_button = QPushButton("Скопировать код")
         self.copy_pairing_code_button.setObjectName("SecondaryButton")
         self.copy_pairing_code_button.clicked.connect(self._on_copy_pairing_code)
@@ -285,6 +337,7 @@ class AccountGateWidget(QFrame):
             self.login_button,
             self.other_button,
             self.browser_register_button,
+            self.web_cabinet_button,
             self.copy_pairing_code_button,
             self.check_request_button,
             self.refresh_button,
@@ -295,6 +348,11 @@ class AccountGateWidget(QFrame):
         layout.addLayout(actions)
         layout.addStretch(1)
         self.render_loading()
+
+    def set_web_links(self, *, cabinet_url: str = "", login_url: str = "", password_reset_url: str = "") -> None:
+        self._web_cabinet_url = str(cabinet_url or "").strip()
+        self._web_login_url = str(login_url or "").strip()
+        self._password_reset_url = str(password_reset_url or "").strip()
 
     def render_loading(self) -> None:
         self.render({}, error=None)
@@ -316,7 +374,13 @@ class AccountGateWidget(QFrame):
         local_session: dict[str, Any] | None = None,
         error: str | None = None,
     ) -> None:
-        self._account_state = account_state or {}
+        self._account_state = dict(account_state or {})
+        if self._web_cabinet_url and not self._account_state.get("web_cabinet_url"):
+            self._account_state["web_cabinet_url"] = self._web_cabinet_url
+        if self._web_login_url and not self._account_state.get("web_login_url"):
+            self._account_state["web_login_url"] = self._web_login_url
+        if self._password_reset_url and not self._account_state.get("password_reset_url"):
+            self._account_state["password_reset_url"] = self._password_reset_url
         self._local_session = local_session or {}
         state = account_gate_view_state(self._account_state, local_session=self._local_session, error=error)
         self._primary_account = state.get("primary_account") if isinstance(state.get("primary_account"), dict) else None
@@ -329,8 +393,14 @@ class AccountGateWidget(QFrame):
         self.message_label.setVisible(bool(self.message_label.text()))
         self._browser_pairing_code = str(state.get("browser_pairing_code") or "").strip()
         self._browser_pairing_url = str(state.get("browser_pairing_url") or "").strip()
+        self._web_cabinet_url = str(state.get("web_cabinet_url") or self._web_cabinet_url or "").strip()
+        self._web_login_url = str(state.get("web_login_url") or self._web_login_url or "").strip()
+        self._password_reset_url = str(state.get("password_reset_url") or self._password_reset_url or "").strip()
         self.pairing_code_label.setVisible(bool(self._browser_pairing_code))
         self.pairing_url_label.setVisible(bool(self._browser_pairing_url))
+        self.web_cabinet_url_label.setVisible(bool(self._web_cabinet_url))
+        self.web_login_url_label.setVisible(bool(self._web_login_url))
+        self.password_reset_url_label.setVisible(bool(self._password_reset_url))
         self.gui_login_frame.setVisible(bool(state.get("show_gui_password_login")))
         self.pairing_code_label.setText(f"Код привязки: {self._browser_pairing_code}" if self._browser_pairing_code else "")
         if self._browser_pairing_url:
@@ -340,6 +410,27 @@ class AccountGateWidget(QFrame):
             )
         else:
             self.pairing_url_label.setText("")
+        if self._web_cabinet_url:
+            safe_url = escape(self._web_cabinet_url, quote=True)
+            self.web_cabinet_url_label.setText(
+                f'Веб кабинет: <a href="{safe_url}">{safe_url}</a>'
+            )
+        else:
+            self.web_cabinet_url_label.setText("")
+        if self._web_login_url:
+            safe_url = escape(self._web_login_url, quote=True)
+            self.web_login_url_label.setText(
+                f'Вход в веб кабинет: <a href="{safe_url}">{safe_url}</a>'
+            )
+        else:
+            self.web_login_url_label.setText("")
+        if self._password_reset_url:
+            safe_url = escape(self._password_reset_url, quote=True)
+            self.password_reset_url_label.setText(
+                f'Забыли пароль: <a href="{safe_url}">{safe_url}</a>'
+            )
+        else:
+            self.password_reset_url_label.setText("")
         account = state.get("primary_account") or state.get("pending_account")
         self.account_card.setVisible(isinstance(account, dict))
         if isinstance(account, dict):
@@ -377,6 +468,7 @@ class AccountGateWidget(QFrame):
         elif not self._showing_other_form:
             self.other_button.setText("Войти в другой аккаунт")
         self.browser_register_button.setVisible(bool(state["show_browser_register"]))
+        self.web_cabinet_button.setVisible(bool(state.get("show_web_cabinet")))
         self.copy_pairing_code_button.setVisible(bool(state.get("show_copy_pairing_code")))
         self.check_request_button.setVisible(bool(state.get("show_check_pending_request") and self._pending_request_id))
         self.other_form.setVisible(self._showing_other_form)

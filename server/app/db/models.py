@@ -5591,6 +5591,32 @@ class UiUserAudit(Base):
     )
 
 
+class UiPasswordResetRequest(Base):
+    """User-submitted UI password reset request reviewed by an administrator."""
+    __tablename__ = "ui_password_reset_requests"
+
+    request_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    login: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="pending")
+    requested_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    requested_ip: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    completed_by: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    resolution_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=sa.text("'{}'::jsonb"))
+
+    __table_args__ = (
+        sa.CheckConstraint("status IN ('pending', 'completed', 'rejected', 'canceled')", name="ck_ui_password_reset_requests_status"),
+        Index("ix_ui_password_reset_requests_status_requested", "status", "requested_at"),
+        Index("ix_ui_password_reset_requests_login_status", "login", "status"),
+    )
+
+
 class AccessGroup(Base):
     """Admin-defined RBAC access group."""
     __tablename__ = "access_groups"

@@ -569,6 +569,7 @@ export type AdminRegistryPayload = {
   bindings?: AdminDeviceUserBinding[];
   account_sessions?: AdminDeviceAccountSession[];
   account_login_requests?: AdminAccountLoginRequest[];
+  password_reset_requests?: AdminPasswordResetRequest[];
   ui_users?: AdminRegistryUiUser[];
 };
 
@@ -803,6 +804,16 @@ export type AdminAccountLoginRequest = {
   reviewed_at: string | null;
   rejection_reason: string | null;
   resulting_session_id: string | null;
+};
+
+export type AdminPasswordResetRequest = {
+  request_id: string;
+  login: string;
+  status: string;
+  requested_at: string | null;
+  completed_at: string | null;
+  completed_by: string | null;
+  resolution_note: string | null;
 };
 
 export type AdminDeviceAccountSession = {
@@ -1154,6 +1165,30 @@ export async function rejectAdminAccountLoginRequest(requestId: string, reason: 
     body: JSON.stringify({ reason })
   });
   await readSuccessResponse(response, "Не удалось отклонить вход в другой аккаунт");
+}
+
+export async function fetchAdminPasswordResetRequests(status?: string): Promise<{ items: AdminPasswordResetRequest[] }> {
+  const params = new URLSearchParams();
+  if (status) {
+    params.set("status", status);
+  }
+  const response = await fetch(`/api/web/admin/registry/password-reset-requests${params.toString() ? `?${params}` : ""}`, {
+    credentials: "same-origin",
+  });
+  return readSuccessResponse(response, "Не удалось загрузить заявки на смену пароля");
+}
+
+export async function completeAdminPasswordResetRequest(
+  requestId: string,
+  payload: { password: string; reason: string },
+): Promise<AdminPasswordResetRequest> {
+  const response = await fetch(`/api/web/admin/registry/password-reset-requests/${encodeURIComponent(requestId)}/complete`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return readSuccessResponse(response, "Не удалось сменить пароль по заявке");
 }
 
 export async function fetchAdminDeviceAccountSessions(deviceId: string): Promise<{ items: AdminDeviceAccountSession[] }> {

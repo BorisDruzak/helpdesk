@@ -23,12 +23,14 @@ import {
   bulkAssignAdminRegistryPeopleDepartment,
   bulkRevokeAdminRegistryAccountSessions,
   bulkRevokeAdminRegistryDeviceAccountSessions,
+  completeAdminPasswordResetRequest,
   createAdminRegistryAudienceGroup,
   createAdminRegistryDepartment,
   createAdminRegistryLocation,
   createAdminRegistryPerson,
   createAdminRegistryPersonIdentity,
   fetchAdminAccountLoginRequests,
+  fetchAdminPasswordResetRequests,
   fetchAdminRegistry,
   fetchAdminRegistryAudienceGroupMembers,
   fetchAdminRegistryAudienceGroups,
@@ -80,6 +82,7 @@ import { RegistryMergePeopleDialog } from "../../features/admin/registry/registr
 import { RegistryOverviewTab } from "../../features/admin/registry/registry-overview-tab";
 import { RegistryPeopleTab } from "../../features/admin/registry/registry-people-tab";
 import { RegistryPersonEditDialog, type PersonEditDialogState } from "../../features/admin/registry/registry-person-edit-dialog";
+import { RegistryPasswordResetRequestsTab } from "../../features/admin/registry/registry-password-reset-requests-tab";
 import { RegistryPoliciesTab } from "../../features/admin/registry/registry-policies-tab";
 import { RegistryProfileSchemaTab } from "../../features/admin/registry/registry-profile-schema-tab";
 import { RegistryQualityTab } from "../../features/admin/registry/registry-quality-tab";
@@ -95,6 +98,7 @@ const tabs: Array<{ key: RegistryTabKey; label: string; description: string; p1?
   { key: "people", label: "Пользователи", description: "Карточки людей, UI-аккаунты, идентичности и операции слияния. Технические идентификаторы оставлены только для точной диагностики." },
   { key: "bindings", label: "Привязки", description: "Активные и исторические связи устройство-пользователь. Фильтры показывают тип связи или состояние." },
   { key: "requests", label: "Заявки", description: "Заявки регистрации и входа в другой аккаунт. Перед подтверждением проверяйте дифф: устройство, текущая привязка, заявленные ФИО, подразделение и локация." },
+  { key: "password_reset", label: "Смена пароля", description: "Заявки пользователей на смену забытого UI-пароля. Закрытие заявки сразу устанавливает новый пароль и фиксирует причину." },
   { key: "account_sessions", label: "Аккаунт-сессии", description: "Серверные сессии пользователей на устройствах. Отзыв сессии прекращает выбранный контекст аккаунта на агенте." },
   { key: "quality", label: "Качество данных", description: "Действительные проблемы качества и подсказки по исправлению. Игнорирование и отсрочка требуют причины для аудита." },
   { key: "locations", label: "Локации", description: "Справочник зданий, этажей и кабинетов. Архивация и слияние требуют причины и предварительного просмотра.", p1: true },
@@ -162,6 +166,12 @@ export function AdminRegistryPage() {
     retry: false,
     refetchInterval: 15_000,
   });
+  const passwordResetRequestsQuery = useQuery({
+    queryKey: ["admin-registry-password-reset-requests"],
+    queryFn: () => fetchAdminPasswordResetRequests("pending"),
+    retry: false,
+    refetchInterval: 15_000,
+  });
   const audienceGroupsQuery = useQuery({
     queryKey: ["admin-registry-audience-groups"],
     queryFn: () => fetchAdminRegistryAudienceGroups(false),
@@ -184,6 +194,7 @@ export function AdminRegistryPage() {
   const invalidateRegistry = async () => {
     await queryClient.invalidateQueries({ queryKey: ["admin-registry"] });
     await queryClient.invalidateQueries({ queryKey: ["admin-registry-account-login-requests"] });
+    await queryClient.invalidateQueries({ queryKey: ["admin-registry-password-reset-requests"] });
     await queryClient.invalidateQueries({ queryKey: ["admin-registry-audience-groups"] });
     await queryClient.invalidateQueries({ queryKey: ["admin-registry-audience-group-members"] });
   };
@@ -231,6 +242,7 @@ export function AdminRegistryPage() {
     [query, registry]
   );
   const pendingLoginRequests = accountLoginRequestsQuery.data?.items ?? registry?.account_login_requests ?? [];
+  const pendingPasswordResetRequests = passwordResetRequestsQuery.data?.items ?? registry?.password_reset_requests ?? [];
   const audienceGroups = audienceGroupsQuery.data?.groups ?? [];
   const audienceMembers = audienceMembersQuery.data?.members ?? [];
 
@@ -538,6 +550,15 @@ export function AdminRegistryPage() {
               onRejectClaim={(claim) => runWithReason("Причина отклонения заявки", "Данные не подтверждены", (reason) => rejectAdminRegistrationClaim(claim.claim_id, reason))}
               onRejectLoginRequest={(request) => runWithReason("Причина отклонения входа", "Не подтверждено администратором", (reason) => rejectAdminAccountLoginRequest(request.request_id, reason))}
               onSelect={setSelection}
+            />
+          ) : null}
+          {tab === "password_reset" ? (
+            <RegistryPasswordResetRequestsTab
+              busy={mutation.isPending}
+              requests={pendingPasswordResetRequests}
+              onComplete={(request, payload) => mutation.mutate(() => (
+                completeAdminPasswordResetRequest(request.request_id, payload).then(() => undefined)
+              ))}
             />
           ) : null}
           {visibleRegistry && tab === "account_sessions" ? (

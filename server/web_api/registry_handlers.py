@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.db import get_session
 from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser
 from auth.middleware import require_auth
+from auth.password_service import PasswordPolicyError
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
@@ -19,6 +20,7 @@ from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.audience_group_service import RegistryAudienceService
 from registry.browser_pairing_service import BrowserPairingService
 from registry.effective_identity_service import EffectiveIdentityService
+from registry.password_reset_service import PasswordResetRequestService
 from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
 from registry.registration_service import RegistrationConflictError, RegistrationService, RegistrationValidationError
 from registry.service import RegistryIngestionService, RegistrySnapshotService
@@ -991,6 +993,49 @@ async def handle_web_admin_registry_account_login_requests(request: web.Request)
         items = await AccountSessionService(session).list_login_requests(status=status, limit=limit)
         await session.commit()
     return _success({"items": items})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_password_reset_requests(request: web.Request) -> web.Response:
+    status = str(request.query.get("status") or "").strip() or None
+    try:
+        limit = int(request.query.get("limit") or "100")
+    except ValueError:
+        limit = 100
+    async with get_session() as session:
+        items = await PasswordResetRequestService(session).list_requests(status=status, limit=limit)
+    return _success({"items": items})
+
+
+@require_auth("admin")
+async def handle_web_admin_registry_password_reset_request_complete(request: web.Request) -> web.Response:
+    auth_context = request["auth_context"]
+    request_id = str(request.match_info.get("request_id") or "").strip()
+    try:
+        data = await request.json() if request.can_read_body else {}
+    except Exception:
+        return web.json_response({"status": "error", "error": "Некорректный JSON", "error_code": "INVALID_JSON"}, status=400)
+    password = str(data.get("password") or "")
+    if not password:
+        return web.json_response({"status": "error", "error": "Введите новый пароль", "error_code": "VALIDATION_ERROR"}, status=400)
+    reason = str(data.get("reason") or "").strip() or None
+    async with get_session() as session:
+        try:
+            payload = await PasswordResetRequestService(session).complete_request(
+                request_id=request_id,
+                password=password,
+                actor_id=auth_context.actor_id,
+                reason=reason,
+            )
+            commit = getattr(session, "commit", None)
+            if commit:
+                await commit()
+        except PasswordPolicyError as exc:
+            return web.json_response({"status": "error", "error": str(exc), "error_code": "PASSWORD_POLICY_ERROR"}, status=400)
+        except ValueError as exc:
+            status_code = 404 if "not found" in str(exc).lower() else 400
+            return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=status_code)
+    return _success(payload)
 
 
 @require_auth("admin")

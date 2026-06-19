@@ -215,4 +215,29 @@ describe("RegisterPage", () => {
       "/app/register?next=%2Fapp%2Fdevice%2Fregister%3Fpairing_id%3Dpair-login"
     );
   });
+
+  it("submits a password reset request from the login page", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/session/me") {
+        return jsonResponse({ status: "error" }, 401);
+      }
+      if (url === "/api/web/session/password-reset-requests") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({ login: "ivan@example.test" });
+        return jsonResponse({ status: "success", data: { accepted: true } });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderRegisterPage("/app/login?forgot_password=1");
+
+    fireEvent.change(await screen.findByLabelText("Логин для восстановления"), {
+      target: { value: " ivan@example.test " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Отправить заявку" }));
+
+    expect(await screen.findByText("Заявка отправлена администратору.")).toBeInTheDocument();
+  });
 });

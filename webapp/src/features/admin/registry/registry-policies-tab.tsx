@@ -239,7 +239,7 @@ export function RegistryPoliciesTab() {
             <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} title="Проверить черновик политик на сервере без сохранения" variant="outline">Предпросмотр</Button>
             <Button leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => query.data && setDraft(clonePolicies(query.data.effective))} variant="outline">Отменить</Button>
             <Button disabled={!reason.trim() || resetMutation.isPending} leadingIcon={<RotateCcw className="h-4 w-4" />} onClick={() => resetMutation.mutate()} title="Сбросить политики к значениям по умолчанию; нужна причина" variant="outline">По умолчанию</Button>
-            <Button aria-label="save-registry-policies" disabled={!reason.trim() || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()}>Сохранить</Button>
+            <Button data-testid="save-registry-policies" disabled={!reason.trim() || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()}>Сохранить</Button>
           </div>
         </CardContent>
       </Card>

@@ -17,6 +17,7 @@ from auth.service import AuthService
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
 from observer.web_event_writer import write_web_cabinet_observer_event
 from registry.browser_pairing_service import BrowserPairingService
+from registry.password_reset_service import PasswordResetRequestService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
     WebSessionRegisterDeviceLinkPayload,
@@ -263,6 +264,35 @@ async def handle_web_session_login(request):
         secure=WEB_SESSION_COOKIE_SECURE,
     )
     return response
+
+
+async def handle_web_session_password_reset_request(request):
+    try:
+        data = await request.json()
+    except Exception:
+        return _error("Некорректные данные заявки", "VALIDATION_ERROR", status=400)
+
+    login = _normalize_login(data.get("login"))
+    if not login:
+        return _error("Введите логин для восстановления.", "VALIDATION_ERROR", status=400)
+    if not check_rate_limit("web_session_password_reset", f"{client_ip(request)}:{login.lower()}", limit=5, window_seconds=60):
+        return rate_limited_response()
+
+    try:
+        async with get_session() as session:
+            await PasswordResetRequestService(session).create_request(
+                login=login,
+                client_ip=client_ip(request),
+                user_agent=request.headers.get("User-Agent"),
+            )
+            commit = getattr(session, "commit", None)
+            if commit:
+                await commit()
+    except Exception as exc:
+        logger.warning(f"[web_session_password_reset] failed to create request: {exc}")
+        return _error("Не удалось отправить заявку. Повторите попытку позже.", "PASSWORD_RESET_REQUEST_FAILED", status=503)
+
+    return json_model_response(SuccessResponse[dict[str, bool]](data={"accepted": True}))
 
 
 async def handle_web_session_register(request):

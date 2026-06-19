@@ -314,6 +314,7 @@ from web_api.session_handlers import (
     handle_web_session_login,
     handle_web_session_logout,
     handle_web_session_me,
+    handle_web_session_password_reset_request,
     handle_web_session_register,
 )
 from web_api.access_handlers import (
@@ -628,6 +629,8 @@ from web_api.registry_handlers import (
     handle_web_registry_browser_pairing_login_confirm,
     handle_web_registry_browser_pairing_registration_confirm,
     handle_web_admin_registry_people_create,
+    handle_web_admin_registry_password_reset_request_complete,
+    handle_web_admin_registry_password_reset_requests,
     handle_web_admin_registry_people_merge,
     handle_web_admin_registry_people_merge_preview,
     handle_web_admin_registry_person_archive,
@@ -867,6 +870,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/ui_session', handle_ui_session),
         web.post('/api/web/session/login', handle_web_session_login),
         web.post('/api/web/session/register', handle_web_session_register),
+        web.post('/api/web/session/password-reset-requests', handle_web_session_password_reset_request),
         web.post('/api/web/session/logout', handle_web_session_logout),
         web.get('/api/web/session/me', handle_web_session_me),
         web.get('/api/web/support/bootstrap', handle_web_support_bootstrap),
@@ -1169,6 +1173,8 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/registry/account-login-requests', handle_web_admin_registry_account_login_requests),
         web.post('/api/web/admin/registry/account-login-requests/{request_id}/approve', handle_web_admin_registry_account_login_request_approve),
         web.post('/api/web/admin/registry/account-login-requests/{request_id}/reject', handle_web_admin_registry_account_login_request_reject),
+        web.get('/api/web/admin/registry/password-reset-requests', handle_web_admin_registry_password_reset_requests),
+        web.post('/api/web/admin/registry/password-reset-requests/{request_id}/complete', handle_web_admin_registry_password_reset_request_complete),
         web.get('/api/web/admin/registry/account-sessions', handle_web_admin_registry_account_sessions),
         web.post('/api/web/admin/registry/bulk/preview', handle_web_admin_registry_bulk_preview),
         web.post('/api/web/admin/registry/bulk/account-sessions/revoke', handle_web_admin_registry_bulk_account_sessions_revoke),

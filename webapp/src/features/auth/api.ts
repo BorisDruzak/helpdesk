@@ -144,6 +144,29 @@ export async function registerWebSessionAccount(input: {
   return payload.data;
 }
 
+export async function requestPasswordReset(login: string): Promise<{ accepted: boolean }> {
+  const response = await fetch("/api/web/session/password-reset-requests", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ login: login.trim() })
+  });
+  const payload = await readJson<SuccessResponse<{ accepted: boolean }> | ErrorResponse>(response);
+
+  if (!response.ok || !payload || payload.status !== "success") {
+    const errorPayload = payload && payload.status === "error" ? payload : null;
+    throw new WebSessionApiError(
+      errorPayload?.error ?? "Не удалось отправить заявку",
+      response.status,
+      errorPayload?.error_code
+    );
+  }
+
+  return payload.data;
+}
+
 export async function logoutWebSession(): Promise<void> {
   const response = await fetch("/api/web/session/logout", {
     method: "POST",

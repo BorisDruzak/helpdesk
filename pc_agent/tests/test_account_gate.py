@@ -161,6 +161,51 @@ def test_account_gate_browser_pairing_url_hides_repeat_registration_action():
     assert state["show_browser_pairing_url"] is True
 
 
+def test_account_gate_exposes_web_cabinet_action_and_fallback_link():
+    state = account_gate_view_state(
+        {
+            "accounts": [],
+            "can_register": True,
+            "can_login_other_account": False,
+            "registration": {"status": "unregistered"},
+            "web_cabinet_url": "https://example.test/app/requester",
+            "web_login_url": "https://example.test/app/login",
+            "password_reset_url": "https://example.test/app/login?forgot_password=1",
+        }
+    )
+
+    assert state["show_web_cabinet"] is True
+    assert state["web_cabinet_url"] == "https://example.test/app/requester"
+    assert state["web_login_url"] == "https://example.test/app/login"
+    assert state["password_reset_url"] == "https://example.test/app/login?forgot_password=1"
+
+    app = QApplication.instance() or QApplication([])
+    widget = AccountGateWidget()
+    events: list[str] = []
+    widget.webCabinetRequested.connect(lambda: events.append("cabinet"))
+    widget.render(
+        {
+            "accounts": [],
+            "can_register": True,
+            "can_login_other_account": False,
+            "registration": {"status": "unregistered"},
+            "web_cabinet_url": "https://example.test/app/requester",
+            "web_login_url": "https://example.test/app/login",
+            "password_reset_url": "https://example.test/app/login?forgot_password=1",
+        }
+    )
+    widget.show()
+    app.processEvents()
+
+    assert widget.web_cabinet_button.isVisible()
+    assert "https://example.test/app/requester" in widget.web_cabinet_url_label.text()
+    assert "https://example.test/app/login" in widget.web_login_url_label.text()
+    assert "https://example.test/app/login?forgot_password=1" in widget.password_reset_url_label.text()
+
+    widget.web_cabinet_button.click()
+    assert events == ["cabinet"]
+
+
 def test_account_gate_unregistered_fallback_shows_browser_registration_only():
     state = account_gate_view_state(
         {
@@ -321,6 +366,14 @@ def test_main_window_browser_pairing_url_uses_https_stand_origin_for_legacy_api_
         window._browser_pairing_url("/app/device/login?pairing_id=pair-1")
         == "https://192.168.100.17:9443/app/device/login?pairing_id=pair-1"
     )
+
+
+def test_main_window_web_cabinet_url_uses_public_app_origin():
+    window = MainWindow.__new__(MainWindow)
+    window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="http://192.168.100.17:8666/api"))
+
+    assert window._web_app_url("/app/requester") == "https://192.168.100.17:9443/app/requester"
+    assert window._web_app_url("/app/login?forgot_password=1") == "https://192.168.100.17:9443/app/login?forgot_password=1"
 
 
 @pytest.mark.asyncio

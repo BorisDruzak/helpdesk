@@ -4,7 +4,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { WebSessionApiError } from "./api";
+import { requestPasswordReset, WebSessionApiError } from "./api";
 import { useSession } from "./session-provider";
 import { resolveNextWorkspacePath } from "./workspace-access";
 
@@ -30,8 +30,13 @@ export function LoginPage() {
   const { login, session, status } = useSession();
   const [loginValue, setLoginValue] = useState("");
   const [passwordValue, setPasswordValue] = useState("");
+  const [passwordResetLogin, setPasswordResetLogin] = useState("");
+  const [showPasswordReset, setShowPasswordReset] = useState(searchParams.get("forgot_password") === "1");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [passwordResetMessage, setPasswordResetMessage] = useState<string | null>(null);
+  const [passwordResetError, setPasswordResetError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPasswordResetSubmitting, setIsPasswordResetSubmitting] = useState(false);
 
   const nextPath = resolveNextPath(searchParams.get("next"), session);
   const registrationComplete = searchParams.get("registered") === "1";
@@ -60,6 +65,26 @@ export function LoginPage() {
       }
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handlePasswordResetSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPasswordResetMessage(null);
+    setPasswordResetError(null);
+    const login = passwordResetLogin.trim();
+    if (!login) {
+      setPasswordResetError("Введите логин для восстановления.");
+      return;
+    }
+    setIsPasswordResetSubmitting(true);
+    try {
+      await requestPasswordReset(login);
+      setPasswordResetMessage("Заявка отправлена администратору.");
+    } catch (error) {
+      setPasswordResetError(error instanceof Error ? error.message : "Не удалось отправить заявку.");
+    } finally {
+      setIsPasswordResetSubmitting(false);
     }
   }
 
@@ -172,8 +197,44 @@ export function LoginPage() {
               </Button>
             </form>
 
-            <div className="rounded-[1.2rem] bg-surface-subtle px-4 py-4 text-sm text-slate-500">
+            <div className="space-y-3 rounded-[1.2rem] bg-surface-subtle px-4 py-4 text-sm text-slate-500">
               <div className="flex flex-wrap items-center justify-between gap-3">
+                <span>Не получается войти?</span>
+                <button
+                  className="font-semibold text-brand-700 hover:text-brand-900"
+                  onClick={() => setShowPasswordReset((current) => !current)}
+                  type="button"
+                >
+                  Забыли пароль?
+                </button>
+              </div>
+              {showPasswordReset ? (
+                <form className="space-y-3" onSubmit={handlePasswordResetSubmit}>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-slate-800">Логин для восстановления</span>
+                    <Input
+                      autoComplete="username"
+                      name="password_reset_login"
+                      onChange={(event) => setPasswordResetLogin(event.target.value)}
+                      value={passwordResetLogin}
+                    />
+                  </label>
+                  {passwordResetError ? (
+                    <p aria-live="polite" className="rounded-[1rem] bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                      {passwordResetError}
+                    </p>
+                  ) : null}
+                  {passwordResetMessage ? (
+                    <p aria-live="polite" className="rounded-[1rem] bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                      {passwordResetMessage}
+                    </p>
+                  ) : null}
+                  <Button disabled={isPasswordResetSubmitting} size="sm" type="submit" variant="outline">
+                    {isPasswordResetSubmitting ? "Отправляем..." : "Отправить заявку"}
+                  </Button>
+                </form>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
                 <span>Еще нет аккаунта?</span>
                 <Link className="font-semibold text-brand-700 hover:text-brand-900" to={registerPath(searchParams.get("next"))}>
                   Создать аккаунт

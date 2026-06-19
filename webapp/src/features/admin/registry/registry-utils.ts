@@ -6,6 +6,7 @@ export type RegistryTabKey =
   | "people"
   | "bindings"
   | "requests"
+  | "password_reset"
   | "account_sessions"
   | "quality"
   | "locations"
@@ -39,7 +40,7 @@ export function formatDateTime(value: string | null | undefined): string {
 
 export function statusTone(value: string | null | undefined): "brand" | "danger" | "info" | "neutral" | "success" | "warning" {
   const normalized = String(value ?? "").trim().toLowerCase();
-  if (["active", "verified", "admin_confirmed", "approved"].includes(normalized)) {
+  if (["active", "verified", "admin_confirmed", "approved", "completed"].includes(normalized)) {
     return "success";
   }
   if (["pending", "self_reported", "pending_user_confirmation", "user_confirmed", "pending_admin_review", "pending_verification"].includes(normalized)) {
@@ -62,6 +63,8 @@ const STATUS_LABELS: Record<string, string> = {
   admin_confirmed: "Подтверждено администратором",
   approved: "Одобрено",
   conflict: "Конфликт",
+  canceled: "Отменено",
+  completed: "Выполнено",
   disabled: "Отключено",
   expired: "Истекло",
   inactive: "Неактивно",
