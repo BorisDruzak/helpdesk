@@ -434,6 +434,56 @@ async def test_requester_can_create_own_profile_with_registry_pickers(test_clien
 
 
 @pytest.mark.asyncio
+async def test_requester_internal_extension_satisfies_profile_contact_requirement(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "requester-profile-extension@example.test"
+    async with session_maker() as session:
+        person = await _person_for_login(session, login=login)
+        person.phone = None
+        person.metadata_json = {**(person.metadata_json or {}), "internal_extension": "4567"}
+        department_id = person.department_id
+        location_id = person.location_id
+        await session.commit()
+
+    bootstrap = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    bootstrap_payload = await bootstrap.json()
+
+    assert bootstrap.status == 200, bootstrap_payload
+    assert bootstrap_payload["data"]["profile"]["phone"] is None
+    assert bootstrap_payload["data"]["profile"]["internal_extension"] == "4567"
+    assert bootstrap_payload["data"]["profile_completion"]["complete"] is True
+    assert "phone" not in {item["key"] for item in bootstrap_payload["data"]["profile_completion"]["missing_fields"]}
+
+    update = await test_client.put(
+        "/api/web/requester/profile",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "person_id": person.person_id,
+            "full_name": "Requester Extension",
+            "department_id": department_id,
+            "location_id": location_id,
+            "phone": "",
+            "internal_extension": "8899",
+        },
+    )
+    update_payload = await update.json()
+
+    assert update.status == 200, update_payload
+    assert update_payload["data"]["profile"]["phone"] is None
+    assert update_payload["data"]["profile"]["internal_extension"] == "8899"
+    assert update_payload["data"]["profile_completion"]["complete"] is True
+
+    async with session_maker() as session:
+        saved = await session.get(RegistryPerson, person.person_id)
+        assert saved is not None
+        assert saved.phone is None
+        assert saved.metadata_json["internal_extension"] == "8899"
+
+
+@pytest.mark.asyncio
 async def test_admin_profile_schema_enforces_system_fields_and_audits_update(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
 
@@ -906,6 +956,18 @@ async def test_existing_pending_agent_claim_is_visible_to_requester_and_admin(te
     login = "requester-legacy-pending-claim@example.test"
 
     async with session_maker() as session:
+        session.add(
+            RegistryAdminPolicy(
+                policy_key="registry_management",
+                config_json={
+                    "registration": {
+                        "require_admin_confirmation": True,
+                        "auto_approve_first_binding": False,
+                    }
+                },
+                updated_by="test",
+            )
+        )
         session.add(_device(device_id, "legacy-pending-device"))
         claim = await RegistrationService(session).submit_agent_profile_claim(
             device_id=device_id,
@@ -1537,11 +1599,16 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     custom_fields = ticket.custom_fields or {}
     assert custom_fields["request_context"] == "authenticated_requester_workspace"
     assert custom_fields["requester_context_snapshot"]["profile"]["person_id"] == approved["person"]["person_id"]
+    assert custom_fields["requester_context_snapshot"]["profile_schema"]["schema_key"] == "requester_profile"
+    assert custom_fields["requester_context_snapshot"]["profile_schema"]["version"]
     assert custom_fields["requester_context_snapshot"]["device"]["device_id"] == device_id
     assert custom_fields["requester_device_id"] == device_id
     assert custom_fields["requester_asset_id"] == approved["binding"]["asset_id"]
     assert custom_fields["requester_binding_id"] == approved["binding"]["binding_id"]
     assert custom_fields["routing_decision"]["source"] == "request_template.routing_policy"
+    assert custom_fields["resolved_pack_version"] == f"test-{suffix}"
+    assert custom_fields["resolved_form_schema_version"] == f"test-{suffix}"
+    assert custom_fields["request_form"]["form_schema_version"] == f"test-{suffix}"
     assert custom_fields["request_form_data"] == {"summary": "No boot"}
     assert custom_fields["service_catalog"]["service_code"] == service_code
     assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"

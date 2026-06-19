@@ -109,6 +109,45 @@ def _profile_completion_snapshot(context: dict[str, Any], custom_fields: dict[st
     return {}, None
 
 
+def _profile_schema_version(context: dict[str, Any], custom_fields: dict[str, Any]) -> tuple[str | None, str | None]:
+    requester_context = _dict(context.get("requester_context"))
+    profile_schema = _dict(requester_context.get("profile_schema"))
+    version = _clean(profile_schema.get("version"))
+    if version:
+        return version, "ticket_context"
+    snapshot = _dict(custom_fields.get("requester_context_snapshot"))
+    profile_schema = _dict(snapshot.get("profile_schema"))
+    version = _clean(profile_schema.get("version"))
+    if version:
+        return version, "requester_context_snapshot"
+    return _clean(custom_fields.get("profile_schema_version")), "custom_fields"
+
+
+def _form_schema_version(context: dict[str, Any], custom_fields: dict[str, Any]) -> tuple[str | None, str | None, bool]:
+    form = _dict(context.get("form"))
+    version = _clean(form.get("form_schema_version")) or _clean(form.get("resolved_form_schema_version"))
+    if version:
+        return version, "ticket_context.form", True
+    version = _clean(custom_fields.get("resolved_form_schema_version"))
+    if version:
+        return version, "custom_fields.resolved_form_schema_version", True
+    request_template = _dict(custom_fields.get("request_template"))
+    version = _clean(request_template.get("form_schema_version"))
+    if version:
+        return version, "custom_fields.request_template", True
+    request_form = _dict(custom_fields.get("request_form"))
+    version = _clean(request_form.get("form_schema_version"))
+    if version:
+        return version, "custom_fields.request_form", True
+    has_form = bool(
+        form
+        or request_form
+        or _clean(custom_fields.get("request_form_key"))
+        or _clean(custom_fields.get("resolved_template_key"))
+    )
+    return None, None, has_form
+
+
 def _profile_completion_blocks(completion: dict[str, Any]) -> bool:
     if not completion:
         return False
@@ -369,6 +408,53 @@ async def _web_invariant_events(
                         for item in missing
                         if isinstance(item, dict) and item.get("key")
                     ][:12],
+                },
+                runbook="docs/runbooks/observer_web_cabinet.md",
+                run_id=run_id,
+            )
+        )
+
+    profile_schema_version, profile_schema_source = _profile_schema_version(context, custom_fields)
+    if not profile_schema_version:
+        events.append(
+            ObserverIntegrityEventInput(
+                event_type="web_ticket_missing_profile_schema_version",
+                severity="high",
+                source=SOURCE,
+                dedupe_key=f"web_ticket_missing_profile_schema_version:{ticket.ticket_id}",
+                ticket_id=ticket.ticket_id,
+                device_id=target_device_id or ticket.device_id,
+                actor_role="requester",
+                expected="Every web requester ticket must keep the server-owned requester profile schema version used for profile completion.",
+                actual="Requester context did not include profile_schema.version.",
+                evidence={
+                    "has_ticket_context_requester_context": bool(_dict(context.get("requester_context"))),
+                    "has_requester_context_snapshot": bool(_dict(custom_fields.get("requester_context_snapshot"))),
+                    "profile_schema_source": profile_schema_source,
+                },
+                runbook="docs/runbooks/observer_web_cabinet.md",
+                run_id=run_id,
+            )
+        )
+
+    form_schema_version, form_schema_source, has_form_snapshot = _form_schema_version(context, custom_fields)
+    if has_form_snapshot and not form_schema_version:
+        events.append(
+            ObserverIntegrityEventInput(
+                event_type="web_ticket_missing_form_schema_version",
+                severity="high",
+                source=SOURCE,
+                dedupe_key=f"web_ticket_missing_form_schema_version:{ticket.ticket_id}",
+                ticket_id=ticket.ticket_id,
+                device_id=target_device_id or ticket.device_id,
+                actor_role="requester",
+                expected="Every web requester ticket with a dynamic request form must keep the resolved form schema version.",
+                actual="Request form snapshot did not include a resolved form schema version.",
+                evidence={
+                    "has_ticket_context_form": bool(_dict(context.get("form"))),
+                    "has_request_form_snapshot": bool(_dict(custom_fields.get("request_form"))),
+                    "request_form_key_present": bool(_clean(custom_fields.get("request_form_key"))),
+                    "form_schema_source": form_schema_source,
                 },
                 runbook="docs/runbooks/observer_web_cabinet.md",
                 run_id=run_id,

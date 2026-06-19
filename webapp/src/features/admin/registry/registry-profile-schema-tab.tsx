@@ -7,6 +7,12 @@ import { Button } from "../../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../../components/ui/card";
 import { Input } from "../../../components/ui/input";
 import {
+  RequesterProfileFieldControl,
+  buildProfileValues,
+  validateRequesterProfileSchema,
+} from "../../requester/profile-runtime";
+import type { RequesterProfileSchema } from "../../requester/types";
+import {
   fetchAdminRegistryProfileSchema,
   previewAdminRegistryProfileSchema,
   saveAdminRegistryProfileSchema,
@@ -47,6 +53,19 @@ const EMPTY_CUSTOM_DRAFT: CustomDraft = {
   help_text: "",
   required: false,
 };
+
+const PREVIEW_PROFILE_VALUES = buildProfileValues({
+  person_id: "preview",
+  full_name: "Иван Петров",
+  department_id: "dept-it",
+  location_id: "loc-ekb",
+  phone: "",
+  internal_extension: "4567",
+  position: "Инженер",
+  workplace_label: "Офис 101",
+  preferred_contact_method: "chat",
+  custom_fields: {},
+});
 
 function cloneSchema(schema: AdminRegistryProfileSchema): AdminRegistryProfileSchema {
   return JSON.parse(JSON.stringify(schema)) as AdminRegistryProfileSchema;
@@ -112,6 +131,10 @@ export function RegistryProfileSchemaTab() {
       custom: fields.filter((field) => field.custom),
     };
   }, [draft?.fields]);
+  const localValidation = useMemo(
+    () => draft ? validateRequesterProfileSchema(draft as RequesterProfileSchema) : { canPublish: false, issues: [] },
+    [draft],
+  );
 
   const updateField = (key: string, patch: Partial<AdminRegistryProfileSchemaField>) => {
     setDraft((current) => {
@@ -163,6 +186,9 @@ export function RegistryProfileSchemaTab() {
   const previewMutation = useMutation({
     mutationFn: async () => {
       if (!draft) return null;
+      if (!localValidation.canPublish) {
+        throw new Error("Исправьте ошибки схемы перед предпросмотром.");
+      }
       return previewAdminRegistryProfileSchema(toUpdatePayload(draft, reason));
     },
     onSuccess: (result) => result && setServerPreview(result),
@@ -171,6 +197,9 @@ export function RegistryProfileSchemaTab() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!draft) return null;
+      if (!localValidation.canPublish) {
+        throw new Error("Исправьте ошибки схемы перед сохранением.");
+      }
       return saveAdminRegistryProfileSchema(toUpdatePayload(draft, reason));
     },
     onSuccess: async (result) => {
@@ -303,8 +332,31 @@ export function RegistryProfileSchemaTab() {
                   ))}
                 </div>
               ) : null}
+              {localValidation.issues.length ? (
+                <div className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                  {localValidation.issues.map((issue) => (
+                    <p key={`${issue.path}:${issue.code}`}>{issue.message}</p>
+                  ))}
+                </div>
+              ) : null}
               <div className="space-y-1 text-sm text-slate-600">
                 {requiredFields.map((field) => <p key={field.key}>{field.label}</p>)}
+              </div>
+              <div className="space-y-3 rounded-md border border-border bg-slate-50 px-3 py-3">
+                <p className="text-sm font-semibold text-slate-900">Так увидит пользователь</p>
+                {(previewSchema?.fields ?? draft.fields).filter((field) => field.visible !== false).slice(0, 6).map((field) => (
+                  <RequesterProfileFieldControl
+                    field={field}
+                    key={field.key}
+                    onChange={() => undefined}
+                    readOnly
+                    value={
+                      field.custom
+                        ? PREVIEW_PROFILE_VALUES.custom_fields[field.key] ?? (field.type === "checkbox" ? false : "")
+                        : ((PREVIEW_PROFILE_VALUES as unknown as Record<string, string | boolean | number | null | undefined>)[field.key] ?? "")
+                    }
+                  />
+                ))}
               </div>
               <label className="block text-sm font-medium">
                 Причина изменения
@@ -316,10 +368,10 @@ export function RegistryProfileSchemaTab() {
                 />
               </label>
               <div className="flex flex-wrap gap-2">
-                <Button leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} type="button" variant="outline">
+                <Button disabled={!localValidation.canPublish || previewMutation.isPending} leadingIcon={<RefreshCcw className="h-4 w-4" />} onClick={() => previewMutation.mutate()} type="button" variant="outline">
                   Предпросмотр
                 </Button>
-                <Button disabled={!reason.trim() || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()} type="button">
+                <Button disabled={!reason.trim() || !localValidation.canPublish || saveMutation.isPending} leadingIcon={<Save className="h-4 w-4" />} onClick={() => saveMutation.mutate()} type="button">
                   Сохранить схему
                 </Button>
               </div>

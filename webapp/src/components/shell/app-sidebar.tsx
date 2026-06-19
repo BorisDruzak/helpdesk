@@ -160,17 +160,19 @@ function SupportSidebar({
   collapsed,
   items,
   currentPath,
+  label = "Навигация поддержки",
   onCollapsedChange,
   onNavigate,
 }: {
   collapsed: boolean;
   items: AppNavItem[];
   currentPath: string;
+  label?: string;
   onCollapsedChange?: (collapsed: boolean) => void;
   onNavigate?: () => void;
 }) {
   return (
-    <nav aria-label="Навигация поддержки" className="space-y-1">
+    <nav aria-label={label} className="space-y-1">
       {items.map((item) => (
         <SidebarNavLink
           collapsed={collapsed}
@@ -354,7 +356,7 @@ export function AppSidebar({
         <div className={cn("min-w-0", collapsed ? "sr-only" : "")}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-100/70">pc_client</p>
           <p className="text-sm font-semibold leading-tight">
-            {workspace === "admin" ? "Admin workspace" : workspace === "requester" ? "Requester workspace" : "Support workspace"}
+            {workspace === "admin" ? "Администрирование" : workspace === "requester" ? "Кабинет заявителя" : "Поддержка"}
           </p>
         </div>
       </Link>
@@ -374,6 +376,7 @@ export function AppSidebar({
             collapsed={collapsed}
             currentPath={currentPath}
             items={requesterItems}
+            label="Боковая навигация заявителя"
             onCollapsedChange={onCollapsedChange}
             onNavigate={onNavigate}
           />

@@ -1218,6 +1218,14 @@ def build_form_custom_fields(validated_submission: dict[str, Any]) -> dict[str, 
         "form_key": validated_submission.get("form_key"),
         "form_title": validated_submission.get("form_title"),
     }
+    if resolved_template_key:
+        request_form_snapshot["request_template_key"] = resolved_template_key
+    if resolved_template_version is not None:
+        request_form_snapshot["request_template_version"] = resolved_template_version
+    if resolved_form_schema_id:
+        request_form_snapshot["form_schema_id"] = resolved_form_schema_id
+    if resolved_form_schema_version is not None:
+        request_form_snapshot["form_schema_version"] = resolved_form_schema_version
     return {
         "request_kind": validated_submission.get("request_kind"),
         "request_form_pack_key": validated_submission.get("pack_key"),

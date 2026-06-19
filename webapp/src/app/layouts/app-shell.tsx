@@ -1,9 +1,13 @@
 import { startTransition, useEffect, useState, type ChangeEvent, type ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import {
-  getSearchPlaceholder,
+  canUseNavigationItemInContext,
   getActiveWorkspace,
+  getSearchPlaceholder,
+  getVisibleNavigationItems,
+  isNavItemActive,
+  resolveNavigationItemTarget,
 } from "../navigation";
 import { AppSidebar } from "../../components/shell/app-sidebar";
 import { AppTopbar } from "../../components/shell/app-topbar";
@@ -24,12 +28,17 @@ const ADMIN_SIDEBAR_STORAGE_KEY = "pc-client:admin-sidebar-collapsed";
 const FORMS_BUILDER_SIDEBAR_STORAGE_KEY = "pc-client:forms-builder-sidebar-collapsed";
 
 function deriveRoleLabel(value: string | null | undefined) {
-  if (value === "admin") {
+  const role = String(value ?? "").trim().toLowerCase();
+  if (role === "admin") {
     return "Администратор";
   }
 
-  if (value === "support") {
+  if (role === "support") {
     return "Поддержка";
+  }
+
+  if (role === "user" || role === "requester") {
+    return "Пользователь";
   }
 
   return value ?? "Оператор";
@@ -47,6 +56,53 @@ function readAdminSidebarCollapsed(isFormsBuilderRoute: boolean) {
     return window.localStorage.getItem(FORMS_BUILDER_SIDEBAR_STORAGE_KEY) !== "expanded";
   }
   return false;
+}
+
+function RequesterMobileNavigation({
+  currentPath,
+  permissions,
+}: {
+  currentPath: string;
+  permissions: string[];
+}) {
+  const items = getVisibleNavigationItems("requester", permissions, { includeWorkspaceHome: true });
+  if (!items.length) {
+    return null;
+  }
+
+  return (
+    <nav aria-label="Навигация заявителя" className="border-b border-border/80 bg-white lg:hidden">
+      <div className="flex min-w-0 gap-1 overflow-x-auto px-3 py-2">
+        {items.map((item) => {
+          const isAvailable = canUseNavigationItemInContext(item, currentPath);
+          const target = resolveNavigationItemTarget(item, currentPath);
+          const isActive = isAvailable && isNavItemActive(item, currentPath);
+          if (!isAvailable || !target) {
+            return null;
+          }
+          const Icon = item.icon;
+          return (
+            <Link
+              aria-current={isActive ? "page" : undefined}
+              className={[
+                "inline-flex h-10 shrink-0 items-center gap-2 rounded-panel px-3 text-sm font-semibold transition-colors",
+                item.isPrimary
+                  ? "bg-brand-700 text-white hover:bg-brand-800"
+                  : isActive
+                    ? "bg-brand-50 text-brand-800"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+              ].join(" ")}
+              key={item.to}
+              to={target}
+            >
+              <Icon className="h-4 w-4" />
+              {item.shortLabel ?? item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
 }
 
 export function AppShell({ children }: AppShellProps) {
@@ -78,7 +134,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   const workspaceOptions = [
-    hasRequester ? { label: "Requester", value: "requester" } : null,
+    hasRequester ? { label: "Кабинет заявителя", value: "requester" } : null,
     hasSupport ? { label: "Поддержка", value: "support" } : null,
     hasAdmin ? { label: "Администрирование", value: "admin" } : null
   ].filter(Boolean) as Array<{ label: string; value: string }>;
@@ -145,6 +201,13 @@ export function AppShell({ children }: AppShellProps) {
             workspaceOptions={workspaceOptions}
             workspaceValue={workspaceValue}
           />
+
+          {currentWorkspace === "requester" ? (
+            <RequesterMobileNavigation
+              currentPath={`${location.pathname}${location.search}${location.hash}`}
+              permissions={session?.permissions ?? []}
+            />
+          ) : null}
 
           <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-4 md:px-5 md:py-5 xl:px-6 xl:py-6">
             <DomainTabs permissions={session?.permissions ?? []} />

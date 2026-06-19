@@ -35,6 +35,7 @@ REQUESTER_PROFILE_EDITABLE_FIELDS: tuple[str, ...] = (
     "department_id",
     "location_id",
     "phone",
+    "internal_extension",
     "position",
     "workplace_label",
     "preferred_contact_method",
@@ -149,6 +150,7 @@ class RequesterIdentityResolver:
             "full_name": person.full_name,
             "email": person.email,
             "phone": person.phone,
+            "internal_extension": metadata.get("internal_extension") or metadata.get("extension"),
             "department_id": person.department_id,
             "location_id": person.location_id,
             "status": person.status,
@@ -262,6 +264,7 @@ class RequesterIdentityResolver:
 
         full_name = _clean_text(payload.get("full_name"), max_length=240)
         phone = _clean_text(payload.get("phone"), max_length=80)
+        internal_extension = _clean_text(payload.get("internal_extension"), max_length=80)
         department_id = _clean_text(payload.get("department_id"), max_length=80)
         location_id = _clean_text(payload.get("location_id"), max_length=80)
         position = _clean_text(payload.get("position"), max_length=160)
@@ -274,7 +277,7 @@ class RequesterIdentityResolver:
         details: dict[str, str] = {}
         if not full_name:
             details["full_name"] = "Укажите ФИО."
-        if not phone:
+        if not phone and not internal_extension:
             details["phone"] = "Укажите телефон или внутренний номер."
         if not department_id:
             details["department_id"] = "Выберите подразделение из справочника."
@@ -302,6 +305,7 @@ class RequesterIdentityResolver:
             "position": position or None,
             "workplace_label": workplace_label or None,
             "preferred_contact_method": preferred_contact_method or None,
+            "internal_extension": internal_extension or None,
             "profile_updated_from": "requester_web",
             "profile_updated_by": actor_login,
             "profile_updated_at": now.isoformat(),
@@ -318,7 +322,7 @@ class RequesterIdentityResolver:
                 person_id=str(uuid.uuid4()),
                 display_name=full_name,
                 full_name=full_name,
-                phone=phone,
+                phone=phone or None,
                 email=actor_login if "@" in actor_login else None,
                 department_id=department.department_id,
                 location_id=location.location_id,
@@ -344,7 +348,7 @@ class RequesterIdentityResolver:
             metadata = current.metadata_json if isinstance(current.metadata_json, dict) else {}
             current.display_name = full_name
             current.full_name = full_name
-            current.phone = phone
+            current.phone = phone or None
             current.department_id = department.department_id
             current.location_id = location.location_id
             current.last_seen_at = now
@@ -429,7 +433,10 @@ class RequesterIdentityResolver:
         person: RegistryPerson | None,
         binding: DeviceUserBinding | None = None,
         account_mode: str,
+        profile_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if profile_schema is None:
+            profile_schema = await RequesterProfileSchemaService(self.session).get_schema()
         department = await self.registry_repo.get_department(getattr(person, "department_id", None))
         location = await self.registry_repo.get_location(getattr(person, "location_id", None))
         person_metadata = person.metadata_json if person is not None and isinstance(person.metadata_json, dict) else {}
@@ -444,6 +451,7 @@ class RequesterIdentityResolver:
             "full_name": getattr(person, "full_name", None),
             "email": getattr(person, "email", None),
             "phone": getattr(person, "phone", None),
+            "internal_extension": person_metadata.get("internal_extension") or person_metadata.get("extension"),
             "department_id": getattr(person, "department_id", None),
             "department": getattr(department, "name", None),
             "department_code": getattr(department, "code", None),
@@ -493,11 +501,20 @@ class RequesterIdentityResolver:
             "validation": "web_requester_identity_resolved",
             "source": "web_requester_session",
         }
+        public_profile_schema = self.serialize_profile_schema_for_requester(profile_schema) or {}
+        profile_schema_context = {
+            "schema_key": public_profile_schema.get("schema_key"),
+            "version": public_profile_schema.get("version"),
+            "updated_at": public_profile_schema.get("updated_at"),
+            "required_field_count": len(public_profile_schema.get("required_fields") or []),
+            "custom_field_count": len(public_profile_schema.get("custom_fields") or []),
+        }
         form_prefill = {
             "requester_name": profile["full_name"] or profile["display_name"],
             "full_name": profile["full_name"] or profile["display_name"],
             "email": profile["email"] or actor_id,
             "phone": profile["phone"],
+            "internal_extension": profile["internal_extension"],
             "department_id": profile["department_id"],
             "department": profile["department"],
             "department_code": profile["department_code"],
@@ -525,6 +542,7 @@ class RequesterIdentityResolver:
             "schema": "requester_context_v1",
             "source": "web_requester_identity_resolved",
             "profile": profile,
+            "profile_schema": profile_schema_context,
             "device": device_context,
             "account": account,
             "form_prefill": {key: value for key, value in form_prefill.items() if value not in (None, "")},
@@ -575,6 +593,7 @@ class RequesterIdentityResolver:
                 "display_name": profile.get("display_name"),
                 "full_name": profile.get("full_name"),
                 "phone": profile.get("phone"),
+                "internal_extension": profile.get("internal_extension"),
                 "department": profile.get("department"),
                 "location": profile.get("location"),
                 "position": profile.get("position"),
@@ -671,6 +690,7 @@ class RequesterIdentityResolver:
             actor_id=actor_id,
             person=person,
             account_mode="browser_no_device",
+            profile_schema=profile_schema,
         )
         tickets = await self.list_tickets(actor_id=actor_id, limit=25)
         blocks = profile_completion.get("blocks") if isinstance(profile_completion.get("blocks"), dict) else {}
@@ -716,6 +736,7 @@ class RequesterIdentityResolver:
             actor_id=actor_id,
             person=person,
             account_mode="browser_no_device",
+            profile_schema=profile_schema,
         )
         return {
             "profile": self.serialize_person(person, profile_schema=profile_schema),

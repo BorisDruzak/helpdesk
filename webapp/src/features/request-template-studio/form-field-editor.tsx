@@ -6,12 +6,21 @@ import { PROCESS_MEANINGS, newDraftField, type StudioDraft, type StudioDraftFiel
 const FIELD_TYPES: Array<{ value: AdminFormsFieldType; label: string }> = [
   { value: "text", label: "Короткий текст" },
   { value: "textarea", label: "Длинный текст" },
+  { value: "email", label: "Email" },
+  { value: "phone", label: "Телефон" },
+  { value: "url", label: "Ссылка" },
   { value: "select", label: "Список" },
   { value: "radio", label: "Один вариант" },
   { value: "multi_select", label: "Несколько вариантов" },
   { value: "checkbox", label: "Да/нет" },
   { value: "date", label: "Дата" },
+  { value: "datetime", label: "Дата и время" },
+  { value: "department_picker", label: "Подразделение" },
+  { value: "location_picker", label: "Локация" },
+  { value: "device_picker", label: "Устройство" },
+  { value: "service_picker", label: "Услуга" },
   { value: "user_picker", label: "Пользователь" },
+  { value: "file", label: "Файл" },
 ];
 
 export function FormFieldEditor({

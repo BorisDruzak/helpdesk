@@ -31,6 +31,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../..
 import { SearchField } from "../../components/ui/search-field";
 import { Select } from "../../components/ui/select";
 import { requirePermission } from "../auth/permissions";
+import {
+  RequestFormFieldControl,
+  buildDefaultFieldValues as buildDynamicDefaultFieldValues,
+  collectVisiblePayload,
+  isDynamicFieldVisible,
+  type DynamicFieldValue,
+  type DynamicFormValues,
+} from "../requester/dynamic-form";
+import type { RequestFormDefinition, RequestFormField } from "../requester/types";
 import { cn } from "../../shared/ui/cn";
 import {
   fetchAdminFormsCatalog,
@@ -558,30 +567,39 @@ function getFieldRoles(form: AdminFormsFormItem, fieldKey: string): string[] {
     .map(([role]) => role);
 }
 
-function isFieldVisible(field: AdminFormsFieldItem, values: Record<string, string | boolean>) {
-  if (!field.visible_when?.field) {
-    return true;
-  }
-  const actual = values[field.visible_when.field];
-  if (field.visible_when.values.length > 0) {
-    return field.visible_when.values.includes(String(actual ?? ""));
-  }
-  if (field.visible_when.equals !== null && field.visible_when.equals !== "") {
-    return String(actual ?? "") === String(field.visible_when.equals);
-  }
-  return true;
+function adminFieldToRequesterField(field: AdminFormsFieldItem): RequestFormField {
+  return {
+    key: field.key,
+    label: field.label,
+    type: field.type as RequestFormField["type"],
+    required: field.required,
+    placeholder: field.placeholder,
+    help_text: field.help_text,
+    options: field.options,
+    visible_when: field.visible_when
+      ? {
+          field: field.visible_when.field,
+          equals: field.visible_when.equals,
+          in: field.visible_when.values,
+        }
+      : null,
+  };
 }
 
-function buildPreviewValues(form: AdminFormsFormItem | null, current: Record<string, string | boolean>) {
-  if (!form) {
-    return {};
-  }
-  return Object.fromEntries(
-    form.fields.map((field) => [
-      field.key,
-      current[field.key] ?? (field.type === "checkbox" ? false : field.options[0]?.value ?? ""),
-    ])
-  );
+function adminFormToRequesterForm(form: AdminFormsFormItem | null): Pick<RequestFormDefinition, "fields"> | null {
+  return form ? { fields: form.fields.map(adminFieldToRequesterField) } : null;
+}
+
+function isFieldVisible(field: AdminFormsFieldItem, values: DynamicFormValues) {
+  return isDynamicFieldVisible(adminFieldToRequesterField(field), values);
+}
+
+function buildPreviewValues(form: AdminFormsFormItem | null, current: DynamicFormValues) {
+  return buildDynamicDefaultFieldValues(adminFormToRequesterForm(form), current);
+}
+
+function buildProcessPreviewPayload(form: AdminFormsFormItem | null, values: DynamicFormValues): Record<string, unknown> {
+  return collectVisiblePayload(adminFormToRequesterForm(form), values);
 }
 
 function issueCounts(report: AdminFormsValidateResult | null, draft: CatalogDraft | null) {
@@ -682,7 +700,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
   const [validationReport, setValidationReport] = useState<AdminFormsValidateResult | null>(null);
   const [versionCompare, setVersionCompare] = useState<VersionCompareSummary | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
-  const [previewValues, setPreviewValues] = useState<Record<string, string | boolean>>({});
+  const [previewValues, setPreviewValues] = useState<DynamicFormValues>({});
   const [versionQuery, setVersionQuery] = useState("");
 
   const formsQuery = useQuery({
@@ -848,7 +866,7 @@ export function FormsBuilderWorkspace({ permissions }: { permissions?: string[] 
       if (!selectedForm) {
         throw new Error("Сначала выберите шаблон обращения.");
       }
-      return previewAdminFormProcess({ form: toSaveForm(selectedForm), form_payload: previewValues });
+      return previewAdminFormProcess({ form: toSaveForm(selectedForm), form_payload: buildProcessPreviewPayload(selectedForm, previewValues) });
     },
   });
   const smartViewPreviewMutation = useMutation({
@@ -1990,31 +2008,22 @@ function EmptyState({ text }: { text: string }) {
   return <div className="rounded-[1rem] border border-dashed border-border bg-surface-subtle px-4 py-10 text-center text-sm text-slate-500">{text}</div>;
 }
 
-function PreviewInput({ field, value, onChange }: { field: AdminFormsFieldItem; value: string | boolean | undefined; onChange: (value: string | boolean) => void }) {
-  if (field.type === "checkbox") {
-    return (
-      <label className="flex items-center gap-3 rounded-[0.9rem] border border-border bg-white px-3 py-3 text-sm">
-        <input checked={Boolean(value)} onChange={(event) => onChange(event.currentTarget.checked)} type="checkbox" />
-        <span>{field.label}{field.required ? " *" : ""}</span>
-      </label>
-    );
-  }
-  if (field.type === "select" || field.type === "radio") {
-    return (
-      <label className="space-y-2 text-sm font-medium text-slate-800">
-        <span>{field.label}{field.required ? " *" : ""}</span>
-        <Select value={String(value ?? "")} onChange={(event) => onChange(event.currentTarget.value)}>
-          <option value="">Не выбрано</option>
-          {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </Select>
-      </label>
-    );
-  }
+function PreviewInput({
+  field,
+  onChange,
+  value,
+}: {
+  field: AdminFormsFieldItem;
+  onChange: (value: DynamicFieldValue) => void;
+  value: DynamicFieldValue;
+}) {
   return (
-    <label className="space-y-2 text-sm font-medium text-slate-800">
-      <span>{field.label}{field.required ? " *" : ""}</span>
-      <input className="field-base h-11 w-full px-4 text-sm" placeholder={field.placeholder ?? ""} value={String(value ?? "")} onChange={(event) => onChange(event.currentTarget.value)} />
-    </label>
+    <RequestFormFieldControl
+      field={adminFieldToRequesterField(field)}
+      onChange={onChange}
+      userPickerAllowed
+      value={value}
+    />
   );
 }
 

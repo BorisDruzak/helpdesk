@@ -761,7 +761,7 @@ export async function setAdminFormsPreferredVersion(version: string): Promise<Ad
 
 export async function previewAdminFormRoute(payload: {
   form: AdminFormsSaveRequest["forms"][number];
-  form_payload: Record<string, string | boolean>;
+  form_payload: Record<string, unknown>;
 }): Promise<AdminFormsRoutePreviewResult> {
   const response = await fetch("/api/web/admin/forms/route-preview", {
     method: "POST",
@@ -776,7 +776,7 @@ export async function previewAdminFormRoute(payload: {
 
 export async function previewAdminFormProcess(payload: {
   form: AdminFormsSaveRequest["forms"][number];
-  form_payload: Record<string, string | boolean>;
+  form_payload: Record<string, unknown>;
 }): Promise<AdminFormsProcessPreviewResult> {
   const response = await fetch("/api/web/admin/forms/process-preview", {
     method: "POST",

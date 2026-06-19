@@ -9,9 +9,11 @@ import {
   FolderKanban,
   Gauge,
   GitBranch,
+  Home,
   KeyRound,
   Layers3,
   MonitorCog,
+  PlusCircle,
   Radar,
   Route,
   Server,
@@ -29,6 +31,12 @@ import { hasPermission } from "../features/auth/permissions";
 export const SUPPORT_HOME_PATH = "/app/support";
 export const ADMIN_HOME_PATH = "/app/admin";
 export const REQUESTER_HOME_PATH = "/app/requester";
+export const REQUESTER_NEW_PATH = "/app/requester/new";
+export const REQUESTER_TICKETS_PATH = "/app/requester/tickets";
+export const REQUESTER_PROFILE_PATH = "/app/requester/profile";
+export const REQUESTER_PROFILE_SETUP_PATH = "/app/requester/profile/setup";
+export const REQUESTER_DEVICES_PATH = "/app/requester/devices";
+export const REQUESTER_DEVICES_LINK_PATH = "/app/requester/devices/link";
 export const REQUESTER_KB_HOME_PATH = "/app/kb";
 export const REQUESTER_KB_SEARCH_PATH = "/app/kb/search";
 export const REQUESTER_KB_ASK_PATH = "/app/kb/ask";
@@ -79,8 +87,8 @@ export const appNavigationDomains: AppNavigationDomain[] = [
   {
     id: "requester-primary",
     workspace: "requester",
-    label: "Requester",
-    description: "Authenticated requester cabinet",
+    label: "Кабинет заявителя",
+    description: "Обращения, устройства, профиль и база знаний",
     icon: UserRound,
     order: 5,
   },
@@ -152,21 +160,68 @@ export const appNavigationDomains: AppNavigationDomain[] = [
 
 export const appNavigation: AppNavItem[] = [
   {
-    label: "Мои обращения",
-    description: "Устройства, заявки и создание обращения",
-    icon: UserRound,
+    label: "Главная",
+    description: "Сводка, готовность профиля и последние обращения",
+    icon: Home,
     section: "requester",
     workspace: "requester",
     domainId: "requester-primary",
     to: REQUESTER_HOME_PATH,
     permission: "workspace.requester.view",
     order: 10,
-    isPrimary: true,
     isWorkspaceHome: true,
   },
   {
+    label: "Создать обращение",
+    description: "Новая заявка через безопасную форму",
+    icon: PlusCircle,
+    section: "requester",
+    workspace: "requester",
+    domainId: "requester-primary",
+    to: REQUESTER_NEW_PATH,
+    permission: "workspace.requester.view",
+    order: 20,
+    isPrimary: true,
+  },
+  {
+    label: "Мои обращения",
+    description: "Список заявок и история переписки",
+    icon: Ticket,
+    section: "requester",
+    workspace: "requester",
+    domainId: "requester-primary",
+    to: REQUESTER_TICKETS_PATH,
+    activePatterns: ["/app/requester/tickets/*"],
+    permission: "workspace.requester.view",
+    order: 30,
+  },
+  {
+    label: "Устройства",
+    description: "Привязанные компьютеры и подключение по коду",
+    icon: MonitorCog,
+    section: "requester",
+    workspace: "requester",
+    domainId: "requester-primary",
+    to: REQUESTER_DEVICES_PATH,
+    activePatterns: ["/app/requester/devices/*"],
+    permission: "workspace.requester.view",
+    order: 40,
+  },
+  {
+    label: "Профиль",
+    description: "Контакты, подразделение и локация",
+    icon: UserRound,
+    section: "requester",
+    workspace: "requester",
+    domainId: "requester-primary",
+    to: REQUESTER_PROFILE_PATH,
+    activePatterns: ["/app/requester/profile/*"],
+    permission: "workspace.requester.view",
+    order: 50,
+  },
+  {
     label: "База знаний",
-    description: "Поиск инструкций и решений",
+    description: "Инструкции и решения",
     icon: BookOpen,
     section: "requester",
     workspace: "requester",
@@ -174,18 +229,18 @@ export const appNavigation: AppNavItem[] = [
     to: REQUESTER_KB_HOME_PATH,
     activePatterns: ["/app/kb/*"],
     permission: "workspace.requester.view",
-    order: 20,
+    order: 60,
   },
   {
-    label: "AI-вопрос",
-    description: "Ответы с источниками, если AI включён",
+    label: "AI-помощник",
+    description: "Ответы с источниками",
     icon: Bot,
     section: "requester",
     workspace: "requester",
     domainId: "requester-primary",
     to: REQUESTER_KB_ASK_PATH,
     permission: "workspace.requester.view",
-    order: 30,
+    order: 70,
   },
   {
     label: "Центр действий",

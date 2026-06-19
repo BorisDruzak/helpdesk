@@ -59,6 +59,7 @@ export type RequestFormAvailabilityPolicy = {
 
 export type RequestFormDefinition = {
   key: string;
+  request_template_key?: string | null;
   title: string;
   description?: string | null;
   request_kind?: string | null;
@@ -132,6 +133,7 @@ export type RequesterContextPreview = {
     display_name?: string | null;
     full_name?: string | null;
     phone?: string | null;
+    internal_extension?: string | null;
     department?: string | null;
     location?: string | null;
     position?: string | null;
@@ -385,6 +387,7 @@ export type RequesterProfile = {
   full_name?: string | null;
   email?: string | null;
   phone?: string | null;
+  internal_extension?: string | null;
   department_id?: string | null;
   location_id?: string | null;
   status?: string | null;
@@ -405,6 +408,9 @@ export type RequesterProfileSchemaField = {
   editable?: boolean;
   can_delete?: boolean;
   can_hide?: boolean;
+  section?: string | null;
+  order?: number | null;
+  width?: string | null;
   target_kind?: string;
   storage_target?: string;
   help_text?: string | null;
@@ -441,6 +447,7 @@ export type RequesterProfileUpdatePayload = {
   department_id: string;
   location_id: string;
   phone: string;
+  internal_extension?: string;
   position?: string;
   workplace_label?: string;
   preferred_contact_method?: string;

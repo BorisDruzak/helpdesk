@@ -2,13 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import {
   ADMIN_HOME_PATH,
+  REQUESTER_HOME_PATH,
   REQUESTER_KB_ASK_PATH,
   REQUESTER_KB_HOME_PATH,
   REQUESTER_KB_SEARCH_PATH,
+  REQUESTER_NEW_PATH,
+  REQUESTER_TICKETS_PATH,
   SUPPORT_HOME_PATH,
   findFirstVisibleDomainItem,
   getActiveNavItem,
   getActiveWorkspace,
+  getVisibleNavigationItems,
   getVisibleNavigationDomains,
   isWorkspacePath,
 } from "./navigation";
@@ -52,7 +56,7 @@ describe("navigation helpers", () => {
     expect(getActiveNavItem("/app/admin/inventory?panel=requests")?.label).toBe("Инвентарь устройств");
     expect(getActiveNavItem("/app/admin/policy-health?service=mail")?.label).toBe("Проверка политик");
     expect(getActiveNavItem("/app/kb/search?query=vpn", ["workspace.requester.view"])?.label).toBe("База знаний");
-    expect(getActiveNavItem("/app/kb/ask", ["workspace.requester.view"])?.label).toBe("AI-вопрос");
+    expect(getActiveNavItem("/app/kb/ask", ["workspace.requester.view"])?.label).toBe("AI-помощник");
   });
 
   it("filters admin domain groups by permissions and hides empty groups", () => {
@@ -166,6 +170,9 @@ describe("navigation helpers", () => {
   it("recognizes workspace-owned paths without including public requester routes", () => {
     expect(SUPPORT_HOME_PATH).toBe("/app/support");
     expect(ADMIN_HOME_PATH).toBe("/app/admin");
+    expect(REQUESTER_HOME_PATH).toBe("/app/requester");
+    expect(REQUESTER_NEW_PATH).toBe("/app/requester/new");
+    expect(REQUESTER_TICKETS_PATH).toBe("/app/requester/tickets");
     expect(REQUESTER_KB_HOME_PATH).toBe("/app/kb");
     expect(REQUESTER_KB_SEARCH_PATH).toBe("/app/kb/search");
     expect(REQUESTER_KB_ASK_PATH).toBe("/app/kb/ask");
@@ -179,6 +186,26 @@ describe("navigation helpers", () => {
     expect(isWorkspacePath("/app/admin/forms#policy", "admin")).toBe(true);
     expect(isWorkspacePath("/app/help", "support")).toBe(false);
     expect(isWorkspacePath("/app/ticket/T-1", "support")).toBe(false);
+  });
+
+  it("exposes Russian requester navigation for explicit cabinet routes", () => {
+    const requesterPermissions = ["workspace.requester.view"];
+    const items = getVisibleNavigationItems("requester", requesterPermissions, { includeWorkspaceHome: true });
+
+    expect(items.map((item) => item.label)).toEqual([
+      "Главная",
+      "Создать обращение",
+      "Мои обращения",
+      "Устройства",
+      "Профиль",
+      "База знаний",
+      "AI-помощник",
+    ]);
+    expect(items.find((item) => item.to === REQUESTER_NEW_PATH)?.isPrimary).toBe(true);
+    expect(getActiveNavItem("/app/requester/new", requesterPermissions)?.label).toBe("Создать обращение");
+    expect(getActiveNavItem("/app/requester/tickets/T-42", requesterPermissions)?.label).toBe("Мои обращения");
+    expect(getActiveNavItem("/app/requester/devices/link", requesterPermissions)?.label).toBe("Устройства");
+    expect(getActiveNavItem("/app/kb/ask", requesterPermissions)?.label).toBe("AI-помощник");
   });
 
   it("stores and resolves workspace switch targets with safe fallbacks", () => {

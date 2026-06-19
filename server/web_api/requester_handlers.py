@@ -522,6 +522,8 @@ def _web_form_runtime_preview_payload(
     return {
         "stage": "preview",
         "has_catalog_selection": _has_catalog_selection(data),
+        "form_pack_key": _clean(data.get("form_pack_key"), max_length=120) or None,
+        "form_pack_version": _clean(data.get("form_pack_version"), max_length=120) or None,
         "form_key": form_key,
         "request_template_key": request_template_key,
         "account_mode": account_mode,
@@ -555,6 +557,16 @@ def _web_form_runtime_create_payload(
     request_template = request_template if isinstance(request_template, dict) else {}
     computed = request_template.get("computed") if isinstance(request_template.get("computed"), dict) else {}
     policy_refs = request_template.get("policy_refs") if isinstance(request_template.get("policy_refs"), dict) else {}
+    requester_context = (
+        ticket_custom_fields.get("requester_context_snapshot")
+        if isinstance(ticket_custom_fields.get("requester_context_snapshot"), dict)
+        else {}
+    )
+    profile_schema = (
+        requester_context.get("profile_schema")
+        if isinstance(requester_context.get("profile_schema"), dict)
+        else {}
+    )
     queue_id = routing.get("to_queue_id") if routing.get("to_queue_id") is not None else routing.get("queue_id")
     sla_configured = bool(
         getattr(ticket, "sla_policy_id", None)
@@ -567,11 +579,17 @@ def _web_form_runtime_create_payload(
     return {
         "stage": "create",
         "has_catalog_selection": _has_catalog_selection(data),
+        "form_pack_key": ticket_custom_fields.get("resolved_pack_key") or ticket_custom_fields.get("request_form_pack_key"),
+        "form_pack_version": ticket_custom_fields.get("resolved_pack_version") or ticket_custom_fields.get("request_form_version"),
         "form_key": form_key,
         "request_template_key": request_template_key,
+        "resolved_from": ticket_custom_fields.get("resolved_from"),
+        "resolved_template_version": ticket_custom_fields.get("resolved_template_version"),
+        "resolved_form_schema_id_present": bool(ticket_custom_fields.get("resolved_form_schema_id")),
+        "resolved_form_schema_version": ticket_custom_fields.get("resolved_form_schema_version"),
+        "profile_schema_version": profile_schema.get("version"),
         "account_mode": account_mode,
         "form_payload_present": isinstance(data.get("form_payload"), dict) and bool(data.get("form_payload")),
-        "resolved_from": ticket_custom_fields.get("resolved_from"),
         "request_template_source": request_template.get("source"),
         "priority_class": priority.get("effective_priority") or priority.get("priority_class") or computed.get("priority"),
         "priority_source": priority.get("priority_source") or computed.get("priority_source"),
@@ -1398,6 +1416,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             person=person,
             binding=binding,
             account_mode=account_mode,
+            profile_schema=profile_schema,
         )
         context_custom_fields = RequesterIdentityResolver.requester_context_custom_fields(requester_context)
         if form_key:
@@ -1623,6 +1642,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             person=person,
             binding=binding,
             account_mode=account_mode,
+            profile_schema=profile_schema,
         )
         snapshot_profile = (
             requester_context_snapshot.get("profile")

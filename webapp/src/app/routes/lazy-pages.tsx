@@ -60,8 +60,24 @@ export const RequesterTicketPage = lazy(() =>
   import("../../pages/requester-ticket").then((module) => ({ default: module.RequesterTicketPage })),
 );
 
-export const RequesterWorkspacePage = lazy(() =>
-  import("../../pages/requester").then((module) => ({ default: module.RequesterWorkspacePage })),
+export const RequesterHomePage = lazy(() =>
+  import("../../pages/requester/home-page").then((module) => ({ default: module.RequesterHomePage })),
+);
+
+export const RequesterNewRequestPage = lazy(() =>
+  import("../../pages/requester/new-request-page").then((module) => ({ default: module.RequesterNewRequestPage })),
+);
+
+export const RequesterTicketsPage = lazy(() =>
+  import("../../pages/requester/tickets-page").then((module) => ({ default: module.RequesterTicketsPage })),
+);
+
+export const RequesterProfilePage = lazy(() =>
+  import("../../pages/requester/profile-page").then((module) => ({ default: module.RequesterProfilePage })),
+);
+
+export const RequesterDevicesPage = lazy(() =>
+  import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDevicesPage })),
 );
 
 export const DevicePairingPage = lazy(() =>

@@ -10,8 +10,24 @@ TOUCHED_TEXT_FILES = [
     "docs/QUICK_LOOKUP.md",
     "server/docs/CODEMAP.md",
     "server/docs/REGISTRY_MANAGEMENT_CENTER.md",
-    "webapp/src/pages/requester/index.tsx",
-    "webapp/src/pages/requester/index.test.tsx",
+    "webapp/src/pages/requester/home-page.tsx",
+    "webapp/src/pages/requester/home-page.test.tsx",
+    "webapp/src/pages/requester/new-request-page.tsx",
+    "webapp/src/pages/requester/new-request-page.test.tsx",
+    "webapp/src/pages/requester/tickets-page.tsx",
+    "webapp/src/pages/requester/tickets-page.test.tsx",
+    "webapp/src/pages/requester/profile-page.tsx",
+    "webapp/src/pages/requester/profile-page.test.tsx",
+    "webapp/src/pages/requester/devices-page.tsx",
+    "webapp/src/pages/requester/devices-page.test.tsx",
+    "webapp/src/features/requester/labels.ts",
+    "webapp/src/features/requester/labels.test.ts",
+    "webapp/src/features/requester/consent-card.tsx",
+    "webapp/src/features/requester/consent-card.test.tsx",
+    "webapp/src/features/requester/dynamic-form/index.tsx",
+    "webapp/src/features/requester/dynamic-form/dynamic-form.test.tsx",
+    "webapp/src/features/requester/profile-runtime/index.tsx",
+    "webapp/src/features/requester/profile-runtime/profile-runtime.test.tsx",
     "webapp/src/pages/device-pairing/index.tsx",
     "webapp/src/pages/device-pairing/device-pairing-page.test.tsx",
     "webapp/src/features/auth/register-page.tsx",
@@ -47,6 +63,7 @@ NORMAL_UI_RAW_ID_ALLOWED_FILES = {
     "pc_agent/ui_gui/accessibility.py",
     "pc_agent/ui_gui/automation_controller.py",
     "pc_agent/ui_gui/server_api.py",
+    "webapp/src/features/requester/baseline-contract.ts",
 }
 
 MOJIBAKE_MARKERS = (
@@ -61,19 +78,6 @@ MOJIBAKE_MARKERS = (
 )
 
 FORBIDDEN_NORMAL_UI_SNIPPETS = {
-    "webapp/src/pages/requester/index.tsx": (
-        "Knowledge Ask:",
-        "Knowledge Ask query:",
-        "Knowledge Ask context was added",
-        " · agent ",
-        '|| "unknown"',
-        '"status unknown"',
-        ' ? "online" : "offline"',
-        'aria-label="Create requester ticket"',
-        'aria-label="Open requester profile detail"',
-        'aria-label="Open requester knowledge suggestion"',
-        "Open requester device detail",
-    ),
     "webapp/src/features/admin/registry/registry-requests-tab.tsx": (
         "Блокер: {claim.conflict_reason}",
     ),
@@ -217,6 +221,20 @@ def test_phase_a_static_raw_id_guard_scope_is_complete() -> None:
     assert any(path.startswith("webapp/src/pages/requester/") for path in NORMAL_UI_RAW_ID_FILES)
     assert any(path.startswith("webapp/src/features/requester/") for path in NORMAL_UI_RAW_ID_FILES)
     assert any(path.startswith("pc_agent/ui_gui/") for path in NORMAL_UI_RAW_ID_FILES)
+
+
+def test_phase_l_guard_tracks_split_requester_runtime_files() -> None:
+    required = {
+        "webapp/src/pages/requester/home-page.tsx",
+        "webapp/src/pages/requester/new-request-page.tsx",
+        "webapp/src/pages/requester/tickets-page.tsx",
+        "webapp/src/pages/requester/profile-page.tsx",
+        "webapp/src/pages/requester/devices-page.tsx",
+        "webapp/src/features/requester/labels.ts",
+        "webapp/src/features/requester/dynamic-form/index.tsx",
+        "webapp/src/features/requester/profile-runtime/index.tsx",
+    }
+    assert sorted(required - set(TOUCHED_TEXT_FILES)) == []
 
 
 def test_phase_a_raw_id_guard_reports_user_visible_terms_with_line_numbers() -> None:

@@ -4,6 +4,8 @@ import type {
   AdminFormsFormItem,
   AdminHelpdeskModelPayload,
 } from "../forms-builder/api";
+import { validateDynamicFormSchema, type DynamicFormValidationResult } from "../requester/dynamic-form";
+import type { RequestFormDefinition, RequestFormField } from "../requester/types";
 import type { AdminServiceCatalogOffering } from "../service-catalog/api";
 import type { RequestStudioDraftPayload } from "./api";
 import { resolveVisibilityPolicyCode } from "./policy-resolvers";
@@ -248,6 +250,7 @@ export function buildRequestStudioPublishPayload(args: {
   confirmationToken?: string | null;
 }): RequestStudioDraftPayload {
   const form = draftToForm(args.draft, args.registry);
+  assertRequesterRuntimePublishable(form);
   const visibilityPolicyCode = resolveVisibilityPolicyCode(args.registry);
   return {
     form,
@@ -275,6 +278,13 @@ export function buildRequestStudioPublishPayload(args: {
     publish_offering: true,
     confirmation_token: args.confirmationToken ?? null,
   };
+}
+
+export function validateStudioDraftRequesterRuntime(
+  draft: StudioDraft,
+  registry?: AdminHelpdeskModelPayload | null,
+): DynamicFormValidationResult {
+  return validateStudioFormRequesterRuntime(draftToForm(draft, registry));
 }
 
 export function isDraftReadyForValidation(draft: StudioDraft | null) {
@@ -333,6 +343,40 @@ function formsItemToSaveForm(form: AdminFormsFormItem): AdminFormsDraftSaveReque
       visible_when: normalizeVisibleWhen(field.visible_when),
     })),
   };
+}
+
+function validateStudioFormRequesterRuntime(
+  form: AdminFormsDraftSaveRequest["forms"][number],
+): DynamicFormValidationResult {
+  return validateDynamicFormSchema({
+    key: form.key,
+    title: form.title,
+    fields: form.fields.map((field): RequestFormField => ({
+      key: field.key,
+      label: field.label,
+      type: field.type as RequestFormField["type"],
+      required: field.required,
+      placeholder: field.placeholder,
+      help_text: field.help_text,
+      options: field.options,
+      visible_when: field.visible_when
+        ? {
+            field: field.visible_when.field,
+            equals: field.visible_when.equals,
+            in: field.visible_when.values,
+          }
+        : null,
+    })),
+  } satisfies Pick<RequestFormDefinition, "key" | "title" | "fields">);
+}
+
+function assertRequesterRuntimePublishable(form: AdminFormsDraftSaveRequest["forms"][number]) {
+  const validation = validateStudioFormRequesterRuntime(form);
+  if (validation.canPublish) {
+    return;
+  }
+  const details = validation.issues.slice(0, 3).map((issue) => issue.message).join(" ");
+  throw new Error(`Форма не готова для requester runtime. ${details}`);
 }
 
 function normalizeVisibleWhen(visibleWhen: AdminFormsFormItem["fields"][number]["visible_when"]) {

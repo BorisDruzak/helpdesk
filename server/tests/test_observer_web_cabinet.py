@@ -32,6 +32,7 @@ from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from observer.web_event_writer import write_web_cabinet_observer_event
 from registry.browser_pairing_service import BrowserPairingService
+from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 from tickets.ticket_context import build_ticket_context_v1
@@ -115,19 +116,31 @@ def _web_ticket_context(
     created_on_behalf: bool = False,
     requester_context: dict | None = None,
 ) -> dict:
+    context_snapshot = {
+        "profile_schema": {
+            "schema_key": "requester_profile",
+            "version": "observer-test-profile-schema",
+        }
+    }
+    if requester_context:
+        context_snapshot.update(requester_context)
     return build_ticket_context_v1(
         creator={"person_id": creator_person_id, "actor_id": f"{creator_person_id}@example.test"},
         affected={"person_id": affected_person_id, "display_name": "Affected User"},
         created_on_behalf=created_on_behalf,
         on_behalf_reason="phone call" if created_on_behalf else None,
-        requester_context=requester_context or {},
+        requester_context=context_snapshot,
         diagnostic_target={
             "device_id": target_device_id,
             "agent_status": "online",
             "source": source,
             "hostname": f"target-{target_device_id[:8]}",
         },
-        form={"key": "observer_web_form", "availability_policy": {"available_without_completed_profile": False}},
+        form={
+            "key": "observer_web_form",
+            "form_schema_version": "observer-test-form-schema",
+            "availability_policy": {"available_without_completed_profile": False},
+        },
         policy_refs={"diagnostic_policy": "server_owned_primary_agent"},
     )
 
@@ -386,6 +399,76 @@ async def test_web_cabinet_integrity_scan_detects_missing_context_and_create_eve
         assert [item["event_type"] for item in filtered["items"]] == [
             "missing_observer_event_for_web_ticket_create"
         ]
+
+
+@pytest.mark.asyncio
+async def test_web_cabinet_integrity_scan_detects_missing_schema_versions(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    context = _web_ticket_context(
+        creator_person_id=person_id,
+        affected_person_id=person_id,
+        target_device_id=device_id,
+        source="creator_primary_agent",
+    )
+    context["requester_context"].pop("profile_schema", None)
+    context["form"].pop("form_schema_version", None)
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=device_id,
+                title="Schema version evidence missing",
+                description="Web requester ticket has context but lacks form/profile schema versions.",
+                status="new",
+                requester_id="schema-version@example.test",
+                requester_person_id=person_id,
+                requester_account_mode="confirmed_binding",
+                custom_fields={
+                    "request_context": "authenticated_requester_workspace",
+                    "requester_account_mode": "confirmed_binding",
+                    "ticket_context": context,
+                    "creator_person_id": person_id,
+                    "affected_person_id": person_id,
+                    "target_device_id": device_id,
+                    "diagnostic_target_source": "creator_primary_agent",
+                    "requester_context_snapshot": {"account": {"account_mode": "confirmed_binding"}},
+                    "request_form": {
+                        "source": "legacy_pack",
+                        "pack_key": "request_forms",
+                        "pack_version": "observer-form-pack-only",
+                        "form_key": "observer_web_form",
+                    },
+                    "request_form_key": "observer_web_form",
+                },
+            )
+        )
+        await _write_ticket_create_trace(session, ticket_id=ticket_id, device_id=device_id, person_id=person_id)
+        await session.commit()
+
+    async with session_maker() as session:
+        await ObserverIntegrityService(session).run_scan(run_id="phase-m-schema-versions")
+        await session.commit()
+        rows = (
+            await session.execute(
+                sa.select(ObserverIntegrityEvent).where(ObserverIntegrityEvent.ticket_id == ticket_id)
+            )
+        ).scalars().all()
+
+    by_type = {row.event_type: row for row in rows}
+    profile_event = by_type["web_ticket_missing_profile_schema_version"]
+    form_event = by_type["web_ticket_missing_form_schema_version"]
+    assert profile_event.severity == "high"
+    assert profile_event.dedupe_key == f"web_ticket_missing_profile_schema_version:{ticket_id}"
+    assert profile_event.evidence_json["has_requester_context_snapshot"] is True
+    assert form_event.severity == "high"
+    assert form_event.dedupe_key == f"web_ticket_missing_form_schema_version:{ticket_id}"
+    assert form_event.evidence_json["has_request_form_snapshot"] is True
+    assert "web_ticket_missing_ticket_context_v1" not in by_type
+    assert "missing_observer_event_for_web_ticket_create" not in by_type
 
 
 @pytest.mark.asyncio
@@ -1169,6 +1252,10 @@ async def test_web_form_runtime_preview_and_create_write_observer_events(test_cl
 
     create_runtime = create_span.attrs_json["payload"]
     assert create_runtime["stage"] == "create"
+    assert create_runtime["form_pack_version"] == f"observer-runtime-{suffix}"
+    assert create_runtime["resolved_from"] == "legacy_pack"
+    assert create_runtime["resolved_form_schema_version"] == f"observer-runtime-{suffix}"
+    assert create_runtime["profile_schema_version"]
     assert create_runtime["priority_class"] == "P0"
     assert create_runtime["priority_source"] == "system"
     assert create_runtime["routing_source"] == "request_template.routing_policy"
@@ -2158,6 +2245,15 @@ async def test_web_device_linking_registration_confirm_writes_observer_event(
     async with session_maker() as session:
         session.add(_device(device_id))
         person = await _seed_completed_person_for_login(session, login=login)
+        await RegistryPolicyService(session).update_policies(
+            {
+                "registration": {
+                    "require_admin_confirmation": True,
+                    "auto_approve_first_binding": False,
+                }
+            },
+            actor_id="test",
+        )
         pairing = await BrowserPairingService(session).create_pairing(
             device_id=device_id,
             purpose="registration",

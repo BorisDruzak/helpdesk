@@ -505,12 +505,12 @@ Requirements:
 
 ## Phase A — Baseline and regression fixture
 
-- [ ] Run workspace/toolchain preflight and build a focused context pack.
-- [ ] Record route/API/component map and known baseline defects.
-- [ ] Create deterministic fixture states: complete/incomplete profile, no/pending/multiple/offline devices, waiting requests, consent, close/rate/reopen, on-behalf allowed/forbidden, archived user.
-- [ ] Add authorization and business-invariant tests independent from old layout.
-- [ ] Add supported field-type matrices and forbidden-term list.
-- [ ] Capture baseline screenshots at 1366×768 and 1920×1080.
+- [x] Run workspace/toolchain preflight and build a focused context pack.
+- [x] Record route/API/component map and known baseline defects.
+- [x] Create deterministic fixture states: complete/incomplete profile, no/pending/multiple/offline devices, waiting requests, consent, close/rate/reopen, on-behalf allowed/forbidden, archived user.
+- [x] Add authorization and business-invariant tests independent from old layout.
+- [x] Add supported field-type matrices and forbidden-term list.
+- [x] Capture baseline screenshots at 1366×768 and 1920×1080.
 
 Checks:
 
@@ -525,11 +525,11 @@ Exit: baseline is reproducible; pre-existing failures are documented.
 
 ## Phase B — Shared UI/Tailwind foundation
 
-- [ ] Audit existing primitives and implement Section 9 components.
-- [ ] Add semantic loading/disabled/status behavior.
-- [ ] Add shared Russian date/status/identifier formatters.
-- [ ] Add component accessibility and responsive tests.
-- [ ] Do not introduce requester page CSS classes.
+- [x] Audit existing primitives and implement Section 9 components.
+- [x] Add semantic loading/disabled/status behavior.
+- [x] Add shared Russian date/status/identifier formatters.
+- [x] Add component accessibility and responsive tests.
+- [x] Do not introduce requester page CSS classes.
 
 Checks:
 
@@ -542,24 +542,24 @@ Exit: new pages can be built without raw repeated controls.
 
 ## Phase C — Routes, shell and navigation
 
-- [ ] Add explicit routes/lazy exports and safe not-found page.
-- [ ] Add Russian navigation: Главная, Мои обращения, База знаний, AI-помощник, Профиль, Устройства.
-- [ ] Keep Создать обращение as primary CTA.
-- [ ] Hide workspace selector for a single workspace.
-- [ ] Map `user` to `Пользователь`; remove `Requester workspace`.
-- [ ] Add mobile navigation.
-- [ ] Remove wildcard after compatibility redirect tests.
+- [x] Add explicit routes/lazy exports and safe not-found page.
+- [x] Add Russian navigation: Главная, Мои обращения, База знаний, AI-помощник, Профиль, Устройства.
+- [x] Keep Создать обращение as primary CTA.
+- [x] Hide workspace selector for a single workspace.
+- [x] Map `user` to `Пользователь`; remove `Requester workspace`.
+- [x] Add mobile navigation.
+- [x] Remove wildcard after compatibility redirect tests.
 
 Exit: route purpose and visible page purpose match.
 
 ## Phase D — Query architecture and typed projections
 
-- [ ] Create requester query keys/hooks by domain.
-- [ ] Convert server state to TanStack Query.
-- [ ] Add typed dashboard/readiness/next-action projection if needed.
-- [ ] Add human request code/safe labels where missing.
-- [ ] Preserve archived-user fail-closed behavior.
-- [ ] Remove dependency on monolithic `load()` for migrated routes.
+- [x] Create requester query keys/hooks by domain.
+- [x] Convert server state to TanStack Query.
+- [x] Add typed dashboard/readiness/next-action projection if needed.
+- [x] Add human request code/safe labels where missing.
+- [x] Preserve archived-user fail-closed behavior.
+- [x] Remove dependency on monolithic `load()` for migrated routes.
 
 Checks:
 
@@ -570,23 +570,23 @@ pnpm --dir webapp exec vitest run src/features/requester
 
 ## Phase E — Dashboard
 
-- [ ] Build greeting/header and create CTA.
-- [ ] Render one primary next action and at most two secondary actions.
-- [ ] Render compact counts, primary device and recent requests.
-- [ ] Add new-user, incomplete-profile, missing-device, pending-consent and waiting-reply states.
-- [ ] Keep full forms/chat/device link off the dashboard.
+- [x] Build greeting/header and create CTA.
+- [x] Render one primary next action and at most two secondary actions.
+- [x] Render compact counts, primary device and recent requests.
+- [x] Add new-user, incomplete-profile, missing-device, pending-consent and waiting-reply states.
+- [x] Keep full forms/chat/device link off the dashboard.
 
 Exit: next action is understandable in the first viewport.
 
 ## Phase F — Dynamic request forms and constructor parity
 
-- [ ] Implement shared field registry/value codecs for every type.
-- [ ] Implement conditions, prefill, options, validation and review display.
-- [ ] Exclude hidden values; preserve manual edits.
-- [ ] Implement/gate draft file upload.
-- [ ] Reuse runtime renderer in constructor preview.
-- [ ] Reject unsupported/invalid publication.
-- [ ] Handle schema version changes.
+- [x] Implement shared field registry/value codecs for every type.
+- [x] Implement conditions, prefill, options, validation and review display.
+- [x] Exclude hidden values; preserve manual edits.
+- [x] Implement/gate draft file upload.
+- [x] Reuse runtime renderer in constructor preview.
+- [x] Reject unsupported/invalid publication.
+- [x] Handle schema version changes.
 
 Required tests:
 
@@ -608,41 +608,41 @@ python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_
 
 ## Phase G — Request creation wizard
 
-- [ ] Implement problem, quick help, details, review and result steps.
-- [ ] Start from user text, not service/form codes.
-- [ ] Preserve Knowledge attempts and sanitized Ask context.
-- [ ] Render dynamic form from Phase F.
-- [ ] Render on-behalf fields only when allowed.
-- [ ] Show server-resolved diagnostic target and warnings without override.
-- [ ] Respect incomplete-profile/no-device setup-help policies.
-- [ ] Block create on preview blockers and prevent double submit.
-- [ ] Navigate to the new request chat after success.
+- [x] Implement problem, quick help, details, review and result steps.
+- [x] Start from user text, not service/form codes.
+- [x] Preserve Knowledge attempts and sanitized Ask context.
+- [x] Render dynamic form from Phase F.
+- [x] Render on-behalf fields only when allowed.
+- [x] Show server-resolved diagnostic target and warnings without override.
+- [x] Respect incomplete-profile/no-device setup-help policies.
+- [x] Block create on preview blockers and prevent double submit.
+- [x] Navigate to the new request chat after success.
 
 Exit: normal request creation exposes no technical catalog/policy terms.
 
 ## Phase H — Request list/detail/chat
 
-- [ ] Build open/action/closed/all filters and search.
-- [ ] Use human request number, title, status, last update and next action.
-- [ ] Build dedicated detail/chat route and sticky composer.
-- [ ] Localize all timestamps with `ru-RU`.
-- [ ] Preserve reply text on transient failure.
-- [ ] Implement attachments and safe timeline.
-- [ ] Show consent/confirm/rate/reopen only when allowed.
-- [ ] Refresh dashboard/list/detail after mutations.
+- [x] Build open/action/closed/all filters and search.
+- [x] Use human request number, title, status, last update and next action.
+- [x] Build dedicated detail/chat route and sticky composer.
+- [x] Localize all timestamps with `ru-RU`.
+- [x] Preserve reply text on transient failure.
+- [x] Implement attachments and safe timeline.
+- [x] Show consent/confirm/rate/reopen only when allowed.
+- [x] Refresh dashboard/list/detail after mutations.
 
 Exit: the complete support conversation works on the detail page.
 
 ## Phase I — Dynamic profile and constructor parity
 
-- [ ] Implement profile field registry/runtime.
-- [ ] Add `internal_extension` and phone-or-extension completion.
-- [ ] Build read/edit/setup modes and sections.
-- [ ] Render custom and managed fields safely.
-- [ ] Add unsaved-change protection.
-- [ ] Remove provider/verified/Registry status details.
-- [ ] Reuse runtime in constructor preview and validate publication.
-- [ ] Prove admin-published custom field appears without code change.
+- [x] Implement profile field registry/runtime.
+- [x] Add `internal_extension` and phone-or-extension completion.
+- [x] Build read/edit/setup modes and sections.
+- [x] Render custom and managed fields safely.
+- [x] Add unsaved-change protection.
+- [x] Remove provider/verified/Registry status details.
+- [x] Reuse runtime in constructor preview and validate publication.
+- [x] Prove admin-published custom field appears without code change.
 
 Checks:
 
@@ -653,55 +653,55 @@ python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_
 
 ## Phase J — Devices and link wizard
 
-- [ ] Build device cards and primary-device explanation.
-- [ ] Localize online/last-seen/agent version/status.
-- [ ] Remove diagnostic radio selection.
-- [ ] Build code → preview → confirm → result wizard.
-- [ ] Keep direct-link compatibility without displaying `pairing_id`.
-- [ ] Keep link available before profile completion.
-- [ ] Cover auto approval and manual admin review.
-- [ ] Provide safe ownership-change request path.
+- [x] Build device cards and primary-device explanation.
+- [x] Localize online/last-seen/agent version/status.
+- [x] Remove diagnostic radio selection.
+- [x] Build code → preview → confirm → result wizard.
+- [x] Keep direct-link compatibility without displaying `pairing_id`.
+- [x] Keep link available before profile completion.
+- [x] Cover auto approval and manual admin review.
+- [x] Provide safe ownership-change request path.
 
 Exit: no binding/claim/session wording is visible.
 
 ## Phase K — Consents and remote actions
 
-- [ ] Build shared consent card for dashboard/detail.
-- [ ] Explain action, access scope, reason, request, requester and expiry.
-- [ ] Distinguish diagnostics, screen view, remote control and admin access.
-- [ ] Provide explicit allow/deny and prevent duplicate decisions.
-- [ ] Remove all technical IDs from visible and accessible text.
-- [ ] Preserve existing consent authorization/audit.
+- [x] Build shared consent card for dashboard/detail.
+- [x] Explain action, access scope, reason, request, requester and expiry.
+- [x] Distinguish diagnostics, screen view, remote control and admin access.
+- [x] Provide explicit allow/deny and prevent duplicate decisions.
+- [x] Remove all technical IDs from visible and accessible text.
+- [x] Preserve existing consent authorization/audit.
 
 ## Phase L — Localization, accessibility and responsive hardening
 
-- [ ] Centralize requester labels/errors/formatters.
-- [ ] Expand localization guard and DOM forbidden-term tests.
-- [ ] Preserve UTF-8 and reject mojibake.
-- [ ] Add landmarks, heading hierarchy, fieldset/legend, first-error focus and `aria-live`.
-- [ ] Verify keyboard-only profile, device link, dynamic form and chat flows.
-- [ ] Verify all target viewport sizes and no horizontal scroll.
+- [x] Centralize requester labels/errors/formatters.
+- [x] Expand localization guard and DOM forbidden-term tests.
+- [x] Preserve UTF-8 and reject mojibake.
+- [x] Add landmarks, heading hierarchy, fieldset/legend, first-error focus and `aria-live`.
+- [x] Verify keyboard-only profile, device link, dynamic form and chat flows.
+- [x] Verify all target viewport sizes and no horizontal scroll.
 
 ## Phase M — Knowledge, AI, Customer History and Observer
 
-- [ ] Preserve server-side Knowledge audience filtering.
-- [ ] Preserve Knowledge attempts and Ask-to-request transfer.
-- [ ] Keep denied titles/internal reasons out of UI.
-- [ ] Preserve Customer History redaction and creator/affected separation.
-- [ ] Preserve required redacted Observer events on new routes.
-- [ ] Do not log message text or sensitive form values into Observer.
-- [ ] Add integrity checks for form/profile schema version and diagnostic target.
+- [x] Preserve server-side Knowledge audience filtering.
+- [x] Preserve Knowledge attempts and Ask-to-request transfer.
+- [x] Keep denied titles/internal reasons out of UI.
+- [x] Preserve Customer History redaction and creator/affected separation.
+- [x] Preserve required redacted Observer events on new routes.
+- [x] Do not log message text or sensitive form values into Observer.
+- [x] Add integrity checks for form/profile schema version and diagnostic target.
 
 This phase prepares the sequence: user question → Knowledge/AI → optional read-only diagnostics → explicit consent → escalation with context. It does not authorize autonomous write-capable AI.
 
 ## Phase N — Cleanup and final gate
 
-- [ ] Delete the old monolithic requester implementation.
-- [ ] Remove dead state/helpers/API calls and legacy requester CSS/classes.
-- [ ] Confirm page/component size targets.
-- [ ] Confirm a single request/profile renderer remains.
-- [ ] Update web-first contract, Quick Lookup, CODEMAP and testing docs.
-- [ ] Run focused frontend/server/E2E/live browser gates.
+- [x] Delete the old monolithic requester implementation.
+- [x] Remove dead state/helpers/API calls and legacy requester CSS/classes.
+- [x] Confirm page/component size targets.
+- [x] Confirm a single request/profile renderer remains.
+- [x] Update web-first contract, Quick Lookup, CODEMAP and testing docs.
+- [x] Run focused frontend/server/E2E/live browser gates.
 
 Frontend gate:
 
@@ -804,8 +804,8 @@ Shared UI:
 
 Requester:
 
-- replace/split `webapp/src/pages/requester/index.tsx`
-- new requester page files from Section 8
+- deleted old `webapp/src/pages/requester/index.tsx`
+- split requester page files from Section 8
 - `webapp/src/features/requester/api.ts`
 - `webapp/src/features/requester/types.ts`
 - new requester hooks, queries, dynamic form/profile and page features
@@ -829,7 +829,7 @@ Server only where required:
 
 Tests/docs:
 
-- split `webapp/src/pages/requester/index.test.tsx`
+- deleted old `webapp/src/pages/requester/index.test.tsx` after split page tests took over
 - `webapp/tests/requester-workspace.spec.ts`
 - `webapp/tests/fixtures/*`
 - focused requester/registration/registry/catalog/ticket/consent/Observer/Knowledge tests
@@ -846,50 +846,50 @@ Tests/docs:
 
 Architecture:
 
-- [ ] explicit requester routes;
-- [ ] old monolith deleted;
-- [ ] focused query hooks;
-- [ ] shared UI/page/form components;
-- [ ] Tailwind theme layout;
-- [ ] no legacy requester layout classes.
+- [x] explicit requester routes;
+- [x] old monolith deleted;
+- [x] focused query hooks;
+- [x] shared UI/page/form components;
+- [x] Tailwind theme layout;
+- [x] no legacy requester layout classes.
 
 UX:
 
-- [ ] one clear next action on dashboard;
-- [ ] primary action above fold;
-- [ ] profile, device link, request creation and chat are separate;
-- [ ] loading/empty/error states exist;
-- [ ] no horizontal scroll;
-- [ ] mobile/tablet preserve the main job.
+- [x] one clear next action on dashboard;
+- [x] primary action above fold;
+- [x] profile, device link, request creation and chat are separate;
+- [x] loading/empty/error states exist;
+- [x] no horizontal scroll;
+- [x] mobile/tablet preserve the main job.
 
 Dynamic forms/profile:
 
-- [ ] every constructor-supported type works;
-- [ ] conditions, options, prefill, validation and hidden-field omission work;
-- [ ] constructor preview and requester runtime share implementation;
-- [ ] unsupported fields cannot publish;
-- [ ] builder-to-requester E2E is green;
-- [ ] phone-or-extension completion works;
-- [ ] hidden/managed profile values are not erased.
+- [x] every constructor-supported type works;
+- [x] conditions, options, prefill, validation and hidden-field omission work;
+- [x] constructor preview and requester runtime share implementation;
+- [x] unsupported fields cannot publish;
+- [x] builder-to-requester E2E is green;
+- [x] phone-or-extension completion works;
+- [x] hidden/managed profile values are not erased.
 
 Language/safety:
 
-- [ ] Russian-first UI;
-- [ ] no forbidden technical terms/raw IDs;
-- [ ] safe unknown-state fallbacks;
-- [ ] backend authorization preserved;
-- [ ] diagnostic target remains server-resolved;
-- [ ] Knowledge audience remains creator-scoped;
-- [ ] consent scope is explicit.
+- [x] Russian-first UI;
+- [x] no forbidden technical terms/raw IDs;
+- [x] safe unknown-state fallbacks;
+- [x] backend authorization preserved;
+- [x] diagnostic target remains server-resolved;
+- [x] Knowledge audience remains creator-scoped;
+- [x] consent scope is explicit.
 
 Verification:
 
-- [ ] focused frontend/server tests green;
-- [ ] build green;
-- [ ] fixture E2E green;
-- [ ] live browser evidence complete;
-- [ ] console/network clean;
-- [ ] docs/code maps current.
+- [x] focused frontend/server tests green;
+- [x] build green;
+- [x] fixture E2E green;
+- [x] live browser evidence complete;
+- [x] console/network clean;
+- [x] docs/code maps current.
 
 ---
 
@@ -921,11 +921,405 @@ Do not combine the whole refactor into one commit.
 
 ## 19. Progress log
 
+### Phase N - Cleanup and final gate, 2026-06-19
+
+- [x] Deleted the old monolithic requester implementation and test file: `webapp/src/pages/requester/index.tsx` and `webapp/src/pages/requester/index.test.tsx`.
+- [x] Removed the legacy requester wildcard route/lazy export; known old requester section aliases now redirect explicitly and unknown requester paths render the requester-safe not-found page.
+- [x] Split requester pages and shared runtimes remain under page/component size targets; no active requester page uses `workspace-page__*` or `support-workspace__*`.
+- [x] Static docs and guards now point at split requester pages/runtimes instead of the removed monolith.
+- [x] Added deterministic E2E coverage for the split requester cabinet routes in `webapp/tests/requester-workspace.spec.ts`.
+- [x] Device-link observer event test now pins manual-review policy before asserting `pending_admin_review`, preserving the default auto-approval production contract.
+
+Phase completion record:
+
+```text
+Phase: N
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md; docs/QUICK_LOOKUP.md; scripts/test_web_first_registration_localization.py; server/docs/CODEMAP.md; server/tests/test_observer_web_cabinet.py; webapp/src/app/router.tsx; webapp/src/app/router.test.tsx; webapp/src/app/routes/lazy-pages.tsx; webapp/src/pages/requester/index.tsx (deleted); webapp/src/pages/requester/index.test.tsx (deleted); webapp/tests/requester-workspace.spec.ts.
+Automated checks:
+- python scripts/bootstrap_web_toolchain.py - passed; Node 24.15.0 and pnpm 10.33.0.
+- pnpm --dir webapp exec vitest run src/app/router.test.tsx src/pages/requester/home-page.test.tsx src/pages/requester/new-request-page.test.tsx src/pages/requester/tickets-page.test.tsx src/pages/requester/profile-page.test.tsx src/pages/requester/devices-page.test.tsx src/features/requester/queries.test.ts src/features/requester/dynamic-form/dynamic-form.test.tsx src/features/requester/profile-runtime/profile-runtime.test.tsx src/features/requester/labels.test.ts src/features/requester/consent-card.test.tsx --reporter=dot - passed 11 files / 52 tests.
+- pnpm --dir webapp exec tsc --noEmit --pretty false - passed.
+- python scripts/test_web_first_registration_localization.py - passed 8 tests after removing deleted monolith paths from the static guard.
+- pnpm --dir webapp run test - passed 111 files / 538 tests; benign jsdom navigation warning remains.
+- pnpm --dir webapp run build - passed; existing Vite chunk-size warnings remain.
+- pnpm --dir webapp run test:e2e -- requester-workspace.spec.ts - passed 1 test.
+- pnpm --dir webapp run test:e2e - passed 7 tests; Windows fixture teardown printed existing asyncio connection-reset noise after tests passed.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_device_linking_registration_confirm_writes_observer_event -vv --tb=short - passed 1 test after policy fixture fix.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_registration_api.py server/tests/test_registry_web_api.py server/tests/test_service_catalog_preview.py server/tests/test_ticket_create_contracts.py server/tests/test_user_consent_api.py server/tests/test_observer_web_cabinet.py server/tests/test_knowledge_ask.py server/tests/test_knowledge_access_service.py -vv --durations=80 - first broad run found the stale observer policy expectation; final rerun passed 147 tests in 964.20s.
+Browser routes checked: split requester dashboard, new request, ticket list/detail, profile/setup, devices/link and Knowledge surfaces through local Vite + real Chromium fixture API coverage.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-l-a11y-responsive-report.json.
+Console/network result: Phase L browser report completed with ok=true, 25 checks, first-error keyboard focus for profile/dynamic form, no forbidden terms and no recorded browser network/console failures.
+Residual risks: final `verify_workspace.py`, `git diff --check`, commit and push still run after this PLANS.md update.
+Next phase: complete.
+```
+
+### Phase M - Knowledge, AI, Customer History and Observer, 2026-06-19
+
+- [x] Requester ticket create now stores safe `requester_context_snapshot.profile_schema.version` evidence and dynamic request-form snapshots include `form_schema_version`.
+- [x] Observer web form runtime traces now include only safe pack/template/schema version markers and boolean/count flags, not message text or submitted form values.
+- [x] `observer.web_cabinet` integrity scan now flags web requester tickets missing profile-schema version or dynamic form-schema version evidence.
+- [x] Existing Knowledge audience filtering, requester Knowledge attempts, Ask-to-request transfer, Customer History projection and chat redaction tests remain green.
+- [x] Docs drift updated in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`, `docs/QUICK_LOOKUP.md` and `server/docs/CODEMAP.md`.
+
+Phase completion record:
+
+```text
+Phase: M
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; server/requester/identity_service.py; server/web_api/requester_handlers.py; server/tickets/form_catalog.py; server/observer/checks/web_cabinet.py; server/tests/test_requester_workspace_api.py; server/tests/test_observer_web_cabinet.py
+Automated checks:
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_create_ticket_accepts_catalog_form_payload server/tests/test_observer_web_cabinet.py::test_web_form_runtime_preview_and_create_write_observer_events server/tests/test_observer_web_cabinet.py::test_web_cabinet_integrity_scan_detects_missing_schema_versions -vv --tb=short - passed 3 tests in 36.20s.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_observer_web_cabinet.py::test_web_cabinet_integrity_scan_detects_on_behalf_knowledge_audience_leak server/tests/test_observer_web_cabinet.py::test_web_cabinet_integrity_scan_detects_missing_customer_history_projection server/tests/test_observer_web_cabinet.py::test_web_knowledge_suggest_writes_requester_observer_event server/tests/test_observer_web_cabinet.py::test_web_knowledge_ask_writes_requester_observer_event server/tests/test_observer_web_cabinet.py::test_web_knowledge_attempts_write_requester_guard_observer_event server/tests/test_observer_web_cabinet.py::test_web_requester_chat_message_writes_observer_event -vv --tb=short - passed 6 tests in 44.36s.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_knowledge_ask.py::test_public_knowledge_ask_applies_audience_rules_before_vector_retrieval_projection server/tests/test_knowledge_ask.py::test_requester_ask_prompt_uses_creator_audience_before_answer_generation server/tests/test_knowledge_access_service.py -vv --tb=short - passed 10 tests in 14.69s.
+- pnpm --dir webapp exec vitest run src/pages/kb/ask-page.test.tsx src/pages/requester/new-request-page.test.tsx --reporter=dot - passed 2 files / 7 tests.
+Browser routes checked: not repeated in Phase M; Phase M touched backend trace/integrity evidence and existing frontend unit coverage for Ask transfer.
+Evidence path: server Observer integrity tests and Knowledge/Ask unit tests above; no new browser artifact.
+Console/network result: not applicable for this backend integrity slice.
+Residual risks: full final gate remains in Phase N after deleting the old requester monolith and running broad frontend/server/browser checks.
+Next phase: Phase N - Cleanup and final gate.
+```
+
+### Phase L — localization, accessibility and responsive hardening, 2026-06-19
+
+- [x] Added shared requester label/status/error helpers in `webapp/src/features/requester/labels.ts`.
+- [x] Refactored active split dashboard/devices/new-request/tickets/profile pages to reuse shared Russian labels and safe fallbacks.
+- [x] Dynamic request/profile controls now use visible Russian labels for accessible names instead of technical field keys.
+- [x] Profile setup and dynamic request-form validation focus the first missing field before mutating API calls.
+- [x] Profile, device-link, request wizard and chat feedback use `aria-live` status/error regions.
+- [x] `scripts/test_web_first_registration_localization.py` now covers split requester pages/runtimes for UTF-8/mojibake/raw-term guardrails.
+- [x] Docs drift updated in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`, `docs/QUICK_LOOKUP.md` and `server/docs/CODEMAP.md`.
+
+Phase completion record:
+
+```text
+Phase: L
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; scripts/test_web_first_registration_localization.py; webapp/src/features/requester/labels.ts; webapp/src/features/requester/labels.test.ts; webapp/src/features/requester/dynamic-form/index.tsx; webapp/src/features/requester/dynamic-form/dynamic-form.test.tsx; webapp/src/features/requester/profile-runtime/index.tsx; webapp/src/features/requester/profile-runtime/profile-runtime.test.tsx; webapp/src/pages/requester/home-page.tsx; webapp/src/pages/requester/devices-page.tsx; webapp/src/pages/requester/new-request-page.tsx; webapp/src/pages/requester/new-request-page.test.tsx; webapp/src/pages/requester/profile-page.tsx; webapp/src/pages/requester/profile-page.test.tsx; webapp/src/pages/requester/tickets-page.tsx; webapp/src/pages/requester/index.test.tsx; webapp/artifacts/requester-phase-l-a11y-responsive-check.mjs
+Automated checks:
+- pnpm --dir webapp exec vitest run src/features/requester/labels.test.ts src/features/requester/dynamic-form/dynamic-form.test.tsx src/features/requester/profile-runtime/profile-runtime.test.tsx src/pages/requester/profile-page.test.tsx src/pages/requester/new-request-page.test.tsx --reporter=dot — passed 5 files / 25 tests after first red profile focus assertion was corrected to the actual first missing field.
+- python -m pytest scripts/test_web_first_registration_localization.py -q — passed 8 tests after excluding the intentional baseline forbidden-term contract file from normal UI scanning.
+- pnpm --dir webapp exec tsc --noEmit --pretty false — passed.
+- pnpm --dir webapp exec vitest run src/pages/requester/devices-page.test.tsx src/pages/requester/home-page.test.tsx src/pages/requester/tickets-page.test.tsx --reporter=dot — passed 3 files / 8 tests.
+- pnpm --dir webapp exec vitest run src/app/router.test.tsx --reporter=dot — passed 1 file / 14 tests after one combined-run ordering flake.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot — passed on rerun, 16 files / 99 tests.
+Browser routes checked: `/app/requester/profile/setup`, `/app/requester/devices/link`, `/app/requester/new`, `/app/requester/tickets/T-1001` plus matrix routes `/app/requester`, `/app/requester/new`, `/app/requester/tickets/T-1001`, `/app/requester/profile/setup`, `/app/requester/devices/link` at 390×844, 768×1024, 1366×768, 1440×900 and 1920×1080 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-l-a11y-responsive-report.json; screenshots `requester-phase-l-a11y-responsive-profile-1366x768.png`, `requester-phase-l-a11y-responsive-devices-link-1366x768.png`, `requester-phase-l-a11y-responsive-new-mobile-390x844.png`, `requester-phase-l-a11y-responsive-chat-1366x768.png`.
+Console/network result: browser report recorded 0 network issues; keyboard first-error focus was `ФИО` for profile and `Кратко` for dynamic request form; forbidden visible/aria terms were empty; all 25 route/viewport overflow checks passed.
+Residual risks: old monolithic requester implementation and legacy tests remain until Phase N cleanup, but the shared runtime contract now forces safe labels in both split and legacy tests.
+Next phase: Phase M — Knowledge, AI, Customer History and Observer.
+```
+
+### Phase K — consents and remote actions, 2026-06-19
+
+- [x] `webapp/src/features/requester/consent-card.tsx` is the shared pending-consent renderer for dashboard and ticket detail.
+- [x] Cards distinguish diagnostics, screen view, remote control and administrative access, explain action/scope/reason/request/requester/expiry, and mask raw UUID/id-like tokens in free text.
+- [x] Dashboard and ticket detail use the same explicit approve/deny controls with per-card in-flight locking to prevent duplicate decisions.
+- [x] Active requester routes no longer expose consent/session/subject/device identifiers in visible or aria text.
+- [x] Existing requester consent authorization, idempotency and audit behavior remains in `server/consent/service.py` and requester handlers; no backend behavior change was needed.
+- [x] Docs drift updated in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`, `docs/QUICK_LOOKUP.md` and `server/docs/CODEMAP.md`.
+
+Phase completion record:
+
+```text
+Phase: K
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; webapp/src/features/requester/consent-card.tsx; webapp/src/features/requester/consent-card.test.tsx; webapp/src/features/requester/queries.ts; webapp/src/pages/requester/home-page.tsx; webapp/src/pages/requester/home-page.test.tsx; webapp/src/pages/requester/tickets-page.tsx; webapp/src/pages/requester/tickets-page.test.tsx; webapp/artifacts/requester-phase-k-consents-check.mjs
+Automated checks:
+- pnpm --dir webapp exec vitest run src/features/requester/consent-card.test.tsx --reporter=dot — RED first on repeated labels/assertion shape, then passed 1 file / 2 tests after implementation/test adjustment.
+- pnpm --dir webapp exec vitest run src/features/requester/consent-card.test.tsx src/pages/requester/home-page.test.tsx src/pages/requester/tickets-page.test.tsx --reporter=dot — passed 3 files / 7 tests.
+- pnpm --dir webapp exec vitest run src/features/requester/consent-card.test.tsx src/features/requester/api.test.ts src/features/requester/queries.test.ts src/pages/requester/home-page.test.tsx src/pages/requester/tickets-page.test.tsx src/app/router.test.tsx --reporter=dot — passed 6 files / 38 tests.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot — passed 15 files / 92 tests.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_user_consent_api.py -vv --durations=80 --tb=short — passed 9 tests in 64.63s.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+Browser routes checked: `/app/requester` and `/app/requester/tickets/550e8400-e29b-41d4-a716-446655440000` at 1366×768 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-k-consents-summary.json; screenshots `requester-phase-k-consents-dashboard-1366x768.png`, `requester-phase-k-consents-detail-1366x768.png`.
+Console/network result: `requester-phase-k-consents-console.json` has only React DevTools info messages; no errors/warnings. `requester-phase-k-consents-network.json` has 0 failed requests. Assertions prove approve and deny calls, 0 forbidden visible/aria consent/session/subject/device identifiers and no horizontal overflow.
+Residual risks: old monolithic requester implementation still exists on disk until Phase N cleanup, but active `/app/requester*` routes use the split dashboard/detail consent cards.
+Next phase: Phase L — Localization, accessibility and responsive hardening.
+```
+
+### Phase J — devices and link wizard, 2026-06-19
+
+- [x] `/app/requester/devices` and `/app/requester/devices/link` now lazy-load `RequesterDevicesPage` instead of the legacy requester monolith.
+- [x] The page renders device cards, primary-device explanation, localized online/activity/agent-version/access labels and safe device detail without a diagnostic radio selector.
+- [x] Device-link flow is code -> preview -> confirm -> result, keeps direct `pairing_id` compatibility without displaying the id, and remains available before profile completion.
+- [x] Manual admin-review and auto-approved result states use requester-safe Russian copy.
+- [x] A safe owner-check request path links to `/app/requester/new?intent=device_owner_change`.
+- [x] Docs drift updated in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`, `docs/QUICK_LOOKUP.md` and `server/docs/CODEMAP.md`.
+
+Phase completion record:
+
+```text
+Phase: J
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; webapp/src/app/router.tsx; webapp/src/app/routes/lazy-pages.tsx; webapp/src/app/router.test.tsx; webapp/src/pages/requester/devices-page.tsx; webapp/src/pages/requester/devices-page.test.tsx; webapp/artifacts/requester-phase-j-devices-check.mjs
+Automated checks:
+- pnpm --dir webapp exec vitest run src/pages/requester/devices-page.test.tsx --reporter=dot — RED first on missing page module, then passed 1 file / 3 tests after implementation.
+- pnpm --dir webapp exec vitest run src/pages/requester/devices-page.test.tsx src/app/router.test.tsx --reporter=dot — passed 2 files / 17 tests.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot — passed 14 files / 90 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+Browser routes checked: `/app/requester/devices` at 1366×768, `/app/requester/devices/link` at 1366×768 with incomplete profile, and `/app/requester/devices?pairing_id=pair-direct` at 390×844 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-j-devices-summary.json; screenshots `requester-phase-j-devices-desktop-1366x768.png`, `requester-phase-j-devices-incomplete-link-1366x768.png`, `requester-phase-j-devices-direct-390x844.png`.
+Console/network result: `requester-phase-j-devices-console.json` has only the React DevTools info message; no errors/warnings. `requester-phase-j-devices-network.json` has 0 failed requests. Assertions prove 0 radio controls, no visible pairing/binding/claim/session/raw id terms, manual-review result, incomplete-profile linking, direct-link auto-approved result and no mobile horizontal overflow.
+Residual risks: consent/remote-action cards still depend on the older requester surfaces until Phase K splits and hardens them.
+Next phase: Phase K — Consents and remote actions.
+```
+
+### Phase I — dynamic profile and constructor parity, 2026-06-19
+
+- [x] `server/registry/profile_schema_service.py` and `server/requester/identity_service.py` now expose controlled `internal_extension`, store it in registry metadata and treat phone-or-internal-extension as satisfying the profile contact requirement.
+- [x] `webapp/src/features/requester/profile-runtime/index.tsx` is the shared profile runtime for built-in/custom fields, supported profile field types, phone-or-extension required checks, hidden custom-field omission and publish validation.
+- [x] `/app/requester/profile` and `/app/requester/profile/setup` lazy-load `RequesterProfilePage` with read/edit/setup modes, grouped sections, unsaved-change protection, safe requester copy and no provider/verified/Registry status details.
+- [x] Admin profile-schema preview reuses the requester profile runtime and blocks preview/save when a draft cannot be published.
+- [x] Registration API email-identity confirmation test now pins the manual-review policy fixture explicitly so it stays deterministic under the current default auto-approve-first-binding policy.
+- [x] Docs drift updated in `docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md`, `docs/QUICK_LOOKUP.md` and `server/docs/CODEMAP.md`.
+
+Phase completion record:
+
+```text
+Phase: I
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; server/registry/profile_schema_service.py; server/requester/identity_service.py; server/tests/test_requester_workspace_api.py; server/tests/test_registration_api.py; webapp/src/app/router.tsx; webapp/src/app/routes/lazy-pages.tsx; webapp/src/features/admin/registry/registry-profile-schema-tab.tsx; webapp/src/features/requester/types.ts; webapp/src/features/requester/profile-runtime/index.tsx; webapp/src/features/requester/profile-runtime/profile-runtime.test.tsx; webapp/src/pages/requester/profile-page.tsx; webapp/src/pages/requester/profile-page.test.tsx; webapp/artifacts/requester-phase-i-profile-check.mjs
+Automated checks:
+- pnpm --dir webapp exec vitest run src/features/requester/profile-runtime/profile-runtime.test.tsx src/pages/requester/profile-page.test.tsx --reporter=dot — RED first on missing profile-runtime imports, then passed 2 files / 7 tests after implementation.
+- pnpm --dir webapp exec vitest run src/features/requester/profile-runtime/profile-runtime.test.tsx src/pages/requester/profile-page.test.tsx src/pages/admin/registry-page.test.tsx --reporter=dot — passed 3 files / 20 tests.
+- pnpm --dir webapp exec vitest run src/features/requester/profile-runtime src/features/admin/registry src/pages/requester/profile-page.test.tsx src/app/router.test.tsx --reporter=dot — passed 8 files / 31 tests.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot — passed 13 files / 86 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_internal_extension_satisfies_profile_contact_requirement -vv --tb=short — passed 1 test in 9.68s.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_registration_api.py::test_user_can_confirm_own_claim_by_email_identity server/tests/test_registration_api.py::test_registration_pairing_confirmation_links_account_only_user_by_default -vv --tb=short — passed 2 tests after making the manual-review fixture explicit.
+- PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_registry_web_api.py server/tests/test_registration_api.py -vv --durations=80 --tb=short — first run failed 1/79 on stale `test_user_can_confirm_own_claim_by_email_identity` policy expectation; final rerun passed 79 tests in 530.07s.
+Browser routes checked: `/app/requester/profile/setup?next=/app/requester/new` at 1366×768 and `/app/requester/profile` at 390×844 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-i-profile-summary.json; screenshots `requester-phase-i-profile-setup-1366x768.png`, `requester-phase-i-profile-read-390x844.png`.
+Console/network result: `requester-phase-i-profile-console.json` has only the React DevTools info message; no errors/warnings. `requester-phase-i-profile-network.json` has 0 failed requests. Payload assertions prove blank phone with `internal_extension=8899`, visible custom `cost_center`, hidden custom-field omission, no forbidden technical terms and no mobile horizontal overflow.
+Notes: a default-DB targeted pytest run hung before producing useful failure output and was stopped; shared-test DB is the recorded server verification path for this phase.
+Residual risks: `/app/requester/devices` and `/app/requester/devices/link` still render the legacy requester workspace until Phase J splits them.
+Next phase: Phase J — Devices and link wizard.
+```
+
+### Phase H — request list/detail/chat, 2026-06-19
+
+- [x] `/app/requester/tickets` and `/app/requester/tickets/:ticketId` now lazy-load a dedicated `RequesterTicketsPage` instead of the legacy requester monolith.
+- [x] The list supports open/action/closed/all filters and search while showing human request numbers, title, requester status, localized last update and next-action hints.
+- [x] Detail route renders requester-safe description, messages, timeline, pending consents, sticky reply composer and attachment upload.
+- [x] Message send clears text/attachments only after success; transient send failures preserve reply text.
+- [x] Consent decisions, close confirmation, feedback and reopen actions use existing requester APIs and invalidate requester bootstrap/list/detail caches after mutations.
+- [x] Docs drift updated in `server/docs/CODEMAP.md` and `docs/QUICK_LOOKUP.md`.
+
+Phase completion record:
+
+```text
+Phase: H
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; webapp/src/app/router.tsx; webapp/src/app/routes/lazy-pages.tsx; webapp/src/pages/requester/tickets-page.tsx; webapp/src/pages/requester/tickets-page.test.tsx; webapp/artifacts/requester-phase-h-tickets-check.mjs
+Automated checks:
+- pnpm --dir webapp exec vitest run src/pages/requester/tickets-page.test.tsx --reporter=dot — RED first on missing page module, then passed 3 tests.
+- pnpm --dir webapp exec vitest run src/pages/requester/tickets-page.test.tsx src/app/router.test.tsx --reporter=dot — passed 2 files / 16 tests.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot — passed 11 files / 79 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+Browser routes checked: `/app/requester/tickets` and `/app/requester/tickets/T-1001` at 1366×768 through local Vite + real Chromium with fixture API interception; detail route also checked at 390×844.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-h-tickets-summary.json; screenshots `requester-phase-h-tickets-list-1366x768.png`, `requester-phase-h-tickets-detail-1366x768.png`, `requester-phase-h-tickets-detail-390x844.png`.
+Console/network result: `requester-phase-h-tickets-console.json` has only the React DevTools info message; no errors/warnings. `requester-phase-h-tickets-network.json` has 0 failed requests. Payload assertions prove attachment upload, requester message with attachment refs, consent approve, close, feedback and reopen calls. DOM checks prove raw UUID fallback hidden and no page-level mobile horizontal overflow.
+Residual risks: profile, devices and device-link routes still render the legacy requester workspace until Phases I-J split them.
+Next phase: Phase I — Dynamic profile and constructor parity.
+```
+
+### Phase G — request creation wizard, 2026-06-19
+
+- [x] `/app/requester/new` now lazy-loads a dedicated `RequesterNewRequestPage` instead of the legacy requester monolith.
+- [x] The wizard starts from free user text, runs requester-safe Knowledge suggestions before details, records feedback/attempts, consumes safe Ask draft context from `pc_client.knowledge_ask.ticket_context` and does not expose service/form code selectors.
+- [x] Details render the Phase F dynamic form runtime with requester context prefill, picker options, required checks and hidden-field omission.
+- [x] On-behalf controls render only when the selected form policy allows them; preview/create payloads carry the affected person context only in that policy-gated branch.
+- [x] Review uses authenticated safe preview, shows server-resolved diagnostics/warnings, blocks create on preview blockers and disables duplicate preview/create submits.
+- [x] Incomplete-profile/no-device setup-help forms remain available when their availability policy allows them; otherwise the profile setup guidance is still shown.
+- [x] Successful create invalidates requester queries and navigates to `/app/requester/tickets/{ticket_id}` as the result route.
+- [x] Docs drift updated in `server/docs/CODEMAP.md` and `docs/QUICK_LOOKUP.md`.
+
+Phase completion record:
+
+```text
+Phase: G
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; webapp/src/app/router.tsx; webapp/src/app/routes/lazy-pages.tsx; webapp/src/app/router.test.tsx; webapp/src/pages/requester/new-request-page.tsx; webapp/src/pages/requester/new-request-page.test.tsx; webapp/artifacts/requester-phase-g-new-wizard-check.mjs
+Automated checks:
+- pnpm --dir webapp exec vitest run src/pages/requester/new-request-page.test.tsx --reporter=dot — RED first on missing page module, then final passed 3 tests.
+- pnpm --dir webapp exec vitest run src/pages/requester/new-request-page.test.tsx src/app/router.test.tsx --reporter=dot — passed 2 files / 16 tests.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot — passed 10 files / 76 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+Browser route checked: `/app/requester/new` at 1366×768 and 390×844 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-g-new-wizard-summary.json; screenshots `requester-phase-g-new-wizard-1366x768.png`, `requester-phase-g-new-wizard-390x844.png`.
+Console/network result: `requester-phase-g-new-wizard-console.json` has only the React DevTools info message; no errors/warnings. `requester-phase-g-new-wizard-network.json` has 0 failed requests. Payload assertions prove service/offering/form/device fields, preview blockers gate, requester Knowledge feedback and `knowledge_attempts` are preserved; mobile check has no page-level horizontal overflow.
+Residual risks: request list/detail/chat, profile, devices and link routes still render the legacy requester workspace until Phases H-J split them; final result presentation is the ticket detail/chat route after successful create.
+Next phase: Phase H — Request list/detail/chat.
+```
+
+### Phase F — dynamic request forms and constructor parity, 2026-06-19
+
+- [x] Added `webapp/src/features/requester/dynamic-form` as the shared requester dynamic-form runtime for field codecs, defaults, prefill merge, `visible_when`, picker option labels, required checks, hidden-field omission, review formatting and schema validation.
+- [x] `/app/requester/new` now uses the shared runtime for dynamic request fields and submits normalized payload values including radio, multi-select arrays, registry/device/service picker values and visible conditional fields only.
+- [x] Forms Builder process preview reuses the requester runtime control and sends side-effect-free preview payloads without hidden fields.
+- [x] Request Studio field editor exposes the full supported constructor type set; Studio publish payload construction blocks unsupported requester runtime schemas, broken `visible_when` references and requester-visible `file` fields until dynamic upload is implemented.
+- [x] Docs drift updated in `server/docs/CODEMAP.md` and `docs/QUICK_LOOKUP.md`.
+
+Phase completion record:
+
+```text
+Phase: F
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; webapp/src/features/requester/dynamic-form/index.tsx; webapp/src/features/requester/dynamic-form/dynamic-form.test.tsx; webapp/src/pages/requester/index.tsx; webapp/src/features/forms-builder/api.ts; webapp/src/features/forms-builder/forms-builder-workspace.tsx; webapp/src/features/forms-builder/forms-builder-workspace.test.tsx; webapp/src/features/request-template-studio/draft-model.ts; webapp/src/features/request-template-studio/draft-model.test.ts; webapp/src/features/request-template-studio/form-field-editor.tsx
+Automated checks:
+- pnpm --dir webapp exec vitest run src/features/requester/dynamic-form/dynamic-form.test.tsx --reporter=dot — RED first on missing runtime module, then passed 8 tests.
+- pnpm --dir webapp exec vitest run src/features/requester/dynamic-form/dynamic-form.test.tsx src/features/request-template-studio/draft-model.test.ts --reporter=dot — passed 13 tests.
+- pnpm --dir webapp exec vitest run src/features/forms-builder/forms-builder-workspace.test.tsx --reporter=dot — passed 5 tests.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/features/forms-builder src/features/request-template-studio --reporter=dot — passed 15 files / 115 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+- python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_service_catalog_preview.py server/tests/test_ticket_create_contracts.py -vv --durations=80 — passed 47 tests in 788.35s; slowest setup 434.52s.
+Browser routes checked: `/app/requester/new` and `/app/admin/forms?mode=process_preview&template=printer` at 1366×768 through local Vite + real Chromium with fixture API interception; `/app/requester/new` also checked at 390×844.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-f-dynamic-form-summary.json and requester-phase-f-builder-preview-summary.json; screenshots `requester-phase-f-dynamic-form-1366x768.png`, `requester-phase-f-dynamic-form-390x844.png`, `requester-phase-f-builder-preview-1366x768.png`.
+Console/network result: Phase F requester and builder console/network artifacts have 0 errors/warnings and 0 failed requests; DOM checks show multi-select, registry/device labels, conditional field behavior and no horizontal overflow. Captured submit/preview payloads prove multi-select arrays and hidden-field omission.
+Residual risks: Phase F gates requester-visible `file` fields instead of implementing final upload inside the dynamic runtime; attachment upload remains in existing ticket attachment paths and the final wizard split is Phase G.
+Next phase: Phase G — Request creation wizard.
+```
+
+### Phase E — dashboard, 2026-06-19
+
+- [x] `/app/requester` now renders a focused `RequesterHomePage` dashboard instead of the legacy all-in-one workspace.
+- [x] Dashboard uses requester query hooks/projection for bootstrap, tickets and pending consents only; form pack, service catalog, profile detail, device detail and message APIs are not fetched on the home route.
+- [x] Header/greeting, `Создать обращение` CTA, one primary next action, compact stats, recent requests and primary device summary fit the dashboard route.
+- [x] Dashboard hides legacy full request creation form, public claim form, chat/profile editor and device-link wizard.
+- [x] Route/docs drift updated in `server/docs/CODEMAP.md` and `docs/QUICK_LOOKUP.md`.
+
+Phase completion record:
+
+```text
+Phase: E
+Commit(s): not committed yet
+Files changed: PLANS.md; docs/QUICK_LOOKUP.md; server/docs/CODEMAP.md; webapp/src/app/router.tsx; webapp/src/app/routes/lazy-pages.tsx; webapp/src/pages/requester/home-page.tsx; webapp/src/pages/requester/home-page.test.tsx
+Automated checks:
+- pnpm --dir webapp exec vitest run src/pages/requester/home-page.test.tsx --reporter=dot — RED first on missing page module, then passed 2 tests.
+- pnpm --dir webapp exec vitest run src/app/router.test.tsx src/pages/requester/home-page.test.tsx src/pages/requester/index.test.tsx --reporter=dot — passed 3 files / 38 tests.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot — passed 8 files / 65 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+Browser routes checked: `/app/requester` at 1366×768 and 390×844 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-e-summary.json; screenshots `requester-phase-e-dashboard-1366x768.png`, `requester-phase-e-dashboard-390x844.png`.
+Console/network result: `requester-phase-e-console.json` has 0 errors/warnings; `requester-phase-e-network.json` has 0 failed API responses. DOM check: raw ticket UUID hidden, masked request code visible, no legacy create form/device-link/public-access blocks, primary CTA above fold, no horizontal overflow, no form-pack/service-catalog/profile/device-detail fetches.
+Residual risks: `/app/requester/new`, `/tickets`, `/profile`, `/devices` and link routes still render the legacy monolith until Phase F+ splits dynamic forms, request creation, chat, profile and devices.
+Next phase: Phase F — Dynamic request forms and constructor parity.
+```
+
+### Phase D — query architecture and typed projections, 2026-06-19
+
+- [x] Requester server snapshots now use TanStack Query domain hooks for bootstrap, ticket list, consents, form pack, service catalog and registry options.
+- [x] Requester detail/profile/device fetches use domain query keys through `queryClient.fetchQuery`; ticket/profile/device/consent mutations invalidate only affected requester keys.
+- [x] Added typed dashboard/readiness/next-action projection and safe human request-code formatter.
+- [x] Replaced visible requester ticket UUID fallbacks in list, consent, device recent-ticket and creation-success surfaces.
+- [x] Page tests now render the requester page under a deterministic `QueryClientProvider`, matching the real app provider boundary.
+
+Phase completion record:
+
+```text
+Phase: D
+Commit(s): not committed yet
+Files changed: PLANS.md; webapp/src/features/requester/queries.ts; webapp/src/features/requester/queries.test.ts; webapp/src/pages/requester/index.tsx; webapp/src/pages/requester/index.test.tsx
+Automated checks:
+- pnpm --dir webapp exec vitest run src/features/requester/queries.test.ts --reporter=dot — RED first on missing query module, then passed 2 tests.
+- pnpm --dir webapp exec vitest run src/features/requester/queries.test.ts src/pages/requester/index.test.tsx --reporter=dot — passed 25 tests after adding the QueryClientProvider page test harness.
+- pnpm --dir webapp exec vitest run src/features/requester src/pages/requester --reporter=dot — passed 6 files / 50 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+- python -m pytest server/tests/test_requester_workspace_api.py server/tests/test_user_consent_api.py -vv --durations=80 — passed 41 tests in 726.11s; slowest setup 434.55s.
+Browser routes checked: `/app/requester` at 1366×768 and 390×844 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/requester-phase-d-summary.json; screenshots `requester-phase-d-query-1366x768.png`, `requester-phase-d-query-390x844.png`.
+Console/network result: `requester-phase-d-console.json` has 0 errors/warnings; `requester-phase-d-network.json` has 0 failed API responses. DOM check: full raw ticket UUID hidden, `Обращение 550e8400` visible, no horizontal overflow.
+Residual risks: requester page is still the legacy monolith; Phase D moved server state/query ownership but did not yet split pages or remove legacy layout classes.
+Next phase: Phase E — Dashboard.
+```
+
+### Phase C — routes, shell and navigation, 2026-06-19
+
+- [x] Requester navigation now exposes explicit Russian cabinet routes: `/app/requester`, `/app/requester/new`, `/app/requester/tickets`, `/app/requester/profile`, `/app/requester/devices`, `/app/kb`, `/app/kb/ask`.
+- [x] Legacy requester sections redirect only through a known compatibility map; unknown sections render a safe not-found page instead of the monolith.
+- [x] Single-workspace requester sessions no longer show the workspace selector; `user` is rendered as `Пользователь`.
+- [x] Requester desktop/sidebar and mobile navigation no longer expose `Requester` or `Requester workspace`; `Создать обращение` is the primary CTA.
+- [x] Stale login-page test expectation for demo passwords was replaced with the current secure contract: demo credentials must not be visible.
+
+Phase completion record:
+
+```text
+Phase: C
+Commit(s): not committed yet
+Files changed: PLANS.md; webapp/src/app/layouts/app-shell.tsx; webapp/src/app/navigation.tsx; webapp/src/app/navigation.test.ts; webapp/src/app/router.tsx; webapp/src/app/router.test.tsx; webapp/src/components/shell/app-sidebar.tsx; webapp/src/components/shell/app-topbar.tsx
+Automated checks:
+- pnpm --dir webapp exec vitest run src/app/navigation.test.ts src/app/router.test.tsx --reporter=dot — RED first on missing Phase C contract, then passed 26 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+Browser routes checked: /app/requester at 1366×768 and 390×844; /app/requester/create compatibility redirect.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/
+Console/network result: requester-phase-c-console.json has only Vite/React dev informational messages; requester-phase-c-network.json shows intercepted API calls returning 200.
+Residual risks: explicit routes still render the legacy monolithic requester page until Phase D+ replaces data/page composition; browser evidence is local fixture, not deployed stand.
+Next phase: Phase D — Query architecture and typed projections.
+```
+
+### Phase B — shared UI/Tailwind foundation, 2026-06-19
+
+- [x] Existing `Button`, `Badge`, `Card`, `Input`, `Select`, `SearchField`, `Tabs` audited; no parallel primitive set introduced.
+- [x] `ui-page` now exports `PageShell`, `PageHeader`, `PageActions`, `ContentSection`, `ActionCard`, `StatCard`, `StatusBadge`, `EmptyState`, `LoadingState`, `PageSkeleton`, `ErrorState`.
+- [x] Shared Russian date/time, status and human identifier formatters added.
+- [x] Component tests cover landmarks/regions, status/alert semantics, retry behavior, Russian status labels and raw UUID masking.
+
+Phase completion record:
+
+```text
+Phase: B
+Commit(s): not committed yet
+Files changed: PLANS.md; webapp/src/components/ui/badge.tsx; webapp/src/components/ui-page/formatters.ts; webapp/src/components/ui-page/formatters.test.ts; webapp/src/components/ui-page/index.ts; webapp/src/components/ui-page/page-components.tsx; webapp/src/components/ui-page/page-components.test.tsx
+Automated checks:
+- pnpm --dir webapp exec vitest run src/components/ui-page --reporter=dot — RED first on missing modules, then passed 6 tests.
+- pnpm --dir webapp exec vitest run src/components/ui src/components/ui-page --reporter=dot — passed 6 tests.
+- pnpm --dir webapp run build — passed; existing Vite chunk-size warning remains.
+Browser routes checked: not required for Phase B because requester routes were not changed.
+Evidence path: not applicable for Phase B.
+Console/network result: not applicable for Phase B.
+Residual risks: new primitives are available but requester pages still need Phase C+ adoption before user-visible UI changes improve.
+Next phase: Phase C — Routes, shell and navigation.
+```
+
+### Phase A — baseline and regression fixture, 2026-06-19
+
+- [x] Current `HEAD`, working tree state, routing docs, context index and focused context pack verified before editing.
+- [x] Deterministic requester baseline contract added for complete/incomplete profile, no/pending/multiple/offline device states, waiting requests, consent, close/rate/reopen, on-behalf allowed/forbidden, archived user, dynamic field matrices and forbidden visible terms.
+- [x] Existing pending-claim server test made deterministic by pinning the test registration policy to a real pending-review scenario.
+- [x] Browser baseline captured at 1366×768 and 1920×1080 with local fixture API responses and console/network evidence.
+
+Phase completion record:
+
+```text
+Phase: A
+Commit(s): not committed yet
+Files changed: PLANS.md; server/tests/test_requester_workspace_api.py; webapp/src/features/requester/baseline-contract.ts; webapp/src/features/requester/baseline-contract.test.ts; webapp/src/features/requester/types.ts
+Automated checks:
+- python scripts/build_context_index.py --force — passed; context index rebuilt.
+- python scripts/build_context_pack.py --topic "Requester Cabinet Full UI Refactoring Plan Phase A" — passed after context index rebuild.
+- python scripts/bootstrap_web_toolchain.py — passed; Node 24.15.0, pnpm 10.33.0.
+- python scripts/verify_workspace.py — passed before Phase A edits.
+- pnpm --dir webapp exec vitest run src/features/requester/baseline-contract.test.ts --reporter=dot — RED first on missing module, then passed 5 tests.
+- pnpm --dir webapp exec vitest run src/features/requester/baseline-contract.test.ts src/pages/requester/index.test.tsx --reporter=dot — passed 28 tests.
+- pnpm --dir webapp run build — passed; Vite chunk-size warning remains.
+- python -m pytest server/tests/test_requester_workspace_api.py -q --tb=short — baseline failed 1/32 before deterministic policy fix: pending agent claim test did not create a pending claim under auto-approve defaults.
+- python -m pytest server/tests/test_requester_workspace_api.py::test_existing_pending_agent_claim_is_visible_to_requester_and_admin -q --tb=short — passed after test fixture fix.
+- pnpm --dir webapp run test — baseline failed 2/505: stale login demo-credential assertion in router.test.tsx and support workspace loading-state expectation in support-workspace.test.tsx.
+Browser routes checked: /app/requester at 1366×768 and 1920×1080 through local Vite + real Chromium with fixture API interception.
+Evidence path: artifacts/browser_live_validation/requester-ui-refactor-20260619/
+Console/network result: no page errors or failed API responses; only Vite/React dev informational console entries; all intercepted API calls returned 200.
+Known baseline defects: requester UI still exposes English/technical labels (`Requester workspace`, `Requester`, `user`, `open`); requester route is still a monolithic page behind wildcard routing; dashboard/list/profile/devices/form data are still fetched together; left rail uses one-note green palette; forms and cards are densely stacked in the right column at 1366×768.
+Residual risks: screenshots are local fixture baseline, not deployed stand evidence; full requester E2E matrix does not exist yet; full web test suite still has unrelated baseline failures to resolve before final gate.
+Next phase: Phase B — Shared UI/Tailwind foundation.
+```
+
 ### Current checkpoint — plan replacement, 2026-06-19
 
 - [x] Current requester screenshots, routes, monolithic component, dynamic request constructor, profile constructor, localization contract and recent changes analyzed.
 - [x] Previous `PLANS.md` replaced by this full requester UI refactoring plan.
-- [ ] Phase A started.
+- [x] Phase A started.
 
 Phase completion record:
 

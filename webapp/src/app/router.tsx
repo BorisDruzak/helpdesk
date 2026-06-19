@@ -42,8 +42,12 @@ import {
   KnowledgePortalHomePage,
   KnowledgePortalSearchPage,
   ReportsPage,
+  RequesterDevicesPage,
+  RequesterHomePage,
+  RequesterNewRequestPage,
+  RequesterProfilePage,
   RequesterTicketPage,
-  RequesterWorkspacePage,
+  RequesterTicketsPage,
   DevicePairCodePage,
   DevicePairingPage,
   SettingsPage,
@@ -61,6 +65,13 @@ import {
   type AppWorkspace
 } from "../features/auth/workspace-access";
 import { hasPermission } from "../features/auth/permissions";
+import {
+  REQUESTER_DEVICES_PATH,
+  REQUESTER_HOME_PATH,
+  REQUESTER_NEW_PATH,
+  REQUESTER_PROFILE_PATH,
+  REQUESTER_TICKETS_PATH,
+} from "./navigation";
 
 function SessionState({
   description,
@@ -201,6 +212,11 @@ function WorkspaceAccessGate({ permission, workspace, children }: WorkspaceAcces
   return <Navigate replace to={defaultPath} />;
 }
 
+function RequesterLegacyRedirect({ target }: { target: string }) {
+  const location = useLocation();
+  return <Navigate replace to={`${target}${location.search}${location.hash}`} />;
+}
+
 export const appRoutes: RouteObject[] = [
   {
     path: "/app",
@@ -272,7 +288,31 @@ export const appRoutes: RouteObject[] = [
             path: "requester",
             element: (
               <WorkspaceAccessGate workspace="requester">
-                <RequesterWorkspacePage />
+                <RequesterHomePage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/new",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterNewRequestPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/tickets",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterTicketsPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/tickets/:ticketId",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterTicketsPage />
               </WorkspaceAccessGate>
             )
           },
@@ -280,7 +320,7 @@ export const appRoutes: RouteObject[] = [
             path: "requester/profile",
             element: (
               <WorkspaceAccessGate workspace="requester">
-                <RequesterWorkspacePage />
+                <RequesterProfilePage />
               </WorkspaceAccessGate>
             )
           },
@@ -288,15 +328,63 @@ export const appRoutes: RouteObject[] = [
             path: "requester/profile/setup",
             element: (
               <WorkspaceAccessGate workspace="requester">
-                <RequesterWorkspacePage />
+                <RequesterProfilePage />
               </WorkspaceAccessGate>
             )
           },
           {
-            path: "requester/:section",
+            path: "requester/devices",
             element: (
               <WorkspaceAccessGate workspace="requester">
-                <RequesterWorkspacePage />
+                <RequesterDevicesPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/devices/link",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterDevicesPage />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/create",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterLegacyRedirect target={REQUESTER_NEW_PATH} />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/dashboard",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterLegacyRedirect target={REQUESTER_HOME_PATH} />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/device",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterLegacyRedirect target={REQUESTER_DEVICES_PATH} />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/overview",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterLegacyRedirect target={REQUESTER_HOME_PATH} />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/requests",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterLegacyRedirect target={REQUESTER_TICKETS_PATH} />
               </WorkspaceAccessGate>
             )
           },

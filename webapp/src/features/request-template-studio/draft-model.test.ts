@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { StudioDraft } from "./draft-model";
-import { buildOfferingDraftPayload } from "./draft-model";
+import {
+  buildOfferingDraftPayload,
+  buildRequestStudioPublishPayload,
+  validateStudioDraftRequesterRuntime,
+} from "./draft-model";
 import { resolveVisibilityPolicyCode } from "./policy-resolvers";
 
 describe("request studio draft model", () => {
@@ -65,6 +69,57 @@ describe("request studio draft model", () => {
     expect(buildOfferingDraftPayload(baseDraft(), null, registryWithVisibility([]))).toMatchObject({
       visibility_policy_code: null,
     });
+  });
+
+  it("rejects Studio publish when requester runtime cannot render the schema safely", () => {
+    const draft = {
+      ...baseDraft(),
+      fields: [
+        {
+          key: "attachment",
+          label: "Файл",
+          type: "file",
+          required: true,
+          placeholder: "",
+          helpText: "",
+          optionsText: "",
+          visibleWhenField: "",
+          visibleWhenValue: "",
+          processMeaning: "display_only",
+        },
+      ],
+    } satisfies StudioDraft;
+
+    expect(validateStudioDraftRequesterRuntime(draft, null)).toMatchObject({
+      canPublish: false,
+      issues: [expect.objectContaining({ code: "requester_file_upload_disabled" })],
+    });
+    expect(() => buildRequestStudioPublishPayload({ draft, registry: null })).toThrow(/requester runtime/);
+  });
+
+  it("rejects Studio publish when visible_when points to a missing field", () => {
+    const draft = {
+      ...baseDraft(),
+      fields: [
+        {
+          key: "details",
+          label: "Детали",
+          type: "textarea",
+          required: false,
+          placeholder: "",
+          helpText: "",
+          optionsText: "",
+          visibleWhenField: "missing_field",
+          visibleWhenValue: "yes",
+          processMeaning: "display_only",
+        },
+      ],
+    } satisfies StudioDraft;
+
+    expect(validateStudioDraftRequesterRuntime(draft, null).issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "invalid_visible_when_field" })]),
+    );
+    expect(() => buildRequestStudioPublishPayload({ draft, registry: null })).toThrow(/Условие/);
   });
 });
 

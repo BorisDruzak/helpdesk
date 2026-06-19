@@ -992,6 +992,15 @@ async def test_user_can_confirm_own_claim_by_email_identity(test_client, test_en
     device_id = str(uuid.uuid4())
     async with session_maker() as session:
         session.add(_device(device_id))
+        await RegistryPolicyService(session).update_policies(
+            {
+                "registration": {
+                    "require_admin_confirmation": True,
+                    "auto_approve_first_binding": False,
+                }
+            },
+            actor_id="admin",
+        )
         result = await RegistrationService(session).submit_agent_profile_claim(
             device_id=device_id,
             requester_id="owner@example.test",

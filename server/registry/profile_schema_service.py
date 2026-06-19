@@ -94,6 +94,7 @@ DEFAULT_PROFILE_FIELDS: tuple[dict[str, Any], ...] = (
     _system_field("department_id", "Подразделение", "department_picker", "registry_people.department_id", required=True),
     _system_field("location_id", "Локация", "location_picker", "registry_people.location_id", required=True),
     _system_field("phone", "Телефон или внутренний номер", "phone", "registry_people.phone", required=True),
+    _optional_field("internal_extension", "Внутренний номер", "phone", "registry_people.metadata_json.internal_extension"),
     _system_field("active_device_links", "Активные привязки устройств", "device_links", "device_user_bindings", required=False, editable=False),
     _optional_field("position", "Должность", "text", "registry_people.metadata_json.position"),
     _optional_field("workplace_label", "Рабочее место", "text", "registry_people.metadata_json.workplace_label"),
@@ -273,10 +274,13 @@ class RequesterProfileSchemaService:
             label = str(field.get("label") or key)
             if field.get("custom"):
                 value = custom_values.get(key)
-            elif key in {"position", "workplace_label", "preferred_contact_method"}:
+            elif key in {"internal_extension", "position", "workplace_label", "preferred_contact_method"}:
                 value = metadata.get(key)
             elif key in {"login_identity", "active_device_links"}:
                 continue
+            elif key == "phone":
+                value = getattr(person, "phone", None) if person is not None else None
+                value = value or metadata.get("internal_extension") or metadata.get("extension")
             else:
                 value = getattr(person, key, None) if person is not None else None
             if not _text(value):

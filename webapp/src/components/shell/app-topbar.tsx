@@ -83,21 +83,23 @@ export function AppTopbar({
       <div className="flex flex-col gap-3 px-4 py-3 md:px-6 xl:px-8">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <div className="relative">
-              <Select
-                aria-label="Рабочая зона"
-                className="h-10 min-w-[220px] bg-brand-50 pr-12 text-brand-900"
-                onChange={onWorkspaceChange}
-                value={workspaceValue}
-              >
-                {workspaceOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </Select>
-              <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-500" />
-            </div>
+            {workspaceOptions.length > 1 ? (
+              <div className="relative">
+                <Select
+                  aria-label="Рабочая зона"
+                  className="h-10 min-w-[220px] bg-brand-50 pr-12 text-brand-900"
+                  onChange={onWorkspaceChange}
+                  value={workspaceValue}
+                >
+                  {workspaceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+                <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-500" />
+              </div>
+            ) : null}
           </div>
 
           <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 md:flex md:flex-wrap xl:w-auto">

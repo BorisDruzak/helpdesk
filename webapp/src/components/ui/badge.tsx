@@ -2,7 +2,7 @@ import type { HTMLAttributes } from "react";
 
 import { cn } from "../../shared/ui/cn";
 
-type BadgeTone =
+export type BadgeTone =
   | "neutral"
   | "brand"
   | "success"

@@ -62,6 +62,78 @@ function createFormsPayload(title = "Печать / принтер"): AdminForms
   };
 }
 
+function createDynamicFormsPayload(): AdminFormsPayload {
+  const payload = createFormsPayload("Динамическая форма");
+  return {
+    ...payload,
+    summary: {
+      ...payload.summary,
+      fields_count: 3,
+      required_fields_count: 2,
+    },
+    capabilities: {
+      ...payload.capabilities,
+      field_type_options: [
+        { value: "select", label: "Список" },
+        { value: "multi_select", label: "Несколько вариантов" },
+        { value: "textarea", label: "Длинный текст" },
+      ],
+    },
+    forms: [
+      {
+        ...payload.forms[0],
+        fields: [
+          {
+            key: "impact",
+            label: "Кого затронуло",
+            type: "select",
+            type_label: "Список",
+            required: true,
+            placeholder: "",
+            help_text: "",
+            options: [
+              { value: "minor", label: "Только меня" },
+              { value: "major", label: "Весь отдел" },
+            ],
+            visible_when: null,
+            validation: {},
+            process_mapping: {},
+          },
+          {
+            key: "systems",
+            label: "Системы",
+            type: "multi_select",
+            type_label: "Несколько вариантов",
+            required: true,
+            placeholder: "",
+            help_text: "",
+            options: [
+              { value: "vpn", label: "VPN" },
+              { value: "crm", label: "CRM" },
+            ],
+            visible_when: null,
+            validation: {},
+            process_mapping: {},
+          },
+          {
+            key: "major_reason",
+            label: "Причина массового сбоя",
+            type: "textarea",
+            type_label: "Длинный текст",
+            required: true,
+            placeholder: "",
+            help_text: "",
+            options: [],
+            visible_when: { field: "impact", equals: "major", values: [] },
+            validation: {},
+            process_mapping: {},
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function createRegistryPayload(): AdminHelpdeskModelPayload {
   return {
     summary: {
@@ -317,6 +389,65 @@ describe("FormsBuilderWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Открыть в редакторе" }));
     expect(await screen.findByRole("heading", { name: "Редактор шаблона обращения: Печать / принтер v4" })).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/app/admin/forms?mode=template&version=1.0.4&template=printer");
+  });
+
+  it("uses requester dynamic renderer for process preview payloads", async () => {
+    const processPreviewCalls: unknown[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/web/admin/forms/current") {
+        return jsonResponse({ status: "success", data: createDynamicFormsPayload() });
+      }
+      if (url === "/api/ticket_forms/packs?pack_key=request_forms") {
+        return jsonResponse(packListPayload());
+      }
+      if (url === "/api/web/admin/helpdesk-model/policies") {
+        return jsonResponse({ status: "success", data: createRegistryPayload() });
+      }
+      if (url === "/api/web/admin/forms/process-preview" && init?.method === "POST") {
+        processPreviewCalls.push(JSON.parse(String(init.body ?? "{}")));
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_type: "incident",
+            request_kind: "printer",
+            priority: {},
+            routing: {},
+            sla: {},
+            ola: {},
+            approval: {},
+            diagnostics: {},
+            closure: {},
+            visibility: {},
+            notifications: {},
+            summary_rows: [],
+            validation_report: { warnings: [] },
+            preview_metadata: {},
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkspace("/app/admin/forms?mode=process_preview&template=printer");
+
+    const previewSelects = await screen.findAllByRole("combobox");
+    expect(previewSelects).toHaveLength(2);
+    expect(previewSelects[0]).toHaveValue("printer");
+
+    fireEvent.change(previewSelects[1], { target: { value: "minor" } });
+    fireEvent.click(screen.getAllByLabelText("VPN")[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Проверить" }));
+
+    await waitFor(() => expect(processPreviewCalls).toHaveLength(1));
+    expect(processPreviewCalls[0]).toMatchObject({
+      form_payload: {
+        impact: "minor",
+        systems: ["vpn"],
+      },
+    });
+    expect((processPreviewCalls[0] as { form_payload?: Record<string, unknown> }).form_payload).not.toHaveProperty("major_reason");
   });
 
   it("saves on-behalf policy from the template process step", async () => {

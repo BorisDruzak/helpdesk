@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { RouterProvider, createMemoryRouter } from "react-router-dom";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { RouterProvider, createMemoryRouter, type RouteObject } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SessionProvider } from "../features/auth/session-provider";
@@ -31,6 +31,18 @@ function renderApp(initialEntries: string[], fetchMock: typeof fetch) {
   );
 
   return { router };
+}
+
+function collectRoutePaths(routes: RouteObject[]): string[] {
+  const paths: string[] = [];
+  const visit = (route: RouteObject) => {
+    if (route.path) {
+      paths.push(route.path);
+    }
+    route.children?.forEach(visit);
+  };
+  routes.forEach(visit);
+  return paths;
 }
 
 function createSupportSession() {
@@ -113,6 +125,122 @@ function createAdminSession() {
       "settings.view",
     ]
   };
+}
+
+function createRequesterSession() {
+  return {
+    user_login: "requester@example.test",
+    actor_role: "user",
+    auth_type: "web_session",
+    default_workspace: "requester",
+    available_workspaces: ["requester"],
+    permissions: ["workspace.requester.view"],
+    permissions_version: "phase-c",
+  };
+}
+
+function createRequesterFetchMock() {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+
+    if (url.endsWith("/api/web/session/me")) {
+      return jsonResponse({ status: "success", data: createRequesterSession() });
+    }
+
+    if (url.endsWith("/api/web/notifications/unread_count")) {
+      return jsonResponse({ status: "ok", unread_count: 0 });
+    }
+
+    if (url.endsWith("/api/web/requester/bootstrap")) {
+      return jsonResponse({
+        status: "success",
+        data: {
+          workspace: "requester",
+          profile: {
+            person_id: "person-1",
+            display_name: "Иван Петров",
+            full_name: "Иван Петров",
+            email: "requester@example.test",
+            phone: "+7 343 000-00-01",
+            department_id: "dept-it",
+            location_id: "loc-ekb",
+            status: "active",
+          },
+          profile_completion: {
+            complete: true,
+            required: true,
+            status: "complete",
+            required_fields: [],
+            missing_fields: [],
+            setup_path: "/app/requester/profile/setup",
+            blocks: {
+              ticket_create: false,
+              ticket_preview: false,
+              knowledge_requester_actions: false,
+              device_binding_confirmation: false,
+            },
+          },
+          profile_schema: { fields: [], custom_fields: [], required_fields: [] },
+          requester_context: {
+            profile: { full_name: "Иван Петров", department: "ИТ", location: "Екатеринбург" },
+            device: null,
+            form_prefill: {},
+            routing_facts: {},
+            summary: [],
+          },
+          devices: [],
+          active_bindings: [],
+          pending_registration_claims: [],
+          open_ticket_count: 0,
+          tickets_requiring_user_action_count: 0,
+          pending_consent_count: 0,
+          recent_tickets: [],
+          feature_flags: {
+            requester_ticket_create: true,
+            requester_owned_device_create: true,
+            requester_no_device_create: true,
+          },
+          policies: { device_selection_required: false },
+        },
+      });
+    }
+
+    if (url.endsWith("/api/web/requester/tickets") && init?.method !== "POST") {
+      return jsonResponse({ status: "success", data: { tickets: [] } });
+    }
+
+    if (url.endsWith("/api/web/requester/consents?status=pending")) {
+      return jsonResponse({ status: "success", data: { consents: [] } });
+    }
+
+    if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+      return jsonResponse({
+        status: "ok",
+        pack: {
+          key: "request_forms",
+          version: "phase-c",
+          forms: [
+            {
+              key: "workplace_issue",
+              title: "Проблема с рабочим местом",
+              fields: [],
+              availability_policy: { available_without_agent_binding: true },
+            },
+          ],
+        },
+      });
+    }
+
+    if (url.endsWith("/api/service-catalog/current")) {
+      return jsonResponse({ status: "ok", catalog_version: "phase-c", services: [], offerings: [], categories: [] });
+    }
+
+    if (url.endsWith("/api/knowledge/suggest") && init?.method === "POST") {
+      return jsonResponse({ status: "ok", suggestions: [], known_errors: [], workarounds: [] });
+    }
+
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
 }
 
 function createKnowledgeMetadataPayload() {
@@ -234,6 +362,18 @@ afterEach(() => {
 });
 
 describe("appRoutes", () => {
+  it("keeps requester routes explicit without the legacy section wildcard", () => {
+    const paths = collectRoutePaths(appRoutes);
+
+    expect(paths).toContain("requester");
+    expect(paths).toContain("requester/new");
+    expect(paths).toContain("requester/tickets");
+    expect(paths).toContain("requester/profile");
+    expect(paths).toContain("requester/devices");
+    expect(paths).toContain("requester/create");
+    expect(paths).not.toContain("requester/:section");
+  });
+
   it("redirects anonymous users to the redesigned login page", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -250,8 +390,8 @@ describe("appRoutes", () => {
     expect(await screen.findByRole("heading", { name: "Добро пожаловать" })).toBeInTheDocument();
     expect(screen.getByLabelText("Логин")).toBeInTheDocument();
     expect(screen.getByLabelText("Пароль")).toBeInTheDocument();
-    expect(screen.getByText(/admin \/ admin123/)).toBeInTheDocument();
-    expect(screen.getByText(/op1 \/ 1\.Abcdef/)).toBeInTheDocument();
+    expect(screen.queryByText(/admin \/ admin123/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/op1 \/ 1\.Abcdef/)).not.toBeInTheDocument();
   });
 
   it("opens the operator command center for support role and keeps tickets in support menu", async () => {
@@ -656,6 +796,47 @@ describe("appRoutes", () => {
     expect(await screen.findByText("helpdesk-server-debug")).toBeInTheDocument();
     expect(await screen.findByText("debug_readonly")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/ai-integration/mcp", { credentials: "same-origin" });
+  });
+
+  it("renders the requester shell with Russian navigation for a single-workspace user", async () => {
+    const fetchMock = createRequesterFetchMock();
+
+    renderApp(["/app/requester"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Мои обращения" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Рабочая зона")).not.toBeInTheDocument();
+    expect(screen.getByText("Пользователь")).toBeInTheDocument();
+    expect(screen.queryByText("Requester")).not.toBeInTheDocument();
+    expect(screen.queryByText("Requester workspace")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Кабинет заявителя").length).toBeGreaterThan(0);
+
+    const mobileNav = screen.getByRole("navigation", { name: "Навигация заявителя" });
+    expect(within(mobileNav).getByRole("link", { name: "Главная" })).toHaveAttribute("href", "/app/requester");
+    expect(within(mobileNav).getByRole("link", { name: "Создать обращение" })).toHaveAttribute("href", "/app/requester/new");
+    expect(within(mobileNav).getByRole("link", { name: "Мои обращения" })).toHaveAttribute("href", "/app/requester/tickets");
+    expect(within(mobileNav).getByRole("link", { name: "Устройства" })).toHaveAttribute("href", "/app/requester/devices");
+    expect(within(mobileNav).getByRole("link", { name: "Профиль" })).toHaveAttribute("href", "/app/requester/profile");
+  });
+
+  it("redirects known legacy requester sections to explicit routes", async () => {
+    const fetchMock = createRequesterFetchMock();
+    const { router } = renderApp(["/app/requester/create"], fetchMock as typeof fetch);
+
+    await waitFor(() => expect(router.state.location.pathname).toBe("/app/requester/new"));
+    expect(await screen.findByRole("heading", { name: "Опишите проблему" })).toBeInTheDocument();
+  });
+
+  it("opens the dedicated requester devices route", async () => {
+    const fetchMock = createRequesterFetchMock();
+
+    renderApp(["/app/requester/devices"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Устройства" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Проверить владельца" })).toHaveAttribute(
+      "href",
+      "/app/requester/new?intent=device_owner_change",
+    );
+    expect(screen.queryByText("Requester workspace")).not.toBeInTheDocument();
   });
 
   it("opens requester help without a web session", async () => {
