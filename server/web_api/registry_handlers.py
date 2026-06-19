@@ -1840,7 +1840,7 @@ async def handle_web_admin_registry_person_update(request: web.Request) -> web.R
         if not person.display_name:
             return web.json_response({"status": "error", "error": "display_name is required", "error_code": "VALIDATION_ERROR"}, status=400)
         revoked_bindings: list[dict[str, object]] = []
-        if previous_status != person.status and person.status in {"inactive", "deactivated", "disabled"}:
+        if previous_status != person.status and person.status in {"archived", "inactive", "deactivated", "disabled"}:
             active_bindings = (
                 await session.execute(
                     select(DeviceUserBinding).where(

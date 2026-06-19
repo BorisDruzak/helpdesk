@@ -213,7 +213,8 @@ async def test_admin_ui_user_link_collision_does_not_steal_login(test_client, te
 
 
 @pytest.mark.asyncio
-async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_client, test_engine):
+@pytest.mark.parametrize("target_status", ["inactive", "archived"])
+async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_client, test_engine, target_status):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
 
@@ -246,7 +247,7 @@ async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_c
 
     response = await test_client.patch(
         f"/api/web/admin/registry/people/{person_id}",
-        json={"status": "inactive", "reason": "employee left"},
+        json={"status": target_status, "reason": "employee left"},
         headers=ADMIN_HEADERS,
     )
     assert response.status == 200
