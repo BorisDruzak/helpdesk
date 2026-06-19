@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -38,7 +38,11 @@ async def test_quality_signals_snapshot_service_catalog_fields(test_engine) -> N
             actor_id="alice",
             actor_role="requester",
         )
-        summary = await ServiceQualityAnalyticsService(session).service_quality(period_start=now.replace(hour=0), period_end=now.replace(hour=23), bucket="day")
+        summary = await ServiceQualityAnalyticsService(session).service_quality(
+            period_start=now - timedelta(hours=1),
+            period_end=now + timedelta(hours=1),
+            bucket="day",
+        )
         await session.commit()
 
     assert feedback["service_code"] == "workplace"

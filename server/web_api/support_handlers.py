@@ -2735,6 +2735,10 @@ _WEB_OBSERVER_FLOW_SOURCES = {
     "support_status": "support_status",
 }
 
+_WEB_OBSERVER_EVENT_PRIORITY = {
+    "resolution_confirmation_requested": 10,
+}
+
 
 def _support_observer_web_flow(observer_data: dict[str, Any]) -> dict[str, Any]:
     traces: list[dict[str, Any]] = []
@@ -2758,6 +2762,7 @@ def _support_observer_web_flow(observer_data: dict[str, Any]) -> dict[str, Any]:
         "latest_trace_url": None,
     }
     latest_at: str | None = None
+    latest_priority = -1
 
     for trace in traces:
         attrs = trace.get("attrs_json") if isinstance(trace.get("attrs_json"), dict) else {}
@@ -2772,8 +2777,14 @@ def _support_observer_web_flow(observer_data: dict[str, Any]) -> dict[str, Any]:
 
         started_at = str(trace.get("started_at") or "").strip()
         is_web_trace = trace.get("root_kind") == "requester_web" or source.startswith(("requester_", "support_"))
-        if is_web_trace and (latest_at is None or started_at > latest_at):
+        priority = _WEB_OBSERVER_EVENT_PRIORITY.get(event_type, 0)
+        if is_web_trace and (
+            latest_at is None
+            or started_at > latest_at
+            or (started_at == latest_at and priority > latest_priority)
+        ):
             latest_at = started_at
+            latest_priority = priority
             flow["latest_event_type"] = event_type or None
             flow["latest_error_code"] = attrs.get("error_code")
             flow["latest_trace_url"] = _observer_trace_url(trace.get("trace_id"))
