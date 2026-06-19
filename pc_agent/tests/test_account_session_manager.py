@@ -402,5 +402,6 @@ def test_account_session_error_action_classifies_errors():
     payload = {"body": '{"error_code":"ACCOUNT_SESSION_REVOKED"}'}
     assert account_session_error_code(payload) == "ACCOUNT_SESSION_REVOKED"
     assert account_session_error_action(payload) == "clear_session"
+    assert account_session_error_action({"error_code": "ACCOUNT_SESSION_PERSON_INACTIVE"}) == "clear_session"
     assert account_session_error_action({"error_code": "ACCOUNT_ACCESS_DENIED"}) == "deny_access"
     assert account_session_error_action(Exception("HTTP 403 ACCOUNT_SESSION_CLAIM_APPROVED")) == "refresh_account_state"

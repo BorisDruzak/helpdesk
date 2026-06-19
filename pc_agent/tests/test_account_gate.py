@@ -936,7 +936,8 @@ async def test_main_window_refresh_auto_activates_confirmed_binding():
 
 
 @pytest.mark.asyncio
-async def test_main_window_refresh_clears_revoked_session_and_returns_to_account_gate():
+@pytest.mark.parametrize("error_code", ["ACCOUNT_SESSION_REVOKED", "ACCOUNT_SESSION_PERSON_INACTIVE"])
+async def test_main_window_refresh_clears_invalid_session_and_returns_to_account_gate(error_code):
     rendered: list[dict] = []
     selected_views: list[str] = []
     cleared: list[bool] = []
@@ -953,7 +954,7 @@ async def test_main_window_refresh_clears_revoked_session_and_returns_to_account
         async def validate_account_session(self, session_id: str, session_token: str | None = None) -> dict:
             assert session_id == "session-1"
             assert session_token == "token-1"
-            raise RuntimeError("HTTP 403 ACCOUNT_SESSION_REVOKED")
+            raise RuntimeError(f"HTTP 403 {error_code}")
 
     class FakeSessionManager:
         def clear(self) -> None:

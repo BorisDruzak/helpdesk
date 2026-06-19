@@ -152,6 +152,7 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
             )
         )
         session.add(RegistryPerson(person_id=person_id, display_name="Archive User", source="manual", status="active"))
+        await session.flush()
         session.add(
             DeviceUserBinding(
                 binding_id=binding_id,
@@ -162,6 +163,7 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
                 source="manual",
             )
         )
+        await session.flush()
         session.add(
             DeviceAccountSession(
                 session_id=session_id,
