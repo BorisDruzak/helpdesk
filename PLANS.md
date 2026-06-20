@@ -923,13 +923,15 @@ Do not combine the whole refactor into one commit.
 
 ### Current checkpoint - requester cabinet review fixes, 2026-06-20
 
-Status: in progress.
+Status: completed.
 
 Source reviews:
 
 - `docs/requester-cabinet-review-2026-06-19.md`
 - `docs/requester-cabinet-review-2026-06-19-2.md`
 - `docs/requester-cabinet-review-2026-06-20.md`
+
+Post-rebase note: `docs/requester-cabinet-review-2026-06-20-2.md` was also rechecked and did not add new requester-cabinet regressions beyond the tracked terminology/service-catalog follow-up.
 
 Confirmed work tracked by implementation:
 
@@ -939,7 +941,7 @@ Confirmed work tracked by implementation:
 - [x] P2 safe requester errors: map `RequesterApiError` / backend error codes to requester-safe Russian messages and avoid showing raw server `message` / `error` text in normal requester UI.
 - [x] P3 traceability: update this plan's completion records/trace note so the review exception and follow-up commit boundary are explicit.
 - [x] Service Catalog public terminology: remove requester-visible `Заявка...` wording from setup-help catalog defaults and relevant requester-safe content surfaces, or document any support-only exceptions.
-- [ ] Deploy/live gate: deploy the verified code to `https://192.168.100.17:9443` and collect real browser evidence for requester cabinet routes.
+- [x] Deploy/live gate: deploy the verified code to `https://192.168.100.17:9443` and collect real browser evidence for requester cabinet routes.
 
 Acceptance criteria:
 
@@ -961,8 +963,8 @@ Phase completion record:
 
 ```text
 Phase: Review fixes
-Commit(s): not committed yet
-Files changed: pending
+Commit(s): d6823009 requester: close cabinet review fixes
+Files changed: PLANS.md; content_packs/knowledge/it-self-service-baseline.yaml; docs/QUICK_LOOKUP.md; docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md; scripts/navigation_catalog.py; scripts/test_web_first_registration_localization.py; server/docs/CODEMAP.md; server/requester/identity_service.py; server/tickets/requester_timeline.py; server/tickets/service_catalog_defaults.py; server/tickets/service_catalog_preview.py; server/tickets/statuses.py; server/web_api/requester_handlers.py; webapp/src/features/request-template-studio/draft-model.ts; webapp/src/features/request-template-studio/form-field-editor.tsx; webapp/src/features/requester/api.ts; webapp/src/features/requester/labels.ts; webapp/src/features/requester/queries.ts; webapp/src/features/requester/types.ts; webapp/src/pages/requester/devices-page.tsx; webapp/src/pages/requester/home-page.tsx; webapp/src/pages/requester/new-request-page.tsx; webapp/src/pages/requester/profile-page.tsx; webapp/src/pages/requester/tickets-page.tsx; related tests and docs listed in Git diff.
 Automated checks completed before deploy:
 - `pnpm --dir webapp exec vitest run src/features/requester/labels.test.ts src/features/requester/queries.test.ts src/features/requester/api.test.ts src/features/requester/dynamic-form/dynamic-form.test.tsx src/features/request-template-studio/draft-model.test.ts src/pages/requester/new-request-page.test.tsx src/pages/requester/tickets-page.test.tsx src/pages/requester/home-page.test.tsx src/pages/requester/devices-page.test.tsx src/pages/requester/profile-page.test.tsx --reporter=dot` — passed 10 files / 52 tests.
 - `python scripts/test_web_first_registration_localization.py` — passed 9 tests.
@@ -972,11 +974,16 @@ Automated checks completed before deploy:
 - `pnpm --dir webapp run build` — passed with existing Vite chunk-size warning.
 - `pnpm --dir webapp exec playwright test tests/requester-workspace.spec.ts` — passed 1 test.
 - `python scripts/verify_workspace.py` — passed after navigation catalog drift update.
+- `python -m pytest server/tests/test_ticket_status_contract_no_db.py server/tests/test_requester_timeline_projection.py server/tests/test_public_queue_privacy.py server/tests/test_ticket_visibility_policy.py server/tests/test_ticket_workflow_visibility.py -q --tb=short` — passed 34 tests.
+- `python -m pytest server/tests/test_web_settings_api.py::test_web_settings_returns_aggregated_real_payload server/tests/test_web_support_api.py::test_web_support_ticket_detail_exposes_template_visibility_policy -q --tb=short` — passed 2 tests.
 Browser routes checked before deploy: local Playwright fixture for `/app/requester`, `/app/requester/tickets`, `/app/requester/tickets/REQ-1001`, `/app/requester/profile`, `/app/requester/devices`, `/app/kb` and `/app/kb/ask`.
-Evidence path: pending
-Console/network result: pending
-Residual risks: pending
-Next phase: close review fixes and deploy/live-test.
+Deploy completed: `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --leave-running --smoke-insecure-tls` deployed `d6823009` to `https://192.168.100.17:9443`; remote smoke passed on attempt 2.
+Live browser evidence: `artifacts/browser_live_validation/requester-cabinet-d6823009-20260620T101945Z/summary.json`; screenshots `01-dashboard.png`, `02-new-request.png`, `03-ticket-list.png`, `04-ticket-detail.png`, `05-devices.png`.
+Live routes checked: `/app/requester`, `/app/requester/new`, `/app/requester/tickets`, `/app/requester/tickets/T-000738`, `/app/requester/devices`.
+Live assertions: no raw `ticket_id` in DOM/URL/hrefs, URL/link uses `ticket_code`, no requester-visible `заявк`, no visible English `preview`, no console errors, no network failures.
+Console/network result: `console.json` and `network.json` in the evidence directory contain no blocking entries.
+Residual risks: full final CI/release artifact gate was not run because this was a quick staging deploy, not an explicit frozen release candidate; Vite still reports the pre-existing chunk-size warning for large bundles.
+Next phase: no open requester-cabinet review bug remains from the checked review documents; only the broader Phase N/full gate remains for final release hardening.
 ```
 
 ### Phase N - Cleanup and final gate, 2026-06-19
