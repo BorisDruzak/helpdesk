@@ -439,6 +439,7 @@ async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_c
     public_current_response = await test_client.get("/public_api/ticket_forms/current?pack_key=request_forms")
     assert public_current_response.status == 200, await public_current_response.text()
     public_current_data = await public_current_response.json()
+    assert public_current_data["pack"]["title"] == "Каталог обращений"
     public_form_keys = [form["key"] for form in public_current_data["pack"]["forms"]]
     assert public_form_keys[:2] == ["profile_completion_help", "agent_binding_help"]
     assert "printer" in public_form_keys

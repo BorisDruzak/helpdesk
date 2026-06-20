@@ -967,6 +967,19 @@ def ensure_setup_assistance_forms(pack: dict[str, Any]) -> dict[str, Any]:
     return validate_form_pack_schema(augmented)
 
 
+def requester_safe_form_pack(pack: dict[str, Any]) -> dict[str, Any]:
+    """Return a requester/public projection without legacy request wording."""
+    safe_pack = ensure_setup_assistance_forms(pack)
+    if safe_pack.get("pack_key") != DEFAULT_TICKET_FORM_PACK_KEY:
+        return safe_pack
+
+    title = str(safe_pack.get("title") or "").strip()
+    if title == "Каталог заявок":
+        safe_pack = deepcopy(safe_pack)
+        safe_pack["title"] = "Каталог обращений"
+    return safe_pack
+
+
 def pack_summary(pack: dict[str, Any]) -> dict[str, Any]:
     forms = pack.get("forms") or []
     return {
