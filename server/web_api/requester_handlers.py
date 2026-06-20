@@ -8,7 +8,7 @@ from aiohttp import web
 from loguru import logger
 from sqlalchemy import func, or_, select
 
-from app.api.serializers import ticket_to_dict
+from app.api.serializers import requester_ticket_actions, ticket_to_dict
 from app.db import get_session
 from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson
 from app.repos import ArtifactsRepo
@@ -714,7 +714,10 @@ def _status_filter(request: web.Request) -> list[str] | None:
 async def handle_web_requester_bootstrap(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
-        payload = await RequesterIdentityResolver(session).build_bootstrap(actor_id=auth_context.actor_id)
+        payload = await RequesterIdentityResolver(session, state=request.app.get("state")).build_bootstrap(
+            actor_id=auth_context.actor_id,
+            state=request.app.get("state"),
+        )
     return _success(payload)
 
 
@@ -722,7 +725,7 @@ async def handle_web_requester_bootstrap(request: web.Request) -> web.Response:
 async def handle_web_requester_devices(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         devices = await resolver.list_allowed_devices(person.person_id if person else None)
     return _success({"devices": devices, "count": len(devices)})
@@ -732,7 +735,10 @@ async def handle_web_requester_devices(request: web.Request) -> web.Response:
 async def handle_web_requester_profile(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
-        payload = await RequesterIdentityResolver(session).build_profile(actor_id=auth_context.actor_id)
+        payload = await RequesterIdentityResolver(session, state=request.app.get("state")).build_profile(
+            actor_id=auth_context.actor_id,
+            state=request.app.get("state"),
+        )
     return _success(payload)
 
 
@@ -748,7 +754,7 @@ async def handle_web_requester_on_behalf_people(request: web.Request) -> web.Res
         return _success({"people": []})
 
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         creator = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         if creator is None:
             return _error(
@@ -813,7 +819,7 @@ async def handle_web_requester_profile_update(request: web.Request) -> web.Respo
     auth_context = request["auth_context"]
     data = await _json_body(request)
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         try:
             payload = await resolver.update_own_profile(actor_id=auth_context.actor_id, payload=data)
             await session.commit()
@@ -834,7 +840,7 @@ async def handle_web_requester_device_detail(request: web.Request) -> web.Respon
         return _error("device not found", status=404, error_code="NOT_FOUND")
     async with get_session() as session:
         try:
-            payload = await RequesterIdentityResolver(session).get_device_detail(
+            payload = await RequesterIdentityResolver(session, state=request.app.get("state")).get_device_detail(
                 actor_id=auth_context.actor_id,
                 device_id=device_id,
             )
@@ -848,7 +854,10 @@ async def handle_web_requester_tickets(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     limit = int(request.query.get("limit") or 100)
     async with get_session() as session:
-        tickets = await RequesterIdentityResolver(session).list_tickets(actor_id=auth_context.actor_id, limit=limit)
+        tickets = await RequesterIdentityResolver(session, state=request.app.get("state")).list_tickets(
+            actor_id=auth_context.actor_id,
+            limit=limit,
+        )
         payload = [ticket_to_dict(ticket, visibility="requester") for ticket in tickets]
     return _success({"tickets": payload, "count": len(payload)})
 
@@ -858,7 +867,10 @@ async def handle_web_requester_ticket_detail(request: web.Request) -> web.Respon
     auth_context = request["auth_context"]
     ticket_id = _clean(request.match_info.get("ticket_id"), max_length=80)
     async with get_session() as session:
-        ticket = await RequesterIdentityResolver(session).get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
+        ticket = await RequesterIdentityResolver(session, state=request.app.get("state")).get_ticket(
+            actor_id=auth_context.actor_id,
+            ticket_id=ticket_id,
+        )
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
         repo = TicketEventsRepo(session)
@@ -879,7 +891,7 @@ async def handle_web_requester_ticket_detail(request: web.Request) -> web.Respon
 async def handle_web_requester_consents(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         items = await UserConsentService(session).list_for_requester(
             requester_person_id=person.person_id if person else None,
@@ -894,7 +906,7 @@ async def handle_web_requester_consent_detail(request: web.Request) -> web.Respo
     auth_context = request["auth_context"]
     consent_id = _clean(request.match_info.get("consent_id"), max_length=80)
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         row = await UserConsentService(session).get_for_requester(
             consent_id=consent_id,
@@ -912,7 +924,7 @@ async def _handle_web_requester_consent_decision(request: web.Request, decision:
     data = await _json_body(request)
     reason = _clean(data.get("reason"), max_length=1000)
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         try:
             row = await UserConsentService(session, state=request.app.get("state")).decide_from_browser(
@@ -955,7 +967,7 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
 
     async with get_session() as session:
         repo = TicketEventsRepo(session)
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         ticket = await repo.get_ticket(ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
@@ -1044,10 +1056,17 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
 
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
+        actions = requester_ticket_actions(ticket)
+        if not actions["can_send_message"]:
+            return _error(
+                "requester message is not available for this ticket status",
+                status=409,
+                error_code="REQUESTER_TICKET_ACTION_NOT_AVAILABLE",
+            )
 
         attachments: list[dict[str, Any]] = []
         if attachment_refs:
@@ -1141,7 +1160,7 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
     data = await _json_body(request)
 
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
@@ -1215,7 +1234,7 @@ async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Resp
     data = await _json_body(request)
 
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
@@ -1271,7 +1290,7 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
     data = await _json_body(request)
 
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
@@ -1337,7 +1356,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
     form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
 
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         profile_schema = await RequesterProfileSchemaService(session).get_schema()
         binding = None
         if device_id:
@@ -1563,7 +1582,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     knowledge_attempts = sanitize_knowledge_attempts(data.get("knowledge_attempts"), surface="requester_portal")
 
     async with get_session() as session:
-        resolver = RequesterIdentityResolver(session)
+        resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         profile_schema = await RequesterProfileSchemaService(session).get_schema()
         binding = None
         if supplied_device_id:

@@ -491,7 +491,7 @@ def build_default_ticket_form_pack() -> dict[str, Any]:
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
         "version": DEFAULT_TICKET_FORM_PACK_VERSION,
-        "title": "Каталог заявок",
+        "title": "Каталог обращений",
         "description": "Базовый каталог интеллектуальных форм для helpdesk.",
         "forms": forms,
     }
@@ -704,7 +704,7 @@ def validate_form_pack_schema(raw_pack: Any, *, require_version: bool = True) ->
 
     pack_key = str(raw_pack.get("pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
     version = str(raw_pack.get("version") or "").strip()
-    title = str(raw_pack.get("title") or "").strip() or "Каталог заявок"
+    title = str(raw_pack.get("title") or "").strip() or "Каталог обращений"
     description = str(raw_pack.get("description") or "").strip()
     raw_forms = raw_pack.get("forms")
     if require_version and not version:

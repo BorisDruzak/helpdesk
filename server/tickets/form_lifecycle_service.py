@@ -185,7 +185,7 @@ def build_admin_forms_summary(
     return AdminFormsSummary(
         pack_key=str(resolved_pack.get("pack_key") or DEFAULT_TICKET_FORM_PACK_KEY),
         version=str(resolved_pack.get("version") or ""),
-        title=str(resolved_pack.get("title") or "Каталог заявок"),
+        title=str(resolved_pack.get("title") or "Каталог обращений"),
         description=str(resolved_pack.get("description") or "").strip() or None,
         forms_count=len(forms),
         fields_count=len(fields),
@@ -314,7 +314,7 @@ def serialize_admin_form_request(payload) -> dict[str, object]:
 def serialize_admin_forms_save_request(payload: AdminFormsSaveRequest) -> dict[str, object]:
     return {
         "pack_key": DEFAULT_TICKET_FORM_PACK_KEY,
-        "title": str(payload.title or "").strip() or "Каталог заявок",
+        "title": str(payload.title or "").strip() or "Каталог обращений",
         "description": str(payload.description or "").strip(),
         "forms": [serialize_admin_form_request(form) for form in payload.forms],
     }

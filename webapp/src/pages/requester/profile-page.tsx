@@ -247,11 +247,11 @@ export function RequesterProfilePage() {
   const displayName = values.full_name || profile?.display_name || "Пользователь";
 
   return (
-    <main aria-labelledby="requester-profile-title" className="space-y-5">
+    <div aria-labelledby="requester-profile-title" className="space-y-5">
       <header className="surface-panel px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="workspace-boot__eyebrow">Кабинет заявителя</p>
+            <p className="workspace-boot__eyebrow">Кабинет пользователя</p>
             <h1 className="mt-2 text-2xl font-semibold text-slate-950" id="requester-profile-title">{pageTitle}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
               Данные профиля помогают поддержке понять, где находится рабочее место и как быстрее связаться с вами.
@@ -394,6 +394,6 @@ export function RequesterProfilePage() {
           </div>
         </form>
       )}
-    </main>
+    </div>
   );
 }

@@ -18,7 +18,7 @@ function LocationProbe() {
   return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
 }
 
-function renderPage() {
+function renderPage(initialEntry = "/app/requester/new") {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, refetchOnWindowFocus: false },
@@ -26,7 +26,7 @@ function renderPage() {
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <MemoryRouter initialEntries={["/app/requester/new"]}>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <QueryClientProvider client={queryClient}>
           <LocationProbe />
           {children}
@@ -88,6 +88,33 @@ describe("RequesterNewRequestPage", () => {
     });
   });
 
+  it("recommends a catalog offering from the problem text instead of taking the first offering", async () => {
+    const fetchMock = installNewRequestMock({ withDistractorOffering: true });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Ноутбук не включается после обновления" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+    fireEvent.change(await screen.findByLabelText("Кратко"), {
+      target: { value: "Ноутбук не включается" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/tickets/T-77"));
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/web/requester/tickets" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+      service_code: "workplace",
+      offering_full_code: "workplace.laptop_broken",
+      request_template_key: "breakage",
+    });
+  });
+
   it("blocks create when safe preview returns blockers", async () => {
     installNewRequestMock({ previewBlockers: ["Недостаточно данных для маршрута."] });
     renderPage();
@@ -120,6 +147,37 @@ describe("RequesterNewRequestPage", () => {
     expect(screen.queryByRole("heading", { name: "Сначала заполните профиль" })).not.toBeInTheDocument();
   });
 
+  it("uses per-form no-device availability instead of treating the global flag as a device context", async () => {
+    installNewRequestMock({
+      withDevice: false,
+      noDeviceCreate: true,
+      withNoDeviceManualForm: true,
+    });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Ноутбук не включается без привязанного устройства" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+
+    expect(await screen.findByLabelText("Описание")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Устройство")).not.toBeInTheDocument();
+  });
+
+  it("uses the owner-change intent to open the explicit owner verification form", async () => {
+    installNewRequestMock({ withOwnerChangeForm: true });
+    renderPage("/app/requester/new?intent=device_owner_change");
+
+    expect(await screen.findByLabelText("Что случилось или что нужно?")).toHaveValue("Нужно проверить владельца устройства");
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+
+    expect(await screen.findByRole("heading", { name: "Проверка владельца устройства" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Что нужно проверить")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Устройство")).not.toBeInTheDocument();
+  });
+
   it("focuses the first missing dynamic field without exposing technical field names", async () => {
     installNewRequestMock();
     renderPage();
@@ -145,7 +203,10 @@ function installNewRequestMock(
     previewBlockers?: string[];
     profileComplete?: boolean;
     setupHelpForm?: boolean;
+    withDistractorOffering?: boolean;
     withDevice?: boolean;
+    withNoDeviceManualForm?: boolean;
+    withOwnerChangeForm?: boolean;
   } = {},
 ) {
   const profileComplete = options.profileComplete ?? true;
@@ -203,28 +264,93 @@ function installNewRequestMock(
                     { key: "device_id", label: "Устройство", type: "device_picker", required: true },
                   ],
             },
+            ...(options.withNoDeviceManualForm
+              ? [
+                  {
+                    key: "manual_help",
+                    title: "Ручная помощь",
+                    request_kind: "service_request",
+                    availability_policy: { available_without_agent_binding: true, contact_required: true },
+                    fields: [{ key: "description", label: "Описание", type: "textarea", required: true }],
+                  },
+                ]
+              : []),
+            ...(options.withOwnerChangeForm
+              ? [
+                  {
+                    key: "device_owner_change",
+                    title: "Проверка владельца устройства",
+                    request_kind: "service_request",
+                    availability_policy: { available_without_agent_binding: true, contact_required: true },
+                    fields: [{ key: "owner_context", label: "Что нужно проверить", type: "textarea", required: true }],
+                  },
+                ]
+              : []),
           ],
         },
       });
     }
     if (url === "/api/service-catalog/current") {
+      const workplaceService = {
+        service_code: "workplace",
+        title: "Рабочее место",
+        offerings: [
+          {
+            offering_code: "laptop_broken",
+            full_code: "workplace.laptop_broken",
+            title: "Сломался ноутбук",
+            request_template_key: "breakage",
+          },
+        ],
+      };
+      const manualService = {
+        service_code: "manual",
+        title: "Ручная помощь",
+        offerings: [
+          {
+            offering_code: "manual_help",
+            full_code: "manual.manual_help",
+            title: "Ручная помощь без устройства",
+            request_template_key: "manual_help",
+          },
+        ],
+      };
+      const ownerService = {
+        service_code: "ownership",
+        title: "Владельцы устройств",
+        offerings: [
+          {
+            offering_code: "device_owner_change",
+            full_code: "ownership.device_owner_change",
+            title: "Проверка владельца устройства",
+            request_template_key: "device_owner_change",
+          },
+        ],
+      };
       return jsonResponse({
         status: "ok",
         catalog_version: "phase-g",
-        services: [
-          {
-            service_code: "workplace",
-            title: "Рабочее место",
-            offerings: [
+        services: options.withDistractorOffering
+          ? [
               {
-                offering_code: "laptop_broken",
-                full_code: "workplace.laptop_broken",
-                title: "Сломался ноутбук",
-                request_template_key: "breakage",
+                service_code: "access",
+                title: "Доступы",
+                offerings: [
+                  {
+                    offering_code: "vpn",
+                    full_code: "access.vpn",
+                    title: "Доступ VPN",
+                    request_template_key: "access_request",
+                  },
+                ],
               },
-            ],
-          },
-        ],
+              workplaceService,
+            ]
+          : options.withNoDeviceManualForm
+            ? [workplaceService, manualService]
+          : options.withOwnerChangeForm
+            ? [workplaceService, ownerService]
+          : [workplaceService],
       });
     }
     if (url === "/api/registry/options") {

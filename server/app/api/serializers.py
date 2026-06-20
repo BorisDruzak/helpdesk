@@ -48,6 +48,22 @@ def serialize_datetime_recursive(value: Any) -> Any:
     return value
 
 
+def requester_ticket_actions(ticket: Any) -> Dict[str, bool]:
+    status = str(getattr(ticket, "status", None) or "").strip().lower()
+    terminal_message_statuses = {"resolved", "closed", "canceled", "cancelled", "archived"}
+    can_send_message = bool(status) and status not in terminal_message_statuses
+    can_confirm_solution = status == "resolved"
+    can_rate_solution = status in {"resolved", "closed"}
+    can_reopen = status in {"resolved", "closed"}
+    return {
+        "can_send_message": can_send_message,
+        "can_attach_files": can_send_message,
+        "can_confirm_solution": can_confirm_solution,
+        "can_rate_solution": can_rate_solution,
+        "can_reopen": can_reopen,
+    }
+
+
 def _queue_code_from_ticket(ticket: Any, queue_code: Optional[str] = None) -> Optional[str]:
     if queue_code:
         return queue_code
@@ -152,4 +168,6 @@ def ticket_to_dict(
         "resolution_confirmation_pending": bool(custom_fields.get("resolution_confirmation_pending")),
         "tags": serialize_datetime_recursive(getattr(ticket, "tags", None) or []),
     }
+    if str(visibility or "").lower() in {"requester", "public", "user"}:
+        base["actions"] = requester_ticket_actions(ticket)
     return apply_ticket_visibility_payload(ticket, base, visibility=visibility)

@@ -42,7 +42,7 @@ const filters: Array<{ key: TicketFilter; label: string }> = [
   { key: "all", label: "Все" },
 ];
 
-const actionStatuses = new Set(["waiting_user", "resolved"]);
+const actionStatuses = new Set(["waiting_on_user", "resolved"]);
 const closedStatuses = new Set(["closed", "canceled", "archived"]);
 
 export function RequesterTicketsPage() {
@@ -71,7 +71,9 @@ export function RequesterTicketsPage() {
   const tickets = ticketsQuery.data ?? [];
   const selectedTicket = detailQuery.data?.ticket ?? null;
   const selectedInternalTicketId = selectedTicket?.ticket_id ?? null;
-  const selectedStatus = selectedTicket?.status ?? "";
+  const selectedActions = selectedTicket?.actions;
+  const canSendMessage = selectedActions?.can_send_message === true;
+  const canAttachFiles = selectedActions?.can_attach_files === true;
   const pendingConsents = (consentsQuery.data ?? []).filter(
     (consent) =>
       consent.status === "pending" &&
@@ -81,12 +83,12 @@ export function RequesterTicketsPage() {
     () => tickets.filter((ticket) => ticketMatchesFilter(ticket, filter)).filter((ticket) => ticketMatchesSearch(ticket, search)),
     [filter, search, tickets],
   );
-  const canClose = selectedStatus === "resolved";
-  const canRate = selectedStatus === "resolved" || selectedStatus === "closed";
-  const canReopen = canRate && (reopenAvailable || feedbackRating <= 3 || !feedbackProblemResolved);
+  const canClose = selectedActions?.can_confirm_solution === true;
+  const canRate = selectedActions?.can_rate_solution === true;
+  const canReopen = selectedActions?.can_reopen === true && (reopenAvailable || feedbackRating <= 3 || !feedbackProblemResolved);
 
   async function refreshTicket() {
-    if (!ticketId) {
+    if (!ticketId || !canAttachFiles) {
       await requesterInvalidations.afterTicketMutation(queryClient);
       return;
     }
@@ -115,7 +117,7 @@ export function RequesterTicketsPage() {
   }
 
   async function handleSendMessage() {
-    if (!ticketId || messageSending || attachmentUploading) {
+    if (!ticketId || !canSendMessage || messageSending || attachmentUploading) {
       return;
     }
     const text = messageText.trim();
@@ -226,11 +228,11 @@ export function RequesterTicketsPage() {
   }
 
   return (
-    <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+    <div className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[360px_minmax(0,1fr)]">
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-brand-700">Кабинет заявителя</p>
+            <p className="text-sm font-semibold text-brand-700">Кабинет пользователя</p>
             <h1 className="mt-1 text-2xl font-semibold text-slate-950">Мои обращения</h1>
           </div>
           <Link className="rounded-panel bg-brand-700 px-3 py-2 text-sm font-semibold text-white" to="/app/requester/new">
@@ -379,46 +381,48 @@ export function RequesterTicketsPage() {
                 ) : null}
               </section>
             ) : null}
-            <section aria-labelledby="requester-reply-title" className="sticky bottom-4 rounded-panel border border-slate-200 bg-white p-4 shadow-lg">
-              <h3 className="text-lg font-semibold text-slate-950" id="requester-reply-title">Ответить</h3>
-              <textarea
-                aria-label="Ответ заявителя"
-                className="mt-3 min-h-28 w-full rounded-panel border border-slate-200 px-3 py-2 text-sm"
-                onChange={(event) => setMessageText(event.currentTarget.value)}
-                value={messageText}
-              />
-              <input aria-label="Прикрепить файл к ответу" className="sr-only" onChange={handleAttachmentUpload} ref={attachmentInputRef} type="file" />
-              {pendingAttachments.length ? (
+            {canSendMessage ? (
+              <section aria-labelledby="requester-reply-title" className="sticky bottom-4 rounded-panel border border-slate-200 bg-white p-4 shadow-lg">
+                <h3 className="text-lg font-semibold text-slate-950" id="requester-reply-title">Ответить</h3>
+                <textarea
+                  aria-label="Ответ заявителя"
+                  className="mt-3 min-h-28 w-full rounded-panel border border-slate-200 px-3 py-2 text-sm"
+                  onChange={(event) => setMessageText(event.currentTarget.value)}
+                  value={messageText}
+                />
+                <input aria-label="Прикрепить файл к ответу" className="sr-only" onChange={handleAttachmentUpload} ref={attachmentInputRef} type="file" />
+                {pendingAttachments.length ? (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {pendingAttachments.map((attachment) => (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700" key={attachment.artifact_id}>
+                        {attachment.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {pendingAttachments.map((attachment) => (
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700" key={attachment.artifact_id}>
-                      {attachment.name}
-                    </span>
-                  ))}
+                  <button className="inline-flex items-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60" disabled={!canAttachFiles || attachmentUploading || messageSending} onClick={() => attachmentInputRef.current?.click()} type="button">
+                    <Paperclip className="h-4 w-4" />
+                    {attachmentUploading ? "Загружаем..." : "Вложить файл"}
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
+                    disabled={messageSending || attachmentUploading || (!messageText.trim() && !pendingAttachments.length)}
+                    onClick={handleSendMessage}
+                    type="button"
+                  >
+                    <Send className="h-4 w-4" />
+                    {messageSending ? "Отправляем..." : "Отправить"}
+                  </button>
                 </div>
-              ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button className="inline-flex items-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60" disabled={attachmentUploading || messageSending} onClick={() => attachmentInputRef.current?.click()} type="button">
-                  <Paperclip className="h-4 w-4" />
-                  {attachmentUploading ? "Загружаем..." : "Вложить файл"}
-                </button>
-                <button
-                  className="inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
-                  disabled={messageSending || attachmentUploading || (!messageText.trim() && !pendingAttachments.length)}
-                  onClick={handleSendMessage}
-                  type="button"
-                >
-                  <Send className="h-4 w-4" />
-                  {messageSending ? "Отправляем..." : "Отправить"}
-                </button>
-              </div>
-            </section>
+              </section>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-panel border border-slate-200 bg-white p-5 text-sm text-slate-600">Обращение не найдено.</div>
         )}
       </section>
-    </main>
+    </div>
   );
 }
 

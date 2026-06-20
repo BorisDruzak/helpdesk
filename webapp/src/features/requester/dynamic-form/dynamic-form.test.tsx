@@ -6,14 +6,17 @@ import type { RequestFormDefinition, RequestFormField } from "../types";
 import {
   ALL_DYNAMIC_REQUEST_FIELD_TYPES,
   PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES,
+  REQUESTER_DYNAMIC_REQUEST_FIELD_TYPES,
   RequestFormFieldControl,
   buildDefaultFieldValues,
   collectVisiblePayload,
   fieldWithRequesterContextOptions,
   formatDynamicFieldReviewValue,
+  isDynamicFieldVisible,
   mergeContextPrefillValues,
   missingRequiredFields,
   validateDynamicFormSchema,
+  validateDynamicFormValues,
   type DynamicFieldValue,
 } from ".";
 
@@ -24,7 +27,7 @@ const baseOptions = [
 
 describe("requester dynamic form runtime", () => {
   it("renders every requester field type through one registry", () => {
-    for (const type of ALL_DYNAMIC_REQUEST_FIELD_TYPES) {
+    for (const type of REQUESTER_DYNAMIC_REQUEST_FIELD_TYPES) {
       const field: RequestFormField = {
         key: `field_${type}`,
         label: `Поле ${type}`,
@@ -40,7 +43,14 @@ describe("requester dynamic form runtime", () => {
 
   it("keeps file fields out of publishable Studio choices while preserving runtime validation", () => {
     expect(PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES).not.toContain("file");
-    expect(ALL_DYNAMIC_REQUEST_FIELD_TYPES).toContain("file");
+    expect(REQUESTER_DYNAMIC_REQUEST_FIELD_TYPES).not.toContain("file");
+    expect(ALL_DYNAMIC_REQUEST_FIELD_TYPES).not.toContain("file");
+  });
+
+  it("does not render legacy file fields in requester runtime", () => {
+    render(<FieldHarness field={{ key: "attachment", label: "Файл", type: "file" }} />);
+
+    expect(screen.queryByLabelText("Файл")).not.toBeInTheDocument();
   });
 
   it("keeps technical request field keys out of accessible field names", () => {
@@ -108,6 +118,40 @@ describe("requester dynamic form runtime", () => {
 
     expect(missingRequiredFields(form, values)).toEqual([]);
     expect(collectVisiblePayload(form, values)).toEqual({ need_access: "vpn" });
+  });
+
+  it("supports null equality conditions and validates submitted values", () => {
+    const form: RequestFormDefinition = {
+      key: "validated",
+      title: "Validated",
+      fields: [
+        { key: "manager_id", label: "Manager", type: "text" },
+        { key: "no_manager_reason", label: "No manager reason", type: "text", visible_when: { field: "manager_id", equals: null } },
+        { key: "email", label: "Email", type: "email", required: true },
+        { key: "url", label: "URL", type: "url" },
+        { key: "seats", label: "Seats", type: "number", validation: { min: 1, max: 3 } },
+        { key: "code", label: "Code", type: "text", validation: { min_length: 3, max_length: 5, pattern: "^[A-Z]+$" } },
+        { key: "system", label: "System", type: "select", options: baseOptions },
+        { key: "systems", label: "Systems", type: "multi_select", options: baseOptions },
+      ],
+    };
+
+    expect(isDynamicFieldVisible(form.fields[1], { manager_id: null })).toBe(true);
+    expect(isDynamicFieldVisible(form.fields[1], { manager_id: "manager-1" })).toBe(false);
+    expect(validateDynamicFormValues(form, { email: "not-email", url: "ftp://example.test", seats: 5, code: "ab", system: "unknown", systems: ["vpn", "unknown"] }).issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "invalid_email", path: "fields.email" }),
+        expect.objectContaining({ code: "invalid_url", path: "fields.url" }),
+        expect.objectContaining({ code: "number_too_large", path: "fields.seats" }),
+        expect.objectContaining({ code: "text_too_short", path: "fields.code" }),
+        expect.objectContaining({ code: "pattern_mismatch", path: "fields.code" }),
+        expect.objectContaining({ code: "invalid_option", path: "fields.system" }),
+        expect.objectContaining({ code: "invalid_option", path: "fields.systems" }),
+      ]),
+    );
+    expect(validateDynamicFormValues(form, { seats: "not-a-number" }).issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "invalid_number", path: "fields.seats" })]),
+    );
   });
 
   it("uses registry, device and service labels in review text instead of technical values", () => {
@@ -211,6 +255,33 @@ describe("requester dynamic form runtime", () => {
         ],
       }).issues,
     ).toEqual(expect.arrayContaining([expect.objectContaining({ code: "invalid_visible_when_field" })]));
+
+    expect(
+      validateDynamicFormSchema({
+        key: "cycle",
+        title: "Cycle",
+        fields: [
+          { key: "a", label: "A", type: "text", visible_when: { field: "b", equals: "yes" } },
+          { key: "b", label: "B", type: "text", visible_when: { field: "a", equals: "yes" } },
+          {
+            key: "system",
+            label: "System",
+            type: "select",
+            options: [
+              { value: "vpn", label: "VPN" },
+              { value: "vpn", label: "Duplicate VPN" },
+              { value: "", label: "Empty" },
+            ],
+          },
+        ],
+      }).issues,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "visible_when_cycle" }),
+        expect.objectContaining({ code: "duplicate_option_value", path: "fields.system.options" }),
+        expect.objectContaining({ code: "empty_option_value", path: "fields.system.options" }),
+      ]),
+    );
 
     expect(
       validateDynamicFormSchema({

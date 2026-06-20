@@ -46,7 +46,7 @@ function item(overrides: Partial<RequestStudioItem> = {}): RequestStudioItem {
       fields: [{ key: "system", label: "Система", type: "text", required: true }],
     },
     processProfile: {
-      profileName: "Заявка на доступ",
+      profileName: "Обращение на доступ",
       requiredMissing: [],
       recommendedMissing: [],
       readyLabels: ["маршрут", "SLA", "закрытие"],

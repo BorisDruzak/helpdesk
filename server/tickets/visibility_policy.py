@@ -69,6 +69,7 @@ REQUESTER_SAFE_TICKET_FIELDS = {
     "chat_counters",
     "presence",
     "actor_role",
+    "actions",
     "events",
     "history",
     "last_event_id",

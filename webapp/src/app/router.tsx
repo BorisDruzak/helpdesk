@@ -42,6 +42,7 @@ import {
   KnowledgePortalHomePage,
   KnowledgePortalSearchPage,
   ReportsPage,
+  RequesterDeviceLinkPage,
   RequesterDevicesPage,
   RequesterHomePage,
   RequesterNewRequestPage,
@@ -344,7 +345,7 @@ export const appRoutes: RouteObject[] = [
             path: "requester/devices/link",
             element: (
               <WorkspaceAccessGate workspace="requester">
-                <RequesterDevicesPage />
+                <RequesterDeviceLinkPage />
               </WorkspaceAccessGate>
             )
           },

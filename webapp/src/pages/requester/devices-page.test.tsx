@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { RequesterDevicesPage } from "./devices-page";
+import { RequesterDeviceLinkPage, RequesterDevicesPage } from "./devices-page";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -15,7 +15,7 @@ function jsonResponse(payload: unknown, status = 200) {
   });
 }
 
-function renderDevicesPage(initialEntry = "/app/requester/devices") {
+function renderDevicesPage(initialEntry = "/app/requester/devices", Page = RequesterDevicesPage) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
@@ -33,7 +33,7 @@ function renderDevicesPage(initialEntry = "/app/requester/devices") {
     );
   }
 
-  return render(<RequesterDevicesPage />, { wrapper: Wrapper });
+  return render(<Page />, { wrapper: Wrapper });
 }
 
 function requesterBootstrap({
@@ -179,9 +179,12 @@ describe("RequesterDevicesPage", () => {
     });
     vi.stubGlobal("fetch", fetchMock as typeof fetch);
 
-    renderDevicesPage("/app/requester/devices/link");
+    renderDevicesPage("/app/requester/devices/link", RequesterDeviceLinkPage);
 
-    fireEvent.change(await screen.findByLabelText("Код подключения"), { target: { value: "abcd-1234" } });
+    expect(await screen.findByRole("heading", { name: "Подключить устройство" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Мои устройства" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Код подключения"), { target: { value: "abcd-1234" } });
     fireEvent.click(screen.getByRole("button", { name: "Проверить код" }));
 
     expect(await screen.findByText("R4-PC")).toBeInTheDocument();
@@ -192,7 +195,7 @@ describe("RequesterDevicesPage", () => {
     expect(screen.queryByText(/pair-manual|device-manual|claim|session|binding/i)).not.toBeInTheDocument();
   });
 
-  it("loads direct link preview without displaying pairing id and shows auto-approved result", async () => {
+  it("loads direct link preview without displaying pairing id and treats active result as connected", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/web/requester/bootstrap") {
@@ -218,7 +221,7 @@ describe("RequesterDevicesPage", () => {
             purpose: "registration",
             status: "confirmed",
             device: { device_id: "device-direct", hostname: "DIRECT-PC", os: "Windows", agent_version: "3.1.64" },
-            registration: { status: "approved", device_id: "device-direct" },
+            registration: { status: "active", device_id: "device-direct" },
           },
         });
       }
@@ -236,5 +239,25 @@ describe("RequesterDevicesPage", () => {
 
     await waitFor(() => expect(screen.getByText("Устройство подключено")).toBeInTheDocument());
     expect(screen.queryByText(/pair-direct|device-direct|pairing_id/i)).not.toBeInTheDocument();
+  });
+
+  it("does not retry a failed direct pairing id load in a loop", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/web/requester/bootstrap") {
+        return jsonResponse({ status: "success", data: requesterBootstrap({ devices: [] }) });
+      }
+      if (url === "/api/web/registry/browser-pairings/broken-direct") {
+        return jsonResponse({ status: "error", error_code: "PAIRING_NOT_FOUND", error: "pairing not found" }, 404);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
+
+    renderDevicesPage("/app/requester/devices/link?pairing_id=broken-direct", RequesterDeviceLinkPage);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/не найдено|недоступно/i);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === "/api/web/registry/browser-pairings/broken-direct")).toHaveLength(1);
   });
 });

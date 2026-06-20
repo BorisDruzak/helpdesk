@@ -54,10 +54,10 @@ export type AutoFixSuggestion = {
 };
 
 export const PROCESS_PROFILES = [
-  "Простая заявка",
+  "Простое обращение",
   "Инцидент",
   "Срочный инцидент",
-  "Заявка на доступ",
+  "Обращение на доступ",
   "Установка ПО",
   "Консультация",
   "Пользовательский профиль",
@@ -212,7 +212,7 @@ export function buildFormsDraftPayload(args: {
   const nextForm = draftToForm(args.draft, args.registry);
   const forms = args.currentForms.filter((form) => form.key !== nextForm.key).map(formsItemToSaveForm);
   return {
-    title: "Каталог заявок",
+    title: "Каталог обращений",
     description: "Черновик из Студии обращений",
     base_version: args.baseVersion ?? null,
     forms: [nextForm, ...forms],

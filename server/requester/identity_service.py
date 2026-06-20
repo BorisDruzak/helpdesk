@@ -21,6 +21,7 @@ from app.db.models import (
 )
 from app.repos.registration_repo import RegistrationRepo, is_person_active
 from app.repos.registry_repo import RegistryRepo
+from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
 
 
@@ -57,9 +58,85 @@ def _metadata_value(row: Any, key: str) -> Any:
     return metadata.get(key) if isinstance(metadata, dict) else None
 
 
+def _requester_ticket_route(ticket: Ticket) -> str | None:
+    ticket_code = str(getattr(ticket, "ticket_code", "") or "").strip()
+    if not ticket_code:
+        return None
+    return f"/app/requester/tickets/{ticket_code}"
+
+
+def _build_requester_next_actions(
+    *,
+    profile_completion: dict[str, Any],
+    tickets: list[Ticket],
+    devices: list[dict[str, Any]],
+    ticket_create_allowed: bool,
+) -> list[dict[str, Any]]:
+    actions: list[dict[str, Any]] = []
+    if profile_completion.get("complete") is False:
+        actions.append(
+            {
+                "key": "complete_profile",
+                "label": "Заполнить профиль",
+                "href": str(profile_completion.get("setup_path") or "/app/requester/profile/setup"),
+            }
+        )
+
+    requester_ticket = next(
+        (
+            ticket
+            for ticket in tickets
+            if str(getattr(ticket, "next_action_owner", "") or "").strip().lower() == "requester"
+            and _requester_ticket_route(ticket)
+        ),
+        None,
+    )
+    if requester_ticket is not None:
+        ticket_code = str(getattr(requester_ticket, "ticket_code", "") or "").strip()
+        actions.append(
+            {
+                "key": "review_ticket",
+                "label": "Ответить по обращению",
+                "href": _requester_ticket_route(requester_ticket),
+                "ticket_code": ticket_code,
+            }
+        )
+
+    if not devices:
+        actions.append(
+            {
+                "key": "link_device",
+                "label": "Привязать устройство",
+                "href": "/app/requester/devices/link",
+            }
+        )
+
+    if ticket_create_allowed:
+        actions.append(
+            {
+                "key": "continue_requests",
+                "label": "Создать обращение",
+                "href": "/app/requester/new",
+            }
+        )
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for action in actions:
+        key = str(action.get("key") or "")
+        href = str(action.get("href") or "")
+        identity = f"{key}:{href}"
+        if not key or not href or identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(action)
+    return deduped
+
+
 class RequesterIdentityResolver:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, *, state: Any | None = None):
         self.session = session
+        self.state = state
         self.registration_repo = RegistrationRepo(session)
         self.registry_repo = RegistryRepo(session)
 
@@ -98,12 +175,24 @@ class RequesterIdentityResolver:
         )
         return list(result.scalars().all())
 
-    async def list_allowed_devices(self, person_id: str | None) -> list[dict[str, Any]]:
+    def _device_online(self, device_id: str | None, *, state: Any | None = None) -> bool | None:
+        if not device_id:
+            return None
+        runtime_state = state if state is not None else self.state
+        checker = getattr(runtime_state, "is_agent_online", None)
+        if not callable(checker):
+            return None
+        try:
+            return bool(checker(str(device_id)))
+        except Exception:
+            return None
+
+    async def list_allowed_devices(self, person_id: str | None, *, state: Any | None = None) -> list[dict[str, Any]]:
         devices: list[dict[str, Any]] = []
         for binding in await self.list_active_bindings(person_id):
             device = await self.session.get(Device, binding.device_id)
             asset = await self.registry_repo.get_asset_by_device_id(binding.device_id)
-            devices.append(self.serialize_device(binding, device, asset))
+            devices.append(self.serialize_device(binding, device, asset, state=state))
         return devices
 
     async def get_device_detail(self, *, actor_id: str, device_id: str) -> dict[str, Any]:
@@ -406,7 +495,10 @@ class RequesterIdentityResolver:
         binding: DeviceUserBinding,
         device: Device | None,
         asset: RegistryAsset | None,
+        *,
+        state: Any | None = None,
     ) -> dict[str, Any]:
+        online = self._device_online(binding.device_id, state=state)
         return {
             "device_id": binding.device_id,
             "binding_id": binding.binding_id,
@@ -417,7 +509,7 @@ class RequesterIdentityResolver:
             "agent_version": getattr(device, "agent_version", None)
             or ((getattr(asset, "discovery_payload", None) or {}).get("agent_version") if asset else None),
             "last_seen_at": getattr(getattr(device, "last_seen_at", None), "isoformat", lambda: None)(),
-            "online": False,
+            "online": online,
             "asset_id": getattr(asset, "asset_id", None),
             "asset_name": getattr(asset, "name", None),
             "asset_type": getattr(asset, "asset_type", None),
@@ -425,6 +517,51 @@ class RequesterIdentityResolver:
             "department_id": getattr(asset, "department_id", None),
             "location_id": getattr(asset, "location_id", None),
         }
+
+    async def resolve_primary_device(
+        self,
+        person_id: str | None,
+        *,
+        state: Any | None = None,
+    ) -> tuple[dict[str, Any] | None, dict[str, Any], DeviceUserBinding | None]:
+        if not person_id:
+            return None, {
+                "status": "missing",
+                "reason_code": "person_missing",
+                "source": None,
+                "candidate_count": 0,
+            }, None
+        resolved = await PrimaryAgentResolver(self.session, state=state if state is not None else self.state).resolve_for_person(person_id)
+        is_resolved = bool(resolved.get("resolved"))
+        reason_code = str(resolved.get("reason_code") or "")
+        status = "available" if is_resolved else "missing"
+        if not is_resolved and reason_code == "ambiguous_primary_device":
+            status = "ambiguous"
+        resolution = {
+            "status": status,
+            "reason_code": reason_code or None,
+            "source": resolved.get("source"),
+            "candidate_count": 1 if is_resolved else int(resolved.get("candidate_count") or 0),
+        }
+        if isinstance(resolved.get("candidates"), list):
+            resolution["candidates"] = resolved["candidates"]
+        if not is_resolved:
+            return None, resolution, None
+        binding = await self.session.get(DeviceUserBinding, str(resolved.get("binding_id") or ""))
+        if binding is None:
+            return None, {
+                "status": "missing",
+                "reason_code": "primary_binding_missing",
+                "source": resolved.get("source"),
+                "candidate_count": 0,
+            }, None
+        device = await self.session.get(Device, binding.device_id)
+        asset = await self.registry_repo.get_asset_by_device_id(binding.device_id)
+        primary_device = self.serialize_device(binding, device, asset, state=state)
+        primary_device["online"] = resolved.get("online")
+        primary_device["connection_state"] = resolved.get("connection_state")
+        primary_device["last_handshake_at"] = resolved.get("last_handshake_at")
+        return primary_device, resolution, binding
 
     async def build_requester_context(
         self,
@@ -682,15 +819,20 @@ class RequesterIdentityResolver:
             for claim in result.scalars().all()
         ]
 
-    async def build_bootstrap(self, *, actor_id: str) -> dict[str, Any]:
+    async def build_bootstrap(self, *, actor_id: str, state: Any | None = None) -> dict[str, Any]:
         person = await self.resolve_person_for_web_user(actor_id)
         profile_schema = await RequesterProfileSchemaService(self.session).get_schema()
         profile_completion = self.build_profile_completion(person, profile_schema=profile_schema)
-        devices = await self.list_allowed_devices(person.person_id if person else None)
+        devices = await self.list_allowed_devices(person.person_id if person else None, state=state)
+        primary_device, primary_device_resolution, primary_binding = await self.resolve_primary_device(
+            person.person_id if person else None,
+            state=state,
+        )
         requester_context = await self.build_requester_context(
             actor_id=actor_id,
             person=person,
-            account_mode="browser_no_device",
+            binding=primary_binding,
+            account_mode="confirmed_binding" if primary_binding is not None else "browser_no_device",
             profile_schema=profile_schema,
         )
         tickets = await self.list_tickets(actor_id=actor_id, limit=25)
@@ -704,6 +846,8 @@ class RequesterIdentityResolver:
             "profile_completion": profile_completion,
             "requester_context": self.requester_context_preview(requester_context),
             "devices": devices,
+            "primary_device": primary_device,
+            "primary_device_resolution": primary_device_resolution,
             "active_bindings": [
                 {
                     "binding_id": device["binding_id"],
@@ -718,6 +862,12 @@ class RequesterIdentityResolver:
             "tickets_requiring_user_action_count": sum(
                 1 for ticket in tickets if str(getattr(ticket, "next_action_owner", "") or "") == "requester"
             ),
+            "next_actions": _build_requester_next_actions(
+                profile_completion=profile_completion,
+                tickets=tickets,
+                devices=devices,
+                ticket_create_allowed=ticket_create_allowed,
+            ),
             "pending_consent_count": 0,
             "recent_tickets": [ticket_to_dict(ticket, visibility="requester") for ticket in tickets[:10]],
             "feature_flags": {
@@ -728,15 +878,17 @@ class RequesterIdentityResolver:
             "policies": {"device_selection_required": False},
         }
 
-    async def build_profile(self, *, actor_id: str) -> dict[str, Any]:
+    async def build_profile(self, *, actor_id: str, state: Any | None = None) -> dict[str, Any]:
         person = await self.resolve_person_for_web_user(actor_id)
         profile_schema = await RequesterProfileSchemaService(self.session).get_schema()
         person_id = person.person_id if person else None
-        devices = await self.list_allowed_devices(person_id)
+        devices = await self.list_allowed_devices(person_id, state=state)
+        primary_device, primary_device_resolution, primary_binding = await self.resolve_primary_device(person_id, state=state)
         requester_context = await self.build_requester_context(
             actor_id=actor_id,
             person=person,
-            account_mode="browser_no_device",
+            binding=primary_binding,
+            account_mode="confirmed_binding" if primary_binding is not None else "browser_no_device",
             profile_schema=profile_schema,
         )
         return {
@@ -744,6 +896,8 @@ class RequesterIdentityResolver:
             "requester_context": self.requester_context_preview(requester_context),
             "identities": await self.list_person_identities(person_id),
             "devices": devices,
+            "primary_device": primary_device,
+            "primary_device_resolution": primary_device_resolution,
             "active_bindings": [
                 {
                     "binding_id": device["binding_id"],

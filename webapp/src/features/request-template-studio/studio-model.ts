@@ -747,7 +747,7 @@ function isTechnicalCatalogObject(service: AdminServiceCatalogService, offering:
 function inferProfileName(template: AdminHelpdeskRequestTemplateItem | null) {
   const text = `${template?.template_code ?? ""} ${template?.public_title ?? ""} ${template?.ticket_type ?? ""}`.toLowerCase();
   if (isAccessProfile(null, template)) {
-    return "Заявка на доступ";
+    return "Обращение на доступ";
   }
   if (isIncidentProfile(null, template)) {
     return "Инцидент";
@@ -758,5 +758,5 @@ function inferProfileName(template: AdminHelpdeskRequestTemplateItem | null) {
   if (text.includes("consult") || text.includes("консульт")) {
     return "Консультация";
   }
-  return "Простая заявка";
+  return "Простое обращение";
 }

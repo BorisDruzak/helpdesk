@@ -1,6 +1,6 @@
 import { ArrowRight, CheckCircle2, Search, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
   createRequesterTicket,
@@ -26,6 +26,7 @@ import {
   mergeContextPrefillValues,
   missingRequiredFieldDetails,
   missingRequiredFields,
+  validateDynamicFormValues,
   type DynamicFormValues,
 } from "../../features/requester/dynamic-form";
 import { requesterDeviceLabel, requesterErrorMessage } from "../../features/requester/labels";
@@ -48,6 +49,8 @@ type KnowledgeFeedbackEvent = Parameters<typeof recordKnowledgeFeedback>[0]["eve
 
 const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
 const ASK_TICKET_CONTEXT_MAX_AGE_MS = 30 * 60 * 1000;
+const OWNER_CHANGE_INTENT = "device_owner_change";
+const OWNER_CHANGE_PROBLEM = "Нужно проверить владельца устройства";
 
 type AskTicketContext = {
   query?: string | null;
@@ -58,7 +61,9 @@ type AskTicketContext = {
 
 export function RequesterNewRequestPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const requestIntent = useMemo(() => new URLSearchParams(location.search).get("intent") || "", [location.search]);
   const bootstrapQuery = useRequesterBootstrapQuery();
   const formPackQuery = useRequesterFormPackQuery();
   const catalogQuery = useRequesterServiceCatalogQuery();
@@ -66,12 +71,11 @@ export function RequesterNewRequestPage() {
   const forms = formPackQuery.data?.forms ?? [];
   const services = catalogQuery.data?.services ?? [];
   const profileComplete = bootstrap?.profile_completion ? bootstrap.profile_completion.complete !== false : Boolean(bootstrap?.profile);
-  const canCreateWithoutDevice = bootstrap?.feature_flags?.requester_no_device_create === true;
   const devices = bootstrap?.devices ?? [];
-  const primaryDevice = devices[0] ?? null;
-  const hasAgentContext = Boolean(primaryDevice || canCreateWithoutDevice);
+  const primaryDevice = bootstrap?.primary_device ?? devices[0] ?? null;
+  const hasAgentContext = Boolean(primaryDevice);
   const [step, setStep] = useState<WizardStep>("problem");
-  const [problem, setProblem] = useState("");
+  const [problem, setProblem] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
   const [fieldValues, setFieldValues] = useState<DynamicFormValues>({});
   const [previousPrefill, setPreviousPrefill] = useState<DynamicFormValues>({});
   const [knowledgeResult, setKnowledgeResult] = useState<KnowledgeSuggestResult | null>(null);
@@ -90,7 +94,7 @@ export function RequesterNewRequestPage() {
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const [validationAttempted, setValidationAttempted] = useState(false);
 
-  const selectedOffering = useMemo(() => firstAvailableOffering(services), [services]);
+  const selectedOffering = useMemo(() => recommendOffering(services, problem, forms, requestIntent), [forms, problem, requestIntent, services]);
   const selectedService = useMemo(
     () => services.find((service) => service.service_code === selectedOffering?.service_code) ?? null,
     [selectedOffering?.service_code, services],
@@ -125,11 +129,12 @@ export function RequesterNewRequestPage() {
   const visiblePayload = useMemo(() => collectVisiblePayload(selectedForm, fieldValues), [fieldValues, selectedForm]);
   const missingFieldDetails = useMemo(() => missingRequiredFieldDetails(selectedForm, fieldValues), [fieldValues, selectedForm]);
   const missingFields = useMemo(() => missingRequiredFields(selectedForm, fieldValues), [fieldValues, selectedForm]);
+  const valueValidation = useMemo(() => validateDynamicFormValues(selectedForm, fieldValues), [fieldValues, selectedForm]);
   const onBehalfPolicy = selectedForm?.on_behalf_policy ?? null;
   const onBehalfMissingRequired =
     Boolean(onBehalfPolicy?.allowed && onBehalfEnabled && onBehalfPolicy.affected_person_required && !selectedOnBehalfPerson) ||
     Boolean(onBehalfPolicy?.allowed && onBehalfEnabled && onBehalfPolicy.reason_required && !onBehalfReason.trim());
-  const canPreview = Boolean(problem.trim() && selectedForm && !missingFields.length && !onBehalfMissingRequired);
+  const canPreview = Boolean(problem.trim() && selectedForm && !missingFields.length && !valueValidation.issues.length && !onBehalfMissingRequired);
   const canCreate = Boolean(previewResult?.ok && !(previewResult.blockers ?? []).length && !submitting && !previewSubmitting);
 
   useEffect(() => {
@@ -250,10 +255,13 @@ export function RequesterNewRequestPage() {
 
   function goToReview() {
     setValidationAttempted(true);
-    if (missingFieldDetails.length || onBehalfMissingRequired) {
-      setError(`Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`);
+    if (missingFieldDetails.length || valueValidation.issues.length || onBehalfMissingRequired) {
+      setError(
+        valueValidation.issues[0]?.message ||
+          `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`,
+      );
       window.requestAnimationFrame(() => {
-        const firstMissingKey = missingFieldDetails[0]?.key;
+        const firstMissingKey = missingFieldDetails[0]?.key ?? valueValidation.issues[0]?.path.replace(/^fields\./, "");
         if (firstMissingKey) {
           fieldRefs.current[firstMissingKey]?.focus();
         }
@@ -319,31 +327,31 @@ export function RequesterNewRequestPage() {
   }
 
   if (bootstrapQuery.isLoading || formPackQuery.isLoading) {
-    return <main className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-600">Загружаем форму...</main>;
+    return <div className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-600">Загружаем форму...</div>;
   }
 
   if (!selectedForm) {
     if (!profileComplete) {
       return (
-        <main className="mx-auto max-w-4xl px-4 py-8">
+        <div className="mx-auto max-w-4xl px-4 py-8">
           <h1 className="text-2xl font-semibold text-slate-950">Сначала заполните профиль</h1>
           <p className="mt-2 text-sm text-slate-600">После этого можно будет создать обычное обращение.</p>
           <a className="mt-4 inline-flex rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white" href={bootstrap?.profile_completion?.setup_path || "/app/requester/profile/setup"}>
             Заполнить профиль
           </a>
-        </main>
+        </div>
       );
     }
     return (
-      <main className="mx-auto max-w-4xl px-4 py-8">
+      <div className="mx-auto max-w-4xl px-4 py-8">
         <h1 className="text-2xl font-semibold text-slate-950">Нет доступной формы</h1>
         <p className="mt-2 text-sm text-slate-600">Для вашего профиля пока нет подходящего типа обращения.</p>
-      </main>
+      </div>
     );
   }
 
   return (
-    <main className="mx-auto grid max-w-5xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="mx-auto grid max-w-5xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
       <section className="space-y-4">
         <div>
           <p className="text-sm font-semibold text-brand-700">Новое обращение</p>
@@ -421,7 +429,13 @@ export function RequesterNewRequestPage() {
             <div className="mt-4 grid gap-3">
               {contextualFields.map((field) => (
                 <RequestFormFieldControl
-                  error={validationAttempted && missingFieldDetails.some((item) => item.key === field.key) ? `Заполните поле: ${field.label}.` : null}
+                  error={
+                    validationAttempted
+                      ? missingFieldDetails.some((item) => item.key === field.key)
+                        ? `Заполните поле: ${field.label}.`
+                        : valueValidation.issues.find((item) => item.path === `fields.${field.key}`)?.message ?? null
+                      : null
+                  }
                   field={field}
                   inputRef={(element) => {
                     fieldRefs.current[field.key] = element;
@@ -436,9 +450,10 @@ export function RequesterNewRequestPage() {
                 />
               ))}
             </div>
-            {missingFields.length || onBehalfMissingRequired ? (
+            {missingFields.length || valueValidation.issues.length || onBehalfMissingRequired ? (
               <p aria-live="polite" className="mt-3 text-sm text-rose-700" role="status">
-                Заполните: {[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.
+                {valueValidation.issues[0]?.message ||
+                  `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`}
               </p>
             ) : null}
             <button
@@ -492,7 +507,7 @@ export function RequesterNewRequestPage() {
           {primaryDevice ? <p className="mt-1 text-slate-500">{requesterDeviceLabel(primaryDevice, "Основное устройство")}</p> : <p className="mt-1 text-amber-700">Устройство не выбрано</p>}
         </div>
       </aside>
-    </main>
+    </div>
   );
 }
 
@@ -573,14 +588,66 @@ function OnBehalfPanel({
   );
 }
 
-function firstAvailableOffering(services: ServiceCatalogCurrent["services"]) {
+function recommendOffering(
+  services: ServiceCatalogCurrent["services"],
+  problem: string,
+  forms: RequestFormDefinition[],
+  intent?: string,
+) {
+  const words = searchableWords(problem);
+  if (intent === OWNER_CHANGE_INTENT) {
+    words.push("device_owner_change", "ownership", "владел", "владель", "устройств");
+  }
+  const uniqueWords = Array.from(new Set(words));
+  if (!uniqueWords.length) {
+    return null;
+  }
+  const formByKey = new Map(forms.map((form) => [form.key, form]));
+  let best:
+    | {
+        offering: ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string };
+        score: number;
+      }
+    | null = null;
   for (const service of services) {
-    const offering = service.offerings?.[0];
-    if (offering) {
-      return { ...offering, service_code: service.service_code };
+    for (const offering of service.offerings ?? []) {
+      const form = offering.request_template_key ? formByKey.get(offering.request_template_key) : null;
+      const haystack = searchableText([
+        service.title,
+        service.description,
+        service.service_code,
+        offering.title,
+        offering.description,
+        offering.full_code,
+        offering.offering_code,
+        offering.request_template_key,
+        form?.title,
+        form?.description,
+        form?.request_kind,
+      ]);
+      const score = uniqueWords.reduce((total, word) => total + (haystack.includes(word) ? 1 : 0), 0);
+      if (score > 0 && (!best || score > best.score)) {
+        best = { offering: { ...offering, service_code: service.service_code }, score };
+      }
     }
   }
-  return null;
+  return best?.offering ?? null;
+}
+
+function searchableWords(value: string): string[] {
+  return Array.from(
+    new Set(
+      String(value || "")
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .map((word) => word.trim())
+        .filter((word) => word.length >= 4),
+    ),
+  );
+}
+
+function searchableText(values: Array<string | null | undefined>): string {
+  return values.map((value) => String(value || "").toLowerCase()).join(" ");
 }
 
 function resolveSelectedForm(

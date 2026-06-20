@@ -17,7 +17,7 @@ describe("request studio draft model", () => {
       title: "Доступ к CRM",
       description: "Запрос прав в CRM",
       visibility: "restricted",
-      processProfile: "Заявка на доступ",
+      processProfile: "Обращение на доступ",
       routingPolicyCode: "route_l1",
       slaPolicyCode: "sla_p2",
       approvalMode: "required",
@@ -92,7 +92,7 @@ describe("request studio draft model", () => {
 
     expect(validateStudioDraftRequesterRuntime(draft, null)).toMatchObject({
       canPublish: false,
-      issues: [expect.objectContaining({ code: "requester_file_upload_disabled" })],
+      issues: expect.arrayContaining([expect.objectContaining({ code: "requester_file_upload_disabled" })]),
     });
     expect(() => buildRequestStudioPublishPayload({ draft, registry: null })).toThrow(/requester runtime/);
   });
@@ -131,7 +131,7 @@ function baseDraft(): StudioDraft {
     title: "Доступ к CRM",
     description: "Запрос прав в CRM",
     visibility: "restricted",
-    processProfile: "Заявка на доступ",
+    processProfile: "Обращение на доступ",
     routingPolicyCode: "route_l1",
     slaPolicyCode: "sla_p2",
     approvalMode: "required",

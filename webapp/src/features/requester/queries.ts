@@ -15,6 +15,7 @@ import type {
   AuthenticatedRequesterTicket,
   RequestFormPack,
   RequesterBootstrap,
+  RequesterBootstrapNextAction,
   RequesterConsent,
   RequesterDeviceDetail,
   RequesterProfileDetail,
@@ -22,6 +23,7 @@ import type {
   RequesterTicketDetail,
   ServiceCatalogCurrent,
 } from "./types";
+import { requesterTicketNextActionLabel } from "./labels";
 import { formatHumanIdentifier, formatRussianDateTime, formatStatusLabel } from "../../components/ui-page";
 
 const REQUESTER_QUERY_STALE_TIME_MS = 30_000;
@@ -33,6 +35,7 @@ type EnabledQueryOptions = {
 type RequesterNextActionKey =
   | "complete_profile"
   | "review_consents"
+  | "review_ticket"
   | "link_device"
   | "continue_requests";
 
@@ -62,6 +65,24 @@ export type RequesterDashboardProjection = {
     createdAtLabel: string;
   }>;
 };
+
+const REQUESTER_NEXT_ACTION_KEYS = new Set<RequesterNextActionKey>([
+  "complete_profile",
+  "review_consents",
+  "review_ticket",
+  "link_device",
+  "continue_requests",
+]);
+
+function normalizeServerNextAction(action: RequesterBootstrapNextAction | null | undefined): RequesterDashboardProjection["nextAction"] | null {
+  const label = String(action?.label || "").trim();
+  const href = String(action?.href || "").trim();
+  const key = String(action?.key || "").trim();
+  if (!label || !href || !REQUESTER_NEXT_ACTION_KEYS.has(key as RequesterNextActionKey)) {
+    return null;
+  }
+  return { key: key as RequesterNextActionKey, label, href };
+}
 
 function normalizedConsentStatuses(statuses: string[] = ["pending"]): string[] {
   return Array.from(new Set(statuses.map((status) => status.trim()).filter(Boolean))).sort();
@@ -148,18 +169,36 @@ export function projectRequesterDashboard(
     : Boolean(bootstrap?.profile);
   const canCreateWithoutDevice = bootstrap?.feature_flags?.requester_no_device_create === true;
   const hasDeviceContext = Boolean((bootstrap?.devices ?? []).length || canCreateWithoutDevice);
+  const ticketNeedingAction = visibleTickets.find((ticket) => {
+    if (String(ticket.next_action_owner || "").toLowerCase() === "requester") {
+      return Boolean(requesterTicketRouteParam(ticket));
+    }
+    return Boolean(requesterTicketRouteParam(ticket) && requesterTicketNextActionLabel(ticket));
+  });
+  const hasRequesterTicketAction = Boolean(ticketNeedingAction || (bootstrap?.tickets_requiring_user_action_count ?? 0) > 0);
+  const serverNextAction = normalizeServerNextAction(bootstrap?.next_actions?.[0]);
   const nextAction = !profileComplete
     ? {
         key: "complete_profile" as const,
         label: "Заполнить профиль",
         href: bootstrap?.profile_completion?.setup_path || "/app/requester/profile/setup",
       }
-    : pendingConsents.length
+      : pendingConsents.length
       ? {
           key: "review_consents" as const,
           label: "Проверить согласия",
           href: "/app/requester/tickets",
         }
+      : serverNextAction
+        ? serverNextAction
+      : hasRequesterTicketAction
+        ? {
+            key: "review_ticket" as const,
+            label: "Ответить по обращению",
+            href: ticketNeedingAction
+              ? `/app/requester/tickets/${encodeURIComponent(requesterTicketRouteParam(ticketNeedingAction) ?? "")}`
+              : "/app/requester/tickets",
+          }
       : !hasDeviceContext
         ? {
             key: "link_device" as const,

@@ -46,6 +46,7 @@ const REQUESTER_SAFE_ERROR_MESSAGES: Record<string, string> = {
   REQUESTER_DEVICE_FORBIDDEN: "Это устройство недоступно для вашего профиля.",
   REQUESTER_PROFILE_FORBIDDEN: "Профиль недоступен для вашего аккаунта.",
   REQUESTER_PROFILE_INCOMPLETE: "Заполните профиль, чтобы продолжить.",
+  REQUESTER_TICKET_ACTION_NOT_AVAILABLE: "Это действие сейчас недоступно для обращения. Обновите страницу.",
   VALIDATION_ERROR: "Проверьте заполненные поля и попробуйте еще раз.",
   WORKFLOW_POLICY_ERROR: "Действие не выполнено из-за правил обработки обращения.",
 };
@@ -153,7 +154,7 @@ export function requesterReadinessText(profileComplete: boolean, hasDeviceContex
 
 export function requesterTicketNextActionLabel(ticket: AuthenticatedRequesterTicket): string | null {
   const status = String(ticket.status ?? "").toLowerCase();
-  if (status === "waiting_user") {
+  if (status === "waiting_on_user") {
     return "Нужен ваш ответ";
   }
   if (status === "resolved") {

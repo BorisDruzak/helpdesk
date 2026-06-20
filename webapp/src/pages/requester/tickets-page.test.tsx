@@ -60,7 +60,7 @@ describe("RequesterTicketsPage", () => {
   });
 
   it("preserves reply text when sending a requester message fails", async () => {
-    installTicketsMock({ messageFails: true });
+    installTicketsMock({ initialDetailStatus: "waiting_on_user", messageFails: true });
     renderTicketsPage("/app/requester/tickets/REQ-1001");
 
     expect(await screen.findByRole("heading", { name: "Ноутбук не включается" })).toBeInTheDocument();
@@ -74,7 +74,7 @@ describe("RequesterTicketsPage", () => {
   });
 
   it("handles attachments, consents, resolution feedback and reopen actions", async () => {
-    const fetchMock = installTicketsMock();
+    const fetchMock = installTicketsMock({ initialDetailStatus: "waiting_on_user" });
     renderTicketsPage("/app/requester/tickets/REQ-1001");
 
     expect(await screen.findByRole("heading", { name: "Ноутбук не включается" })).toBeInTheDocument();
@@ -130,11 +130,21 @@ describe("RequesterTicketsPage", () => {
     });
     expect(within(screen.getByRole("list", { name: "История обращения" })).getByText("Оператор запросил диагностику")).toBeInTheDocument();
   });
+
+  it("hides requester composer when server actions deny messages", async () => {
+    installTicketsMock();
+    renderTicketsPage("/app/requester/tickets/REQ-1003");
+
+    expect(await screen.findByRole("heading", { name: "Закрытое обращение" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Ответ заявителя")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Вложить файл" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Отправить" })).not.toBeInTheDocument();
+  });
 });
 
-function installTicketsMock(options: { messageFails?: boolean } = {}) {
+function installTicketsMock(options: { initialDetailStatus?: string; messageFails?: boolean } = {}) {
   let consentStatus = "pending";
-  let detailStatus = "resolved";
+  let detailStatus = options.initialDetailStatus ?? "resolved";
   let feedbackSubmitted = false;
   let messageSent = false;
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -150,6 +160,7 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
               title: "Ноутбук не включается",
               status: detailStatus,
               requester_status_label: detailStatus === "resolved" ? "Решена" : "В работе",
+              actions: mockTicketActions(detailStatus),
               updated_at: "2026-06-19T04:30:00Z",
               created_at: "2026-06-19T04:00:00Z",
             },
@@ -157,8 +168,9 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
               ticket_id: "550e8400-e29b-41d4-a716-446655440000",
               ticket_code: "REQ-1002",
               title: "Нужен ответ",
-              status: "waiting_user",
+              status: "waiting_on_user",
               requester_status_label: "Ждет вашего ответа",
+              actions: mockTicketActions("waiting_on_user"),
               updated_at: "2026-06-19T05:00:00Z",
             },
             {
@@ -167,6 +179,7 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
               title: "Закрытое обращение",
               status: "closed",
               requester_status_label: "Закрыта",
+              actions: mockTicketActions("closed"),
               updated_at: "2026-06-18T09:00:00Z",
             },
             {
@@ -174,6 +187,7 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
               title: "Обращение без публичного номера",
               status: "open",
               requester_status_label: "В работе",
+              actions: mockTicketActions("open"),
               updated_at: "2026-06-18T08:00:00Z",
             },
           ],
@@ -214,6 +228,7 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
             description: "Не включается после обновления",
             status: detailStatus,
             requester_status_label: detailStatus === "resolved" ? "Решена" : "В работе",
+            actions: mockTicketActions(detailStatus),
             updated_at: "2026-06-19T04:30:00Z",
           },
           messages: messageSent
@@ -231,6 +246,25 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
         },
       });
     }
+    if (url === "/api/web/requester/tickets/REQ-1003") {
+      return jsonResponse({
+        status: "success",
+        data: {
+          ticket: {
+            ticket_id: "T-1003",
+            ticket_code: "REQ-1003",
+            title: "Закрытое обращение",
+            description: "Закрыто после подтверждения пользователя",
+            status: "closed",
+            requester_status_label: "Закрыта",
+            actions: mockTicketActions("closed"),
+            updated_at: "2026-06-18T09:00:00Z",
+          },
+          messages: [{ message_id: "m-closed", from_role: "support", text: "Обращение закрыто.", created_at: "2026-06-18T08:40:00Z" }],
+          events: [{ event_id: "e-closed", requester_timeline_text: "Обращение закрыто", created_at: "2026-06-18T09:00:00Z" }],
+        },
+      });
+    }
     if (url === "/api/upload") {
       return jsonResponse({
         status: "success",
@@ -245,6 +279,7 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
         return jsonResponse({ status: "error", message: "Не удалось отправить сообщение" }, 500);
       }
       messageSent = true;
+      detailStatus = "resolved";
       return jsonResponse({ status: "success", data: { message_id: "m-1" } });
     }
     if (url === "/api/web/requester/consents/consent-1/approve") {
@@ -272,4 +307,16 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
   });
   vi.stubGlobal("fetch", fetchMock as typeof fetch);
   return fetchMock;
+}
+
+function mockTicketActions(status: string) {
+  const normalized = status.toLowerCase();
+  const canSendMessage = !["resolved", "closed", "canceled", "archived"].includes(normalized);
+  return {
+    can_send_message: canSendMessage,
+    can_attach_files: canSendMessage,
+    can_confirm_solution: normalized === "resolved",
+    can_rate_solution: normalized === "resolved" || normalized === "closed",
+    can_reopen: normalized === "resolved" || normalized === "closed",
+  };
 }

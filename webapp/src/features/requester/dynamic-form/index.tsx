@@ -35,7 +35,6 @@ export const ALL_DYNAMIC_REQUEST_FIELD_TYPES = [
   "number",
   "date",
   "datetime",
-  "file",
   "user_picker",
   "department_picker",
   "location_picker",
@@ -46,11 +45,11 @@ export const ALL_DYNAMIC_REQUEST_FIELD_TYPES = [
   "email",
 ] as const satisfies readonly RequestFormField["type"][];
 
-export type PublishableDynamicRequestFieldType = Exclude<RequestFormField["type"], "file">;
+export const REQUESTER_DYNAMIC_REQUEST_FIELD_TYPES = ALL_DYNAMIC_REQUEST_FIELD_TYPES;
 
-export const PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES = ALL_DYNAMIC_REQUEST_FIELD_TYPES.filter(
-  (type): type is PublishableDynamicRequestFieldType => type !== "file",
-);
+export type PublishableDynamicRequestFieldType = (typeof REQUESTER_DYNAMIC_REQUEST_FIELD_TYPES)[number];
+
+export const PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES = REQUESTER_DYNAMIC_REQUEST_FIELD_TYPES;
 
 const DYNAMIC_REQUEST_FIELD_TYPE_SET = new Set<string>(ALL_DYNAMIC_REQUEST_FIELD_TYPES);
 const PICKER_TYPES = new Set<RequestFormField["type"]>([
@@ -85,7 +84,7 @@ export function isDynamicFieldVisible(field: RequestFormField, values: DynamicFo
     return true;
   }
   const currentValue = values[rule.field];
-  if (Object.prototype.hasOwnProperty.call(rule, "equals") && rule.equals !== undefined && rule.equals !== null) {
+  if (Object.prototype.hasOwnProperty.call(rule, "equals") && rule.equals !== undefined) {
     return valuesMatch(currentValue, rule.equals);
   }
   const allowed = Array.isArray(rule.in) ? rule.in : Array.isArray(rule.values) ? rule.values : [];
@@ -199,6 +198,73 @@ export function missingRequiredFieldDetails(
     .map((field) => ({ key: field.key, label: requesterSafeFieldLabel(field.label, "Поле обращения") }));
 }
 
+export function validateDynamicFormValues(
+  form: Pick<RequestFormDefinition, "fields"> | null | undefined,
+  values: DynamicFormValues,
+): DynamicFormValidationResult {
+  const issues: DynamicFormValidationIssue[] = [];
+  for (const field of form?.fields ?? []) {
+    if (!isDynamicFieldVisible(field, values)) {
+      continue;
+    }
+    const rawValue = values[field.key];
+    const normalized = normalizeDynamicFieldValue(field, values[field.key]);
+    const path = `fields.${field.key}`;
+    if (field.type === "number" && !isEmptyDynamicValue(field, rawValue) && normalized === null) {
+      issues.push(issue("invalid_number", "Укажите число.", path));
+      continue;
+    }
+    if (isEmptyDynamicValue(field, normalized)) {
+      continue;
+    }
+    const minValue = validationNumber(field, ["min", "minimum", "min_value"]);
+    const maxValue = validationNumber(field, ["max", "maximum", "max_value"]);
+    if (field.type === "number" && typeof normalized === "number") {
+      if (minValue !== null && normalized < minValue) {
+        issues.push(issue("number_too_small", `Минимальное значение: ${minValue}.`, path));
+      }
+      if (maxValue !== null && normalized > maxValue) {
+        issues.push(issue("number_too_large", `Максимальное значение: ${maxValue}.`, path));
+      }
+    }
+    if (isTextValidationField(field)) {
+      const text = String(normalized);
+      const minLength = validationNumber(field, ["min_length", "minLength"]);
+      const maxLength = validationNumber(field, ["max_length", "maxLength"]);
+      const pattern = validationString(field, ["pattern", "regex"]);
+      if (minLength !== null && text.length < minLength) {
+        issues.push(issue("text_too_short", `Минимум символов: ${minLength}.`, path));
+      }
+      if (maxLength !== null && text.length > maxLength) {
+        issues.push(issue("text_too_long", `Максимум символов: ${maxLength}.`, path));
+      }
+      if (pattern && !matchesPattern(text, pattern)) {
+        issues.push(issue("pattern_mismatch", "Проверьте формат поля.", path));
+      }
+    }
+    if (field.type === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(normalized))) {
+      issues.push(issue("invalid_email", "Укажите корректный email.", path));
+    }
+    if (field.type === "url" && !isValidUrl(String(normalized))) {
+      issues.push(issue("invalid_url", "Укажите корректную ссылку.", path));
+    }
+    if (OPTION_TYPES.has(field.type) && uniqueOptions(field.options ?? []).length) {
+      const allowed = new Set(uniqueOptions(field.options ?? []).map((option) => option.value));
+      if (Array.isArray(normalized)) {
+        if (normalized.some((item) => !allowed.has(String(item)))) {
+          issues.push(issue("invalid_option", "Выберите значение из списка.", path));
+        }
+      } else if (!allowed.has(String(normalized))) {
+        issues.push(issue("invalid_option", "Выберите значение из списка.", path));
+      }
+    }
+  }
+  return {
+    canPublish: !issues.some((item) => item.severity === "error"),
+    issues,
+  };
+}
+
 export function formatDynamicFieldReviewValue(field: RequestFormField, value: DynamicFieldValue): string {
   const normalized = normalizeDynamicFieldValue(field, value);
   if (field.type === "checkbox") {
@@ -224,6 +290,7 @@ export function validateDynamicFormSchema(
   const issues: DynamicFormValidationIssue[] = [];
   const seenKeys = new Set<string>();
   const fieldKeys = new Set((form.fields ?? []).map((field) => field.key).filter(Boolean));
+  const visibleDependencies = new Map<string, string>();
 
   if (!String(form.key ?? "").trim()) {
     issues.push(issue("missing_form_key", "Ключ формы обязателен.", "key"));
@@ -261,9 +328,28 @@ export function validateDynamicFormSchema(
       const dependencyKey = String(field.visible_when.field).trim();
       if (!fieldKeys.has(dependencyKey)) {
         issues.push(issue("invalid_visible_when_field", "Условие ссылается на отсутствующее поле.", `${path}.visible_when.field`));
-      }
-      if (dependencyKey === key) {
+      } else if (dependencyKey === key) {
         issues.push(issue("invalid_visible_when_self_reference", "Поле не может зависеть от самого себя.", `${path}.visible_when.field`));
+      } else if (key) {
+        visibleDependencies.set(key, dependencyKey);
+      }
+    }
+    const pattern = validationString(field, ["pattern", "regex"]);
+    if (pattern && !isValidPattern(pattern)) {
+      issues.push(issue("invalid_pattern", "Регулярное выражение поля некорректно.", `${path}.validation.pattern`));
+    }
+    if (OPTION_TYPES.has(field.type)) {
+      const seenOptionValues = new Set<string>();
+      for (const option of field.options ?? []) {
+        const optionValue = String(option.value || "").trim();
+        if (!optionValue) {
+          issues.push(issue("empty_option_value", "Вариант выбора должен иметь значение.", `${path}.options`));
+          continue;
+        }
+        if (seenOptionValues.has(optionValue)) {
+          issues.push(issue("duplicate_option_value", "Значения вариантов выбора должны быть уникальными.", `${path}.options`));
+        }
+        seenOptionValues.add(optionValue);
       }
     }
     if (
@@ -273,6 +359,22 @@ export function validateDynamicFormSchema(
       issues.push(issue("missing_field_options", "Для поля нужны варианты выбора.", `${path}.options`));
     }
   });
+  const cycleReported = new Set<string>();
+  for (const start of visibleDependencies.keys()) {
+    const localPath = new Set<string>();
+    let current: string | undefined = start;
+    while (current && visibleDependencies.has(current)) {
+      if (localPath.has(current)) {
+        if (!cycleReported.has(current)) {
+          cycleReported.add(current);
+          issues.push(issue("visible_when_cycle", "Условия видимости не должны образовывать цикл.", `fields.${current}.visible_when.field`));
+        }
+        break;
+      }
+      localPath.add(current);
+      current = visibleDependencies.get(current);
+    }
+  }
 
   return {
     canPublish: !issues.some((item) => item.severity === "error"),
@@ -459,24 +561,7 @@ export function RequestFormFieldControl({
   }
 
   if (field.type === "file") {
-    return (
-      <label className="block text-sm font-semibold text-slate-700">
-        {label}
-        <input
-          {...invalidProps}
-          aria-label={safeLabel}
-          className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
-          disabled
-          onChange={() => onChange(null)}
-          ref={(element) => inputRef?.(element)}
-          type="file"
-        />
-        <p className="mt-1 text-xs font-normal text-amber-700">
-          Вложения добавляются после создания обращения. Поле файла нельзя публиковать до включения загрузки в динамической форме.
-        </p>
-        {errorText}
-      </label>
-    );
+    return null;
   }
 
   return (
@@ -615,6 +700,69 @@ function valuesMatch(currentValue: DynamicFieldValue, expected: string | boolean
     return currentValue.some((item) => String(item ?? "").trim() === String(expected ?? "").trim());
   }
   return String(currentValue ?? "").trim() === String(expected ?? "").trim();
+}
+
+function isValidUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function validationSource(field: RequestFormField): Record<string, unknown> {
+  return field.validation && typeof field.validation === "object" ? field.validation : {};
+}
+
+function validationValue(field: RequestFormField, keys: string[]): unknown {
+  const validation = validationSource(field);
+  const fieldRecord = field as unknown as Record<string, unknown>;
+  for (const key of keys) {
+    if (validation[key] !== undefined && validation[key] !== null && validation[key] !== "") {
+      return validation[key];
+    }
+    if (fieldRecord[key] !== undefined && fieldRecord[key] !== null && fieldRecord[key] !== "") {
+      return fieldRecord[key];
+    }
+  }
+  return null;
+}
+
+function validationNumber(field: RequestFormField, keys: string[]): number | null {
+  const value = validationValue(field, keys);
+  if (value === null) {
+    return null;
+  }
+  const parsed = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function validationString(field: RequestFormField, keys: string[]): string | null {
+  const value = validationValue(field, keys);
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function isTextValidationField(field: RequestFormField): boolean {
+  return field.type === "text" || field.type === "textarea" || field.type === "email" || field.type === "url" || field.type === "phone";
+}
+
+function isValidPattern(pattern: string): boolean {
+  try {
+    new RegExp(pattern);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function matchesPattern(value: string, pattern: string): boolean {
+  try {
+    return new RegExp(pattern).test(value);
+  } catch {
+    return true;
+  }
 }
 
 function uniqueOptions(options: RequesterRegistryOption[]): RequestFormFieldOption[] {

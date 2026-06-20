@@ -1,5 +1,5 @@
 import { CheckCircle2, Link2, Monitor, Search, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -28,10 +28,11 @@ import {
 } from "../device-pairing/api";
 
 type WizardStep = "code" | "preview" | "result";
+type RequesterDevicesMode = "overview" | "link";
 
 function resultTitle(pairing: DevicePairingPayload | null): string {
   const status = pairing?.registration?.status || pairing?.status;
-  if (status === "approved" || status === "admin_confirmed" || status === "confirmed") {
+  if (status === "approved" || status === "admin_confirmed" || status === "confirmed" || status === "active") {
     return "Устройство подключено";
   }
   if (status === "pending_admin_review" || status === "user_confirmed") {
@@ -42,7 +43,7 @@ function resultTitle(pairing: DevicePairingPayload | null): string {
 
 function resultDescription(pairing: DevicePairingPayload | null): string {
   const status = pairing?.registration?.status || pairing?.status;
-  if (status === "approved" || status === "admin_confirmed" || status === "confirmed") {
+  if (status === "approved" || status === "admin_confirmed" || status === "confirmed" || status === "active") {
     return "Можно продолжить работу в кабинете. Список устройств обновится после синхронизации.";
   }
   if (status === "pending_admin_review" || status === "user_confirmed") {
@@ -56,8 +57,17 @@ function isRegistrationPairing(pairing: DevicePairingPayload): boolean {
 }
 
 export function RequesterDevicesPage() {
+  return <RequesterDevicesWorkspace mode="overview" />;
+}
+
+export function RequesterDeviceLinkPage() {
+  return <RequesterDevicesWorkspace mode="link" />;
+}
+
+function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
   const location = useLocation();
   const queryClient = useQueryClient();
+  const isLinkRoute = mode === "link";
   const bootstrapQuery = useRequesterBootstrapQuery();
   const bootstrap = bootstrapQuery.data;
   const devices = bootstrap?.devices ?? [];
@@ -69,6 +79,7 @@ export function RequesterDevicesPage() {
   const [step, setStep] = useState<WizardStep>(directPairingId ? "preview" : "code");
   const [notice, setNotice] = useState<string | null>(directPairingId ? "Проверьте устройство перед подключением." : null);
   const [error, setError] = useState<string | null>(null);
+  const directPairingAttemptedRef = useRef<string | null>(null);
   const selectedDevice = selectedDeviceId ? devices.find((device) => device.device_id === selectedDeviceId) ?? null : null;
   const deviceDetailQuery = useRequesterDeviceDetailQuery(selectedDeviceId, { enabled: Boolean(selectedDeviceId) });
 
@@ -138,9 +149,15 @@ export function RequesterDevicesPage() {
   });
 
   useEffect(() => {
-    if (!directPairingId || pairing?.pairing_id === directPairingId || loadPairingMutation.isPending) {
+    if (
+      !directPairingId ||
+      directPairingAttemptedRef.current === directPairingId ||
+      pairing?.pairing_id === directPairingId ||
+      loadPairingMutation.isPending
+    ) {
       return;
     }
+    directPairingAttemptedRef.current = directPairingId;
     loadPairingMutation.mutate(directPairingId);
   }, [directPairingId, loadPairingMutation, pairing?.pairing_id]);
 
@@ -169,27 +186,39 @@ export function RequesterDevicesPage() {
   }
 
   return (
-    <main className="space-y-5">
+    <div className="space-y-5">
       <header className="surface-panel px-5 py-5">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="workspace-boot__eyebrow">Кабинет заявителя</p>
-            <h1 className="mt-2 text-2xl font-semibold text-slate-950">Устройства</h1>
+            <p className="workspace-boot__eyebrow">Кабинет пользователя</p>
+            <h1 className="mt-2 text-2xl font-semibold text-slate-950">{isLinkRoute ? "Подключение устройства" : "Устройства"}</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-              Основное устройство используется для диагностики и ускоряет обработку обычных обращений. Новое устройство можно подключить кодом из локального агента.
+              {isLinkRoute
+                ? "Введите код из локального агента или проверьте устройство по прямой ссылке. Подключение доступно до заполнения профиля."
+                : "Основное устройство используется для диагностики и ускоряет обработку обычных обращений. Новое устройство можно подключить кодом из локального агента."}
             </p>
           </div>
-          <Link
-            className="inline-flex items-center justify-center gap-2 rounded-panel bg-brand-700 px-3 py-2 text-sm font-semibold text-white"
-            to="/app/requester/new?intent=device_owner_change"
-          >
-            <ShieldCheck className="h-4 w-4" />
-            Проверить владельца
-          </Link>
+          {isLinkRoute ? (
+            <Link
+              className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800"
+              to="/app/requester/devices"
+            >
+              К устройствам
+            </Link>
+          ) : (
+            <Link
+              className="inline-flex items-center justify-center gap-2 rounded-panel bg-brand-700 px-3 py-2 text-sm font-semibold text-white"
+              to="/app/requester/new?intent=device_owner_change"
+            >
+              <ShieldCheck className="h-4 w-4" />
+              Проверить владельца
+            </Link>
+          )}
         </div>
       </header>
 
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <section className={isLinkRoute ? "grid gap-5 lg:max-w-xl" : "grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]"}>
+        {!isLinkRoute ? (
         <div className="space-y-4">
           <section className="surface-panel px-5 py-4">
             <h2 className="text-lg font-semibold text-slate-950">Мои устройства</h2>
@@ -312,6 +341,7 @@ export function RequesterDevicesPage() {
             </section>
           ) : null}
         </div>
+        ) : null}
 
         <aside className="space-y-4">
           <section className="surface-panel px-5 py-4">
@@ -372,6 +402,7 @@ export function RequesterDevicesPage() {
             {error ? <p aria-live="assertive" className="mt-3 text-sm text-rose-700" role="alert">{error}</p> : null}
           </section>
 
+          {!isLinkRoute ? (
           <section className="surface-panel px-5 py-4 text-sm text-slate-600">
             <p className="font-semibold text-slate-950">Проверка владельца</p>
             <p className="mt-2">
@@ -381,8 +412,9 @@ export function RequesterDevicesPage() {
               Создать запрос на проверку
             </Link>
           </section>
+          ) : null}
         </aside>
       </section>
-    </main>
+    </div>
   );
 }

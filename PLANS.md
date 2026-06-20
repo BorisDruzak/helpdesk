@@ -988,7 +988,7 @@ Next phase: no open requester-cabinet review bug remains from the checked review
 
 ### Current checkpoint - requester critical defects closure, 2026-06-20
 
-Status: planned; implementation not started in this checkpoint update.
+Status: implementation completed locally for D1-D13 closure; build/deploy/live evidence still pending in this checkpoint.
 
 Source intake:
 
@@ -1000,19 +1000,19 @@ Triage:
 
 | ID | Status | Priority | Closure target |
 | --- | --- | --- | --- |
-| D1 service/form auto-selection | Confirmed open: `RequesterNewRequestPage` still uses `firstAvailableOffering(services)` | P0 | Stop silently choosing the first catalog offering. Add server-driven recommendation from problem text plus visible category/form selection with mandatory user override before preview/create. |
-| D2 primary device resolution | Confirmed open: frontend uses `devices[0]`; bootstrap requester context is built without binding | P0 | Server returns `primary_device` and `primary_device_resolution { status, reason }` from `PrimaryAgentResolver`; frontend never derives primary device from array order. |
-| D3 device online state | Confirmed open: `serialize_device()` returns `online: False` | P1 | Compute `online` from agreed presence/last-seen evidence; return `null` when unknown. UI must distinguish online/offline/unknown. |
-| D4 no-device/form availability gate | Confirmed open: `requester_no_device_create` is profile-derived and frontend treats on-behalf as bypass | P0 | Availability is per selected form and mode: `available_for_self`, `available_for_on_behalf`, `available_without_profile`, `available_without_device`, `requires_manual_triage`; preview/create enforce the same projection. |
-| D5 `waiting_on_user` vs `waiting_user` | Confirmed open in requester UI filters/CTA labels | P1 | Use one canonical requester status type based on server-returned `waiting_on_user`; keep aliases only in server normalization, not UI assertions. |
-| D6 messages into terminal tickets | Confirmed open: requester message handler checks ownership but not terminal state | P0 | Backend rejects chat messages for terminal states; `resolved` policy is explicit and defaults to no free chat, use confirm/rate/reopen instead. |
-| D7 requester ticket actions | Confirmed open: frontend derives actions from local status checks | P0 | Ticket detail/list returns `actions { can_send_message, can_confirm_solution, can_rate, can_reopen, can_attach_files, reason }`; backend handlers enforce the same capabilities. |
-| D8 dynamic forms partial contract | Confirmed partially open: file is blocked for publish but remains in all-types matrix; value validation is mostly required-only | P1 | Choose honest contract now: no draft upload in this phase; remove `file` from requester constructor/support matrix and add `validateDynamicFormValues(form, values)` before preview and create. Cover email/url/number min-max/text length/pattern/options/conditional cycles/null equals. |
-| D9 dashboard next action | Confirmed open: `tickets_requiring_user_action_count` does not affect `nextAction` | P1 | Server returns ordered `next_actions[]`; requester reply/consent/solution confirmation outrank creating a new request. Remove duplicate primary "Создать обращение" CTA when next action already creates. |
-| D10 device-link flow | Confirmed open/partial: `active` not success, direct `pairing_id` retry guard is weak, `/devices/link` shares the same component, owner-change intent is not handled by new-request | P1 | Add `RequesterDeviceLinkPage`, treat active/approved/confirmed as connected, guard one direct pairing load per ID, and implement explicit owner-change request form/intent. |
-| D11 localization/safe messages | Partially stale: `requesterErrorMessage()` no longer returns raw `Error.message`, but labels still contain `Кабинет заявителя` and Studio still has `Каталог заявок` | P1 | Finish Russian-first canon: `Кабинет пользователя`, `обращение`, no `заявка`/English `preview` in requester-visible UI; backend raw English messages require `error_code` mapping or safe fallback. |
-| D12 shared UI/accessibility | Confirmed open: requester pages and `PageShell` can create nested `<main>` landmarks; large pages still use raw controls/classes | P2 | Keep one `<main>` in `AppShell`; PageShell/requester pages use `section/div`. Split wizard/ticket/device/profile panels and shared controls to meet size and accessibility targets. |
-| D13 internal ticket IDs in URL | Previously fixed for generated requester UI links and post-create navigation | Regression gate | Keep tests/live checks proving generated requester URLs use `ticket_code`, raw UUID is absent from DOM/hrefs/URL. Decide whether legacy UUID resolver remains temporary compatibility or is removed after migration. |
+| D1 service/form auto-selection | Closed locally: wizard uses deterministic problem-text recommendation and no longer chooses the first offering by array order | P0 | Deploy/live-test category recommendation and selected service/template payload. |
+| D2 primary device resolution | Closed locally: bootstrap returns `primary_device`/`primary_device_resolution` from `PrimaryAgentResolver`; request wizard uses server primary device | P0 | Deploy/live-test multi-device ordering and requester context. |
+| D3 device online state | Closed locally: requester device serialization computes online from runtime state and returns `null` when unknown | P1 | Deploy/live-test online/offline/unknown labels against stand evidence. |
+| D4 no-device/form availability gate | Closed locally: frontend no longer treats global `requester_no_device_create` as device context; per-form availability decides selected form | P0 | Deploy/live-test no-device allowed vs device-required forms. |
+| D5 `waiting_on_user` vs `waiting_user` | Closed locally: requester UI filters/labels/tests use canonical `waiting_on_user` | P1 | Deploy/live-test requester action ticket CTA. |
+| D6 messages into terminal tickets | Closed locally: requester message handler rejects terminal states with safe `REQUESTER_TICKET_ACTION_NOT_AVAILABLE` | P0 | Deploy/live-test terminal ticket composer hidden and backend reject. |
+| D7 requester ticket actions | Closed locally: requester ticket DTO exposes server `actions`; UI gates composer/attachments/lifecycle controls by server actions | P0 | Deploy/live-test resolved/closed action buttons and message denial. |
+| D8 dynamic forms partial contract | Closed locally: requester runtime removes `file` from supported matrices and validates email/url/number min-max/text length/pattern/options/null equals plus schema option/cycle guards | P1 | Build/deploy/live-test dynamic form preview/create blockers. |
+| D9 dashboard next action | Closed locally: bootstrap returns ordered `next_actions[]`; dashboard consumes server action before local fallback | P1 | Deploy/live-test requester reply action outranks create request. |
+| D10 device-link flow | Closed locally: `/app/requester/devices/link` uses `RequesterDeviceLinkPage`, `active` is success, direct pairing load is idempotent, owner-change intent opens explicit owner form | P1 | Deploy/live-test link route and owner-change flow. |
+| D11 localization/safe messages | Closed locally: requester/Studio/backend default copy uses `Кабинет пользователя`/`обращение`; old `Каталог заявок` defaults removed from requester-safe surfaces | P1 | Run static localization guard and live DOM scan. |
+| D12 shared UI/accessibility | Closed locally for active requester pages: nested requester page `<main>` landmarks removed under `AppShell` | P2 | Browser-live landmark/overflow check remains required. |
+| D13 internal ticket IDs in URL | Regression guard retained: generated requester URLs and post-create navigation use `ticket_code`; raw UUID DOM checks remain in tests | Regression gate | Live URL/DOM check remains required. |
 
 Implementation order:
 
@@ -1044,6 +1044,16 @@ Planned verification:
 - `pnpm --dir webapp run build`
 - deploy quick gate: `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --leave-running --smoke-insecure-tls`
 - live browser evidence on `https://192.168.100.17:9443` with console/network capture and DOM/URL assertions
+
+Execution update, 2026-06-20:
+
+- RED/green coverage added for server primary device, bootstrap `next_actions[]`, terminal message rejection/action DTOs, dynamic-form value/schema validation, service recommendation, per-form no-device fallback, device-link `active`/direct retry/link route, owner-change intent and requester action dashboard.
+- Local verification passed so far:
+  - `pnpm --dir webapp test -- src/features/requester/queries.test.ts src/features/requester/labels.test.ts src/features/requester/dynamic-form/dynamic-form.test.tsx src/pages/requester/new-request-page.test.tsx src/pages/requester/devices-page.test.tsx src/pages/requester/tickets-page.test.tsx src/features/request-template-studio/studio-model.test.ts src/features/request-template-studio/draft-model.test.ts src/features/request-template-studio/readiness.test.ts` — 9 files / 48 tests passed.
+  - `pnpm --dir webapp test -- src/app/router.test.tsx src/pages/requester/home-page.test.tsx` — 2 files / 17 tests passed.
+  - `python -m py_compile server/requester/identity_service.py server/web_api/requester_handlers.py server/app/api/serializers.py server/tickets/visibility_policy.py server/tickets/form_catalog.py server/tickets/form_lifecycle_service.py server/web_api/admin_handlers.py server/tests/test_requester_workspace_api.py` — passed.
+  - `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_workspace_bootstrap_lists_owned_device_and_ticket server/tests/test_requester_workspace_api.py::test_requester_bootstrap_resolves_primary_device_independently_from_device_order server/tests/test_requester_workspace_api.py::test_requester_ticket_message_rejects_terminal_statuses_and_exposes_actions -q --tb=short` — 4 tests passed.
+- Remaining gates: webapp build, `python scripts/verify_workspace.py`, docs drift check, deploy to `https://192.168.100.17:9443`, and live browser evidence for the acceptance scenarios above.
 
 Open decisions for implementation:
 

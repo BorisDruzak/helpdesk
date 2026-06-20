@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import uuid
 
@@ -1018,6 +1018,10 @@ async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_
             },
             include_public_access=True,
         )
+        ticket = await session.get(Ticket, session_payload["ticket_id"])
+        assert ticket is not None
+        ticket.next_action_owner = "requester"
+        ticket.status = "waiting_on_user"
         await session.commit()
 
     response = await test_client.get(
@@ -1030,6 +1034,12 @@ async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_
     assert payload["data"]["profile"]["person_id"] == approved["person"]["person_id"]
     assert payload["data"]["devices"][0]["device_id"] == device_id
     assert payload["data"]["open_ticket_count"] >= 1
+    assert payload["data"]["next_actions"][0] == {
+        "key": "review_ticket",
+        "label": "Ответить по обращению",
+        "href": f"/app/requester/tickets/{session_payload['ticket'].ticket_code}",
+        "ticket_code": session_payload["ticket"].ticket_code,
+    }
 
     tickets = await test_client.get(
         "/api/web/requester/tickets",
@@ -1038,6 +1048,69 @@ async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_
     tickets_payload = await tickets.json()
     assert tickets.status == 200, tickets_payload
     assert session_payload["ticket_id"] in {item["ticket_id"] for item in tickets_payload["data"]["tickets"]}
+
+
+@pytest.mark.asyncio
+async def test_requester_bootstrap_resolves_primary_device_independently_from_device_order(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    primary_device_id = str(uuid.uuid4())
+    shared_device_id = str(uuid.uuid4())
+    login = "requester-primary-resolution@example.test"
+    now = datetime.now(timezone.utc)
+    async with session_maker() as session:
+        person = await _person_for_login(session, login=login)
+        session.add_all([
+            _device(shared_device_id, "shared-listed-first"),
+            _device(primary_device_id, "primary-diagnostic-target"),
+        ])
+        await session.flush()
+        session.add_all(
+            [
+                DeviceUserBinding(
+                    binding_id=str(uuid.uuid4()),
+                    device_id=shared_device_id,
+                    person_id=person.person_id,
+                    relationship_type="shared_user",
+                    status="active",
+                    source="test",
+                    confirmed_at=now + timedelta(seconds=5),
+                    created_at=now + timedelta(seconds=5),
+                ),
+                DeviceUserBinding(
+                    binding_id=str(uuid.uuid4()),
+                    device_id=primary_device_id,
+                    person_id=person.person_id,
+                    relationship_type="primary_user",
+                    status="active",
+                    source="test",
+                    confirmed_at=now,
+                    created_at=now,
+                ),
+            ]
+        )
+        await session.commit()
+
+    test_client.app["state"].is_agent_online = lambda checked_device_id: checked_device_id == primary_device_id
+
+    response = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    data = payload["data"]
+    assert data["devices"][0]["device_id"] == shared_device_id
+    assert data["primary_device"]["device_id"] == primary_device_id
+    assert data["primary_device"]["online"] is True
+    assert data["primary_device_resolution"] == {
+        "status": "available",
+        "reason_code": "primary_binding",
+        "source": "primary_user_binding",
+        "candidate_count": 1,
+    }
+    assert data["requester_context"]["device"]["device_id"] == primary_device_id
+    assert data["requester_context"]["routing_facts"]["device_id"] == primary_device_id
 
 
 @pytest.mark.asyncio
@@ -2086,6 +2159,74 @@ async def test_requester_ticket_detail_and_message_are_owned_only(test_client, t
     texts = [event.payload.get("text") for event in events if isinstance(event.payload, dict)]
     assert "Requester authenticated follow-up" in texts
     assert "Should not be accepted" not in texts
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ["resolved", "closed"])
+async def test_requester_ticket_message_rejects_terminal_statuses_and_exposes_actions(
+    test_client,
+    test_engine,
+    terminal_status,
+):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"requester-terminal-message-{terminal_status}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, f"terminal-message-{terminal_status}"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title=f"Terminal requester message {terminal_status}",
+            description="Messages must not reopen terminal tickets",
+            user_display_name="Requester Terminal Message",
+            requester_profile={"full_name": "Requester Terminal Message", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.status = terminal_status
+        if terminal_status == "resolved":
+            ticket.resolved_at = datetime.now(timezone.utc)
+        if terminal_status == "closed":
+            ticket.resolved_at = datetime.now(timezone.utc)
+            ticket.closed_at = datetime.now(timezone.utc)
+        await session.commit()
+
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+    detail = await test_client.get(f"/api/web/requester/tickets/{ticket_ref}", headers=headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    actions = detail_payload["data"]["ticket"]["actions"]
+    assert actions["can_send_message"] is False
+    assert actions["can_attach_files"] is False
+
+    response = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_ref}/message",
+        headers=headers,
+        json={"text": "This terminal ticket should not accept a requester reply"},
+    )
+    payload = await response.json()
+    assert response.status == 409, payload
+    assert payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
+
+    async with session_maker() as session:
+        message_count = await session.scalar(
+            select(func.count())
+            .select_from(TicketEvent)
+            .where(TicketEvent.ticket_id == ticket_id)
+            .where(TicketEvent.event_type == "chat_message")
+            .where(TicketEvent.payload["text"].astext == "This terminal ticket should not accept a requester reply")
+        )
+    assert message_count == 0
 
 
 @pytest.mark.asyncio

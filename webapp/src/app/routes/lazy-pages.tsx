@@ -80,6 +80,10 @@ export const RequesterDevicesPage = lazy(() =>
   import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDevicesPage })),
 );
 
+export const RequesterDeviceLinkPage = lazy(() =>
+  import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDeviceLinkPage })),
+);
+
 export const DevicePairingPage = lazy(() =>
   import("../../pages/device-pairing").then((module) => ({ default: module.DevicePairingPage })),
 );

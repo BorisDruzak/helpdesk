@@ -29,6 +29,7 @@ export type RequestFormField = {
   placeholder?: string | null;
   help_text?: string | null;
   options?: RequestFormFieldOption[];
+  validation?: Record<string, unknown> | null;
   visible_when?: {
     field?: string;
     equals?: string | boolean | number | null;
@@ -244,6 +245,14 @@ export type PublicTicket = {
   resolution_confirmation_pending?: boolean | null;
 };
 
+export type RequesterTicketActions = {
+  can_send_message?: boolean;
+  can_attach_files?: boolean;
+  can_confirm_solution?: boolean;
+  can_rate_solution?: boolean;
+  can_reopen?: boolean;
+};
+
 export type PublicTicketConfirmationRequest = {
   request_id?: string | null;
   options?: Array<{
@@ -367,7 +376,7 @@ export type RequesterDevice = {
   os?: string | null;
   agent_version?: string | null;
   last_seen_at?: string | null;
-  online?: boolean;
+  online?: boolean | null;
   asset_id?: string | null;
   asset_name?: string | null;
   asset_type?: string | null;
@@ -512,12 +521,14 @@ export type RequesterIdentity = {
 
 export type AuthenticatedRequesterTicket = PublicTicket & {
   device_id?: string | null;
+  next_action_owner?: string | null;
   requester_person_id?: string | null;
   requester_binding_id?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   priority_class?: string | null;
   public_access_url?: string | null;
+  actions?: RequesterTicketActions;
 };
 
 export type RequesterDeviceDetail = {
@@ -553,6 +564,13 @@ export type RequesterPendingRegistrationClaim = {
   submitted_at?: string | null;
 };
 
+export type RequesterBootstrapNextAction = {
+  key: string;
+  label: string;
+  href: string;
+  ticket_code?: string | null;
+};
+
 export type RequesterBootstrap = {
   workspace: "requester";
   profile?: RequesterProfile | null;
@@ -560,6 +578,18 @@ export type RequesterBootstrap = {
   profile_schema?: RequesterProfileSchema;
   requester_context?: RequesterContextPreview;
   devices: RequesterDevice[];
+  primary_device?: RequesterDevice | null;
+  primary_device_resolution?: {
+    status?: "available" | "missing" | "ambiguous" | string;
+    reason_code?: string | null;
+    source?: string | null;
+    candidate_count?: number;
+    candidates?: Array<{
+      device_id?: string | null;
+      binding_id?: string | null;
+      relationship_type?: string | null;
+    }>;
+  };
   active_bindings: Array<{
     binding_id?: string | null;
     device_id?: string | null;
@@ -569,6 +599,7 @@ export type RequesterBootstrap = {
   pending_registration_claims: RequesterPendingRegistrationClaim[];
   open_ticket_count: number;
   tickets_requiring_user_action_count: number;
+  next_actions?: RequesterBootstrapNextAction[];
   pending_consent_count: number;
   recent_tickets: AuthenticatedRequesterTicket[];
   feature_flags?: Record<string, boolean>;
