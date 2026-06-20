@@ -133,6 +133,7 @@ async def test_content_pack_installs_declared_graph_nodes_and_edges(test_engine)
     assert "mentions" in relation_types
 
 
+@pytest.mark.no_db
 def test_required_baseline_content_packs_are_present_and_safe() -> None:
     required = {
         "it-self-service-baseline": 6,

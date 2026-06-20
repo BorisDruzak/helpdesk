@@ -83,7 +83,7 @@ def test_public_ticket_projection_omits_sensitive_internal_fields() -> None:
         "ticket_code": "TCK-2026-0001",
         "public_position": 7,
         "public_status": "in_work",
-        "public_status_label": "Заявка в работе",
+        "public_status_label": "Обращение в работе",
         "queue_code": "support",
         "wait_bucket": "1-2h",
         "updated_at": "2026-05-13T10:00:00Z",

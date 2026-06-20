@@ -6,6 +6,7 @@ import {
   projectRequesterDashboard,
   requesterInvalidations,
   requesterQueryKeys,
+  requesterTicketRouteParam,
 } from "./queries";
 import type { AuthenticatedRequesterTicket, RequesterBootstrap, RequesterConsent } from "./types";
 
@@ -63,8 +64,10 @@ describe("requester query architecture", () => {
     } satisfies RequesterBootstrap;
     const consents = [{ consent_id: "consent-1", status: "pending", subject_type: "remote_control", subject_id: "subject-1" }] satisfies RequesterConsent[];
 
-    expect(humanRequesterTicketCode(rawUuidTicket)).toBe("Обращение 550e8400");
+    expect(humanRequesterTicketCode(rawUuidTicket)).toBe("Обращение без номера");
+    expect(requesterTicketRouteParam(rawUuidTicket)).toBeNull();
     expect(humanRequesterTicketCode(codedTicket)).toBe("REQ-2026-42");
+    expect(requesterTicketRouteParam(codedTicket)).toBe("REQ-2026-42");
 
     const projection = projectRequesterDashboard(bootstrap, [codedTicket], consents);
     expect(projection.readiness.profileComplete).toBe(false);
@@ -74,6 +77,7 @@ describe("requester query architecture", () => {
     expect(projection.recentTickets).toEqual([
       expect.objectContaining({
         displayCode: "REQ-2026-42",
+        ticketRouteParam: "REQ-2026-42",
         statusLabel: "Открыта",
       }),
     ]);

@@ -8,19 +8,20 @@ import {
   requesterAccessStatusLabel,
   requesterDeviceLabel,
   requesterDeviceSystemParts,
+  requesterErrorMessage,
   requesterOnlineStatusLabel,
   requesterPendingDeviceStatusLabel,
   requesterRelationshipLabel,
 } from "../../features/requester/labels";
 import {
+  humanRequesterTicketCode,
   requesterInvalidations,
+  requesterTicketRouteParam,
   useRequesterBootstrapQuery,
   useRequesterDeviceDetailQuery,
-  humanRequesterTicketCode,
 } from "../../features/requester/queries";
 import {
   confirmDevicePairing,
-  DevicePairingApiError,
   fetchDevicePairing,
   lookupDevicePairingCode,
   type DevicePairingPayload,
@@ -89,7 +90,7 @@ export function RequesterDevicesPage() {
       setPairing(null);
       setStep("code");
       setNotice(null);
-      setError(exc instanceof Error ? exc.message : "Не удалось загрузить устройство для подключения.");
+      setError(requesterErrorMessage(exc, "Не удалось загрузить устройство для подключения."));
     },
   });
 
@@ -111,7 +112,7 @@ export function RequesterDevicesPage() {
     onError: (exc) => {
       setPairing(null);
       setNotice(null);
-      setError(exc instanceof Error ? exc.message : "Код подключения не найден или истек.");
+      setError(requesterErrorMessage(exc, "Код подключения не найден или истек."));
     },
   });
 
@@ -131,13 +132,7 @@ export function RequesterDevicesPage() {
       await requesterInvalidations.afterDeviceLink(queryClient);
     },
     onError: (exc) => {
-      const message =
-        exc instanceof DevicePairingApiError && exc.errorCode === "REQUESTER_PROFILE_INCOMPLETE"
-          ? "Сервер отклонил подключение из-за профиля. Подключение устройства не должно зависеть от заполнения профиля."
-          : exc instanceof Error
-            ? exc.message
-            : "Не удалось подключить устройство.";
-      setError(message);
+      setError(requesterErrorMessage(exc, "Не удалось подключить устройство."));
       setNotice(null);
     },
   });
@@ -168,7 +163,7 @@ export function RequesterDevicesPage() {
   if (bootstrapQuery.error) {
     return (
       <section className="rounded-panel border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-        {bootstrapQuery.error instanceof Error ? bootstrapQuery.error.message : "Не удалось загрузить устройства"}
+        {requesterErrorMessage(bootstrapQuery.error, "Не удалось загрузить устройства")}
       </section>
     );
   }
@@ -199,7 +194,7 @@ export function RequesterDevicesPage() {
           <section className="surface-panel px-5 py-4">
             <h2 className="text-lg font-semibold text-slate-950">Мои устройства</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Для обращения не нужно выбирать диагностическую цель вручную: поддержка использует подтвержденное основное устройство или уточнит контекст в заявке.
+              Для обращения не нужно выбирать диагностическую цель вручную: поддержка использует подтвержденное основное устройство или уточнит контекст в обращении.
             </p>
             <div className="mt-4 grid gap-3">
               {devices.length ? (
@@ -275,7 +270,7 @@ export function RequesterDevicesPage() {
               {deviceDetailQuery.isLoading ? <p className="mt-3 text-sm text-slate-500">Загружаем сведения...</p> : null}
               {deviceDetailQuery.error ? (
                 <p className="mt-3 text-sm text-rose-700">
-                  {deviceDetailQuery.error instanceof Error ? deviceDetailQuery.error.message : "Не удалось загрузить сведения"}
+                  {requesterErrorMessage(deviceDetailQuery.error, "Не удалось загрузить сведения")}
                 </p>
               ) : null}
               {deviceDetailQuery.data ? (
@@ -294,14 +289,21 @@ export function RequesterDevicesPage() {
                     <div>
                       <p className="text-sm font-semibold text-slate-950">Последние обращения</p>
                       <ul className="mt-2 grid gap-2 text-sm">
-                        {deviceDetailQuery.data.recent_tickets.map((ticket) => (
-                          <li className="rounded-panel border border-slate-200 px-3 py-2" key={ticket.ticket_id}>
-                            <Link className="font-semibold text-brand-700" to={`/app/requester/tickets/${encodeURIComponent(ticket.ticket_id)}`}>
-                              {humanRequesterTicketCode(ticket)}
-                            </Link>
-                            <span className="ml-2 text-slate-600">{ticket.title || "Без темы"}</span>
-                          </li>
-                        ))}
+                        {deviceDetailQuery.data.recent_tickets.map((ticket) => {
+                          const routeParam = requesterTicketRouteParam(ticket);
+                          return (
+                            <li className="rounded-panel border border-slate-200 px-3 py-2" key={ticket.ticket_id}>
+                              {routeParam ? (
+                                <Link className="font-semibold text-brand-700" to={`/app/requester/tickets/${encodeURIComponent(routeParam)}`}>
+                                  {humanRequesterTicketCode(ticket)}
+                                </Link>
+                              ) : (
+                                <span className="font-semibold text-slate-700">{humanRequesterTicketCode(ticket)}</span>
+                              )}
+                              <span className="ml-2 text-slate-600">{ticket.title || "Без темы"}</span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   ) : null}

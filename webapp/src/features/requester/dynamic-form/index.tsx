@@ -46,6 +46,12 @@ export const ALL_DYNAMIC_REQUEST_FIELD_TYPES = [
   "email",
 ] as const satisfies readonly RequestFormField["type"][];
 
+export type PublishableDynamicRequestFieldType = Exclude<RequestFormField["type"], "file">;
+
+export const PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES = ALL_DYNAMIC_REQUEST_FIELD_TYPES.filter(
+  (type): type is PublishableDynamicRequestFieldType => type !== "file",
+);
+
 const DYNAMIC_REQUEST_FIELD_TYPE_SET = new Set<string>(ALL_DYNAMIC_REQUEST_FIELD_TYPES);
 const PICKER_TYPES = new Set<RequestFormField["type"]>([
   "user_picker",
@@ -246,7 +252,7 @@ export function validateDynamicFormSchema(
       issues.push(
         issue(
           "requester_file_upload_disabled",
-          "Поля файла нельзя публиковать для requester runtime, пока upload не включен в динамической форме.",
+          "Поле файла нельзя публиковать, пока загрузка вложений не включена в динамической форме.",
           path,
         ),
       );
@@ -466,7 +472,7 @@ export function RequestFormFieldControl({
           type="file"
         />
         <p className="mt-1 text-xs font-normal text-amber-700">
-          Вложения добавляются после создания обращения. Публикация requester-visible file поля заблокирована.
+          Вложения добавляются после создания обращения. Поле файла нельзя публиковать до включения загрузки в динамической форме.
         </p>
         {errorText}
       </label>

@@ -55,6 +55,7 @@ export type RequesterDashboardProjection = {
   };
   recentTickets: Array<{
     ticketId: string;
+    ticketRouteParam: string | null;
     displayCode: string;
     title: string;
     statusLabel: string;
@@ -126,7 +127,13 @@ export const requesterInvalidations = {
 };
 
 export function humanRequesterTicketCode(ticket: Pick<AuthenticatedRequesterTicket, "ticket_code" | "ticket_id">): string {
-  return formatHumanIdentifier(ticket.ticket_code || ticket.ticket_id, { uuidPrefix: "Обращение" });
+  const safeCode = String(ticket.ticket_code || "").trim();
+  return safeCode || "Обращение без номера";
+}
+
+export function requesterTicketRouteParam(ticket: Pick<AuthenticatedRequesterTicket, "ticket_id" | "ticket_code">): string | null {
+  const safeCode = String(ticket.ticket_code || "").trim();
+  return safeCode || null;
 }
 
 export function projectRequesterDashboard(
@@ -180,6 +187,7 @@ export function projectRequesterDashboard(
     },
     recentTickets: visibleTickets.map((ticket) => ({
       ticketId: ticket.ticket_id,
+      ticketRouteParam: requesterTicketRouteParam(ticket),
       displayCode: humanRequesterTicketCode(ticket),
       title: ticket.title || "Без темы",
       statusLabel: ticket.requester_status_label || ticket.public_status_label || ticket.status_label || formatStatusLabel(ticket.status),

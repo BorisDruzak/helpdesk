@@ -601,6 +601,7 @@ export type RequesterTicketCreatePayload = {
 export type RequesterTicketCreateResult = {
   ticket: AuthenticatedRequesterTicket;
   ticket_id: string;
+  ticket_code?: string | null;
   public_access_code?: string | null;
   public_access_url?: string | null;
 };

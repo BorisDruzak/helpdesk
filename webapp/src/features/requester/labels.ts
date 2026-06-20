@@ -10,7 +10,71 @@ type DeviceLike = {
 };
 
 export function requesterErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message.trim() ? error.message : fallback;
+  const code = requesterErrorCode(error);
+  if (code && REQUESTER_SAFE_ERROR_MESSAGES[code]) {
+    return REQUESTER_SAFE_ERROR_MESSAGES[code];
+  }
+  const status = requesterErrorStatus(error);
+  if (status === 401) {
+    return "Войдите в аккаунт, чтобы продолжить.";
+  }
+  if (status === 403) {
+    return "Это действие недоступно для вашего аккаунта.";
+  }
+  if (status === 404) {
+    return "Обращение не найдено или недоступно.";
+  }
+  if (status === 409) {
+    return "Состояние обращения изменилось. Обновите страницу и попробуйте еще раз.";
+  }
+  if (status && status >= 500) {
+    return "Сервис временно недоступен. Попробуйте позже.";
+  }
+  if (status && status >= 400) {
+    return "Проверьте данные и попробуйте еще раз.";
+  }
+  return fallback;
+}
+
+const REQUESTER_SAFE_ERROR_MESSAGES: Record<string, string> = {
+  INVALID_TICKET_STATUS: "Это действие сейчас недоступно для обращения.",
+  NOT_FOUND: "Обращение не найдено или недоступно.",
+  QUALITY_FEEDBACK_ERROR: "Оценку не удалось сохранить. Проверьте данные и попробуйте еще раз.",
+  QUALITY_REOPEN_ERROR: "Обращение не удалось вернуть в работу. Проверьте данные и попробуйте еще раз.",
+  REQUESTER_AGENT_REQUIRED: "Для этой формы нужно привязанное устройство. Привяжите устройство или выберите форму для ручной обработки.",
+  REQUESTER_CONTACT_REQUIRED: "Укажите телефон или другой контакт для связи.",
+  REQUESTER_DEVICE_FORBIDDEN: "Это устройство недоступно для вашего профиля.",
+  REQUESTER_PROFILE_FORBIDDEN: "Профиль недоступен для вашего аккаунта.",
+  REQUESTER_PROFILE_INCOMPLETE: "Заполните профиль, чтобы продолжить.",
+  VALIDATION_ERROR: "Проверьте заполненные поля и попробуйте еще раз.",
+  WORKFLOW_POLICY_ERROR: "Действие не выполнено из-за правил обработки обращения.",
+};
+
+function requesterErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const value = (error as { code?: unknown; details?: unknown; errorCode?: unknown }).code;
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  const errorCode = (error as { errorCode?: unknown }).errorCode;
+  if (typeof errorCode === "string" && errorCode.trim()) {
+    return errorCode.trim();
+  }
+  const details = (error as { details?: unknown }).details;
+  if (typeof details === "string" && /^[A-Z0-9_]+$/.test(details.trim())) {
+    return details.trim();
+  }
+  return null;
+}
+
+function requesterErrorStatus(error: unknown): number | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const value = (error as { status?: unknown }).status;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 export function requesterSafeFieldLabel(label: string | null | undefined, fallback: string): string {

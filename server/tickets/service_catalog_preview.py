@@ -126,7 +126,7 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
             "title": offering.get("public_title") or offering.get("name") or offering.get("code"),
         },
         "request_type_label": request_type_label(request_type),
-        "public_status_after_create": "Новая заявка",
+        "public_status_after_create": "Новое обращение",
         "expected_first_response": first_response,
         "expected_resolution": resolution,
         "approval": {
@@ -138,7 +138,7 @@ async def build_requester_service_catalog_preview(session: Any, payload: dict[st
             "consent_required": consent_required,
             "text": "Может потребоваться диагностика устройства" if consent_required else "Диагностика не требуется до отправки",
         },
-        "next_action": "После отправки заявка попадет в поддержку. Детали маршрута скрыты из публичного preview.",
+        "next_action": "После отправки обращение попадет в поддержку. Детали маршрута скрыты из публичной проверки.",
         "warnings": warnings,
         "blockers": blockers,
         "would_create_ticket": False,

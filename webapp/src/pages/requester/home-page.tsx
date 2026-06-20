@@ -182,20 +182,31 @@ export function RequesterHomePage() {
         >
           {dashboard.recentTickets.length ? (
             <div className="grid gap-3">
-              {dashboard.recentTickets.slice(0, 4).map((ticket) => (
-                <Link
-                  className="surface-panel block min-w-0 px-4 py-3 transition-colors hover:border-brand-200 hover:bg-brand-50"
-                  key={ticket.ticketId}
-                  to={`/app/requester/tickets/${encodeURIComponent(ticket.ticketId)}`}
-                >
-                  <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <span className="font-semibold text-slate-950">{ticket.displayCode}</span>
-                    <StatusBadge label={ticket.statusLabel} status={ticket.statusLabel} />
+              {dashboard.recentTickets.slice(0, 4).map((ticket) => {
+                const cardBody = (
+                  <>
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="font-semibold text-slate-950">{ticket.displayCode}</span>
+                      <StatusBadge label={ticket.statusLabel} status={ticket.statusLabel} />
+                    </div>
+                    <h3 className="mt-2 text-sm font-semibold text-slate-900">{ticket.title}</h3>
+                    <p className="mt-1 text-xs text-slate-500">{ticket.createdAtLabel}</p>
+                  </>
+                );
+                return ticket.ticketRouteParam ? (
+                  <Link
+                    className="surface-panel block min-w-0 px-4 py-3 transition-colors hover:border-brand-200 hover:bg-brand-50"
+                    key={ticket.ticketId}
+                    to={`/app/requester/tickets/${encodeURIComponent(ticket.ticketRouteParam)}`}
+                  >
+                    {cardBody}
+                  </Link>
+                ) : (
+                  <div className="surface-panel block min-w-0 px-4 py-3" key={ticket.ticketId}>
+                    {cardBody}
                   </div>
-                  <h3 className="mt-2 text-sm font-semibold text-slate-900">{ticket.title}</h3>
-                  <p className="mt-1 text-xs text-slate-500">{ticket.createdAtLabel}</p>
-                </Link>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <EmptyState

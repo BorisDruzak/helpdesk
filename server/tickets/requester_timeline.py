@@ -27,8 +27,8 @@ class RequesterTimelineProjection:
 
 
 STATUS_TEXT: dict[str, str] = {
-    "new": "Заявка принята.",
-    "queued": "Заявка принята.",
+    "new": "Обращение принято.",
+    "queued": "Обращение принято.",
     "assigned": "Назначен специалист поддержки.",
     "in_progress": "Специалист взял обращение в работу.",
     "waiting_on_user": "Специалист ждёт ваш ответ.",
@@ -47,7 +47,7 @@ STATUS_TEXT: dict[str, str] = {
 }
 
 SYSTEM_EVENT_TEXT: dict[str, str] = {
-    "ticket_created": "Заявка зарегистрирована.",
+    "ticket_created": "Обращение зарегистрировано.",
     "queue_changed": "Обращение передано в профильную группу поддержки.",
     "routing_applied": "Обращение направлено в подходящую группу поддержки.",
     "priority_changed": "Приоритет обращения обновлён.",
@@ -182,7 +182,7 @@ def _project_chat_message(event: object | dict[str, Any], payload: Mapping[str, 
 
     if is_public_access_message_payload(payload):
         return RequesterTimelineProjection(
-            "Код доступа к заявке сформирован.",
+            "Код доступа к обращению сформирован.",
             "system_event",
             {"message_kind": "ticket_access_notice"},
         )

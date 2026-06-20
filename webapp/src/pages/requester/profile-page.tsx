@@ -25,6 +25,7 @@ import {
   type RequesterProfileValue,
   type RequesterProfileValues,
 } from "../../features/requester/profile-runtime";
+import { requesterErrorMessage } from "../../features/requester/labels";
 
 type ProfileMode = "read" | "edit" | "setup";
 
@@ -166,7 +167,7 @@ export function RequesterProfilePage() {
       await requesterInvalidations.afterProfileUpdate(queryClient);
     },
     onError: (error) => {
-      setLocalError(error instanceof Error ? error.message : "Не удалось сохранить профиль");
+      setLocalError(requesterErrorMessage(error, "Не удалось сохранить профиль"));
     },
   });
 
@@ -235,7 +236,7 @@ export function RequesterProfilePage() {
   if (loadError) {
     return (
       <section className="rounded-panel border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
-        {loadError instanceof Error ? loadError.message : "Не удалось загрузить профиль"}
+        {requesterErrorMessage(loadError, "Не удалось загрузить профиль")}
       </section>
     );
   }

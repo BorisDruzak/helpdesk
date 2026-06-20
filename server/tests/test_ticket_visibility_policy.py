@@ -17,7 +17,7 @@ def test_requester_visibility_redacts_nested_fields_and_keeps_support_preview_me
             "request_template": {
                 "visibility_policy": {
                     "public_status_mapping": {
-                        "waiting_on_approval": {"status": "in_work", "label": "Заявка в работе"}
+                        "waiting_on_approval": {"status": "in_work", "label": "Обращение в работе"}
                     },
                     "hide_from_requester": [
                         "custom_fields.internal_cost",
@@ -48,7 +48,7 @@ def test_requester_visibility_redacts_nested_fields_and_keeps_support_preview_me
     support_payload = apply_ticket_visibility_payload(ticket, payload, visibility="support")
 
     assert requester_payload["public_status"] == "in_work"
-    assert requester_payload["public_status_label"] == "Заявка в работе"
+    assert requester_payload["public_status_label"] == "Обращение в работе"
     assert requester_payload["custom_fields"] == {"public_scope": "department"}
     assert requester_payload["passport"]["sections"] == {"user_result": "available"}
     assert "raw_diagnostics" not in requester_payload

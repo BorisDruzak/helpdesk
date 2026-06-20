@@ -63,11 +63,12 @@ describe("RequesterNewRequestPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Проверить заявку" }));
-    expect(await screen.findByText("Безопасный preview")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
+    expect(await screen.findByText("Безопасная проверка")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
 
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/tickets/T-77"));
+    expect(screen.getByTestId("location")).not.toHaveTextContent("550e8400-e29b-41d4-a716-446655440077");
     const createCall = fetchMock.mock.calls.find(
       ([input, init]) => String(input) === "/api/web/requester/tickets" && init?.method === "POST",
     );
@@ -100,7 +101,7 @@ describe("RequesterNewRequestPage", () => {
       target: { value: "Нужна помощь" },
     });
     fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Проверить заявку" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
 
     expect(await screen.findByText("Недостаточно данных для маршрута.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Создать обращение" })).toBeDisabled();
@@ -264,8 +265,9 @@ function installNewRequestMock(
       return jsonResponse({
         status: "success",
         data: {
-          ticket_id: "T-77",
-          ticket: { ticket_id: "T-77", title: "Ноутбук не включается", status: "new" },
+          ticket_id: "550e8400-e29b-41d4-a716-446655440077",
+          ticket_code: "T-77",
+          ticket: { ticket_id: "550e8400-e29b-41d4-a716-446655440077", ticket_code: "T-77", title: "Ноутбук не включается", status: "new" },
         },
       });
     }

@@ -3310,7 +3310,7 @@ async def test_web_support_ticket_detail_exposes_template_visibility_policy(test
                     "ticket_type": "incident",
                     "visibility_policy": {
                         "public_status_mapping": {
-                            "waiting_on_internal_team": "Заявка в работе"
+                            "waiting_on_internal_team": "Обращение в работе"
                         },
                         "hide_from_requester": ["ola", "raw_diagnostics"],
                         "show_to_requester": ["public_messages", "public_status", "expected_due_at"],
@@ -3329,7 +3329,7 @@ async def test_web_support_ticket_detail_exposes_template_visibility_policy(test
 
     assert ticket_payload["status"] == "waiting_on_internal_team"
     assert ticket_payload["public_status"] == "in_work"
-    assert ticket_payload["public_status_label"] == "Заявка в работе"
+    assert ticket_payload["public_status_label"] == "Обращение в работе"
     assert ticket_payload["visibility"]["source"] == "request_template.visibility_policy"
     assert "ola" in ticket_payload["visibility"]["hidden_from_requester"]
     assert "raw_diagnostics" in ticket_payload["visibility"]["hidden_from_requester"]

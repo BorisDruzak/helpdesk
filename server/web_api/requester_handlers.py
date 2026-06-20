@@ -1128,9 +1128,9 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
         )
         await session.commit()
 
-    await _push_ticket_event(request, ticket_id, result, "chat_message", payload)
+    await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
     if status_result:
-        await _push_ticket_event(request, ticket_id, status_result, "status_changed", status_payload or {})
+        await _push_ticket_event(request, ticket.ticket_id, status_result, "status_changed", status_payload or {})
     return _success({"message_id": message_id, "event_id": result[0] if result else None, "attachments_count": len(attachments)})
 
 
@@ -1200,7 +1200,7 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
 
     await _push_ticket_event(
         request,
-        ticket_id,
+        ticket.ticket_id if ticket is not None else ticket_id,
         transition.get("event_result"),
         "status_changed",
         transition.get("event_payload") or {},
@@ -1456,14 +1456,14 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                 "service": {"code": None, "title": None},
                 "offering": {"code": None, "full_code": None, "title": None},
                 "request_type_label": "Request",
-                "public_status_after_create": "Новая заявка",
+                "public_status_after_create": "Новое обращение",
                 "approval": {"required": False, "text": "Согласование не требуется"},
                 "diagnostics": {
                     "required": False,
                     "consent_required": False,
                     "text": "Диагностика не требуется до отправки",
                 },
-                "next_action": "После отправки заявка попадет в поддержку.",
+                "next_action": "После отправки обращение попадет в поддержку.",
                 "warnings": [],
                 "blockers": [],
                 "would_create_ticket": False,
@@ -1882,6 +1882,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
         {
             "ticket": ticket,
             "ticket_id": created["ticket_id"],
+            "ticket_code": ticket.get("ticket_code"),
             "public_access_code": created.get("public_access_code"),
             "public_access_url": ticket.get("public_access_url"),
         }

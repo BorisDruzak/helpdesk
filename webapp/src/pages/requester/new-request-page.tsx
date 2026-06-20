@@ -8,10 +8,10 @@ import {
   recordKnowledgeFeedback,
   searchRequesterOnBehalfPeople,
   suggestKnowledge,
-  RequesterApiError,
 } from "../../features/requester/api";
 import {
   requesterInvalidations,
+  requesterTicketRouteParam,
   useRequesterBootstrapQuery,
   useRequesterFormPackQuery,
   useRequesterRegistryOptionsQuery,
@@ -28,7 +28,7 @@ import {
   missingRequiredFields,
   type DynamicFormValues,
 } from "../../features/requester/dynamic-form";
-import { requesterDeviceLabel } from "../../features/requester/labels";
+import { requesterDeviceLabel, requesterErrorMessage } from "../../features/requester/labels";
 import type {
   KnowledgeAttempt,
   KnowledgeSuggestResult,
@@ -227,7 +227,7 @@ export function RequesterNewRequestPage() {
       });
       setOnBehalfPeople(result.people ?? []);
     } catch (exc) {
-      setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось найти сотрудника");
+      setError(requesterErrorMessage(exc, "Не удалось найти сотрудника"));
     }
   }
 
@@ -242,7 +242,7 @@ export function RequesterNewRequestPage() {
       setPreviewResult(result);
     } catch (exc) {
       setPreviewResult(null);
-      setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось проверить заявку");
+      setError(requesterErrorMessage(exc, "Не удалось проверить обращение"));
     } finally {
       setPreviewSubmitting(false);
     }
@@ -273,10 +273,18 @@ export function RequesterNewRequestPage() {
     try {
       const result = await createRequesterTicket(buildCreatePayload());
       window.sessionStorage.removeItem(ASK_TICKET_CONTEXT_STORAGE_KEY);
-      await requesterInvalidations.afterTicketMutation(queryClient, result.ticket_id);
-      navigate(`/app/requester/tickets/${encodeURIComponent(result.ticket_id)}`);
+      const ticketRouteParam = requesterTicketRouteParam({
+        ticket_id: result.ticket?.ticket_id ?? result.ticket_id,
+        ticket_code: result.ticket?.ticket_code ?? result.ticket_code,
+      });
+      await requesterInvalidations.afterTicketMutation(queryClient, ticketRouteParam);
+      if (!ticketRouteParam) {
+        navigate("/app/requester/tickets");
+        return;
+      }
+      navigate(`/app/requester/tickets/${encodeURIComponent(ticketRouteParam)}`);
     } catch (exc) {
-      setError(exc instanceof RequesterApiError || exc instanceof Error ? exc.message : "Не удалось создать обращение");
+      setError(requesterErrorMessage(exc, "Не удалось создать обращение"));
     } finally {
       setSubmitting(false);
     }
@@ -454,7 +462,7 @@ export function RequesterNewRequestPage() {
             </dl>
             {previewResult ? (
               <div className="mt-3 rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                <p className="font-semibold text-slate-950">Безопасный preview</p>
+                <p className="font-semibold text-slate-950">Безопасная проверка</p>
                 {previewResult.request_type_label ? <p>Тип: {previewResult.request_type_label}</p> : null}
                 {previewResult.diagnostics?.text ? <p>{previewResult.diagnostics.text}</p> : null}
                 {(previewResult.blockers ?? []).map((blocker) => <p className="text-rose-700" key={blocker}>{blocker}</p>)}
@@ -462,7 +470,7 @@ export function RequesterNewRequestPage() {
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
               <button className="rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60" disabled={previewSubmitting} onClick={runPreview} type="button">
-                {previewSubmitting ? "Проверяем..." : "Проверить заявку"}
+                {previewSubmitting ? "Проверяем..." : "Проверить обращение"}
               </button>
               <button className="inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300" disabled={!canCreate} onClick={createTicket} type="button">
                 <Send className="h-4 w-4" />
@@ -476,7 +484,7 @@ export function RequesterNewRequestPage() {
         <div className="rounded-panel border border-slate-200 bg-white p-4 text-sm">
           <p className="font-semibold text-slate-950">Подобранный вариант</p>
           <p className="mt-2 text-slate-700">{selectedOffering?.title || selectedForm.title}</p>
-          <p className="mt-1 text-slate-500">{selectedService?.title || "Каталог заявок"}</p>
+          <p className="mt-1 text-slate-500">{selectedService?.title || "Каталог обращений"}</p>
         </div>
         <div className="rounded-panel border border-slate-200 bg-white p-4 text-sm">
           <p className="font-semibold text-slate-950">Контекст</p>
@@ -643,7 +651,7 @@ function stepTitle(step: WizardStep): string {
   return {
     problem: "Опишите проблему",
     quick_help: "Быстрые подсказки",
-    details: "Детали заявки",
+    details: "Детали обращения",
     review: "Проверка",
   }[step];
 }

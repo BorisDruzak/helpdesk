@@ -112,7 +112,9 @@ Target routes:
 
 ## Requester Consent UI Contract
 
-Pending requester consent is rendered through the shared React card in `webapp/src/features/requester/consent-card.tsx` on both `/app/requester` and `/app/requester/tickets/:ticketId`.
+Pending requester consent is rendered through the shared React card in `webapp/src/features/requester/consent-card.tsx` on both `/app/requester` and `/app/requester/tickets/:ticketCode`.
+
+Requester ticket browser routes must prefer the requester-safe `ticket_code` (`/app/requester/tickets/:ticketCode`). The authenticated requester API accepts `{ticket_ref}` and resolves it to a caller-owned ticket by safe code, with legacy raw `ticket_id` accepted only as a compatibility fallback after the same ownership boundary.
 
 The card must:
 

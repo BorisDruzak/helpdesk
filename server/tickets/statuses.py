@@ -48,12 +48,12 @@ STATUS_LABELS_RU = {
 }
 
 REQUESTER_STATUS_LABELS_RU = {
-    "accepted": "Заявка принята",
-    "in_work": "Заявка в работе",
+    "accepted": "Обращение принято",
+    "in_work": "Обращение в работе",
     "needs_requester": "Нужен ваш ответ",
     "review_solution": "Проверьте решение",
-    "closed": "Закрыта",
-    "canceled": "Отменена",
+    "closed": "Закрыто",
+    "canceled": "Отменено",
 }
 
 LEGACY_STATUS_ALIASES = {

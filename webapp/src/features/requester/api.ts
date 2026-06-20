@@ -57,12 +57,14 @@ type SuccessResponse<T> = {
 export class RequesterApiError extends Error {
   status: number;
   details?: unknown;
+  code?: string;
 
-  constructor(message: string, status: number, details?: unknown) {
+  constructor(message: string, status: number, details?: unknown, code?: string) {
     super(message);
     this.name = "RequesterApiError";
     this.status = status;
     this.details = details;
+    this.code = code;
   }
 }
 
@@ -82,6 +84,7 @@ async function readOk<T>(response: Response, fallbackMessage: string): Promise<O
       errorPayload?.message ?? errorPayload?.error ?? fallbackMessage,
       response.status,
       errorPayload?.details,
+      errorPayload?.error_code,
     );
   }
   return payload;
@@ -94,7 +97,8 @@ async function readSuccess<T>(response: Response, fallbackMessage: string): Prom
     throw new RequesterApiError(
       errorPayload?.message ?? errorPayload?.error ?? fallbackMessage,
       response.status,
-      errorPayload?.details ?? errorPayload?.error_code,
+      errorPayload?.details,
+      errorPayload?.error_code,
     );
   }
   return payload.data;
@@ -115,7 +119,7 @@ export async function fetchPublicFormPack(): Promise<RequestFormPack> {
   const response = await fetch("/public_api/ticket_forms/current?pack_key=request_forms", {
     cache: "no-store",
   });
-  const payload = await readOk<{ pack: RequestFormPack }>(response, "Не удалось загрузить форму заявки");
+  const payload = await readOk<{ pack: RequestFormPack }>(response, "Не удалось загрузить форму обращения");
   return payload.pack;
 }
 
@@ -133,7 +137,7 @@ export async function createPublicTicket(payload: PublicTicketCreatePayload): Pr
     headers: publicHeaders(null, true),
     body: JSON.stringify(payload),
   });
-  return readOk<PublicTicketCreateResult>(response, "Не удалось создать заявку");
+  return readOk<PublicTicketCreateResult>(response, "Не удалось создать обращение");
 }
 
 export async function fetchRequesterBootstrap(): Promise<RequesterBootstrap> {
@@ -295,7 +299,7 @@ export async function previewRequesterTicket(
     headers: publicHeaders(null, true),
     body: JSON.stringify(payload),
   });
-  return readSuccess<ServiceCatalogSafePreview>(response, "Requester ticket preview failed");
+  return readSuccess<ServiceCatalogSafePreview>(response, "Не удалось проверить обращение");
 }
 
 export async function fetchRequesterTicket(ticketId: string): Promise<RequesterTicketDetail> {
@@ -343,7 +347,8 @@ export async function uploadRequesterTicketAttachment(
     throw new RequesterApiError(
       errorPayload?.message ?? errorPayload?.error ?? "Не удалось загрузить вложение",
       response.status,
-      errorPayload?.details ?? errorPayload?.error_code,
+      errorPayload?.details,
+      errorPayload?.error_code,
     );
   }
   return {
@@ -364,7 +369,7 @@ export async function closeRequesterTicket(ticketId: string): Promise<RequesterT
     headers: publicHeaders(null, true),
     body: JSON.stringify({ reason: "requester_confirmed_resolution" }),
   });
-  return readSuccess<RequesterTicketCloseResult>(response, "Requester ticket close failed");
+  return readSuccess<RequesterTicketCloseResult>(response, "Не удалось подтвердить решение");
 }
 
 export async function submitRequesterTicketFeedback(
@@ -377,7 +382,7 @@ export async function submitRequesterTicketFeedback(
     headers: publicHeaders(null, true),
     body: JSON.stringify(payload),
   });
-  return readSuccess<RequesterTicketFeedbackResult>(response, "Requester feedback failed");
+  return readSuccess<RequesterTicketFeedbackResult>(response, "Не удалось сохранить оценку");
 }
 
 export async function reopenRequesterTicket(
@@ -390,7 +395,7 @@ export async function reopenRequesterTicket(
     headers: publicHeaders(null, true),
     body: JSON.stringify(payload),
   });
-  return readSuccess<RequesterTicketReopenResult>(response, "Requester ticket reopen failed");
+  return readSuccess<RequesterTicketReopenResult>(response, "Не удалось вернуть обращение в работу");
 }
 
 export async function previewServiceCatalogRequest(
@@ -401,7 +406,7 @@ export async function previewServiceCatalogRequest(
     headers: publicHeaders(null, true),
     body: JSON.stringify(payload),
   });
-  return readOk<ServiceCatalogSafePreview>(response, "Не удалось построить безопасный preview обращения");
+  return readOk<ServiceCatalogSafePreview>(response, "Не удалось подготовить безопасную проверку обращения");
 }
 
 export async function suggestKnowledge(payload: {

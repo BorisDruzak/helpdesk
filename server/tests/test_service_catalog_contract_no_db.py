@@ -14,6 +14,7 @@ from tickets.service_catalog_contract import (
     serialize_offering_for_requester,
     serialize_service_for_requester,
 )
+from tickets.service_catalog_defaults import DEFAULT_SERVICE_CATALOG_OFFERINGS
 
 
 pytestmark = pytest.mark.no_db
@@ -156,3 +157,14 @@ def test_requester_offering_serializer_is_safe_and_stable() -> None:
         "expected_resolution": None,
         "requires_attachment": False,
     }
+
+
+def test_requester_setup_defaults_use_requester_safe_terminology() -> None:
+    setup_descriptions = [
+        str(offering.get("short_description") or "")
+        for offering in DEFAULT_SERVICE_CATALOG_OFFERINGS
+        if offering.get("service_code") == "requester_setup"
+    ]
+
+    assert setup_descriptions
+    assert all("Заявка" not in description and "заявка" not in description for description in setup_descriptions)

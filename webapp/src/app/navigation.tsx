@@ -111,7 +111,7 @@ export const appNavigationDomains: AppNavigationDomain[] = [
   {
     id: "catalog-intake",
     workspace: "admin",
-    label: "Каталог и заявки",
+    label: "Каталог и обращения",
     description: "Студия обращений и экспертные разделы каталога, форм и политик",
     icon: FolderKanban,
     order: 20,
@@ -173,7 +173,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Создать обращение",
-    description: "Новая заявка через безопасную форму",
+    description: "Новое обращение через безопасную форму",
     icon: PlusCircle,
     section: "requester",
     workspace: "requester",
@@ -185,7 +185,7 @@ export const appNavigation: AppNavItem[] = [
   },
   {
     label: "Мои обращения",
-    description: "Список заявок и история переписки",
+    description: "Список обращений и история переписки",
     icon: Ticket,
     section: "requester",
     workspace: "requester",

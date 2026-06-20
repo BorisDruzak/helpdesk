@@ -19,6 +19,7 @@ import { requesterErrorMessage, requesterSafeAttachmentName, requesterTicketNext
 import {
   humanRequesterTicketCode,
   requesterInvalidations,
+  requesterTicketRouteParam,
   useRequesterConsentsQuery,
   useRequesterTicketDetailQuery,
   useRequesterTicketsQuery,
@@ -69,9 +70,12 @@ export function RequesterTicketsPage() {
 
   const tickets = ticketsQuery.data ?? [];
   const selectedTicket = detailQuery.data?.ticket ?? null;
+  const selectedInternalTicketId = selectedTicket?.ticket_id ?? null;
   const selectedStatus = selectedTicket?.status ?? "";
   const pendingConsents = (consentsQuery.data ?? []).filter(
-    (consent) => consent.status === "pending" && (!ticketId || consent.ticket_id === ticketId),
+    (consent) =>
+      consent.status === "pending" &&
+      (!ticketId || consent.ticket_id === ticketId || (selectedInternalTicketId ? consent.ticket_id === selectedInternalTicketId : false)),
   );
   const filteredTickets = useMemo(
     () => tickets.filter((ticket) => ticketMatchesFilter(ticket, filter)).filter((ticket) => ticketMatchesSearch(ticket, search)),
@@ -101,7 +105,7 @@ export function RequesterTicketsPage() {
     setAttachmentUploading(true);
     setNotice(null);
     try {
-      const uploaded = await Promise.all(files.map((file) => uploadRequesterTicketAttachment(ticketId, file)));
+      const uploaded = await Promise.all(files.map((file) => uploadRequesterTicketAttachment(selectedInternalTicketId ?? ticketId, file)));
       setPendingAttachments((current) => [...current, ...uploaded.map((item) => attachmentFromUpload(item))]);
     } catch (exc) {
       setNotice(requesterErrorMessage(exc, "Не удалось загрузить вложение"));
@@ -259,25 +263,37 @@ export function RequesterTicketsPage() {
           {!ticketsQuery.isLoading && !filteredTickets.length ? (
             <p className="px-4 py-3 text-sm text-slate-600">Нет обращений по выбранным условиям</p>
           ) : null}
-          {filteredTickets.map((ticket) => (
-            <Link
-              className={`block border-t border-slate-100 px-4 py-3 first:border-t-0 ${ticket.ticket_id === ticketId ? "bg-brand-50" : "hover:bg-slate-50"}`}
-              key={ticket.ticket_id}
-              to={`/app/requester/tickets/${encodeURIComponent(ticket.ticket_id)}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-brand-700">{humanRequesterTicketCode(ticket)}</p>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-950">{ticket.title || "Без темы"}</p>
+          {filteredTickets.map((ticket) => {
+            const routeParam = requesterTicketRouteParam(ticket);
+            const cardBody = (
+              <>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-brand-700">{humanRequesterTicketCode(ticket)}</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-950">{ticket.title || "Без темы"}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                    {ticket.requester_status_label || ticket.public_status_label || ticket.status_label || formatStatusLabel(ticket.status)}
+                  </span>
                 </div>
-                <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                  {ticket.requester_status_label || ticket.public_status_label || ticket.status_label || formatStatusLabel(ticket.status)}
-                </span>
+                <p className="mt-2 text-xs text-slate-500">{formatRussianDateTime(ticket.updated_at || ticket.created_at, { emptyText: "Дата не указана" })}</p>
+                {requesterTicketNextActionLabel(ticket) ? <p className="mt-1 text-xs font-semibold text-amber-700">{requesterTicketNextActionLabel(ticket)}</p> : null}
+              </>
+            );
+            return routeParam ? (
+              <Link
+                className={`block border-t border-slate-100 px-4 py-3 first:border-t-0 ${requesterTicketIsActive(ticket, ticketId) ? "bg-brand-50" : "hover:bg-slate-50"}`}
+                key={ticket.ticket_id}
+                to={`/app/requester/tickets/${encodeURIComponent(routeParam)}`}
+              >
+                {cardBody}
+              </Link>
+            ) : (
+              <div className="block border-t border-slate-100 px-4 py-3 first:border-t-0" key={ticket.ticket_id}>
+                {cardBody}
               </div>
-              <p className="mt-2 text-xs text-slate-500">{formatRussianDateTime(ticket.updated_at || ticket.created_at, { emptyText: "Дата не указана" })}</p>
-              {requesterTicketNextActionLabel(ticket) ? <p className="mt-1 text-xs font-semibold text-amber-700">{requesterTicketNextActionLabel(ticket)}</p> : null}
-            </Link>
-          ))}
+            );
+          })}
         </div>
       </section>
       <section className="min-w-0">
@@ -435,6 +451,13 @@ function ticketMatchesSearch(ticket: AuthenticatedRequesterTicket, search: strin
   ]
     .filter(Boolean)
     .some((value) => String(value).toLowerCase().includes(query));
+}
+
+function requesterTicketIsActive(ticket: AuthenticatedRequesterTicket, routeParam: string | undefined): boolean {
+  if (!routeParam) {
+    return false;
+  }
+  return routeParam === ticket.ticket_id || routeParam === ticket.ticket_code;
 }
 
 function attachmentFromUpload(upload: RequesterAttachmentUploadResult): PublicTicketAttachment & { name: string } {

@@ -651,9 +651,10 @@ class RequesterIdentityResolver:
         return list(result.scalars().all())
 
     async def get_ticket(self, *, actor_id: str, ticket_id: str) -> Ticket | None:
+        ticket_ref = str(ticket_id or "").strip()
         tickets = await self.list_tickets(actor_id=actor_id, limit=300)
         for ticket in tickets:
-            if ticket.ticket_id == str(ticket_id):
+            if ticket.ticket_id == ticket_ref or str(getattr(ticket, "ticket_code", "") or "") == ticket_ref:
                 return ticket
         return None
 

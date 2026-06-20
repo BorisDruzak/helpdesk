@@ -45,6 +45,9 @@ describe("RequesterTicketsPage", () => {
 
     expect(await screen.findByRole("heading", { name: "Мои обращения" })).toBeInTheDocument();
     expect(await screen.findByText("REQ-1001")).toBeInTheDocument();
+    expect(screen.getByText("REQ-1002").closest("a")).toHaveAttribute("href", "/app/requester/tickets/REQ-1002");
+    expect(screen.getByText("REQ-1002").closest("a")).not.toHaveAttribute("href", expect.stringContaining("550e8400"));
+    expect(screen.getByText("Обращение без номера").closest("a")).toBeNull();
     expect(screen.getByText("19.06.2026, 09:30")).toBeInTheDocument();
     expect(screen.queryByText("550e8400-e29b-41d4-a716-446655440000")).not.toBeInTheDocument();
 
@@ -58,7 +61,7 @@ describe("RequesterTicketsPage", () => {
 
   it("preserves reply text when sending a requester message fails", async () => {
     installTicketsMock({ messageFails: true });
-    renderTicketsPage("/app/requester/tickets/T-1001");
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
 
     expect(await screen.findByRole("heading", { name: "Ноутбук не включается" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Ответ заявителя"), {
@@ -66,13 +69,13 @@ describe("RequesterTicketsPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
 
-    expect(await screen.findByText("Не удалось отправить сообщение")).toBeInTheDocument();
+    expect(await screen.findByText("Сервис временно недоступен. Попробуйте позже.")).toBeInTheDocument();
     expect(screen.getByLabelText("Ответ заявителя")).toHaveValue("Проблема повторяется после перезагрузки");
   });
 
   it("handles attachments, consents, resolution feedback and reopen actions", async () => {
     const fetchMock = installTicketsMock();
-    renderTicketsPage("/app/requester/tickets/T-1001");
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
 
     expect(await screen.findByRole("heading", { name: "Ноутбук не включается" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Прикрепить файл к ответу"), {
@@ -83,7 +86,7 @@ describe("RequesterTicketsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Отправить" }));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/requester/tickets/T-1001/message",
+        "/api/web/requester/tickets/REQ-1001/message",
         expect.objectContaining({ method: "POST", body: JSON.stringify({ text: "Прикладываю лог", attachment_refs: ["artifact-1"] }) }),
       );
     });
@@ -103,7 +106,7 @@ describe("RequesterTicketsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Подтвердить решение" }));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/requester/tickets/T-1001/close",
+        "/api/web/requester/tickets/REQ-1001/close",
         expect.objectContaining({ method: "POST" }),
       );
     });
@@ -113,7 +116,7 @@ describe("RequesterTicketsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Отправить оценку" }));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/requester/tickets/T-1001/feedback",
+        "/api/web/requester/tickets/REQ-1001/feedback",
         expect.objectContaining({ method: "POST", body: expect.stringContaining('"rating":2') }),
       );
     });
@@ -121,7 +124,7 @@ describe("RequesterTicketsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Вернуть в работу" }));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/web/requester/tickets/T-1001/reopen",
+        "/api/web/requester/tickets/REQ-1001/reopen",
         expect.objectContaining({ method: "POST" }),
       );
     });
@@ -161,10 +164,17 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
             {
               ticket_id: "T-1003",
               ticket_code: "REQ-1003",
-              title: "Закрытая заявка",
+              title: "Закрытое обращение",
               status: "closed",
               requester_status_label: "Закрыта",
               updated_at: "2026-06-18T09:00:00Z",
+            },
+            {
+              ticket_id: "550e8400-e29b-41d4-a716-446655440099",
+              title: "Обращение без публичного номера",
+              status: "open",
+              requester_status_label: "В работе",
+              updated_at: "2026-06-18T08:00:00Z",
             },
           ],
         },
@@ -193,7 +203,7 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
         },
       });
     }
-    if (url === "/api/web/requester/tickets/T-1001") {
+    if (url === "/api/web/requester/tickets/REQ-1001") {
       return jsonResponse({
         status: "success",
         data: {
@@ -230,7 +240,7 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
         kind: "file",
       });
     }
-    if (url === "/api/web/requester/tickets/T-1001/message") {
+    if (url === "/api/web/requester/tickets/REQ-1001/message") {
       if (options.messageFails) {
         return jsonResponse({ status: "error", message: "Не удалось отправить сообщение" }, 500);
       }
@@ -245,15 +255,15 @@ function installTicketsMock(options: { messageFails?: boolean } = {}) {
       consentStatus = "denied";
       return jsonResponse({ status: "success", data: { consent: { consent_id: "consent-1", status: "denied" } } });
     }
-    if (url === "/api/web/requester/tickets/T-1001/close") {
+    if (url === "/api/web/requester/tickets/REQ-1001/close") {
       detailStatus = "closed";
       return jsonResponse({ status: "success", data: { ticket: { ticket_id: "T-1001", status: "closed" } } });
     }
-    if (url === "/api/web/requester/tickets/T-1001/feedback") {
+    if (url === "/api/web/requester/tickets/REQ-1001/feedback") {
       feedbackSubmitted = true;
       return jsonResponse({ status: "success", data: { ok: true, feedback_id: "fb-1", reopen_available: true } });
     }
-    if (url === "/api/web/requester/tickets/T-1001/reopen") {
+    if (url === "/api/web/requester/tickets/REQ-1001/reopen") {
       expect(feedbackSubmitted).toBe(true);
       detailStatus = "in_progress";
       return jsonResponse({ status: "success", data: { ok: true, ticket_id: "T-1001", ticket_status: "in_progress", reopen_id: "re-1" } });

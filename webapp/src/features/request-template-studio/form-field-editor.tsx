@@ -1,27 +1,32 @@
 import { Trash2 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import type { AdminFormsFieldType } from "../forms-builder/api";
+import { PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES } from "../requester/dynamic-form";
 import { PROCESS_MEANINGS, newDraftField, type StudioDraft, type StudioDraftField } from "./draft-model";
 
-const FIELD_TYPES: Array<{ value: AdminFormsFieldType; label: string }> = [
-  { value: "text", label: "Короткий текст" },
-  { value: "textarea", label: "Длинный текст" },
-  { value: "email", label: "Email" },
-  { value: "phone", label: "Телефон" },
-  { value: "url", label: "Ссылка" },
-  { value: "select", label: "Список" },
-  { value: "radio", label: "Один вариант" },
-  { value: "multi_select", label: "Несколько вариантов" },
-  { value: "checkbox", label: "Да/нет" },
-  { value: "date", label: "Дата" },
-  { value: "datetime", label: "Дата и время" },
-  { value: "department_picker", label: "Подразделение" },
-  { value: "location_picker", label: "Локация" },
-  { value: "device_picker", label: "Устройство" },
-  { value: "service_picker", label: "Услуга" },
-  { value: "user_picker", label: "Пользователь" },
-  { value: "file", label: "Файл" },
-];
+const FIELD_TYPE_LABELS: Partial<Record<AdminFormsFieldType, string>> = {
+  text: "Короткий текст",
+  textarea: "Длинный текст",
+  email: "Email",
+  phone: "Телефон",
+  url: "Ссылка",
+  select: "Список",
+  radio: "Один вариант",
+  multi_select: "Несколько вариантов",
+  checkbox: "Да/нет",
+  date: "Дата",
+  datetime: "Дата и время",
+  department_picker: "Подразделение",
+  location_picker: "Локация",
+  device_picker: "Устройство",
+  service_picker: "Услуга",
+  user_picker: "Пользователь",
+};
+
+const FIELD_TYPES: Array<{ value: AdminFormsFieldType; label: string }> = PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES.map((value) => ({
+  value: value as AdminFormsFieldType,
+  label: FIELD_TYPE_LABELS[value as AdminFormsFieldType] ?? value,
+}));
 
 export function FormFieldEditor({
   draft,

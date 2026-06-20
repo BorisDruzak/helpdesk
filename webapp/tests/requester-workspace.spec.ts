@@ -1,6 +1,7 @@
 import { expect, type Page, type Route, test } from "playwright/test";
 
-const ticketId = "T-1001";
+const ticketId = "550e8400-e29b-41d4-a716-446655440001";
+const ticketCode = "REQ-1001";
 
 async function fulfillJson(route: Route, payload: unknown) {
   await route.fulfill({
@@ -13,7 +14,7 @@ async function fulfillJson(route: Route, payload: unknown) {
 async function installRequesterMocks(page: Page) {
   const ticket = {
     ticket_id: ticketId,
-    ticket_code: "REQ-1001",
+    ticket_code: ticketCode,
     title: "VPN access problem",
     description: "VPN is unavailable from the requester laptop.",
     status: "waiting_on_user",
@@ -99,12 +100,22 @@ async function installRequesterMocks(page: Page) {
 
   await page.route("**/api/web/requester/tickets", (route) => {
     if (route.request().method() === "POST") {
-      return fulfillJson(route, { status: "success", data: { ticket_id: "T-1002", ticket_code: "REQ-1002" } });
+      return fulfillJson(route, {
+        status: "success",
+        data: {
+          ticket_id: "550e8400-e29b-41d4-a716-446655440002",
+          ticket_code: "REQ-1002",
+          ticket: {
+            ticket_id: "550e8400-e29b-41d4-a716-446655440002",
+            ticket_code: "REQ-1002",
+          },
+        },
+      });
     }
     return fulfillJson(route, { status: "success", data: { tickets: [ticket] } });
   });
 
-  await page.route(`**/api/web/requester/tickets/${ticketId}`, (route) =>
+  await page.route(`**/api/web/requester/tickets/${ticketCode}`, (route) =>
     fulfillJson(route, {
       status: "success",
       data: {
@@ -258,7 +269,7 @@ test("requester split routes render without legacy workspace leakage", async ({ 
   await expect(page.getByText("VPN access problem")).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
-  await page.goto(`/app/requester/tickets/${ticketId}`);
+  await page.goto(`/app/requester/tickets/${ticketCode}`);
   await expect(page.getByText("Please confirm VPN error code.")).toBeVisible();
   await expectNoHorizontalOverflow(page);
 

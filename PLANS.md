@@ -193,7 +193,7 @@ Every error must explain what happened and what the user should do next. Unknown
 | `/app/requester` | Dashboard | See next action and current state |
 | `/app/requester/new` | Wizard | Create an обращение |
 | `/app/requester/tickets` | List | Find an обращение |
-| `/app/requester/tickets/:ticketId` | Detail/chat | Continue one conversation |
+| `/app/requester/tickets/:ticketCode` | Detail/chat | Continue one conversation by requester-safe ticket code |
 | `/app/requester/profile` | Settings | View/edit profile |
 | `/app/requester/profile/setup` | Required setup | Complete required profile fields |
 | `/app/requester/devices` | Device dashboard | View devices and link state |
@@ -921,6 +921,64 @@ Do not combine the whole refactor into one commit.
 
 ## 19. Progress log
 
+### Current checkpoint - requester cabinet review fixes, 2026-06-20
+
+Status: in progress.
+
+Source reviews:
+
+- `docs/requester-cabinet-review-2026-06-19.md`
+- `docs/requester-cabinet-review-2026-06-19-2.md`
+- `docs/requester-cabinet-review-2026-06-20.md`
+
+Confirmed work tracked by implementation:
+
+- [x] P1 terminology hardening: replace requester-visible `заявка` / English `preview` leftovers with the canonical `обращение` / Russian safe wording in requester navigation, request creation, safe API fallbacks and tests.
+- [x] P1 safe ticket detail URLs: stop using raw internal `ticket_id` / UUID in `/app/requester/tickets/:ticketCode`; route and post-create navigation must use requester-safe `ticket_code` where available, with a server-side resolver that preserves caller ownership checks.
+- [x] P1 dynamic `file` field policy: keep requester-visible `file` fields blocked until draft upload exists, but make the publishable field list, UI copy, tests and DoD explicit so `file` is not advertised as supported requester runtime behavior.
+- [x] P2 safe requester errors: map `RequesterApiError` / backend error codes to requester-safe Russian messages and avoid showing raw server `message` / `error` text in normal requester UI.
+- [x] P3 traceability: update this plan's completion records/trace note so the review exception and follow-up commit boundary are explicit.
+- [x] Service Catalog public terminology: remove requester-visible `Заявка...` wording from setup-help catalog defaults and relevant requester-safe content surfaces, or document any support-only exceptions.
+- [ ] Deploy/live gate: deploy the verified code to `https://192.168.100.17:9443` and collect real browser evidence for requester cabinet routes.
+
+Acceptance criteria:
+
+- Requester-visible DOM, accessible labels, safe error texts and browser route snapshots no longer contain forbidden review terms for this scope: `заявк`, English `preview`, raw UUID ticket URLs, raw server exception text.
+- Ticket list/detail, creation success redirect, requester API detail/message/close/feedback/reopen/history calls keep working for caller-owned tickets through the safe public code route parameter.
+- Tests cover safe-code route resolution, post-create navigation, safe error mapping, terminology guard, file-field publication policy and Service Catalog setup-help wording.
+- Browser evidence is collected on the canonical deployed stand `https://192.168.100.17:9443` for `/app/requester`, `/app/requester/new`, `/app/requester/tickets` and one detail/chat URL after deploy.
+
+Planned verification:
+
+- `python scripts/verify_workspace.py`
+- `python scripts/test_web_first_registration_localization.py`
+- `pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/app/router.test.tsx --reporter=dot`
+- `pnpm --dir webapp run build`
+- targeted server requester/service-catalog tests for safe ticket code resolution and catalog wording
+- deployed browser/live requester cabinet check with console/network capture
+
+Phase completion record:
+
+```text
+Phase: Review fixes
+Commit(s): not committed yet
+Files changed: pending
+Automated checks completed before deploy:
+- `pnpm --dir webapp exec vitest run src/features/requester/labels.test.ts src/features/requester/queries.test.ts src/features/requester/api.test.ts src/features/requester/dynamic-form/dynamic-form.test.tsx src/features/request-template-studio/draft-model.test.ts src/pages/requester/new-request-page.test.tsx src/pages/requester/tickets-page.test.tsx src/pages/requester/home-page.test.tsx src/pages/requester/devices-page.test.tsx src/pages/requester/profile-page.test.tsx --reporter=dot` — passed 10 files / 52 tests.
+- `python scripts/test_web_first_registration_localization.py` — passed 9 tests.
+- `python -m pytest server/tests/test_service_catalog_contract_no_db.py -q --tb=short` — passed 5 tests.
+- `python -m pytest server/tests/test_knowledge_content_packs.py::test_required_baseline_content_packs_are_present_and_safe server/tests/test_knowledge_content_packs.py::test_primary_agent_requester_guides_pack_contains_pa11_articles server/tests/test_knowledge_pack_bindings.py -q --tb=short` — passed 13 tests.
+- `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_ticket_detail_and_message_are_owned_only server/tests/test_requester_workspace_api.py::test_requester_ticket_message_accepts_attachment_refs server/tests/test_requester_workspace_api.py::test_requester_ticket_message_rejects_foreign_attachment_ref server/tests/test_requester_workspace_api.py::test_requester_can_close_owned_resolved_ticket_only server/tests/test_requester_workspace_api.py::test_requester_can_submit_feedback_and_reopen_owned_ticket_only -q --tb=short` — passed 5 tests.
+- `pnpm --dir webapp run build` — passed with existing Vite chunk-size warning.
+- `pnpm --dir webapp exec playwright test tests/requester-workspace.spec.ts` — passed 1 test.
+- `python scripts/verify_workspace.py` — passed after navigation catalog drift update.
+Browser routes checked before deploy: local Playwright fixture for `/app/requester`, `/app/requester/tickets`, `/app/requester/tickets/REQ-1001`, `/app/requester/profile`, `/app/requester/devices`, `/app/kb` and `/app/kb/ask`.
+Evidence path: pending
+Console/network result: pending
+Residual risks: pending
+Next phase: close review fixes and deploy/live-test.
+```
+
 ### Phase N - Cleanup and final gate, 2026-06-19
 
 - [x] Deleted the old monolithic requester implementation and test file: `webapp/src/pages/requester/index.tsx` and `webapp/src/pages/requester/index.test.tsx`.
@@ -1100,7 +1158,7 @@ Next phase: Phase J — Devices and link wizard.
 
 ### Phase H — request list/detail/chat, 2026-06-19
 
-- [x] `/app/requester/tickets` and `/app/requester/tickets/:ticketId` now lazy-load a dedicated `RequesterTicketsPage` instead of the legacy requester monolith.
+- [x] `/app/requester/tickets` and `/app/requester/tickets/:ticketCode` now lazy-load a dedicated `RequesterTicketsPage` instead of the legacy requester monolith.
 - [x] The list supports open/action/closed/all filters and search while showing human request numbers, title, requester status, localized last update and next-action hints.
 - [x] Detail route renders requester-safe description, messages, timeline, pending consents, sticky reply composer and attachment upload.
 - [x] Message send clears text/attachments only after success; transient send failures preserve reply text.
@@ -1133,7 +1191,7 @@ Next phase: Phase I — Dynamic profile and constructor parity.
 - [x] On-behalf controls render only when the selected form policy allows them; preview/create payloads carry the affected person context only in that policy-gated branch.
 - [x] Review uses authenticated safe preview, shows server-resolved diagnostics/warnings, blocks create on preview blockers and disables duplicate preview/create submits.
 - [x] Incomplete-profile/no-device setup-help forms remain available when their availability policy allows them; otherwise the profile setup guidance is still shown.
-- [x] Successful create invalidates requester queries and navigates to `/app/requester/tickets/{ticket_id}` as the result route.
+- [x] Successful create invalidates requester queries and navigates to `/app/requester/tickets/{ticket_code}` as the result route when a safe code is available.
 - [x] Docs drift updated in `server/docs/CODEMAP.md` and `docs/QUICK_LOOKUP.md`.
 
 Phase completion record:

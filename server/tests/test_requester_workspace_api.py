@@ -2041,22 +2041,24 @@ async def test_requester_ticket_detail_and_message_are_owned_only(test_client, t
             include_public_access=True,
         )
         ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
         await session.commit()
 
     owner_headers = _headers(f"{TEST_UI_USER_PREFIX}{owner_login}")
     foreign_headers = _headers(f"{TEST_UI_USER_PREFIX}{foreign_login}")
 
-    detail = await test_client.get(f"/api/web/requester/tickets/{ticket_id}", headers=owner_headers)
+    detail = await test_client.get(f"/api/web/requester/tickets/{ticket_ref}", headers=owner_headers)
     detail_payload = await detail.json()
     assert detail.status == 200, detail_payload
     assert detail_payload["data"]["ticket"]["ticket_id"] == ticket_id
+    assert detail_payload["data"]["ticket"]["ticket_code"] == ticket_ref
     assert any(
         message.get("text") == "Visible to owner only"
         for message in detail_payload["data"].get("messages", [])
     )
 
     sent = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/message",
+        f"/api/web/requester/tickets/{ticket_ref}/message",
         headers=owner_headers,
         json={"text": "Requester authenticated follow-up"},
     )
@@ -2065,7 +2067,7 @@ async def test_requester_ticket_detail_and_message_are_owned_only(test_client, t
     assert sent_payload["data"]["message_id"]
 
     denied = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/message",
+        f"/api/web/requester/tickets/{ticket_ref}/message",
         headers=foreign_headers,
         json={"text": "Should not be accepted"},
     )
@@ -2277,6 +2279,7 @@ async def test_requester_ticket_message_accepts_attachment_refs(test_client, tes
             include_public_access=True,
         )
         ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
         artifact = Artifact(
             artifact_id=str(uuid.uuid4()),
             storage_path="requester-log.txt",
@@ -2295,7 +2298,7 @@ async def test_requester_ticket_message_accepts_attachment_refs(test_client, tes
         await session.commit()
 
     sent = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/message",
+        f"/api/web/requester/tickets/{ticket_ref}/message",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
         json={"text": "", "attachment_refs": [artifact_id]},
     )
@@ -2304,7 +2307,7 @@ async def test_requester_ticket_message_accepts_attachment_refs(test_client, tes
     assert sent_payload["data"]["attachments_count"] == 1
 
     detail = await test_client.get(
-        f"/api/web/requester/tickets/{ticket_id}",
+        f"/api/web/requester/tickets/{ticket_ref}",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
     )
     detail_payload = await detail.json()
@@ -2370,11 +2373,12 @@ async def test_requester_ticket_message_rejects_foreign_attachment_ref(test_clie
         )
         session.add(foreign_artifact)
         ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
         artifact_id = foreign_artifact.artifact_id
         await session.commit()
 
     response = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/message",
+        f"/api/web/requester/tickets/{ticket_ref}/message",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
         json={"text": "", "attachment_refs": [artifact_id]},
     )
@@ -2411,20 +2415,21 @@ async def test_requester_can_close_owned_resolved_ticket_only(test_client, test_
             include_public_access=True,
         )
         ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
         ticket = await session.get(Ticket, ticket_id)
         ticket.status = "resolved"
         ticket.resolved_at = datetime.now(timezone.utc)
         await session.commit()
 
     foreign_denied = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/close",
+        f"/api/web/requester/tickets/{ticket_ref}/close",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{foreign_login}"),
         json={"reason": "requester_confirmed_resolution"},
     )
     assert foreign_denied.status == 404, await foreign_denied.text()
 
     closed = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/close",
+        f"/api/web/requester/tickets/{ticket_ref}/close",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{owner_login}"),
         json={"reason": "requester_confirmed_resolution"},
     )
@@ -2466,20 +2471,21 @@ async def test_requester_can_submit_feedback_and_reopen_owned_ticket_only(test_c
             include_public_access=True,
         )
         ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
         ticket = await session.get(Ticket, ticket_id)
         ticket.status = "resolved"
         ticket.resolved_at = datetime.now(timezone.utc)
         await session.commit()
 
     foreign_feedback = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/feedback",
+        f"/api/web/requester/tickets/{ticket_ref}/feedback",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{foreign_login}"),
         json={"rating": 1, "problem_resolved": False, "reason_codes": ["not_resolved"]},
     )
     assert foreign_feedback.status == 404, await foreign_feedback.text()
 
     feedback = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/feedback",
+        f"/api/web/requester/tickets/{ticket_ref}/feedback",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{owner_login}"),
         json={
             "rating": 2,
@@ -2495,14 +2501,14 @@ async def test_requester_can_submit_feedback_and_reopen_owned_ticket_only(test_c
     assert feedback_payload["data"]["reopen_available"] is True
 
     foreign_reopen = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/reopen",
+        f"/api/web/requester/tickets/{ticket_ref}/reopen",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{foreign_login}"),
         json={"reason_code": "not_resolved", "linked_feedback_id": feedback_payload["data"]["feedback_id"]},
     )
     assert foreign_reopen.status == 404, await foreign_reopen.text()
 
     reopened = await test_client.post(
-        f"/api/web/requester/tickets/{ticket_id}/reopen",
+        f"/api/web/requester/tickets/{ticket_ref}/reopen",
         headers=_headers(f"{TEST_UI_USER_PREFIX}{owner_login}"),
         json={
             "reason_code": "not_resolved",

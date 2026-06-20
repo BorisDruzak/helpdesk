@@ -280,7 +280,7 @@ async def test_web_settings_returns_aggregated_real_payload(test_client, test_en
     assert payload["data"]["queues"][0]["members"][0]["actor_id"] == "support-test"
     assert payload["data"]["queues"][0]["ola_targets"][0]["priority"] == "P1"
     assert payload["data"]["routing_rules"][0]["target_queue_name"] == "ServiceDesk L1"
-    assert payload["data"]["ticket_settings"]["requester_statuses"][0]["label"] == "Заявка принята"
+    assert payload["data"]["ticket_settings"]["requester_statuses"][0]["label"] == "Обращение принято"
     assert payload["data"]["ticket_settings"]["next_action_owners"][0]["value"] == "support"
     workflow_profiles = {item["ticket_type"]: item for item in payload["data"]["ticket_settings"]["workflow_profiles"]}
     assert workflow_profiles["incident"]["purpose"] == "restore_service"

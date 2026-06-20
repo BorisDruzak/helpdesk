@@ -10,6 +10,9 @@ TOUCHED_TEXT_FILES = [
     "docs/QUICK_LOOKUP.md",
     "server/docs/CODEMAP.md",
     "server/docs/REGISTRY_MANAGEMENT_CENTER.md",
+    "webapp/src/app/navigation.tsx",
+    "webapp/src/features/requester/api.ts",
+    "webapp/src/features/requester/queries.ts",
     "webapp/src/pages/requester/home-page.tsx",
     "webapp/src/pages/requester/home-page.test.tsx",
     "webapp/src/pages/requester/new-request-page.tsx",
@@ -28,6 +31,7 @@ TOUCHED_TEXT_FILES = [
     "webapp/src/features/requester/dynamic-form/dynamic-form.test.tsx",
     "webapp/src/features/requester/profile-runtime/index.tsx",
     "webapp/src/features/requester/profile-runtime/profile-runtime.test.tsx",
+    "webapp/src/features/request-template-studio/form-field-editor.tsx",
     "webapp/src/pages/device-pairing/index.tsx",
     "webapp/src/pages/device-pairing/device-pairing-page.test.tsx",
     "webapp/src/features/auth/register-page.tsx",
@@ -38,6 +42,12 @@ TOUCHED_TEXT_FILES = [
     "pc_agent/ui_gui/main_window.py",
     "pc_agent/tests/test_account_gate.py",
     "pc_agent/tests/test_main_window_runtime_windows.py",
+    "server/tickets/service_catalog_defaults.py",
+    "server/tickets/service_catalog_preview.py",
+    "server/tickets/statuses.py",
+    "server/tickets/requester_timeline.py",
+    "server/web_api/requester_handlers.py",
+    "content_packs/knowledge/it-self-service-baseline.yaml",
     "content_packs/knowledge/primary-agent-requester-guides.yaml",
 ]
 
@@ -80,6 +90,53 @@ MOJIBAKE_MARKERS = (
 FORBIDDEN_NORMAL_UI_SNIPPETS = {
     "webapp/src/features/admin/registry/registry-requests-tab.tsx": (
         "Блокер: {claim.conflict_reason}",
+    ),
+}
+
+REVIEW_FORBIDDEN_REQUESTER_VISIBLE_SNIPPETS = {
+    "webapp/src/app/navigation.tsx": (
+        "Новая заявка через безопасную форму",
+        "Список заявок и история переписки",
+    ),
+    "webapp/src/features/requester/api.ts": (
+        "Requester ticket preview failed",
+        "Не удалось загрузить форму заявки",
+        "Не удалось создать заявку",
+    ),
+    "webapp/src/features/requester/dynamic-form/index.tsx": (
+        "requester-visible file",
+    ),
+    "webapp/src/pages/requester/new-request-page.tsx": (
+        "Безопасный preview",
+        "Проверить заявку",
+        "Каталог заявок",
+        "Детали заявки",
+        "Не удалось проверить заявку",
+    ),
+    "server/tickets/service_catalog_defaults.py": (
+        "Заявка на помощь",
+    ),
+    "server/tickets/service_catalog_preview.py": (
+        "Новая заявка",
+        "После отправки заявка",
+        "публичного preview",
+    ),
+    "server/tickets/statuses.py": (
+        "Заявка принята",
+        "Заявка в работе",
+    ),
+    "server/tickets/requester_timeline.py": (
+        "Заявка принята.",
+        "Заявка зарегистрирована.",
+        "Код доступа к заявке сформирован.",
+    ),
+    "server/web_api/requester_handlers.py": (
+        "Новая заявка",
+        "После отправки заявка",
+    ),
+    "content_packs/knowledge/it-self-service-baseline.yaml": (
+        "заявк",
+        "Заявк",
     ),
 }
 
@@ -187,6 +244,16 @@ def test_web_first_registration_touched_files_have_no_mojibake() -> None:
 def test_web_first_registration_normal_ui_uses_russian_product_labels() -> None:
     offenders: list[str] = []
     for relative_path, snippets in FORBIDDEN_NORMAL_UI_SNIPPETS.items():
+        text = (ROOT / relative_path).read_text(encoding="utf-8")
+        for snippet in snippets:
+            if snippet in text:
+                offenders.append(f"{relative_path}: contains {snippet!r}")
+    assert offenders == []
+
+
+def test_requester_cabinet_review_visible_terms_are_closed() -> None:
+    offenders: list[str] = []
+    for relative_path, snippets in REVIEW_FORBIDDEN_REQUESTER_VISIBLE_SNIPPETS.items():
         text = (ROOT / relative_path).read_text(encoding="utf-8")
         for snippet in snippets:
             if snippet in text:

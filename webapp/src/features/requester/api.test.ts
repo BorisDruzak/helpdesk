@@ -73,7 +73,7 @@ describe("requester public api", () => {
     vi.stubGlobal("fetch", fetchMock as typeof fetch);
 
     const result = await createPublicTicket({
-      title: "Заявка",
+      title: "Обращение",
       description: "Не открывается сайт",
       user_display_name: "Иван",
       urgency: false,
@@ -85,7 +85,7 @@ describe("requester public api", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
-          title: "Заявка",
+          title: "Обращение",
           description: "Не открывается сайт",
           user_display_name: "Иван",
           urgency: false,
@@ -198,7 +198,7 @@ describe("requester public api", () => {
       vi.fn(async () => new Response("not json", { status: 503, headers: { "Content-Type": "text/plain" } })) as typeof fetch,
     );
 
-    await expect(fetchPublicFormPack()).rejects.toThrow("Не удалось загрузить форму заявки");
+    await expect(fetchPublicFormPack()).rejects.toThrow("Не удалось загрузить форму обращения");
   });
 });
 

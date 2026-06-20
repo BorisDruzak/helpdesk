@@ -118,7 +118,7 @@ def test_ticket_serializer_applies_request_template_visibility_policy():
                 "ticket_type": "incident",
                 "visibility_policy": {
                     "public_status_mapping": {
-                        "waiting_on_internal_team": "Заявка в работе у внутренней команды"
+                        "waiting_on_internal_team": "Обращение в работе у внутренней команды"
                     },
                     "hide_from_requester": ["root_cause", "ola", "latest_operations"],
                     "show_to_requester": ["public_status", "public_status_label", "expected_due_at"],
@@ -132,14 +132,14 @@ def test_ticket_serializer_applies_request_template_visibility_policy():
 
     assert support_payload["status"] == "waiting_on_internal_team"
     assert support_payload["public_status"] == "in_work"
-    assert support_payload["public_status_label"] == "Заявка в работе у внутренней команды"
+    assert support_payload["public_status_label"] == "Обращение в работе у внутренней команды"
     assert support_payload["root_cause"] == "Internal DNS resolver failed"
     assert support_payload["visibility"]["source"] == "request_template.visibility_policy"
     assert "root_cause" in support_payload["visibility"]["hidden_from_requester"]
 
     assert requester_payload["status"] == "waiting_on_internal_team"
     assert requester_payload["public_status"] == "in_work"
-    assert requester_payload["public_status_label"] == "Заявка в работе у внутренней команды"
+    assert requester_payload["public_status_label"] == "Обращение в работе у внутренней команды"
     assert "root_cause" not in requester_payload
     assert requester_payload["requester_visible_fields"] == [
         "public_status",

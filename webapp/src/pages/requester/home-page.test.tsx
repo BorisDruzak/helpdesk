@@ -157,7 +157,7 @@ describe("RequesterHomePage", () => {
     expect(screen.queryByText("remote-session-secret")).not.toBeInTheDocument();
     expect(screen.queryByText("550e8400-e29b-41d4-a716-446655440000")).not.toBeInTheDocument();
     expect(screen.getByText("WORKSTATION-1")).toBeInTheDocument();
-    expect(screen.queryByText("Новая заявка")).not.toBeInTheDocument();
+    expect(screen.queryByText("Новое обращение")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Форма обращения заявителя")).not.toBeInTheDocument();
     expect(screen.queryByText("Код привязки")).not.toBeInTheDocument();
     expect(screen.queryByText("Публичный доступ")).not.toBeInTheDocument();

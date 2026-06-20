@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { RequestFormDefinition, RequestFormField } from "../types";
 import {
   ALL_DYNAMIC_REQUEST_FIELD_TYPES,
+  PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES,
   RequestFormFieldControl,
   buildDefaultFieldValues,
   collectVisiblePayload,
@@ -35,6 +36,11 @@ describe("requester dynamic form runtime", () => {
       expect(screen.getByLabelText(`Поле ${type}`)).toBeInTheDocument();
       expect(screen.queryByLabelText(`Поле формы обращения ${field.key}`)).not.toBeInTheDocument();
     }
+  });
+
+  it("keeps file fields out of publishable Studio choices while preserving runtime validation", () => {
+    expect(PUBLISHABLE_DYNAMIC_REQUEST_FIELD_TYPES).not.toContain("file");
+    expect(ALL_DYNAMIC_REQUEST_FIELD_TYPES).toContain("file");
   });
 
   it("keeps technical request field keys out of accessible field names", () => {

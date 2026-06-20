@@ -96,7 +96,7 @@ def test_public_access_code_message_is_system_event_not_support_message():
 
     assert projection is not None
     assert projection.kind == "system_event"
-    assert projection.text == "Код доступа к заявке сформирован."
+    assert projection.text == "Код доступа к обращению сформирован."
     assert projection.payload == {"message_kind": "ticket_access_notice"}
     assert "RZ76RPDR" not in projection.text
     assert "RZ76RPDR" not in str(projection.payload)
