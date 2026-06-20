@@ -92,7 +92,7 @@ describe("request studio draft model", () => {
 
     expect(validateStudioDraftRequesterRuntime(draft, null)).toMatchObject({
       canPublish: false,
-      issues: expect.arrayContaining([expect.objectContaining({ code: "requester_file_upload_disabled" })]),
+      issues: expect.arrayContaining([expect.objectContaining({ code: "unsupported_field_type" })]),
     });
     expect(() => buildRequestStudioPublishPayload({ draft, registry: null })).toThrow(/requester runtime/);
   });
