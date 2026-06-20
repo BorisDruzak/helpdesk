@@ -16,7 +16,7 @@ This file replaces the previous active `PLANS.md`. Completed backend architectur
 
 Source: `C:\Users\admin-2\Downloads\requester_remaining_work.md`, checked against branch `codex/helpdesk-process-model` at `53462d7684e32251a17d23dae85cb38a0a06a8fb`.
 
-Status: implementation checkpoint updated after local verification. RREM-01..RREM-14 are fixed or verified in targeted tests; RREM-15/RREM-16 stay open until deployed browser/live evidence and the final release gate are attached below.
+Status: closed for this iteration. Functional defects RREM-01..RREM-14 are fixed or verified in targeted tests; RREM-15 is release-mitigated by fixture E2E plus deployed browser evidence; RREM-16 is closed by full CI, remote deploy and live requester-cabinet validation.
 
 ### P0 - fix before final functional signoff
 
@@ -46,8 +46,8 @@ Status: implementation checkpoint updated after local verification. RREM-01..RRE
 | --- | --- | --- | --- |
 | RREM-13 | `PageShell` defaults to `<main>`, allowing future nested landmarks. | Only the app shell owns `<main>` by default; page sections use `div`/`section` unless explicitly overridden. | fixed; covered by `page-components.test.tsx` and router tests |
 | RREM-14 | Unknown backend status is transformed into a visible enum-ish label. | Unknown statuses display a neutral requester-safe fallback. | fixed; covered by `formatters.test.ts` |
-| RREM-15 | E2E coverage is below the full requester matrix. | Expand deterministic requester E2E for profile/device/form/on-behalf/consent/rating/reopen/archived/ambiguous/responsive/keyboard paths. | open; targeted unit/server coverage added, deterministic Playwright/live evidence pending |
-| RREM-16 | Last deployment used quick gate only. | Final signoff requires full focused frontend/server/Playwright/live evidence and frozen green CI artifact. | open; deploy/live gate pending |
+| RREM-15 | E2E coverage is below the full requester matrix. | Expand deterministic requester E2E for profile/device/form/on-behalf/consent/rating/reopen/archived/ambiguous/responsive/keyboard paths. | release-mitigated; `requester-workspace.spec.ts` fixture now asserts server-owned primary-device context, `pnpm --dir webapp run test:e2e` passed, and deployed live matrix covered home/new/detail/devices; broader regression-pack remains non-blocking hardening |
+| RREM-16 | Last deployment used quick gate only. | Final signoff requires full focused frontend/server/Playwright/live evidence and frozen green CI artifact. | closed; full CI green for `abfacaa40618a653f84c133e5948711978ec08ae`, remote deploy passed, live requester browser summary captured |
 
 Implementation order for this iteration:
 
@@ -55,6 +55,14 @@ Implementation order for this iteration:
 2. Close low-risk P1/P2 correctness items RREM-08, RREM-09, RREM-13 and RREM-14 in the same cycle if the diff stays focused.
 3. Add targeted server validation coverage for RREM-10 where gaps are confirmed; keep broad decomposition/E2E/full release gate as separate records if they exceed this iteration.
 4. Run targeted tests, `python scripts/verify_workspace.py`, deploy through project release scripts and collect real browser evidence for `/app/requester`, `/app/requester/new`, `/app/requester/tickets/:code` and `/app/requester/devices`.
+
+Final evidence for this checkpoint:
+
+- Code commits pushed to `origin/codex/helpdesk-process-model`: `0151c977` (`fix requester remaining defects`), `51b1a704` (`fix requester terminology tests`), `abfacaa4` (`fix requester e2e primary device fixture`).
+- Full CI artifact: `artifacts/ci/abfacaa40618a653f84c133e5948711978ec08ae/summary.json`, status `green`.
+- Remote deploy: `python scripts\release_server_to_remote.py --gate full --allow-local-dirty --leave-running --smoke-insecure-tls`, remote smoke passed on `https://192.168.100.17:9443/api/health`.
+- Live browser evidence: `artifacts/browser_live_validation/requester-remaining-20260620T163317Z-9719916b/browser-summary.json`; screenshots `01-requester-home.png`, `02-requester-new.png`, `03-requester-ticket-detail.png`, `04-requester-devices.png`.
+- Live seed evidence: `artifacts/browser_live_validation/requester-remaining-20260620T163317Z-9719916b/seed-report.json`; the generated test logins were deactivated after validation.
 
 ## 1. Product outcome
 
