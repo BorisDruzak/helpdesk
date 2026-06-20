@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from typing import Any
 
@@ -19,6 +20,8 @@ from tickets.form_catalog import (
     validate_form_pack_schema,
 )
 from tickets.request_template_submission import _find_registry_form_schema, _registry_pack_from_template
+
+logger = logging.getLogger(__name__)
 
 
 def _json_ok(**payload: Any) -> web.Response:
@@ -69,11 +72,19 @@ async def _merge_registry_requester_forms(session, pack: dict[str, Any]) -> dict
             template_code=template_code,
             raise_if_missing=False,
         )
-        registry_pack = _registry_pack_from_template(
-            effective_template=effective_template,
-            form_schema=form_schema,
-            form_key=template_code,
-        )
+        try:
+            registry_pack = _registry_pack_from_template(
+                effective_template=effective_template,
+                form_schema=form_schema,
+                form_key=template_code,
+            )
+        except ValueError as exc:
+            logger.warning(
+                "Skipping requester registry template %s while building public form pack: %s",
+                template_code,
+                exc,
+            )
+            continue
         for form in registry_pack.get("forms") or []:
             key = str(form.get("key") or "")
             request_template_key = str(form.get("request_template_key") or key)

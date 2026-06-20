@@ -16,7 +16,7 @@ This file replaces the previous active `PLANS.md`. Completed backend architectur
 
 Source: user P0/P1/P2/P3 defect list from 2026-06-20, rechecked against branch `codex/helpdesk-process-model` after the previous requester checkpoint.
 
-Status: implemented locally; release-candidate gate, deploy and live validation remain before final closure.
+Status: implemented locally; release-candidate gate, deploy and live validation remain before final closure. First post-deploy live setup exposed RCA-20 on historical registry data; fixed locally and queued for the next frozen commit.
 
 ### P0 - functional correctness
 
@@ -48,6 +48,7 @@ Status: implemented locally; release-candidate gate, deploy and live validation 
 | RCA-14 | `new-request-page.tsx`, `tickets-page.tsx`, `devices-page.tsx`, `profile-page.tsx` still mix orchestration, form logic and visual blocks. | Extract large remaining pages into focused requester components without changing contracts. | mitigated; form/action orchestration moved to shared requester controls, deeper file splitting remains non-functional hardening |
 | RCA-15 | Requester pages still contain raw form controls and repeated Tailwind classes. | Complete shared controls: `FieldShell`, `Textarea`, `SelectField`, `FormActions`, `Stepper`, `InlineAlert`, `StickyActionBar`. | fixed; raw requester controls reduced to native checkbox/radio/file picker |
 | RCA-16 | Requester dynamic-form runtime still contains a `file` branch while file fields are not publishable. | Remove requester runtime support branch for pre-create `file` fields until draft uploads exist; unsupported `file` remains rejected by schema validation. | fixed |
+| RCA-20 | Historical published registry templates can still contain requester-visible `file` fields and break the public requester form pack after `file` removal. | Public `/public_api/ticket_forms/current` skips invalid historical registry templates instead of returning 500, while new `file` schemas remain rejected. | fixed; reproduced on stand logs and covered by `test_public_ticket_forms_current_skips_legacy_registry_file_template` |
 
 ### P3 - proof of completion
 

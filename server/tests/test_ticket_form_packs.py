@@ -393,6 +393,59 @@ async def test_public_ticket_forms_current_returns_builtin_catalog(test_client, 
 
 
 @pytest.mark.asyncio
+async def test_public_ticket_forms_current_skips_legacy_registry_file_template(test_client, test_engine):
+    await _clear_request_form_packs(test_engine)
+    suffix = uuid.uuid4().hex[:8]
+    template_code = f"legacy_file_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        session.add(
+            FormSchema(
+                schema_id=template_code,
+                version="1",
+                title="Legacy file form",
+                form_key=template_code,
+                request_template_code=template_code,
+                ticket_type="incident",
+                is_active=True,
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        session.add(
+            FormField(
+                schema_id=template_code,
+                schema_version="1",
+                key="evidence_file",
+                label="Evidence file",
+                field_type="file",
+                required=False,
+                sort_order=0,
+            )
+        )
+        session.add(
+            RequestTemplate(
+                template_code=template_code,
+                version="1",
+                public_title="Legacy file template",
+                ticket_type="incident",
+                form_schema_id=template_code,
+                config_json={"no_sla": True},
+                is_active=True,
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get("/public_api/ticket_forms/current?pack_key=request_forms")
+    assert response.status == 200, await response.text()
+    data = await response.json()
+    form_keys = {form["key"] for form in data["pack"]["forms"]}
+    assert template_code not in form_keys
+    assert {"profile_completion_help", "agent_binding_help", "printer"} <= form_keys
+
+
+@pytest.mark.asyncio
 async def test_admin_can_save_ticket_form_pack_and_switch_current_version(test_client, test_engine):
     await _clear_request_form_packs(test_engine)
 
