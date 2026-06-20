@@ -52,7 +52,7 @@ export function RequesterHomePage() {
 
   if (isLoading) {
     return (
-      <PageShell ariaLabelledBy="requester-home-title">
+      <PageShell ariaLabelledBy="requester-home-title" as="div">
         <PageSkeleton sections={3} title="Загружаем главную страницу кабинета" />
       </PageShell>
     );
@@ -60,7 +60,7 @@ export function RequesterHomePage() {
 
   if (blockingError) {
     return (
-      <PageShell ariaLabelledBy="requester-home-title">
+      <PageShell ariaLabelledBy="requester-home-title" as="div">
         <ErrorState
           message={requesterErrorMessage(blockingError, "Не удалось загрузить главную страницу кабинета.")}
           onRetry={() => {
@@ -100,7 +100,7 @@ export function RequesterHomePage() {
   }
 
   return (
-    <PageShell ariaLabelledBy="requester-home-title" className="bg-app">
+    <PageShell ariaLabelledBy="requester-home-title" as="div" className="bg-app">
       <PageHeader
         actions={
           <PageActions>

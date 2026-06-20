@@ -16,25 +16,28 @@ const shellWidths: Record<PageShellWidth, string> = {
 
 export type PageShellProps = HTMLAttributes<HTMLElement> & {
   ariaLabelledBy?: string;
+  as?: "main" | "div";
   children: ReactNode;
   width?: PageShellWidth;
 };
 
 export function PageShell({
   ariaLabelledBy,
+  as = "main",
   children,
   className,
   width = "wide",
   ...props
 }: PageShellProps) {
+  const ShellElement = as;
   return (
-    <main
+    <ShellElement
       aria-labelledby={ariaLabelledBy}
       className={cn("min-w-0 px-4 py-6 sm:px-6 lg:px-8", className)}
       {...props}
     >
       <div className={cn("mx-auto flex min-w-0 flex-col gap-6", shellWidths[width])}>{children}</div>
-    </main>
+    </ShellElement>
   );
 }
 
