@@ -988,7 +988,7 @@ Next phase: no open requester-cabinet review bug remains from the checked review
 
 ### Current checkpoint - requester critical defects closure, 2026-06-20
 
-Status: implementation completed locally for D1-D13 closure; build/deploy/live evidence still pending in this checkpoint.
+Status: D1-D13 closure completed, committed, pushed and deployed to `https://192.168.100.17:9443`. Final deployed code commit: `898dc47993cea62647a2b65d695a8f15ac4bda14`. Final live report: `artifacts/browser_live_validation/requester-critical-302c2ff2-20260620T112749Z/live-report.json`, run `critical-898dc479-20260620-live10-f6e5d4c3b2a1`, status `passed`.
 
 Source intake:
 
@@ -1000,19 +1000,19 @@ Triage:
 
 | ID | Status | Priority | Closure target |
 | --- | --- | --- | --- |
-| D1 service/form auto-selection | Closed locally: wizard uses deterministic problem-text recommendation and no longer chooses the first offering by array order | P0 | Deploy/live-test category recommendation and selected service/template payload. |
-| D2 primary device resolution | Closed locally: bootstrap returns `primary_device`/`primary_device_resolution` from `PrimaryAgentResolver`; request wizard uses server primary device | P0 | Deploy/live-test multi-device ordering and requester context. |
-| D3 device online state | Closed locally: requester device serialization computes online from runtime state and returns `null` when unknown | P1 | Deploy/live-test online/offline/unknown labels against stand evidence. |
-| D4 no-device/form availability gate | Closed locally: frontend no longer treats global `requester_no_device_create` as device context; per-form availability decides selected form | P0 | Deploy/live-test no-device allowed vs device-required forms. |
-| D5 `waiting_on_user` vs `waiting_user` | Closed locally: requester UI filters/labels/tests use canonical `waiting_on_user` | P1 | Deploy/live-test requester action ticket CTA. |
-| D6 messages into terminal tickets | Closed locally: requester message handler rejects terminal states with safe `REQUESTER_TICKET_ACTION_NOT_AVAILABLE` | P0 | Deploy/live-test terminal ticket composer hidden and backend reject. |
-| D7 requester ticket actions | Closed locally: requester ticket DTO exposes server `actions`; UI gates composer/attachments/lifecycle controls by server actions | P0 | Deploy/live-test resolved/closed action buttons and message denial. |
-| D8 dynamic forms partial contract | Closed locally: requester runtime removes `file` from supported matrices and validates email/url/number min-max/text length/pattern/options/null equals plus schema option/cycle guards | P1 | Build/deploy/live-test dynamic form preview/create blockers. |
-| D9 dashboard next action | Closed locally: bootstrap returns ordered `next_actions[]`; dashboard consumes server action before local fallback | P1 | Deploy/live-test requester reply action outranks create request. |
-| D10 device-link flow | Closed locally: `/app/requester/devices/link` uses `RequesterDeviceLinkPage`, `active` is success, direct pairing load is idempotent, owner-change intent opens explicit owner form | P1 | Deploy/live-test link route and owner-change flow. |
-| D11 localization/safe messages | Closed locally: requester/Studio/backend default copy uses `Кабинет пользователя`/`обращение`; old `Каталог заявок` defaults removed from requester-safe surfaces | P1 | Run static localization guard and live DOM scan. |
-| D12 shared UI/accessibility | Closed locally for active requester pages: nested requester page `<main>` landmarks removed under `AppShell` | P2 | Browser-live landmark/overflow check remains required. |
-| D13 internal ticket IDs in URL | Regression guard retained: generated requester URLs and post-create navigation use `ticket_code`; raw UUID DOM checks remain in tests | Regression gate | Live URL/DOM check remains required. |
+| D1 service/form auto-selection | Closed and live-verified: wizard uses deterministic problem-text recommendation and no longer chooses the first offering by array order | P0 | Live printer scenario selected printer form and did not expose laptop offering. |
+| D2 primary device resolution | Closed: bootstrap returns `primary_device`/`primary_device_resolution` from `PrimaryAgentResolver`; request wizard uses server primary device | P0 | Server multi-device pytest covers ordering; live bootstrap proved `primary_device_resolution.status=available`. |
+| D3 device online state | Closed and live-verified: requester device serialization computes online from runtime state and returns requester-safe online values | P1 | Live report shows `device_online_values=[false]` and UI label `Не в сети`; type guard accepts `true/false/null` only. |
+| D4 no-device/form availability gate | Closed: frontend no longer treats global `requester_no_device_create` as device context; per-form availability decides selected form | P0 | Automated requester form tests cover no-device/device-required branches; live covers the normal device-backed path. |
+| D5 `waiting_on_user` vs `waiting_user` | Closed: requester UI filters/labels/tests use canonical `waiting_on_user` | P1 | Server/frontend tests cover canonical CTA/filter behavior. |
+| D6 messages into terminal tickets | Closed and live-verified: requester message handler rejects terminal states with safe `REQUESTER_TICKET_ACTION_NOT_AVAILABLE` | P0 | Live setup POST into closed ticket was rejected; detail page hides reply composer. |
+| D7 requester ticket actions | Closed and live-verified: requester ticket DTO exposes server `actions`; UI gates composer/attachments/lifecycle controls by server actions | P0 | Live terminal ticket returned `can_send_message=false`, `can_attach_files=false`; UI composer hidden. |
+| D8 dynamic forms partial contract | Closed: requester runtime removes `file` from supported matrices and validates email/url/number/text/options/conditions before preview/create | P1 | Unit tests cover value/schema blockers; live request wizard covers dynamic printer fields and required blockers. |
+| D9 dashboard next action | Closed: bootstrap returns ordered `next_actions[]`; dashboard consumes server action before local fallback | P1 | Server tests cover action priority; live bootstrap proved non-empty server `next_actions`. |
+| D10 device-link flow | Closed and live-verified: `/app/requester/devices/link` uses `RequesterDeviceLinkPage`, `active` is success, direct pairing load is idempotent, owner-change intent opens explicit owner form | P1 | Live visited `/app/requester/devices`, `/app/requester/devices/link` and `/app/requester/new?intent=device_owner_change`. |
+| D11 localization/safe messages | Closed and live-verified: requester/Studio/backend default copy uses `Кабинет пользователя`/`обращение`; old `Каталог заявок` defaults removed from requester-safe surfaces | P1 | Live public form title is `Каталог обращений`; DOM guard found no `заявк`, English `preview` or forbidden technical terms. |
+| D12 shared UI/accessibility | Closed and live-verified for active requester pages: nested requester page `<main>` landmarks removed under `AppShell` | P2 | Live desktop/mobile route scan shows `mainCount=1` and no horizontal overflow. |
+| D13 internal IDs in URL/DOM | Closed and live-verified: requester URLs use `ticket_code`; requester-safe device labels suppress UUID-like asset names | Regression gate | Live URL/link/DOM guard found no raw ticket UUID and no UUID-like text in visible DOM. |
 
 Implementation order:
 
@@ -1047,19 +1047,40 @@ Planned verification:
 
 Execution update, 2026-06-20:
 
-- RED/green coverage added for server primary device, bootstrap `next_actions[]`, terminal message rejection/action DTOs, dynamic-form value/schema validation, service recommendation, per-form no-device fallback, device-link `active`/direct retry/link route, owner-change intent and requester action dashboard.
-- Local verification passed so far:
-  - `pnpm --dir webapp test -- src/features/requester/queries.test.ts src/features/requester/labels.test.ts src/features/requester/dynamic-form/dynamic-form.test.tsx src/pages/requester/new-request-page.test.tsx src/pages/requester/devices-page.test.tsx src/pages/requester/tickets-page.test.tsx src/features/request-template-studio/studio-model.test.ts src/features/request-template-studio/draft-model.test.ts src/features/request-template-studio/readiness.test.ts` — 9 files / 48 tests passed.
-  - `pnpm --dir webapp test -- src/app/router.test.tsx src/pages/requester/home-page.test.tsx` — 2 files / 17 tests passed.
-  - `python -m py_compile server/requester/identity_service.py server/web_api/requester_handlers.py server/app/api/serializers.py server/tickets/visibility_policy.py server/tickets/form_catalog.py server/tickets/form_lifecycle_service.py server/web_api/admin_handlers.py server/tests/test_requester_workspace_api.py` — passed.
-  - `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_workspace_bootstrap_lists_owned_device_and_ticket server/tests/test_requester_workspace_api.py::test_requester_bootstrap_resolves_primary_device_independently_from_device_order server/tests/test_requester_workspace_api.py::test_requester_ticket_message_rejects_terminal_statuses_and_exposes_actions -q --tb=short` — 4 tests passed.
-- Remaining gates: webapp build, `python scripts/verify_workspace.py`, docs drift check, deploy to `https://192.168.100.17:9443`, and live browser evidence for the acceptance scenarios above.
+- RED/green coverage added for server primary device, bootstrap `next_actions[]`, terminal message rejection/action DTOs, dynamic-form value/schema validation, service recommendation, per-form no-device fallback, device-link `active`/direct retry/link route, owner-change intent, requester action dashboard, duplicate `<main>` regression and UUID-like requester device label suppression.
+- Code commits for this checkpoint:
+  - `302c2ff2` - requester critical D1-D13 server/frontend implementation.
+  - `70da7592` - requester-safe public form title normalization to `Каталог обращений`.
+  - `84772bc3` - nested requester home `<main>` landmark fix.
+  - `898dc479` - requester-safe device labels suppress UUID-like asset names.
+- Local verification passed:
+  - `pnpm --dir webapp test -- src/features/requester/queries.test.ts src/features/requester/labels.test.ts src/features/requester/dynamic-form/dynamic-form.test.tsx src/pages/requester/new-request-page.test.tsx src/pages/requester/devices-page.test.tsx src/pages/requester/tickets-page.test.tsx src/features/request-template-studio/studio-model.test.ts src/features/request-template-studio/draft-model.test.ts src/features/request-template-studio/readiness.test.ts` - 9 files / 48 tests passed.
+  - `pnpm --dir webapp test -- src/app/router.test.tsx src/pages/requester/home-page.test.tsx` - 2 files / 17 tests passed.
+  - `pnpm --dir webapp test -- src/components/ui-page/page-components.test.tsx src/pages/requester/home-page.test.tsx` - 2 files / 5 tests passed.
+  - `python -m py_compile server/requester/identity_service.py server/web_api/requester_handlers.py server/app/api/serializers.py server/tickets/visibility_policy.py server/tickets/form_catalog.py server/tickets/form_lifecycle_service.py server/web_api/admin_handlers.py server/tests/test_requester_workspace_api.py` - passed.
+  - `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_requester_workspace_api.py::test_requester_workspace_bootstrap_lists_owned_device_and_ticket server/tests/test_requester_workspace_api.py::test_requester_bootstrap_resolves_primary_device_independently_from_device_order server/tests/test_requester_workspace_api.py::test_requester_ticket_message_rejects_terminal_statuses_and_exposes_actions -q --tb=short` - 4 tests passed.
+  - `PC_CLIENT_ALLOW_SHARED_TEST_DB=1 python -m pytest server/tests/test_ticket_form_packs.py::test_admin_can_save_ticket_form_pack_and_switch_current_version -q --tb=short` - 1 test passed.
+  - `python scripts/test_web_first_registration_localization.py` - 9 tests passed.
+  - `pnpm --dir webapp run build` - passed; existing Vite large-chunk warning remains.
+  - `python -m pytest scripts/test_navigation_catalog.py scripts/test_docs_drift_check.py -q` - 14 tests passed.
+  - `python scripts/verify_workspace.py` - passed; release script reran it before deploy.
+- Deploy evidence:
+  - `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --leave-running --smoke-insecure-tls` - completed successfully for final code commit `898dc47993cea62647a2b65d695a8f15ac4bda14`.
+  - Remote workspace HEAD verified as `898dc47993cea62647a2b65d695a8f15ac4bda14`.
+  - Remote smoke: `https://192.168.100.17:9443/api/health -> 200` after normal startup retry.
+- Live browser evidence:
+  - Command: `python artifacts/browser_live_validation/requester-critical-302c2ff2-20260620T112749Z/requester_cabinet_live_check.py --base-url https://192.168.100.17:9443 --run-id critical-898dc479-20260620-live10-f6e5d4c3b2a1 --artifact-dir artifacts/browser_live_validation/requester-critical-302c2ff2-20260620T112749Z --insecure-tls`
+  - Result: passed; report `artifacts/browser_live_validation/requester-critical-302c2ff2-20260620T112749Z/live-report.json`.
+  - Browser report `browser-report.json`: session/bootstrap/tickets/terminal/public-form APIs returned 200; `publicForms.title=Каталог обращений`; terminal ticket status `closed`, `can_send_message=false`, `can_attach_files=false`; printer recommendation visible and laptop offering not visible; owner-change intent route contains owner/device wording.
+  - Screenshots captured: `00-after-login.png`, `01-home.png`, `02-new-request-printer-selection.png`, `03-new-request-owner-intent.png`, `04-devices.png`, `05-devices-link.png`, `06-tickets-open.png`, `06b-tickets-closed.png`, `07-ticket-detail.png`, `08-terminal-ticket-detail.png`, `09-profile.png`, `10-mobile-home.png`.
+  - Live guards passed: no console/page/network issues, no horizontal overflow, no duplicate `<main>`, no requester-visible `заявк`, no English `preview`, no forbidden technical terms, no raw ticket UUID, no UUID-like text in visible DOM, and no UUID in requester URLs/links.
 
-Open decisions for implementation:
+Residual release notes:
 
-- Recommendation engine scope: start with deterministic server-side catalog/form recommendation from problem text and catalog metadata; use AI only behind an explicit later feature flag.
-- Online threshold: define the freshness window in server config/docs and test `true`, `false`, and `null` cases.
-- Legacy UUID resolver: keep during this checkpoint for compatibility only if tests prove UI never emits raw UUID; otherwise remove after migration notes are updated.
+- No open D1-D13 requester-critical defect remains in this checkpoint.
+- The deploy used quick gate intentionally; full frozen release/green CI artifact gate was not run because this was a targeted stand deployment, not a final release-candidate freeze.
+- Live validation created isolated stand test users/devices/tickets for run `critical-898dc479-20260620-live10-f6e5d4c3b2a1`; tokens are redacted in reports.
+- The remote agent service status is outside this requester web-cabinet gate; server/control services are running and smoke passed.
 
 ### Phase N - Cleanup and final gate, 2026-06-19
 
