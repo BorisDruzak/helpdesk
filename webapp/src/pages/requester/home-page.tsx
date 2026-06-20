@@ -80,7 +80,11 @@ export function RequesterHomePage() {
   const pendingConsents = consents.filter((consent) => consent.status === "pending");
   const dashboard = projectRequesterDashboard(bootstrap, tickets, consents);
   const profileName = bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || "пользователь";
-  const primaryDevice = bootstrap?.devices[0] ?? null;
+  const primaryResolutionStatus = String(bootstrap?.primary_device_resolution?.status ?? "").trim().toLowerCase();
+  const primaryDevice =
+    bootstrap?.primary_device && (!primaryResolutionStatus || primaryResolutionStatus === "available" || primaryResolutionStatus === "resolved")
+      ? bootstrap.primary_device
+      : null;
   const nextActionTone = dashboard.nextAction.key === "complete_profile" || dashboard.nextAction.key === "review_consents" ? "warning" : "success";
 
   async function decideConsent(consent: RequesterConsent, decision: "approved" | "denied") {

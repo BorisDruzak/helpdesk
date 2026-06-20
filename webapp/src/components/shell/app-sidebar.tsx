@@ -356,7 +356,7 @@ export function AppSidebar({
         <div className={cn("min-w-0", collapsed ? "sr-only" : "")}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-100/70">pc_client</p>
           <p className="text-sm font-semibold leading-tight">
-            {workspace === "admin" ? "Администрирование" : workspace === "requester" ? "Кабинет заявителя" : "Поддержка"}
+            {workspace === "admin" ? "Администрирование" : workspace === "requester" ? "Кабинет пользователя" : "Поддержка"}
           </p>
         </div>
       </Link>

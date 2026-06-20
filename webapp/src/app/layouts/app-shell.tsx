@@ -134,7 +134,7 @@ export function AppShell({ children }: AppShellProps) {
   }
 
   const workspaceOptions = [
-    hasRequester ? { label: "Кабинет заявителя", value: "requester" } : null,
+    hasRequester ? { label: "Кабинет пользователя", value: "requester" } : null,
     hasSupport ? { label: "Поддержка", value: "support" } : null,
     hasAdmin ? { label: "Администрирование", value: "admin" } : null
   ].filter(Boolean) as Array<{ label: string; value: string }>;

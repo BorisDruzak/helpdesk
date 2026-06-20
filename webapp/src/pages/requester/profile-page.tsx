@@ -91,7 +91,7 @@ function fieldsWithRuntimeOptions(
           options: [
             { value: "phone", label: "Телефон" },
             { value: "chat", label: "Чат в обращении" },
-            { value: "email", label: "Email" },
+            { value: "email", label: "Электронная почта" },
           ],
         };
       }

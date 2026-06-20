@@ -119,7 +119,7 @@ export function formatStatusLabel(status: string | null | undefined): string {
   if (!key) {
     return "Не указано";
   }
-  return STATUS_LABELS[key] ?? key.replace(/[_-]+/g, " ");
+  return STATUS_LABELS[key] ?? "Статус уточняется";
 }
 
 export function statusBadgeTone(status: string | null | undefined): BadgeTone {

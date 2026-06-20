@@ -87,7 +87,7 @@ export const appNavigationDomains: AppNavigationDomain[] = [
   {
     id: "requester-primary",
     workspace: "requester",
-    label: "Кабинет заявителя",
+    label: "Кабинет пользователя",
     description: "Обращения, устройства, профиль и база знаний",
     icon: UserRound,
     order: 5,
@@ -849,7 +849,7 @@ export function getWorkspaceLabel(pathname: string) {
     return "Администрирование";
   }
   if (workspace === "requester") {
-    return "Кабинет заявителя";
+    return "Кабинет пользователя";
   }
   return "Поддержка";
 }

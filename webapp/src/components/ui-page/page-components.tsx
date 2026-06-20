@@ -16,14 +16,14 @@ const shellWidths: Record<PageShellWidth, string> = {
 
 export type PageShellProps = HTMLAttributes<HTMLElement> & {
   ariaLabelledBy?: string;
-  as?: "main" | "div";
+  as?: "main" | "div" | "section";
   children: ReactNode;
   width?: PageShellWidth;
 };
 
 export function PageShell({
   ariaLabelledBy,
-  as = "main",
+  as = "div",
   children,
   className,
   width = "wide",

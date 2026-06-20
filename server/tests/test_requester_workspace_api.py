@@ -1128,6 +1128,100 @@ async def test_requester_bootstrap_resolves_primary_device_independently_from_de
 
 
 @pytest.mark.asyncio
+async def test_requester_device_online_state_is_consistent_across_bootstrap_list_and_detail(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "requester-device-online-state@example.test"
+    online_device_id = str(uuid.uuid4())
+    offline_device_id = str(uuid.uuid4())
+    unknown_device_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    async with session_maker() as session:
+        person = await _person_for_login(session, login=login)
+        session.add_all(
+            [
+                _device(online_device_id, "online-device"),
+                _device(offline_device_id, "offline-device"),
+                _device(unknown_device_id, "unknown-device"),
+            ]
+        )
+        await session.flush()
+        session.add_all(
+            [
+                DeviceUserBinding(
+                    binding_id=str(uuid.uuid4()),
+                    device_id=online_device_id,
+                    person_id=person.person_id,
+                    relationship_type="primary_user",
+                    status="active",
+                    source="test",
+                    confirmed_at=now,
+                    created_at=now,
+                ),
+                DeviceUserBinding(
+                    binding_id=str(uuid.uuid4()),
+                    device_id=offline_device_id,
+                    person_id=person.person_id,
+                    relationship_type="shared_user",
+                    status="active",
+                    source="test",
+                    confirmed_at=now + timedelta(seconds=1),
+                    created_at=now + timedelta(seconds=1),
+                ),
+                DeviceUserBinding(
+                    binding_id=str(uuid.uuid4()),
+                    device_id=unknown_device_id,
+                    person_id=person.person_id,
+                    relationship_type="shared_user",
+                    status="active",
+                    source="test",
+                    confirmed_at=now + timedelta(seconds=2),
+                    created_at=now + timedelta(seconds=2),
+                ),
+            ]
+        )
+        await session.commit()
+
+    def online_checker(checked_device_id: str) -> bool:
+        if checked_device_id == online_device_id:
+            return True
+        if checked_device_id == offline_device_id:
+            return False
+        raise RuntimeError("runtime state unavailable")
+
+    test_client.app["state"].is_agent_online = online_checker
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+
+    bootstrap = await test_client.get("/api/web/requester/bootstrap", headers=headers)
+    bootstrap_payload = await bootstrap.json()
+    assert bootstrap.status == 200, bootstrap_payload
+    assert {
+        item["device_id"]: item["online"]
+        for item in bootstrap_payload["data"]["devices"]
+    } == {
+        online_device_id: True,
+        offline_device_id: False,
+        unknown_device_id: None,
+    }
+
+    devices = await test_client.get("/api/web/requester/devices", headers=headers)
+    devices_payload = await devices.json()
+    assert devices.status == 200, devices_payload
+    assert {
+        item["device_id"]: item["online"]
+        for item in devices_payload["data"]["devices"]
+    } == {
+        online_device_id: True,
+        offline_device_id: False,
+        unknown_device_id: None,
+    }
+
+    detail = await test_client.get(f"/api/web/requester/devices/{offline_device_id}", headers=headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    assert detail_payload["data"]["device"]["online"] is False
+
+
+@pytest.mark.asyncio
 async def test_requester_shared_device_tickets_stay_scoped_to_person_and_binding(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

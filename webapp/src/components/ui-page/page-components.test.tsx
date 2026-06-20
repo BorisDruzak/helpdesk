@@ -17,12 +17,12 @@ import {
 
 describe("ui-page components", () => {
   it("renders a labeled responsive page shell with header actions", () => {
-    render(
+    const { container } = render(
       <PageShell ariaLabelledBy="requester-dashboard-title">
         <PageHeader
           actions={<PageActions label="Действия страницы"><button type="button">Создать</button></PageActions>}
           description="Устройства и обращения"
-          eyebrow="Кабинет заявителя"
+          eyebrow="Кабинет пользователя"
           id="requester-dashboard-title"
           title="Главная"
         />
@@ -32,7 +32,8 @@ describe("ui-page components", () => {
       </PageShell>,
     );
 
-    expect(screen.getByRole("main")).toHaveAttribute("aria-labelledby", "requester-dashboard-title");
+    expect(screen.queryByRole("main")).not.toBeInTheDocument();
+    expect(container.firstElementChild).toHaveAttribute("aria-labelledby", "requester-dashboard-title");
     expect(screen.getByRole("heading", { level: 1, name: "Главная" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Обращения" })).toBeInTheDocument();
     expect(screen.getByLabelText("Действия страницы")).toContainElement(screen.getByRole("button", { name: "Создать" }));

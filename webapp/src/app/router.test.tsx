@@ -808,7 +808,7 @@ describe("appRoutes", () => {
     expect(screen.getByText("Пользователь")).toBeInTheDocument();
     expect(screen.queryByText("Requester")).not.toBeInTheDocument();
     expect(screen.queryByText("Requester workspace")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Кабинет заявителя").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Кабинет пользователя").length).toBeGreaterThan(0);
 
     const mobileNav = screen.getByRole("navigation", { name: "Навигация заявителя" });
     expect(within(mobileNav).getByRole("link", { name: "Главная" })).toHaveAttribute("href", "/app/requester");

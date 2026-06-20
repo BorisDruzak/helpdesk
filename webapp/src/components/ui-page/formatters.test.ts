@@ -20,7 +20,7 @@ describe("ui-page formatters", () => {
     expect(formatStatusLabel("open")).toBe("Открыта");
     expect(formatStatusLabel("in_progress")).toBe("В работе");
     expect(formatStatusLabel("waiting_user")).toBe("Ждет пользователя");
-    expect(formatStatusLabel("not_a_known_status")).toBe("not a known status");
+    expect(formatStatusLabel("not_a_known_status")).toBe("Статус уточняется");
 
     expect(statusBadgeTone("open")).toBe("info");
     expect(statusBadgeTone("resolved")).toBe("success");

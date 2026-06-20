@@ -84,6 +84,14 @@ function normalizeServerNextAction(action: RequesterBootstrapNextAction | null |
   return { key: key as RequesterNextActionKey, label, href };
 }
 
+function hasResolvedPrimaryDevice(bootstrap: RequesterBootstrap | null | undefined): boolean {
+  const status = String(bootstrap?.primary_device_resolution?.status ?? "").trim().toLowerCase();
+  if (!bootstrap?.primary_device) {
+    return false;
+  }
+  return !status || status === "available" || status === "resolved";
+}
+
 function normalizedConsentStatuses(statuses: string[] = ["pending"]): string[] {
   return Array.from(new Set(statuses.map((status) => status.trim()).filter(Boolean))).sort();
 }
@@ -168,7 +176,7 @@ export function projectRequesterDashboard(
     ? bootstrap.profile_completion.complete !== false
     : Boolean(bootstrap?.profile);
   const canCreateWithoutDevice = bootstrap?.feature_flags?.requester_no_device_create === true;
-  const hasDeviceContext = Boolean((bootstrap?.devices ?? []).length || canCreateWithoutDevice);
+  const hasDeviceContext = hasResolvedPrimaryDevice(bootstrap);
   const ticketNeedingAction = visibleTickets.find((ticket) => {
     if (String(ticket.next_action_owner || "").toLowerCase() === "requester") {
       return Boolean(requesterTicketRouteParam(ticket));
@@ -199,7 +207,7 @@ export function projectRequesterDashboard(
               ? `/app/requester/tickets/${encodeURIComponent(requesterTicketRouteParam(ticketNeedingAction) ?? "")}`
               : "/app/requester/tickets",
           }
-      : !hasDeviceContext
+      : !hasDeviceContext && !canCreateWithoutDevice
         ? {
             key: "link_device" as const,
             label: "Привязать устройство",

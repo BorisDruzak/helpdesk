@@ -38,10 +38,14 @@ function renderHomePage() {
 
 function installDashboardMock({
   devices = [{ device_id: "device-1", hostname: "WORKSTATION-1", os: "Windows", agent_version: "3.1.71", online: true }],
+  primaryDevice = devices[0] ?? null,
+  primaryDeviceResolution = primaryDevice ? "available" : "missing",
   profileComplete = true,
   pendingConsents = 1,
 }: {
   devices?: Array<Record<string, unknown>>;
+  primaryDevice?: Record<string, unknown> | null;
+  primaryDeviceResolution?: "available" | "missing" | "ambiguous";
   profileComplete?: boolean;
   pendingConsents?: number;
 } = {}) {
@@ -72,6 +76,12 @@ function installDashboardMock({
             profile: { display_name: "Алексей Иванов", department: "ИТ", location: "Екатеринбург" },
           },
           devices,
+          primary_device: primaryDevice,
+          primary_device_resolution: {
+            status: primaryDeviceResolution,
+            reason_code: primaryDeviceResolution,
+            candidate_count: primaryDeviceResolution === "ambiguous" ? devices.length : primaryDevice ? 1 : 0,
+          },
           active_bindings: [],
           pending_registration_claims: [],
           open_ticket_count: 1,
@@ -193,5 +203,24 @@ describe("RequesterHomePage", () => {
     expect(screen.getAllByText("Профиль нужно заполнить").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Устройство не привязано").length).toBeGreaterThan(0);
     expect(screen.queryByText("Сохранить профиль")).not.toBeInTheDocument();
+  });
+
+  it("does not display the first device as primary when server resolution is ambiguous", async () => {
+    installDashboardMock({
+      devices: [
+        { device_id: "device-1", hostname: "WORKSTATION-1", os: "Windows", online: true },
+        { device_id: "device-2", hostname: "WORKSTATION-2", os: "Linux", online: false },
+      ],
+      primaryDevice: null,
+      primaryDeviceResolution: "ambiguous",
+      pendingConsents: 0,
+    });
+
+    renderHomePage();
+
+    expect(await screen.findByRole("heading", { name: "Главная" })).toBeInTheDocument();
+    expect(screen.getAllByText("Устройство не привязано").length).toBeGreaterThan(0);
+    expect(screen.queryByText("WORKSTATION-1")).not.toBeInTheDocument();
+    expect(screen.queryByText("WORKSTATION-2")).not.toBeInTheDocument();
   });
 });

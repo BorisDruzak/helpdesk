@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 import re
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from playbooks.form_triggers import normalize_form_playbook_triggers
@@ -23,6 +25,7 @@ ALLOWED_FIELD_TYPES = {
     "date",
     "datetime",
     "file",
+    "number",
     "user_picker",
     "department_picker",
     "location_picker",
@@ -33,6 +36,13 @@ ALLOWED_FIELD_TYPES = {
     "email",
 }
 OPTION_FIELD_TYPES = {"select", "radio"}
+OPTION_VALIDATED_FIELD_TYPES = OPTION_FIELD_TYPES | {
+    "user_picker",
+    "department_picker",
+    "location_picker",
+    "device_picker",
+    "service_picker",
+}
 MULTI_SELECT_FIELD_TYPES = {"multi_select"}
 KEY_PATTERN = re.compile(r"^[a-z0-9_]+$")
 _TICKET_TYPE_BY_FORM_KIND = {
@@ -1007,6 +1017,17 @@ def _normalize_field_value(field_def: dict[str, Any], raw_value: Any) -> Any:
     field_type = field_def.get("type")
     if field_type == "checkbox":
         return bool(raw_value)
+    if field_type == "number":
+        if raw_value in (None, ""):
+            return None
+        text_value = str(raw_value).strip().replace(",", ".")
+        try:
+            number_value = float(text_value)
+        except (TypeError, ValueError):
+            raise ValueError("invalid number")
+        if not math.isfinite(number_value):
+            raise ValueError("invalid number")
+        return int(number_value) if number_value.is_integer() else number_value
     if field_type == "file":
         if raw_value in (None, ""):
             return {}
@@ -1035,11 +1056,85 @@ def _normalize_field_value(field_def: dict[str, Any], raw_value: Any) -> Any:
             raise ValueError("invalid option")
         return values
     text_value = str(raw_value or "").strip()
-    if field_type in OPTION_FIELD_TYPES and text_value:
+    if field_type in OPTION_VALIDATED_FIELD_TYPES and text_value:
         allowed_values = {str(option.get("value") or "") for option in field_def.get("options") or []}
-        if text_value not in allowed_values:
+        if allowed_values and text_value not in allowed_values:
             raise ValueError("invalid option")
     return text_value
+
+
+def _validation_value(field_def: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    validation = field_def.get("validation") if isinstance(field_def.get("validation"), dict) else {}
+    for key in keys:
+        value = validation.get(key)
+        if value not in (None, ""):
+            return value
+        value = field_def.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _validation_number(field_def: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    value = _validation_value(field_def, keys)
+    if value in (None, ""):
+        return None
+    try:
+        parsed = float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _validation_string(field_def: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    value = _validation_value(field_def, keys)
+    text_value = str(value or "").strip()
+    return text_value or None
+
+
+def _is_text_validation_field(field_def: dict[str, Any]) -> bool:
+    return field_def.get("type") in {"text", "textarea", "email", "url", "phone"}
+
+
+def _is_valid_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _field_constraint_error(field_def: dict[str, Any], value: Any) -> str | None:
+    field_type = field_def.get("type")
+    if field_type == "number":
+        if value is None:
+            return None
+        min_value = _validation_number(field_def, ("min", "minimum", "min_value"))
+        max_value = _validation_number(field_def, ("max", "maximum", "max_value"))
+        if min_value is not None and float(value) < min_value:
+            return f"Минимальное значение: {min_value:g}."
+        if max_value is not None and float(value) > max_value:
+            return f"Максимальное значение: {max_value:g}."
+
+    if _is_text_validation_field(field_def):
+        text_value = str(value or "").strip()
+        if not text_value:
+            return None
+        min_length = _validation_number(field_def, ("min_length", "minLength"))
+        max_length = _validation_number(field_def, ("max_length", "maxLength"))
+        pattern = _validation_string(field_def, ("pattern", "regex"))
+        if min_length is not None and len(text_value) < int(min_length):
+            return f"Минимум символов: {int(min_length)}."
+        if max_length is not None and len(text_value) > int(max_length):
+            return f"Максимум символов: {int(max_length)}."
+        if pattern:
+            try:
+                if not re.search(pattern, text_value):
+                    return "Проверьте формат поля."
+            except re.error:
+                pass
+        if field_type == "email" and not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", text_value):
+            return "Укажите корректный email."
+        if field_type == "url" and not _is_valid_url(text_value):
+            return "Укажите корректную ссылку."
+    return None
 
 
 def validate_form_submission(
@@ -1089,9 +1184,18 @@ def validate_form_submission(
                 required_message = str(validation.get("required_message") or "").strip()
                 errors[key] = required_message or "Поле обязательно"
                 continue
+        constraint_error = _field_constraint_error(field_def, value)
+        if constraint_error:
+            errors[key] = constraint_error
+            continue
         if field_def.get("type") == "checkbox":
             submitted_values[key] = bool(value)
             display_value = "Да" if value else "Нет"
+        elif field_def.get("type") == "number":
+            if value is None:
+                continue
+            submitted_values[key] = value
+            display_value = f"{value:g}" if isinstance(value, float) else str(value)
         elif field_def.get("type") == "file":
             file_value = value if isinstance(value, dict) else {}
             filename = str(file_value.get("filename") or "").strip()

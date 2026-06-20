@@ -1,4 +1,4 @@
-# Requester Cabinet Full UI Refactoring Plan
+﻿# Requester Cabinet Full UI Refactoring Plan
 
 > **Active plan.** Implement phase by phase. Follow root `AGENTS.md`, `webapp/AGENTS.md` and the repository browser/testing skills. Do not edit the same files from multiple agents concurrently. After every completed phase, update the progress log in this file with commits, checks and browser evidence.
 
@@ -11,6 +11,50 @@
 This file replaces the previous active `PLANS.md`. Completed backend architecture and historical evidence remain in git history and existing contracts.
 
 ---
+
+## Current checkpoint - remaining requester defects, 2026-06-20
+
+Source: `C:\Users\admin-2\Downloads\requester_remaining_work.md`, checked against branch `codex/helpdesk-process-model` at `53462d7684e32251a17d23dae85cb38a0a06a8fb`.
+
+Status: implementation checkpoint updated after local verification. RREM-01..RREM-14 are fixed or verified in targeted tests; RREM-15/RREM-16 stay open until deployed browser/live evidence and the final release gate are attached below.
+
+### P0 - fix before final functional signoff
+
+| ID | Defect | Required outcome | Status |
+| --- | --- | --- | --- |
+| RREM-01 | Request creation still has implicit form/offering selection and `visible[0]` fallback. | The user must explicitly select/confirm category; no first-form fallback; system intents use typed `request_template_key` or a clear no-match choice state. | fixed; covered by `new-request-page.test.tsx` and build |
+| RREM-02 | `on_behalf_policy.allowed` makes a form look available without a device for self requests. | Self, on-behalf, no-profile, no-device and manual-triage availability are computed separately and used consistently by create/preview/UI. | fixed; covered by requester create tests and on-behalf API tests |
+| RREM-03 | Requester UI still falls back to `devices[0]` when `primary_device_resolution` is missing/ambiguous. | Use only server-projected `primary_device`; missing/ambiguous states show the server reason and never choose an arbitrary device. | fixed; covered by requester home/new-request tests |
+| RREM-04 | Ticket detail refresh is skipped when `can_attach_files=false`. | Every close/feedback/reopen/message mutation refreshes detail, list and dashboard when a detail route is active. | fixed; covered by `tickets-page.test.tsx` |
+| RREM-05 | Reopen button depends on local unsaved feedback state after reload. | Server `actions.can_reopen` is the display source of truth; local rating/reason state only validates the submitted feedback/reopen payload. | fixed; covered by `tickets-page.test.tsx` and requester API reopen test |
+
+### P1 - contract and UX completion
+
+| ID | Defect | Required outcome | Status |
+| --- | --- | --- | --- |
+| RREM-06 | Ticket actions are not yet a full server capability projection. | Server projects and enforces `can_send_message`, `can_attach_files`, `can_confirm_solution`, `can_rate`, `can_reopen` plus reason fields. | verified existing; requester tickets UI now consumes server `actions.can_reopen` |
+| RREM-07 | `next_actions` priority still puts advisory setup before active requester work. | Pending reply/consent/solution/reopen outranks advisory setup; duplicate create CTA is suppressed when it is already the primary next action. | fixed; covered by `queries.test.ts` |
+| RREM-08 | Requester shell still contains old requester-cabinet wording and user-facing `Email`. | Canonical requester UI uses user-cabinet wording and `Электронная почта`. | fixed; covered by navigation/router/profile tests |
+| RREM-09 | Requester device APIs do not consistently use runtime online state. | Bootstrap, devices list and device detail project `online=true/false/null` from the same runtime state source. | fixed; covered by `test_requester_device_online_state_is_consistent_across_bootstrap_list_and_detail` |
+| RREM-10 | Server-side dynamic-field validation needs regression coverage for forged payloads. | Server rejects forged required/option/min-max/length/pattern/email/url/hidden/version/on-behalf violations. | fixed; dynamic constraints added, version/on-behalf verified by existing API tests |
+| RREM-11 | Requester page decomposition/shared UI extraction is incomplete. | Split large page files into reusable wizard, selector, lifecycle, chat, device and profile components. | partially closed; route pages/shared controls exist, deeper `new-request-page.tsx` extraction remains backlog |
+| RREM-12 | File-field contract is not fully reflected in docs/DoD. | Docs state requester-visible pre-create file fields are unsupported until draft uploads exist; post-create attachments remain chat flow. | fixed in `docs/QUICK_LOOKUP.md` |
+
+### P2 - quality and release gate
+
+| ID | Defect | Required outcome | Status |
+| --- | --- | --- | --- |
+| RREM-13 | `PageShell` defaults to `<main>`, allowing future nested landmarks. | Only the app shell owns `<main>` by default; page sections use `div`/`section` unless explicitly overridden. | fixed; covered by `page-components.test.tsx` and router tests |
+| RREM-14 | Unknown backend status is transformed into a visible enum-ish label. | Unknown statuses display a neutral requester-safe fallback. | fixed; covered by `formatters.test.ts` |
+| RREM-15 | E2E coverage is below the full requester matrix. | Expand deterministic requester E2E for profile/device/form/on-behalf/consent/rating/reopen/archived/ambiguous/responsive/keyboard paths. | open; targeted unit/server coverage added, deterministic Playwright/live evidence pending |
+| RREM-16 | Last deployment used quick gate only. | Final signoff requires full focused frontend/server/Playwright/live evidence and frozen green CI artifact. | open; deploy/live gate pending |
+
+Implementation order for this iteration:
+
+1. Close P0 defects RREM-01..RREM-05 with failing regression tests first.
+2. Close low-risk P1/P2 correctness items RREM-08, RREM-09, RREM-13 and RREM-14 in the same cycle if the diff stays focused.
+3. Add targeted server validation coverage for RREM-10 where gaps are confirmed; keep broad decomposition/E2E/full release gate as separate records if they exceed this iteration.
+4. Run targeted tests, `python scripts/verify_workspace.py`, deploy through project release scripts and collect real browser evidence for `/app/requester`, `/app/requester/new`, `/app/requester/tickets/:code` and `/app/requester/devices`.
 
 ## 1. Product outcome
 
@@ -985,7 +1029,6 @@ Console/network result: `console.json` and `network.json` in the evidence direct
 Residual risks: full final CI/release artifact gate was not run because this was a quick staging deploy, not an explicit frozen release candidate; Vite still reports the pre-existing chunk-size warning for large bundles.
 Next phase: no open requester-cabinet review bug remains from the checked review documents; only the broader Phase N/full gate remains for final release hardening.
 ```
-
 ### Current checkpoint - requester critical defects closure, 2026-06-20
 
 Status: D1-D13 closure completed, committed, pushed and deployed to `https://192.168.100.17:9443`. Final deployed code commit: `898dc47993cea62647a2b65d695a8f15ac4bda14`. Final live report: `artifacts/browser_live_validation/requester-critical-302c2ff2-20260620T112749Z/live-report.json`, run `critical-898dc479-20260620-live10-f6e5d4c3b2a1`, status `passed`.

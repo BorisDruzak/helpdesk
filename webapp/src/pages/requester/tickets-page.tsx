@@ -85,10 +85,10 @@ export function RequesterTicketsPage() {
   );
   const canClose = selectedActions?.can_confirm_solution === true;
   const canRate = selectedActions?.can_rate_solution === true;
-  const canReopen = selectedActions?.can_reopen === true && (reopenAvailable || feedbackRating <= 3 || !feedbackProblemResolved);
+  const canReopen = selectedActions?.can_reopen === true;
 
   async function refreshTicket() {
-    if (!ticketId || !canAttachFiles) {
+    if (!ticketId) {
       await requesterInvalidations.afterTicketMutation(queryClient);
       return;
     }

@@ -1636,6 +1636,79 @@ def test_validate_form_submission_accepts_extended_field_types():
     assert summary["symptoms"] == "DNS, Прокси"
 
 
+def test_validate_form_submission_enforces_dynamic_field_constraints_server_side():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "version": "1.0.0",
+            "title": "Каталог обращений",
+            "forms": [
+                {
+                    "key": "dynamic_guard",
+                    "request_kind": "dynamic_guard",
+                    "title": "Проверка динамических правил",
+                    "fields": [
+                        {
+                            "key": "request_type",
+                            "label": "Тип",
+                            "type": "select",
+                            "required": True,
+                            "options": [
+                                {"value": "hardware", "label": "Оборудование"},
+                                {"value": "access", "label": "Доступ"},
+                            ],
+                        },
+                        {"key": "contact_email", "label": "Email", "type": "email", "required": True},
+                        {"key": "target_url", "label": "URL", "type": "url", "required": True},
+                        {"key": "seats", "label": "Мест", "type": "number", "validation": {"min": 1, "max": 3}},
+                        {"key": "code", "label": "Код", "type": "text", "validation": {"min_length": 3, "max_length": 5, "pattern": "^[A-Z]+$"}},
+                        {
+                            "key": "access_reason",
+                            "label": "Причина доступа",
+                            "type": "text",
+                            "required": True,
+                            "visible_when": {"field": "request_type", "equals": "access"},
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    valid = validate_form_submission(
+        pack,
+        form_key="dynamic_guard",
+        raw_values={
+            "request_type": "hardware",
+            "contact_email": "ivan@example.test",
+            "target_url": "https://example.test",
+            "seats": "2",
+            "code": "ABC",
+            "access_reason": "forged hidden value",
+        },
+    )
+    assert valid["submitted_values"]["seats"] == 2
+    assert "access_reason" not in valid["submitted_values"]
+
+    with pytest.raises(ValueError) as exc:
+        validate_form_submission(
+            pack,
+            form_key="dynamic_guard",
+            raw_values={
+                "request_type": "hardware",
+                "contact_email": "not-email",
+                "target_url": "ftp://example.test",
+                "seats": "7",
+                "code": "ab",
+                "access_reason": "still hidden",
+            },
+        )
+
+    errors = exc.value.args[0]
+    assert {"contact_email", "target_url", "seats", "code"} <= set(errors)
+    assert "access_reason" not in errors
+
+
 def test_validate_form_pack_schema_preserves_request_template_process_context():
     pack = validate_form_pack_schema(
         {

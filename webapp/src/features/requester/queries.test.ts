@@ -162,4 +162,37 @@ describe("requester query architecture", () => {
       href: "/app/requester/tickets/REQ-3001",
     });
   });
+
+  it("does not count devices or global no-device create as primary diagnostic context", () => {
+    const bootstrap = {
+      workspace: "requester",
+      profile: { person_id: "person-1" },
+      profile_completion: {
+        complete: true,
+        status: "complete",
+        setup_path: "/app/requester/profile/setup",
+        required_fields: [],
+        missing_fields: [],
+      },
+      devices: [
+        { device_id: "device-1", hostname: "WORKSTATION-1" },
+        { device_id: "device-2", hostname: "WORKSTATION-2" },
+      ],
+      primary_device: null,
+      primary_device_resolution: { status: "ambiguous", reason_code: "multiple_active_devices", candidate_count: 2 },
+      active_bindings: [],
+      pending_registration_claims: [],
+      open_ticket_count: 0,
+      tickets_requiring_user_action_count: 0,
+      pending_consent_count: 0,
+      recent_tickets: [],
+      feature_flags: { requester_no_device_create: true },
+    } satisfies RequesterBootstrap;
+
+    const projection = projectRequesterDashboard(bootstrap, [], []);
+
+    expect(projection.readiness.hasDeviceContext).toBe(false);
+    expect(projection.readiness.canCreateWithoutDevice).toBe(true);
+    expect(projection.nextAction.key).toBe("continue_requests");
+  });
 });

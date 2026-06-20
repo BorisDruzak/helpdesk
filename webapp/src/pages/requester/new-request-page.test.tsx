@@ -37,6 +37,15 @@ function renderPage(initialEntry = "/app/requester/new") {
   return render(<RequesterNewRequestPage />, { wrapper: Wrapper });
 }
 
+async function chooseCategory(label: string) {
+  const select = await screen.findByLabelText("Категория обращения");
+  const option = Array.from((select as HTMLSelectElement).options).find((item) => item.textContent?.includes(label));
+  if (!option) {
+    throw new Error(`Category option not found: ${label}`);
+  }
+  fireEvent.change(select, { target: { value: option.value } });
+}
+
 afterEach(() => {
   window.sessionStorage.clear();
   vi.unstubAllGlobals();
@@ -115,6 +124,67 @@ describe("RequesterNewRequestPage", () => {
     });
   });
 
+  it("requires an explicit category choice when no confident recommendation exists", async () => {
+    installNewRequestMock({ withDistractorOffering: true });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Нужно уточнить нестандартный вопрос" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+
+    expect(await screen.findByText("Выберите категорию обращения")).toBeInTheDocument();
+    expect(screen.getByLabelText("Категория обращения")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument();
+  });
+
+  it("does not treat an on-behalf-only form as available for a self no-device request", async () => {
+    installNewRequestMock({
+      withDevice: false,
+      withOnBehalfOnlyForm: true,
+    });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Нужен доступ для коллеги" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+
+    expect(await screen.findByText("Для обращения за себя нужно основное устройство.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Обращение за другого сотрудника")).toBeChecked();
+    expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument();
+  });
+
+  it("does not submit an arbitrary device when primary device resolution is ambiguous", async () => {
+    const fetchMock = installNewRequestMock({
+      primaryDeviceResolution: "ambiguous",
+      withNoDeviceManualForm: true,
+    });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Нужна ручная помощь без диагностики" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+    fireEvent.change(await screen.findByLabelText("Описание"), {
+      target: { value: "Нужно разобраться без выбора устройства" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/tickets/T-77"));
+    const createCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input) === "/api/web/requester/tickets" && init?.method === "POST",
+    );
+    const body = JSON.parse(String(createCall?.[1]?.body));
+    expect(body).not.toHaveProperty("device_id");
+    expect(body.form_payload).not.toHaveProperty("device_id");
+  });
+
   it("blocks create when safe preview returns blockers", async () => {
     installNewRequestMock({ previewBlockers: ["Недостаточно данных для маршрута."] });
     renderPage();
@@ -124,6 +194,7 @@ describe("RequesterNewRequestPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
     fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+    await chooseCategory("Сломался ноутбук");
     fireEvent.change(await screen.findByLabelText("Кратко"), {
       target: { value: "Нужна помощь" },
     });
@@ -160,6 +231,7 @@ describe("RequesterNewRequestPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
     fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+    await chooseCategory("Ручная помощь без устройства");
 
     expect(await screen.findByLabelText("Описание")).toBeInTheDocument();
     expect(screen.queryByLabelText("Устройство")).not.toBeInTheDocument();
@@ -200,17 +272,20 @@ describe("RequesterNewRequestPage", () => {
 function installNewRequestMock(
   options: {
     noDeviceCreate?: boolean;
+    primaryDeviceResolution?: "available" | "missing" | "ambiguous";
     previewBlockers?: string[];
     profileComplete?: boolean;
     setupHelpForm?: boolean;
     withDistractorOffering?: boolean;
     withDevice?: boolean;
     withNoDeviceManualForm?: boolean;
+    withOnBehalfOnlyForm?: boolean;
     withOwnerChangeForm?: boolean;
   } = {},
 ) {
   const profileComplete = options.profileComplete ?? true;
   const devices = options.withDevice === false ? [] : [{ device_id: "device-1", hostname: "desk-1", asset_name: "Desk 1" }];
+  const primaryDeviceResolution = options.primaryDeviceResolution ?? (devices.length ? "available" : "missing");
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/web/requester/bootstrap") {
@@ -233,6 +308,12 @@ function installNewRequestMock(
             form_prefill: { device_id: "device-1" },
           },
           devices,
+          primary_device: primaryDeviceResolution === "available" ? devices[0] ?? null : null,
+          primary_device_resolution: {
+            status: primaryDeviceResolution,
+            reason_code: primaryDeviceResolution,
+            candidate_count: primaryDeviceResolution === "ambiguous" ? devices.length : primaryDeviceResolution === "available" ? 1 : 0,
+          },
           active_bindings: [],
           pending_registration_claims: [],
           open_ticket_count: 0,
@@ -272,6 +353,22 @@ function installNewRequestMock(
                     request_kind: "service_request",
                     availability_policy: { available_without_agent_binding: true, contact_required: true },
                     fields: [{ key: "description", label: "Описание", type: "textarea", required: true }],
+                  },
+                ]
+              : []),
+            ...(options.withOnBehalfOnlyForm
+              ? [
+                  {
+                    key: "on_behalf_access",
+                    title: "Доступ для сотрудника",
+                    request_kind: "service_request",
+                    on_behalf_policy: {
+                      allowed: true,
+                      label: "Обращение за другого сотрудника",
+                      affected_person_required: true,
+                      reason_required: true,
+                    },
+                    fields: [{ key: "summary", label: "Кратко", type: "text", required: true }],
                   },
                 ]
               : []),
@@ -327,6 +424,18 @@ function installNewRequestMock(
           },
         ],
       };
+      const onBehalfService = {
+        service_code: "access",
+        title: "Доступы",
+        offerings: [
+          {
+            offering_code: "on_behalf_access",
+            full_code: "access.on_behalf_access",
+            title: "Доступ для сотрудника",
+            request_template_key: "on_behalf_access",
+          },
+        ],
+      };
       return jsonResponse({
         status: "ok",
         catalog_version: "phase-g",
@@ -350,6 +459,8 @@ function installNewRequestMock(
             ? [workplaceService, manualService]
           : options.withOwnerChangeForm
             ? [workplaceService, ownerService]
+          : options.withOnBehalfOnlyForm
+            ? [onBehalfService]
           : [workplaceService],
       });
     }

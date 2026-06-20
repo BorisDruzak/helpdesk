@@ -727,7 +727,7 @@ async def handle_web_requester_devices(request: web.Request) -> web.Response:
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
-        devices = await resolver.list_allowed_devices(person.person_id if person else None)
+        devices = await resolver.list_allowed_devices(person.person_id if person else None, state=request.app.get("state"))
     return _success({"devices": devices, "count": len(devices)})
 
 
@@ -843,6 +843,7 @@ async def handle_web_requester_device_detail(request: web.Request) -> web.Respon
             payload = await RequesterIdentityResolver(session, state=request.app.get("state")).get_device_detail(
                 actor_id=auth_context.actor_id,
                 device_id=device_id,
+                state=request.app.get("state"),
             )
         except PermissionError:
             return _error("device not found", status=404, error_code="NOT_FOUND")

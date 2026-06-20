@@ -206,7 +206,7 @@ class RequesterIdentityResolver:
             devices.append(self.serialize_device(binding, device, asset, state=state))
         return devices
 
-    async def get_device_detail(self, *, actor_id: str, device_id: str) -> dict[str, Any]:
+    async def get_device_detail(self, *, actor_id: str, device_id: str, state: Any | None = None) -> dict[str, Any]:
         _person, binding = await self.require_owned_device(actor_id=actor_id, device_id=device_id)
         device = await self.session.get(Device, binding.device_id)
         asset = await self.registry_repo.get_asset_by_device_id(binding.device_id)
@@ -216,7 +216,7 @@ class RequesterIdentityResolver:
             if str(getattr(ticket, "device_id", "") or "") == binding.device_id
         ]
         open_statuses = {"resolved", "closed", "canceled"}
-        detail = self.serialize_device(binding, device, asset)
+        detail = self.serialize_device(binding, device, asset, state=state)
         detail.update(
             {
                 "asset_type": getattr(asset, "asset_type", None),

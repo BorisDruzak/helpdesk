@@ -146,7 +146,7 @@ export function profileFieldsFromSchema(schema?: RequesterProfileSchema | null):
       options: [
         { value: "phone", label: "Телефон" },
         { value: "chat", label: "Чат в обращении" },
-        { value: "email", label: "Email" },
+        { value: "email", label: "Электронная почта" },
       ],
     },
   ];

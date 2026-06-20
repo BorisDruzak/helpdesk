@@ -59,6 +59,25 @@ type AskTicketContext = {
   retrieval_results?: Array<{ item_id?: string | null; version_id?: string | null }>;
 };
 
+type FormAvailability = {
+  availableForSelf: boolean;
+  availableForOnBehalf: boolean;
+  availableWithoutProfile: boolean;
+  availableWithoutDevice: boolean;
+  requiresManualTriage: boolean;
+  requiresOnBehalfForAvailability: boolean;
+};
+
+type CategoryOption = {
+  availability: FormAvailability;
+  form: RequestFormDefinition;
+  key: string;
+  label: string;
+  offering: (ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string }) | null;
+  service: ServiceCatalogCurrent["services"][number] | null;
+  serviceTitle: string | null;
+};
+
 export function RequesterNewRequestPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -72,7 +91,11 @@ export function RequesterNewRequestPage() {
   const services = catalogQuery.data?.services ?? [];
   const profileComplete = bootstrap?.profile_completion ? bootstrap.profile_completion.complete !== false : Boolean(bootstrap?.profile);
   const devices = bootstrap?.devices ?? [];
-  const primaryDevice = bootstrap?.primary_device ?? devices[0] ?? null;
+  const primaryResolutionStatus = String(bootstrap?.primary_device_resolution?.status ?? "").trim().toLowerCase();
+  const primaryDevice =
+    bootstrap?.primary_device && isResolvedPrimaryDeviceStatus(primaryResolutionStatus)
+      ? bootstrap.primary_device
+      : null;
   const hasAgentContext = Boolean(primaryDevice);
   const [step, setStep] = useState<WizardStep>("problem");
   const [problem, setProblem] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
@@ -93,16 +116,26 @@ export function RequesterNewRequestPage() {
   const loadedAskContextRef = useRef(false);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const [validationAttempted, setValidationAttempted] = useState(false);
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
 
-  const selectedOffering = useMemo(() => recommendOffering(services, problem, forms, requestIntent), [forms, problem, requestIntent, services]);
-  const selectedService = useMemo(
-    () => services.find((service) => service.service_code === selectedOffering?.service_code) ?? null,
-    [selectedOffering?.service_code, services],
+  const categoryOptions = useMemo(
+    () => buildCategoryOptions(services, forms, profileComplete, hasAgentContext),
+    [forms, hasAgentContext, profileComplete, services],
   );
-  const selectedForm = useMemo(
-    () => resolveSelectedForm(forms, selectedOffering, profileComplete, hasAgentContext),
-    [forms, hasAgentContext, profileComplete, selectedOffering],
+  const recommendedOffering = useMemo(() => recommendOffering(services, problem, forms, requestIntent), [forms, problem, requestIntent, services]);
+  const recommendedCategoryKey = useMemo(
+    () => resolveRecommendedCategoryKey(categoryOptions, recommendedOffering, requestIntent),
+    [categoryOptions, recommendedOffering, requestIntent],
   );
+  const selectedCategory = useMemo(
+    () => categoryOptions.find((option) => option.key === selectedCategoryKey) ?? null,
+    [categoryOptions, selectedCategoryKey],
+  );
+  const selectedOffering = selectedCategory?.offering ?? null;
+  const selectedService = selectedCategory?.service ?? null;
+  const selectedForm = selectedCategory?.form ?? null;
+  const selectedFormAvailability = selectedCategory?.availability ?? null;
+  const requiresOnBehalfForAvailability = selectedFormAvailability?.requiresOnBehalfForAvailability === true;
   const needsRegistryOptions = useMemo(
     () => (selectedForm?.fields ?? []).some((field) => field.type === "department_picker" || field.type === "location_picker"),
     [selectedForm],
@@ -112,9 +145,12 @@ export function RequesterNewRequestPage() {
     () => requesterFormPrefillFromContext(bootstrap?.requester_context, bootstrap?.profile, primaryDevice, selectedService, selectedOffering),
     [bootstrap?.profile, bootstrap?.requester_context, primaryDevice, selectedOffering, selectedService],
   );
+  const onBehalfPolicy = selectedForm?.on_behalf_policy ?? null;
+  const onBehalfActive = Boolean(onBehalfPolicy?.allowed && (onBehalfEnabled || requiresOnBehalfForAvailability));
+  const activeDynamicForm = selectedForm && (!requiresOnBehalfForAvailability || selectedOnBehalfPerson) ? selectedForm : null;
   const contextualFields = useMemo(
     () =>
-      (selectedForm?.fields ?? [])
+      (activeDynamicForm?.fields ?? [])
         .filter((field) => isDynamicFieldVisible(field, fieldValues))
         .map((field) =>
           fieldWithRequesterContextOptions(field, {
@@ -124,17 +160,23 @@ export function RequesterNewRequestPage() {
             services,
           }),
         ),
-    [devices, fieldValues, registryOptionsQuery.data?.departments, registryOptionsQuery.data?.locations, selectedForm, services],
+    [activeDynamicForm, devices, fieldValues, registryOptionsQuery.data?.departments, registryOptionsQuery.data?.locations, services],
   );
-  const visiblePayload = useMemo(() => collectVisiblePayload(selectedForm, fieldValues), [fieldValues, selectedForm]);
-  const missingFieldDetails = useMemo(() => missingRequiredFieldDetails(selectedForm, fieldValues), [fieldValues, selectedForm]);
-  const missingFields = useMemo(() => missingRequiredFields(selectedForm, fieldValues), [fieldValues, selectedForm]);
-  const valueValidation = useMemo(() => validateDynamicFormValues(selectedForm, fieldValues), [fieldValues, selectedForm]);
-  const onBehalfPolicy = selectedForm?.on_behalf_policy ?? null;
+  const visiblePayload = useMemo(() => collectVisiblePayload(activeDynamicForm, fieldValues), [activeDynamicForm, fieldValues]);
+  const missingFieldDetails = useMemo(() => missingRequiredFieldDetails(activeDynamicForm, fieldValues), [activeDynamicForm, fieldValues]);
+  const missingFields = useMemo(() => missingRequiredFields(activeDynamicForm, fieldValues), [activeDynamicForm, fieldValues]);
+  const valueValidation = useMemo(() => validateDynamicFormValues(activeDynamicForm, fieldValues), [activeDynamicForm, fieldValues]);
   const onBehalfMissingRequired =
-    Boolean(onBehalfPolicy?.allowed && onBehalfEnabled && onBehalfPolicy.affected_person_required && !selectedOnBehalfPerson) ||
-    Boolean(onBehalfPolicy?.allowed && onBehalfEnabled && onBehalfPolicy.reason_required && !onBehalfReason.trim());
-  const canPreview = Boolean(problem.trim() && selectedForm && !missingFields.length && !valueValidation.issues.length && !onBehalfMissingRequired);
+    Boolean(onBehalfActive && onBehalfPolicy?.affected_person_required && !selectedOnBehalfPerson) ||
+    Boolean(onBehalfActive && onBehalfPolicy?.reason_required && !onBehalfReason.trim());
+  const canPreview = Boolean(
+    problem.trim() &&
+      selectedForm &&
+      (selectedFormAvailability?.availableForSelf || onBehalfActive) &&
+      !missingFields.length &&
+      !valueValidation.issues.length &&
+      !onBehalfMissingRequired,
+  );
   const canCreate = Boolean(previewResult?.ok && !(previewResult.blockers ?? []).length && !submitting && !previewSubmitting);
 
   useEffect(() => {
@@ -153,6 +195,15 @@ export function RequesterNewRequestPage() {
   }, []);
 
   useEffect(() => {
+    setSelectedCategoryKey((current) => {
+      if (current && categoryOptions.some((option) => option.key === current)) {
+        return current;
+      }
+      return recommendedCategoryKey ?? "";
+    });
+  }, [categoryOptions, recommendedCategoryKey]);
+
+  useEffect(() => {
     setFieldValues((current) => {
       const next = mergeContextPrefillValues(selectedForm, current, previousPrefill, requestFormPrefill);
       setPreviousPrefill(buildDefaultFieldValues(selectedForm, requestFormPrefill));
@@ -162,7 +213,15 @@ export function RequesterNewRequestPage() {
 
   useEffect(() => {
     setPreviewResult(null);
-  }, [fieldValues, problem, selectedForm?.key, selectedOffering?.full_code, selectedService?.service_code, onBehalfReason, selectedOnBehalfPerson?.person_id]);
+  }, [fieldValues, problem, selectedCategoryKey, selectedForm?.key, selectedOffering?.full_code, selectedService?.service_code, onBehalfReason, selectedOnBehalfPerson?.person_id]);
+
+  useEffect(() => {
+    setOnBehalfEnabled(false);
+    setOnBehalfQuery("");
+    setOnBehalfPeople([]);
+    setSelectedOnBehalfPerson(null);
+    setOnBehalfReason("");
+  }, [selectedForm?.key]);
 
   async function loadKnowledgeSuggestions() {
     if (!problem.trim()) {
@@ -300,7 +359,7 @@ export function RequesterNewRequestPage() {
 
   function buildCreatePayload(): RequesterTicketCreatePayload {
     const ticketContext =
-      onBehalfPolicy?.allowed && onBehalfEnabled && selectedOnBehalfPerson
+      onBehalfActive && selectedOnBehalfPerson
         ? {
             affected_person_id: selectedOnBehalfPerson.person_id,
             on_behalf_reason: onBehalfReason.trim() || undefined,
@@ -330,7 +389,7 @@ export function RequesterNewRequestPage() {
     return <div className="mx-auto max-w-4xl px-4 py-8 text-sm text-slate-600">Загружаем форму...</div>;
   }
 
-  if (!selectedForm) {
+  if (!categoryOptions.length) {
     if (!profileComplete) {
       return (
         <div className="mx-auto max-w-4xl px-4 py-8">
@@ -410,10 +469,27 @@ export function RequesterNewRequestPage() {
         ) : null}
         {step === "details" ? (
           <section className="rounded-panel border border-slate-200 bg-white p-4">
-            <h2 className="text-lg font-semibold text-slate-950">{selectedForm.title}</h2>
-            {onBehalfPolicy?.allowed ? (
+            <CategorySelector
+              options={categoryOptions}
+              recommendedKey={recommendedCategoryKey}
+              selectedKey={selectedCategoryKey}
+              onChange={(key) => {
+                setSelectedCategoryKey(key);
+                setError(null);
+              }}
+            />
+            {!selectedForm ? (
+              <p className="mt-3 text-sm text-slate-600">Выберите категорию, чтобы увидеть нужные поля и безопасную проверку.</p>
+            ) : null}
+            {selectedForm ? <h2 className="mt-4 text-lg font-semibold text-slate-950">{selectedForm.title}</h2> : null}
+            {requiresOnBehalfForAvailability ? (
+              <p className="mt-3 rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Для обращения за себя нужно основное устройство.
+              </p>
+            ) : null}
+            {selectedForm && onBehalfPolicy?.allowed ? (
               <OnBehalfPanel
-                enabled={onBehalfEnabled}
+                enabled={onBehalfActive}
                 onQueryChange={setOnBehalfQuery}
                 onReasonChange={setOnBehalfReason}
                 onSearch={runOnBehalfSearch}
@@ -422,6 +498,7 @@ export function RequesterNewRequestPage() {
                 policy={onBehalfPolicy}
                 query={onBehalfQuery}
                 reason={onBehalfReason}
+                required={requiresOnBehalfForAvailability}
                 selectedPerson={selectedOnBehalfPerson}
                 setEnabled={setOnBehalfEnabled}
               />
@@ -450,7 +527,7 @@ export function RequesterNewRequestPage() {
                 />
               ))}
             </div>
-            {missingFields.length || valueValidation.issues.length || onBehalfMissingRequired ? (
+            {selectedForm && (missingFields.length || valueValidation.issues.length || onBehalfMissingRequired) ? (
               <p aria-live="polite" className="mt-3 text-sm text-rose-700" role="status">
                 {valueValidation.issues[0]?.message ||
                   `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`}
@@ -472,7 +549,7 @@ export function RequesterNewRequestPage() {
             <h2 className="text-lg font-semibold text-slate-950">Проверка перед отправкой</h2>
             <dl className="mt-3 grid gap-2 text-sm">
               <div><dt className="font-semibold text-slate-500">Тема</dt><dd>{problem.trim().split(/\r?\n/)[0]}</dd></div>
-              <div><dt className="font-semibold text-slate-500">Тип</dt><dd>{selectedOffering?.title || selectedForm.title}</dd></div>
+              <div><dt className="font-semibold text-slate-500">Тип</dt><dd>{selectedOffering?.title || selectedForm?.title}</dd></div>
               {primaryDevice ? <div><dt className="font-semibold text-slate-500">Устройство</dt><dd>{requesterDeviceLabel(primaryDevice, "Основное устройство")}</dd></div> : null}
             </dl>
             {previewResult ? (
@@ -497,14 +574,18 @@ export function RequesterNewRequestPage() {
       </section>
       <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
         <div className="rounded-panel border border-slate-200 bg-white p-4 text-sm">
-          <p className="font-semibold text-slate-950">Подобранный вариант</p>
-          <p className="mt-2 text-slate-700">{selectedOffering?.title || selectedForm.title}</p>
+          <p className="font-semibold text-slate-950">Категория обращения</p>
+          <p className="mt-2 text-slate-700">{selectedCategory?.label || "Выберите категорию"}</p>
           <p className="mt-1 text-slate-500">{selectedService?.title || "Каталог обращений"}</p>
         </div>
         <div className="rounded-panel border border-slate-200 bg-white p-4 text-sm">
           <p className="font-semibold text-slate-950">Контекст</p>
           <p className="mt-2 text-slate-700">{bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || "Заявитель"}</p>
-          {primaryDevice ? <p className="mt-1 text-slate-500">{requesterDeviceLabel(primaryDevice, "Основное устройство")}</p> : <p className="mt-1 text-amber-700">Устройство не выбрано</p>}
+          {primaryDevice ? (
+            <p className="mt-1 text-slate-500">{requesterDeviceLabel(primaryDevice, "Основное устройство")}</p>
+          ) : (
+            <p className="mt-1 text-amber-700">{primaryDeviceResolutionText(bootstrap?.primary_device_resolution)}</p>
+          )}
         </div>
       </aside>
     </div>
@@ -529,6 +610,45 @@ function StepRail({ step }: { step: WizardStep }) {
   );
 }
 
+function CategorySelector({
+  onChange,
+  options,
+  recommendedKey,
+  selectedKey,
+}: {
+  onChange: (key: string) => void;
+  options: CategoryOption[];
+  recommendedKey: string | null;
+  selectedKey: string;
+}) {
+  return (
+    <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-3">
+      <label className="block text-sm font-semibold text-slate-800">
+        Выберите категорию обращения
+        <select
+          aria-label="Категория обращения"
+          className="mt-2 w-full rounded-panel border border-slate-200 bg-white px-3 py-2 font-normal"
+          onChange={(event) => onChange(event.currentTarget.value)}
+          value={selectedKey}
+        >
+          <option value="">Выберите...</option>
+          {options.map((option) => (
+            <option key={option.key} value={option.key}>
+              {option.label}
+              {option.key === recommendedKey ? " (подходит по описанию)" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      {selectedKey ? (
+        <p className="mt-2 text-xs text-slate-500">Вы можете изменить категорию перед проверкой и отправкой.</p>
+      ) : (
+        <p className="mt-2 text-xs text-slate-500">Автоматически первая форма не выбирается. Если нет точного совпадения, выберите вариант вручную.</p>
+      )}
+    </div>
+  );
+}
+
 function OnBehalfPanel({
   enabled,
   onQueryChange,
@@ -539,6 +659,7 @@ function OnBehalfPanel({
   policy,
   query,
   reason,
+  required = false,
   selectedPerson,
   setEnabled,
 }: {
@@ -551,15 +672,22 @@ function OnBehalfPanel({
   policy: NonNullable<RequestFormDefinition["on_behalf_policy"]>;
   query: string;
   reason: string;
+  required?: boolean;
   selectedPerson: RequesterOnBehalfPerson | null;
   setEnabled: (value: boolean) => void;
 }) {
   return (
     <div className="mt-4 rounded-panel border border-slate-200 bg-slate-50 p-3">
       <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-        <input checked={enabled} onChange={(event) => setEnabled(event.currentTarget.checked)} type="checkbox" />
+        <input
+          checked={enabled}
+          disabled={required}
+          onChange={(event) => setEnabled(event.currentTarget.checked)}
+          type="checkbox"
+        />
         {policy.label || "Обращение за другого сотрудника"}
       </label>
+      {required ? <p className="mt-2 text-sm text-amber-700">Эта категория доступна только как обращение за другого сотрудника.</p> : null}
       {enabled ? (
         <div className="mt-3 grid gap-3">
           <label className="block text-sm font-semibold text-slate-800">
@@ -650,25 +778,100 @@ function searchableText(values: Array<string | null | undefined>): string {
   return values.map((value) => String(value || "").toLowerCase()).join(" ");
 }
 
-function resolveSelectedForm(
+function buildCategoryOptions(
+  services: ServiceCatalogCurrent["services"],
   forms: RequestFormDefinition[],
-  offering: (ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string }) | null,
   profileComplete: boolean,
   hasAgentContext: boolean,
-) {
-  const visible = forms.filter((form) => formVisibleForRequester(form, profileComplete, hasAgentContext));
-  return visible.find((form) => form.key === offering?.request_template_key) ?? visible[0] ?? null;
+): CategoryOption[] {
+  const formByKey = new Map(forms.map((form) => [form.key, form]));
+  const seenFormKeys = new Set<string>();
+  const options: CategoryOption[] = [];
+  for (const service of services) {
+    for (const rawOffering of service.offerings ?? []) {
+      const form = rawOffering.request_template_key ? formByKey.get(rawOffering.request_template_key) : null;
+      if (!form) {
+        continue;
+      }
+      const availability = formAvailabilityForRequester(form, profileComplete, hasAgentContext);
+      if (!availability.availableForSelf && !availability.availableForOnBehalf) {
+        continue;
+      }
+      const offering = { ...rawOffering, service_code: service.service_code };
+      seenFormKeys.add(form.key);
+      options.push({
+        availability,
+        form,
+        key: categoryKeyForOffering(offering, form.key),
+        label: offering.title || form.title,
+        offering,
+        service,
+        serviceTitle: service.title || service.service_code,
+      });
+    }
+  }
+  for (const form of forms) {
+    if (seenFormKeys.has(form.key)) {
+      continue;
+    }
+    const availability = formAvailabilityForRequester(form, profileComplete, hasAgentContext);
+    if (!availability.availableForSelf && !availability.availableForOnBehalf) {
+      continue;
+    }
+    options.push({
+      availability,
+      form,
+      key: `form:${form.key}`,
+      label: form.title || form.key,
+      offering: null,
+      service: null,
+      serviceTitle: null,
+    });
+  }
+  return options;
 }
 
-function formVisibleForRequester(form: RequestFormDefinition, profileComplete: boolean, hasAgentContext: boolean): boolean {
+function categoryKeyForOffering(
+  offering: ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string },
+  formKey: string,
+): string {
+  return `offering:${offering.full_code || `${offering.service_code}.${offering.offering_code || formKey}`}:${formKey}`;
+}
+
+function resolveRecommendedCategoryKey(
+  options: CategoryOption[],
+  offering: (ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string }) | null,
+  intent?: string,
+): string | null {
+  if (intent === OWNER_CHANGE_INTENT) {
+    return options.find((option) => option.form.key === OWNER_CHANGE_INTENT || option.offering?.request_template_key === OWNER_CHANGE_INTENT)?.key ?? null;
+  }
+  if (!offering) {
+    return null;
+  }
+  return (
+    options.find((option) => option.offering?.full_code && option.offering.full_code === offering.full_code)?.key ??
+    options.find((option) => option.form.key === offering.request_template_key)?.key ??
+    null
+  );
+}
+
+function formAvailabilityForRequester(form: RequestFormDefinition, profileComplete: boolean, hasAgentContext: boolean): FormAvailability {
   const policy = form.availability_policy ?? {};
-  if (!profileComplete && !policy.available_without_completed_profile && !form.available_without_completed_profile) {
-    return false;
-  }
-  if (!hasAgentContext && !policy.available_without_agent_binding && !form.available_without_agent_binding && !form.on_behalf_policy?.allowed) {
-    return false;
-  }
-  return true;
+  const availableWithoutProfile = Boolean(policy.available_without_completed_profile || form.available_without_completed_profile);
+  const availableWithoutDevice = Boolean(policy.available_without_agent_binding || form.available_without_agent_binding);
+  const profileOk = profileComplete || availableWithoutProfile;
+  const deviceOk = hasAgentContext || availableWithoutDevice;
+  const availableForSelf = profileOk && deviceOk;
+  const availableForOnBehalf = Boolean(form.on_behalf_policy?.allowed && profileOk);
+  return {
+    availableForSelf,
+    availableForOnBehalf,
+    availableWithoutProfile,
+    availableWithoutDevice,
+    requiresManualTriage: Boolean(policy.requires_manual_triage),
+    requiresOnBehalfForAvailability: !availableForSelf && availableForOnBehalf,
+  };
 }
 
 function requesterFormPrefillFromContext(
@@ -682,6 +885,10 @@ function requesterFormPrefillFromContext(
   Object.entries(context?.form_prefill ?? {}).forEach(([key, value]) => {
     values[key] = Array.isArray(value) ? value.map((item) => String(item)) : typeof value === "boolean" ? value : String(value ?? "");
   });
+  if (!device) {
+    delete values.device_id;
+    delete values.device;
+  }
   if (profile?.department_id) values.department_id = profile.department_id;
   if (profile?.location_id) values.location_id = profile.location_id;
   if (profile?.phone) values.phone = profile.phone;
@@ -701,6 +908,21 @@ function requesterFormPrefillFromContext(
     values.offering = offering.title || offering.full_code;
   }
   return values;
+}
+
+function isResolvedPrimaryDeviceStatus(status: string): boolean {
+  return !status || status === "available" || status === "resolved";
+}
+
+function primaryDeviceResolutionText(resolution: RequesterContextPreview | RequesterDevice | unknown): string {
+  const status = String((resolution as { status?: unknown } | null | undefined)?.status ?? "").trim().toLowerCase();
+  if (status === "ambiguous") {
+    return "Основное устройство требует уточнения.";
+  }
+  if (status === "missing") {
+    return "Основное устройство не найдено.";
+  }
+  return "Устройство не выбрано.";
 }
 
 function deviceMetadata(device: RequesterDevice): Record<string, unknown> {

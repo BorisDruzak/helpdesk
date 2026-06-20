@@ -140,9 +140,32 @@ describe("RequesterTicketsPage", () => {
     expect(screen.queryByRole("button", { name: "Вложить файл" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Отправить" })).not.toBeInTheDocument();
   });
+
+  it("refreshes the selected detail after close even when attachments are not allowed", async () => {
+    const fetchMock = installTicketsMock({ initialDetailStatus: "resolved" });
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
+
+    expect(await screen.findByRole("button", { name: "Подтвердить решение" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Вложить файл" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Подтвердить решение" }));
+
+    await waitFor(() => expect(screen.getByText("Закрыта")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Подтвердить решение" })).not.toBeInTheDocument();
+    const detailFetches = fetchMock.mock.calls.filter(([input]) => String(input) === "/api/web/requester/tickets/REQ-1001");
+    expect(detailFetches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows server-authorized reopen after page reload without local feedback state", async () => {
+    installTicketsMock({ initialDetailStatus: "closed", allowClosedReopen: true });
+    renderTicketsPage("/app/requester/tickets/REQ-1001");
+
+    expect(await screen.findByRole("heading", { name: "Ноутбук не включается" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Вернуть в работу" })).toBeInTheDocument();
+  });
 });
 
-function installTicketsMock(options: { initialDetailStatus?: string; messageFails?: boolean } = {}) {
+function installTicketsMock(options: { allowClosedReopen?: boolean; initialDetailStatus?: string; messageFails?: boolean } = {}) {
   let consentStatus = "pending";
   let detailStatus = options.initialDetailStatus ?? "resolved";
   let feedbackSubmitted = false;
@@ -159,7 +182,7 @@ function installTicketsMock(options: { initialDetailStatus?: string; messageFail
               ticket_code: "REQ-1001",
               title: "Ноутбук не включается",
               status: detailStatus,
-              requester_status_label: detailStatus === "resolved" ? "Решена" : "В работе",
+              requester_status_label: mockRequesterStatusLabel(detailStatus),
               actions: mockTicketActions(detailStatus),
               updated_at: "2026-06-19T04:30:00Z",
               created_at: "2026-06-19T04:00:00Z",
@@ -227,7 +250,7 @@ function installTicketsMock(options: { initialDetailStatus?: string; messageFail
             title: "Ноутбук не включается",
             description: "Не включается после обновления",
             status: detailStatus,
-            requester_status_label: detailStatus === "resolved" ? "Решена" : "В работе",
+            requester_status_label: mockRequesterStatusLabel(detailStatus),
             actions: mockTicketActions(detailStatus),
             updated_at: "2026-06-19T04:30:00Z",
           },
@@ -307,6 +330,13 @@ function installTicketsMock(options: { initialDetailStatus?: string; messageFail
   });
   vi.stubGlobal("fetch", fetchMock as typeof fetch);
   return fetchMock;
+}
+
+function mockRequesterStatusLabel(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized === "resolved") return "Решена";
+  if (normalized === "closed") return "Закрыта";
+  return "В работе";
 }
 
 function mockTicketActions(status: string) {
