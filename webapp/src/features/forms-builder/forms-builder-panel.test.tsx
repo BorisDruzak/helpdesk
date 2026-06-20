@@ -2255,6 +2255,10 @@ describe("FormsBuilderPanel", () => {
     renderFormsBuilder({ permissions: ["admin.forms.publish"] });
 
     await screen.findByText("Реестр целевой модели");
+    fireEvent.click(await screen.findByRole("button", { name: /Печать \/ принтер/ }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("Ключ формы")).toHaveValue("printer");
+    });
     const publishButton = screen.getByRole("button", { name: "Опубликовать в реестр" });
     await waitFor(() => {
       expect(publishButton).not.toBeDisabled();

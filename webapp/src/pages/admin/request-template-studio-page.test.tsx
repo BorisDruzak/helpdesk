@@ -514,7 +514,16 @@ describe("AdminRequestTemplateStudioPage", () => {
     await waitFor(() => expect(publishButton).toBeEnabled());
     fireEvent.click(publishButton);
 
-    expect(await screen.findByText("Safe publish preview")).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/web/admin/request-studio/publish-preview",
+          expect.objectContaining({ method: "POST" }),
+        );
+      },
+      { timeout: 5000 },
+    );
+    expect(await screen.findByText("Safe publish preview", {}, { timeout: 5000 })).toBeInTheDocument();
     expect(screen.getAllByText("Будет обновлено").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Название формы").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Без изменений").length).toBeGreaterThan(0);
