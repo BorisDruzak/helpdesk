@@ -76,7 +76,7 @@ describe("AppSidebar", () => {
     const devicesGroup = screen.getByRole("button", { name: /Устройства и агенты/ });
     expect(devicesGroup).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByRole("link", { name: /Инвентарь устройств/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: /Каталог и заявки/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Каталог и обращения/ })).toBeInTheDocument();
   });
 
   it("renders device operations as a disabled contextual item without a device workspace", () => {

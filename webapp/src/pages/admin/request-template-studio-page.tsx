@@ -81,7 +81,7 @@ export function AdminRequestTemplateStudioPage() {
     description: string;
     visibility: StudioDraft["visibility"];
   }>({
-    processProfile: "Заявка на доступ",
+    processProfile: "Обращение на доступ",
     serviceCode: "",
     title: "",
     description: "",

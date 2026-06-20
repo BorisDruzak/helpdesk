@@ -295,7 +295,7 @@ describe("AdminRequestTemplateStudioPage", () => {
 
     await screen.findByRole("heading", { name: "Студия обращений" });
     fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
-    fireEvent.click(screen.getByRole("button", { name: "Заявка на доступ" }));
+    fireEvent.click(screen.getByRole("button", { name: "Обращение на доступ" }));
     fireEvent.change(screen.getByLabelText("Раздел"), { target: { value: "it" } });
     fireEvent.change(screen.getAllByLabelText("Название для пользователей")[0], { target: { value: "Доступ к CRM" } });
     fireEvent.change(screen.getAllByLabelText("Краткое описание")[0], { target: { value: "Запрос прав в CRM" } });
