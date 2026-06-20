@@ -78,6 +78,8 @@ async function installRequesterMocks(page: Page) {
           summary: ["IT", "WORKSTATION-1"],
         },
         devices: [{ device_id: "device-1", hostname: "WORKSTATION-1", os: "Windows", agent_version: "3.1.71", online: true }],
+        primary_device: { device_id: "device-1", hostname: "WORKSTATION-1", os: "Windows", agent_version: "3.1.71", online: true },
+        primary_device_resolution: { status: "available", reason_code: null, source: "fixture" },
         active_bindings: [],
         pending_registration_claims: [],
         open_ticket_count: 1,
