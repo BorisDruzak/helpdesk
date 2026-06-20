@@ -1001,6 +1001,18 @@ async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_
     login = "requester-owner@example.test"
     async with session_maker() as session:
         session.add(_device(device_id))
+        session.add(
+            RegistryAsset(
+                asset_id=str(uuid.uuid4()),
+                asset_type="pc",
+                name=device_id,
+                hostname="asset-hostname-should-not-replace-device-hostname",
+                device_id=device_id,
+                source="test",
+                status="active",
+                discovery_payload={},
+            )
+        )
         approved = await _approved_binding(session, device_id=device_id, login=login)
         session_payload = await create_ticket_with_side_effects(
             session,
@@ -1033,6 +1045,8 @@ async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_
     assert response.status == 200, payload
     assert payload["data"]["profile"]["person_id"] == approved["person"]["person_id"]
     assert payload["data"]["devices"][0]["device_id"] == device_id
+    assert payload["data"]["devices"][0]["asset_name"] is None
+    assert payload["data"]["devices"][0]["hostname"] == "requester-device"
     assert payload["data"]["open_ticket_count"] >= 1
     assert payload["data"]["next_actions"][0] == {
         "key": "review_ticket",

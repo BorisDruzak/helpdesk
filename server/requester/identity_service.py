@@ -58,6 +58,17 @@ def _metadata_value(row: Any, key: str) -> Any:
     return metadata.get(key) if isinstance(metadata, dict) else None
 
 
+def _requester_safe_display_text(value: object, *, max_length: int = 240) -> str | None:
+    text = _clean_text(value, max_length=max_length)
+    if not text:
+        return None
+    try:
+        uuid.UUID(text)
+    except (TypeError, ValueError):
+        return text
+    return None
+
+
 def _requester_ticket_route(ticket: Ticket) -> str | None:
     ticket_code = str(getattr(ticket, "ticket_code", "") or "").strip()
     if not ticket_code:
@@ -499,6 +510,7 @@ class RequesterIdentityResolver:
         state: Any | None = None,
     ) -> dict[str, Any]:
         online = self._device_online(binding.device_id, state=state)
+        asset_name = _requester_safe_display_text(getattr(asset, "name", None))
         return {
             "device_id": binding.device_id,
             "binding_id": binding.binding_id,
@@ -511,7 +523,7 @@ class RequesterIdentityResolver:
             "last_seen_at": getattr(getattr(device, "last_seen_at", None), "isoformat", lambda: None)(),
             "online": online,
             "asset_id": getattr(asset, "asset_id", None),
-            "asset_name": getattr(asset, "name", None),
+            "asset_name": asset_name,
             "asset_type": getattr(asset, "asset_type", None),
             "asset_status": getattr(asset, "status", None),
             "department_id": getattr(asset, "department_id", None),
@@ -581,6 +593,7 @@ class RequesterIdentityResolver:
         asset = await self.registry_repo.get_asset_by_device_id(binding.device_id) if binding is not None else None
         asset_department = await self.registry_repo.get_department(getattr(asset, "department_id", None))
         asset_location = await self.registry_repo.get_location(getattr(asset, "location_id", None))
+        asset_name = _requester_safe_display_text(getattr(asset, "name", None))
 
         profile = {
             "person_id": getattr(person, "person_id", None),
@@ -606,8 +619,8 @@ class RequesterIdentityResolver:
             device_label = (
                 getattr(device, "hostname", None)
                 or getattr(asset, "hostname", None)
-                or getattr(asset, "name", None)
-                or binding.device_id
+                or asset_name
+                or "Устройство"
             )
             device_context = {
                 "device_id": binding.device_id,
@@ -620,7 +633,7 @@ class RequesterIdentityResolver:
                 "agent_version": getattr(device, "agent_version", None)
                 or ((getattr(asset, "discovery_payload", None) or {}).get("agent_version") if asset else None),
                 "asset_id": getattr(asset, "asset_id", None),
-                "asset_name": getattr(asset, "name", None),
+                "asset_name": asset_name,
                 "asset_type": getattr(asset, "asset_type", None),
                 "asset_status": getattr(asset, "status", None),
                 "department_id": getattr(asset, "department_id", None),
