@@ -986,6 +986,71 @@ Residual risks: full final CI/release artifact gate was not run because this was
 Next phase: no open requester-cabinet review bug remains from the checked review documents; only the broader Phase N/full gate remains for final release hardening.
 ```
 
+### Current checkpoint - requester critical defects closure, 2026-06-20
+
+Status: planned; implementation not started in this checkpoint update.
+
+Source intake:
+
+- `C:\Users\admin-2\.codex\attachments\56c20d49-75ac-4507-bfca-abbcf682ab50\pasted-text.txt`
+
+Scope classification: cross-cutting requester cabinet fix across server requester contracts, ticket workflow, service catalog/form selection, dynamic-form runtime, device binding, dashboard projection, browser UI and live validation. This supersedes the narrow review-fixes checkpoint only for newly identified defects; the previous `ticket_code`/safe-error/terminology fixes remain completed.
+
+Triage:
+
+| ID | Status | Priority | Closure target |
+| --- | --- | --- | --- |
+| D1 service/form auto-selection | Confirmed open: `RequesterNewRequestPage` still uses `firstAvailableOffering(services)` | P0 | Stop silently choosing the first catalog offering. Add server-driven recommendation from problem text plus visible category/form selection with mandatory user override before preview/create. |
+| D2 primary device resolution | Confirmed open: frontend uses `devices[0]`; bootstrap requester context is built without binding | P0 | Server returns `primary_device` and `primary_device_resolution { status, reason }` from `PrimaryAgentResolver`; frontend never derives primary device from array order. |
+| D3 device online state | Confirmed open: `serialize_device()` returns `online: False` | P1 | Compute `online` from agreed presence/last-seen evidence; return `null` when unknown. UI must distinguish online/offline/unknown. |
+| D4 no-device/form availability gate | Confirmed open: `requester_no_device_create` is profile-derived and frontend treats on-behalf as bypass | P0 | Availability is per selected form and mode: `available_for_self`, `available_for_on_behalf`, `available_without_profile`, `available_without_device`, `requires_manual_triage`; preview/create enforce the same projection. |
+| D5 `waiting_on_user` vs `waiting_user` | Confirmed open in requester UI filters/CTA labels | P1 | Use one canonical requester status type based on server-returned `waiting_on_user`; keep aliases only in server normalization, not UI assertions. |
+| D6 messages into terminal tickets | Confirmed open: requester message handler checks ownership but not terminal state | P0 | Backend rejects chat messages for terminal states; `resolved` policy is explicit and defaults to no free chat, use confirm/rate/reopen instead. |
+| D7 requester ticket actions | Confirmed open: frontend derives actions from local status checks | P0 | Ticket detail/list returns `actions { can_send_message, can_confirm_solution, can_rate, can_reopen, can_attach_files, reason }`; backend handlers enforce the same capabilities. |
+| D8 dynamic forms partial contract | Confirmed partially open: file is blocked for publish but remains in all-types matrix; value validation is mostly required-only | P1 | Choose honest contract now: no draft upload in this phase; remove `file` from requester constructor/support matrix and add `validateDynamicFormValues(form, values)` before preview and create. Cover email/url/number min-max/text length/pattern/options/conditional cycles/null equals. |
+| D9 dashboard next action | Confirmed open: `tickets_requiring_user_action_count` does not affect `nextAction` | P1 | Server returns ordered `next_actions[]`; requester reply/consent/solution confirmation outrank creating a new request. Remove duplicate primary "Создать обращение" CTA when next action already creates. |
+| D10 device-link flow | Confirmed open/partial: `active` not success, direct `pairing_id` retry guard is weak, `/devices/link` shares the same component, owner-change intent is not handled by new-request | P1 | Add `RequesterDeviceLinkPage`, treat active/approved/confirmed as connected, guard one direct pairing load per ID, and implement explicit owner-change request form/intent. |
+| D11 localization/safe messages | Partially stale: `requesterErrorMessage()` no longer returns raw `Error.message`, but labels still contain `Кабинет заявителя` and Studio still has `Каталог заявок` | P1 | Finish Russian-first canon: `Кабинет пользователя`, `обращение`, no `заявка`/English `preview` in requester-visible UI; backend raw English messages require `error_code` mapping or safe fallback. |
+| D12 shared UI/accessibility | Confirmed open: requester pages and `PageShell` can create nested `<main>` landmarks; large pages still use raw controls/classes | P2 | Keep one `<main>` in `AppShell`; PageShell/requester pages use `section/div`. Split wizard/ticket/device/profile panels and shared controls to meet size and accessibility targets. |
+| D13 internal ticket IDs in URL | Previously fixed for generated requester UI links and post-create navigation | Regression gate | Keep tests/live checks proving generated requester URLs use `ticket_code`, raw UUID is absent from DOM/hrefs/URL. Decide whether legacy UUID resolver remains temporary compatibility or is removed after migration. |
+
+Implementation order:
+
+1. Contract/test freeze: add failing tests for D1-D13 before implementation where coverage is missing. Pin server DTO expectations for `primary_device`, `primary_device_resolution`, `next_actions[]`, per-form availability and ticket `actions`.
+2. Server projections: implement primary-device resolution, online state, per-form availability, server-side next actions and requester ticket action capabilities. Keep ownership checks central in `RequesterIdentityResolver`.
+3. Workflow enforcement: block requester messages/attachments and close/feedback/reopen handlers by backend capability, with safe `error_code` responses. Canonicalize `waiting_on_user` across requester list/detail/timeline/tests.
+4. Request creation UX: replace first-offering selection with problem-text recommendation plus user-visible category/form review and override before preview/create. Persist selected service/offering/template consistently into preview/create payloads.
+5. Dynamic-form contract: remove requester-visible `file` support until draft upload exists; add shared value validation used by preview and create; harden option/condition validation.
+6. Device-link/dashboard/localization/UI cleanup: separate `/app/requester/devices/link`, handle owner-change intent, update dashboard to server `next_actions[]`, complete `Кабинет пользователя`/`обращение` copy and remove nested `main` landmarks.
+7. Release evidence: deploy to `https://192.168.100.17:9443` only after targeted tests pass, then collect browser evidence for category selection, multi-device primary resolution, online/unknown display, no-device availability, waiting-on-user CTA, terminal-ticket composer hidden, device-link route and ticket-code URL regression.
+
+Acceptance criteria:
+
+- Request creation cannot submit a catalog service/offering/template chosen only by array order; recommendation source and selected override are visible to the user.
+- Server bootstrap owns primary device, online state, per-form availability and ordered next actions; frontend treats server projection as authoritative.
+- Ticket detail/list actions are server-projected and server-enforced; terminal/closed/canceled tickets reject requester messages and attachments.
+- `waiting_on_user` is the canonical value across server projection, frontend filters/CTA and tests; aliases are normalization-only.
+- Dynamic form values are type-validated before both preview and create; hidden fields are excluded; null `visible_when.equals` is meaningful; condition cycles and duplicate/empty option values are rejected.
+- `/app/requester/devices/link` is a real wizard route; `active` binding/registration status is treated as connected; direct pairing load is idempotent per ID; owner-change CTA lands on a supported flow.
+- Requester-visible copy uses `Кабинет пользователя` and `обращение`; no requester-visible `заявка`, English `preview`, raw backend message, raw internal UUID URL or duplicate main landmark remains.
+
+Planned verification:
+
+- `python scripts/verify_workspace.py`
+- `python scripts/test_web_first_registration_localization.py`
+- `pnpm --dir webapp exec vitest run src/features/requester src/pages/requester src/features/request-template-studio src/components/ui-page --reporter=dot`
+- targeted requester browser E2E covering catalog selection, dashboard next actions, ticket capabilities and device-link route
+- targeted server pytest for requester bootstrap/profile/ticket detail/message/close/feedback/reopen/create-preview/create contracts
+- `pnpm --dir webapp run build`
+- deploy quick gate: `python scripts/release_server_to_remote.py --allow-local-dirty --gate quick --leave-running --smoke-insecure-tls`
+- live browser evidence on `https://192.168.100.17:9443` with console/network capture and DOM/URL assertions
+
+Open decisions for implementation:
+
+- Recommendation engine scope: start with deterministic server-side catalog/form recommendation from problem text and catalog metadata; use AI only behind an explicit later feature flag.
+- Online threshold: define the freshness window in server config/docs and test `true`, `false`, and `null` cases.
+- Legacy UUID resolver: keep during this checkpoint for compatibility only if tests prove UI never emits raw UUID; otherwise remove after migration notes are updated.
+
 ### Phase N - Cleanup and final gate, 2026-06-19
 
 - [x] Deleted the old monolithic requester implementation and test file: `webapp/src/pages/requester/index.tsx` and `webapp/src/pages/requester/index.test.tsx`.
