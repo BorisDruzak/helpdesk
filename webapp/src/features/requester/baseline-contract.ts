@@ -21,7 +21,6 @@ export const REQUESTER_REQUEST_FIELD_TYPES = [
   "number",
   "date",
   "datetime",
-  "file",
   "user_picker",
   "department_picker",
   "location_picker",

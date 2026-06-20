@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { Link, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequesterProfilePage } from "./profile-page";
@@ -20,21 +19,27 @@ function renderProfilePage(initialEntry = "/app/requester/profile") {
     },
   });
 
-  function Wrapper({ children }: { children: ReactNode }) {
-    return (
-      <MemoryRouter initialEntries={[initialEntry]}>
-        <QueryClientProvider client={queryClient}>
-          <Routes>
-            <Route path="/app/requester/profile" element={children} />
-            <Route path="/app/requester/profile/setup" element={children} />
-            <Route path="/app/requester" element={<p>Главная заявителя</p>} />
-          </Routes>
-        </QueryClientProvider>
-      </MemoryRouter>
-    );
-  }
+  const page = (
+    <>
+      <Link to="/app/requester/devices">Устройства</Link>
+      <RequesterProfilePage />
+    </>
+  );
+  const router = createMemoryRouter(
+    [
+      { path: "/app/requester/profile", element: page },
+      { path: "/app/requester/profile/setup", element: page },
+      { path: "/app/requester", element: <p>Главная заявителя</p> },
+      { path: "/app/requester/devices", element: <p>Страница устройств</p> },
+    ],
+    { initialEntries: [initialEntry] },
+  );
 
-  return render(<RequesterProfilePage />, { wrapper: Wrapper });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
 }
 
 afterEach(() => {
@@ -100,6 +105,19 @@ describe("RequesterProfilePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Отменить" }));
 
     expect(confirmSpy).toHaveBeenCalledWith("Есть несохраненные изменения профиля. Отменить их?");
+    expect(screen.getByLabelText("Внутренний номер")).toHaveValue("9999");
+  });
+
+  it("blocks sidebar navigation while profile changes are unsaved", async () => {
+    installProfileMock({ complete: false });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    renderProfilePage("/app/requester/profile/setup");
+
+    fireEvent.change(await screen.findByLabelText("Внутренний номер"), { target: { value: "9999" } });
+    fireEvent.click(screen.getByRole("link", { name: "Устройства" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith("Есть несохраненные изменения профиля. Покинуть страницу?");
+    expect(screen.queryByText("Страница устройств")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Внутренний номер")).toHaveValue("9999");
   });
 

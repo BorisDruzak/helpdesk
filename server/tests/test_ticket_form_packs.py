@@ -1607,7 +1607,6 @@ def test_validate_form_submission_accepts_extended_field_types():
                         },
                         {"key": "owner", "label": "Владелец", "type": "user_picker", "required": False},
                         {"key": "contact_email", "label": "Email", "type": "email", "required": False},
-                        {"key": "attachment", "label": "Файл", "type": "file", "required": False},
                     ],
                 }
             ],
@@ -1623,7 +1622,6 @@ def test_validate_form_submission_accepts_extended_field_types():
             "symptoms": ["dns", "proxy"],
             "owner": "ivan.petrov",
             "contact_email": "ivan@example.test",
-            "attachment": "diagnostic.txt",
             "impact_scope": "single_user",
             "work_continuity": "workaround_available",
             "business_importance": "normal",
@@ -1634,6 +1632,27 @@ def test_validate_form_submission_accepts_extended_field_types():
     assert submission["submitted_values"]["target_url"] == "https://example.test"
     summary = {item["key"]: item["value"] for item in submission["summary_rows"]}
     assert summary["symptoms"] == "DNS, Прокси"
+
+
+def test_validate_form_pack_schema_rejects_file_field_without_draft_upload():
+    with pytest.raises(ValueError, match="unsupported type 'file'"):
+        validate_form_pack_schema(
+            {
+                "pack_key": "request_forms",
+                "version": "1.0.0",
+                "title": "Каталог обращений",
+                "forms": [
+                    {
+                        "key": "file_guard",
+                        "request_kind": "file_guard",
+                        "title": "Файловое поле",
+                        "fields": [
+                            {"key": "attachment", "label": "Файл", "type": "file", "required": False},
+                        ],
+                    }
+                ],
+            }
+        )
 
 
 def test_validate_form_submission_enforces_dynamic_field_constraints_server_side():

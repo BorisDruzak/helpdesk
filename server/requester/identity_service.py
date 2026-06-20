@@ -21,8 +21,10 @@ from app.db.models import (
 )
 from app.repos.registration_repo import RegistrationRepo, is_person_active
 from app.repos.registry_repo import RegistryRepo
+from consent.service import UserConsentService
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
+from tickets.requester_policy import annotate_requester_ticket_policy_state, requester_ticket_actions
 
 
 REQUESTER_PROFILE_REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
@@ -81,6 +83,7 @@ def _build_requester_next_actions(
     profile_completion: dict[str, Any],
     tickets: list[Ticket],
     devices: list[dict[str, Any]],
+    pending_consents: list[dict[str, Any]],
     ticket_create_allowed: bool,
 ) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
@@ -109,6 +112,48 @@ def _build_requester_next_actions(
                 "key": "review_ticket",
                 "label": "Ответить по обращению",
                 "href": _requester_ticket_route(requester_ticket),
+                "ticket_code": ticket_code,
+            }
+        )
+
+    if pending_consents:
+        consent = pending_consents[0]
+        consent_ticket_id = str(consent.get("ticket_id") or "").strip()
+        consent_ticket = next(
+            (
+                ticket
+                for ticket in tickets
+                if consent_ticket_id
+                and str(getattr(ticket, "ticket_id", "") or "") == consent_ticket_id
+                and _requester_ticket_route(ticket)
+            ),
+            None,
+        )
+        actions.append(
+            {
+                "key": "review_consents",
+                "label": "Проверить согласия",
+                "href": _requester_ticket_route(consent_ticket) if consent_ticket is not None else "/app/requester/tickets",
+                "ticket_code": str(getattr(consent_ticket, "ticket_code", "") or "").strip() if consent_ticket is not None else None,
+            }
+        )
+
+    confirmation_ticket = next(
+        (
+            ticket
+            for ticket in tickets
+            if requester_ticket_actions(ticket).get("can_confirm_solution")
+            and _requester_ticket_route(ticket)
+        ),
+        None,
+    )
+    if confirmation_ticket is not None:
+        ticket_code = str(getattr(confirmation_ticket, "ticket_code", "") or "").strip()
+        actions.append(
+            {
+                "key": "review_ticket",
+                "label": "Подтвердить решение",
+                "href": _requester_ticket_route(confirmation_ticket),
                 "ticket_code": ticket_code,
             }
         )
@@ -258,6 +303,18 @@ class RequesterIdentityResolver:
             "workplace_label": metadata.get("workplace_label"),
             "preferred_contact_method": metadata.get("preferred_contact_method"),
             "custom_fields": schema_service.profile_custom_fields(metadata, profile_schema),
+        }
+
+    def account_summary(self, *, actor_id: str, person: RegistryPerson | None) -> dict[str, Any]:
+        login = _clean_text(actor_id, max_length=240)
+        email = _clean_text(getattr(person, "email", None), max_length=240) if person is not None else ""
+        if not email and "@" in login:
+            email = login
+        return {
+            "login": login or None,
+            "display_name": getattr(person, "display_name", None) if person is not None else None,
+            "email": email or None,
+            "linked_profile": person is not None,
         }
 
     def serialize_profile_schema_for_requester(self, profile_schema: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -798,7 +855,9 @@ class RequesterIdentityResolver:
             .order_by(desc(Ticket.created_at))
             .limit(max(1, min(int(limit or 100), 300)))
         )
-        return list(result.scalars().all())
+        tickets = list(result.scalars().all())
+        await annotate_requester_ticket_policy_state(self.session, tickets)
+        return tickets
 
     async def get_ticket(self, *, actor_id: str, ticket_id: str) -> Ticket | None:
         ticket_ref = str(ticket_id or "").strip()
@@ -849,6 +908,10 @@ class RequesterIdentityResolver:
             profile_schema=profile_schema,
         )
         tickets = await self.list_tickets(actor_id=actor_id, limit=25)
+        pending_consents = await UserConsentService(self.session).list_for_requester(
+            requester_person_id=person.person_id if person else None,
+            statuses=["pending"],
+        )
         blocks = profile_completion.get("blocks") if isinstance(profile_completion.get("blocks"), dict) else {}
         ticket_create_allowed = not bool(blocks.get("ticket_create", not profile_completion["complete"]))
         ticket_preview_allowed = not bool(blocks.get("ticket_preview", not profile_completion["complete"]))
@@ -879,9 +942,10 @@ class RequesterIdentityResolver:
                 profile_completion=profile_completion,
                 tickets=tickets,
                 devices=devices,
+                pending_consents=pending_consents,
                 ticket_create_allowed=ticket_create_allowed,
             ),
-            "pending_consent_count": 0,
+            "pending_consent_count": len(pending_consents),
             "recent_tickets": [ticket_to_dict(ticket, visibility="requester") for ticket in tickets[:10]],
             "feature_flags": {
                 "requester_ticket_create": ticket_create_allowed,
@@ -907,7 +971,7 @@ class RequesterIdentityResolver:
         return {
             "profile": self.serialize_person(person, profile_schema=profile_schema),
             "requester_context": self.requester_context_preview(requester_context),
-            "identities": await self.list_person_identities(person_id),
+            "account_summary": self.account_summary(actor_id=actor_id, person=person),
             "devices": devices,
             "primary_device": primary_device,
             "primary_device_resolution": primary_device_resolution,

@@ -187,6 +187,27 @@ async def test_request_studio_preview_and_publish_use_confirmation_token(test_cl
     assert result["offering"]["lifecycle_status"] == "published"
     assert result["offering"]["request_template_key"] == f"studio_access_{suffix}"
 
+    requester_forms_resp = await test_client.get("/public_api/ticket_forms/current?pack_key=request_forms")
+    assert requester_forms_resp.status == 200, await requester_forms_resp.text()
+    requester_forms = await requester_forms_resp.json()
+    published_forms = {
+        form["key"]: form
+        for form in requester_forms["pack"]["forms"]
+    }
+    assert published_forms[f"studio_access_{suffix}"]["request_template_key"] == f"studio_access_{suffix}"
+    assert published_forms[f"studio_access_{suffix}"]["fields"][0]["key"] == "summary"
+
+    requester_catalog_resp = await test_client.get("/api/service-catalog/current")
+    assert requester_catalog_resp.status == 200, await requester_catalog_resp.text()
+    requester_catalog = await requester_catalog_resp.json()
+    requester_offerings = {
+        offering["request_template_key"]: offering
+        for service in requester_catalog["services"]
+        for offering in service.get("offerings", [])
+    }
+    assert requester_offerings[f"studio_access_{suffix}"]["full_code"] == f"studio_service_{suffix}.grant_access"
+    assert requester_offerings[f"studio_access_{suffix}"]["title"] == "Доступ к системе"
+
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     async with session_maker() as session:
         template = await session.scalar(select(RequestTemplate).where(RequestTemplate.template_code == f"studio_access_{suffix}"))

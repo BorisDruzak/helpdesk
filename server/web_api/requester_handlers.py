@@ -8,7 +8,7 @@ from aiohttp import web
 from loguru import logger
 from sqlalchemy import func, or_, select
 
-from app.api.serializers import requester_ticket_actions, ticket_to_dict
+from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson
 from app.repos import ArtifactsRepo
@@ -41,6 +41,7 @@ from tickets.form_catalog import DEFAULT_TICKET_FORM_PACK_KEY, build_form_custom
 from tickets.helpdesk_policy_runtime import apply_effective_registry_policies
 from tickets.priority_policy import compute_priority_from_policy
 from tickets.public_access import verify_public_access_code
+from tickets.requester_policy import requester_ticket_actions
 from tickets.request_template_submission import resolve_create_form_submission
 from tickets.service_catalog_preview import ServiceCatalogPreviewError, build_requester_service_catalog_preview
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
@@ -1175,6 +1176,13 @@ async def handle_web_requester_ticket_close(request: web.Request) -> web.Respons
                 status=400,
                 error_code="INVALID_TICKET_STATUS",
             )
+        actions = requester_ticket_actions(ticket)
+        if not actions["can_confirm_solution"]:
+            return _error(
+                "requester confirmation is not available for this ticket",
+                status=409,
+                error_code="REQUESTER_TICKET_ACTION_NOT_AVAILABLE",
+            )
 
         from_status = str(getattr(ticket, "status", "") or "")
         workflow = TicketWorkflowService(session, repo)
@@ -1239,6 +1247,13 @@ async def handle_web_requester_ticket_feedback(request: web.Request) -> web.Resp
         ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
+        actions = requester_ticket_actions(ticket)
+        if not actions["can_rate_solution"]:
+            return _error(
+                "requester feedback is not available for this ticket",
+                status=409,
+                error_code="REQUESTER_TICKET_ACTION_NOT_AVAILABLE",
+            )
 
         metadata = dict(data.get("metadata")) if isinstance(data.get("metadata"), dict) else {}
         request_metadata_present = bool(metadata)
@@ -1295,6 +1310,13 @@ async def handle_web_requester_ticket_reopen(request: web.Request) -> web.Respon
         ticket = await resolver.get_ticket(actor_id=auth_context.actor_id, ticket_id=ticket_id)
         if ticket is None:
             return _error("ticket not found", status=404, error_code="NOT_FOUND")
+        actions = requester_ticket_actions(ticket)
+        if not actions["can_reopen"]:
+            return _error(
+                "requester reopen is not available for this ticket",
+                status=409,
+                error_code="REQUESTER_TICKET_ACTION_NOT_AVAILABLE",
+            )
 
         from_status = str(getattr(ticket, "status", "") or "")
         try:

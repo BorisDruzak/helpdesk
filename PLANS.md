@@ -12,6 +12,59 @@ This file replaces the previous active `PLANS.md`. Completed backend architectur
 
 ---
 
+## Current checkpoint - requester correctness audit, 2026-06-20
+
+Source: user P0/P1/P2/P3 defect list from 2026-06-20, rechecked against branch `codex/helpdesk-process-model` after the previous requester checkpoint.
+
+Status: implemented locally; release-candidate gate, deploy and live validation remain before final closure.
+
+### P0 - functional correctness
+
+| ID | Defect | Required outcome | Status |
+| --- | --- | --- | --- |
+| RCA-01 | Weak requester problem text can still auto-select a recommended form/category. | No fallback to the first or low-confidence form. Typed intents may preselect an exact form; weak catalog matches only highlight recommendations and require explicit user choice. | fixed; covered by requester unit tests and Playwright create flow |
+| RCA-02 | `devices[0]` fallback could select an arbitrary primary device. | Use only server-owned `primary_device` when `primary_device_resolution.status` is available/resolved; missing/ambiguous states show resolution details and submit no arbitrary device. | fixed; regression coverage retained |
+| RCA-03 | On-behalf policy can make a self-mode no-device form available. | Compute self-mode availability and on-behalf availability independently in UI and server preview/create policy. | fixed; UI/server policy coverage retained |
+| RCA-04 | Ticket detail refetch can be tied to attachment capability after mutations. | Close, feedback, reopen and message mutations always refetch detail/list/bootstrap when a detail route is active. | fixed; regression coverage retained |
+| RCA-05 | Requester ticket capabilities are mostly status-derived. | Move capability projection to a policy service and use the same result in DTOs and handlers; account for workflow/closure policy, feedback window, latest feedback and form restrictions. | fixed; `server/tickets/requester_policy.py` owns DTO and handler actions |
+| RCA-06 | Dynamic-form values must not rely on client validation. | Server rejects forged type/options/min/max/pattern/email/url/conditional-visibility payloads. | fixed; server validation tests retained |
+
+### P1 - server-owned context and UX
+
+| ID | Defect | Required outcome | Status |
+| --- | --- | --- | --- |
+| RCA-07 | `next_actions` omits pending consents and frontend restores priority locally. | Server returns one ordered list: profile, requester answer, consent, solution confirmation, device, new request; frontend uses the first server action as source of truth with only safe legacy fallback. | fixed; server order includes pending consents |
+| RCA-08 | Home header duplicates the create CTA when `next_actions[0]` is create request. | Hide the header create action when the primary next action is already `continue_requests`. | fixed |
+| RCA-09 | Shell terminology can drift from "Кабинет пользователя". | Navigation domains, workspace selector and sidebar use "Кабинет пользователя"; no requester shell copy exposes Email/Placeholder/Raw JSON. | verified; requester shell grep and router/navigation tests clean |
+| RCA-10 | Requester errors are mapped only by HTTP status. | Error copy depends on `error_code` and operation domain; 404/409 messages are contextual instead of always ticket-specific. | fixed |
+| RCA-11 | Requester profile DTO exposes technical identities. | `/api/web/requester/profile` returns safe `account_summary`; technical `identities` remain admin-only. | fixed |
+| RCA-12 | Unsaved profile changes are protected only for tab close/cancel. | React Router SPA navigation is blocked while the profile form is dirty. | fixed |
+| RCA-13 | Unknown `/app/requester/*` routes use the generic app fallback. | Add a requester-safe not-found route inside the requester workspace. | fixed |
+
+### P2 - shared UI and contract cleanup
+
+| ID | Defect | Required outcome | Status |
+| --- | --- | --- | --- |
+| RCA-14 | `new-request-page.tsx`, `tickets-page.tsx`, `devices-page.tsx`, `profile-page.tsx` still mix orchestration, form logic and visual blocks. | Extract large remaining pages into focused requester components without changing contracts. | mitigated; form/action orchestration moved to shared requester controls, deeper file splitting remains non-functional hardening |
+| RCA-15 | Requester pages still contain raw form controls and repeated Tailwind classes. | Complete shared controls: `FieldShell`, `Textarea`, `SelectField`, `FormActions`, `Stepper`, `InlineAlert`, `StickyActionBar`. | fixed; raw requester controls reduced to native checkbox/radio/file picker |
+| RCA-16 | Requester dynamic-form runtime still contains a `file` branch while file fields are not publishable. | Remove requester runtime support branch for pre-create `file` fields until draft uploads exist; unsupported `file` remains rejected by schema validation. | fixed |
+
+### P3 - proof of completion
+
+| ID | Defect | Required outcome | Status |
+| --- | --- | --- | --- |
+| RCA-17 | Playwright E2E is still too small for the stated requester matrix. | Expand deterministic requester E2E into separate scenarios for profile, device, form, on-behalf, consent, rating, reopen, archived, ambiguous, responsive and keyboard flows. | expanded; requester Playwright spec now has 13 route/create/mutation/policy scenarios |
+| RCA-18 | Builder -> publish -> requester coverage must include request and profile constructors. | Add real builder-to-requester tests for request-form constructor and profile-schema constructor. | fixed; Request Studio publish now proves requester form pack/catalog visibility, profile schema publish proves requester profile enforcement |
+| RCA-19 | Final signoff needs a frozen release-candidate gate. | After P0/P1 fixes, run full frontend/server/E2E gate, deploy that exact commit and repeat live requester validation. | pending release-candidate gate, deploy and live validation |
+
+Implementation order for this checkpoint:
+
+1. Add/adjust regression tests for RCA-01, RCA-05, RCA-07, RCA-08, RCA-10, RCA-11, RCA-12, RCA-13 and RCA-16.
+2. Fix the P0/P1 functional and contract defects in the smallest focused diff.
+3. Run targeted frontend/server tests, then `python scripts/verify_workspace.py`.
+4. Update docs/CODEMAP if route/API contracts changed.
+5. Commit, push, deploy through project scripts and collect live browser evidence for the frozen commit before marking RCA-19 closed.
+
 ## Current checkpoint - remaining requester defects, 2026-06-20
 
 Source: `C:\Users\admin-2\Downloads\requester_remaining_work.md`, checked against branch `codex/helpdesk-process-model` at `53462d7684e32251a17d23dae85cb38a0a06a8fb`.

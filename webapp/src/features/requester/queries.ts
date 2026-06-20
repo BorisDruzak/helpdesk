@@ -191,14 +191,14 @@ export function projectRequesterDashboard(
         label: "Заполнить профиль",
         href: bootstrap?.profile_completion?.setup_path || "/app/requester/profile/setup",
       }
+      : serverNextAction
+        ? serverNextAction
       : pendingConsents.length
       ? {
           key: "review_consents" as const,
           label: "Проверить согласия",
           href: "/app/requester/tickets",
         }
-      : serverNextAction
-        ? serverNextAction
       : hasRequesterTicketAction
         ? {
             key: "review_ticket" as const,

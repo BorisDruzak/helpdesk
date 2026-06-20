@@ -9,6 +9,7 @@ import type {
   ServiceCatalogCurrent,
 } from "../types";
 import { requesterDeviceLabel, requesterSafeFieldLabel } from "../labels";
+import { FieldShell, Input, Select, Textarea } from "../ui/form-controls";
 
 export type DynamicFieldValue = string | number | boolean | string[] | null | undefined;
 export type DynamicFormValues = Record<string, DynamicFieldValue>;
@@ -69,6 +70,10 @@ const OPTION_TYPES = new Set<RequestFormField["type"]>([
   "device_picker",
   "service_picker",
 ]);
+
+function isSupportedDynamicRequestFieldType(type: unknown): type is RequestFormField["type"] {
+  return DYNAMIC_REQUEST_FIELD_TYPE_SET.has(String(type ?? ""));
+}
 
 export function isDynamicFieldVisible(field: RequestFormField, values: DynamicFormValues): boolean {
   const rule = field.visible_when as
@@ -315,15 +320,6 @@ export function validateDynamicFormSchema(
     if (!DYNAMIC_REQUEST_FIELD_TYPE_SET.has(fieldType)) {
       issues.push(issue("unsupported_field_type", `Тип поля ${fieldType || "unknown"} не поддерживается.`, path));
     }
-    if (field.type === "file") {
-      issues.push(
-        issue(
-          "requester_file_upload_disabled",
-          "Поле файла нельзя публиковать, пока загрузка вложений не включена в динамической форме.",
-          path,
-        ),
-      );
-    }
     if (field.visible_when?.field) {
       const dependencyKey = String(field.visible_when.field).trim();
       if (!fieldKeys.has(dependencyKey)) {
@@ -383,6 +379,9 @@ export function validateDynamicFormSchema(
 }
 
 export function normalizeDynamicFieldValue(field: RequestFormField, value: DynamicFieldValue): DynamicFieldValue {
+  if (!isSupportedDynamicRequestFieldType(field.type)) {
+    return null;
+  }
   if (field.type === "checkbox") {
     if (typeof value === "string") {
       return value === "true" || value === "1" || value.toLowerCase() === "yes";
@@ -402,9 +401,6 @@ export function normalizeDynamicFieldValue(field: RequestFormField, value: Dynam
     }
     const next = typeof value === "number" ? value : Number(String(value).replace(",", "."));
     return Number.isFinite(next) ? next : null;
-  }
-  if (field.type === "file") {
-    return null;
   }
   if (typeof value === "boolean" || Array.isArray(value)) {
     return "";
@@ -428,6 +424,10 @@ export function RequestFormFieldControl({
   userPickerAllowed?: boolean;
   value: DynamicFieldValue;
 }) {
+  if (!isSupportedDynamicRequestFieldType(field.type)) {
+    return null;
+  }
+
   if (field.type === "user_picker" && !userPickerAllowed) {
     return null;
   }
@@ -443,20 +443,17 @@ export function RequestFormFieldControl({
 
   if (field.type === "textarea") {
     return (
-      <label className="block text-sm font-semibold text-slate-700">
-        {label}
-        <textarea
+      <FieldShell error={error} helpText={field.help_text} label={safeLabel} required={field.required}>
+        <Textarea
           {...invalidProps}
           aria-label={safeLabel}
-          className="mt-1 min-h-24 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          className="mt-1 font-normal"
           onChange={(event) => onChange(event.currentTarget.value)}
           placeholder={field.placeholder ?? ""}
           ref={(element) => inputRef?.(element)}
           value={String(normalizedValue ?? "")}
         />
-        {helpText}
-        {errorText}
-      </label>
+      </FieldShell>
     );
   }
 
@@ -519,12 +516,11 @@ export function RequestFormFieldControl({
 
   if (isSelectLike(field)) {
     return (
-      <label className="block text-sm font-semibold text-slate-700">
-        {label}
-        <select
+      <FieldShell error={error} helpText={field.help_text} label={safeLabel} required={field.required}>
+        <Select
           {...invalidProps}
           aria-label={safeLabel}
-          className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          className="mt-1 w-full font-normal"
           onChange={(event) => onChange(event.currentTarget.value)}
           ref={(element) => inputRef?.(element)}
           value={String(normalizedValue ?? "")}
@@ -535,10 +531,8 @@ export function RequestFormFieldControl({
               {option.label || option.value}
             </option>
           ))}
-        </select>
-        {helpText}
-        {errorText}
-      </label>
+        </Select>
+      </FieldShell>
     );
   }
 
@@ -560,26 +554,19 @@ export function RequestFormFieldControl({
     );
   }
 
-  if (field.type === "file") {
-    return null;
-  }
-
   return (
-    <label className="block text-sm font-semibold text-slate-700">
-      {label}
-      <input
+    <FieldShell error={error} helpText={field.help_text} label={safeLabel} required={field.required}>
+      <Input
         {...invalidProps}
         aria-label={safeLabel}
-        className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+        className="mt-1 w-full font-normal"
         onChange={(event) => onChange(inputValueForField(field, event))}
         placeholder={field.placeholder ?? ""}
         ref={(element) => inputRef?.(element)}
         type={inputTypeForField(field)}
         value={String(normalizedValue ?? "")}
       />
-      {helpText}
-      {errorText}
-    </label>
+    </FieldShell>
   );
 }
 
@@ -624,13 +611,16 @@ function isSelectLike(field: RequestFormField): boolean {
 }
 
 function defaultValueForField(field: RequestFormField): DynamicFieldValue {
+  if (!isSupportedDynamicRequestFieldType(field.type)) {
+    return null;
+  }
   if (field.type === "checkbox") {
     return false;
   }
   if (field.type === "multi_select") {
     return [];
   }
-  if (field.type === "number" || field.type === "file") {
+  if (field.type === "number") {
     return null;
   }
   return "";

@@ -1,5 +1,10 @@
 import type { AuthenticatedRequesterTicket, RequesterPendingRegistrationClaim } from "./types";
 
+type RequesterErrorContext = {
+  domain?: "ticket" | "device" | "profile" | "consent" | "request" | string;
+  operation?: "message" | "close" | "feedback" | "reopen" | "preview" | "create" | "device_link" | "profile_save" | string;
+};
+
 type DeviceLike = {
   agent_version?: string | null;
   asset_name?: string | null;
@@ -9,7 +14,7 @@ type DeviceLike = {
   os?: string | null;
 };
 
-export function requesterErrorMessage(error: unknown, fallback: string): string {
+export function requesterErrorMessage(error: unknown, fallback: string, context: RequesterErrorContext = {}): string {
   const code = requesterErrorCode(error);
   if (code && REQUESTER_SAFE_ERROR_MESSAGES[code]) {
     return REQUESTER_SAFE_ERROR_MESSAGES[code];
@@ -22,9 +27,30 @@ export function requesterErrorMessage(error: unknown, fallback: string): string 
     return "Это действие недоступно для вашего аккаунта.";
   }
   if (status === 404) {
+    if (context.domain === "device") {
+      return "Устройство не найдено или недоступно.";
+    }
+    if (context.domain === "profile") {
+      return "Профиль не найден или недоступен.";
+    }
+    if (context.domain === "consent") {
+      return "Запрос согласия не найден или уже недоступен.";
+    }
     return "Обращение не найдено или недоступно.";
   }
   if (status === 409) {
+    if (context.operation === "feedback") {
+      return "Оценку уже нельзя сохранить для этого обращения.";
+    }
+    if (context.operation === "reopen") {
+      return "Обращение уже нельзя вернуть в работу.";
+    }
+    if (context.operation === "message") {
+      return "Сообщение уже нельзя отправить для этого обращения.";
+    }
+    if (context.operation === "close") {
+      return "Решение уже нельзя подтвердить для этого обращения.";
+    }
     return "Состояние обращения изменилось. Обновите страницу и попробуйте еще раз.";
   }
   if (status && status >= 500) {

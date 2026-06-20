@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { formatHumanIdentifier, formatRussianDateTime } from "../../components/ui-page";
 import { cn } from "../../shared/ui/cn";
 import type { RequesterConsent } from "./types";
+import { Button } from "./ui/form-controls";
 
 export type RequesterConsentDecision = "approved" | "denied";
 
@@ -256,26 +257,27 @@ export function RequesterConsentList({
                 </div>
 
                 <div className="flex shrink-0 flex-wrap gap-2 lg:justify-end">
-                  <button
+                  <Button
                     aria-label="Отклонить запрос согласия"
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="min-h-10"
                     disabled={busy}
+                    leadingIcon={<X aria-hidden="true" className="h-4 w-4" />}
                     onClick={() => void decide(consent, "denied")}
                     type="button"
+                    variant="outline"
                   >
-                    <X aria-hidden="true" className="h-4 w-4" />
                     Отклонить
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     aria-label="Разрешить запрос согласия"
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-panel bg-emerald-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                    className="min-h-10 bg-emerald-700 hover:bg-emerald-800"
                     disabled={busy}
+                    leadingIcon={<CheckCircle2 aria-hidden="true" className="h-4 w-4" />}
                     onClick={() => void decide(consent, "approved")}
                     type="button"
                   >
-                    <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
                     Разрешить
-                  </button>
+                  </Button>
                 </div>
               </div>
             </article>

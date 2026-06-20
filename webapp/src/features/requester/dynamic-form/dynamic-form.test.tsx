@@ -48,7 +48,8 @@ describe("requester dynamic form runtime", () => {
   });
 
   it("does not render legacy file fields in requester runtime", () => {
-    render(<FieldHarness field={{ key: "attachment", label: "Файл", type: "file" }} />);
+    const legacyFileField = { key: "attachment", label: "Файл", type: "file" } as unknown as RequestFormField;
+    render(<FieldHarness field={legacyFileField} />);
 
     expect(screen.queryByLabelText("Файл")).not.toBeInTheDocument();
   });
@@ -234,15 +235,24 @@ describe("requester dynamic form runtime", () => {
   });
 
   it("blocks unsupported requester publication and invalid conditions", () => {
+    const legacyFileForm = {
+      key: "file-form",
+      title: "File form",
+      fields: [{ key: "attachment", label: "Файл", type: "file", required: true }],
+    } as unknown as RequestFormDefinition;
+
     expect(
-      validateDynamicFormSchema({
-        key: "file-form",
-        title: "File form",
-        fields: [{ key: "attachment", label: "Файл", type: "file", required: true }],
-      }).issues,
+      validateDynamicFormSchema(legacyFileForm).issues,
     ).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ code: "requester_file_upload_disabled", path: "fields.attachment" }),
+        expect.objectContaining({ code: "unsupported_field_type", path: "fields.attachment" }),
+      ]),
+    );
+    expect(
+      validateDynamicFormSchema(legacyFileForm).issues,
+    ).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "requester_file_upload_disabled" }),
       ]),
     );
 

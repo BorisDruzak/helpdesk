@@ -16,6 +16,7 @@ import {
 } from "../../features/requester/api";
 import { RequesterConsentList } from "../../features/requester/consent-card";
 import { requesterErrorMessage, requesterSafeAttachmentName, requesterTicketNextActionLabel } from "../../features/requester/labels";
+import { Button, FieldShell, FormActions, InlineAlert, Input, Select, Textarea } from "../../features/requester/ui/form-controls";
 import {
   humanRequesterTicketCode,
   requesterInvalidations,
@@ -137,7 +138,7 @@ export function RequesterTicketsPage() {
       await refreshTicket();
       setNotice("Ответ отправлен");
     } catch (exc) {
-      setNotice(requesterErrorMessage(exc, "Не удалось отправить сообщение"));
+      setNotice(requesterErrorMessage(exc, "Не удалось отправить сообщение", { operation: "message" }));
     } finally {
       setMessageSending(false);
     }
@@ -156,7 +157,7 @@ export function RequesterTicketsPage() {
       await detailQuery.refetch();
       setNotice(decision === "approved" ? "Согласие подтверждено" : "Согласие отклонено");
     } catch (exc) {
-      setNotice(requesterErrorMessage(exc, "Не удалось сохранить решение"));
+      setNotice(requesterErrorMessage(exc, "Не удалось сохранить решение", { operation: "close" }));
     } finally {
       setActionSubmitting(false);
     }
@@ -173,7 +174,7 @@ export function RequesterTicketsPage() {
       await refreshTicket();
       setNotice("Решение подтверждено");
     } catch (exc) {
-      setNotice(requesterErrorMessage(exc, "Не удалось закрыть обращение"));
+      setNotice(requesterErrorMessage(exc, "Не удалось закрыть обращение", { operation: "close" }));
     } finally {
       setActionSubmitting(false);
     }
@@ -199,7 +200,7 @@ export function RequesterTicketsPage() {
       await refreshTicket();
       setNotice(result.message || "Оценка сохранена");
     } catch (exc) {
-      setNotice(requesterErrorMessage(exc, "Не удалось сохранить оценку"));
+      setNotice(requesterErrorMessage(exc, "Не удалось сохранить оценку", { operation: "feedback" }));
     } finally {
       setActionSubmitting(false);
     }
@@ -221,7 +222,7 @@ export function RequesterTicketsPage() {
       await refreshTicket();
       setNotice("Обращение возвращено в работу");
     } catch (exc) {
-      setNotice(requesterErrorMessage(exc, "Не удалось вернуть обращение в работу"));
+      setNotice(requesterErrorMessage(exc, "Не удалось вернуть обращение в работу", { operation: "reopen" }));
     } finally {
       setActionSubmitting(false);
     }
@@ -239,25 +240,26 @@ export function RequesterTicketsPage() {
             Создать
           </Link>
         </div>
-        <label className="block text-sm font-semibold text-slate-700">
-          Поиск по обращениям
-          <input
+        <FieldShell label="Поиск по обращениям">
+          <Input
             aria-label="Поиск по обращениям"
-            className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+            className="mt-1 w-full font-normal"
             onChange={(event) => setSearch(event.currentTarget.value)}
             value={search}
           />
-        </label>
+        </FieldShell>
         <div className="flex flex-wrap gap-2" role="group" aria-label="Фильтр обращений">
           {filters.map((item) => (
-            <button
-              className={`rounded-panel border px-3 py-1.5 text-sm font-semibold ${filter === item.key ? "border-brand-300 bg-brand-50 text-brand-800" : "border-slate-200 bg-white text-slate-600"}`}
+            <Button
+              className={filter === item.key ? "border-brand-300 bg-brand-50 text-brand-800" : undefined}
               key={item.key}
               onClick={() => setFilter(item.key)}
+              size="sm"
               type="button"
+              variant={filter === item.key ? "outline" : "ghost"}
             >
               {item.label}
-            </button>
+            </Button>
           ))}
         </div>
         <div className="overflow-hidden rounded-panel border border-slate-200 bg-white">
@@ -314,7 +316,7 @@ export function RequesterTicketsPage() {
                 <span>{formatRussianDateTime(selectedTicket.updated_at || selectedTicket.created_at, { emptyText: "Дата не указана" })}</span>
               </div>
             </article>
-            {notice ? <div aria-live="polite" className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" role="status">{notice}</div> : null}
+            {notice ? <InlineAlert aria-live="polite" role="status">{notice}</InlineAlert> : null}
             <RequesterConsentList consents={pendingConsents} disabled={actionSubmitting} onDecision={decideConsent} />
             <MessagesPanel messages={detailQuery.data?.messages ?? []} />
             <TimelinePanel events={detailQuery.data?.events ?? []} />
@@ -322,56 +324,53 @@ export function RequesterTicketsPage() {
               <section className="rounded-panel border border-slate-200 bg-white p-4">
                 <h3 className="text-lg font-semibold text-slate-950">Решение обращения</h3>
                 {canClose ? (
-                  <button className="mt-3 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300" disabled={actionSubmitting} onClick={closeTicket} type="button">
+                  <Button className="mt-3" disabled={actionSubmitting} onClick={closeTicket} type="button">
                     Подтвердить решение
-                  </button>
+                  </Button>
                 ) : null}
                 {canRate ? (
                   <div className="mt-4 grid gap-3">
-                    <label className="block text-sm font-semibold text-slate-700">
-                      Оценка обращения
-                      <input
+                    <FieldShell label="Оценка обращения">
+                      <Input
                         aria-label="Оценка обращения"
-                        className="mt-1 w-24 rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                        className="mt-1 w-24 font-normal"
                         max={5}
                         min={1}
                         onChange={(event) => setFeedbackRating(Number(event.currentTarget.value))}
                         type="number"
                         value={feedbackRating}
                       />
-                    </label>
+                    </FieldShell>
                     <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                       <input checked={feedbackProblemResolved} onChange={(event) => setFeedbackProblemResolved(event.currentTarget.checked)} type="checkbox" />
                       Проблема решена
                     </label>
                     {(feedbackRating <= 3 || !feedbackProblemResolved) ? (
-                      <label className="block text-sm font-semibold text-slate-700">
-                        Причина
-                        <select className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal" onChange={(event) => setFeedbackReason(event.currentTarget.value)} value={feedbackReason}>
+                      <FieldShell label="Причина">
+                        <Select className="mt-1 w-full font-normal" onChange={(event) => setFeedbackReason(event.currentTarget.value)} value={feedbackReason}>
                           <option value="not_resolved">Проблема не решена</option>
                           <option value="poor_quality">Низкое качество решения</option>
                           <option value="other">Другая причина</option>
-                        </select>
-                      </label>
+                        </Select>
+                      </FieldShell>
                     ) : null}
-                    <label className="block text-sm font-semibold text-slate-700">
-                      Комментарий
-                      <textarea className="mt-1 min-h-20 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal" onChange={(event) => setFeedbackComment(event.currentTarget.value)} value={feedbackComment} />
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      <button className="rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60" disabled={actionSubmitting} onClick={submitFeedback} type="button">
+                    <FieldShell label="Комментарий">
+                      <Textarea className="mt-1 min-h-20 font-normal" onChange={(event) => setFeedbackComment(event.currentTarget.value)} value={feedbackComment} />
+                    </FieldShell>
+                    <FormActions>
+                      <Button disabled={actionSubmitting} onClick={submitFeedback} type="button" variant="outline">
                         Отправить оценку
-                      </button>
+                      </Button>
                       {canReopen ? (
-                        <button className="rounded-panel border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 disabled:opacity-60" disabled={actionSubmitting} onClick={reopenTicket} type="button">
+                        <Button className="border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100" disabled={actionSubmitting} onClick={reopenTicket} type="button" variant="outline">
                           Вернуть в работу
-                        </button>
+                        </Button>
                       ) : null}
-                    </div>
+                    </FormActions>
                     {canReopen ? (
-                      <textarea
+                      <Textarea
                         aria-label="Комментарий для возврата в работу"
-                        className="min-h-20 w-full rounded-panel border border-slate-200 px-3 py-2 text-sm"
+                        className="min-h-20 text-sm"
                         onChange={(event) => setReopenComment(event.currentTarget.value)}
                         placeholder="Что осталось не решено"
                         value={reopenComment}
@@ -384,9 +383,9 @@ export function RequesterTicketsPage() {
             {canSendMessage ? (
               <section aria-labelledby="requester-reply-title" className="sticky bottom-4 rounded-panel border border-slate-200 bg-white p-4 shadow-lg">
                 <h3 className="text-lg font-semibold text-slate-950" id="requester-reply-title">Ответить</h3>
-                <textarea
+                <Textarea
                   aria-label="Ответ заявителя"
-                  className="mt-3 min-h-28 w-full rounded-panel border border-slate-200 px-3 py-2 text-sm"
+                  className="mt-3 min-h-28 text-sm"
                   onChange={(event) => setMessageText(event.currentTarget.value)}
                   value={messageText}
                 />
@@ -400,21 +399,19 @@ export function RequesterTicketsPage() {
                     ))}
                   </div>
                 ) : null}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button className="inline-flex items-center gap-2 rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60" disabled={!canAttachFiles || attachmentUploading || messageSending} onClick={() => attachmentInputRef.current?.click()} type="button">
-                    <Paperclip className="h-4 w-4" />
+                <FormActions className="mt-3">
+                  <Button disabled={!canAttachFiles || attachmentUploading || messageSending} leadingIcon={<Paperclip className="h-4 w-4" />} onClick={() => attachmentInputRef.current?.click()} type="button" variant="outline">
                     {attachmentUploading ? "Загружаем..." : "Вложить файл"}
-                  </button>
-                  <button
-                    className="inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
+                  </Button>
+                  <Button
                     disabled={messageSending || attachmentUploading || (!messageText.trim() && !pendingAttachments.length)}
+                    leadingIcon={<Send className="h-4 w-4" />}
                     onClick={handleSendMessage}
                     type="button"
                   >
-                    <Send className="h-4 w-4" />
                     {messageSending ? "Отправляем..." : "Отправить"}
-                  </button>
-                </div>
+                  </Button>
+                </FormActions>
               </section>
             ) : null}
           </div>

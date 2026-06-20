@@ -152,6 +152,9 @@ Response on success is `201` with `user_login`, `actor_role=user`, `next_path=/a
 - `setup_path`: `/app/requester/profile/setup`.
 - `required_fields` and `missing_fields` with requester-facing Russian labels.
 - `blocks`: booleans for normal ticket create/preview and requester knowledge actions while the profile is incomplete and the policy requires completion. Device-link confirmation is a separate lifecycle step and is not blocked by requester profile completion by default.
+- `next_actions`: the server-owned ordered action list. Order is profile setup, requester answer, pending consent, solution confirmation, device linking, then new request. React must not rebuild this priority locally except for backward-compatible fallback when the field is absent.
+
+`GET /api/web/requester/profile` returns requester-safe profile data plus `account_summary` (`login`, display name, email and linked-profile flag). It must not expose identity provider names, raw identifiers, `verified`, identity ids, source fields or identity metadata; those remain admin Registry API data.
 
 `PUT /api/web/requester/profile` is the authenticated requester profile update endpoint. It writes to `RegistryPerson`, creates or refreshes the verified `ui_login` `RegistryPersonIdentity`, and accepts only the controlled editable fields: `full_name`, `department_id`, `location_id`, `phone`, `internal_extension`, `position`, `workplace_label`, `preferred_contact_method`, `custom_fields`, plus the caller-owned `person_id` when editing an existing profile.
 
@@ -160,6 +163,10 @@ Department and location values must come from registry picker options. Invalid o
 Normal requester ticket preview/create returns `403 REQUESTER_PROFILE_INCOMPLETE` while the profile is incomplete and `profile_completion.blocks.ticket_*` is true. The React requester workspace follows `blocks`, not only `complete`, so a temporary rollout override can leave missing-field guidance visible without stranding users. After a successful profile save it returns to `/app/requester`.
 
 The built-in `request_forms` fallback exposes only setup assistance forms when the requester profile is incomplete or no agent binding exists: `profile_completion_help` and `agent_binding_help`. Both opt into `available_without_completed_profile`, `available_without_agent_binding`, `requires_manual_triage` and `contact_required`; normal request forms stay hidden and remain rejected by the requester create/preview APIs until the relevant gates are complete.
+
+Requester dynamic request forms do not support pre-create `file` fields until draft upload exists. The request-form schema rejects `type=file`; post-create attachments remain the ticket chat attachment flow.
+
+`/public_api/ticket_forms/current?pack_key=request_forms` is the requester-facing form contract. It returns the preferred legacy request-form pack plus active standalone Helpdesk Model Registry templates published by Request Studio, projected through the same requester-safe form runtime used by create/preview submission.
 
 ## R4 Device Linking Contract
 

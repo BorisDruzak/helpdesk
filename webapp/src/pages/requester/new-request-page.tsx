@@ -30,6 +30,7 @@ import {
   type DynamicFormValues,
 } from "../../features/requester/dynamic-form";
 import { requesterDeviceLabel, requesterErrorMessage } from "../../features/requester/labels";
+import { Button, FieldShell, FormActions, InlineAlert, Input, Select, Stepper, Textarea } from "../../features/requester/ui/form-controls";
 import type {
   KnowledgeAttempt,
   KnowledgeSuggestResult,
@@ -127,6 +128,7 @@ export function RequesterNewRequestPage() {
     () => resolveRecommendedCategoryKey(categoryOptions, recommendedOffering, requestIntent),
     [categoryOptions, recommendedOffering, requestIntent],
   );
+  const autoSelectCategoryKey = requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : null;
   const selectedCategory = useMemo(
     () => categoryOptions.find((option) => option.key === selectedCategoryKey) ?? null,
     [categoryOptions, selectedCategoryKey],
@@ -199,9 +201,9 @@ export function RequesterNewRequestPage() {
       if (current && categoryOptions.some((option) => option.key === current)) {
         return current;
       }
-      return recommendedCategoryKey ?? "";
+      return autoSelectCategoryKey ?? "";
     });
-  }, [categoryOptions, recommendedCategoryKey]);
+  }, [autoSelectCategoryKey, categoryOptions]);
 
   useEffect(() => {
     setFieldValues((current) => {
@@ -291,7 +293,7 @@ export function RequesterNewRequestPage() {
       });
       setOnBehalfPeople(result.people ?? []);
     } catch (exc) {
-      setError(requesterErrorMessage(exc, "Не удалось найти сотрудника"));
+      setError(requesterErrorMessage(exc, "Не удалось найти сотрудника", { domain: "profile" }));
     }
   }
 
@@ -306,7 +308,7 @@ export function RequesterNewRequestPage() {
       setPreviewResult(result);
     } catch (exc) {
       setPreviewResult(null);
-      setError(requesterErrorMessage(exc, "Не удалось проверить обращение"));
+      setError(requesterErrorMessage(exc, "Не удалось проверить обращение", { operation: "preview" }));
     } finally {
       setPreviewSubmitting(false);
     }
@@ -351,7 +353,7 @@ export function RequesterNewRequestPage() {
       }
       navigate(`/app/requester/tickets/${encodeURIComponent(ticketRouteParam)}`);
     } catch (exc) {
-      setError(requesterErrorMessage(exc, "Не удалось создать обращение"));
+      setError(requesterErrorMessage(exc, "Не удалось создать обращение", { operation: "create" }));
     } finally {
       setSubmitting(false);
     }
@@ -417,27 +419,26 @@ export function RequesterNewRequestPage() {
           <h1 className="mt-1 text-2xl font-semibold text-slate-950">{stepTitle(step)}</h1>
         </div>
         <StepRail step={step} />
-        {error ? <div aria-live="assertive" className="rounded-panel border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">{error}</div> : null}
+        {error ? <InlineAlert aria-live="assertive" role="alert" tone="danger">{error}</InlineAlert> : null}
         {step === "problem" ? (
           <section className="rounded-panel border border-slate-200 bg-white p-4">
-            <label className="block text-sm font-semibold text-slate-800">
-              Что случилось или что нужно?
-              <textarea
+            <FieldShell label="Что случилось или что нужно?">
+              <Textarea
                 aria-label="Что случилось или что нужно?"
-                className="mt-2 min-h-36 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+                className="mt-2 min-h-36 font-normal"
                 onChange={(event) => setProblem(event.currentTarget.value)}
                 value={problem}
               />
-            </label>
-            <button
-              className="mt-4 inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
+            </FieldShell>
+            <Button
+              className="mt-4"
               disabled={!problem.trim() || knowledgeLoading}
+              leadingIcon={<Search className="h-4 w-4" />}
               onClick={goToQuickHelp}
               type="button"
             >
-              <Search className="h-4 w-4" />
               Продолжить
-            </button>
+            </Button>
           </section>
         ) : null}
         {step === "quick_help" ? (
@@ -452,19 +453,18 @@ export function RequesterNewRequestPage() {
                   <article className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2" key={item.item_id}>
                     <p className="font-semibold text-slate-950">{item.title}</p>
                     {item.summary ? <p className="mt-1 text-sm text-slate-600">{item.summary}</p> : null}
-                    <button className="mt-2 rounded-panel border border-slate-300 bg-white px-3 py-1 text-xs font-semibold" onClick={() => markKnowledge(item, "not_helpful")} type="button">
+                    <Button className="mt-2" onClick={() => markKnowledge(item, "not_helpful")} size="sm" type="button" variant="outline">
                       Не помогло
-                    </button>
+                    </Button>
                   </article>
                 ))
               ) : (
                 <p className="text-sm text-slate-600">Подходящих подсказок пока нет.</p>
               )}
             </div>
-            <button className="mt-4 inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white" onClick={() => setStep("details")} type="button">
-              <ArrowRight className="h-4 w-4" />
+            <Button className="mt-4" leadingIcon={<ArrowRight className="h-4 w-4" />} onClick={() => setStep("details")} type="button">
               Продолжить оформление
-            </button>
+            </Button>
           </section>
         ) : null}
         {step === "details" ? (
@@ -483,9 +483,9 @@ export function RequesterNewRequestPage() {
             ) : null}
             {selectedForm ? <h2 className="mt-4 text-lg font-semibold text-slate-950">{selectedForm.title}</h2> : null}
             {requiresOnBehalfForAvailability ? (
-              <p className="mt-3 rounded-panel border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <InlineAlert className="mt-3" tone="warning">
                 Для обращения за себя нужно основное устройство.
-              </p>
+              </InlineAlert>
             ) : null}
             {selectedForm && onBehalfPolicy?.allowed ? (
               <OnBehalfPanel
@@ -533,15 +533,15 @@ export function RequesterNewRequestPage() {
                   `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`}
               </p>
             ) : null}
-            <button
-              className="mt-4 inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300"
+            <Button
+              className="mt-4"
               disabled={!problem.trim() || !selectedForm}
+              leadingIcon={<CheckCircle2 className="h-4 w-4" />}
               onClick={goToReview}
               type="button"
             >
-              <CheckCircle2 className="h-4 w-4" />
               К проверке
-            </button>
+            </Button>
           </section>
         ) : null}
         {step === "review" ? (
@@ -560,15 +560,14 @@ export function RequesterNewRequestPage() {
                 {(previewResult.blockers ?? []).map((blocker) => <p className="text-rose-700" key={blocker}>{blocker}</p>)}
               </div>
             ) : null}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button className="rounded-panel border border-slate-300 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-60" disabled={previewSubmitting} onClick={runPreview} type="button">
+            <FormActions className="mt-4">
+              <Button disabled={previewSubmitting} onClick={runPreview} type="button" variant="outline">
                 {previewSubmitting ? "Проверяем..." : "Проверить обращение"}
-              </button>
-              <button className="inline-flex items-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300" disabled={!canCreate} onClick={createTicket} type="button">
-                <Send className="h-4 w-4" />
+              </Button>
+              <Button disabled={!canCreate} leadingIcon={<Send className="h-4 w-4" />} onClick={createTicket} type="button">
                 {submitting ? "Создаем..." : "Создать обращение"}
-              </button>
-            </div>
+              </Button>
+            </FormActions>
           </section>
         ) : null}
       </section>
@@ -593,20 +592,16 @@ export function RequesterNewRequestPage() {
 }
 
 function StepRail({ step }: { step: WizardStep }) {
-  const items: Array<{ key: WizardStep; label: string }> = [
-    { key: "problem", label: "Описание" },
-    { key: "quick_help", label: "Подсказки" },
-    { key: "details", label: "Детали" },
-    { key: "review", label: "Проверка" },
-  ];
   return (
-    <div className="grid gap-2 sm:grid-cols-4">
-      {items.map((item) => (
-        <div className={`rounded-panel border px-3 py-2 text-sm ${item.key === step ? "border-brand-300 bg-brand-50 text-brand-800" : "border-slate-200 bg-white text-slate-600"}`} key={item.key}>
-          {item.label}
-        </div>
-      ))}
-    </div>
+    <Stepper
+      current={step}
+      steps={[
+        { id: "problem", label: "Описание" },
+        { id: "quick_help", label: "Подсказки" },
+        { id: "details", label: "Детали" },
+        { id: "review", label: "Проверка" },
+      ]}
+    />
   );
 }
 
@@ -623,11 +618,10 @@ function CategorySelector({
 }) {
   return (
     <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-3">
-      <label className="block text-sm font-semibold text-slate-800">
-        Выберите категорию обращения
-        <select
+      <FieldShell label="Выберите категорию обращения">
+        <Select
           aria-label="Категория обращения"
-          className="mt-2 w-full rounded-panel border border-slate-200 bg-white px-3 py-2 font-normal"
+          className="mt-2 w-full bg-white font-normal"
           onChange={(event) => onChange(event.currentTarget.value)}
           value={selectedKey}
         >
@@ -638,8 +632,8 @@ function CategorySelector({
               {option.key === recommendedKey ? " (подходит по описанию)" : ""}
             </option>
           ))}
-        </select>
-      </label>
+        </Select>
+      </FieldShell>
       {selectedKey ? (
         <p className="mt-2 text-xs text-slate-500">Вы можете изменить категорию перед проверкой и отправкой.</p>
       ) : (
@@ -690,22 +684,20 @@ function OnBehalfPanel({
       {required ? <p className="mt-2 text-sm text-amber-700">Эта категория доступна только как обращение за другого сотрудника.</p> : null}
       {enabled ? (
         <div className="mt-3 grid gap-3">
-          <label className="block text-sm font-semibold text-slate-800">
-            Найти сотрудника
-            <input className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal" onChange={(event) => onQueryChange(event.currentTarget.value)} value={query} />
-          </label>
-          <button className="w-fit rounded-panel border border-slate-300 bg-white px-3 py-1 text-sm font-semibold" onClick={onSearch} type="button">Найти</button>
+          <FieldShell label="Найти сотрудника">
+            <Input className="mt-1 w-full font-normal" onChange={(event) => onQueryChange(event.currentTarget.value)} value={query} />
+          </FieldShell>
+          <Button className="w-fit" onClick={onSearch} size="sm" type="button" variant="outline">Найти</Button>
           {people.map((person) => (
-            <button className="rounded-panel border border-slate-200 bg-white px-3 py-2 text-left text-sm" key={person.person_id} onClick={() => onSelect(person)} type="button">
+            <Button className="h-auto justify-start rounded-panel px-3 py-2 text-left text-sm" key={person.person_id} onClick={() => onSelect(person)} type="button" variant="outline">
               <span className="font-semibold">{person.display_name || person.full_name || person.email}</span>
               {selectedPerson?.person_id === person.person_id ? <span className="ml-2 text-brand-700">выбран</span> : null}
-            </button>
+            </Button>
           ))}
           {policy.reason_required ? (
-            <label className="block text-sm font-semibold text-slate-800">
-              Причина
-              <textarea className="mt-1 min-h-20 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal" onChange={(event) => onReasonChange(event.currentTarget.value)} value={reason} />
-            </label>
+            <FieldShell label="Причина">
+              <Textarea className="mt-1 min-h-20 font-normal" onChange={(event) => onReasonChange(event.currentTarget.value)} value={reason} />
+            </FieldShell>
           ) : null}
           {selectedPerson?.primary_agent?.status === "missing" || selectedPerson?.primary_agent?.status === "ambiguous" ? (
             <p className="text-sm text-amber-700">У выбранного сотрудника нет однозначного основного устройства. Диагностика может быть недоступна.</p>
@@ -763,15 +755,16 @@ function recommendOffering(
 }
 
 function searchableWords(value: string): string[] {
-  return Array.from(
-    new Set(
-      String(value || "")
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .map((word) => word.trim())
-        .filter((word) => word.length >= 4),
-    ),
-  );
+  const words = String(value || "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((word) => word.trim())
+    .filter((word) => word.length >= 4);
+  const variants = words.flatMap((word) => {
+    const stem = word.replace(/(ыми|ими|ого|ему|ому|ыми|ими|ая|яя|ое|ее|ой|ий|ый|ом|ем|ым|им|ую|юю|ах|ях|ам|ям|а|я|е|о|у|ы|и)$/u, "");
+    return stem.length >= 4 && stem !== word ? [word, stem] : [word];
+  });
+  return Array.from(new Set(variants));
 }
 
 function searchableText(values: Array<string | null | undefined>): string {

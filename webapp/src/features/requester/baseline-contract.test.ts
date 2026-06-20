@@ -45,7 +45,6 @@ describe("requester baseline contract", () => {
       "number",
       "date",
       "datetime",
-      "file",
       "user_picker",
       "department_picker",
       "location_picker",

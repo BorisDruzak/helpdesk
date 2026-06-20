@@ -86,6 +86,7 @@ export function RequesterHomePage() {
       ? bootstrap.primary_device
       : null;
   const nextActionTone = dashboard.nextAction.key === "complete_profile" || dashboard.nextAction.key === "review_consents" ? "warning" : "success";
+  const showHeaderCreateAction = dashboard.nextAction.key !== "continue_requests";
 
   async function decideConsent(consent: RequesterConsent, decision: "approved" | "denied") {
     setConsentNotice(null);
@@ -99,7 +100,7 @@ export function RequesterHomePage() {
       await consentsQuery.refetch();
       setConsentNotice(decision === "approved" ? "Согласие подтверждено" : "Согласие отклонено");
     } catch (exc) {
-      setConsentNotice(requesterErrorMessage(exc, "Не удалось сохранить решение"));
+      setConsentNotice(requesterErrorMessage(exc, "Не удалось сохранить решение", { domain: "consent" }));
     }
   }
 
@@ -107,12 +108,14 @@ export function RequesterHomePage() {
     <PageShell ariaLabelledBy="requester-home-title" as="div" className="bg-app">
       <PageHeader
         actions={
-          <PageActions>
-            <Link className={primaryLinkClasses} to="/app/requester/new">
-              <Plus className="h-4 w-4" />
-              Создать обращение
-            </Link>
-          </PageActions>
+          showHeaderCreateAction ? (
+            <PageActions>
+              <Link className={primaryLinkClasses} to="/app/requester/new">
+                <Plus className="h-4 w-4" />
+                Создать обращение
+              </Link>
+            </PageActions>
+          ) : null
         }
         description={`Здравствуйте, ${profileName}. Здесь собраны ближайшие действия, обращения и состояние рабочего места.`}
         eyebrow="Кабинет пользователя"

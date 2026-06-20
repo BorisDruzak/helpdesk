@@ -826,6 +826,17 @@ describe("appRoutes", () => {
     expect(await screen.findByRole("heading", { name: "Опишите проблему" })).toBeInTheDocument();
   });
 
+  it("renders a requester-safe not-found page for unknown requester routes", async () => {
+    const fetchMock = createRequesterFetchMock();
+    const { router } = renderApp(["/app/requester/unknown-section"], fetchMock as typeof fetch);
+
+    expect(await screen.findByRole("heading", { name: "Раздел не найден" })).toBeInTheDocument();
+    expect(screen.getAllByText("Кабинет пользователя").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Вернуться на главную" })).toHaveAttribute("href", "/app/requester");
+    expect(router.state.location.pathname).toBe("/app/requester/unknown-section");
+    expect(screen.queryByText("Requester workspace")).not.toBeInTheDocument();
+  });
+
   it("opens the dedicated requester devices route", async () => {
     const fetchMock = createRequesterFetchMock();
 

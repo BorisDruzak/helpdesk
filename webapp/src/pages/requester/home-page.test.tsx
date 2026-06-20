@@ -42,8 +42,10 @@ function installDashboardMock({
   primaryDeviceResolution = primaryDevice ? "available" : "missing",
   profileComplete = true,
   pendingConsents = 1,
+  nextActions,
 }: {
   devices?: Array<Record<string, unknown>>;
+  nextActions?: Array<{ key: string; label: string; href: string }>;
   primaryDevice?: Record<string, unknown> | null;
   primaryDeviceResolution?: "available" | "missing" | "ambiguous";
   profileComplete?: boolean;
@@ -87,6 +89,7 @@ function installDashboardMock({
           open_ticket_count: 1,
           tickets_requiring_user_action_count: pendingConsentCount ? 1 : 0,
           pending_consent_count: pendingConsentCount,
+          next_actions: nextActions,
           recent_tickets: [],
           feature_flags: { requester_ticket_create: profileComplete, requester_no_device_create: false },
         },
@@ -203,6 +206,18 @@ describe("RequesterHomePage", () => {
     expect(screen.getAllByText("Профиль нужно заполнить").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Устройство не привязано").length).toBeGreaterThan(0);
     expect(screen.queryByText("Сохранить профиль")).not.toBeInTheDocument();
+  });
+
+  it("hides the header create action when server next action is already create request", async () => {
+    installDashboardMock({
+      pendingConsents: 0,
+      nextActions: [{ key: "continue_requests", label: "Создать обращение", href: "/app/requester/new" }],
+    });
+
+    renderHomePage();
+
+    expect(await screen.findByRole("heading", { name: "Главная" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Создать обращение" })).toHaveLength(1);
   });
 
   it("does not display the first device as primary when server resolution is ambiguous", async () => {

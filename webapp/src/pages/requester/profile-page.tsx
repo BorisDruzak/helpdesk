@@ -1,7 +1,7 @@
 import { CheckCircle2, Pencil, Save, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useBlocker, useLocation } from "react-router-dom";
 
 import { updateRequesterProfile } from "../../features/requester/api";
 import {
@@ -26,6 +26,7 @@ import {
   type RequesterProfileValues,
 } from "../../features/requester/profile-runtime";
 import { requesterErrorMessage } from "../../features/requester/labels";
+import { Button, FormActions, InlineAlert, StickyActionBar } from "../../features/requester/ui/form-controls";
 
 type ProfileMode = "read" | "edit" | "setup";
 
@@ -145,6 +146,12 @@ export function RequesterProfilePage() {
   const isEditing = mode === "edit" || mode === "setup";
   const dirty = useMemo(() => JSON.stringify(values) !== JSON.stringify(savedValues), [savedValues, values]);
   const nextPath = safeNextPath(location.search);
+  const navigationBlocker = useBlocker(({ currentLocation, nextLocation }) => {
+    if (!dirty) {
+      return false;
+    }
+    return `${currentLocation.pathname}${currentLocation.search}` !== `${nextLocation.pathname}${nextLocation.search}`;
+  });
   const saveMutation = useMutation({
     mutationFn: async () => {
       return updateRequesterProfile(buildProfilePayload(values, profile, visibleEditableFields));
@@ -167,7 +174,7 @@ export function RequesterProfilePage() {
       await requesterInvalidations.afterProfileUpdate(queryClient);
     },
     onError: (error) => {
-      setLocalError(requesterErrorMessage(error, "Не удалось сохранить профиль"));
+      setLocalError(requesterErrorMessage(error, "Не удалось сохранить профиль", { domain: "profile", operation: "profile_save" }));
     },
   });
 
@@ -194,6 +201,17 @@ export function RequesterProfilePage() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
+
+  useEffect(() => {
+    if (navigationBlocker.state !== "blocked") {
+      return;
+    }
+    if (window.confirm("Есть несохраненные изменения профиля. Покинуть страницу?")) {
+      navigationBlocker.proceed();
+      return;
+    }
+    navigationBlocker.reset();
+  }, [navigationBlocker]);
 
   function cancelEdit() {
     if (dirty && !window.confirm("Есть несохраненные изменения профиля. Отменить их?")) {
@@ -236,7 +254,7 @@ export function RequesterProfilePage() {
   if (loadError) {
     return (
       <section className="rounded-panel border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
-        {requesterErrorMessage(loadError, "Не удалось загрузить профиль")}
+        {requesterErrorMessage(loadError, "Не удалось загрузить профиль", { domain: "profile" })}
       </section>
     );
   }
@@ -259,17 +277,17 @@ export function RequesterProfilePage() {
           </div>
           <div className="flex flex-wrap gap-2">
             {!isEditing ? (
-              <button
-                className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800"
+              <Button
+                leadingIcon={<Pencil className="h-4 w-4" />}
                 onClick={() => {
                   setNotice(null);
                   setMode("edit");
                 }}
                 type="button"
+                variant="outline"
               >
-                <Pencil className="h-4 w-4" />
                 Редактировать
-              </button>
+              </Button>
             ) : null}
             {notice && profileComplete ? (
               <Link
@@ -298,14 +316,14 @@ export function RequesterProfilePage() {
       ) : null}
 
       {notice ? (
-        <div aria-live="polite" className="rounded-panel border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">
+        <InlineAlert aria-live="polite" role="status" tone="success">
           {notice}
-        </div>
+        </InlineAlert>
       ) : null}
       {localError ? (
-        <div aria-live="assertive" className="rounded-panel border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
+        <InlineAlert aria-live="assertive" role="alert" tone="danger">
           {localError}
-        </div>
+        </InlineAlert>
       ) : null}
 
       {!isEditing ? (
@@ -369,29 +387,28 @@ export function RequesterProfilePage() {
               </div>
             </section>
           ))}
-          <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-panel border border-slate-200 bg-white/95 px-4 py-3 shadow-lg backdrop-blur">
+          <StickyActionBar className="bottom-4 justify-between rounded-panel shadow-lg">
             <p className="text-sm text-slate-600">
               {dirty ? "Есть несохраненные изменения" : "Изменений нет"}
             </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800"
+            <FormActions>
+              <Button
+                leadingIcon={<X className="h-4 w-4" />}
                 onClick={cancelEdit}
                 type="button"
+                variant="outline"
               >
-                <X className="h-4 w-4" />
                 Отменить
-              </button>
-              <button
-                className="inline-flex items-center justify-center gap-2 rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+              </Button>
+              <Button
                 disabled={saveMutation.isPending || (!dirty && mode !== "setup")}
+                leadingIcon={<Save className="h-4 w-4" />}
                 type="submit"
               >
-                <Save className="h-4 w-4" />
                 {saveMutation.isPending ? "Сохраняем..." : "Сохранить профиль"}
-              </button>
-            </div>
-          </div>
+              </Button>
+            </FormActions>
+          </StickyActionBar>
         </form>
       )}
     </div>

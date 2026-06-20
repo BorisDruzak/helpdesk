@@ -31,6 +31,10 @@ describe("requester labels", () => {
     expect(requesterErrorMessage(null, "Не удалось загрузить кабинет")).toBe("Не удалось загрузить кабинет");
     expect(requesterErrorMessage(new Error("SQL timeout: relation registry_people"), "Не удалось загрузить кабинет")).toBe("Не удалось загрузить кабинет");
     expect(requesterErrorMessage({ status: 403, code: "REQUESTER_DEVICE_FORBIDDEN" }, "Не удалось загрузить кабинет")).toBe("Это устройство недоступно для вашего профиля.");
+    expect(requesterErrorMessage({ status: 404 }, "Не удалось загрузить устройство", { domain: "device" })).toBe("Устройство не найдено или недоступно.");
+    expect(requesterErrorMessage({ status: 404 }, "Не удалось загрузить профиль", { domain: "profile" })).toBe("Профиль не найден или недоступен.");
+    expect(requesterErrorMessage({ status: 409 }, "Не удалось сохранить оценку", { operation: "feedback" })).toBe("Оценку уже нельзя сохранить для этого обращения.");
+    expect(requesterErrorMessage({ status: 409 }, "Не удалось вернуть обращение в работу", { operation: "reopen" })).toBe("Обращение уже нельзя вернуть в работу.");
     expect(requesterErrorMessage({ status: 500, message: "Traceback leaked" }, "Не удалось загрузить кабинет")).toBe("Сервис временно недоступен. Попробуйте позже.");
     expect(requesterTicketNextActionLabel({ ticket_id: "T-1", status: "waiting_on_user" })).toBe("Нужен ваш ответ");
     expect(requesterTicketNextActionLabel({ ticket_id: "T-2", status: "resolved" })).toBe("Подтвердите решение");

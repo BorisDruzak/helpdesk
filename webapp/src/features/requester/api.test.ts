@@ -261,7 +261,7 @@ describe("authenticated requester api", () => {
         status: "success",
         data: {
           profile: { person_id: "person-1", display_name: "Requester One", email: "requester@example.test" },
-          identities: [{ provider: "ui_login", identifier: "requester@example.test", verified: true }],
+          account_summary: { login: "requester@example.test", display_name: "Requester One", email: "requester@example.test", linked_profile: true },
           devices: [{ device_id: "device-1", hostname: "desk-1" }],
           active_bindings: [{ binding_id: "binding-1", device_id: "device-1", status: "active" }],
           pending_registration_claims: [],
@@ -274,7 +274,7 @@ describe("authenticated requester api", () => {
     const result = await fetchRequesterProfile();
 
     expect(result.profile?.person_id).toBe("person-1");
-    expect(result.identities[0]?.provider).toBe("ui_login");
+    expect(result.account_summary?.login).toBe("requester@example.test");
     expect(result.profile_policy.editable).toBe(false);
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/web/requester/profile",

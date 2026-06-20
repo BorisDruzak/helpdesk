@@ -7,6 +7,7 @@ import type {
   RequesterProfileUpdatePayload,
 } from "../types";
 import { requesterSafeFieldLabel } from "../labels";
+import { FieldShell, Input, Select, Textarea } from "../ui/form-controls";
 
 export const ALL_REQUESTER_PROFILE_FIELD_TYPES = [
   "text",
@@ -301,33 +302,29 @@ export function RequesterProfileFieldControl({
 
   if (field.type === "textarea") {
     return (
-      <label className="block text-sm font-semibold text-slate-700">
-        {label}
-        <textarea
+      <FieldShell error={error} errorId={errorId} helpId={helpId} helpText={field.help_text} label={safeLabel} required={field.required}>
+        <Textarea
           aria-describedby={describedBy}
           aria-invalid={error ? true : undefined}
           aria-label={safeLabel}
-          className="mt-1 min-h-24 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          className="mt-1 font-normal"
           disabled={disabled}
           onChange={(event) => onChange(event.target.value)}
           ref={(element) => inputRef?.(element)}
           value={String(value ?? "")}
         />
-        {helpText}
-        {errorText}
-      </label>
+      </FieldShell>
     );
   }
 
   if (field.type === "select") {
     return (
-      <label className="block text-sm font-semibold text-slate-700">
-        {label}
-        <select
+      <FieldShell error={error} errorId={errorId} helpId={helpId} helpText={field.help_text} label={safeLabel} required={field.required}>
+        <Select
           aria-describedby={describedBy}
           aria-invalid={error ? true : undefined}
           aria-label={safeLabel}
-          className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+          className="mt-1 w-full font-normal"
           disabled={disabled}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => onChange(event.target.value)}
           ref={(element) => inputRef?.(element)}
@@ -342,10 +339,8 @@ export function RequesterProfileFieldControl({
               </option>
             );
           })}
-        </select>
-        {helpText}
-        {errorText}
-      </label>
+        </Select>
+      </FieldShell>
     );
   }
 
@@ -382,19 +377,16 @@ export function RequesterProfileFieldControl({
               ? "tel"
               : "text";
   return (
-    <label className="block text-sm font-semibold text-slate-700">
-      {label}
-      <input
+    <FieldShell error={error} errorId={errorId} helpId={helpId} helpText={field.help_text} label={safeLabel} required={field.required}>
+      <Input
         {...commonInputProps}
-        className="mt-1 w-full rounded-panel border border-slate-200 px-3 py-2 font-normal"
+        className="mt-1 w-full font-normal"
         onChange={(event) => onChange(event.target.value)}
         ref={(element) => inputRef?.(element)}
         type={inputType}
         value={String(value ?? "")}
       />
-      {helpText}
-      {errorText}
-    </label>
+    </FieldShell>
   );
 }
 

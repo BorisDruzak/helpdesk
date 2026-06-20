@@ -163,6 +163,46 @@ describe("requester query architecture", () => {
     });
   });
 
+  it("does not let locally fetched consents override the server ordered next action", () => {
+    const bootstrap = {
+      workspace: "requester",
+      profile: { person_id: "person-1" },
+      profile_completion: {
+        complete: true,
+        status: "complete",
+        setup_path: "/app/requester/profile/setup",
+        required_fields: [],
+        missing_fields: [],
+      },
+      devices: [{ device_id: "device-1" }],
+      active_bindings: [],
+      pending_registration_claims: [],
+      open_ticket_count: 0,
+      tickets_requiring_user_action_count: 0,
+      next_actions: [
+        {
+          key: "continue_requests",
+          label: "Создать обращение",
+          href: "/app/requester/new",
+        },
+      ],
+      pending_consent_count: 1,
+      recent_tickets: [],
+      feature_flags: { requester_no_device_create: false },
+    } satisfies RequesterBootstrap;
+    const consents = [{ consent_id: "consent-1", status: "pending", subject_type: "diagnostic", subject_id: "subject-1" }] satisfies RequesterConsent[];
+
+    const projection = projectRequesterDashboard(bootstrap, [], consents);
+
+    expect(projection.nextAction).toEqual({
+      key: "continue_requests",
+      label: "Создать обращение",
+      href: "/app/requester/new",
+    });
+    expect(projection.stats.pendingConsents).toBe(1);
+    expect(projection.stats.actionsRequired).toBe(1);
+  });
+
   it("does not count devices or global no-device create as primary diagnostic context", () => {
     const bootstrap = {
       workspace: "requester",

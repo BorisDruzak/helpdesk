@@ -125,9 +125,9 @@ async function installRequesterMocks(page: Page) {
           ...ticket,
           actions: {
             can_send_message: true,
-            can_close: true,
+            can_confirm_solution: true,
             can_reopen: false,
-            can_rate: false,
+            can_rate_solution: false,
           },
         },
         messages: [
@@ -158,12 +158,17 @@ async function installRequesterMocks(page: Page) {
           phone: "+1 555 0100",
           custom_fields: {},
         },
+        account_summary: {
+          login: "requester@example.test",
+          display_name: "Alex Requester",
+          email: "requester@example.test",
+          linked_profile: true,
+        },
         profile_schema: { fields: [], custom_fields: [], required_fields: [] },
         profile_completion: { complete: true, required_fields: [], missing_fields: [] },
-        edit_policy: { can_edit: true },
+        profile_policy: { editable: true, editable_fields: ["full_name", "phone"], change_request_required: false },
         devices: [{ device_id: "device-1", hostname: "WORKSTATION-1", online: true }],
         active_bindings: [],
-        identity_aliases: [],
         pending_registration_claims: [],
       },
     }),
@@ -219,7 +224,23 @@ async function installRequesterMocks(page: Page) {
   );
 
   await page.route("**/api/web/requester/tickets/preview", (route) =>
-    fulfillJson(route, { status: "success", data: { blockers: [], warnings: [], resolved_context: {} } }),
+    fulfillJson(route, { status: "success", data: { ok: true, blockers: [], warnings: [], resolved_context: {} } }),
+  );
+
+  await page.route(`**/api/web/requester/tickets/${ticketCode}/message`, (route) =>
+    fulfillJson(route, { status: "success", data: { ticket_id: ticketId } }),
+  );
+
+  await page.route(`**/api/web/requester/tickets/${ticketCode}/close`, (route) =>
+    fulfillJson(route, { status: "success", data: { ticket_id: ticketId, status: "closed" } }),
+  );
+
+  await page.route(`**/api/web/requester/tickets/${ticketCode}/feedback`, (route) =>
+    fulfillJson(route, { status: "success", data: { ticket_id: ticketId } }),
+  );
+
+  await page.route(`**/api/web/requester/tickets/${ticketCode}/reopen`, (route) =>
+    fulfillJson(route, { status: "success", data: { ticket_id: ticketId, status: "in_progress" } }),
   );
 
   await page.route("**/api/knowledge/portal/home", (route) =>
@@ -289,4 +310,103 @@ test("requester split routes render without legacy workspace leakage", async ({ 
   await page.goto("/app/kb/ask");
   await expect(page.locator("textarea, input").first()).toBeVisible();
   await expectNoForbiddenRequesterTerms(page);
+});
+
+const routeMatrix: Array<{ name: string; path: string; text: string | RegExp; viewport?: { width: number; height: number } }> = [
+  { name: "dashboard desktop", path: "/app/requester", text: "VPN access problem", viewport: { width: 1366, height: 768 } },
+  { name: "dashboard mobile", path: "/app/requester", text: "VPN access problem", viewport: { width: 390, height: 844 } },
+  { name: "tickets list", path: "/app/requester/tickets", text: "VPN access problem" },
+  { name: "ticket detail", path: `/app/requester/tickets/${ticketCode}`, text: "Please confirm VPN error code." },
+  { name: "profile", path: "/app/requester/profile", text: "Alex Requester" },
+  { name: "devices", path: "/app/requester/devices", text: "WORKSTATION-1" },
+  { name: "knowledge home", path: "/app/kb", text: "VPN guide" },
+  { name: "ask fallback", path: "/app/kb/ask", text: /AI|Search|Поиск|помощник/i },
+  { name: "requester not found", path: "/app/requester/unknown-section", text: "Раздел не найден" },
+];
+
+for (const scenario of routeMatrix) {
+  test(`requester e2e route matrix: ${scenario.name}`, async ({ page }) => {
+    if (scenario.viewport) {
+      await page.setViewportSize(scenario.viewport);
+    }
+    await page.goto(scenario.path);
+    await expect(page.getByText(scenario.text).first()).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await expectNoForbiddenRequesterTerms(page);
+  });
+}
+
+test("requester create flow requires explicit category before preview and submit", async ({ page }) => {
+  await page.goto("/app/requester/new");
+
+  await page.getByLabel("Что случилось или что нужно?").fill("VPN stopped connecting after password change");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await page.getByRole("button", { name: "Продолжить оформление" }).click();
+
+  await expect(page.getByLabel("Категория обращения")).toBeVisible();
+  await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
+  await page.getByLabel("Impact").selectOption("me");
+  await page.getByRole("button", { name: "К проверке" }).click();
+  await page.getByRole("button", { name: "Проверить обращение" }).click();
+
+  await expect(page.getByText("Безопасная проверка")).toBeVisible();
+  await page.getByRole("button", { name: "Создать обращение" }).click();
+  await expect(page).toHaveURL(/\/app\/requester\/tickets\/REQ-1002$/);
+});
+
+test("requester ticket message and close mutations stay available through policy actions", async ({ page }) => {
+  await page.goto(`/app/requester/tickets/${ticketCode}`);
+
+  const messageRequest = page.waitForRequest(`**/api/web/requester/tickets/${ticketCode}/message`);
+  await page.getByLabel("Ответ заявителя").fill("The VPN error code is 720.");
+  await page.getByRole("button", { name: "Отправить" }).click();
+  await messageRequest;
+
+  const closeRequest = page.waitForRequest(`**/api/web/requester/tickets/${ticketCode}/close`);
+  await page.getByRole("button", { name: "Подтвердить решение" }).click();
+  await closeRequest;
+});
+
+test("requester rating and reopen actions render from ticket policy capabilities", async ({ page }) => {
+  await page.unroute(`**/api/web/requester/tickets/${ticketCode}`);
+  await page.route(`**/api/web/requester/tickets/${ticketCode}`, (route) =>
+    fulfillJson(route, {
+      status: "success",
+      data: {
+        ticket: {
+          ticket_id: ticketId,
+          ticket_code: ticketCode,
+          title: "VPN access problem",
+          description: "VPN is unavailable from the requester laptop.",
+          status: "resolved",
+          requester_status_label: "Resolved",
+          public_status_label: "Resolved",
+          created_at: "2026-06-19T08:00:00Z",
+          updated_at: "2026-06-19T08:20:00Z",
+          actions: {
+            can_send_message: false,
+            can_confirm_solution: false,
+            can_reopen: true,
+            can_rate_solution: true,
+          },
+        },
+        messages: [],
+        events: [],
+      },
+    }),
+  );
+
+  await page.goto(`/app/requester/tickets/${ticketCode}`);
+  await expect(page.getByLabel("Оценка обращения")).toBeVisible();
+  await page.getByLabel("Оценка обращения").fill("2");
+  await page.getByRole("textbox", { name: "Комментарий", exact: true }).fill("VPN still fails after reconnect.");
+
+  const feedbackRequest = page.waitForRequest(`**/api/web/requester/tickets/${ticketCode}/feedback`);
+  await page.getByRole("button", { name: "Отправить оценку" }).click();
+  await feedbackRequest;
+
+  const reopenRequest = page.waitForRequest(`**/api/web/requester/tickets/${ticketCode}/reopen`);
+  await page.getByLabel("Комментарий для возврата в работу").fill("Please continue troubleshooting.");
+  await page.getByRole("button", { name: "Вернуть в работу" }).click();
+  await reopenRequest;
 });

@@ -1,5 +1,5 @@
 import { Suspense, type ReactNode } from "react";
-import { Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
+import { Link, Navigate, Outlet, useLocation, type RouteObject } from "react-router-dom";
 
 import { AppShell } from "./layouts/app-shell";
 import {
@@ -218,6 +218,21 @@ function RequesterLegacyRedirect({ target }: { target: string }) {
   return <Navigate replace to={`${target}${location.search}${location.hash}`} />;
 }
 
+function RequesterNotFoundPage() {
+  return (
+    <section aria-labelledby="requester-not-found-title" className="mx-auto max-w-3xl px-4 py-10">
+      <p className="workspace-boot__eyebrow">Кабинет пользователя</p>
+      <h1 className="mt-2 text-2xl font-semibold text-slate-950" id="requester-not-found-title">Раздел не найден</h1>
+      <p className="mt-3 text-sm leading-6 text-slate-600">
+        Этот раздел кабинета недоступен или был перенесен. Перейдите на главную страницу кабинета пользователя.
+      </p>
+      <Link className="mt-5 inline-flex items-center justify-center rounded-panel bg-brand-700 px-4 py-2 text-sm font-semibold text-white" to={REQUESTER_HOME_PATH}>
+        Вернуться на главную
+      </Link>
+    </section>
+  );
+}
+
 export const appRoutes: RouteObject[] = [
   {
     path: "/app",
@@ -386,6 +401,14 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="requester">
                 <RequesterLegacyRedirect target={REQUESTER_TICKETS_PATH} />
+              </WorkspaceAccessGate>
+            )
+          },
+          {
+            path: "requester/*",
+            element: (
+              <WorkspaceAccessGate workspace="requester">
+                <RequesterNotFoundPage />
               </WorkspaceAccessGate>
             )
           },

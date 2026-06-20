@@ -16,7 +16,6 @@ export type RequestFormField = {
     | "number"
     | "date"
     | "datetime"
-    | "file"
     | "user_picker"
     | "department_picker"
     | "location_picker"
@@ -531,6 +530,13 @@ export type AuthenticatedRequesterTicket = PublicTicket & {
   actions?: RequesterTicketActions;
 };
 
+export type RequesterAccountSummary = {
+  login?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+  linked_profile: boolean;
+};
+
 export type RequesterDeviceDetail = {
   device: RequesterDevice;
   recent_tickets?: AuthenticatedRequesterTicket[];
@@ -539,7 +545,7 @@ export type RequesterDeviceDetail = {
 export type RequesterProfileDetail = {
   profile?: RequesterProfile | null;
   requester_context?: RequesterContextPreview;
-  identities: RequesterIdentity[];
+  account_summary?: RequesterAccountSummary;
   devices: RequesterDevice[];
   active_bindings: Array<{
     binding_id?: string | null;

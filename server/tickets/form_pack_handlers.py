@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from aiohttp import web
 
 from app.db import get_session
+from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from tickets.form_catalog import (
     DEFAULT_TICKET_FORM_PACK_KEY,
@@ -16,6 +18,7 @@ from tickets.form_catalog import (
     resolve_ticket_form_pack,
     validate_form_pack_schema,
 )
+from tickets.request_template_submission import _find_registry_form_schema, _registry_pack_from_template
 
 
 def _json_ok(**payload: Any) -> web.Response:
@@ -38,6 +41,54 @@ def _admin_only(request: web.Request):
     if auth_context.actor_role != "admin":
         raise web.HTTPForbidden(text='{"status":"error","error":"forbidden"}', content_type="application/json")
     return auth_context
+
+
+async def _merge_registry_requester_forms(session, pack: dict[str, Any]) -> dict[str, Any]:
+    if str(pack.get("pack_key") or "") != DEFAULT_TICKET_FORM_PACK_KEY:
+        return pack
+    result = deepcopy(pack)
+    forms = list(result.get("forms") or [])
+    seen_keys = {str(form.get("key") or "") for form in forms if isinstance(form, dict)}
+    seen_templates = {str(form.get("request_template_key") or form.get("key") or "") for form in forms if isinstance(form, dict)}
+    policy_repo = HelpdeskPolicyRepo(session)
+    schemas = await policy_repo.list_form_schemas(include_inactive=False)
+    added = 0
+    for template in await policy_repo.list_request_templates(include_inactive=False):
+        template_code = str(template.get("template_code") or "").strip()
+        if not template_code or template_code in seen_templates or template_code in seen_keys:
+            continue
+        form_schema = _find_registry_form_schema(
+            schemas,
+            template_code=template_code,
+            requested_form_key=template_code,
+            preferred_schema_id=template.get("form_schema_id"),
+        )
+        if not form_schema:
+            continue
+        effective_template = await policy_repo.resolve_effective_request_template(
+            template_code=template_code,
+            raise_if_missing=False,
+        )
+        registry_pack = _registry_pack_from_template(
+            effective_template=effective_template,
+            form_schema=form_schema,
+            form_key=template_code,
+        )
+        for form in registry_pack.get("forms") or []:
+            key = str(form.get("key") or "")
+            request_template_key = str(form.get("request_template_key") or key)
+            if not key or key in seen_keys or request_template_key in seen_templates:
+                continue
+            forms.append(form)
+            seen_keys.add(key)
+            seen_templates.add(request_template_key)
+            added += 1
+    if not added:
+        return pack
+    result["forms"] = forms
+    base_version = str(result.get("version") or "current")
+    result["version"] = f"{base_version}+registry.{added}"
+    return result
 
 
 async def handle_ticket_form_packs_list(request: web.Request) -> web.Response:
@@ -87,6 +138,7 @@ async def handle_ticket_form_pack_current(request: web.Request) -> web.Response:
         repo = TicketFormPacksRepo(session)
         pack = await resolve_ticket_form_pack(repo, pack_key=pack_key)
         if request.path.startswith("/public_api/"):
+            pack = await _merge_registry_requester_forms(session, pack)
             pack = requester_safe_form_pack(pack)
         has_update = bool(current_version and current_version != pack.get("version"))
     return _json_ok(pack=pack, has_update=has_update, current_version=pack.get("version"))

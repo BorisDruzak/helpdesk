@@ -11,6 +11,7 @@ from tickets.public_access import (
     is_public_unbound_ticket,
     public_access_code_hint,
 )
+from tickets.requester_policy import requester_ticket_actions
 from tickets.statuses import (
     compute_effective_priority,
     extract_priority_class,
@@ -46,22 +47,6 @@ def serialize_datetime_recursive(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [serialize_datetime_recursive(item) for item in value]
     return value
-
-
-def requester_ticket_actions(ticket: Any) -> Dict[str, bool]:
-    status = str(getattr(ticket, "status", None) or "").strip().lower()
-    terminal_message_statuses = {"resolved", "closed", "canceled", "cancelled", "archived"}
-    can_send_message = bool(status) and status not in terminal_message_statuses
-    can_confirm_solution = status == "resolved"
-    can_rate_solution = status in {"resolved", "closed"}
-    can_reopen = status in {"resolved", "closed"}
-    return {
-        "can_send_message": can_send_message,
-        "can_attach_files": can_send_message,
-        "can_confirm_solution": can_confirm_solution,
-        "can_rate_solution": can_rate_solution,
-        "can_reopen": can_reopen,
-    }
 
 
 def _queue_code_from_ticket(ticket: Any, queue_code: Optional[str] = None) -> Optional[str]:

@@ -26,6 +26,7 @@ from app.db.models import (
     TicketFeedback,
     TicketQueue,
     TicketReopenEvent,
+    UserConsentRequest,
 )
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
@@ -239,7 +240,7 @@ async def _publish_availability_forms(
 
 
 @pytest.mark.asyncio
-async def test_requester_profile_returns_safe_identities_and_devices(test_client, test_engine):
+async def test_requester_profile_returns_safe_account_summary_and_devices(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
     login = "requester-profile-owner@example.test"
@@ -276,10 +277,18 @@ async def test_requester_profile_returns_safe_identities_and_devices(test_client
     assert data["profile_policy"]["editable"] is True
     assert data["profile_policy"]["change_request_required"] is False
     assert data["devices"][0]["device_id"] == device_id
-    identities = {(item["provider"], item["identifier"]) for item in data["identities"]}
-    assert ("ui_login", login) in identities
-    assert ("employee_id", "EMP-42") in identities
-    assert all("normalized_identifier" not in item for item in data["identities"])
+    assert data["account_summary"] == {
+        "login": login,
+        "display_name": person.display_name,
+        "email": login,
+        "linked_profile": True,
+    }
+    assert "identities" not in data
+    profile_public_payload = str({"profile": data["profile"], "account_summary": data["account_summary"]})
+    assert "provider" not in profile_public_payload
+    assert "identifier" not in profile_public_payload
+    assert "verified" not in profile_public_payload
+    assert "EMP-42" not in profile_public_payload
     assert "metadata_json" not in str(payload)
     assert "must-not-leak-profile" not in str(payload)
 
@@ -290,7 +299,13 @@ async def test_requester_profile_returns_safe_identities_and_devices(test_client
     anonymous_payload = await anonymous_profile.json()
     assert anonymous_profile.status == 200, anonymous_payload
     assert anonymous_payload["data"]["profile"] is None
-    assert anonymous_payload["data"]["identities"] == []
+    assert anonymous_payload["data"]["account_summary"] == {
+        "login": "requester-profile-missing@example.test",
+        "display_name": None,
+        "email": "requester-profile-missing@example.test",
+        "linked_profile": False,
+    }
+    assert "identities" not in anonymous_payload["data"]
     assert anonymous_payload["data"]["devices"] == []
 
     agent_denied = await test_client.get(
@@ -584,7 +599,7 @@ async def test_admin_profile_schema_rejects_uncontrolled_custom_fields(test_clie
 
 
 @pytest.mark.asyncio
-async def test_requester_profile_schema_required_custom_fields_are_enforced(test_client, test_engine):
+async def test_profile_schema_builder_publishes_required_custom_field_to_requester_profile(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     department_id = str(uuid.uuid4())
     location_id = str(uuid.uuid4())
@@ -1062,6 +1077,64 @@ async def test_requester_workspace_bootstrap_lists_owned_device_and_ticket(test_
     tickets_payload = await tickets.json()
     assert tickets.status == 200, tickets_payload
     assert session_payload["ticket_id"] in {item["ticket_id"] for item in tickets_payload["data"]["tickets"]}
+
+
+@pytest.mark.asyncio
+async def test_requester_bootstrap_next_actions_include_pending_consents_in_server_order(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-next-actions-consent@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "next-actions-consent-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title="Requester next actions ticket",
+            description="Answer and consent must be ordered by the server",
+            user_display_name="Requester Next Actions",
+            requester_profile={"full_name": "Requester Next Actions", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket = await session.get(Ticket, created["ticket_id"])
+        assert ticket is not None
+        ticket.status = "waiting_on_user"
+        ticket.next_action_owner = "requester"
+        session.add(
+            UserConsentRequest(
+                consent_id=str(uuid.uuid4()),
+                subject_type="diagnostic",
+                subject_id=f"diagnostic-{uuid.uuid4().hex}",
+                ticket_id=created["ticket_id"],
+                device_id=device_id,
+                requester_person_id=approved["person"]["person_id"],
+                requester_binding_id=approved["binding"]["binding_id"],
+                requested_by_actor_id="support1",
+                requested_by_role="support",
+                risk_level="medium",
+                title="Нужно согласие на диагностику",
+                status="pending",
+            )
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    assert payload["data"]["pending_consent_count"] == 1
+    assert [item["key"] for item in payload["data"]["next_actions"][:2]] == ["review_ticket", "review_consents"]
+    assert payload["data"]["next_actions"][1]["href"] == f"/app/requester/tickets/{created['ticket'].ticket_code}"
 
 
 @pytest.mark.asyncio
@@ -2335,6 +2408,136 @@ async def test_requester_ticket_message_rejects_terminal_statuses_and_exposes_ac
             .where(TicketEvent.payload["text"].astext == "This terminal ticket should not accept a requester reply")
         )
     assert message_count == 0
+
+
+@pytest.mark.asyncio
+async def test_requester_ticket_actions_respect_feedback_window_in_dto_and_handlers(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-expired-feedback-window@example.test"
+    closed_at = datetime.now(timezone.utc) - timedelta(days=30)
+    async with session_maker() as session:
+        session.add(_device(device_id, "expired-feedback-window-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title="Expired requester feedback window",
+            description="Requester actions must use policy windows",
+            user_display_name="Requester Expired Window",
+            requester_profile={"full_name": "Requester Expired Window", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket = await session.get(Ticket, created["ticket_id"])
+        assert ticket is not None
+        ticket.status = "closed"
+        ticket.resolved_at = closed_at
+        ticket.closed_at = closed_at
+        await session.commit()
+
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+    detail = await test_client.get(f"/api/web/requester/tickets/{created['ticket'].ticket_code}", headers=headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    actions = detail_payload["data"]["ticket"]["actions"]
+    assert actions["can_rate_solution"] is False
+    assert actions["can_reopen"] is False
+
+    feedback = await test_client.post(
+        f"/api/web/requester/tickets/{created['ticket'].ticket_code}/feedback",
+        headers=headers,
+        json={"rating": 2, "problem_resolved": False, "reason_codes": ["not_resolved"]},
+    )
+    feedback_payload = await feedback.json()
+    assert feedback.status == 409, feedback_payload
+    assert feedback_payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
+
+    reopen = await test_client.post(
+        f"/api/web/requester/tickets/{created['ticket'].ticket_code}/reopen",
+        headers=headers,
+        json={"reason_code": "not_resolved"},
+    )
+    reopen_payload = await reopen.json()
+    assert reopen.status == 409, reopen_payload
+    assert reopen_payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_requester_ticket_actions_hide_repeated_rating_after_latest_feedback(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-repeat-rating@example.test"
+    now = datetime.now(timezone.utc)
+    async with session_maker() as session:
+        session.add(_device(device_id, "repeat-rating-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title="Requester repeated rating",
+            description="Requester can rate a resolved ticket only once",
+            user_display_name="Requester Repeat Rating",
+            requester_profile={"full_name": "Requester Repeat Rating", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket = await session.get(Ticket, created["ticket_id"])
+        assert ticket is not None
+        ticket.status = "resolved"
+        ticket.resolved_at = now
+        session.add(
+            TicketFeedback(
+                feedback_id=str(uuid.uuid4()),
+                ticket_id=created["ticket_id"],
+                requester_id=login,
+                actor_id=login,
+                actor_role="requester",
+                rating=5,
+                sentiment="positive",
+                resolution_confirmed=True,
+                problem_resolved=True,
+                reason_codes=[],
+                visibility="requester_visible",
+                source_surface="requester_portal",
+                service_code=ticket.service_code,
+                offering_code=ticket.offering_code,
+                submitted_at=now,
+                updated_at=now,
+                metadata_json={},
+                is_latest=True,
+            )
+        )
+        await session.commit()
+
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+    detail = await test_client.get(f"/api/web/requester/tickets/{created['ticket'].ticket_code}", headers=headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    actions = detail_payload["data"]["ticket"]["actions"]
+    assert actions["can_rate_solution"] is False
+    assert actions["can_confirm_solution"] is True
+
+    feedback = await test_client.post(
+        f"/api/web/requester/tickets/{created['ticket'].ticket_code}/feedback",
+        headers=headers,
+        json={"rating": 4, "problem_resolved": True, "reason_codes": []},
+    )
+    feedback_payload = await feedback.json()
+    assert feedback.status == 409, feedback_payload
+    assert feedback_payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
 
 
 @pytest.mark.asyncio

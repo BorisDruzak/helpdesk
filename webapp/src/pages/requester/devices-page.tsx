@@ -26,6 +26,7 @@ import {
   lookupDevicePairingCode,
   type DevicePairingPayload,
 } from "../device-pairing/api";
+import { Button, FieldShell, InlineAlert, Input } from "../../features/requester/ui/form-controls";
 
 type WizardStep = "code" | "preview" | "result";
 type RequesterDevicesMode = "overview" | "link";
@@ -101,7 +102,7 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
       setPairing(null);
       setStep("code");
       setNotice(null);
-      setError(requesterErrorMessage(exc, "Не удалось загрузить устройство для подключения."));
+      setError(requesterErrorMessage(exc, "Не удалось загрузить устройство для подключения.", { domain: "device" }));
     },
   });
 
@@ -123,7 +124,7 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
     onError: (exc) => {
       setPairing(null);
       setNotice(null);
-      setError(requesterErrorMessage(exc, "Код подключения не найден или истек."));
+      setError(requesterErrorMessage(exc, "Код подключения не найден или истек.", { domain: "device", operation: "device_link" }));
     },
   });
 
@@ -143,7 +144,7 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
       await requesterInvalidations.afterDeviceLink(queryClient);
     },
     onError: (exc) => {
-      setError(requesterErrorMessage(exc, "Не удалось подключить устройство."));
+      setError(requesterErrorMessage(exc, "Не удалось подключить устройство.", { domain: "device", operation: "device_link" }));
       setNotice(null);
     },
   });
@@ -180,7 +181,7 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
   if (bootstrapQuery.error) {
     return (
       <section className="rounded-panel border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-        {requesterErrorMessage(bootstrapQuery.error, "Не удалось загрузить устройства")}
+        {requesterErrorMessage(bootstrapQuery.error, "Не удалось загрузить устройства", { domain: "device" })}
       </section>
     );
   }
@@ -243,13 +244,13 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
                             <span className="rounded-panel bg-slate-100 px-2 py-1 text-slate-700">{requesterOnlineStatusLabel(device.online)}</span>
                           </div>
                         </div>
-                        <button
-                          className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800"
+                        <Button
                           onClick={() => setSelectedDeviceId(device.device_id)}
                           type="button"
+                          variant="outline"
                         >
                           Подробнее о {name}
-                        </button>
+                        </Button>
                       </div>
                       <dl className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
                         <div>
@@ -299,7 +300,7 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
               {deviceDetailQuery.isLoading ? <p className="mt-3 text-sm text-slate-500">Загружаем сведения...</p> : null}
               {deviceDetailQuery.error ? (
                 <p className="mt-3 text-sm text-rose-700">
-                  {requesterErrorMessage(deviceDetailQuery.error, "Не удалось загрузить сведения")}
+                  {requesterErrorMessage(deviceDetailQuery.error, "Не удалось загрузить сведения", { domain: "device" })}
                 </p>
               ) : null}
               {deviceDetailQuery.data ? (
@@ -354,40 +355,39 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
             </p>
 
             <form className="mt-4 grid gap-3" onSubmit={submitCode}>
-              <label className="block text-sm font-semibold text-slate-700">
-                Код подключения
-                <input
+              <FieldShell label="Код подключения">
+                <Input
                   aria-label="Код подключения"
-                  className="mt-1 w-full rounded-panel border border-slate-300 px-3 py-2 text-sm uppercase text-slate-950"
+                  className="mt-1 w-full text-sm uppercase text-slate-950"
                   disabled={lookupMutation.isPending || confirmMutation.isPending}
                   onChange={(event) => setCode(event.target.value.toUpperCase())}
                   placeholder="ABCD-1234"
                   value={code}
                 />
-              </label>
-              <button
-                className="inline-flex items-center justify-center gap-2 rounded-panel border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:bg-slate-100"
+              </FieldShell>
+              <Button
                 disabled={lookupMutation.isPending || confirmMutation.isPending}
+                leadingIcon={<Search className="h-4 w-4" />}
                 type="submit"
+                variant="outline"
               >
-                <Search className="h-4 w-4" />
                 {lookupMutation.isPending ? "Проверяем..." : "Проверить код"}
-              </button>
+              </Button>
             </form>
 
             {step === "preview" && pairing ? (
               <div className="mt-4 rounded-panel border border-brand-200 bg-brand-50 px-3 py-3">
                 <p className="text-sm font-semibold text-brand-950">{requesterDeviceLabel(pairing.device)}</p>
                 <p className="mt-1 text-sm text-brand-900">{requesterDeviceSystemParts(pairing.device).join(" · ") || "Система не указана"}</p>
-                <button
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-panel bg-brand-700 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+                <Button
+                  className="mt-3 w-full"
                   disabled={confirmMutation.isPending}
+                  leadingIcon={<CheckCircle2 className="h-4 w-4" />}
                   onClick={() => confirmMutation.mutate()}
                   type="button"
                 >
-                  <CheckCircle2 className="h-4 w-4" />
                   {confirmMutation.isPending ? "Подключаем..." : "Подключить устройство"}
-                </button>
+                </Button>
               </div>
             ) : null}
 
@@ -398,8 +398,8 @@ function RequesterDevicesWorkspace({ mode }: { mode: RequesterDevicesMode }) {
               </div>
             ) : null}
 
-            {notice && step !== "result" ? <p aria-live="polite" className="mt-3 text-sm text-emerald-700" role="status">{notice}</p> : null}
-            {error ? <p aria-live="assertive" className="mt-3 text-sm text-rose-700" role="alert">{error}</p> : null}
+            {notice && step !== "result" ? <InlineAlert aria-live="polite" className="mt-3" role="status" tone="success">{notice}</InlineAlert> : null}
+            {error ? <InlineAlert aria-live="assertive" className="mt-3" role="alert" tone="danger">{error}</InlineAlert> : null}
           </section>
 
           {!isLinkRoute ? (
