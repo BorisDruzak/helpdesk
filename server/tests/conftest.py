@@ -162,11 +162,13 @@ def _apply_ci_layer_markers(item) -> None:
 
 def pytest_configure(config) -> None:
     config.addinivalue_line("markers", "agent_ws: tests that start the in-process WS agent fixture")
+    config.addinivalue_line("markers", "db_cleanup(profile): select an explicit DB cleanup table profile")
 
 
 def pytest_collection_modifyitems(config, items) -> None:
     for item in items:
         _apply_ci_layer_markers(item)
+        _resolve_cleanup_profile(item)
 
 
 def pytest_runtest_setup(item) -> None:
@@ -1234,8 +1236,469 @@ def ensure_db_ready(request):
     request.getfixturevalue("run_migrations")
 
 
-async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str, test_engine) -> None:
+FULL_CLEANUP_TABLES = (
+    "observer_integrity_events",
+    "observer_known_contamination",
+    "observer_error_occurrences",
+    "observer_error_signatures",
+    "observer_span_links",
+    "observer_spans",
+    "observer_traces",
+    "agent_observer_events",
+    "diagnostic_provider_audit",
+    "diagnostic_provider_credential_refs",
+    "diagnostic_provider_configs",
+    "tool_presentation_overrides",
+    "agent_recipe_test_runs",
+    "agent_recipe_primitives",
+    "agent_recipe_versions",
+    "diagnostic_capability_versions",
+    "diagnostic_capabilities",
+    "diagnostic_providers",
+    "diagnostic_bundles",
+    "diagnostic_findings",
+    "diagnostic_evidence",
+    "diagnostic_steps",
+    "diagnostic_sessions",
+    "knowledge_chunk_embeddings",
+    "knowledge_index_jobs",
+    "ai_request_audit",
+    "ai_policy_profiles",
+    "ai_model_profiles",
+    "ai_providers",
+    "knowledge_search_settings",
+    "knowledge_search_events",
+    "knowledge_gap_findings",
+    "knowledge_quality_snapshots",
+    "knowledge_audience_rules",
+    "knowledge_review_comments",
+    "knowledge_review_tasks",
+    "knowledge_content_pack_items",
+    "knowledge_content_packs",
+    "knowledge_rollout_policies",
+    "continuous_improvement_actions",
+    "problem_scanner_runs",
+    "problem_activity_events",
+    "problem_known_error_links",
+    "problem_affected_objects",
+    "problem_rca_records",
+    "problem_candidates",
+    "problem_detection_rules",
+    "problem_slo_policies",
+    "problem_ticket_links",
+    "problems",
+    "knowledge_edges",
+    "knowledge_nodes",
+    "knowledge_bindings",
+    "knowledge_chunks",
+    "knowledge_item_versions",
+    "knowledge_items",
+    "knowledge_spaces",
+    "ticket_quality_review_comments",
+    "ticket_quality_reviews",
+    "ticket_reopen_events",
+    "ticket_feedback",
+    "service_quality_snapshots",
+    "quality_policies",
+    "remote_access_events",
+    "remote_access_sessions",
+    "artifacts",
+    "operation_dependencies",
+    "operations",
+    "device_outbox",
+    "ticket_events",
+    "device_events",
+    "device_toolset_snapshots",
+    "device_desired_modules",
+    "device_modules",
+    "device_config",
+    "registry_quality_issue_overrides",
+    "registry_admin_events",
+    "registry_admin_policies",
+    "registry_person_department_memberships",
+    "registry_audience_group_members",
+    "registry_audience_groups",
+    "registry_assets",
+    "registry_people",
+    "registry_services",
+    "registry_vendors",
+    "registry_locations",
+    "registry_departments",
+    "dispatch_ready_devices",
+    "devices",
+    "agent_tokens",
+    "connection_requests",
+    "agent_build_download_audit",
+    "agent_builds",
+    "agent_runtime_audit",
+    "server_config",
+    "ui_user_audit",
+    "access_audit",
+    "access_group_queue_members",
+    "access_group_permissions",
+    "access_group_members",
+    "access_groups",
+    "helpdesk_policy_audit",
+    "request_templates",
+    "priority_policies",
+    "sla_policies",
+    "ola_policies",
+    "routing_policies",
+    "approval_policies",
+    "closure_policies",
+    "diagnostic_policies",
+    "notification_policies",
+    "visibility_policies",
+    "reporting_policies",
+    "smart_views",
+    "ticket_admin_audit",
+    "ticket_queue_ola_targets",
+    "ticket_queue_members",
+    "ticket_routing_rules",
+    "ticket_priority_matrix",
+    "ticket_sla_targets",
+    "ticket_sla_policies",
+    "ticket_business_calendars",
+    "ticket_resolution_codes",
+    "ticket_queues",
+    "playbook_step_run",
+    "playbook_step",
+    "playbook_run",
+    "playbook_version",
+    "playbook",
+    "ui_users",
+    "modules",
+    "tickets",
+)
+
+
+def _cleanup_profile_subset(*tables: str) -> tuple[str, ...]:
+    requested = set(tables)
+    unknown = requested - set(FULL_CLEANUP_TABLES)
+    if unknown:
+        raise RuntimeError(f"Cleanup profile references unknown tables: {sorted(unknown)}")
+    return tuple(table for table in FULL_CLEANUP_TABLES if table in requested)
+
+
+CLEANUP_TABLES_BY_PROFILE = {
+    "full": FULL_CLEANUP_TABLES,
+    "knowledge": _cleanup_profile_subset(
+        "knowledge_chunk_embeddings",
+        "knowledge_index_jobs",
+        "ai_request_audit",
+        "ai_policy_profiles",
+        "ai_model_profiles",
+        "ai_providers",
+        "knowledge_search_settings",
+        "knowledge_search_events",
+        "knowledge_gap_findings",
+        "knowledge_quality_snapshots",
+        "knowledge_audience_rules",
+        "knowledge_review_comments",
+        "knowledge_review_tasks",
+        "knowledge_content_pack_items",
+        "knowledge_content_packs",
+        "knowledge_rollout_policies",
+        "continuous_improvement_actions",
+        "problem_scanner_runs",
+        "problem_activity_events",
+        "problem_known_error_links",
+        "problem_affected_objects",
+        "problem_rca_records",
+        "problem_candidates",
+        "problem_detection_rules",
+        "problem_slo_policies",
+        "problem_ticket_links",
+        "problems",
+        "knowledge_edges",
+        "knowledge_nodes",
+        "knowledge_bindings",
+        "knowledge_chunks",
+        "knowledge_item_versions",
+        "knowledge_items",
+        "knowledge_spaces",
+        "registry_departments",
+        "registry_audience_group_members",
+        "registry_audience_groups",
+        "registry_people",
+        "agent_runtime_audit",
+        "ticket_events",
+        "artifacts",
+        "ui_users",
+        "tickets",
+    ),
+    "observer_diagnostics": _cleanup_profile_subset(
+        "observer_integrity_events",
+        "observer_known_contamination",
+        "observer_error_occurrences",
+        "observer_error_signatures",
+        "observer_span_links",
+        "observer_spans",
+        "observer_traces",
+        "agent_observer_events",
+        "diagnostic_provider_audit",
+        "diagnostic_provider_credential_refs",
+        "diagnostic_provider_configs",
+        "tool_presentation_overrides",
+        "agent_recipe_test_runs",
+        "agent_recipe_primitives",
+        "agent_recipe_versions",
+        "diagnostic_capability_versions",
+        "diagnostic_capabilities",
+        "diagnostic_providers",
+        "diagnostic_bundles",
+        "diagnostic_findings",
+        "diagnostic_evidence",
+        "diagnostic_steps",
+        "diagnostic_sessions",
+        "problem_scanner_runs",
+        "problem_activity_events",
+        "problem_known_error_links",
+        "problem_affected_objects",
+        "problem_rca_records",
+        "problem_candidates",
+        "problem_detection_rules",
+        "problem_slo_policies",
+        "problem_ticket_links",
+        "problems",
+        "operations",
+        "device_outbox",
+        "ticket_events",
+        "device_events",
+        "device_toolset_snapshots",
+        "device_modules",
+        "device_config",
+        "dispatch_ready_devices",
+        "devices",
+        "agent_runtime_audit",
+        "modules",
+        "tickets",
+    ),
+    "tickets": _cleanup_profile_subset(
+        "ticket_quality_review_comments",
+        "ticket_quality_reviews",
+        "ticket_reopen_events",
+        "ticket_feedback",
+        "service_quality_snapshots",
+        "quality_policies",
+        "remote_access_events",
+        "remote_access_sessions",
+        "artifacts",
+        "operation_dependencies",
+        "operations",
+        "device_outbox",
+        "ticket_events",
+        "device_events",
+        "device_toolset_snapshots",
+        "device_desired_modules",
+        "device_modules",
+        "device_config",
+        "registry_quality_issue_overrides",
+        "registry_admin_events",
+        "registry_admin_policies",
+        "registry_person_department_memberships",
+        "registry_audience_group_members",
+        "registry_audience_groups",
+        "registry_assets",
+        "registry_people",
+        "registry_services",
+        "registry_vendors",
+        "registry_locations",
+        "registry_departments",
+        "dispatch_ready_devices",
+        "devices",
+        "agent_tokens",
+        "connection_requests",
+        "server_config",
+        "ui_user_audit",
+        "access_audit",
+        "access_group_queue_members",
+        "access_group_permissions",
+        "access_group_members",
+        "access_groups",
+        "helpdesk_policy_audit",
+        "request_templates",
+        "priority_policies",
+        "sla_policies",
+        "ola_policies",
+        "routing_policies",
+        "approval_policies",
+        "closure_policies",
+        "diagnostic_policies",
+        "notification_policies",
+        "visibility_policies",
+        "reporting_policies",
+        "smart_views",
+        "ticket_admin_audit",
+        "ticket_queue_ola_targets",
+        "ticket_queue_members",
+        "ticket_routing_rules",
+        "ticket_priority_matrix",
+        "ticket_sla_targets",
+        "ticket_sla_policies",
+        "ticket_business_calendars",
+        "ticket_resolution_codes",
+        "ticket_queues",
+        "playbook_step_run",
+        "playbook_step",
+        "playbook_run",
+        "playbook_version",
+        "playbook",
+        "ui_users",
+        "modules",
+        "tickets",
+    ),
+    "agent_runtime": _cleanup_profile_subset(
+        "remote_access_events",
+        "remote_access_sessions",
+        "artifacts",
+        "operation_dependencies",
+        "operations",
+        "device_outbox",
+        "device_events",
+        "device_toolset_snapshots",
+        "device_desired_modules",
+        "device_modules",
+        "device_config",
+        "dispatch_ready_devices",
+        "devices",
+        "agent_tokens",
+        "connection_requests",
+        "agent_build_download_audit",
+        "agent_builds",
+        "agent_runtime_audit",
+        "modules",
+    ),
+    "registry_access": _cleanup_profile_subset(
+        "registry_quality_issue_overrides",
+        "registry_admin_events",
+        "registry_admin_policies",
+        "registry_person_department_memberships",
+        "registry_audience_group_members",
+        "registry_audience_groups",
+        "registry_assets",
+        "registry_people",
+        "registry_services",
+        "registry_vendors",
+        "registry_locations",
+        "registry_departments",
+        "ui_user_audit",
+        "access_audit",
+        "access_group_queue_members",
+        "access_group_permissions",
+        "access_group_members",
+        "access_groups",
+        "ui_users",
+    ),
+    "policies_config": _cleanup_profile_subset(
+        "server_config",
+        "helpdesk_policy_audit",
+        "request_templates",
+        "priority_policies",
+        "sla_policies",
+        "ola_policies",
+        "routing_policies",
+        "approval_policies",
+        "closure_policies",
+        "diagnostic_policies",
+        "notification_policies",
+        "visibility_policies",
+        "reporting_policies",
+        "smart_views",
+        "ticket_admin_audit",
+        "ticket_queue_ola_targets",
+        "ticket_queue_members",
+        "ticket_routing_rules",
+        "ticket_priority_matrix",
+        "ticket_sla_targets",
+        "ticket_sla_policies",
+        "ticket_business_calendars",
+        "ticket_resolution_codes",
+        "ticket_queues",
+        "ui_users",
+        "tickets",
+    ),
+}
+
+
+def _validate_cleanup_table_name(table_name: str) -> None:
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", table_name):
+        raise RuntimeError(f"Unsafe cleanup table name: {table_name}")
+
+
+def _cleanup_tables_for_profile(profile: str) -> tuple[str, ...]:
+    try:
+        tables = CLEANUP_TABLES_BY_PROFILE[profile]
+    except KeyError as exc:
+        raise RuntimeError(
+            f"Unknown db_cleanup profile {profile!r}; expected one of {sorted(CLEANUP_TABLES_BY_PROFILE)}"
+        ) from exc
+    for table_name in tables:
+        _validate_cleanup_table_name(table_name)
+    return tables
+
+
+def _cleanup_truncate_sql(profile: str) -> str:
+    tables = _cleanup_tables_for_profile(profile)
+    table_list = ",\n                    ".join(tables)
+    return f"""
+                TRUNCATE TABLE
+                    {table_list}
+                RESTART IDENTITY CASCADE
+            """
+
+
+def _resolve_cleanup_profile(node) -> str | None:
+    if node.get_closest_marker("no_db"):
+        return None
+    markers = list(node.iter_markers("db_cleanup"))
+    if not markers:
+        return "full"
+    if len(markers) > 1:
+        raise RuntimeError("Multiple db_cleanup markers are not allowed on one test")
+    marker = markers[0]
+    if len(marker.args) != 1 or not isinstance(marker.args[0], str) or marker.kwargs:
+        raise RuntimeError("db_cleanup marker requires exactly one profile string argument")
+    profile = marker.args[0]
+    _cleanup_tables_for_profile(profile)
+    return profile
+
+
+def _cleanup_audit_enabled() -> bool:
+    return os.getenv("PC_CLIENT_TEST_CLEANUP_AUDIT") == "1"
+
+
+async def _audit_cleanup_profile_empty(conn, profile: str, tables: tuple[str, ...]) -> None:
+    if not _cleanup_audit_enabled():
+        return
+    dirty: list[str] = []
+    for table_name in tables:
+        _validate_cleanup_table_name(table_name)
+        result = await conn.execute(text(f"SELECT COUNT(*) FROM {_quote_database_identifier(table_name)}"))
+        count = int(result.scalar_one())
+        if count:
+            dirty.append(f"{table_name}={count}")
+    if dirty:
+        raise AssertionError(f"db_cleanup({profile!r}) left rows after cleanup: {', '.join(dirty)}")
+
+
+def _cleanup_timing_extra(profile: str) -> dict[str, object]:
+    return {
+        "profile": profile,
+        "table_count": len(_cleanup_tables_for_profile(profile)),
+        "cleanup_strategy": "truncate_profile",
+    }
+
+
+async def _cleanup_db_async(
+    test_database_url: str,
+    test_database_admin_url: str,
+    test_engine,
+    *,
+    profile: str = "full",
+) -> None:
     timing_started = _test_timing_start()
+    timing_extra = _cleanup_timing_extra(profile)
     try:
         verify_test_database(test_database_url)
         clear_log_records()
@@ -1246,159 +1709,34 @@ async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str
 
         async with test_engine.begin() as conn:
             await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
-            await conn.execute(text("""
-                TRUNCATE TABLE
-                    observer_integrity_events,
-                    observer_known_contamination,
-                    observer_error_occurrences,
-                    observer_error_signatures,
-                    observer_span_links,
-                    observer_spans,
-                    observer_traces,
-                    agent_observer_events,
-                    diagnostic_provider_audit,
-                    diagnostic_provider_credential_refs,
-                    diagnostic_provider_configs,
-                    tool_presentation_overrides,
-                    agent_recipe_test_runs,
-                    agent_recipe_primitives,
-                    agent_recipe_versions,
-                    diagnostic_capability_versions,
-                    diagnostic_capabilities,
-                    diagnostic_providers,
-                    diagnostic_bundles,
-                    diagnostic_findings,
-                    diagnostic_evidence,
-                    diagnostic_steps,
-                    diagnostic_sessions,
-                    knowledge_chunk_embeddings,
-                    knowledge_index_jobs,
-                    ai_request_audit,
-                    ai_policy_profiles,
-                    ai_model_profiles,
-                    ai_providers,
-                    knowledge_search_settings,
-                    knowledge_search_events,
-                    knowledge_gap_findings,
-                    knowledge_quality_snapshots,
-                    knowledge_audience_rules,
-                    knowledge_review_comments,
-                    knowledge_review_tasks,
-                    knowledge_content_pack_items,
-                    knowledge_content_packs,
-                    knowledge_rollout_policies,
-                    continuous_improvement_actions,
-                    problem_scanner_runs,
-                    problem_activity_events,
-                    problem_known_error_links,
-                    problem_affected_objects,
-                    problem_rca_records,
-                    problem_candidates,
-                    problem_detection_rules,
-                    problem_slo_policies,
-                    problem_ticket_links,
-                    problems,
-                    knowledge_edges,
-                    knowledge_nodes,
-                    knowledge_bindings,
-                    knowledge_chunks,
-                    knowledge_item_versions,
-                    knowledge_items,
-                    knowledge_spaces,
-                    ticket_quality_review_comments,
-                    ticket_quality_reviews,
-                    ticket_reopen_events,
-                    ticket_feedback,
-                    service_quality_snapshots,
-                    quality_policies,
-                    remote_access_events,
-                    remote_access_sessions,
-                    artifacts,
-                    operation_dependencies,
-                    operations,
-                    device_outbox,
-                    ticket_events,
-                    device_events,
-                    device_toolset_snapshots,
-                    device_desired_modules,
-                    device_modules,
-                    device_config,
-                    registry_quality_issue_overrides,
-                    registry_admin_events,
-                    registry_admin_policies,
-                    registry_person_department_memberships,
-                    registry_audience_group_members,
-                    registry_audience_groups,
-                    registry_assets,
-                    registry_people,
-                    registry_services,
-                    registry_vendors,
-                    registry_locations,
-                    registry_departments,
-                    dispatch_ready_devices,
-                    devices,
-                    agent_tokens,
-                    connection_requests,
-                    agent_build_download_audit,
-                    agent_builds,
-                    agent_runtime_audit,
-                    server_config,
-                    ui_user_audit,
-                    access_audit,
-                    access_group_queue_members,
-                    access_group_permissions,
-                    access_group_members,
-                    access_groups,
-                    helpdesk_policy_audit,
-                    request_templates,
-                    priority_policies,
-                    sla_policies,
-                    ola_policies,
-                    routing_policies,
-                    approval_policies,
-                    closure_policies,
-                    diagnostic_policies,
-                    notification_policies,
-                    visibility_policies,
-                    reporting_policies,
-                    smart_views,
-                    ticket_admin_audit,
-                    ticket_queue_ola_targets,
-                    ticket_queue_members,
-                    ticket_routing_rules,
-                    ticket_priority_matrix,
-                    ticket_sla_targets,
-                    ticket_sla_policies,
-                    ticket_business_calendars,
-                    ticket_resolution_codes,
-                    ticket_queues,
-                    playbook_step_run,
-                    playbook_step,
-                    playbook_run,
-                    playbook_version,
-                    playbook,
-                    ui_users,
-                    modules,
-                    tickets
-                RESTART IDENTITY CASCADE
-            """))
+            tables = _cleanup_tables_for_profile(profile)
+            await conn.execute(text(_cleanup_truncate_sql(profile)))
+            await _audit_cleanup_profile_empty(conn, profile, tables)
     finally:
-        _record_test_timing("_cleanup_db_async", "call", timing_started)
+        _record_test_timing("_cleanup_db_async", "call", timing_started, extra=timing_extra)
 
 
 @pytest.fixture(autouse=True)
 def cleanup_db(request):
     """Clean test data before each DB-backed test."""
-    if request.node.get_closest_marker("no_db"):
+    profile = _resolve_cleanup_profile(request.node)
+    if profile is None:
         return
     timing_started = _test_timing_start()
+    timing_extra = _cleanup_timing_extra(profile)
     test_database_url = request.getfixturevalue("test_database_url")
     test_database_admin_url = request.getfixturevalue("test_database_admin_url")
     test_engine = request.getfixturevalue("test_engine")
     try:
-        asyncio.run(_cleanup_db_async(test_database_url, test_database_admin_url, test_engine))
+        asyncio.run(_cleanup_db_async(test_database_url, test_database_admin_url, test_engine, profile=profile))
     finally:
-        _record_test_timing("cleanup_db", "setup", timing_started, nodeid=request.node.nodeid)
+        _record_test_timing(
+            "cleanup_db",
+            "setup",
+            timing_started,
+            nodeid=request.node.nodeid,
+            extra=timing_extra,
+        )
 
 
 @pytest.fixture

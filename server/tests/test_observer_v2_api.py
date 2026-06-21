@@ -13,6 +13,9 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 ADMIN_TOKEN = "test-ui-admin-token"
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
+
 def _auth(token: str = ADMIN_TOKEN) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 

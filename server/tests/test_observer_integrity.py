@@ -26,6 +26,9 @@ from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 RUN_ID = "obs1-test-20260529-0000"
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
+
 class _FakeRuntimeState:
     def __init__(self, online_devices: set[str]) -> None:
         self._online_devices = online_devices

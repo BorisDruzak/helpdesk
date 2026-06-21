@@ -9,6 +9,9 @@ from knowledge.search_service import KnowledgeSearchService
 from registry.audience_contracts import EffectiveAudience
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
+
 @pytest.mark.asyncio
 async def test_knowledge_search_filters_visibility_and_boosts_offering_binding(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

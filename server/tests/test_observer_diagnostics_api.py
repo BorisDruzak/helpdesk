@@ -14,6 +14,9 @@ SUPPORT_TOKEN = "test-ui-support-token"
 USER_TOKEN = "test-ui-user:plain-user"
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
+
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 

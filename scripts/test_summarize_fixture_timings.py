@@ -49,6 +49,33 @@ def test_summarize_artifact_dir_groups_fixture_phase_stats(tmp_path):
     assert (artifact_dir / "fixture-timings-summary.json").exists()
 
 
+def test_summarize_artifact_dir_adds_cleanup_profile_breakdown(tmp_path):
+    summarize = importlib.import_module("scripts.summarize_fixture_timings")
+    artifact_dir = tmp_path / "artifacts" / "ci" / "abc123"
+    _write_jsonl(
+        artifact_dir / "fixture-timings" / "server_pytest_db_web_api.jsonl",
+        [
+            {"fixture": "cleanup_db", "phase": "setup", "duration_seconds": 1.0, "profile": "full"},
+            {"fixture": "cleanup_db", "phase": "setup", "duration_seconds": 2.0, "profile": "tickets"},
+            {"fixture": "cleanup_db", "phase": "setup", "duration_seconds": 3.0, "profile": "tickets"},
+            {"fixture": "cleanup_db", "phase": "setup", "duration_seconds": 4.0},
+        ],
+    )
+
+    summary = summarize.summarize_artifact_dir(artifact_dir)
+
+    assert summary["fixtures"]["cleanup_db"]["setup"]["count"] == 4
+    assert summary["fixtures"]["cleanup_db:full"]["setup"]["total_seconds"] == 1.0
+    assert summary["fixtures"]["cleanup_db:tickets"]["setup"] == {
+        "count": 2,
+        "total_seconds": 5.0,
+        "avg_seconds": 2.5,
+        "p50_seconds": 2.5,
+        "p95_seconds": 3.0,
+        "max_seconds": 3.0,
+    }
+
+
 def test_main_prints_summary_table_and_ignores_bad_records(tmp_path, capsys):
     summarize = importlib.import_module("scripts.summarize_fixture_timings")
     artifact_dir = tmp_path / "artifacts" / "ci" / "abc123"

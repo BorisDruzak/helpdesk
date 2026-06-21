@@ -109,13 +109,13 @@ python -m pytest server/tests/test_web_support_api.py -m "not manual and not no_
 python scripts/summarize_fixture_timings.py artifacts/ci/manual
 ```
 
-The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_client/setup`, `test_client/teardown`, `test_agent/setup`, and `test_agent/teardown`. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
+The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_client/setup`, `test_client/teardown`, `test_agent/setup`, and `test_agent/teardown`. Cleanup timings with a `profile` field are also grouped as `cleanup_db:<profile>` and `_cleanup_db_async:<profile>` while preserving the original aggregate rows. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
 
 ## Server DB Template Mode
 
 `PC_CLIENT_TEST_DB_TEMPLATE=1` is an opt-in server pytest acceleration path for PostgreSQL DB/WS layers. The harness computes a stable fingerprint from `server/alembic.ini` and `server/app/db/migrations/**`, creates or reuses `pc_support_test_template_<fingerprint12>`, applies `alembic upgrade head` once to that template, then creates each isolated `pc_support_test_<domain>_<worker>_<hash>` database with `CREATE DATABASE ... TEMPLATE ...`.
 
-This removes repeated Alembic setup for DB/WS layers, but it does not change the per-test `cleanup_db` `TRUNCATE ... RESTART IDENTITY CASCADE` cost, `test_app`, `test_client`, `test_agent`, pooling, xdist, or test semantics.
+This removes repeated Alembic setup for DB/WS layers, but it does not change `test_app`, `test_client`, `test_agent`, pooling, xdist, or test semantics. Tests without an explicit cleanup profile still pay the full per-test `cleanup_db` `TRUNCATE ... RESTART IDENTITY CASCADE` cost.
 
 Manual controls:
 
@@ -127,6 +127,30 @@ $env:PC_CLIENT_TEST_DB_TEMPLATE_REBUILD = "1"  # force rebuild for the current f
 ```
 
 `scripts/run_ci_suite.py` enables `PC_CLIENT_TEST_DB_TEMPLATE_KEEP=1` for DB/WS layers so the migrated template is reused across pytest processes. Without `KEEP=1`, the harness best-effort drops the template after the pytest session. Only databases named `pc_support_test_template_*` are template caches and are safe to drop manually. Do not drop arbitrary PostgreSQL databases from cleanup scripts. Shared DB fallback (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1` or automatic fallback to `pc_support_test`) is not a valid full DB/API gate path; template mode requires isolated admin database access and fails clearly if the run falls back to the shared DB.
+
+## Server DB Cleanup Profiles
+
+`cleanup_db` is fail-closed. A DB-backed test without `@pytest.mark.db_cleanup(...)` uses the `full` profile, which preserves the historical broad `TRUNCATE ... RESTART IDENTITY CASCADE` table list. `no_db` still skips DB setup and cleanup entirely.
+
+Use a narrower profile only after a focused run proves the file does not leak data outside that profile:
+
+```python
+pytestmark = pytest.mark.db_cleanup("knowledge")
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+pytestmark = pytest.mark.db_cleanup("tickets")
+```
+
+Supported profiles are `full`, `tickets`, `knowledge`, `observer_diagnostics`, `agent_runtime`, `registry_access`, and `policies_config`. Unknown profiles and multiple `db_cleanup` markers on one test fail fast. The first optimized files are conservative: selected knowledge, observer/diagnostics, and ticket policy tests. Broad `agent_ws` and mixed runtime tests should stay on `full` until separately validated.
+
+For contamination checks on a small focused sample, enable audit mode:
+
+```powershell
+$env:PC_CLIENT_TEST_TIMING = "1"
+$env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
+python -m pytest server/tests/test_knowledge_search.py -vv
+```
+
+Audit mode checks row counts for the selected profile tables after cleanup and fails if rows remain. It is intentionally opt-in because it adds extra DB queries per test.
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
 

@@ -59,6 +59,10 @@ def _load_records(files: Iterable[Path]) -> tuple[dict[str, dict[str, list[float
                     invalid_count += 1
                     continue
                 grouped.setdefault(fixture, {}).setdefault(phase, []).append(duration_seconds)
+                profile = record.get("profile")
+                if isinstance(profile, str) and profile:
+                    profile_fixture = f"{fixture}:{profile}"
+                    grouped.setdefault(profile_fixture, {}).setdefault(phase, []).append(duration_seconds)
                 valid_count += 1
     return grouped, valid_count, invalid_count
 

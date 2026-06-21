@@ -25,6 +25,9 @@ from tickets.passport_service import TicketPassportService
 from tickets.closure_policy import build_closure_requirements
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
+
 def _template_context(closure_policy: dict, *, approval_policy: dict | None = None) -> dict:
     return {
         "request_template": {

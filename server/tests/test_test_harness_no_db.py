@@ -2,6 +2,7 @@ import asyncio
 import importlib.util
 import warnings
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -20,6 +21,24 @@ test_harness = _load_test_harness()
 
 
 pytestmark = pytest.mark.no_db
+
+
+class _FakeNode:
+    def __init__(self, *markers):
+        self._markers = list(markers)
+
+    def get_closest_marker(self, name):
+        for marker_name, marker in reversed(self._markers):
+            if marker_name == name:
+                return marker
+        return None
+
+    def iter_markers(self, name=None):
+        return [marker for marker_name, marker in self._markers if name is None or marker_name == name]
+
+
+def _marker(*args):
+    return SimpleNamespace(args=args, kwargs={})
 
 
 def test_auto_fallback_to_shared_db_when_admin_db_unavailable(monkeypatch):
@@ -143,6 +162,98 @@ def test_keep_test_database_env_flag(monkeypatch):
 
     monkeypatch.setenv("PC_CLIENT_KEEP_TEST_DB", "1")
     assert test_harness._keep_test_database() is True
+
+
+def test_cleanup_profile_defaults_to_full_without_marker():
+    assert test_harness._resolve_cleanup_profile(_FakeNode()) == "full"
+
+
+def test_cleanup_profile_uses_explicit_marker():
+    node = _FakeNode(("db_cleanup", _marker("tickets")))
+
+    assert test_harness._resolve_cleanup_profile(node) == "tickets"
+
+
+def test_cleanup_profile_returns_none_for_no_db_marker():
+    node = _FakeNode(("no_db", _marker()))
+
+    assert test_harness._resolve_cleanup_profile(node) is None
+
+
+def test_cleanup_profile_rejects_unknown_profile():
+    node = _FakeNode(("db_cleanup", _marker("unknown")))
+
+    with pytest.raises(RuntimeError, match="Unknown db_cleanup profile"):
+        test_harness._resolve_cleanup_profile(node)
+
+
+def test_cleanup_profile_rejects_multiple_markers():
+    node = _FakeNode(("db_cleanup", _marker("tickets")), ("db_cleanup", _marker("knowledge")))
+
+    with pytest.raises(RuntimeError, match="Multiple db_cleanup markers"):
+        test_harness._resolve_cleanup_profile(node)
+
+
+def test_cleanup_profile_rejects_marker_without_single_string_argument():
+    node = _FakeNode(("db_cleanup", _marker()))
+
+    with pytest.raises(RuntimeError, match="requires exactly one profile"):
+        test_harness._resolve_cleanup_profile(node)
+
+
+def test_cleanup_profile_tables_use_safe_identifiers():
+    for profile, tables in test_harness.CLEANUP_TABLES_BY_PROFILE.items():
+        assert tables, profile
+        for table in tables:
+            test_harness._validate_cleanup_table_name(table)
+
+
+def test_cleanup_truncate_sql_uses_selected_profile_tables_only():
+    sql = test_harness._cleanup_truncate_sql("knowledge")
+    tables = test_harness.CLEANUP_TABLES_BY_PROFILE["knowledge"]
+
+    assert "knowledge_items" in tables
+    assert "knowledge_items" in sql
+    assert "ticket_queues" not in tables
+    assert "ticket_queues" not in sql
+    assert sql.strip().endswith("RESTART IDENTITY CASCADE")
+
+
+def test_full_cleanup_profile_preserves_current_table_scope():
+    full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
+
+    assert len(full_tables) == 132
+    assert full_tables[:3] == (
+        "observer_integrity_events",
+        "observer_known_contamination",
+        "observer_error_occurrences",
+    )
+    assert full_tables[-3:] == ("ui_users", "modules", "tickets")
+
+
+@pytest.mark.asyncio
+async def test_cleanup_audit_fails_when_profile_table_keeps_rows(monkeypatch):
+    class FakeResult:
+        def __init__(self, value):
+            self.value = value
+
+        def scalar_one(self):
+            return self.value
+
+    class FakeConn:
+        async def execute(self, statement):
+            sql = str(statement)
+            table = sql.split('FROM "', 1)[1].split('"', 1)[0]
+            return FakeResult(2 if table == "knowledge_items" else 0)
+
+    monkeypatch.setenv("PC_CLIENT_TEST_CLEANUP_AUDIT", "1")
+
+    with pytest.raises(AssertionError, match="knowledge_items=2"):
+        await test_harness._audit_cleanup_profile_empty(
+            FakeConn(),
+            "knowledge",
+            ("knowledge_items", "knowledge_spaces"),
+        )
 
 
 def test_template_env_flags(monkeypatch):
