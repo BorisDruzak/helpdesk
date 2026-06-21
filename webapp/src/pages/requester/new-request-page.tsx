@@ -765,7 +765,7 @@ function recommendOffering(
         strongScore: number;
       }
     | null = null;
-  let secondBestScore = 0;
+  let secondBestStrongScore = 0;
   for (const service of services) {
     for (const offering of service.offerings ?? []) {
       const form = offering.request_template_key ? formByKey.get(offering.request_template_key) : null;
@@ -788,20 +788,20 @@ function recommendOffering(
         (total, word) => total + (!REQUEST_CATEGORY_GENERIC_WORDS.has(word) && titleHaystack.includes(word) ? 1 : 0),
         0,
       );
-      if (score > 0 && (!best || score > best.score)) {
+      if (score > 0 && (!best || strongScore > best.strongScore || (strongScore === best.strongScore && score > best.score))) {
         if (best) {
-          secondBestScore = Math.max(secondBestScore, best.score);
+          secondBestStrongScore = Math.max(secondBestStrongScore, best.strongScore);
         }
         best = { offering: { ...offering, service_code: service.service_code }, score, strongScore };
       } else if (score > 0) {
-        secondBestScore = Math.max(secondBestScore, score);
+        secondBestStrongScore = Math.max(secondBestStrongScore, strongScore);
       }
     }
   }
   if (!best) {
     return null;
   }
-  const confident = intent === OWNER_CHANGE_INTENT || (best.strongScore > 0 && best.score > secondBestScore);
+  const confident = intent === OWNER_CHANGE_INTENT || (best.strongScore > 0 && best.strongScore > secondBestStrongScore);
   return { confident, offering: best.offering };
 }
 

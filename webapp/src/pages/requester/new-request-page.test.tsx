@@ -173,6 +173,21 @@ describe("RequesterNewRequestPage", () => {
     expect(screen.getByRole("button", { name: "Выбрать другую категорию" })).toBeInTheDocument();
   });
 
+  it("keeps a strong printer recommendation confident when weak context words match another offering", async () => {
+    installNewRequestMock({ withDistractorOffering: true, withPrinterOffering: true });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Не печатает принтер в кабинете 214" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+
+    expect(await screen.findByRole("heading", { name: "Проблема с принтером" })).toBeInTheDocument();
+    expect(screen.queryByText("Сломался ноутбук")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Выбрать другую категорию" })).toBeInTheDocument();
+  });
+
   it("shows other categories only after explicit change from a confident recommendation", async () => {
     installNewRequestMock({ withPrinterOffering: true });
     renderPage();
@@ -525,6 +540,7 @@ function installNewRequestMock(
                     offering_code: "vpn",
                     full_code: "access.vpn",
                     title: "Доступ VPN",
+                    description: "Подключение и доступ к сети в кабинете.",
                     request_template_key: "access_request",
                   },
                 ],
