@@ -25,6 +25,7 @@ try:
         webapp_bundle_archive_for_commit,
         webapp_bundle_dir_for_commit,
     )
+    from scripts.summarize_fixture_timings import summarize_artifact_dir
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from scripts.ci_artifacts import (
@@ -34,6 +35,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
         webapp_bundle_archive_for_commit,
         webapp_bundle_dir_for_commit,
     )
+    from scripts.summarize_fixture_timings import summarize_artifact_dir
 
 
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 10 * 60
@@ -385,8 +387,12 @@ def _server_pytest_env(
     layer_name: str | None = None,
     commit: str | None = None,
     keep_test_db: bool = False,
+    timing_path: Path | None = None,
 ) -> dict[str, str]:
     env = {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": str(DEFAULT_PYTEST_WATCHDOG_SECONDS)}
+    if timing_path is not None:
+        env["PC_CLIENT_TEST_TIMING"] = "1"
+        env["PC_CLIENT_TEST_TIMING_PATH"] = str(timing_path)
     if layer_name and layer_name != "server_pytest_no_db":
         env["PC_CLIENT_TEST_DB_DOMAIN"] = _test_db_domain_for_layer(layer_name)
         if commit:
@@ -394,6 +400,10 @@ def _server_pytest_env(
         if keep_test_db:
             env["PC_CLIENT_KEEP_TEST_DB"] = "1"
     return env
+
+
+def _server_fixture_timing_path(artifact_dir: Path, layer_name: str) -> Path:
+    return artifact_dir / "fixture-timings" / f"{layer_name}.jsonl"
 
 
 def _server_pytest_command(marker_expr: str, junit_path: Path, paths: list[Path | str] | None = None) -> list[str]:
@@ -458,7 +468,12 @@ def _server_db_api_layer_steps(
                 logs_dir / f"{layer_name}.log",
                 timeout_seconds,
                 idle_timeout_seconds,
-                _server_pytest_env(layer_name=layer_name, commit=commit, keep_test_db=keep_test_db),
+                _server_pytest_env(
+                    layer_name=layer_name,
+                    commit=commit,
+                    keep_test_db=keep_test_db,
+                    timing_path=_server_fixture_timing_path(artifact_dir, layer_name),
+                ),
             )
         )
     return steps
@@ -500,6 +515,8 @@ def main() -> None:
     summary_path = summary_path_for_commit(args.workspace, commit)
     artifact_dir = summary_path.parent
     logs_dir = artifact_dir / "logs"
+    fixture_timings_dir = artifact_dir / "fixture-timings"
+    fixture_timings_summary_path = artifact_dir / "fixture-timings-summary.json"
     webapp_bundle_dir = webapp_bundle_dir_for_commit(args.workspace, commit)
     webapp_bundle_archive = webapp_bundle_archive_for_commit(args.workspace, commit)
     started_at = now_iso()
@@ -557,7 +574,12 @@ def main() -> None:
             logs_dir / "server_pytest_no_db.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
-            _server_pytest_env(layer_name="server_pytest_no_db", commit=commit, keep_test_db=args.keep_test_db),
+            _server_pytest_env(
+                layer_name="server_pytest_no_db",
+                commit=commit,
+                keep_test_db=args.keep_test_db,
+                timing_path=_server_fixture_timing_path(artifact_dir, "server_pytest_no_db"),
+            ),
         ),
         *_server_db_api_layer_steps(
             workspace=args.workspace,
@@ -574,7 +596,12 @@ def main() -> None:
             logs_dir / "server_pytest_agent_ws.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
-            _server_pytest_env(layer_name="server_pytest_agent_ws", commit=commit, keep_test_db=args.keep_test_db),
+            _server_pytest_env(
+                layer_name="server_pytest_agent_ws",
+                commit=commit,
+                keep_test_db=args.keep_test_db,
+                timing_path=_server_fixture_timing_path(artifact_dir, "server_pytest_agent_ws"),
+            ),
         ),
         (
             "pc_agent_pytest",
@@ -600,6 +627,7 @@ def main() -> None:
     results: list[dict[str, object]] = []
     status = "green"
     runner_error: str | None = None
+    fixture_timings_error: str | None = None
     try:
         for step_name, command, log_path, timeout_seconds, idle_timeout_seconds, env_overrides in steps:
             result = run_and_capture(
@@ -624,6 +652,11 @@ def main() -> None:
         runner_error = f"{type(exc).__name__}: {exc}"
         print(f"[ci] runner error: {runner_error}", file=sys.stderr)
     finally:
+        try:
+            summarize_artifact_dir(artifact_dir)
+        except Exception as exc:  # pragma: no cover - defensive CI artifact path.
+            fixture_timings_error = f"{type(exc).__name__}: {exc}"
+            print(f"[ci] fixture timing summary error: {fixture_timings_error}", file=sys.stderr)
         summary = {
             "commit": commit,
             "status": status,
@@ -633,6 +666,8 @@ def main() -> None:
             "available_layers": available_layers,
             "artifacts": {
                 "summary": str(summary_path),
+                "fixture_timings_dir": str(fixture_timings_dir),
+                "fixture_timings_summary": str(fixture_timings_summary_path),
                 "webapp_bundle_dir": str(webapp_bundle_dir),
                 "webapp_bundle_archive": str(webapp_bundle_archive),
                 "junit_server_no_db": str(artifact_dir / "junit-server-no-db.xml"),
@@ -650,6 +685,8 @@ def main() -> None:
         }
         if runner_error:
             summary["runner_error"] = runner_error
+        if fixture_timings_error:
+            summary["fixture_timings_error"] = fixture_timings_error
         write_summary(summary_path, summary)
 
     if status != "green":

@@ -4,6 +4,7 @@ import asyncio
 import faulthandler
 import hashlib
 import importlib
+import json
 import os
 import re
 import socket
@@ -14,7 +15,8 @@ import time
 import types
 import uuid
 import warnings
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -64,6 +66,68 @@ _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
 _WINDOWS_TEST_DB_TUNNEL_OWNED = False
 _SHARED_TEST_DB_TERMINATE_UNAVAILABLE = False
 _AGENT_WS_FIXTURES = {"test_agent"}
+_TEST_TIMING_WRITE_FAILED = False
+
+
+def _test_timing_enabled() -> bool:
+    return os.getenv("PC_CLIENT_TEST_TIMING", "").strip() == "1"
+
+
+def _test_timing_start() -> float | None:
+    if not _test_timing_enabled():
+        return None
+    return time.perf_counter()
+
+
+def _record_test_timing(
+    fixture: str,
+    phase: str,
+    started_at: float | None,
+    *,
+    nodeid: str | None = None,
+) -> None:
+    if started_at is None:
+        return
+    path_raw = os.getenv("PC_CLIENT_TEST_TIMING_PATH", "").strip()
+    if not path_raw:
+        return
+    duration_seconds = time.perf_counter() - started_at
+    record = {
+        "schema": "pc_client.fixture_timing.v1",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "pid": os.getpid(),
+        "worker_id": os.getenv("PYTEST_XDIST_WORKER"),
+        "nodeid": nodeid,
+        "fixture": fixture,
+        "phase": phase,
+        "duration_seconds": round(duration_seconds, 6),
+    }
+    path = Path(path_raw)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            json.dump(record, handle, ensure_ascii=False)
+            handle.write("\n")
+    except Exception as exc:
+        global _TEST_TIMING_WRITE_FAILED
+        if not _TEST_TIMING_WRITE_FAILED:
+            _TEST_TIMING_WRITE_FAILED = True
+            try:
+                sys.stderr.write(
+                    f"[fixture-timing] failed to write {path}: {type(exc).__name__}: {exc}\n"
+                )
+                sys.stderr.flush()
+            except Exception:
+                pass
+
+
+@contextmanager
+def _test_timing_span(fixture: str, phase: str, *, nodeid: str | None = None):
+    started_at = _test_timing_start()
+    try:
+        yield
+    finally:
+        _record_test_timing(fixture, phase, started_at, nodeid=nodeid)
 
 
 def _pytest_watchdog_seconds() -> float | None:
@@ -596,37 +660,41 @@ def test_database_url() -> str:
 @pytest.fixture(scope="session")
 def run_migrations(test_database_url: str):
     """Apply Alembic migrations once per pytest session."""
-    verify_test_database(test_database_url)
+    timing_started = _test_timing_start()
+    try:
+        verify_test_database(test_database_url)
 
-    from alembic import command
-    from alembic.config import Config
+        from alembic import command
+        from alembic.config import Config
 
-    conftest_path = Path(__file__).resolve()
-    server_root = conftest_path.parents[1]
-    alembic_ini = server_root / "alembic.ini"
+        conftest_path = Path(__file__).resolve()
+        server_root = conftest_path.parents[1]
+        alembic_ini = server_root / "alembic.ini"
 
-    if not alembic_ini.exists():
-        raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
+        if not alembic_ini.exists():
+            raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
 
-    alembic_cfg = Config(str(alembic_ini))
-    alembic_cfg.set_main_option("sqlalchemy.url", test_database_url)
-    script_path = server_root / "app" / "db" / "migrations"
-    if script_path.exists():
-        alembic_cfg.set_main_option("script_location", str(script_path))
+        alembic_cfg = Config(str(alembic_ini))
+        alembic_cfg.set_main_option("sqlalchemy.url", test_database_url)
+        script_path = server_root / "app" / "db" / "migrations"
+        if script_path.exists():
+            alembic_cfg.set_main_option("script_location", str(script_path))
 
-    if os.name == "nt" and make_url(test_database_url).database == SHARED_TEST_DATABASE_NAME:
-        env = os.environ.copy()
-        env["DATABASE_URL"] = test_database_url
-        subprocess.run(
-            [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
-            cwd=str(server_root),
-            env=env,
-            check=True,
-        )
-        return
+        if os.name == "nt" and make_url(test_database_url).database == SHARED_TEST_DATABASE_NAME:
+            env = os.environ.copy()
+            env["DATABASE_URL"] = test_database_url
+            subprocess.run(
+                [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
+                cwd=str(server_root),
+                env=env,
+                check=True,
+            )
+            return
 
-    with patch.dict(os.environ, {"DATABASE_URL": test_database_url}):
-        command.upgrade(alembic_cfg, "head")
+        with patch.dict(os.environ, {"DATABASE_URL": test_database_url}):
+            command.upgrade(alembic_cfg, "head")
+    finally:
+        _record_test_timing("run_migrations", "setup", timing_started)
 
 
 @pytest.fixture(scope="session")
@@ -674,151 +742,155 @@ def ensure_db_ready(request):
 
 
 async def _cleanup_db_async(test_database_url: str, test_database_admin_url: str, test_engine) -> None:
-    verify_test_database(test_database_url)
-    clear_log_records()
-    clear_dismissed_alerts()
+    timing_started = _test_timing_start()
+    try:
+        verify_test_database(test_database_url)
+        clear_log_records()
+        clear_dismissed_alerts()
 
-    if _is_shared_test_database_url(test_database_url):
-        await _terminate_other_test_database_backends(test_database_admin_url, test_database_url)
+        if _is_shared_test_database_url(test_database_url):
+            await _terminate_other_test_database_backends(test_database_admin_url, test_database_url)
 
-    async with test_engine.begin() as conn:
-        await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
-        await conn.execute(text("""
-            TRUNCATE TABLE
-                observer_integrity_events,
-                observer_known_contamination,
-                observer_error_occurrences,
-                observer_error_signatures,
-                observer_span_links,
-                observer_spans,
-                observer_traces,
-                agent_observer_events,
-                diagnostic_provider_audit,
-                diagnostic_provider_credential_refs,
-                diagnostic_provider_configs,
-                tool_presentation_overrides,
-                agent_recipe_test_runs,
-                agent_recipe_primitives,
-                agent_recipe_versions,
-                diagnostic_capability_versions,
-                diagnostic_capabilities,
-                diagnostic_providers,
-                diagnostic_bundles,
-                diagnostic_findings,
-                diagnostic_evidence,
-                diagnostic_steps,
-                diagnostic_sessions,
-                knowledge_chunk_embeddings,
-                knowledge_index_jobs,
-                ai_request_audit,
-                ai_policy_profiles,
-                ai_model_profiles,
-                ai_providers,
-                knowledge_search_settings,
-                knowledge_search_events,
-                knowledge_gap_findings,
-                knowledge_quality_snapshots,
-                knowledge_audience_rules,
-                knowledge_review_comments,
-                knowledge_review_tasks,
-                knowledge_content_pack_items,
-                knowledge_content_packs,
-                knowledge_rollout_policies,
-                continuous_improvement_actions,
-                problem_scanner_runs,
-                problem_activity_events,
-                problem_known_error_links,
-                problem_affected_objects,
-                problem_rca_records,
-                problem_candidates,
-                problem_detection_rules,
-                problem_slo_policies,
-                problem_ticket_links,
-                problems,
-                knowledge_edges,
-                knowledge_nodes,
-                knowledge_bindings,
-                knowledge_chunks,
-                knowledge_item_versions,
-                knowledge_items,
-                knowledge_spaces,
-                ticket_quality_review_comments,
-                ticket_quality_reviews,
-                ticket_reopen_events,
-                ticket_feedback,
-                service_quality_snapshots,
-                quality_policies,
-                remote_access_events,
-                remote_access_sessions,
-                artifacts,
-                operation_dependencies,
-                operations,
-                device_outbox,
-                ticket_events,
-                device_events,
-                device_toolset_snapshots,
-                device_desired_modules,
-                device_modules,
-                device_config,
-                registry_quality_issue_overrides,
-                registry_admin_events,
-                registry_admin_policies,
-                registry_person_department_memberships,
-                registry_audience_group_members,
-                registry_audience_groups,
-                registry_assets,
-                registry_people,
-                registry_services,
-                registry_vendors,
-                registry_locations,
-                registry_departments,
-                dispatch_ready_devices,
-                devices,
-                agent_tokens,
-                connection_requests,
-                agent_build_download_audit,
-                agent_builds,
-                agent_runtime_audit,
-                server_config,
-                ui_user_audit,
-                access_audit,
-                access_group_queue_members,
-                access_group_permissions,
-                access_group_members,
-                access_groups,
-                helpdesk_policy_audit,
-                request_templates,
-                priority_policies,
-                sla_policies,
-                ola_policies,
-                routing_policies,
-                approval_policies,
-                closure_policies,
-                diagnostic_policies,
-                notification_policies,
-                visibility_policies,
-                reporting_policies,
-                smart_views,
-                ticket_admin_audit,
-                ticket_queue_ola_targets,
-                ticket_queue_members,
-                ticket_routing_rules,
-                ticket_priority_matrix,
-                ticket_sla_targets,
-                ticket_sla_policies,
-                ticket_business_calendars,
-                ticket_resolution_codes,
-                ticket_queues,
-                playbook_step_run,
-                playbook_step,
-                playbook_run,
-                playbook_version,
-                playbook,
-                ui_users,
-                modules,
-                tickets
-            RESTART IDENTITY CASCADE
-        """))
+        async with test_engine.begin() as conn:
+            await conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            await conn.execute(text("""
+                TRUNCATE TABLE
+                    observer_integrity_events,
+                    observer_known_contamination,
+                    observer_error_occurrences,
+                    observer_error_signatures,
+                    observer_span_links,
+                    observer_spans,
+                    observer_traces,
+                    agent_observer_events,
+                    diagnostic_provider_audit,
+                    diagnostic_provider_credential_refs,
+                    diagnostic_provider_configs,
+                    tool_presentation_overrides,
+                    agent_recipe_test_runs,
+                    agent_recipe_primitives,
+                    agent_recipe_versions,
+                    diagnostic_capability_versions,
+                    diagnostic_capabilities,
+                    diagnostic_providers,
+                    diagnostic_bundles,
+                    diagnostic_findings,
+                    diagnostic_evidence,
+                    diagnostic_steps,
+                    diagnostic_sessions,
+                    knowledge_chunk_embeddings,
+                    knowledge_index_jobs,
+                    ai_request_audit,
+                    ai_policy_profiles,
+                    ai_model_profiles,
+                    ai_providers,
+                    knowledge_search_settings,
+                    knowledge_search_events,
+                    knowledge_gap_findings,
+                    knowledge_quality_snapshots,
+                    knowledge_audience_rules,
+                    knowledge_review_comments,
+                    knowledge_review_tasks,
+                    knowledge_content_pack_items,
+                    knowledge_content_packs,
+                    knowledge_rollout_policies,
+                    continuous_improvement_actions,
+                    problem_scanner_runs,
+                    problem_activity_events,
+                    problem_known_error_links,
+                    problem_affected_objects,
+                    problem_rca_records,
+                    problem_candidates,
+                    problem_detection_rules,
+                    problem_slo_policies,
+                    problem_ticket_links,
+                    problems,
+                    knowledge_edges,
+                    knowledge_nodes,
+                    knowledge_bindings,
+                    knowledge_chunks,
+                    knowledge_item_versions,
+                    knowledge_items,
+                    knowledge_spaces,
+                    ticket_quality_review_comments,
+                    ticket_quality_reviews,
+                    ticket_reopen_events,
+                    ticket_feedback,
+                    service_quality_snapshots,
+                    quality_policies,
+                    remote_access_events,
+                    remote_access_sessions,
+                    artifacts,
+                    operation_dependencies,
+                    operations,
+                    device_outbox,
+                    ticket_events,
+                    device_events,
+                    device_toolset_snapshots,
+                    device_desired_modules,
+                    device_modules,
+                    device_config,
+                    registry_quality_issue_overrides,
+                    registry_admin_events,
+                    registry_admin_policies,
+                    registry_person_department_memberships,
+                    registry_audience_group_members,
+                    registry_audience_groups,
+                    registry_assets,
+                    registry_people,
+                    registry_services,
+                    registry_vendors,
+                    registry_locations,
+                    registry_departments,
+                    dispatch_ready_devices,
+                    devices,
+                    agent_tokens,
+                    connection_requests,
+                    agent_build_download_audit,
+                    agent_builds,
+                    agent_runtime_audit,
+                    server_config,
+                    ui_user_audit,
+                    access_audit,
+                    access_group_queue_members,
+                    access_group_permissions,
+                    access_group_members,
+                    access_groups,
+                    helpdesk_policy_audit,
+                    request_templates,
+                    priority_policies,
+                    sla_policies,
+                    ola_policies,
+                    routing_policies,
+                    approval_policies,
+                    closure_policies,
+                    diagnostic_policies,
+                    notification_policies,
+                    visibility_policies,
+                    reporting_policies,
+                    smart_views,
+                    ticket_admin_audit,
+                    ticket_queue_ola_targets,
+                    ticket_queue_members,
+                    ticket_routing_rules,
+                    ticket_priority_matrix,
+                    ticket_sla_targets,
+                    ticket_sla_policies,
+                    ticket_business_calendars,
+                    ticket_resolution_codes,
+                    ticket_queues,
+                    playbook_step_run,
+                    playbook_step,
+                    playbook_run,
+                    playbook_version,
+                    playbook,
+                    ui_users,
+                    modules,
+                    tickets
+                RESTART IDENTITY CASCADE
+            """))
+    finally:
+        _record_test_timing("_cleanup_db_async", "call", timing_started)
 
 
 @pytest.fixture(autouse=True)
@@ -826,10 +898,14 @@ def cleanup_db(request):
     """Clean test data before each DB-backed test."""
     if request.node.get_closest_marker("no_db"):
         return
+    timing_started = _test_timing_start()
     test_database_url = request.getfixturevalue("test_database_url")
     test_database_admin_url = request.getfixturevalue("test_database_admin_url")
     test_engine = request.getfixturevalue("test_engine")
-    asyncio.run(_cleanup_db_async(test_database_url, test_database_admin_url, test_engine))
+    try:
+        asyncio.run(_cleanup_db_async(test_database_url, test_database_admin_url, test_engine))
+    finally:
+        _record_test_timing("cleanup_db", "setup", timing_started, nodeid=request.node.nodeid)
 
 
 @pytest.fixture
@@ -860,6 +936,9 @@ def patched_get_session(test_engine):
 @pytest_asyncio.fixture
 async def test_app(patched_get_session, test_engine, test_database_url: str):
     """Создаёт aiohttp app через create_app() с session-scoped test engine."""
+    setup_timing_started = _test_timing_start()
+    setup_timing_recorded = False
+    teardown_timing_started = None
     from auth import middleware as auth_middleware_module
     from auth.context import AuthContext, AuthType
     from auth.service import AuthService
@@ -960,58 +1039,72 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
             token="implicit-test-auth",
         )
 
-    with patch.object(AuthService, "verify_ui_token", fake_verify_ui_token), \
-         patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context), \
-         patch.object(server_config, "AGENT_BUILTIN_MODULES", test_builtin_modules), \
-         patch.object(tools_service_module, "AGENT_BUILTIN_MODULES", test_builtin_modules):
-        app = create_app()
-        verify_test_database(test_database_url)
+    try:
+        with patch.object(AuthService, "verify_ui_token", fake_verify_ui_token), \
+             patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context), \
+             patch.object(server_config, "AGENT_BUILTIN_MODULES", test_builtin_modules), \
+             patch.object(tools_service_module, "AGENT_BUILTIN_MODULES", test_builtin_modules):
+            app = create_app()
+            verify_test_database(test_database_url)
 
-        state = app["state"]
-        await recover_pending_commands(state)
+            state = app["state"]
+            await recover_pending_commands(state)
 
-        sender = DeviceOutboxSender(state, poll_interval=0.5)
-        await sender.start_async()
-        bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
+            sender = DeviceOutboxSender(state, poll_interval=0.5)
+            await sender.start_async()
+            bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
 
-        app.on_startup.clear()
-        app.on_cleanup.clear()
+            app.on_startup.clear()
+            app.on_cleanup.clear()
 
-        async def test_cleanup(app):
-            if "outbox_sender" in app:
-                await app["outbox_sender"].stop_async()
+            async def test_cleanup(app):
+                if "outbox_sender" in app:
+                    await app["outbox_sender"].stop_async()
 
-        app.on_cleanup.append(test_cleanup)
-        yield app
+            app.on_cleanup.append(test_cleanup)
+            _record_test_timing("test_app", "setup", setup_timing_started)
+            setup_timing_recorded = True
+            try:
+                yield app
+            finally:
+                teardown_timing_started = _test_timing_start()
+    finally:
+        if not setup_timing_recorded:
+            _record_test_timing("test_app", "setup", setup_timing_started)
+        _record_test_timing("test_app", "teardown", teardown_timing_started)
 
 
 @pytest_asyncio.fixture
 async def test_client(test_app):
     """aiohttp test client для HTTP запросов."""
-    client = TestClient(TestServer(test_app))
-    await client.start_server()
+    with _test_timing_span("test_client", "setup"):
+        client = TestClient(TestServer(test_app))
+        await client.start_server()
     try:
         yield client
     finally:
-        if not getattr(client, "_closed", False):
-            for ws in list(getattr(client, "_websockets", ())):
-                try:
-                    await ws.close()
-                except Exception:
-                    pass
-                response = getattr(ws, "_response", None)
-                wait_for_close = getattr(response, "wait_for_close", None)
-                if callable(wait_for_close):
+        with _test_timing_span("test_client", "teardown"):
+            if not getattr(client, "_closed", False):
+                for ws in list(getattr(client, "_websockets", ())):
                     try:
-                        await wait_for_close()
+                        await ws.close()
                     except Exception:
                         pass
-            await client.close()
+                    response = getattr(ws, "_response", None)
+                    wait_for_close = getattr(response, "wait_for_close", None)
+                    if callable(wait_for_close):
+                        try:
+                            await wait_for_close()
+                        except Exception:
+                            pass
+                await client.close()
 
 
 @pytest_asyncio.fixture
 async def test_agent(tmp_path, test_client):
     """Запускает WSAgent in-process с временным SQLite."""
+    setup_timing_started = _test_timing_start()
+    setup_timing_recorded = False
     import sys
     from pathlib import Path
     from unittest.mock import patch
@@ -1155,24 +1248,30 @@ async def test_agent(tmp_path, test_client):
             else:
                 logger.warning(f"Agent did not connect within {max_wait}s, continuing test")
 
-            yield agent
-
-            close_agent_ws = getattr(agent, "_close_agent_ws", None)
-            if callable(close_agent_ws):
-                try:
-                    await close_agent_ws(reason="test_fixture_shutdown", message=b"test_shutdown")
-                    await asyncio.sleep(0)
-                except Exception:
-                    pass
-
-            agent_task.cancel()
+            _record_test_timing("test_agent", "setup", setup_timing_started)
+            setup_timing_recorded = True
             try:
-                await agent_task
-            except asyncio.CancelledError:
-                pass
-            await agent.cleanup()
-            _clear_agent_runtime_modules()
+                yield agent
+            finally:
+                with _test_timing_span("test_agent", "teardown"):
+                    close_agent_ws = getattr(agent, "_close_agent_ws", None)
+                    if callable(close_agent_ws):
+                        try:
+                            await close_agent_ws(reason="test_fixture_shutdown", message=b"test_shutdown")
+                            await asyncio.sleep(0)
+                        except Exception:
+                            pass
+
+                    agent_task.cancel()
+                    try:
+                        await agent_task
+                    except asyncio.CancelledError:
+                        pass
+                    await agent.cleanup()
+                    _clear_agent_runtime_modules()
     finally:
+        if not setup_timing_recorded:
+            _record_test_timing("test_agent", "setup", setup_timing_started)
         _clear_agent_runtime_modules()
         _restore_module_snapshot(shadowed_modules)
         if not pc_agent_dir_in_path:

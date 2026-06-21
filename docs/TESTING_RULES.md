@@ -94,9 +94,21 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - The configured idle timeout for all CI steps, including server and pc_agent pytest layers.
 - `-vv --durations=80` for each server layer.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
+- `PC_CLIENT_TEST_TIMING=1` and `PC_CLIENT_TEST_TIMING_PATH=artifacts/ci/<sha>/fixture-timings/<layer>.jsonl` for server pytest layers.
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled.
 
 If a test runs longer than the watchdog value, `server/tests/conftest.py` prints all Python thread stacks into the pytest log. This is meant to make the next timeout actionable: the log should show the current test and stack traces, not just a killed process.
+
+Fixture timing is opt-in outside `run_ci_suite.py`. To profile a focused server pytest run without changing test behavior:
+
+```powershell
+$env:PC_CLIENT_TEST_TIMING = "1"
+$env:PC_CLIENT_TEST_TIMING_PATH = "artifacts/ci/manual/fixture-timings/focused.jsonl"
+python -m pytest server/tests/test_web_support_api.py -m "not manual and not no_db and not agent_ws" -q
+python scripts/summarize_fixture_timings.py artifacts/ci/manual
+```
+
+The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_client/setup`, `test_client/teardown`, `test_agent/setup`, and `test_agent/teardown`. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
 

@@ -319,19 +319,33 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert env_by_step["webapp_unit_tests"] == {"CI": "1"}
     assert env_by_step["webapp_fixture_e2e"] == {"CI": "1"}
-    assert env_by_step["server_pytest_no_db"] == {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120"}
+    assert env_by_step["server_pytest_no_db"] == {
+        "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+        "PC_CLIENT_TEST_TIMING": "1",
+        "PC_CLIENT_TEST_TIMING_PATH": str(summary_path.parent / "fixture-timings" / "server_pytest_no_db.jsonl"),
+    }
     assert env_by_step["server_pytest_db_knowledge"] == {
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+        "PC_CLIENT_TEST_TIMING": "1",
+        "PC_CLIENT_TEST_TIMING_PATH": str(
+            summary_path.parent / "fixture-timings" / "server_pytest_db_knowledge.jsonl"
+        ),
         "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
     assert env_by_step["server_pytest_db_web_api"] == {
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+        "PC_CLIENT_TEST_TIMING": "1",
+        "PC_CLIENT_TEST_TIMING_PATH": str(
+            summary_path.parent / "fixture-timings" / "server_pytest_db_web_api.jsonl"
+        ),
         "PC_CLIENT_TEST_DB_DOMAIN": "web_api",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
     assert env_by_step["server_pytest_agent_ws"] == {
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+        "PC_CLIENT_TEST_TIMING": "1",
+        "PC_CLIENT_TEST_TIMING_PATH": str(summary_path.parent / "fixture-timings" / "server_pytest_agent_ws.jsonl"),
         "PC_CLIENT_TEST_DB_DOMAIN": "agent_ws",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
@@ -414,6 +428,10 @@ def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
         steps_seen.append(step_name)
         assert env_overrides == {
             "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
+            "PC_CLIENT_TEST_TIMING": "1",
+            "PC_CLIENT_TEST_TIMING_PATH": str(
+                summary_path.parent / "fixture-timings" / "server_pytest_db_knowledge.jsonl"
+            ),
             "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
             "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
             "PC_CLIENT_KEEP_TEST_DB": "1",
