@@ -158,6 +158,36 @@ describe("RequesterNewRequestPage", () => {
     expect(screen.getByRole("option", { name: /Сломался ноутбук \(подходит по описанию\)/ })).toBeInTheDocument();
   });
 
+  it("auto-selects a confident printer category without exposing the first laptop form", async () => {
+    installNewRequestMock({ withPrinterOffering: true });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Не печатает принтер в кабинете 214" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+
+    expect(await screen.findByRole("heading", { name: "Проблема с принтером" })).toBeInTheDocument();
+    expect(screen.queryByText("Сломался ноутбук")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Выбрать другую категорию" })).toBeInTheDocument();
+  });
+
+  it("shows other categories only after explicit change from a confident recommendation", async () => {
+    installNewRequestMock({ withPrinterOffering: true });
+    renderPage();
+
+    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
+      target: { value: "Не печатает принтер в кабинете 214" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Выбрать другую категорию" }));
+
+    expect(await screen.findByRole("option", { name: "Сломался ноутбук" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Проблема с принтером" })).toBeInTheDocument();
+  });
+
   it("does not treat an on-behalf-only form as available for a self no-device request", async () => {
     installNewRequestMock({
       withDevice: false,
@@ -303,6 +333,7 @@ function installNewRequestMock(
     withNoDeviceManualForm?: boolean;
     withOnBehalfOnlyForm?: boolean;
     withOwnerChangeForm?: boolean;
+    withPrinterOffering?: boolean;
   } = {},
 ) {
   const profileComplete = options.profileComplete ?? true;
@@ -378,6 +409,19 @@ function installNewRequestMock(
                   },
                 ]
               : []),
+            ...(options.withPrinterOffering
+              ? [
+                  {
+                    key: "printer_issue",
+                    title: "Проблема с принтером",
+                    request_kind: "incident",
+                    fields: [
+                      { key: "summary", label: "Кратко", type: "text", required: true },
+                      { key: "device_id", label: "Устройство", type: "device_picker", required: true },
+                    ],
+                  },
+                ]
+              : []),
             ...(options.withOnBehalfOnlyForm
               ? [
                   {
@@ -420,6 +464,16 @@ function installNewRequestMock(
             title: "Сломался ноутбук",
             request_template_key: "breakage",
           },
+          ...(options.withPrinterOffering
+            ? [
+                {
+                  offering_code: "printer_issue",
+                  full_code: "workplace.printer_issue",
+                  title: "Проблема с принтером",
+                  request_template_key: "printer_issue",
+                },
+              ]
+            : []),
         ],
       };
       const manualService = {

@@ -79,6 +79,11 @@ type CategoryOption = {
   serviceTitle: string | null;
 };
 
+type RecommendedOffering = {
+  confident: boolean;
+  offering: ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string };
+};
+
 export function RequesterNewRequestPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -118,21 +123,36 @@ export function RequesterNewRequestPage() {
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
+  const [showAllCategoryOptions, setShowAllCategoryOptions] = useState(false);
 
   const categoryOptions = useMemo(
     () => buildCategoryOptions(services, forms, profileComplete, hasAgentContext),
     [forms, hasAgentContext, profileComplete, services],
   );
-  const recommendedOffering = useMemo(() => recommendOffering(services, problem, forms, requestIntent), [forms, problem, requestIntent, services]);
+  const recommendation = useMemo(() => recommendOffering(services, problem, forms, requestIntent), [forms, problem, requestIntent, services]);
+  const recommendedOffering = recommendation?.offering ?? null;
   const recommendedCategoryKey = useMemo(
     () => resolveRecommendedCategoryKey(categoryOptions, recommendedOffering, requestIntent),
     [categoryOptions, recommendedOffering, requestIntent],
   );
-  const autoSelectCategoryKey = requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : null;
+  const shouldAutoSelectRecommendedCategory = Boolean(recommendedCategoryKey && recommendation?.confident);
+  const autoSelectCategoryKey =
+    requestIntent === OWNER_CHANGE_INTENT ? recommendedCategoryKey : shouldAutoSelectRecommendedCategory ? recommendedCategoryKey : null;
   const selectedCategory = useMemo(
     () => categoryOptions.find((option) => option.key === selectedCategoryKey) ?? null,
     [categoryOptions, selectedCategoryKey],
   );
+  const categorySelectorOptions = useMemo(() => {
+    if (
+      !showAllCategoryOptions &&
+      shouldAutoSelectRecommendedCategory &&
+      selectedCategory &&
+      selectedCategory.key === recommendedCategoryKey
+    ) {
+      return [selectedCategory];
+    }
+    return categoryOptions;
+  }, [categoryOptions, recommendedCategoryKey, selectedCategory, shouldAutoSelectRecommendedCategory, showAllCategoryOptions]);
   const selectedOffering = selectedCategory?.offering ?? null;
   const selectedService = selectedCategory?.service ?? null;
   const selectedForm = selectedCategory?.form ?? null;
@@ -204,6 +224,10 @@ export function RequesterNewRequestPage() {
       return autoSelectCategoryKey ?? "";
     });
   }, [autoSelectCategoryKey, categoryOptions]);
+
+  useEffect(() => {
+    setShowAllCategoryOptions(false);
+  }, [recommendedCategoryKey]);
 
   useEffect(() => {
     setFieldValues((current) => {
@@ -470,7 +494,9 @@ export function RequesterNewRequestPage() {
         {step === "details" ? (
           <section className="rounded-panel border border-slate-200 bg-white p-4">
             <CategorySelector
-              options={categoryOptions}
+              canShowAll={categorySelectorOptions.length < categoryOptions.length}
+              onShowAll={() => setShowAllCategoryOptions(true)}
+              options={categorySelectorOptions}
               recommendedKey={recommendedCategoryKey}
               selectedKey={selectedCategoryKey}
               onChange={(key) => {
@@ -606,12 +632,16 @@ function StepRail({ step }: { step: WizardStep }) {
 }
 
 function CategorySelector({
+  canShowAll = false,
   onChange,
+  onShowAll,
   options,
   recommendedKey,
   selectedKey,
 }: {
+  canShowAll?: boolean;
   onChange: (key: string) => void;
+  onShowAll?: () => void;
   options: CategoryOption[];
   recommendedKey: string | null;
   selectedKey: string;
@@ -639,6 +669,11 @@ function CategorySelector({
       ) : (
         <p className="mt-2 text-xs text-slate-500">Автоматически первая форма не выбирается. Если нет точного совпадения, выберите вариант вручную.</p>
       )}
+      {canShowAll ? (
+        <Button className="mt-2" onClick={onShowAll} size="sm" type="button" variant="outline">
+          Выбрать другую категорию
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -713,7 +748,7 @@ function recommendOffering(
   problem: string,
   forms: RequestFormDefinition[],
   intent?: string,
-) {
+): RecommendedOffering | null {
   const words = searchableWords(problem);
   if (intent === OWNER_CHANGE_INTENT) {
     words.push("device_owner_change", "ownership", "владел", "владель", "устройств");
@@ -727,8 +762,10 @@ function recommendOffering(
     | {
         offering: ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string };
         score: number;
+        strongScore: number;
       }
     | null = null;
+  let secondBestScore = 0;
   for (const service of services) {
     for (const offering of service.offerings ?? []) {
       const form = offering.request_template_key ? formByKey.get(offering.request_template_key) : null;
@@ -745,14 +782,41 @@ function recommendOffering(
         form?.description,
         form?.request_kind,
       ]);
+      const titleHaystack = searchableText([offering.title, offering.full_code, offering.offering_code, offering.request_template_key, form?.title]);
       const score = uniqueWords.reduce((total, word) => total + (haystack.includes(word) ? 1 : 0), 0);
+      const strongScore = uniqueWords.reduce(
+        (total, word) => total + (!REQUEST_CATEGORY_GENERIC_WORDS.has(word) && titleHaystack.includes(word) ? 1 : 0),
+        0,
+      );
       if (score > 0 && (!best || score > best.score)) {
-        best = { offering: { ...offering, service_code: service.service_code }, score };
+        if (best) {
+          secondBestScore = Math.max(secondBestScore, best.score);
+        }
+        best = { offering: { ...offering, service_code: service.service_code }, score, strongScore };
+      } else if (score > 0) {
+        secondBestScore = Math.max(secondBestScore, score);
       }
     }
   }
-  return best?.offering ?? null;
+  if (!best) {
+    return null;
+  }
+  const confident = intent === OWNER_CHANGE_INTENT || (best.strongScore > 0 && best.score > secondBestScore);
+  return { confident, offering: best.offering };
 }
+
+const REQUEST_CATEGORY_GENERIC_WORDS = new Set([
+  "вопрос",
+  "кабинет",
+  "мест",
+  "нужн",
+  "обращ",
+  "помощ",
+  "проблем",
+  "рабоч",
+  "систем",
+  "устройств",
+]);
 
 function searchableWords(value: string): string[] {
   const words = String(value || "")
