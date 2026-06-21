@@ -4,16 +4,19 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import fnmatch
 import json
 import os
 import queue
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -47,6 +50,17 @@ DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
 OUTPUT_POLL_INTERVAL_SECONDS = 0.2
 STEP_TIMEOUT_EXIT_CODE = 124
+
+Step = tuple[str, list[str], Path, float, float, dict[str, str] | None]
+
+SERVER_DB_WS_PARALLEL_LAYER_ORDER: tuple[str, ...] = (
+    "server_pytest_db_web_api",
+    "server_pytest_db_tickets",
+    "server_pytest_db_knowledge",
+    "server_pytest_db_observer_diagnostics",
+    "server_pytest_db_agent_runtime",
+    "server_pytest_agent_ws",
+)
 
 SERVER_DB_API_LAYER_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -127,6 +141,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Keep isolated PostgreSQL test databases after DB-backed server layers.",
     )
+    parser.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Run independent server DB/WS pytest layers in a bounded parallel group.",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=None,
+        help="Maximum active subprocesses for --parallel. Defaults to 2.",
+    )
     parser.add_argument("--verify-timeout", type=float, default=DEFAULT_VERIFY_TIMEOUT_SECONDS)
     parser.add_argument("--web-build-timeout", type=float, default=DEFAULT_WEB_BUILD_TIMEOUT_SECONDS)
     parser.add_argument("--server-pytest-timeout", type=float, default=DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS)
@@ -185,9 +210,11 @@ def _pump_process_output(
         output_queue.put(None)
 
 
-def _write_output(handle, text: str) -> None:
+def _write_output(handle, text: str, *, mirror_output: bool = True) -> None:
     handle.write(text)
     handle.flush()
+    if not mirror_output:
+        return
     try:
         sys.stdout.write(text)
     except UnicodeEncodeError:
@@ -205,6 +232,8 @@ def _write_output(handle, text: str) -> None:
 def _drain_output_queue(
     output_queue: "queue.Queue[str | None]",
     handle,
+    *,
+    mirror_output: bool = True,
 ) -> tuple[bool, bool]:
     saw_output = False
     reader_closed = False
@@ -217,7 +246,7 @@ def _drain_output_queue(
             reader_closed = True
             continue
         saw_output = True
-        _write_output(handle, item)
+        _write_output(handle, item, mirror_output=mirror_output)
     return saw_output, reader_closed
 
 
@@ -236,6 +265,7 @@ def run_and_capture(
     timeout_seconds: float,
     idle_timeout_seconds: float | None = DEFAULT_IDLE_TIMEOUT_SECONDS,
     env_overrides: dict[str, str] | None = None,
+    mirror_output: bool = True,
 ) -> dict[str, object]:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started_at = now_iso()
@@ -248,7 +278,8 @@ def run_and_capture(
     )
     print(
         f"[ci] step={step_name} started timeout={timeout_seconds:.1f}s "
-        f"idle_timeout={idle_timeout_label} log={log_path}"
+        f"idle_timeout={idle_timeout_label} log={log_path}",
+        flush=True,
     )
     with log_path.open("w", encoding="utf-8") as handle:
         handle.write(f"[ci] step={step_name}\n")
@@ -290,14 +321,22 @@ def run_and_capture(
         reader_closed = False
 
         while True:
-            saw_output, saw_reader_close = _drain_output_queue(output_queue, handle)
+            saw_output, saw_reader_close = _drain_output_queue(
+                output_queue,
+                handle,
+                mirror_output=mirror_output,
+            )
             if saw_output:
                 last_output_monotonic = time.monotonic()
             reader_closed = reader_closed or saw_reader_close
 
             if process.poll() is not None:
                 reader.join(timeout=OUTPUT_POLL_INTERVAL_SECONDS)
-                saw_output, saw_reader_close = _drain_output_queue(output_queue, handle)
+                saw_output, saw_reader_close = _drain_output_queue(
+                    output_queue,
+                    handle,
+                    mirror_output=mirror_output,
+                )
                 if saw_output:
                     last_output_monotonic = time.monotonic()
                 reader_closed = reader_closed or saw_reader_close
@@ -315,7 +354,7 @@ def run_and_capture(
                 handle.flush()
                 _terminate_process_tree(process)
                 reader.join(timeout=5)
-                _drain_output_queue(output_queue, handle)
+                _drain_output_queue(output_queue, handle, mirror_output=mirror_output)
                 break
 
             if (
@@ -331,7 +370,7 @@ def run_and_capture(
                 handle.flush()
                 _terminate_process_tree(process)
                 reader.join(timeout=5)
-                _drain_output_queue(output_queue, handle)
+                _drain_output_queue(output_queue, handle, mirror_output=mirror_output)
                 break
 
             time.sleep(OUTPUT_POLL_INTERVAL_SECONDS)
@@ -350,7 +389,8 @@ def run_and_capture(
     print(
         f"[ci] step={step_name} finished returncode={returncode} "
         f"timed_out={timed_out} timeout_reason={timeout_reason or 'none'} "
-        f"duration={duration_seconds:.3f}s"
+        f"duration={duration_seconds:.3f}s",
+        flush=True,
     )
     return {
         "name": step_name,
@@ -371,6 +411,238 @@ def write_summary(summary_path: Path, summary: dict[str, object]) -> None:
     with summary_path.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
+
+
+@dataclass
+class WindowsParallelDbTunnel:
+    env_overrides: dict[str, str]
+    process: subprocess.Popen[str] | None = None
+    owns_process: bool = False
+
+    def close(self) -> None:
+        if not self.owns_process or self.process is None:
+            return
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait(timeout=5)
+
+
+def _is_tcp_port_open(host: str, port: int) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _windows_parallel_db_tunnel_settings() -> tuple[str, int, str, str, str]:
+    host = os.getenv("PC_CLIENT_TEST_DB_TUNNEL_HOST", "127.0.0.1")
+    port = int(os.getenv("PC_CLIENT_TEST_DB_TUNNEL_PORT", "55432"))
+    target = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@192.168.100.17")
+    remote_bind = os.getenv("PC_CLIENT_TEST_DB_REMOTE_BIND", "127.0.0.1:5432")
+    ssh_key = os.getenv(
+        "PC_CLIENT_TEST_DB_SSH_KEY",
+        r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519",
+    )
+    return host, port, target, remote_bind, ssh_key
+
+
+def _windows_parallel_db_admin_url(host: str, port: int) -> str:
+    return f"postgresql+asyncpg://chatbot:chatbot@{host}:{port}/postgres"
+
+
+def _prepare_windows_parallel_db_tunnel() -> WindowsParallelDbTunnel:
+    if os.name != "nt":
+        return WindowsParallelDbTunnel(env_overrides={})
+
+    if os.getenv("TEST_DATABASE_ADMIN_URL"):
+        print("[ci-db-tunnel] using explicit TEST_DATABASE_ADMIN_URL", flush=True)
+        return WindowsParallelDbTunnel(env_overrides={})
+
+    host, port, target, remote_bind, ssh_key = _windows_parallel_db_tunnel_settings()
+    admin_url = _windows_parallel_db_admin_url(host, port)
+    if _is_tcp_port_open(host, port):
+        print(f"[ci-db-tunnel] using existing tunnel {host}:{port}", flush=True)
+        return WindowsParallelDbTunnel(
+            env_overrides={
+                "TEST_DATABASE_ADMIN_URL": admin_url,
+                "PC_CLIENT_TEST_DB_TUNNEL_PARENT_OWNED": "existing",
+            }
+        )
+
+    cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ExitOnForwardFailure=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-i",
+        ssh_key,
+        "-L",
+        f"{port}:{remote_bind}",
+        target,
+        "-N",
+    ]
+    print(
+        f"[ci-db-tunnel] starting parent-owned tunnel {host}:{port} -> {target} {remote_bind}",
+        flush=True,
+    )
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        if _is_tcp_port_open(host, port):
+            print(f"[ci-db-tunnel] parent-owned tunnel ready {host}:{port}", flush=True)
+            return WindowsParallelDbTunnel(
+                env_overrides={
+                    "TEST_DATABASE_ADMIN_URL": admin_url,
+                    "PC_CLIENT_TEST_DB_TUNNEL_PARENT_OWNED": "1",
+                },
+                process=proc,
+                owns_process=True,
+            )
+        if proc.poll() is not None:
+            stderr = (proc.stderr.read() if proc.stderr else "").strip()
+            raise RuntimeError(
+                "Failed to start parent-owned Windows test DB SSH tunnel: "
+                f"{stderr or proc.returncode}"
+            )
+        time.sleep(0.2)
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+    raise RuntimeError("Timed out waiting for parent-owned Windows test DB SSH tunnel to open")
+
+
+def _is_server_db_ws_parallel_layer(step_name: str) -> bool:
+    return step_name in SERVER_DB_WS_PARALLEL_LAYER_ORDER
+
+
+def _merge_step_env(step: Step, env_overrides: dict[str, str]) -> Step:
+    step_name, command, log_path, timeout_seconds, idle_timeout_seconds, step_env = step
+    if not env_overrides:
+        return step
+    merged_env = dict(step_env or {})
+    merged_env.update(env_overrides)
+    return step_name, command, log_path, timeout_seconds, idle_timeout_seconds, merged_env
+
+
+def _split_steps_for_parallel(steps: list[Step]) -> tuple[list[Step], list[Step], list[Step]]:
+    db_steps = [step for step in steps if _is_server_db_ws_parallel_layer(step[0])]
+    if not db_steps:
+        return steps, [], []
+
+    db_names = {step[0] for step in db_steps}
+    first_idx = next(index for index, step in enumerate(steps) if step[0] in db_names)
+    last_idx = max(index for index, step in enumerate(steps) if step[0] in db_names)
+    before = [step for step in steps[:first_idx] if step[0] not in db_names]
+    after = [step for step in steps[last_idx + 1 :] if step[0] not in db_names]
+    by_name = {step[0]: step for step in db_steps}
+    ordered_db_steps = [by_name[name] for name in SERVER_DB_WS_PARALLEL_LAYER_ORDER if name in by_name]
+    return before, ordered_db_steps, after
+
+
+def _run_step(step: Step, *, workspace: Path, mirror_output: bool) -> dict[str, object]:
+    step_name, command, log_path, timeout_seconds, idle_timeout_seconds, env_overrides = step
+    return run_and_capture(
+        command,
+        cwd=workspace,
+        log_path=log_path,
+        step_name=step_name,
+        timeout_seconds=timeout_seconds,
+        idle_timeout_seconds=idle_timeout_seconds,
+        env_overrides=env_overrides,
+        mirror_output=mirror_output,
+    )
+
+
+def _run_parallel_steps(
+    steps: list[Step],
+    *,
+    workspace: Path,
+    max_workers: int,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    group_started_at = now_iso()
+    group_started_monotonic = time.monotonic()
+    layer_names = [step[0] for step in steps]
+    print(
+        "[ci] parallel group server-db started "
+        f"max_workers={max_workers} layers={','.join(layer_names)}",
+        flush=True,
+    )
+    results_by_name: dict[str, dict[str, object]] = {}
+    skipped_layers: list[str] = []
+    active: dict[concurrent.futures.Future[dict[str, object]], str] = {}
+    next_index = 0
+    failure_seen = False
+
+    def submit_next(executor: concurrent.futures.ThreadPoolExecutor) -> None:
+        nonlocal next_index
+        if next_index >= len(steps):
+            return
+        step = steps[next_index]
+        next_index += 1
+        future = executor.submit(_run_step, step, workspace=workspace, mirror_output=False)
+        active[future] = step[0]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for _ in range(min(max_workers, len(steps))):
+            submit_next(executor)
+
+        while active:
+            done, _pending = concurrent.futures.wait(
+                active,
+                return_when=concurrent.futures.FIRST_COMPLETED,
+            )
+            for future in done:
+                step_name = active.pop(future)
+                result = future.result()
+                results_by_name[step_name] = result
+                if result["returncode"] != 0:
+                    failure_seen = True
+
+            while not failure_seen and len(active) < max_workers and next_index < len(steps):
+                submit_next(executor)
+
+        if failure_seen and next_index < len(steps):
+            skipped_layers = [step[0] for step in steps[next_index:]]
+
+    status = "red" if any(result["returncode"] != 0 for result in results_by_name.values()) else "green"
+    group_finished_at = now_iso()
+    duration_seconds = round(time.monotonic() - group_started_monotonic, 3)
+    print(
+        "[ci] parallel group server-db finished "
+        f"status={status} duration={duration_seconds:.3f}s skipped={','.join(skipped_layers) or 'none'}",
+        flush=True,
+    )
+    metadata = {
+        "name": "server-db",
+        "layers": layer_names,
+        "max_workers": max_workers,
+        "started_at": group_started_at,
+        "finished_at": group_finished_at,
+        "duration_seconds": duration_seconds,
+        "status": status,
+        "skipped_layers": skipped_layers,
+    }
+    ordered_results = [results_by_name[step[0]] for step in steps if step[0] in results_by_name]
+    return ordered_results, metadata
 
 
 def _test_db_domain_for_layer(layer_name: str) -> str:
@@ -513,6 +785,17 @@ def _pnpm_webapp_command(workspace: Path, *args: str) -> list[str]:
 
 def main() -> None:
     args = parse_args()
+    max_workers = args.max_workers if args.max_workers is not None else (2 if args.parallel else 1)
+    if max_workers < 1:
+        raise SystemExit("--max-workers must be >= 1")
+    parallel_warning: str | None = None
+    if args.parallel and max_workers > 3:
+        parallel_warning = (
+            f"--max-workers {max_workers} is allowed but risky for remote PostgreSQL/SSH tunnel load; "
+            "start with --max-workers 2 unless the environment has been proven stable."
+        )
+        print(f"[ci] warning: {parallel_warning}", file=sys.stderr, flush=True)
+
     commit = detect_commit(args.workspace, args.commit)
     summary_path = summary_path_for_commit(args.workspace, commit)
     artifact_dir = summary_path.parent
@@ -523,7 +806,7 @@ def main() -> None:
     webapp_bundle_archive = webapp_bundle_archive_for_commit(args.workspace, commit)
     started_at = now_iso()
 
-    steps = [
+    steps: list[Step] = [
         (
             "verify_workspace",
             [
@@ -627,24 +910,52 @@ def main() -> None:
     steps = _filter_steps_by_layer(steps, args.layer)
 
     results: list[dict[str, object]] = []
+    parallel_groups: list[dict[str, object]] = []
     status = "green"
     runner_error: str | None = None
     fixture_timings_error: str | None = None
     try:
-        for step_name, command, log_path, timeout_seconds, idle_timeout_seconds, env_overrides in steps:
-            result = run_and_capture(
-                command,
-                cwd=args.workspace,
-                log_path=log_path,
-                step_name=step_name,
-                timeout_seconds=timeout_seconds,
-                idle_timeout_seconds=idle_timeout_seconds,
-                env_overrides=env_overrides,
-            )
+        if args.parallel:
+            before_steps, parallel_steps, after_steps = _split_steps_for_parallel(steps)
+        else:
+            before_steps, parallel_steps, after_steps = steps, [], []
+
+        if len(parallel_steps) < 2:
+            before_steps = steps
+            parallel_steps = []
+            after_steps = []
+
+        for step in before_steps:
+            result = _run_step(step, workspace=args.workspace, mirror_output=True)
             results.append(result)
             if result["returncode"] != 0:
                 status = "red"
                 break
+
+        if status == "green" and parallel_steps:
+            tunnel = _prepare_windows_parallel_db_tunnel()
+            try:
+                parallel_env = tunnel.env_overrides
+                prepared_parallel_steps = [_merge_step_env(step, parallel_env) for step in parallel_steps]
+                group_results, group_metadata = _run_parallel_steps(
+                    prepared_parallel_steps,
+                    workspace=args.workspace,
+                    max_workers=max_workers,
+                )
+                results.extend(group_results)
+                parallel_groups.append(group_metadata)
+                if group_metadata["status"] != "green":
+                    status = "red"
+            finally:
+                tunnel.close()
+
+        if status == "green":
+            for step in after_steps:
+                result = _run_step(step, workspace=args.workspace, mirror_output=True)
+                results.append(result)
+                if result["returncode"] != 0:
+                    status = "red"
+                    break
     except KeyboardInterrupt:
         status = "red"
         runner_error = "Interrupted by user"
@@ -666,6 +977,9 @@ def main() -> None:
             "finished_at": now_iso(),
             "requested_layers": args.layer,
             "available_layers": available_layers,
+            "parallel_enabled": bool(args.parallel),
+            "max_workers": max_workers,
+            "parallel_groups": parallel_groups,
             "artifacts": {
                 "summary": str(summary_path),
                 "fixture_timings_dir": str(fixture_timings_dir),
@@ -687,6 +1001,8 @@ def main() -> None:
         }
         if runner_error:
             summary["runner_error"] = runner_error
+        if parallel_warning:
+            summary["parallel_warning"] = parallel_warning
         if fixture_timings_error:
             summary["fixture_timings_error"] = fixture_timings_error
         write_summary(summary_path, summary)

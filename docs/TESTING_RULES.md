@@ -39,6 +39,30 @@ The full local CI runner executes these same layers. It is an important final re
 python scripts/run_ci_suite.py
 ```
 
+The runner is sequential by default. For server DB/WS runtime measurements or an explicit CI-speed check, use bounded
+layer-level parallelism instead of `pytest-xdist`:
+
+```powershell
+python scripts/run_ci_suite.py --parallel --max-workers 2
+python scripts/run_ci_suite.py --parallel --max-workers 2 --layer server_pytest_db_agent_runtime --layer server_pytest_agent_ws
+```
+
+`--parallel` only groups independent server DB/WS pytest layers. The runner still keeps `verify_workspace`,
+webapp build/unit/e2e, and `server_pytest_no_db` sequential before the group, then keeps `pc_agent_pytest`
+sequential after it. A single requested DB/WS layer remains sequential. Start with `--max-workers 2`; values above `3`
+are allowed but risky until the remote PostgreSQL and SSH tunnel behavior is proven stable.
+
+On Windows, parallel DB/WS mode is guarded against child pytest processes owning a shared DB tunnel. If
+`TEST_DATABASE_ADMIN_URL` is already set, the runner uses it. Otherwise, it reuses an already-open
+`PC_CLIENT_TEST_DB_TUNNEL_HOST:PC_CLIENT_TEST_DB_TUNNEL_PORT` tunnel or starts one parent-owned SSH tunnel and passes
+`TEST_DATABASE_ADMIN_URL` to the child pytest processes. The parent closes only the tunnel it started.
+For CI, prefer leaving the configured local tunnel port free so the runner owns the tunnel lifecycle; reusing an
+already-open tunnel is a compatibility path and the runner cannot keep that external process alive.
+
+Parallel layer output is intentionally high-level in the terminal; detailed pytest output remains in each
+`artifacts/ci/<sha>/logs/<layer>.log`. `summary.json` preserves the `steps` list and adds `parallel_enabled`,
+`max_workers`, and `parallel_groups` metadata.
+
 To run a single canonical layer:
 
 ```powershell
@@ -97,6 +121,8 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `PC_CLIENT_TEST_TIMING=1` and `PC_CLIENT_TEST_TIMING_PATH=artifacts/ci/<sha>/fixture-timings/<layer>.jsonl` for server pytest layers.
 - `PC_CLIENT_TEST_DB_TEMPLATE=1` for DB/WS server pytest layers, so isolated layer databases are cloned from a migrated PostgreSQL template keyed by the Alembic migration fingerprint.
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled.
+- Optional `--parallel --max-workers 2` for bounded server DB/WS layer concurrency; this does not change pytest markers,
+  cleanup profiles, DB template behavior, pool settings, or test fixture semantics.
 
 If a test runs longer than the watchdog value, `server/tests/conftest.py` prints all Python thread stacks into the pytest log. This is meant to make the next timeout actionable: the log should show the current test and stack traces, not just a killed process.
 
