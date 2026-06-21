@@ -1,6 +1,8 @@
+import asyncio
 import importlib.util
 import warnings
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -141,3 +143,93 @@ def test_keep_test_database_env_flag(monkeypatch):
 
     monkeypatch.setenv("PC_CLIENT_KEEP_TEST_DB", "1")
     assert test_harness._keep_test_database() is True
+
+
+def test_template_env_flags(monkeypatch):
+    monkeypatch.delenv("PC_CLIENT_TEST_DB_TEMPLATE", raising=False)
+    monkeypatch.delenv("PC_CLIENT_TEST_DB_TEMPLATE_KEEP", raising=False)
+    monkeypatch.delenv("PC_CLIENT_TEST_DB_TEMPLATE_REBUILD", raising=False)
+
+    assert test_harness._test_db_template_enabled() is False
+    assert test_harness._keep_test_db_template() is False
+    assert test_harness._rebuild_test_db_template() is False
+
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_TEMPLATE", "1")
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_TEMPLATE_KEEP", "1")
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_TEMPLATE_REBUILD", "1")
+
+    assert test_harness._test_db_template_enabled() is True
+    assert test_harness._keep_test_db_template() is True
+    assert test_harness._rebuild_test_db_template() is True
+
+
+@pytest.mark.asyncio
+async def test_run_async_blocking_works_from_running_event_loop():
+    async def sample(value):
+        await asyncio.sleep(0)
+        return value
+
+    assert test_harness._run_async_blocking(sample, "ok") == "ok"
+
+
+def test_template_database_name_uses_safe_prefix_and_fingerprint(monkeypatch):
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_TEMPLATE_PREFIX", "pc-support-test-template")
+
+    name = test_harness._template_database_name_for_fingerprint("abcdef1234567890")
+
+    assert name == "pc_support_test_template_abcdef123456"
+    test_harness._validate_template_database_name(name)
+
+
+def test_template_database_name_rejects_unsafe_prefix(monkeypatch):
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_TEMPLATE_PREFIX", "production")
+
+    with pytest.raises(RuntimeError, match="pc_support_test_template"):
+        test_harness._template_database_name_for_fingerprint("abcdef1234567890")
+
+
+def test_validate_template_database_name_rejects_non_template_names():
+    with pytest.raises(RuntimeError, match="Unsafe template database name"):
+        test_harness._validate_template_database_name("pc_support_test_web_api_123456")
+
+    with pytest.raises(RuntimeError, match="Unsafe template database name"):
+        test_harness._validate_template_database_name('pc_support_test_template_bad";drop')
+
+
+def test_migration_fingerprint_is_stable_and_changes_with_migration_content(tmp_path):
+    server_root = tmp_path / "server"
+    migrations = server_root / "app" / "db" / "migrations" / "versions"
+    migrations.mkdir(parents=True)
+    (server_root / "alembic.ini").write_text("[alembic]\nscript_location = app/db/migrations\n", encoding="utf-8")
+    migration_path = migrations / "20260621_001_example.py"
+    migration_path.write_text("revision = '001'\ndown_revision = None\n", encoding="utf-8")
+
+    first = test_harness._migration_fingerprint(server_root)
+    second = test_harness._migration_fingerprint(server_root)
+    migration_path.write_text("revision = '001'\ndown_revision = None\n# changed\n", encoding="utf-8")
+    changed = test_harness._migration_fingerprint(server_root)
+
+    assert first == second
+    assert first != changed
+    assert len(first) == 40
+
+
+@pytest.mark.asyncio
+async def test_clone_test_database_from_template_uses_quoted_identifiers(monkeypatch):
+    run_admin_sql = AsyncMock()
+    monkeypatch.setattr(test_harness, "_run_admin_sql", run_admin_sql)
+
+    await test_harness._clone_test_database_from_template(
+        "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres",
+        "pc_support_test_knowledge_123456",
+        "pc_support_test_template_abcdef123456",
+    )
+
+    assert run_admin_sql.await_count == 1
+    args, kwargs = run_admin_sql.await_args
+    assert args[0] == "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres"
+    assert args[1] == (
+        'CREATE DATABASE "pc_support_test_knowledge_123456" '
+        'TEMPLATE "pc_support_test_template_abcdef123456"'
+    )
+    assert kwargs == {}

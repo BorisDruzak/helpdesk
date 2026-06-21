@@ -394,6 +394,8 @@ def _server_pytest_env(
         env["PC_CLIENT_TEST_TIMING"] = "1"
         env["PC_CLIENT_TEST_TIMING_PATH"] = str(timing_path)
     if layer_name and layer_name != "server_pytest_no_db":
+        env["PC_CLIENT_TEST_DB_TEMPLATE"] = "1"
+        env["PC_CLIENT_TEST_DB_TEMPLATE_KEEP"] = "1"
         env["PC_CLIENT_TEST_DB_DOMAIN"] = _test_db_domain_for_layer(layer_name)
         if commit:
             env["PC_CLIENT_TEST_DB_RUN_ID"] = commit[:12]

@@ -46,7 +46,10 @@ from tech.dismiss_store import clear_dismissed_alerts
 from tech.log_buffer import clear_log_records
 
 TEST_DATABASE_PREFIX = "pc_support_test_"
+TEST_DATABASE_TEMPLATE_PREFIX = "pc_support_test_template"
 SHARED_TEST_DATABASE_NAME = "pc_support_test"
+TEST_DB_TEMPLATE_CLONED_FROM_ENV = "PC_CLIENT_TEST_DB_TEMPLATE_CLONED_FROM"
+TEST_DB_TEMPLATE_FINGERPRINT_ENV = "PC_CLIENT_TEST_DB_TEMPLATE_FINGERPRINT"
 WINDOWS_TEST_DB_TUNNEL_PORT = int(os.getenv("PC_CLIENT_TEST_DB_TUNNEL_PORT", "55432"))
 WINDOWS_TEST_DB_TUNNEL_HOST = os.getenv("PC_CLIENT_TEST_DB_TUNNEL_HOST", "127.0.0.1")
 WINDOWS_TEST_DB_SSH_TARGET = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@192.168.100.17")
@@ -69,6 +72,10 @@ _AGENT_WS_FIXTURES = {"test_agent"}
 _TEST_TIMING_WRITE_FAILED = False
 
 
+class TestDbTemplateConfigError(RuntimeError):
+    """Raised when the opt-in template DB configuration is unsafe."""
+
+
 def _test_timing_enabled() -> bool:
     return os.getenv("PC_CLIENT_TEST_TIMING", "").strip() == "1"
 
@@ -85,6 +92,7 @@ def _record_test_timing(
     started_at: float | None,
     *,
     nodeid: str | None = None,
+    extra: dict[str, object] | None = None,
 ) -> None:
     if started_at is None:
         return
@@ -102,6 +110,8 @@ def _record_test_timing(
         "phase": phase,
         "duration_seconds": round(duration_seconds, 6),
     }
+    if extra:
+        record.update(extra)
     path = Path(path_raw)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,6 +208,35 @@ def event_loop_policy():
             if selector_policy is not None:
                 return selector_policy()
     return asyncio.get_event_loop_policy()
+
+
+def _run_sync_blocking(func, *args, **kwargs):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return func(*args, **kwargs)
+
+    result: dict[str, object] = {}
+
+    def run_in_thread() -> None:
+        try:
+            result["value"] = func(*args, **kwargs)
+        except BaseException as exc:
+            result["exception"] = exc
+
+    thread = threading.Thread(target=run_in_thread, name="pc-client-test-sync-bridge")
+    thread.start()
+    thread.join()
+    if "exception" in result:
+        raise result["exception"]
+    return result.get("value")
+
+
+def _run_async_blocking(async_func, *args, **kwargs):
+    def run() -> object:
+        return asyncio.run(async_func(*args, **kwargs))
+
+    return _run_sync_blocking(run)
 
 
 def _default_runtime_database_url() -> str:
@@ -308,6 +347,22 @@ def _validate_test_database_name(db_name: str) -> None:
         raise RuntimeError(f"Unsafe test database name: {db_name}")
 
 
+def _validate_template_database_name(db_name: str) -> None:
+    if not re.fullmatch(r"[a-z0-9_]+", db_name) or not db_name.startswith(
+        f"{TEST_DATABASE_TEMPLATE_PREFIX}_"
+    ):
+        raise TestDbTemplateConfigError(
+            "Unsafe template database name: expected "
+            f"{TEST_DATABASE_TEMPLATE_PREFIX}_<fingerprint>, got: {db_name}"
+        )
+
+
+def _quote_database_identifier(db_name: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_]+", db_name):
+        raise RuntimeError(f"Unsafe database identifier: {db_name}")
+    return f'"{db_name}"'
+
+
 def _sanitize_test_database_part(value: str, *, fallback: str, max_length: int) -> str:
     sanitized = re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")
     return (sanitized or fallback)[:max_length]
@@ -333,6 +388,73 @@ def _generated_test_database_name() -> str:
 
 def _keep_test_database() -> bool:
     return os.getenv("PC_CLIENT_KEEP_TEST_DB") == "1"
+
+
+def _test_db_template_enabled() -> bool:
+    return os.getenv("PC_CLIENT_TEST_DB_TEMPLATE") == "1"
+
+
+def _keep_test_db_template() -> bool:
+    return os.getenv("PC_CLIENT_TEST_DB_TEMPLATE_KEEP") == "1"
+
+
+def _rebuild_test_db_template() -> bool:
+    return os.getenv("PC_CLIENT_TEST_DB_TEMPLATE_REBUILD") == "1"
+
+
+def _template_database_name_for_fingerprint(fingerprint: str) -> str:
+    prefix_raw = os.getenv("PC_CLIENT_TEST_DB_TEMPLATE_PREFIX", TEST_DATABASE_TEMPLATE_PREFIX)
+    prefix = _sanitize_test_database_part(
+        prefix_raw,
+        fallback=TEST_DATABASE_TEMPLATE_PREFIX,
+        max_length=40,
+    )
+    if not prefix.startswith(TEST_DATABASE_TEMPLATE_PREFIX):
+        raise TestDbTemplateConfigError(
+            "PC_CLIENT_TEST_DB_TEMPLATE_PREFIX must resolve to a name starting with "
+            f"{TEST_DATABASE_TEMPLATE_PREFIX}, got: {prefix_raw}"
+        )
+    fingerprint_short = re.sub(r"[^a-f0-9]+", "", fingerprint.lower())[:12]
+    if len(fingerprint_short) != 12:
+        raise TestDbTemplateConfigError(f"Migration fingerprint is too short for template DB name: {fingerprint}")
+    db_name = f"{prefix}_{fingerprint_short}"
+    _validate_template_database_name(db_name)
+    return db_name
+
+
+def _is_postgresql_database_url(database_url: str) -> bool:
+    return make_url(database_url).drivername.startswith("postgresql")
+
+
+def _migration_fingerprint(server_root: Path | None = None) -> str:
+    server_root = server_root or Path(__file__).resolve().parents[1]
+    hasher = hashlib.sha1()
+
+    def _add_file(path: Path) -> None:
+        rel_path = path.relative_to(server_root).as_posix()
+        hasher.update(rel_path.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(path.read_bytes())
+        hasher.update(b"\0")
+
+    alembic_ini = server_root / "alembic.ini"
+    if alembic_ini.exists():
+        _add_file(alembic_ini)
+
+    migrations_root = server_root / "app" / "db" / "migrations"
+    if migrations_root.exists():
+        for path in sorted(item for item in migrations_root.rglob("*") if item.is_file()):
+            _add_file(path)
+
+    return hasher.hexdigest()
+
+
+def _advisory_lock_key_for_template(template_name: str) -> int:
+    digest = hashlib.sha1(template_name.encode("utf-8")).hexdigest()[:16]
+    value = int(digest, 16)
+    if value >= 2**63:
+        value -= 2**64
+    return value
 
 
 def _resolve_test_database_urls() -> tuple[str, str, bool]:
@@ -505,7 +627,7 @@ async def _probe_database(database_url: str) -> None:
 
 
 def _probe_database_sync(database_url: str) -> None:
-    asyncio.run(_probe_database(database_url))
+    _run_async_blocking(_probe_database, database_url)
 
 
 def _maybe_fallback_to_shared_test_db(
@@ -556,6 +678,55 @@ async def _run_admin_sql(admin_database_url: str, sql: str, **params) -> None:
         await engine.dispose()
 
 
+async def _run_admin_scalar(admin_database_url: str, sql: str, **params):
+    engine = create_async_engine(
+        admin_database_url,
+        echo=False,
+        isolation_level="AUTOCOMMIT",
+        pool_pre_ping=True,
+    )
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(text(sql), params)
+            return result.scalar()
+    finally:
+        await engine.dispose()
+
+
+async def _terminate_database_backends_on_connection(conn, db_name: str) -> None:
+    await conn.execute(
+        text(
+            """
+            SELECT pg_terminate_backend(pid)
+            FROM pg_stat_activity
+            WHERE datname = :db_name
+              AND pid <> pg_backend_pid()
+              AND usename = current_user
+            """
+        ),
+        {"db_name": db_name},
+    )
+
+
+async def _database_exists_on_connection(conn, db_name: str) -> bool:
+    result = await conn.execute(
+        text("SELECT 1 FROM pg_database WHERE datname = :db_name"),
+        {"db_name": db_name},
+    )
+    return result.scalar() == 1
+
+
+async def _set_database_allow_connections_on_connection(
+    conn,
+    db_name: str,
+    allow_connections: bool,
+) -> None:
+    allow_sql = "true" if allow_connections else "false"
+    await conn.execute(
+        text(f"ALTER DATABASE {_quote_database_identifier(db_name)} WITH ALLOW_CONNECTIONS {allow_sql}")
+    )
+
+
 async def _drop_test_database(admin_database_url: str, db_name: str) -> None:
     _validate_test_database_name(db_name)
     await _run_admin_sql(
@@ -575,6 +746,290 @@ async def _drop_test_database(admin_database_url: str, db_name: str) -> None:
 async def _create_test_database(admin_database_url: str, db_name: str) -> None:
     _validate_test_database_name(db_name)
     await _run_admin_sql(admin_database_url, f'CREATE DATABASE "{db_name}"')
+
+
+async def _clone_test_database_from_template(
+    admin_database_url: str,
+    db_name: str,
+    template_name: str,
+) -> None:
+    _validate_test_database_name(db_name)
+    _validate_template_database_name(template_name)
+    await _run_admin_sql(
+        admin_database_url,
+        f"CREATE DATABASE {_quote_database_identifier(db_name)} TEMPLATE {_quote_database_identifier(template_name)}",
+    )
+
+
+def _alembic_config_for_database_url(test_database_url: str, server_root: Path | None = None):
+    from alembic.config import Config
+
+    server_root = server_root or Path(__file__).resolve().parents[1]
+    alembic_ini = server_root / "alembic.ini"
+    if not alembic_ini.exists():
+        raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
+    alembic_cfg = Config(str(alembic_ini))
+    alembic_cfg.set_main_option("sqlalchemy.url", test_database_url)
+    script_path = server_root / "app" / "db" / "migrations"
+    if script_path.exists():
+        alembic_cfg.set_main_option("script_location", str(script_path))
+    return alembic_cfg
+
+
+def _alembic_head_revisions(server_root: Path | None = None) -> set[str]:
+    from alembic.script import ScriptDirectory
+
+    alembic_cfg = _alembic_config_for_database_url("postgresql+asyncpg://example/example", server_root)
+    return set(ScriptDirectory.from_config(alembic_cfg).get_heads())
+
+
+def _run_alembic_upgrade(test_database_url: str, server_root: Path | None = None) -> None:
+    from alembic import command
+
+    server_root = server_root or Path(__file__).resolve().parents[1]
+    alembic_cfg = _alembic_config_for_database_url(test_database_url, server_root)
+    alembic_ini = server_root / "alembic.ini"
+
+    if os.name == "nt" and make_url(test_database_url).database == SHARED_TEST_DATABASE_NAME:
+        env = os.environ.copy()
+        env["DATABASE_URL"] = test_database_url
+        subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
+            cwd=str(server_root),
+            env=env,
+            check=True,
+        )
+        return
+
+    with patch.dict(os.environ, {"DATABASE_URL": test_database_url}):
+        command.upgrade(alembic_cfg, "head")
+
+
+async def _database_alembic_revisions(test_database_url: str) -> set[str]:
+    engine = create_async_engine(test_database_url, echo=False, pool_pre_ping=True, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT version_num FROM alembic_version"))
+            return {str(row[0]) for row in result.fetchall()}
+    finally:
+        await engine.dispose()
+
+
+def _ensure_database_at_alembic_head(test_database_url: str, server_root: Path | None = None) -> None:
+    expected = _alembic_head_revisions(server_root)
+    actual = _run_async_blocking(_database_alembic_revisions, test_database_url)
+    if actual != expected:
+        db_name = make_url(test_database_url).database or ""
+        raise RuntimeError(
+            f"Template-cloned test database {db_name} is not at Alembic head; "
+            f"expected {sorted(expected)}, got {sorted(actual)}"
+        )
+
+
+async def _template_database_ready(
+    template_database_url: str,
+    server_root: Path | None = None,
+) -> bool:
+    try:
+        expected = _alembic_head_revisions(server_root)
+        actual = await _database_alembic_revisions(template_database_url)
+    except Exception:
+        return False
+    return actual == expected
+
+
+async def _asyncpg_database_exists(conn, db_name: str) -> bool:
+    return bool(
+        await conn.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)",
+            db_name,
+        )
+    )
+
+
+async def _asyncpg_set_database_allow_connections(
+    conn,
+    db_name: str,
+    allow_connections: bool,
+) -> None:
+    allow_sql = "true" if allow_connections else "false"
+    await conn.execute(
+        f"ALTER DATABASE {_quote_database_identifier(db_name)} WITH ALLOW_CONNECTIONS {allow_sql}"
+    )
+
+
+async def _asyncpg_terminate_database_backends(conn, db_name: str) -> None:
+    await conn.execute(
+        """
+        SELECT pg_terminate_backend(pid)
+        FROM pg_stat_activity
+        WHERE datname = $1
+          AND pid <> pg_backend_pid()
+          AND usename = current_user
+        """,
+        db_name,
+    )
+
+
+async def _asyncpg_drop_database(conn, db_name: str) -> None:
+    await conn.execute(f"DROP DATABASE IF EXISTS {_quote_database_identifier(db_name)}")
+
+
+async def _template_database_pre_migration_setup(
+    conn,
+    template_name: str,
+    template_url: str,
+    server_root: Path,
+) -> bool:
+    exists = await _asyncpg_database_exists(conn, template_name)
+    if exists:
+        await _asyncpg_set_database_allow_connections(conn, template_name, True)
+    if exists and not _rebuild_test_db_template():
+        if await _template_database_ready(template_url, server_root):
+            await _asyncpg_set_database_allow_connections(conn, template_name, False)
+            return False
+
+    if exists:
+        await _asyncpg_terminate_database_backends(conn, template_name)
+        await _asyncpg_drop_database(conn, template_name)
+
+    await conn.execute(f"CREATE DATABASE {_quote_database_identifier(template_name)}")
+    return True
+
+
+async def _template_database_finalize_after_migration(
+    conn,
+    template_name: str,
+    template_url: str,
+    server_root: Path,
+) -> None:
+    if not await _template_database_ready(template_url, server_root):
+        raise RuntimeError(f"Template DB {template_name} was migrated but did not reach Alembic head")
+    await _asyncpg_set_database_allow_connections(conn, template_name, False)
+
+
+async def _template_database_cleanup_after_failure(conn, template_name: str) -> None:
+    try:
+        if not await _asyncpg_database_exists(conn, template_name):
+            return
+        await _asyncpg_set_database_allow_connections(conn, template_name, True)
+        await _asyncpg_terminate_database_backends(conn, template_name)
+        await _asyncpg_drop_database(conn, template_name)
+    except Exception:
+        return
+
+
+def _prepare_test_db_template_locked(
+    admin_database_url: str,
+    *,
+    server_root: Path,
+    template_name: str,
+    template_url: str,
+    lock_key: int,
+) -> None:
+    loop = asyncio.new_event_loop()
+    previous_loop = None
+    try:
+        try:
+            previous_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            previous_loop = None
+        asyncio.set_event_loop(loop)
+        conn = loop.run_until_complete(asyncpg.connect(admin_database_url.replace("+asyncpg", "")))
+        locked = False
+        needs_cleanup_on_error = False
+        try:
+            loop.run_until_complete(conn.execute("SELECT pg_advisory_lock($1::bigint)", lock_key))
+            locked = True
+            needs_migration = loop.run_until_complete(
+                _template_database_pre_migration_setup(conn, template_name, template_url, server_root)
+            )
+            if needs_migration:
+                needs_cleanup_on_error = True
+                _run_alembic_upgrade(template_url, server_root)
+                loop.run_until_complete(
+                    _template_database_finalize_after_migration(conn, template_name, template_url, server_root)
+                )
+                needs_cleanup_on_error = False
+        except Exception:
+            if needs_cleanup_on_error:
+                loop.run_until_complete(_template_database_cleanup_after_failure(conn, template_name))
+            raise
+        finally:
+            if locked:
+                loop.run_until_complete(conn.execute("SELECT pg_advisory_unlock($1::bigint)", lock_key))
+            loop.run_until_complete(conn.close())
+    finally:
+        asyncio.set_event_loop(previous_loop)
+        loop.close()
+
+
+def _prepare_test_db_template(
+    admin_database_url: str,
+    *,
+    server_root: Path | None = None,
+) -> tuple[str, str]:
+    server_root = server_root or Path(__file__).resolve().parents[1]
+    fingerprint = _migration_fingerprint(server_root)
+    template_name = _template_database_name_for_fingerprint(fingerprint)
+    template_url = _render_url(make_url(admin_database_url).set(database=template_name))
+    lock_key = _advisory_lock_key_for_template(template_name)
+    _record_test_timing(
+        "db_template_fingerprint",
+        "info",
+        _test_timing_start(),
+        extra={"fingerprint": fingerprint, "template_db": template_name},
+    )
+
+    prepare_started = _test_timing_start()
+    try:
+        _run_sync_blocking(
+            _prepare_test_db_template_locked,
+            admin_database_url,
+            server_root=server_root,
+            template_name=template_name,
+            template_url=template_url,
+            lock_key=lock_key,
+        )
+        return template_name, fingerprint
+    finally:
+        _record_test_timing(
+            "db_template_prepare",
+            "prepare",
+            prepare_started,
+            extra={"template_db": template_name, "fingerprint": fingerprint},
+        )
+
+
+async def _clone_test_database_from_template_with_retry(
+    admin_database_url: str,
+    db_name: str,
+    template_name: str,
+) -> None:
+    clone_started = _test_timing_start()
+    try:
+        try:
+            await _clone_test_database_from_template(admin_database_url, db_name, template_name)
+        except Exception:
+            engine = create_async_engine(
+                admin_database_url,
+                echo=False,
+                isolation_level="AUTOCOMMIT",
+                pool_pre_ping=True,
+            )
+            try:
+                async with engine.connect() as conn:
+                    await _terminate_database_backends_on_connection(conn, template_name)
+            finally:
+                await engine.dispose()
+            await _clone_test_database_from_template(admin_database_url, db_name, template_name)
+    finally:
+        _record_test_timing(
+            "db_template_clone",
+            "clone",
+            clone_started,
+            extra={"template_db": template_name, "test_db": db_name},
+        )
 
 
 async def _terminate_other_test_database_backends(
@@ -623,19 +1078,55 @@ def test_database_url() -> str:
         is_shared,
         allow_auto_shared_fallback=_should_auto_fallback_to_shared_test_db(),
     )
+    if is_shared and _test_db_template_enabled():
+        raise RuntimeError(
+            "template DB requires isolated admin database access; shared fallback is not valid "
+            "for full DB/API gate"
+        )
     verify_test_database(test_db_url, allow_shared=is_shared)
     original_test_url = os.environ.get("TEST_DATABASE_URL")
     original_admin_url = os.environ.get("TEST_DATABASE_ADMIN_URL")
     original_allow_shared = os.environ.get("PC_CLIENT_ALLOW_SHARED_TEST_DB")
+    original_template_cloned_from = os.environ.get(TEST_DB_TEMPLATE_CLONED_FROM_ENV)
+    original_template_fingerprint = os.environ.get(TEST_DB_TEMPLATE_FINGERPRINT_ENV)
     os.environ["TEST_DATABASE_URL"] = test_db_url
     os.environ["TEST_DATABASE_ADMIN_URL"] = admin_db_url
     if is_shared:
         os.environ["PC_CLIENT_ALLOW_SHARED_TEST_DB"] = "1"
 
     db_name = make_url(test_db_url).database or ""
+    template_name: str | None = None
     if not is_shared:
-        asyncio.run(_drop_test_database(admin_db_url, db_name))
-        asyncio.run(_create_test_database(admin_db_url, db_name))
+        _run_async_blocking(_drop_test_database, admin_db_url, db_name)
+        if _test_db_template_enabled() and _is_postgresql_database_url(test_db_url):
+            try:
+                template_name, template_fingerprint = _prepare_test_db_template(admin_db_url)
+                _run_async_blocking(
+                    _clone_test_database_from_template_with_retry,
+                    admin_db_url,
+                    db_name,
+                    template_name,
+                )
+                os.environ[TEST_DB_TEMPLATE_CLONED_FROM_ENV] = template_name
+                os.environ[TEST_DB_TEMPLATE_FINGERPRINT_ENV] = template_fingerprint
+            except TestDbTemplateConfigError:
+                raise
+            except Exception as exc:
+                _record_test_timing(
+                    "db_template_fallback",
+                    "fallback",
+                    _test_timing_start(),
+                    extra={"reason": f"{type(exc).__name__}: {exc}", "test_db": db_name},
+                )
+                warnings.warn(
+                    "PostgreSQL test DB template is unavailable; falling back to direct "
+                    f"Alembic migration path for {db_name}: {type(exc).__name__}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                _run_async_blocking(_create_test_database, admin_db_url, db_name)
+        else:
+            _run_async_blocking(_create_test_database, admin_db_url, db_name)
 
     try:
         yield test_db_url
@@ -652,49 +1143,51 @@ def test_database_url() -> str:
             os.environ.pop("PC_CLIENT_ALLOW_SHARED_TEST_DB", None)
         else:
             os.environ["PC_CLIENT_ALLOW_SHARED_TEST_DB"] = original_allow_shared
+        if original_template_cloned_from is None:
+            os.environ.pop(TEST_DB_TEMPLATE_CLONED_FROM_ENV, None)
+        else:
+            os.environ[TEST_DB_TEMPLATE_CLONED_FROM_ENV] = original_template_cloned_from
+        if original_template_fingerprint is None:
+            os.environ.pop(TEST_DB_TEMPLATE_FINGERPRINT_ENV, None)
+        else:
+            os.environ[TEST_DB_TEMPLATE_FINGERPRINT_ENV] = original_template_fingerprint
         _close_windows_test_db_tunnel()
         if not is_shared and not _keep_test_database():
-            asyncio.run(_drop_test_database(admin_db_url, db_name))
+            _run_async_blocking(_drop_test_database, admin_db_url, db_name)
+        if template_name and not _keep_test_db_template():
+            try:
+                _validate_template_database_name(template_name)
+                _run_async_blocking(_drop_test_database, admin_db_url, template_name)
+            except Exception as exc:
+                warnings.warn(
+                    "Could not drop PostgreSQL test DB template "
+                    f"{template_name}: {type(exc).__name__}: {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
 
 @pytest.fixture(scope="session")
 def run_migrations(test_database_url: str):
     """Apply Alembic migrations once per pytest session."""
     timing_started = _test_timing_start()
+    timing_phase = "setup"
+    timing_extra: dict[str, object] | None = None
     try:
         verify_test_database(test_database_url)
-
-        from alembic import command
-        from alembic.config import Config
-
-        conftest_path = Path(__file__).resolve()
-        server_root = conftest_path.parents[1]
-        alembic_ini = server_root / "alembic.ini"
-
-        if not alembic_ini.exists():
-            raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
-
-        alembic_cfg = Config(str(alembic_ini))
-        alembic_cfg.set_main_option("sqlalchemy.url", test_database_url)
-        script_path = server_root / "app" / "db" / "migrations"
-        if script_path.exists():
-            alembic_cfg.set_main_option("script_location", str(script_path))
-
-        if os.name == "nt" and make_url(test_database_url).database == SHARED_TEST_DATABASE_NAME:
-            env = os.environ.copy()
-            env["DATABASE_URL"] = test_database_url
-            subprocess.run(
-                [sys.executable, "-m", "alembic", "-c", str(alembic_ini), "upgrade", "head"],
-                cwd=str(server_root),
-                env=env,
-                check=True,
-            )
+        cloned_from = os.getenv(TEST_DB_TEMPLATE_CLONED_FROM_ENV)
+        if _test_db_template_enabled() and cloned_from:
+            _ensure_database_at_alembic_head(test_database_url)
+            timing_phase = "skipped_template"
+            timing_extra = {
+                "template_db": cloned_from,
+                "fingerprint": os.getenv(TEST_DB_TEMPLATE_FINGERPRINT_ENV),
+            }
             return
 
-        with patch.dict(os.environ, {"DATABASE_URL": test_database_url}):
-            command.upgrade(alembic_cfg, "head")
+        _run_alembic_upgrade(test_database_url)
     finally:
-        _record_test_timing("run_migrations", "setup", timing_started)
+        _record_test_timing("run_migrations", timing_phase, timing_started, extra=timing_extra)
 
 
 @pytest.fixture(scope="session")

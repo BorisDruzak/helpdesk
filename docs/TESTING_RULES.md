@@ -95,6 +95,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `-vv --durations=80` for each server layer.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
 - `PC_CLIENT_TEST_TIMING=1` and `PC_CLIENT_TEST_TIMING_PATH=artifacts/ci/<sha>/fixture-timings/<layer>.jsonl` for server pytest layers.
+- `PC_CLIENT_TEST_DB_TEMPLATE=1` for DB/WS server pytest layers, so isolated layer databases are cloned from a migrated PostgreSQL template keyed by the Alembic migration fingerprint.
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled.
 
 If a test runs longer than the watchdog value, `server/tests/conftest.py` prints all Python thread stacks into the pytest log. This is meant to make the next timeout actionable: the log should show the current test and stack traces, not just a killed process.
@@ -109,6 +110,23 @@ python scripts/summarize_fixture_timings.py artifacts/ci/manual
 ```
 
 The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_client/setup`, `test_client/teardown`, `test_agent/setup`, and `test_agent/teardown`. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
+
+## Server DB Template Mode
+
+`PC_CLIENT_TEST_DB_TEMPLATE=1` is an opt-in server pytest acceleration path for PostgreSQL DB/WS layers. The harness computes a stable fingerprint from `server/alembic.ini` and `server/app/db/migrations/**`, creates or reuses `pc_support_test_template_<fingerprint12>`, applies `alembic upgrade head` once to that template, then creates each isolated `pc_support_test_<domain>_<worker>_<hash>` database with `CREATE DATABASE ... TEMPLATE ...`.
+
+This removes repeated Alembic setup for DB/WS layers, but it does not change the per-test `cleanup_db` `TRUNCATE ... RESTART IDENTITY CASCADE` cost, `test_app`, `test_client`, `test_agent`, pooling, xdist, or test semantics.
+
+Manual controls:
+
+```powershell
+$env:PC_CLIENT_TEST_DB_TEMPLATE = "0"          # disable and use direct Alembic setup
+$env:PC_CLIENT_TEST_DB_TEMPLATE = "1"          # enable template clone mode
+$env:PC_CLIENT_TEST_DB_TEMPLATE_KEEP = "1"     # keep the migrated template for repeated/layered runs
+$env:PC_CLIENT_TEST_DB_TEMPLATE_REBUILD = "1"  # force rebuild for the current fingerprint
+```
+
+`scripts/run_ci_suite.py` enables `PC_CLIENT_TEST_DB_TEMPLATE_KEEP=1` for DB/WS layers so the migrated template is reused across pytest processes. Without `KEEP=1`, the harness best-effort drops the template after the pytest session. Only databases named `pc_support_test_template_*` are template caches and are safe to drop manually. Do not drop arbitrary PostgreSQL databases from cleanup scripts. Shared DB fallback (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1` or automatic fallback to `pc_support_test`) is not a valid full DB/API gate path; template mode requires isolated admin database access and fails clearly if the run falls back to the shared DB.
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
 

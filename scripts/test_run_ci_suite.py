@@ -330,6 +330,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "PC_CLIENT_TEST_TIMING_PATH": str(
             summary_path.parent / "fixture-timings" / "server_pytest_db_knowledge.jsonl"
         ),
+        "PC_CLIENT_TEST_DB_TEMPLATE": "1",
+        "PC_CLIENT_TEST_DB_TEMPLATE_KEEP": "1",
         "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
@@ -339,6 +341,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "PC_CLIENT_TEST_TIMING_PATH": str(
             summary_path.parent / "fixture-timings" / "server_pytest_db_web_api.jsonl"
         ),
+        "PC_CLIENT_TEST_DB_TEMPLATE": "1",
+        "PC_CLIENT_TEST_DB_TEMPLATE_KEEP": "1",
         "PC_CLIENT_TEST_DB_DOMAIN": "web_api",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
@@ -346,6 +350,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
         "PC_CLIENT_TEST_TIMING": "1",
         "PC_CLIENT_TEST_TIMING_PATH": str(summary_path.parent / "fixture-timings" / "server_pytest_agent_ws.jsonl"),
+        "PC_CLIENT_TEST_DB_TEMPLATE": "1",
+        "PC_CLIENT_TEST_DB_TEMPLATE_KEEP": "1",
         "PC_CLIENT_TEST_DB_DOMAIN": "agent_ws",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
@@ -432,6 +438,8 @@ def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
             "PC_CLIENT_TEST_TIMING_PATH": str(
                 summary_path.parent / "fixture-timings" / "server_pytest_db_knowledge.jsonl"
             ),
+            "PC_CLIENT_TEST_DB_TEMPLATE": "1",
+            "PC_CLIENT_TEST_DB_TEMPLATE_KEEP": "1",
             "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
             "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
             "PC_CLIENT_KEEP_TEST_DB": "1",
