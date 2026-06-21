@@ -22,6 +22,8 @@ from diagnostics.projection import DiagnosticEvidenceRetentionPolicy, Diagnostic
 from diagnostics.sessions import DiagnosticSessionService
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 def _ticket(ticket_id: str, device_id: str) -> Ticket:
     return Ticket(
         ticket_id=ticket_id,

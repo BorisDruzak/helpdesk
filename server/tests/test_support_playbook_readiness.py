@@ -4,7 +4,10 @@ from web_api.support_handlers import (
     _build_operation_display,
     _build_playbook_launch_readiness,
 )
+import pytest
 
+
+pytestmark = pytest.mark.db_cleanup("tickets")
 
 def test_playbook_readiness_blocks_missing_tools_and_required_params():
     manifest = {

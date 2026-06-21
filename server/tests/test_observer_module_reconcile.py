@@ -12,6 +12,8 @@ from modules.reconcile import reconcile_device
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 @pytest.mark.asyncio
 async def test_module_reconcile_missing_registry_writes_searchable_observer_audit() -> None:
     now = datetime.now(timezone.utc)

@@ -23,6 +23,8 @@ from requester.identity_service import RequesterIdentityResolver
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 

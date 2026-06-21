@@ -7,6 +7,8 @@ from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.visibility import KnowledgeVisibilityService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_knowledge_visibility_filters_by_actor_role_before_projection(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

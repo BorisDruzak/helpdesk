@@ -25,6 +25,8 @@ from app.db.models import (
 from registry.admin_operations_service import RegistryAdminOperationsService
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 

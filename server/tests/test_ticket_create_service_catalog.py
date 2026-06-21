@@ -12,6 +12,8 @@ from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_ticket_create_with_service_catalog_stores_explicit_fields_and_snapshot(test_client, test_engine) -> None:
     suffix = uuid.uuid4().hex[:8]

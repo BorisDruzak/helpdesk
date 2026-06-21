@@ -4059,6 +4059,7 @@ TOPICS: tuple[Topic, ...] = (
             "scripts/docs_inventory.py",
             "scripts/build_context_pack.py",
             "scripts/run_ci_suite.py",
+            "scripts/audit_db_cleanup_profiles.py",
             "scripts/release_candidate_preflight.py",
             "scripts/run_observer_canary_suite.py",
             "scripts/deploy_workspace_to_remote.py",
@@ -4078,6 +4079,7 @@ TOPICS: tuple[Topic, ...] = (
         suggested_commands=(
             "python scripts/verify_workspace.py",
             "python -m pytest --collect-only -q",
+            "python scripts/audit_db_cleanup_profiles.py",
             "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
             "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
@@ -4091,6 +4093,7 @@ TOPICS: tuple[Topic, ...] = (
         checks=(
             "python scripts/verify_workspace.py",
             "python -m pytest --collect-only -q",
+            "python scripts/audit_db_cleanup_profiles.py",
             "python scripts/release_server_to_remote.py --gate quick",
             "python scripts/manage_remote_stack.py status control",
             "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",

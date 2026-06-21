@@ -11,6 +11,8 @@ from app.db.models import Device
 from websocket.outbox_ingest_components import OutboxEventPublishService, OutboxPersistenceOutcome
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 @pytest.mark.asyncio
 async def test_tools_changed_event_enqueues_list_tools_refresh():
     device_id = "device-tools-refresh"

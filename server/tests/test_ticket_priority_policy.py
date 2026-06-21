@@ -10,6 +10,8 @@ from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.priority_policy import compute_priority_from_facts, compute_priority_from_policy
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 

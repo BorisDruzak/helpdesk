@@ -10,6 +10,8 @@ from knowledge.content_lint import lint_knowledge_content
 from knowledge.contracts import KnowledgePublicationBlockedError
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 def test_requester_unsafe_phrase_blocks_publication() -> None:
     result = lint_knowledge_content(
         item_type="article",

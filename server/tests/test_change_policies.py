@@ -8,6 +8,8 @@ from change.approval_service import ChangeApprovalService
 from change.change_service import ChangeService
 
 
+pytestmark = pytest.mark.db_cleanup("policies_config")
+
 @pytest.mark.asyncio
 async def test_change_policy_effective_preview_prefers_risk_over_global(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

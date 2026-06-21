@@ -12,6 +12,8 @@ from tech.log_buffer import append_log_record
 from tech.handlers import _compact_agent_action_entry
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 ADMIN_TOKEN = "test-ui-admin-token"
 SUPPORT_TOKEN = "test-ui-support-token"
 USER_TOKEN = "test-ui-user:plain-user"

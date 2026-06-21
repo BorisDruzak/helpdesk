@@ -6,6 +6,8 @@ from app.repos import DevicesRepo
 from tickets.public_access import is_public_unbound_ticket
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_staff_can_bind_public_ticket_to_existing_device(test_client, test_engine):
     create_response = await test_client.post(

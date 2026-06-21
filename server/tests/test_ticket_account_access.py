@@ -19,6 +19,8 @@ from tests.test_ticket_form_packs import _ensure_default_sla_policy, _ensure_fal
 from uploads.handlers import _require_agent_ticket_account_access
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)
     return Device(

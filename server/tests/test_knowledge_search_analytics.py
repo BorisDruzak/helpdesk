@@ -8,6 +8,8 @@ from app.db.models import KnowledgeSearchEvent
 from knowledge.search_analytics_service import KnowledgeSearchAnalyticsService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_search_event_records_hash_and_redacted_query(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

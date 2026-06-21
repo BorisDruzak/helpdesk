@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from app.db.base import Base
+import pytest
 
+
+pytestmark = pytest.mark.db_cleanup("tickets")
 
 def test_ticket_passport_tables_are_registered():
     tables = Base.metadata.tables

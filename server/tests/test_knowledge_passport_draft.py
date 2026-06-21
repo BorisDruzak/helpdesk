@@ -7,6 +7,8 @@ from app.db.models import Ticket, TicketResolutionPassport
 from knowledge.passport_draft_service import KnowledgePassportDraftService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_passport_draft_creates_knowledge_item_version_and_bindings(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

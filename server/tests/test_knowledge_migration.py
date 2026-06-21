@@ -4,6 +4,8 @@ import pytest
 from sqlalchemy import text
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_knowledge_platform_tables_exist_after_migration(test_engine) -> None:
     expected = {

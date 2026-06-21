@@ -13,6 +13,8 @@ from app.services.operation_service import OperationService
 from websocket.device_outbox_sender import _sync_operation_delivery_state
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 class _StateStub:
     ui_publisher = None
 

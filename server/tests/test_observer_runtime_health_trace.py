@@ -9,6 +9,8 @@ from observer.runtime import ObserverRefreshRuntime
 from observer.service import ObserverOverlayService
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 @pytest.mark.asyncio
 async def test_observer_runtime_degraded_health_emits_trace_visible_audit() -> None:
     runtime = ObserverRefreshRuntime(max_batch=1)

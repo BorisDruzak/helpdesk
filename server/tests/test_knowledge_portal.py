@@ -10,6 +10,8 @@ from app.db.models import KnowledgeAudienceRule, RegistryDepartment, RegistryPer
 from app.repos.knowledge_repo import KnowledgeRepo
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 

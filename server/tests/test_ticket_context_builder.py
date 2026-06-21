@@ -19,6 +19,8 @@ from tickets.ticket_context import (
 )
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _new_id() -> str:
     return str(uuid.uuid4())
 

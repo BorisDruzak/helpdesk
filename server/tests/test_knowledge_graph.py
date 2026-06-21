@@ -7,6 +7,8 @@ from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.graph_service import KnowledgeGraphService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_knowledge_graph_binding_creates_service_offering_edges_and_filters_visibility(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

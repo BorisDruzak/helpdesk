@@ -12,6 +12,8 @@ from tickets.policy_action_dispatcher import dispatch_policy_actions
 from tickets import ola_service
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 class FakeChannelProvider:
     def __init__(self) -> None:
         self.calls: list[dict] = []

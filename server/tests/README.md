@@ -8,6 +8,7 @@
 - Server markers: [server/pytest.ini](/C:/Users/admin-2/CodexProjects/pc_client/server/pytest.ini)
 - Main fixtures: [server/tests/conftest.py](/C:/Users/admin-2/CodexProjects/pc_client/server/tests/conftest.py)
 - CI runner: [scripts/run_ci_suite.py](/C:/Users/admin-2/CodexProjects/pc_client/scripts/run_ci_suite.py)
+- DB cleanup profile audit: [scripts/audit_db_cleanup_profiles.py](/C:/Users/admin-2/CodexProjects/pc_client/scripts/audit_db_cleanup_profiles.py)
 
 ## CI layers
 
@@ -41,6 +42,7 @@ The default server pytest step timeout is 45 minutes per layer. If a layer appro
 - `manual` — не попадает в обычный `pytest -m "not manual"`.
 
 - `agent_ws` - tests that start the in-process WS agent fixture; auto-applied when `test_agent` is used.
+- `db_cleanup("<profile>")` - DB-backed tests that have been validated against a narrower cleanup table profile. Missing markers stay on historical `full` cleanup. Run `python scripts/audit_db_cleanup_profiles.py` to report coverage.
 
 ## Test database
 

@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import AccessGroup, AccessGroupMember, AccessGroupPermission, KnowledgeQualityModel, KnowledgeSpace, UiUser
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 def _unique_code(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:8]}"
 

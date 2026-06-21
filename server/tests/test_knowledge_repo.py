@@ -7,6 +7,8 @@ from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.contracts import KnowledgePublicationBlockedError
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_knowledge_repo_creates_space_item_version_publish_and_bindings(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

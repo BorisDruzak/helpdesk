@@ -12,6 +12,8 @@ from websocket.agent_services import AgentObserverTelemetryService
 from websocket.contexts import AgentConnectionContext
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 class _FakeWs:
     def __init__(self) -> None:
         self.sent: list[dict] = []

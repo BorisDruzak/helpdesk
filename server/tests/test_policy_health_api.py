@@ -22,6 +22,8 @@ from app.db.models import (
 )
 
 
+pytestmark = pytest.mark.db_cleanup("policies_config")
+
 @pytest.mark.asyncio
 async def test_policy_health_api_rbac_and_schema(test_client, test_engine) -> None:
     suffix = uuid.uuid4().hex[:8]

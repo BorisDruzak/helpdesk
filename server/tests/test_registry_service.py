@@ -9,6 +9,8 @@ from app.repos.registry_repo import RegistryRepo
 from registry.service import RegistryIngestionService
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 @pytest.mark.asyncio
 async def test_registry_ingests_agent_handshake_as_unverified_pc_asset(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

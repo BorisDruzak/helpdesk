@@ -14,6 +14,8 @@ from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.diagnostic_policy import apply_diagnostic_result_policy
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 async def _seed_published_playbook(session, *, key: str, manifest_json: dict | None = None) -> PlaybookVersion:
     playbook = Playbook(
         key=key,

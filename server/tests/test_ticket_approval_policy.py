@@ -15,6 +15,8 @@ from tickets.create_flow import create_ticket_with_side_effects
 from tickets.workflow_service import TicketWorkflowService
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _template_context(approval_policy: dict) -> dict:
     return {
         "request_template": {

@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 SUPPORT_HEADERS = {"Authorization": "Bearer test-ui-support-token"}
 

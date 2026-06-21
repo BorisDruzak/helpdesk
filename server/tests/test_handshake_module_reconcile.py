@@ -15,6 +15,8 @@ from tests.conftest import TEST_UI_ADMIN_TOKEN
 from websocket.agent_handshake import handle_handshake
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 class _HandshakeWsStub:
     def __init__(self) -> None:
         self.closed = False

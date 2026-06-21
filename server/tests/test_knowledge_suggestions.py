@@ -10,6 +10,8 @@ from knowledge.suggestion_service import KnowledgeSuggestionService
 from registry.audience_contracts import EffectiveAudience
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_knowledge_suggestions_return_requester_safe_bound_items(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

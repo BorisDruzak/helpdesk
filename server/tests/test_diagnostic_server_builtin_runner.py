@@ -12,6 +12,8 @@ from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.execution_router import CapabilityExecutionRouter
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 def _ticket(ticket_id: str, device_id: str) -> Ticket:
     return Ticket(
         ticket_id=ticket_id,

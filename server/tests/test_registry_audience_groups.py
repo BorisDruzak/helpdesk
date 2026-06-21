@@ -19,6 +19,8 @@ from app.db.models import (
 from app.repos.access_control_repo import AccessControlRepo
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 

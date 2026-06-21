@@ -9,6 +9,8 @@ from app.db.models import AgentObserverEvent
 from app.repos.agent_observer_events_repo import AgentObserverEventsRepo
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 @pytest.mark.asyncio
 async def test_agent_observer_events_repo_ingests_idempotently_redacts_and_lists() -> None:
     now = datetime.now(timezone.utc)

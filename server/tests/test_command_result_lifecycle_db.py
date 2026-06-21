@@ -14,6 +14,8 @@ from websocket.agent_services import CommandAckService, CommandResultService
 from websocket.contexts import AgentConnectionContext
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 async def _create_sent_operation(
     session,
     *,

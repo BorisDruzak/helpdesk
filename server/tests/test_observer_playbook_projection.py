@@ -10,6 +10,8 @@ from app.db.models import Playbook, PlaybookRun, PlaybookStep, PlaybookStepRun, 
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 @pytest.mark.asyncio
 async def test_playbook_run_projects_local_steps_and_failed_preflight_signature() -> None:
     now = datetime.now(timezone.utc)

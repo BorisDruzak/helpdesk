@@ -11,6 +11,8 @@ from app.db.models import Ticket, TicketEvent
 from app.services.ticket_sla_watchdog import TicketSlaWatchdog
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 async def _seed_breached_ticket(*, ticket_id: str, device_id: str, now: datetime) -> None:
     async with get_session() as session:
         session.add(

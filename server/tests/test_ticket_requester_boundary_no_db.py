@@ -1,5 +1,8 @@
 from app.db.models import Ticket, _ensure_ticket_requester_id
+import pytest
 
+
+pytestmark = pytest.mark.db_cleanup("tickets")
 
 def _ticket(**overrides) -> Ticket:
     values = {

@@ -10,6 +10,8 @@ from app.repos.agent_observer_events_repo import AgentObserverEventsRepo
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 @pytest.mark.asyncio
 async def test_agent_observer_event_projects_as_runtime_trace_and_signature() -> None:
     now = datetime.now(timezone.utc)

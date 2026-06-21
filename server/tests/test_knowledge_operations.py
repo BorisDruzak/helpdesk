@@ -15,6 +15,8 @@ from knowledge.operations_service import KnowledgeOperationsService
 from knowledge.suggestion_service import KnowledgeSuggestionService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 async def _published_item(session, *, slug: str = "vpn-reconnect-basic", visibility: str = "requester") -> dict:
     repo = KnowledgeRepo(session)
     await repo.upsert_space(

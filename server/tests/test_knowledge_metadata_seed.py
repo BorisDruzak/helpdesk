@@ -10,6 +10,8 @@ from app.db.models import KnowledgeTaxonomyTerm
 from scripts.seed_knowledge_metadata import DEFAULT_METADATA_PACK_PATH, apply_metadata_seed_pack, load_metadata_seed_pack
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_default_metadata_seed_dry_run_apply_and_idempotency(test_engine) -> None:
     pack = load_metadata_seed_pack(DEFAULT_METADATA_PACK_PATH)

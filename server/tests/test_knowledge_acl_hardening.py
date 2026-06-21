@@ -8,6 +8,8 @@ from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.graph_service import KnowledgeGraphService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 def _support_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-support-token"}
 

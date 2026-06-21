@@ -39,6 +39,8 @@ from tickets.ticket_context import build_ticket_context_v1
 import web_api.session_handlers as session_handlers_module
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 def _headers(token: str, *, request_id: str | None = None) -> dict[str, str]:
     headers = {"Authorization": f"Bearer {token}"}
     if request_id:

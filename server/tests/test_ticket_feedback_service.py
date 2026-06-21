@@ -13,6 +13,8 @@ from app.db.models import Ticket, TicketFeedback, TicketQualityReview
 from quality.feedback_service import TicketFeedbackService
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _ticket(ticket_id: str, *, status: str = "resolved", requester_id: str = "requester-1") -> Ticket:
     now = datetime.now(timezone.utc)
     return Ticket(

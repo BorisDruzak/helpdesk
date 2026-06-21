@@ -14,6 +14,8 @@ from app.repos.auth_tokens_repo import AuthTokensRepo
 from websocket.agent_handshake import handle_handshake
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 class _HandshakeWsStub:
     def __init__(self) -> None:
         self.closed = False

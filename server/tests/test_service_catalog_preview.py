@@ -12,6 +12,8 @@ from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 FORBIDDEN_PREVIEW_KEYS = {
     "queue_id",
     "target_queue_id",

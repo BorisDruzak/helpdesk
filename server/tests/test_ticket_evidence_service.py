@@ -11,6 +11,8 @@ from app.db.models import Artifact, ObserverTrace, Operation, Ticket, TicketAppr
 from tickets.evidence_service import TicketEvidenceService
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_evidence_service_collects_ticket_scoped_operation_and_artifact_candidates(test_engine):
     session_maker = async_sessionmaker(test_engine)

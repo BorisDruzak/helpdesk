@@ -13,6 +13,8 @@ from tests.test_ticket_queue_routing_contracts import _seed_queue
 from tickets.routing_service import TicketRoutingService, set_routing_lock
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 async def _seed_ticket(
     test_engine,
     *,

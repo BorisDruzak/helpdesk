@@ -17,6 +17,8 @@ from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from knowledge.segmentation_service import KnowledgeSegmentationService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 async def _publish_item(
     session: AsyncSession,
     *,

@@ -12,6 +12,8 @@ from app.repos.knowledge_repo import KnowledgeRepo
 from knowledge.ops_summary_service import KnowledgeOpsSummaryService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 

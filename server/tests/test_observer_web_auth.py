@@ -8,6 +8,8 @@ from app.db.models import AgentRuntimeAudit
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 SUPPORT_TOKEN = "test-ui-support-token"
 
 

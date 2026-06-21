@@ -25,6 +25,8 @@ from tickets.sla_service import TicketSlaService
 import tickets.sla_service as sla_service_module
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 class FrozenDateTime(datetime):
     @classmethod
     def now(cls, tz=None):

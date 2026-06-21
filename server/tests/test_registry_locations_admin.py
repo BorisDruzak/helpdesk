@@ -10,6 +10,8 @@ from app.db.models import DeviceInventoryBinding, RegistryAdminEvent, RegistryAs
 from registry.admin_operations_service import RegistryAdminOperationsService
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 @pytest.mark.asyncio
 async def test_location_create_update_duplicate_and_archive(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

@@ -6,6 +6,8 @@ import pytest
 from sqlalchemy import text
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 

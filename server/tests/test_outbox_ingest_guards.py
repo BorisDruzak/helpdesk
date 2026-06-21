@@ -9,6 +9,8 @@ from websocket.agent_services import OutboxIngestService
 from websocket.contexts import AgentConnectionContext
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 class _BatchAckRecorder:
     def __init__(self) -> None:
         self.nacks: list[dict] = []

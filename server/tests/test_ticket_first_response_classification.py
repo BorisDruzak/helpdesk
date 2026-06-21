@@ -1,5 +1,8 @@
 from tickets.public_access import build_public_access_message, is_public_support_reply_payload
+import pytest
 
+
+pytestmark = pytest.mark.db_cleanup("tickets")
 
 def test_public_access_message_is_system_notice_not_first_response():
     payload = build_public_access_message("RZ76RPDR", "ticket-1")

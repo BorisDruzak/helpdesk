@@ -11,6 +11,8 @@ from app.repos.service_catalog_repo import ServiceCatalogRepo
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 FORBIDDEN_SAFE_KEYS = {
     "queue_id",
     "default_queue_id",

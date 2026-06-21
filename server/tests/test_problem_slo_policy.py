@@ -10,6 +10,8 @@ from problem.problem_service import ProblemService
 from problem.slo_service import ProblemSLOService
 
 
+pytestmark = pytest.mark.db_cleanup("policies_config")
+
 @pytest.mark.asyncio
 async def test_problem_create_computes_slo_due_milestones_from_effective_policy(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

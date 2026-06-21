@@ -11,6 +11,8 @@ from knowledge.feedback_service import KnowledgeFeedbackService
 from knowledge.quality_service import KnowledgeQualityService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 async def _article(session, *, slug: str, body: str, owner: str | None = "owner", reviewer: str | None = "reviewer") -> dict:
     repo = KnowledgeRepo(session)
     await repo.upsert_space({"code": "it", "title": "IT", "visibility": "requester", "lifecycle_status": "active"}, actor_id="admin")

@@ -14,6 +14,8 @@ from tools.handlers import handle_tools_run
 from tests.test_helpers import TEST_ECHO_TOOL
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)
     return Device(

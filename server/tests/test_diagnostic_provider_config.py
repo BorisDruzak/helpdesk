@@ -15,6 +15,8 @@ from diagnostics.provider_config import DiagnosticProviderConfigService
 from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 ADMIN_TOKEN = "test-ui-admin-token"
 
 

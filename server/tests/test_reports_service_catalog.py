@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import HelpdeskService, HelpdeskServiceOffering, Ticket, TicketQueue
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_reports_summary_includes_service_catalog_dimensions(test_client, test_engine) -> None:
     suffix = uuid.uuid4().hex[:8]

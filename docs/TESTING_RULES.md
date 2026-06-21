@@ -132,7 +132,7 @@ $env:PC_CLIENT_TEST_DB_TEMPLATE_REBUILD = "1"  # force rebuild for the current f
 
 `cleanup_db` is fail-closed. A DB-backed test without `@pytest.mark.db_cleanup(...)` uses the `full` profile, which preserves the historical broad `TRUNCATE ... RESTART IDENTITY CASCADE` table list. `no_db` still skips DB setup and cleanup entirely.
 
-Use a narrower profile only after a focused run proves the file does not leak data outside that profile:
+Use a narrower profile only after a focused run proves the file does not leak data outside that profile. Prefer module-level markers so the audit/reporting tools can see the file assignment:
 
 ```python
 pytestmark = pytest.mark.db_cleanup("knowledge")
@@ -140,7 +140,29 @@ pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
 pytestmark = pytest.mark.db_cleanup("tickets")
 ```
 
-Supported profiles are `full`, `tickets`, `knowledge`, `observer_diagnostics`, `agent_runtime`, `registry_access`, and `policies_config`. Unknown profiles and multiple `db_cleanup` markers on one test fail fast. The first optimized files are conservative: selected knowledge, observer/diagnostics, and ticket policy tests. Broad `agent_ws` and mixed runtime tests should stay on `full` until separately validated.
+Supported profiles are `full`, `tickets`, `knowledge`, `observer_diagnostics`, `agent_runtime`, `registry_access`, and `policies_config`. Unknown profiles and multiple `db_cleanup` markers on one test fail fast.
+
+Profile selection guide:
+
+| Profile | Use for |
+| --- | --- |
+| `knowledge` | `test_knowledge_*.py` and clear Knowledge-only provider/repo/API tests. |
+| `observer_diagnostics` | observer, diagnostics, tech/admin control-plane and trace-overlay tests. |
+| `tickets` | ticket/helpdesk/form/service-catalog/requester-timeline/support-playbook tests. |
+| `registry_access` | registry/access/audience/group/user-permission tests. |
+| `policies_config` | policy/config/SLA/OLA/routing/closure/visibility/reporting tests. |
+| `agent_runtime` | agent/device/outbox/module/tool/runtime API tests that do not use the in-process `test_agent` fixture. |
+
+Keep a file on `full` when it is mixed-domain, uses `test_agent`/`agent_ws`, writes through broad web/API flows, or is otherwise hard to prove from the existing cleanup profile. If a focused run fails after adding a marker, revert that file to `full` instead of weakening assertions or expanding cleanup behavior in the same pass.
+
+To audit current file-level coverage without changing pytest behavior:
+
+```powershell
+python scripts/audit_db_cleanup_profiles.py
+python scripts/audit_db_cleanup_profiles.py --strict  # optional gate for missing DB-backed profiles
+```
+
+The audit report prints `file`, inferred domain layer, explicit profile or `missing`, module/file-level `no_db`, likely `agent_ws`, and a summary. Normal mode is report-only; `--strict` returns non-zero for DB-backed, non-`agent_ws` files that still have no explicit profile.
 
 For contamination checks on a small focused sample, enable audit mode:
 
@@ -150,7 +172,13 @@ $env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
 python -m pytest server/tests/test_knowledge_search.py -vv
 ```
 
-Audit mode checks row counts for the selected profile tables after cleanup and fails if rows remain. It is intentionally opt-in because it adds extra DB queries per test.
+Audit mode checks row counts for the selected profile tables after cleanup and fails if rows remain. It is intentionally opt-in because it adds extra DB queries per test. Use it together with focused domain runs before broadening profile coverage, for example:
+
+```powershell
+$env:PC_CLIENT_TEST_TIMING = "1"
+$env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
+python -m pytest server/tests/test_ticket_*.py server/tests/test_helpdesk_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=40
+```
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
 

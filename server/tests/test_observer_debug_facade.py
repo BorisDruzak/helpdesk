@@ -17,6 +17,8 @@ from observer.debug_facade import (
 )
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 async def _seed_debug_context(test_engine):
     session_maker = async_sessionmaker(test_engine)
     now = datetime.now(timezone.utc).replace(microsecond=0)

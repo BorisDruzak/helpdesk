@@ -8,6 +8,8 @@ from app.repos.service_catalog_repo import ServiceCatalogRepo
 from knowledge.gap_service import KnowledgeGapService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 async def _catalog_offering(session) -> None:
     catalog = ServiceCatalogRepo(session)
     await catalog.upsert_service_draft({"code": "network", "name": "Network", "public_title": "Network", "visibility": "public"}, actor_id="admin", actor_role="admin")

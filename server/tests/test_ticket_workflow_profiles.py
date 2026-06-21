@@ -19,6 +19,8 @@ from tickets.workflow_profiles import (
 )
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def test_workflow_profile_registry_exposes_required_ticket_types() -> None:
     profiles = {profile.ticket_type: profile for profile in list_workflow_profiles()}
 

@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.repos.knowledge_repo import KnowledgeRepo
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 async def _create_item_with_version(session, *, slug: str, metadata: dict | None = None) -> tuple[dict, dict]:
     repo = KnowledgeRepo(session)
     await repo.upsert_space(

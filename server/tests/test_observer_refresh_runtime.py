@@ -13,6 +13,8 @@ from observer.service import ObserverOverlayService
 from observer.runtime import ObserverRefreshRuntime
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 async def _wait_until(predicate, *, timeout: float = 3.0, interval: float = 0.05) -> None:
     deadline = asyncio.get_running_loop().time() + timeout
     while asyncio.get_running_loop().time() < deadline:

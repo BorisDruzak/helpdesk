@@ -25,6 +25,8 @@ from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.registration_service import RegistrationService
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 def _new_id() -> str:
     return str(uuid.uuid4())
 

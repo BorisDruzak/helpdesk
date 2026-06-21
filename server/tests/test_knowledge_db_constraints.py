@@ -6,6 +6,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 async def _assert_integrity_error(test_engine, sql: str) -> None:
     async with test_engine.connect() as conn:
         tx = await conn.begin()

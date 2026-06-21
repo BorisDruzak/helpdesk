@@ -9,6 +9,8 @@ from knowledge.content_pack_service import KnowledgeContentPackService, load_con
 from knowledge.graph_service import KnowledgeGraphService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 def _baseline_pack(body: str = "## Steps\n\n1. Reconnect VPN.") -> dict:
     return {
         "code": "it-self-service-baseline",

@@ -11,6 +11,8 @@ from app.db.models import Ticket, TicketQualityReview, TicketReopenEvent
 from quality.reopen_service import TicketReopenService
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _closed_ticket(ticket_id: str) -> Ticket:
     now = datetime.now(timezone.utc)
     return Ticket(

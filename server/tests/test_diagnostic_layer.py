@@ -19,6 +19,8 @@ from diagnostics.service import DiagnosticOverviewService
 from diagnostics.sessions import DiagnosticSessionService
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 SUPPORT_TOKEN = "test-ui-support-token"
 
 

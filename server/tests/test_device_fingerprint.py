@@ -13,6 +13,8 @@ from auth.device_fingerprint import compare_device_fingerprints, normalize_devic
 from auth.service import AuthService
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 def _fingerprint(**overrides):
     base = {
         "schema": "device_fingerprint_v1",

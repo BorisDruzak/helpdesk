@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import AgentRuntimeAudit, Ticket
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _support_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-support-token"}
 

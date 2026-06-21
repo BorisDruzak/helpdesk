@@ -7,6 +7,8 @@ import pytest
 from knowledge.operations_service import KnowledgeOperationsService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_old_rollout_payload_gets_production_defaults(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

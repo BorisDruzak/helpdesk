@@ -18,6 +18,8 @@ from app.db.models import (
 from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 

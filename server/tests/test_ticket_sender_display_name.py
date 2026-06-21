@@ -7,6 +7,8 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from tickets.statuses import merge_requester_custom_fields
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_snapshot_enriches_agent_chat_message_with_requester_name(test_client, test_engine):
     ticket_id = str(uuid.uuid4())

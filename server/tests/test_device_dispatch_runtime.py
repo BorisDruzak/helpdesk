@@ -13,6 +13,8 @@ from websocket.device_outbox_sender import (
 )
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 @pytest.mark.asyncio
 async def test_device_ready_queue_deduplicates_until_popped():
     queue = DeviceReadyQueue()

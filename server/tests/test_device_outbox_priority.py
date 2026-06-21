@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.repos.device_outbox_repo import DeviceOutboxRepo
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 async def _set_created_at(repo: DeviceOutboxRepo, outbox_id: int, created_at: datetime) -> None:
     entry = await repo.get_by_id(outbox_id)
     assert entry is not None

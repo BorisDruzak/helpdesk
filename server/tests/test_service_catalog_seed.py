@@ -7,6 +7,8 @@ from app.repos.service_catalog_repo import ServiceCatalogRepo
 from scripts.seed_service_catalog import seed_service_catalog
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_service_catalog_seed_dry_run_does_not_mutate(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

@@ -8,6 +8,8 @@ from app.db.models import RemoteAccessSession, Ticket
 from remote_assist.service import RemoteAssistError, RemoteAssistService
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 @pytest.mark.asyncio
 async def test_remote_assist_rejects_ticket_without_requester_scope(test_engine):
     device_id = str(uuid.uuid4())

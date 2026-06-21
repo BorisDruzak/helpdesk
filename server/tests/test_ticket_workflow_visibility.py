@@ -19,6 +19,8 @@ from tickets.statuses import (
 from tickets.workflow_service import validate_transition, TicketWorkflowService
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def test_ticket_status_catalog_exposes_product_lifecycle():
     assert CANONICAL_STATUSES == (
         "new",

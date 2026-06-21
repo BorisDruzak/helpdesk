@@ -31,6 +31,8 @@ from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.helpdesk_policy_runtime import resolve_effective_ticket_policy
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 

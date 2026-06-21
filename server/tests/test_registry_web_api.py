@@ -21,6 +21,8 @@ from registry.service import RegistryIngestionService
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
 

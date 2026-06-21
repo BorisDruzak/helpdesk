@@ -7,6 +7,8 @@ import pytest
 from knowledge.operations_service import KnowledgeOperationsService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_effective_rollout_order_template_beats_offering_service_global(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

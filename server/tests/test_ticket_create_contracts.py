@@ -18,6 +18,8 @@ from app.db.models import (
 from tickets.workflow_profiles import save_workflow_profiles
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 async def _seed_queue(
     session,
     *,

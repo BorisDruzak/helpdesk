@@ -40,6 +40,8 @@ from app.repos.ticket_form_packs_repo import TICKET_FORM_PREFERRED_KEY_PREFIX
 from tickets.form_catalog import validate_form_pack_schema, validate_form_submission
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.no_db
 def test_validate_form_pack_schema_normalizes_on_behalf_policy():
     pack = validate_form_pack_schema(

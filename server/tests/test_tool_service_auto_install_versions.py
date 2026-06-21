@@ -13,6 +13,8 @@ from app.db.models import Device, DeviceDesiredModule, DeviceModule, DeviceTools
 from tools.service import ToolService
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 def _module_manifest(module_name: str, version: str) -> dict:
     return {
         "manifest_version": 2,

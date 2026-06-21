@@ -5,6 +5,8 @@ from sqlalchemy import text
 
 from web_api import knowledge_ai_handlers
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 ADMIN_TOKEN = "test-ui-admin-token"
 SUPPORT_TOKEN = "test-ui-support-token"
 USER_TOKEN = "test-ui-user:plain-user"

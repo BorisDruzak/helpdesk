@@ -22,6 +22,8 @@ from app.db.models import (
 from registry.admin_operations_service import RegistryAdminOperationsService
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)
     return Device(

@@ -11,6 +11,8 @@ from app.db.models import ProblemCandidate, Ticket
 from problem.candidate_service import ProblemCandidateService
 
 
+pytestmark = pytest.mark.db_cleanup("policies_config")
+
 def _ticket(ticket_id: str, now: datetime, *, breach: str) -> Ticket:
     breached_at = now - timedelta(hours=1)
     return Ticket(

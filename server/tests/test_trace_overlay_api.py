@@ -8,6 +8,8 @@ from app.db import get_session
 from app.db.models import AgentRuntimeAudit, Device, DeviceEvent, ObserverTrace, Operation, Ticket, TicketEvent
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 ADMIN_TOKEN = "test-ui-admin-token"
 
 

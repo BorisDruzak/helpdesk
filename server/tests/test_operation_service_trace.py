@@ -9,6 +9,8 @@ from app.db.models import Device, Ticket
 from app.services.operation_service import OperationService
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 @pytest.mark.asyncio
 async def test_enqueue_operation_uses_canonical_ticket_root_trace_for_ticket_bound_work():
     now = datetime.now(timezone.utc)

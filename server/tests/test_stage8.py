@@ -19,6 +19,8 @@ from app.repos.notification_prefs_repo import (
 )
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 class TestProblemsStatuses:
     """Unit tests для problems_statuses FSM."""
 

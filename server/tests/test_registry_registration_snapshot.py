@@ -22,6 +22,8 @@ from registry.registration_service import RegistrationService
 from registry.service import RegistrySnapshotService
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)
     return Device(

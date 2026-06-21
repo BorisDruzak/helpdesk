@@ -6,6 +6,8 @@ from aiohttp.test_utils import TestClient, TestServer
 from control_plane import create_control_app
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 ADMIN_TOKEN = "test-ui-admin-token"
 SUPPORT_TOKEN = "test-ui-support-token"
 

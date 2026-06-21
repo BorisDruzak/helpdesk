@@ -12,6 +12,8 @@ from app.repos.ticket_passport_repo import TicketPassportRepo
 from tickets.passport_service import TicketPassportService
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_passport_service_builds_requester_problem_and_object_sections(test_engine):
     session_maker = async_sessionmaker(test_engine)

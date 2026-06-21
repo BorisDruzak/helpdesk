@@ -18,6 +18,8 @@ from utils.module_builder import build_module_package
 from utils.module_preflight import preflight_module_zip
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 ADMIN_HEADERS = {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
 
 

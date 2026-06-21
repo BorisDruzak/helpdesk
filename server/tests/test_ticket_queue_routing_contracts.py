@@ -23,6 +23,8 @@ from app.db.models import (
 from tests.conftest import TEST_UI_SUPPORT_TOKEN
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 async def _seed_queue(
     session,
     *,

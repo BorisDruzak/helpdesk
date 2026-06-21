@@ -5,6 +5,8 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from state_manager import StateManager
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_requester_read_cursor_accepts_agent_message_read_events(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

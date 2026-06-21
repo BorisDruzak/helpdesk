@@ -10,6 +10,8 @@ import observer.service as observer_service_module
 from observer.service import ObserverOverlayService, TraceOverlayFilters, _iter_postgres_payload_batches
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
 class _AsyncSessionContext:
     def __init__(self, session):
         self._session = session

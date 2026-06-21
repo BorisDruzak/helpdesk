@@ -7,6 +7,8 @@ from websocket.contexts import AgentConnectionContext
 from websocket.device_outbox_sender import ShardDispatcher
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 class _DispatchRecorder:
     def __init__(self) -> None:
         self.calls: list[str] = []

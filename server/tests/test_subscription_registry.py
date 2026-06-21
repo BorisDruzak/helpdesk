@@ -6,6 +6,8 @@ from aiohttp import web
 from websocket.subscription_registry import SubscriptionRegistry
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 @pytest.mark.asyncio
 async def test_add_remove_ticket_subscriber():
     """Test adding and removing ticket subscribers."""

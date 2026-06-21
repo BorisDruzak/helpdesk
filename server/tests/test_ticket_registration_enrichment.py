@@ -14,6 +14,8 @@ from tests.conftest import TEST_AGENT_PREFIX
 from tickets.create_flow import create_ticket_with_side_effects
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)
     return Device(

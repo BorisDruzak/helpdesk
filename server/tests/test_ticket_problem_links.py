@@ -10,6 +10,8 @@ from app.db.models import Ticket
 from problem.problem_service import ProblemService
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_support_can_link_and_soft_unlink_ticket_problem(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

@@ -9,6 +9,8 @@ from app.db.models import KnowledgeBinding, KnowledgeContentPackItem, KnowledgeI
 from knowledge.content_pack_service import KnowledgeContentPackService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 def _stale_pack() -> dict:
     return {
         "code": "it-self-service-baseline",

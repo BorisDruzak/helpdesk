@@ -8,6 +8,8 @@ from knowledge.ingestion_service import KnowledgeIngestionService
 from knowledge.search_service import KnowledgeSearchService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_markdown_ingestion_creates_internal_draft_version_and_chunks(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

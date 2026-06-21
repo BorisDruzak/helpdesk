@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from knowledge.content_templates import default_visibility_for_item_type, get_content_template, validate_template_body
+import pytest
 
+
+pytestmark = pytest.mark.db_cleanup("knowledge")
 
 def test_article_template_requires_operational_sections() -> None:
     template = get_content_template("article")

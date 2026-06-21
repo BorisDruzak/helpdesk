@@ -12,6 +12,8 @@ from app.repos.operations_repo import OperationsRepo
 from websocket.protocol import enqueue_command_async
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 @pytest.mark.asyncio
 async def test_enqueue_command_async_creates_missing_operation_for_precreated_operation_id(
     test_client,

@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import RequestTemplate, TicketQueue
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 

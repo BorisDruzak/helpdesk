@@ -9,6 +9,8 @@ import pytest
 from knowledge import ingestion_service as ingestion_module
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}
 

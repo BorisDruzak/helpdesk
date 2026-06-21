@@ -14,6 +14,8 @@ from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 
 

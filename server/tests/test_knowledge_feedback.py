@@ -10,6 +10,8 @@ from knowledge.feedback_service import KnowledgeFeedbackService
 from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 @pytest.mark.asyncio
 async def test_knowledge_feedback_records_deflection_without_ticket(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)

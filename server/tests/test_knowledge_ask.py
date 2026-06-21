@@ -15,6 +15,8 @@ from knowledge.search_settings_service import KnowledgeSearchSettingsService
 from registry.audience_contracts import EffectiveAudience
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 ADMIN_HEADERS = {"Authorization": "Bearer test-ui-admin-token"}
 SUPPORT_HEADERS = {"Authorization": "Bearer test-ui-support-token"}
 

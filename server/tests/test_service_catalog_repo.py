@@ -12,6 +12,8 @@ from tickets.service_catalog_publication import ServiceCatalogPublicationService
 from tickets.service_catalog_runtime import ServiceCatalogRuntimeResolver
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_service_catalog_repo_draft_publish_and_safe_catalog(test_engine) -> None:
     suffix = uuid.uuid4().hex[:8]

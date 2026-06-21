@@ -10,6 +10,8 @@ from knowledge.content_pack_service import KnowledgeContentPackService, load_con
 from knowledge.suggestion_service import KnowledgeSuggestionService
 
 
+pytestmark = pytest.mark.db_cleanup("knowledge")
+
 PACK_DIR = Path("content_packs/knowledge")
 
 

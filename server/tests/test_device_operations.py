@@ -23,6 +23,8 @@ from app.db.models import (
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
 

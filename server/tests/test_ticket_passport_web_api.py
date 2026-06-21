@@ -12,6 +12,8 @@ from tests.conftest import TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 def _support_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_SUPPORT_TOKEN}"}
 

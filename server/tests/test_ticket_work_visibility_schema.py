@@ -11,6 +11,8 @@ from app.db.engine import async_sessionmaker
 from app.db.models import Ticket
 
 
+pytestmark = pytest.mark.db_cleanup("tickets")
+
 @pytest.mark.asyncio
 async def test_ticket_work_visibility_schema_contract(test_engine):
     async with test_engine.begin() as connection:

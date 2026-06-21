@@ -22,6 +22,8 @@ from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService, RegistrationValidationError
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 def _device(device_id: str, *, hostname: str = "policy-reg-pc") -> Device:
     now = datetime.now(timezone.utc)
     return Device(

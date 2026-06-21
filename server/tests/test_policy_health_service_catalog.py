@@ -12,6 +12,8 @@ from app.repos.service_catalog_repo import ServiceCatalogRepo
 from tickets.policy_health_service import PolicyHealthService
 
 
+pytestmark = pytest.mark.db_cleanup("policies_config")
+
 @pytest.mark.asyncio
 async def test_policy_health_includes_service_catalog_objects(test_engine) -> None:
     suffix = uuid.uuid4().hex[:8]
