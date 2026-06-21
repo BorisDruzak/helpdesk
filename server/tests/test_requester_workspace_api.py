@@ -36,6 +36,9 @@ from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_USER_
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 
 
+pytestmark = pytest.mark.db_cleanup("web_support")
+
+
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 

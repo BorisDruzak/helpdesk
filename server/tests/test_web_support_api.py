@@ -54,6 +54,9 @@ from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_AUDITOR_TOKEN, TEST_UI_S
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
 
+pytestmark = pytest.mark.db_cleanup("web_support")
+
+
 @pytest.fixture
 async def web_support_client():
     @web.middleware

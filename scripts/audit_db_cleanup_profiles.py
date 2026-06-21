@@ -22,9 +22,26 @@ KNOWN_PROFILES = {
     "agent_runtime",
     "registry_access",
     "policies_config",
+    "registration",
+    "web_support",
 }
 
 LAYER_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "registration",
+        (
+            "test_account_session_service.py",
+            "test_registration_api.py",
+        ),
+    ),
+    (
+        "web_support",
+        (
+            "test_p0_workbench_update_contracts.py",
+            "test_requester_workspace_api.py",
+            "test_web_support_api.py",
+        ),
+    ),
     (
         "knowledge",
         (

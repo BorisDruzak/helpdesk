@@ -12,6 +12,9 @@ from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
 
+pytestmark = pytest.mark.db_cleanup("registration")
+
+
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)
     return Device(

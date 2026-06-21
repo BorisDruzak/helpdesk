@@ -164,9 +164,11 @@ Use a narrower profile only after a focused run proves the file does not leak da
 pytestmark = pytest.mark.db_cleanup("knowledge")
 pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
 pytestmark = pytest.mark.db_cleanup("tickets")
+pytestmark = pytest.mark.db_cleanup("registration")
+pytestmark = pytest.mark.db_cleanup("web_support")
 ```
 
-Supported profiles are `full`, `tickets`, `knowledge`, `observer_diagnostics`, `agent_runtime`, `registry_access`, and `policies_config`. Unknown profiles and multiple `db_cleanup` markers on one test fail fast.
+Supported profiles are `full`, `tickets`, `knowledge`, `observer_diagnostics`, `agent_runtime`, `registry_access`, `policies_config`, `registration`, and `web_support`. Unknown profiles and multiple `db_cleanup` markers on one test fail fast.
 
 Profile selection guide:
 
@@ -178,8 +180,12 @@ Profile selection guide:
 | `registry_access` | registry/access/audience/group/user-permission tests. |
 | `policies_config` | policy/config/SLA/OLA/routing/closure/visibility/reporting tests. |
 | `agent_runtime` | agent/device/outbox/module/tool/runtime API tests that do not use the in-process `test_agent` fixture. |
+| `registration` | registration, device binding, browser pairing, and account-session tests that are driven by device/registry parent rows. |
+| `web_support` | broad support/requester web API flows that mix tickets, registry/access, operations/outbox, playbooks, observer traces, and agent update artifacts. |
 
-Keep a file on `full` when it is mixed-domain, uses `test_agent`/`agent_ws`, writes through broad web/API flows, or is otherwise hard to prove from the existing cleanup profile. If a focused run fails after adding a marker, revert that file to `full` instead of weakening assertions or expanding cleanup behavior in the same pass.
+Do not automatically map mixed `web_api` files to `tickets`. Use `web_support` only when the file is a support/requester web workspace flow and focused validation with `PC_CLIENT_TEST_CLEANUP_AUDIT=1` is green. Keep a file on `full` when it is mixed-domain beyond a documented profile, uses `test_agent`/`agent_ws`, writes through broad web/API flows that are not covered by `web_support`, or is otherwise hard to prove from the existing cleanup profile. If a focused run fails after adding a marker, revert that file to `full` instead of weakening assertions or expanding cleanup behavior in the same pass.
+
+Cleanup profiles may rely on database cascades from parent tables already listed in `FULL_CLEANUP_TABLES`. Do not add child tables that are not present in `FULL_CLEANUP_TABLES`; document the gap instead. Known child tables such as `device_user_bindings`, `device_account_sessions`, `device_registration_claims`, `device_browser_pairings`, `ticket_approvals`, `ticket_notifications`, and `user_consent_requests` are not currently explicit cleanup tables, so profile changes should be validated by focused runs rather than by adding those names ad hoc.
 
 To audit current file-level coverage without changing pytest behavior:
 
@@ -204,6 +210,19 @@ Audit mode checks row counts for the selected profile tables after cleanup and f
 $env:PC_CLIENT_TEST_TIMING = "1"
 $env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
 python -m pytest server/tests/test_ticket_*.py server/tests/test_helpdesk_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=40
+```
+
+Focused validation for reducing `server_pytest_db_web_api` full-cleanup debt should use timing plus cleanup audit before and after adding module-level markers:
+
+```powershell
+$env:PC_CLIENT_TEST_TIMING = "1"
+$env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
+python -m pytest server/tests/test_web_support_api.py -vv --durations=40
+python -m pytest server/tests/test_requester_workspace_api.py -vv --durations=40
+python -m pytest server/tests/test_registration_api.py -vv --durations=40
+python -m pytest server/tests/test_p0_workbench_update_contracts.py -vv --durations=40
+python -m pytest server/tests/test_account_session_service.py -vv --durations=40
+python scripts/run_ci_suite.py --layer server_pytest_db_web_api
 ```
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.

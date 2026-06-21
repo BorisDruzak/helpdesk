@@ -164,6 +164,45 @@ def test_keep_test_database_env_flag(monkeypatch):
     assert test_harness._keep_test_database() is True
 
 
+def test_test_database_url_teardown_drops_database_before_closing_tunnel(monkeypatch):
+    test_db_url = "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/pc_support_test_unit"
+    admin_db_url = "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres"
+    events = []
+
+    def fake_run_async_blocking(func, *args):
+        events.append((func.__name__, args))
+
+    monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.delenv("PC_CLIENT_ALLOW_SHARED_TEST_DB", raising=False)
+    monkeypatch.delenv(test_harness.TEST_DB_TEMPLATE_CLONED_FROM_ENV, raising=False)
+    monkeypatch.delenv(test_harness.TEST_DB_TEMPLATE_FINGERPRINT_ENV, raising=False)
+    monkeypatch.setattr(test_harness, "_resolve_test_database_urls", lambda: (test_db_url, admin_db_url, False))
+    monkeypatch.setattr(
+        test_harness,
+        "_maybe_fallback_to_shared_test_db",
+        lambda test_url, admin_url, is_shared, *, allow_auto_shared_fallback: (test_url, admin_url, is_shared),
+    )
+    monkeypatch.setattr(test_harness, "_should_auto_fallback_to_shared_test_db", lambda: False)
+    monkeypatch.setattr(test_harness, "verify_test_database", lambda *args, **kwargs: None)
+    monkeypatch.setattr(test_harness, "_test_db_template_enabled", lambda: False)
+    monkeypatch.setattr(test_harness, "_keep_test_database", lambda: False)
+    monkeypatch.setattr(test_harness, "_run_async_blocking", fake_run_async_blocking)
+    monkeypatch.setattr(test_harness, "_close_windows_test_db_tunnel", lambda: events.append(("close_tunnel", ())))
+
+    fixture = test_harness.test_database_url.__wrapped__()
+    assert next(fixture) == test_db_url
+    with pytest.raises(StopIteration):
+        next(fixture)
+
+    assert events == [
+        ("_drop_test_database", (admin_db_url, "pc_support_test_unit")),
+        ("_create_test_database", (admin_db_url, "pc_support_test_unit")),
+        ("_drop_test_database", (admin_db_url, "pc_support_test_unit")),
+        ("close_tunnel", ()),
+    ]
+
+
 def test_cleanup_profile_defaults_to_full_without_marker():
     assert test_harness._resolve_cleanup_profile(_FakeNode()) == "full"
 
@@ -206,6 +245,18 @@ def test_cleanup_profile_tables_use_safe_identifiers():
         assert tables, profile
         for table in tables:
             test_harness._validate_cleanup_table_name(table)
+
+
+def test_web_api_cleanup_profiles_are_bounded_subsets():
+    full_tables = set(test_harness.CLEANUP_TABLES_BY_PROFILE["full"])
+    registration_tables = set(test_harness.CLEANUP_TABLES_BY_PROFILE["registration"])
+    web_support_tables = set(test_harness.CLEANUP_TABLES_BY_PROFILE["web_support"])
+
+    assert registration_tables < full_tables
+    assert web_support_tables < full_tables
+    assert {"devices", "registry_people", "registry_departments", "registry_locations", "ui_users"} <= registration_tables
+    assert {"tickets", "ticket_events", "operations", "device_outbox", "artifacts", "agent_builds"} <= web_support_tables
+    assert {"observer_traces", "observer_spans", "playbook", "playbook_run"} <= web_support_tables
 
 
 def test_cleanup_truncate_sql_uses_selected_profile_tables_only():

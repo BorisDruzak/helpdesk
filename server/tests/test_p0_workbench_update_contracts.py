@@ -20,6 +20,9 @@ from websocket.agent_services import CommandResultService
 from websocket.contexts import AgentConnectionContext
 
 
+pytestmark = pytest.mark.db_cleanup("web_support")
+
+
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}
 
