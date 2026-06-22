@@ -27,7 +27,6 @@ import {
   DetailsStepPanel,
   RequestSummaryAside,
   RequestWizardShell,
-  ReviewStepPanel,
 } from "./new-request-panels";
 import {
   ASK_TICKET_CONTEXT_STORAGE_KEY,
@@ -40,7 +39,6 @@ import {
   recommendOffering,
   requesterFormPrefillFromContext,
   resolveRecommendedCategoryKey,
-  type WizardStep,
 } from "./new-request-workflow";
 import type {
   KnowledgeAttempt,
@@ -65,7 +63,6 @@ type NewRequestDraft = {
   selectedOnBehalfPerson?: RequesterOnBehalfPerson | null;
   showAllCategoryOptions?: boolean;
   status: "draft";
-  step?: WizardStep;
   updated_at?: string;
 };
 
@@ -181,6 +178,147 @@ function requestDescriptionFromForm(
   return rows.length ? rows.join("\n") : title;
 }
 
+type InlineValidationDetails = {
+  fieldErrors: Record<string, string>;
+  messages: string[];
+};
+
+function requesterErrorDetails(error: unknown): unknown {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  return (error as { details?: unknown }).details ?? null;
+}
+
+function requesterFieldValidationDetails(error: unknown, fields: RequestFormField[]): InlineValidationDetails {
+  const fieldLabels = new Map(fields.map((field) => [field.key, field.label || field.key]));
+  const fieldErrors: Record<string, string> = {};
+  const messages: string[] = [];
+  collectValidationDetails(requesterErrorDetails(error), fieldLabels, fieldErrors, messages);
+  return { fieldErrors, messages: uniqueMessages(messages) };
+}
+
+function collectValidationDetails(
+  details: unknown,
+  fieldLabels: Map<string, string>,
+  fieldErrors: Record<string, string>,
+  messages: string[],
+): void {
+  const direct = stringMessage(details);
+  if (direct) {
+    messages.push(direct);
+    return;
+  }
+  if (Array.isArray(details)) {
+    details.forEach((item) => collectValidationDetails(item, fieldLabels, fieldErrors, messages));
+    return;
+  }
+  if (!details || typeof details !== "object") {
+    return;
+  }
+
+  const payload = details as Record<string, unknown>;
+  recordFieldErrorMap(payload.fields, fieldLabels, fieldErrors, messages);
+  recordFieldErrorMap(payload.field_errors, fieldLabels, fieldErrors, messages);
+  recordFieldErrorMap(payload.fieldErrors, fieldLabels, fieldErrors, messages);
+  collectValidationDetails(payload.errors, fieldLabels, fieldErrors, messages);
+
+  ["message", "detail", "reason", "preview"].forEach((key) => {
+    const message = stringMessage(payload[key]);
+    if (message) {
+      messages.push(message);
+    }
+  });
+
+  const fieldKey = normalizeValidationFieldKey(payload.field ?? payload.path ?? payload.name);
+  const message = firstMessage(payload.message ?? payload.detail ?? payload.error ?? payload.reason);
+  if (fieldKey && message) {
+    recordSingleFieldError(fieldKey, message, fieldLabels, fieldErrors, messages);
+  }
+
+  Object.entries(payload).forEach(([rawKey, value]) => {
+    const fieldKey = normalizeValidationFieldKey(rawKey);
+    if (!fieldKey || !fieldLabels.has(fieldKey) || fieldErrors[fieldKey]) {
+      return;
+    }
+    const fieldMessage = firstMessage(value);
+    if (fieldMessage) {
+      recordSingleFieldError(fieldKey, fieldMessage, fieldLabels, fieldErrors, messages);
+    }
+  });
+}
+
+function recordFieldErrorMap(
+  value: unknown,
+  fieldLabels: Map<string, string>,
+  fieldErrors: Record<string, string>,
+  messages: string[],
+): void {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  Object.entries(value as Record<string, unknown>).forEach(([rawKey, rawValue]) => {
+    const fieldKey = normalizeValidationFieldKey(rawKey);
+    const message = firstMessage(rawValue);
+    if (fieldKey && message) {
+      recordSingleFieldError(fieldKey, message, fieldLabels, fieldErrors, messages);
+    }
+  });
+}
+
+function recordSingleFieldError(
+  fieldKey: string,
+  message: string,
+  fieldLabels: Map<string, string>,
+  fieldErrors: Record<string, string>,
+  messages: string[],
+): void {
+  const label = fieldLabels.get(fieldKey);
+  if (label) {
+    fieldErrors[fieldKey] = fieldErrors[fieldKey] ?? message;
+    messages.push(`${label}: ${message}`);
+    return;
+  }
+  messages.push(message);
+}
+
+function normalizeValidationFieldKey(value: unknown): string | null {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) {
+    return null;
+  }
+  const last = text.replace(/^fields\./, "").split(".").filter(Boolean).pop() ?? text;
+  return last.replace(/\[\d+\]$/u, "");
+}
+
+function firstMessage(value: unknown): string | null {
+  const direct = stringMessage(value);
+  if (direct) {
+    return direct;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const message = firstMessage(item);
+      if (message) {
+        return message;
+      }
+    }
+  }
+  if (value && typeof value === "object") {
+    const payload = value as Record<string, unknown>;
+    return firstMessage(payload.message ?? payload.detail ?? payload.error ?? payload.reason);
+  }
+  return null;
+}
+
+function stringMessage(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function uniqueMessages(messages: string[]): string[] {
+  return Array.from(new Set(messages.map((message) => message.trim()).filter(Boolean)));
+}
+
 export function RequesterNewRequestPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -201,9 +339,9 @@ export function RequesterNewRequestPage() {
       : null;
   const hasAgentContext = Boolean(primaryDevice);
   const requestDraftStorageKey = bootstrap ? draftStorageKey(bootstrap.profile?.person_id, requestIntent) : null;
-  const [step, setStep] = useState<WizardStep>("details");
   const [requestSeed, setRequestSeed] = useState(() => (requestIntent === OWNER_CHANGE_INTENT ? OWNER_CHANGE_PROBLEM : ""));
   const [fieldValues, setFieldValues] = useState<DynamicFormValues>({});
+  const [fieldServerErrors, setFieldServerErrors] = useState<Record<string, string>>({});
   const [previousPrefill, setPreviousPrefill] = useState<DynamicFormValues>({});
   const [knowledgeAttempts, setKnowledgeAttempts] = useState<KnowledgeAttempt[]>([]);
   const [previewResult, setPreviewResult] = useState<ServiceCatalogSafePreview | null>(null);
@@ -215,9 +353,11 @@ export function RequesterNewRequestPage() {
   const [onBehalfPeople, setOnBehalfPeople] = useState<RequesterOnBehalfPerson[]>([]);
   const [selectedOnBehalfPerson, setSelectedOnBehalfPerson] = useState<RequesterOnBehalfPerson | null>(null);
   const [onBehalfReason, setOnBehalfReason] = useState("");
+  const categorySelectRef = useRef<HTMLSelectElement | null>(null);
   const loadedAskContextRef = useRef(false);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const [validationAttempted, setValidationAttempted] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [selectedCategoryKey, setSelectedCategoryKey] = useState("");
   const [showAllCategoryOptions, setShowAllCategoryOptions] = useState(false);
   const restoredDraftRef = useRef(false);
@@ -312,7 +452,14 @@ export function RequesterNewRequestPage() {
       !valueValidation.issues.length &&
       !onBehalfMissingRequired,
   );
-  const canCreate = Boolean(previewResult?.ok && !(previewResult.blockers ?? []).length && !submitting && !previewSubmitting);
+  const onBehalfAffectedPersonError =
+    validationAttempted && onBehalfActive && onBehalfPolicy?.affected_person_required && !selectedOnBehalfPerson
+      ? "Выберите сотрудника, за которого создается обращение."
+      : null;
+  const onBehalfReasonError =
+    validationAttempted && onBehalfActive && onBehalfPolicy?.reason_required && !onBehalfReason.trim()
+      ? "Укажите причину обращения за другого сотрудника."
+      : null;
 
   useEffect(() => {
     if (loadedAskContextRef.current) {
@@ -386,8 +533,9 @@ export function RequesterNewRequestPage() {
     setOnBehalfQuery(draft.onBehalfQuery ?? "");
     setSelectedOnBehalfPerson(draft.selectedOnBehalfPerson ?? null);
     setOnBehalfReason(draft.onBehalfReason ?? "");
-    setStep(draft.step === "review" ? "review" : "details");
     setPreviewResult(null);
+    setFieldServerErrors({});
+    setCategoryError(null);
     setError(null);
   }, [categoryOptions, formPackQuery.data, requestDraftStorageKey, requestIntent]);
 
@@ -402,8 +550,7 @@ export function RequesterNewRequestPage() {
       Boolean(onBehalfQuery.trim()) ||
       Boolean(onBehalfReason.trim()) ||
       Boolean(selectedOnBehalfPerson) ||
-      showAllCategoryOptions ||
-      step !== "details";
+      showAllCategoryOptions;
     if (!hasDraftData) {
       removeNewRequestDraft(requestDraftStorageKey);
       return;
@@ -419,7 +566,6 @@ export function RequesterNewRequestPage() {
       selectedOnBehalfPerson,
       showAllCategoryOptions,
       status: "draft",
-      step,
       updated_at: new Date().toISOString(),
     });
   }, [
@@ -433,7 +579,6 @@ export function RequesterNewRequestPage() {
     selectedCategoryKey,
     selectedOnBehalfPerson,
     showAllCategoryOptions,
-    step,
   ]);
 
   async function runOnBehalfSearch() {
@@ -455,60 +600,80 @@ export function RequesterNewRequestPage() {
     }
   }
 
-  async function runPreview() {
+  function clearFieldServerError(fieldKey: string) {
+    setFieldServerErrors((current) => {
+      if (!current[fieldKey]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[fieldKey];
+      return next;
+    });
+  }
+
+  function localValidationMessage(): string | null {
+    if (!selectedForm) {
+      return "Выберите категорию обращения.";
+    }
+    if (!missingFieldDetails.length && !valueValidation.issues.length && !onBehalfMissingRequired) {
+      return null;
+    }
+    if (valueValidation.issues[0]?.message) {
+      return valueValidation.issues[0].message;
+    }
+    const missingLabels = [...missingFields];
+    if (onBehalfActive && onBehalfPolicy?.affected_person_required && !selectedOnBehalfPerson) {
+      missingLabels.push("сотрудника");
+    }
+    if (onBehalfActive && onBehalfPolicy?.reason_required && !onBehalfReason.trim()) {
+      missingLabels.push("причину обращения за другого сотрудника");
+    }
+    return `Заполните: ${missingLabels.filter(Boolean).join(", ")}.`;
+  }
+
+  function focusFirstInvalidField() {
+    window.requestAnimationFrame(() => {
+      if (!selectedForm) {
+        categorySelectRef.current?.focus();
+        return;
+      }
+      const firstMissingKey = missingFieldDetails[0]?.key ?? valueValidation.issues[0]?.path.replace(/^fields\./, "");
+      if (firstMissingKey) {
+        fieldRefs.current[firstMissingKey]?.focus();
+      }
+    });
+  }
+
+  function applyRequesterInlineError(exc: unknown, fallback: string, operation: "preview" | "create") {
+    const details = requesterFieldValidationDetails(exc, contextualFields);
+    setFieldServerErrors(details.fieldErrors);
+    const message = details.messages.length
+      ? details.messages.join(" ")
+      : requesterErrorMessage(exc, fallback, { operation });
+    setError(message);
+    const firstFieldKey = Object.keys(details.fieldErrors)[0];
+    if (firstFieldKey) {
+      window.requestAnimationFrame(() => fieldRefs.current[firstFieldKey]?.focus());
+    }
+  }
+
+  async function previewTicketBeforeCreate(): Promise<ServiceCatalogSafePreview | null> {
     if (!canPreview) {
-      return;
+      return null;
     }
     setPreviewSubmitting(true);
     setError(null);
     try {
       const result = await previewRequesterTicket(buildCreatePayload());
       setPreviewResult(result);
+      return result;
     } catch (exc) {
       setPreviewResult(null);
-      setError(requesterErrorMessage(exc, "Не удалось проверить обращение", { operation: "preview" }));
+      applyRequesterInlineError(exc, "Не удалось проверить обращение", "preview");
+      return null;
     } finally {
       setPreviewSubmitting(false);
     }
-  }
-
-  function goToReview() {
-    setValidationAttempted(true);
-    if (!selectedForm) {
-      setError("Выберите категорию обращения.");
-      return;
-    }
-    if (missingFieldDetails.length || valueValidation.issues.length || onBehalfMissingRequired) {
-      setError(
-        valueValidation.issues[0]?.message ||
-          `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`,
-      );
-      window.requestAnimationFrame(() => {
-        const firstMissingKey = missingFieldDetails[0]?.key ?? valueValidation.issues[0]?.path.replace(/^fields\./, "");
-        if (firstMissingKey) {
-          fieldRefs.current[firstMissingKey]?.focus();
-        }
-      });
-      return;
-    }
-    setError(null);
-    setStep("review");
-  }
-
-  function canSelectStep(nextStep: WizardStep): boolean {
-    if (nextStep === "details") {
-      return true;
-    }
-    return canPreview;
-  }
-
-  function selectStep(nextStep: WizardStep) {
-    if (nextStep === "details") {
-      setError(null);
-      setStep("details");
-      return;
-    }
-    goToReview();
   }
 
   function resetOnBehalfState() {
@@ -522,12 +687,38 @@ export function RequesterNewRequestPage() {
   function selectCategoryKey(key: string) {
     if (key !== selectedCategoryKey) {
       resetOnBehalfState();
+      setFieldServerErrors({});
+      setPreviewResult(null);
     }
+    setCategoryError(null);
+    setError(null);
     setSelectedCategoryKey(key);
   }
 
   async function createTicket() {
-    if (!canCreate) {
+    if (submitting || previewSubmitting) {
+      return;
+    }
+    setValidationAttempted(true);
+    setFieldServerErrors({});
+    setCategoryError(null);
+    setPreviewResult(null);
+    const localError = localValidationMessage();
+    if (localError) {
+      if (!selectedForm) {
+        setCategoryError(localError);
+      }
+      setError(localError);
+      focusFirstInvalidField();
+      return;
+    }
+    const preview = await previewTicketBeforeCreate();
+    if (!preview) {
+      return;
+    }
+    const previewBlockers = preview.blockers ?? [];
+    if (!preview.ok || previewBlockers.length) {
+      setError(previewBlockers.length ? null : "Нельзя создать обращение: проверка формы нашла блокирующее условие.");
       return;
     }
     setSubmitting(true);
@@ -547,7 +738,7 @@ export function RequesterNewRequestPage() {
       }
       navigate(`/app/requester/tickets/${encodeURIComponent(ticketRouteParam)}`);
     } catch (exc) {
-      setError(requesterErrorMessage(exc, "Не удалось создать обращение", { operation: "create" }));
+      applyRequesterInlineError(exc, "Не удалось создать обращение", "create");
     } finally {
       setSubmitting(false);
     }
@@ -607,61 +798,52 @@ export function RequesterNewRequestPage() {
   return (
     <div className="mx-auto grid max-w-5xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
       <RequestWizardShell
-        canSelectStep={canSelectStep}
         draftStatusLabel="Черновик"
         error={error}
-        onStepSelect={selectStep}
-        step={step}
       >
-        {step === "details" ? (
-          <DetailsStepPanel
-            categoryOptions={categoryOptions}
-            categorySelectorOptions={categorySelectorOptions}
-            contextualFields={contextualFields}
-            fieldRefs={fieldRefs}
-            fieldValues={fieldValues}
-            goToReview={goToReview}
-            missingFieldDetails={missingFieldDetails}
-            missingFields={missingFields}
-            onBehalfActive={onBehalfActive}
-            onBehalfMissingRequired={onBehalfMissingRequired}
-            onBehalfPeople={onBehalfPeople}
-            onBehalfPolicy={onBehalfPolicy}
-            onBehalfQuery={onBehalfQuery}
-            onBehalfReason={onBehalfReason}
-            recommendedCategoryKey={recommendedCategoryKey}
-            requiresOnBehalfForAvailability={requiresOnBehalfForAvailability}
-            runOnBehalfSearch={runOnBehalfSearch}
-            selectedCategoryKey={selectedCategoryKey}
-            selectedForm={selectedForm}
-            selectedOnBehalfPerson={selectedOnBehalfPerson}
-            setError={setError}
-            setFieldValues={setFieldValues}
-            setOnBehalfEnabled={setOnBehalfEnabled}
-            setOnBehalfQuery={setOnBehalfQuery}
-            setOnBehalfReason={setOnBehalfReason}
-            setSelectedCategoryKey={selectCategoryKey}
-            setSelectedOnBehalfPerson={setSelectedOnBehalfPerson}
-            setShowAllCategoryOptions={setShowAllCategoryOptions}
-            validationAttempted={validationAttempted}
-            valueValidation={valueValidation}
-          />
-        ) : null}
-        {step === "review" ? (
-          <ReviewStepPanel
-            canCreate={canCreate}
-            createTicket={createTicket}
-            primaryDevice={primaryDevice}
-            previewResult={previewResult}
-            previewSubmitting={previewSubmitting}
-            requestDescription={requestDescription}
-            requestTitle={requestTitle}
-            runPreview={runPreview}
-            selectedForm={selectedForm}
-            selectedOffering={selectedOffering}
-            submitting={submitting}
-          />
-        ) : null}
+        <DetailsStepPanel
+          categoryError={categoryError}
+          categoryInputRef={(element) => {
+            categorySelectRef.current = element;
+          }}
+          categoryOptions={categoryOptions}
+          categorySelectorOptions={categorySelectorOptions}
+          clearFieldServerError={clearFieldServerError}
+          contextualFields={contextualFields}
+          createTicket={createTicket}
+          fieldRefs={fieldRefs}
+          fieldServerErrors={fieldServerErrors}
+          fieldValues={fieldValues}
+          missingFieldDetails={missingFieldDetails}
+          missingFields={missingFields}
+          onBehalfActive={onBehalfActive}
+          onBehalfAffectedPersonError={onBehalfAffectedPersonError}
+          onBehalfMissingRequired={onBehalfMissingRequired}
+          onBehalfPeople={onBehalfPeople}
+          onBehalfPolicy={onBehalfPolicy}
+          onBehalfQuery={onBehalfQuery}
+          onBehalfReason={onBehalfReason}
+          onBehalfReasonError={onBehalfReasonError}
+          previewResult={previewResult}
+          previewSubmitting={previewSubmitting}
+          recommendedCategoryKey={recommendedCategoryKey}
+          requiresOnBehalfForAvailability={requiresOnBehalfForAvailability}
+          runOnBehalfSearch={runOnBehalfSearch}
+          selectedCategoryKey={selectedCategoryKey}
+          selectedForm={selectedForm}
+          selectedOnBehalfPerson={selectedOnBehalfPerson}
+          setError={setError}
+          setFieldValues={setFieldValues}
+          setOnBehalfEnabled={setOnBehalfEnabled}
+          setOnBehalfQuery={setOnBehalfQuery}
+          setOnBehalfReason={setOnBehalfReason}
+          setSelectedCategoryKey={selectCategoryKey}
+          setSelectedOnBehalfPerson={setSelectedOnBehalfPerson}
+          setShowAllCategoryOptions={setShowAllCategoryOptions}
+          submitting={submitting}
+          validationAttempted={validationAttempted}
+          valueValidation={valueValidation}
+        />
       </RequestWizardShell>
       <RequestSummaryAside
         bootstrap={bootstrap}

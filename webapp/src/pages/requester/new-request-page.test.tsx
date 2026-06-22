@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -47,6 +47,7 @@ async function chooseCategory(label: string) {
 }
 
 afterEach(() => {
+  cleanup();
   window.sessionStorage.clear();
   vi.unstubAllGlobals();
 });
@@ -72,6 +73,9 @@ describe("RequesterNewRequestPage", () => {
     expect(await screen.findByLabelText("Категория обращения")).toBeInTheDocument();
     expect(screen.queryByLabelText("Что случилось или что нужно?")).not.toBeInTheDocument();
     expect(screen.queryByText("Возможно, поможет")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "К проверке" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Проверить обращение" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Создать обращение" })).toBeInTheDocument();
 
     await fillLaptopForm();
     expect(screen.getByLabelText("Кратко")).toBeInTheDocument();
@@ -83,10 +87,6 @@ describe("RequesterNewRequestPage", () => {
     renderPage();
 
     await fillLaptopForm();
-    fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
-
-    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
-    expect(await screen.findByText("Безопасная проверка")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
 
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/tickets/T-77"));
@@ -112,20 +112,17 @@ describe("RequesterNewRequestPage", () => {
     expect(draftEntries()).toHaveLength(0);
   });
 
-  it("allows moving between form and review through the stepper", async () => {
+  it("keeps the create action on the form without a separate review step", async () => {
     installNewRequestMock();
     renderPage();
 
     await fillLaptopForm("Ноутбук выключается после входа");
-    fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
-
-    expect(await screen.findByRole("heading", { name: "Проверка" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Категория и форма/ }));
-    expect(await screen.findByRole("heading", { name: "Категория и форма" })).toBeInTheDocument();
     expect(screen.getByLabelText("Кратко")).toHaveValue("Ноутбук выключается после входа");
-
-    fireEvent.click(screen.getByRole("button", { name: /Проверка/ }));
-    expect(await screen.findByText("Проверка перед отправкой")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Проверка" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Проверка перед отправкой")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "К проверке" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Проверить обращение" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Создать обращение" })).toBeInTheDocument();
   });
 
   it("saves unfinished progress as a draft and restores it after remount", async () => {
@@ -157,7 +154,8 @@ describe("RequesterNewRequestPage", () => {
 
     const selector = await screen.findByLabelText("Категория обращения");
     expect(selector).toHaveValue("");
-    expect(screen.getByRole("button", { name: "К проверке" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Выберите категорию обращения.");
     expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument();
   });
 
@@ -195,9 +193,7 @@ describe("RequesterNewRequestPage", () => {
     fireEvent.change(await screen.findByLabelText("Описание"), {
       target: { value: "Нужно разобраться без выбора устройства" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
 
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/tickets/T-77"));
     const createCall = fetchMock.mock.calls.find(
@@ -217,11 +213,27 @@ describe("RequesterNewRequestPage", () => {
     renderPage();
 
     await fillLaptopForm("Нужна помощь");
-    fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
 
     expect(await screen.findByText("Недостаточно данных для маршрута.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Создать обращение" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Создать обращение" })).toBeEnabled();
+  });
+
+  it("shows server validation details on the same form when create rejects the payload", async () => {
+    installNewRequestMock({
+      createError: {
+        code: "VALIDATION_ERROR",
+        details: { fields: { summary: "Минимум 10 символов." } },
+      },
+    });
+    renderPage();
+
+    await fillLaptopForm("Коротко");
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
+
+    expect(await screen.findByText("Минимум 10 символов.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Кратко")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/new");
   });
 
   it("keeps policy-allowed setup-help forms available for incomplete profiles", async () => {
@@ -268,7 +280,7 @@ describe("RequesterNewRequestPage", () => {
     await chooseCategory("Сломался ноутбук");
     const summary = await screen.findByLabelText("Кратко");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
+    fireEvent.click(screen.getByRole("button", { name: "Создать обращение" }));
 
     await waitFor(() => expect(summary).toHaveFocus());
     expect(screen.getByRole("alert")).toHaveTextContent("Заполните: Кратко");
@@ -278,6 +290,7 @@ describe("RequesterNewRequestPage", () => {
 
 function installNewRequestMock(
   options: {
+    createError?: { code?: string; details?: unknown; message?: string; status?: number };
     noDeviceCreate?: boolean;
     primaryDeviceResolution?: "available" | "missing" | "ambiguous";
     previewBlockers?: string[];
@@ -531,6 +544,17 @@ function installNewRequestMock(
       });
     }
     if (url === "/api/web/requester/tickets" && init?.method === "POST") {
+      if (options.createError) {
+        return jsonResponse(
+          {
+            status: "error",
+            error: options.createError.message ?? "validation_error",
+            error_code: options.createError.code ?? "VALIDATION_ERROR",
+            details: options.createError.details ?? {},
+          },
+          options.createError.status ?? 400,
+        );
+      }
       return jsonResponse({
         status: "success",
         data: {

@@ -1,4 +1,4 @@
-import { Button, FieldShell, Input, Select, Stepper, Textarea } from "../../features/requester/ui/form-controls";
+import { Button, FieldShell, Input, Select, Textarea } from "../../features/requester/ui/form-controls";
 import { requesterDeviceLabel } from "../../features/requester/labels";
 import type { DynamicFormValues } from "../../features/requester/dynamic-form";
 import type {
@@ -10,7 +10,6 @@ import type {
   ServiceCatalogCurrent,
 } from "../../features/requester/types";
 
-export type WizardStep = "details" | "review";
 export const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
 const ASK_TICKET_CONTEXT_MAX_AGE_MS = 30 * 60 * 1000;
 export const OWNER_CHANGE_INTENT = "device_owner_change";
@@ -47,29 +46,10 @@ export type RecommendedOffering = {
   offering: ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string };
 };
 
-export function StepRail({
-  canSelectStep,
-  onStepSelect,
-  step,
-}: {
-  canSelectStep?: (step: WizardStep) => boolean;
-  onStepSelect?: (step: WizardStep) => void;
-  step: WizardStep;
-}) {
-  return (
-    <Stepper
-      current={step}
-      steps={[
-        { disabled: canSelectStep ? !canSelectStep("details") : false, id: "details", label: "Категория и форма" },
-        { disabled: canSelectStep ? !canSelectStep("review") : false, id: "review", label: "Проверка" },
-      ]}
-      onStepSelect={onStepSelect ? (nextStep) => onStepSelect(nextStep as WizardStep) : undefined}
-    />
-  );
-}
-
 export function CategorySelector({
   canShowAll = false,
+  error,
+  inputRef,
   onChange,
   onShowAll,
   options,
@@ -77,6 +57,8 @@ export function CategorySelector({
   selectedKey,
 }: {
   canShowAll?: boolean;
+  error?: string | null;
+  inputRef?: (element: HTMLSelectElement | null) => void;
   onChange: (key: string) => void;
   onShowAll?: () => void;
   options: CategoryOption[];
@@ -85,11 +67,13 @@ export function CategorySelector({
 }) {
   return (
     <div className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-3">
-      <FieldShell label="Выберите категорию обращения">
+      <FieldShell error={error} label="Выберите категорию обращения">
         <Select
+          aria-invalid={error ? true : undefined}
           aria-label="Категория обращения"
           className="mt-2 w-full bg-white font-normal"
           onChange={(event) => onChange(event.currentTarget.value)}
+          ref={inputRef}
           value={selectedKey}
         >
           <option value="">Выберите...</option>
@@ -102,7 +86,7 @@ export function CategorySelector({
         </Select>
       </FieldShell>
       {selectedKey ? (
-        <p className="mt-2 text-xs text-slate-500">Вы можете изменить категорию перед проверкой и отправкой.</p>
+        <p className="mt-2 text-xs text-slate-500">Вы можете изменить категорию перед созданием обращения.</p>
       ) : (
         <p className="mt-2 text-xs text-slate-500">Автоматически первая форма не выбирается. Если нет точного совпадения, выберите вариант вручную.</p>
       )}
@@ -116,6 +100,7 @@ export function CategorySelector({
 }
 
 export function OnBehalfPanel({
+  affectedPersonError,
   enabled,
   onQueryChange,
   onReasonChange,
@@ -125,10 +110,12 @@ export function OnBehalfPanel({
   policy,
   query,
   reason,
+  reasonError,
   required = false,
   selectedPerson,
   setEnabled,
 }: {
+  affectedPersonError?: string | null;
   enabled: boolean;
   onQueryChange: (value: string) => void;
   onReasonChange: (value: string) => void;
@@ -138,6 +125,7 @@ export function OnBehalfPanel({
   policy: NonNullable<RequestFormDefinition["on_behalf_policy"]>;
   query: string;
   reason: string;
+  reasonError?: string | null;
   required?: boolean;
   selectedPerson: RequesterOnBehalfPerson | null;
   setEnabled: (value: boolean) => void;
@@ -166,9 +154,15 @@ export function OnBehalfPanel({
               {selectedPerson?.person_id === person.person_id ? <span className="ml-2 text-brand-700">выбран</span> : null}
             </Button>
           ))}
+          {affectedPersonError ? <p className="text-sm font-semibold text-rose-700">{affectedPersonError}</p> : null}
           {policy.reason_required ? (
-            <FieldShell label="Причина">
-              <Textarea className="mt-1 min-h-20 font-normal" onChange={(event) => onReasonChange(event.currentTarget.value)} value={reason} />
+            <FieldShell error={reasonError} label="Причина">
+              <Textarea
+                aria-invalid={reasonError ? true : undefined}
+                className="mt-1 min-h-20 font-normal"
+                onChange={(event) => onReasonChange(event.currentTarget.value)}
+                value={reason}
+              />
             </FieldShell>
           ) : null}
           {selectedPerson?.primary_agent?.status === "missing" || selectedPerson?.primary_agent?.status === "ambiguous" ? (
@@ -417,13 +411,6 @@ export function primaryDeviceResolutionText(resolution: RequesterContextPreview 
     return "Основное устройство не найдено.";
   }
   return "Устройство не выбрано.";
-}
-
-export function stepTitle(step: WizardStep): string {
-  return {
-    details: "Категория и форма",
-    review: "Проверка",
-  }[step];
 }
 
 export function readAskContext(): AskTicketContext | null {

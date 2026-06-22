@@ -410,13 +410,13 @@ R8 request-form-context slice:
 
 - `server/requester/identity_service.py` builds requester context v1, requester-safe preview projection and stable custom-field aliases.
 - `server/web_api/requester_handlers.py` recomputes requester context for preview/create and stores `requester_context_snapshot` with flat aliases on ticket create.
-- `webapp/src/pages/requester/new-request-page.tsx` pre-fills request forms from safe context, renders registry-backed picker options and shows preview context explanation.
+- `webapp/src/pages/requester/new-request-page.tsx` pre-fills request forms from safe context, renders registry-backed picker options and runs local plus server preview validation inline during create.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r8-20260615/`.
 
 R9 knowledge-context slice:
 
 - `server/knowledge/suggestion_service.py` uses safe requester form/profile/device context as pre-submit suggestion search signals while preserving effective-audience filtering.
-- `webapp/src/pages/requester/new-request-page.tsx` starts the requester create wizard from category/form fields, not a built-in description step. Pre-submit `/api/knowledge/suggest` is deferred for the requester wizard; Ask/context handoff still pre-fills constructor-authored fields where possible and persists requester `knowledge_attempts` on ticket create.
+- `webapp/src/pages/requester/new-request-page.tsx` starts requester create from a single category/form surface, not a built-in description or separate review step. Pre-submit `/api/knowledge/suggest` is deferred for requester create; Ask/context handoff still pre-fills constructor-authored fields where possible and persists requester `knowledge_attempts` on ticket create.
 - Existing Knowledge audience/search/suggestion/Ask/RAG tests cover Registry audience enforcement before projection.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r9-20260615/`.
 

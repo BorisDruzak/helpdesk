@@ -336,22 +336,16 @@ for (const scenario of routeMatrix) {
   });
 }
 
-test("requester create flow requires explicit category before preview and submit", async ({ page }) => {
+test("requester create flow validates and submits from one form", async ({ page }) => {
   await page.goto("/app/requester/new");
 
   await expect(page.getByLabel("Категория обращения")).toBeVisible();
   await expect(page.getByText("Черновик")).toBeVisible();
   await expect(page.getByLabel("Что случилось или что нужно?")).toBeHidden();
+  await expect(page.getByRole("button", { name: "К проверке" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Проверить обращение" })).toBeHidden();
   await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
   await page.getByLabel("Impact").selectOption("me");
-  await page.getByRole("button", { name: "К проверке" }).click();
-  await expect(page.getByText("Проверка перед отправкой")).toBeVisible();
-  await page.getByRole("button", { name: /Категория и форма/ }).click();
-  await expect(page.getByLabel("Impact")).toBeVisible();
-  await page.getByRole("button", { name: /Проверка/ }).click();
-  await page.getByRole("button", { name: "Проверить обращение" }).click();
-
-  await expect(page.getByText("Безопасная проверка")).toBeVisible();
   await page.getByRole("button", { name: "Создать обращение" }).click();
   await expect(page).toHaveURL(/\/app\/requester\/tickets\/REQ-1002$/);
 });
@@ -404,8 +398,6 @@ test("requester on-behalf flow searches a person and submits affected-person con
   await page.getByRole("button", { name: "Найти" }).click();
   await page.getByRole("button", { name: /Maria Affected/ }).click();
   await page.getByLabel("Причина").fill("Employee is away from the workstation");
-  await page.getByRole("button", { name: "К проверке" }).click();
-  await page.getByRole("button", { name: "Проверить обращение" }).click();
 
   const createRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/web/requester/tickets"));
   await page.getByRole("button", { name: "Создать обращение" }).click();
@@ -462,11 +454,9 @@ test("requester dynamic multi-select conditions reveal and require conditional f
   await expect(page.getByLabel("Printer room")).toBeHidden();
   await page.getByLabel("Assets").getByText("Printer").click();
   await expect(page.getByLabel("Printer room")).toBeVisible();
-  await page.getByRole("button", { name: "К проверке" }).click();
+  await page.getByRole("button", { name: "Создать обращение" }).click();
   await expect(page.getByRole("status")).toContainText("Printer room");
   await page.getByLabel("Printer room").fill("Room 401");
-  await page.getByRole("button", { name: "К проверке" }).click();
-  await page.getByRole("button", { name: "Проверить обращение" }).click();
 
   const createRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/web/requester/tickets"));
   await page.getByRole("button", { name: "Создать обращение" }).click();

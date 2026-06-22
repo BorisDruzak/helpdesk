@@ -1,4 +1,4 @@
-import { CheckCircle2, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from "react";
 
 import {
@@ -7,7 +7,7 @@ import {
   type DynamicFormValues,
 } from "../../features/requester/dynamic-form";
 import { requesterDeviceLabel } from "../../features/requester/labels";
-import { Button, FormActions, InlineAlert } from "../../features/requester/ui/form-controls";
+import { Button, InlineAlert } from "../../features/requester/ui/form-controls";
 import type {
   RequestFormDefinition,
   RequesterDevice,
@@ -17,34 +17,39 @@ import type {
 import {
   CategorySelector,
   OnBehalfPanel,
-  StepRail,
   primaryDeviceResolutionText,
-  stepTitle,
   type CategoryOption,
-  type WizardStep,
 } from "./new-request-workflow";
 
 export function DetailsStepPanel({
   categoryOptions,
+  categoryError,
+  categoryInputRef,
   categorySelectorOptions,
+  createTicket,
   contextualFields,
   fieldRefs,
+  fieldServerErrors,
   fieldValues,
-  goToReview,
   missingFieldDetails,
   missingFields,
+  onBehalfAffectedPersonError,
   onBehalfActive,
   onBehalfMissingRequired,
   onBehalfPeople,
   onBehalfPolicy,
   onBehalfQuery,
   onBehalfReason,
+  onBehalfReasonError,
+  previewResult,
+  previewSubmitting,
   recommendedCategoryKey,
   requiresOnBehalfForAvailability,
   runOnBehalfSearch,
   selectedCategoryKey,
   selectedForm,
   selectedOnBehalfPerson,
+  clearFieldServerError,
   setError,
   setFieldValues,
   setOnBehalfEnabled,
@@ -53,29 +58,38 @@ export function DetailsStepPanel({
   setSelectedCategoryKey,
   setSelectedOnBehalfPerson,
   setShowAllCategoryOptions,
+  submitting,
   validationAttempted,
   valueValidation,
 }: {
   categoryOptions: CategoryOption[];
+  categoryError?: string | null;
+  categoryInputRef?: (element: HTMLSelectElement | null) => void;
   categorySelectorOptions: CategoryOption[];
+  createTicket: () => void;
   contextualFields: RequestFormDefinition["fields"];
   fieldRefs: MutableRefObject<Record<string, HTMLElement | null>>;
+  fieldServerErrors: Record<string, string>;
   fieldValues: DynamicFormValues;
-  goToReview: () => void;
   missingFieldDetails: Array<{ key: string; label: string }>;
   missingFields: string[];
+  onBehalfAffectedPersonError?: string | null;
   onBehalfActive: boolean;
   onBehalfMissingRequired: boolean;
   onBehalfPeople: RequesterOnBehalfPerson[];
   onBehalfPolicy: RequestFormDefinition["on_behalf_policy"] | null;
   onBehalfQuery: string;
   onBehalfReason: string;
+  onBehalfReasonError?: string | null;
+  previewResult: ServiceCatalogSafePreview | null;
+  previewSubmitting: boolean;
   recommendedCategoryKey: string | null;
   requiresOnBehalfForAvailability: boolean;
   runOnBehalfSearch: () => void;
   selectedCategoryKey: string;
   selectedForm: RequestFormDefinition | null;
   selectedOnBehalfPerson: RequesterOnBehalfPerson | null;
+  clearFieldServerError: (fieldKey: string) => void;
   setError: (value: string | null) => void;
   setFieldValues: Dispatch<SetStateAction<DynamicFormValues>>;
   setOnBehalfEnabled: (value: boolean) => void;
@@ -84,13 +98,17 @@ export function DetailsStepPanel({
   setSelectedCategoryKey: (value: string) => void;
   setSelectedOnBehalfPerson: (value: RequesterOnBehalfPerson) => void;
   setShowAllCategoryOptions: (value: boolean) => void;
+  submitting: boolean;
   validationAttempted: boolean;
   valueValidation: DynamicFormValidationResult;
 }) {
+  const previewBlockers = previewResult?.blockers ?? [];
   return (
     <section className="rounded-panel border border-slate-200 bg-white p-4">
       <CategorySelector
         canShowAll={categorySelectorOptions.length < categoryOptions.length}
+        error={categoryError}
+        inputRef={categoryInputRef}
         onShowAll={() => setShowAllCategoryOptions(true)}
         options={categorySelectorOptions}
         recommendedKey={recommendedCategoryKey}
@@ -111,6 +129,7 @@ export function DetailsStepPanel({
       ) : null}
       {selectedForm && onBehalfPolicy?.allowed ? (
         <OnBehalfPanel
+          affectedPersonError={onBehalfAffectedPersonError}
           enabled={onBehalfActive}
           onQueryChange={setOnBehalfQuery}
           onReasonChange={setOnBehalfReason}
@@ -120,6 +139,7 @@ export function DetailsStepPanel({
           policy={onBehalfPolicy}
           query={onBehalfQuery}
           reason={onBehalfReason}
+          reasonError={onBehalfReasonError}
           required={requiresOnBehalfForAvailability}
           selectedPerson={selectedOnBehalfPerson}
           setEnabled={setOnBehalfEnabled}
@@ -129,11 +149,12 @@ export function DetailsStepPanel({
         {contextualFields.map((field) => (
           <RequestFormFieldControl
             error={
-              validationAttempted
+              fieldServerErrors[field.key] ??
+              (validationAttempted
                 ? missingFieldDetails.some((item) => item.key === field.key)
                   ? `Заполните поле: ${field.label}.`
                   : valueValidation.issues.find((item) => item.path === `fields.${field.key}`)?.message ?? null
-                : null
+                : null)
             }
             field={field}
             inputRef={(element) => {
@@ -142,6 +163,7 @@ export function DetailsStepPanel({
             key={field.key}
             onChange={(value) => {
               setFieldValues((current) => ({ ...current, [field.key]: value }));
+              clearFieldServerError(field.key);
               setError(null);
             }}
             userPickerAllowed={Boolean(onBehalfPolicy?.allowed)}
@@ -155,103 +177,36 @@ export function DetailsStepPanel({
             `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`}
         </p>
       ) : null}
+      {previewBlockers.length ? (
+        <InlineAlert className="mt-3" title="Нельзя создать обращение" tone="danger">
+          <ul className="list-disc space-y-1 pl-5">
+            {previewBlockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </InlineAlert>
+      ) : null}
       <Button
         className="mt-4"
-        disabled={!selectedForm}
-        leadingIcon={<CheckCircle2 className="h-4 w-4" />}
-        onClick={goToReview}
+        disabled={previewSubmitting || submitting}
+        leadingIcon={<Send className="h-4 w-4" />}
+        onClick={createTicket}
         type="button"
       >
-        К проверке
+        {previewSubmitting ? "Проверяем..." : submitting ? "Создаем..." : "Создать обращение"}
       </Button>
     </section>
   );
 }
 
-export function ReviewStepPanel({
-  canCreate,
-  createTicket,
-  primaryDevice,
-  previewResult,
-  previewSubmitting,
-  runPreview,
-  requestDescription,
-  requestTitle,
-  selectedForm,
-  selectedOffering,
-  submitting,
-}: {
-  canCreate: boolean;
-  createTicket: () => void;
-  primaryDevice: RequesterDevice | null;
-  previewResult: ServiceCatalogSafePreview | null;
-  previewSubmitting: boolean;
-  requestDescription: string;
-  requestTitle: string;
-  runPreview: () => void;
-  selectedForm: RequestFormDefinition | null;
-  selectedOffering: CategoryOption["offering"];
-  submitting: boolean;
-}) {
-  return (
-    <section className="rounded-panel border border-slate-200 bg-white p-4">
-      <h2 className="text-lg font-semibold text-slate-950">Проверка перед отправкой</h2>
-      <dl className="mt-3 grid gap-2 text-sm">
-        <div>
-          <dt className="font-semibold text-slate-500">Тема</dt>
-          <dd>{requestTitle}</dd>
-        </div>
-        {requestDescription && requestDescription !== requestTitle ? (
-          <div>
-            <dt className="font-semibold text-slate-500">Описание</dt>
-            <dd>{requestDescription}</dd>
-          </div>
-        ) : null}
-        <div>
-          <dt className="font-semibold text-slate-500">Тип</dt>
-          <dd>{selectedOffering?.title || selectedForm?.title}</dd>
-        </div>
-        {primaryDevice ? (
-          <div>
-            <dt className="font-semibold text-slate-500">Устройство</dt>
-            <dd>{requesterDeviceLabel(primaryDevice, "Основное устройство")}</dd>
-          </div>
-        ) : null}
-      </dl>
-      {previewResult ? (
-        <div className="mt-3 rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-          <p className="font-semibold text-slate-950">Безопасная проверка</p>
-          {previewResult.request_type_label ? <p>Тип: {previewResult.request_type_label}</p> : null}
-          {previewResult.diagnostics?.text ? <p>{previewResult.diagnostics.text}</p> : null}
-          {(previewResult.blockers ?? []).map((blocker) => <p className="text-rose-700" key={blocker}>{blocker}</p>)}
-        </div>
-      ) : null}
-      <FormActions className="mt-4">
-        <Button disabled={previewSubmitting} onClick={runPreview} type="button" variant="outline">
-          {previewSubmitting ? "Проверяем..." : "Проверить обращение"}
-        </Button>
-        <Button disabled={!canCreate} leadingIcon={<Send className="h-4 w-4" />} onClick={createTicket} type="button">
-          {submitting ? "Создаем..." : "Создать обращение"}
-        </Button>
-      </FormActions>
-    </section>
-  );
-}
-
 export function RequestWizardShell({
-  canSelectStep,
   children,
   draftStatusLabel,
   error,
-  onStepSelect,
-  step,
 }: {
-  canSelectStep?: (step: WizardStep) => boolean;
   children: ReactNode;
   draftStatusLabel?: string;
   error: string | null;
-  onStepSelect?: (step: WizardStep) => void;
-  step: WizardStep;
 }) {
   return (
     <section className="space-y-4">
@@ -264,9 +219,8 @@ export function RequestWizardShell({
             </span>
           ) : null}
         </div>
-        <h1 className="mt-1 text-2xl font-semibold text-slate-950">{stepTitle(step)}</h1>
+        <h1 className="mt-1 text-2xl font-semibold text-slate-950">Категория и форма</h1>
       </div>
-      <StepRail canSelectStep={canSelectStep} onStepSelect={onStepSelect} step={step} />
       {error ? <InlineAlert aria-live="assertive" role="alert" tone="danger">{error}</InlineAlert> : null}
       {children}
     </section>
