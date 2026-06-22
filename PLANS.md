@@ -2,7 +2,7 @@
 
 > **Active plan.** Implement phase by phase. Follow root `AGENTS.md`, `webapp/AGENTS.md` and the repository browser/testing skills. Do not edit the same files from multiple agents concurrently. After every completed phase, update the progress log in this file with commits, checks and browser evidence.
 
-**Status:** ready for implementation, 2026-06-19.
+**Status:** completed through the requester critical/hardening release gate, 2026-06-22.
 
 **Goal:** replace the monolithic requester workspace with a route-based, Russian-first user cabinet built on shared UI components and Tailwind v4. Preserve existing web-first identity, Registry profile, device, ticket, Knowledge, Customer History, consent and Observer contracts.
 
@@ -16,7 +16,7 @@ This file replaces the previous active `PLANS.md`. Completed backend architectur
 
 Source: user critical/high-priority defect list from 2026-06-22, rechecked against current `codex/helpdesk-process-model`.
 
-Status: functional P0/P1 closure was committed, pushed, full-CI verified, deployed and live-validated as `2c46f0707012a220f6944c2634111470989ef2ed`. Follow-up P2/P3 hardening is now implemented locally: requester pages are split into page + workflow modules, the Playwright requester matrix covers on-behalf, multi-select dynamic conditions, consent approval, profile schema layout/save, archived/no-workspace access and rating/reopen. Fresh full gate, deploy and live validation are still required for the new hardening commit.
+Status: functional P0/P1 closure was committed, pushed, full-CI verified, deployed and live-validated as `2c46f0707012a220f6944c2634111470989ef2ed`. Follow-up P2/P3 hardening was then committed, pushed, full-CI verified, deployed and live-validated as `0e1be3b0af17b1868a33d89243a65f314a73c53f`: requester pages are split into page + workflow modules, the Playwright requester matrix covers on-behalf, multi-select dynamic conditions, consent approval, profile schema layout/save, archived/no-workspace access and rating/reopen, and the deployed cabinet passed a real browser check.
 
 | ID | Defect / risk | Required outcome | Current status |
 | --- | --- | --- | --- |
@@ -29,13 +29,13 @@ Status: functional P0/P1 closure was committed, pushed, full-CI verified, deploy
 | RCC-29 | Requester profile DTO exposes technical identities. | User profile endpoint returns safe `account_summary`; technical identities remain admin-only. | closed |
 | RCC-30 | Profile schema safe projection omits `section` / `order`. | Profile schema builder persists layout metadata and requester-safe DTO exposes it for requester profile layout. | closed in `2c46f070`; API regression and browser profile-schema E2E cover it |
 | RCC-31 | Remaining P1 UX items from the review list. | SPA dirty-profile blocker, requester-safe not-found and duplicate create CTA suppression stay covered. | closed; route/page code plus requester route matrix cover it |
-| RCC-32 | Formal DoD still has hardening backlog. | Complete large-page decomposition, raw-control cleanup and full browser E2E matrix before claiming total plan completion. | implemented locally; page workflow modules and 24-test fixture E2E matrix are green; fresh RC gate/deploy/live pending |
+| RCC-32 | Formal DoD still has hardening backlog. | Complete large-page decomposition, raw-control cleanup and full browser E2E matrix before claiming total plan completion. | closed in `0e1be3b0`; page workflow modules, 24-test fixture E2E matrix, full CI, deploy and live browser validation are green |
 
 Verification for this checkpoint:
 
 1. `2c46f0707012a220f6944c2634111470989ef2ed`: full CI green, remote deploy applied migration `127`, remote smoke passed, live requester browser validation passed at `artifacts/browser_live_validation/requester-critical-followup-2c46f070-20260622T093445Z/live-report.json`.
-2. Local hardening follow-up: `pnpm --dir webapp exec tsc --noEmit` passed; `pnpm --dir webapp run test:e2e` passed 24 tests; `pnpm --dir webapp run test` passed 111 files / 563 tests; `python -m pytest scripts/test_web_first_registration_localization.py -q` passed 9 tests.
-3. Remaining before final closure: run `python scripts/verify_workspace.py`, freeze/push the hardening commit, run release-candidate preflight/full gate, deploy that exact commit through project release scripts and repeat live requester browser validation.
+2. `0e1be3b0af17b1868a33d89243a65f314a73c53f`: `python scripts/run_ci_suite.py` produced green full CI at `artifacts/ci/0e1be3b0af17b1868a33d89243a65f314a73c53f/summary.json`; `python scripts/release_candidate_preflight.py --commit 0e1be3b0af17b1868a33d89243a65f314a73c53f --allow-local-dirty` passed; `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --gate full --allow-local-dirty --leave-running --smoke-insecure-tls` deployed the same commit and remote smoke passed.
+3. Live requester browser validation for `0e1be3b0` passed at `artifacts/browser_live_validation/requester-hardening-0e1be3b0-20260622T115200Z/live-report.json`; evidence includes login, home, create wizard, device linking, ticket list/detail, closed-ticket action gate, profile and mobile screenshots.
 
 ---
 
@@ -43,7 +43,7 @@ Verification for this checkpoint:
 
 Source: user P0/P1/P2/P3 defect list from 2026-06-20, rechecked against branch `codex/helpdesk-process-model` after the previous requester checkpoint.
 
-Status: P0/P1 functional fixes are closed by `2c46f0707012a220f6944c2634111470989ef2ed` with full CI, deploy and live requester validation. P2/P3 hardening follow-up is implemented locally and awaiting a fresh final gate/deploy/live run.
+Status: P0/P1 functional fixes are closed by `2c46f0707012a220f6944c2634111470989ef2ed` with full CI, deploy and live requester validation. P2/P3 hardening follow-up is closed by `0e1be3b0af17b1868a33d89243a65f314a73c53f` with full CI, deploy and live requester validation.
 
 ### P0 - functional correctness
 
@@ -83,9 +83,9 @@ Status: P0/P1 functional fixes are closed by `2c46f0707012a220f6944c263411147098
 
 | ID | Defect | Required outcome | Status |
 | --- | --- | --- | --- |
-| RCA-17 | Playwright E2E is still too small for the stated requester matrix. | Expand deterministic requester E2E into separate scenarios for profile, device, form, on-behalf, consent, rating, reopen, archived, ambiguous, responsive and keyboard flows. | fixed locally; requester Playwright spec now runs 24 tests including on-behalf, dynamic multi-select conditions, consent, profile-schema layout/save, archived/no-workspace, rating/reopen and responsive route matrix |
+| RCA-17 | Playwright E2E is still too small for the stated requester matrix. | Expand deterministic requester E2E into separate scenarios for profile, device, form, on-behalf, consent, rating, reopen, archived, ambiguous, responsive and keyboard flows. | fixed in `0e1be3b0`; requester Playwright spec runs 24 tests including on-behalf, dynamic multi-select conditions, consent, profile-schema layout/save, archived/no-workspace, rating/reopen and responsive route matrix |
 | RCA-18 | Builder -> publish -> requester coverage must include request and profile constructors. | Add real builder-to-requester tests for request-form constructor and profile-schema constructor. | fixed; Request Studio publish now proves requester form pack/catalog visibility, profile schema publish proves requester profile enforcement |
-| RCA-19 | Final signoff needs a frozen release-candidate gate. | After P0/P1 fixes, run full frontend/server/E2E gate, deploy that exact commit and repeat live requester validation. | closed for `2c46f070`; fresh gate/deploy/live is pending for the local hardening follow-up |
+| RCA-19 | Final signoff needs a frozen release-candidate gate. | After P0/P1 fixes, run full frontend/server/E2E gate, deploy that exact commit and repeat live requester validation. | closed for `0e1be3b0`; full CI, release preflight, full deploy gate, remote smoke and live requester browser validation passed |
 
 Implementation order for this checkpoint:
 
