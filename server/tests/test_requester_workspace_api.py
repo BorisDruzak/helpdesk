@@ -3036,6 +3036,10 @@ async def test_requester_can_close_owned_resolved_ticket_only(test_client, test_
         ticket = await session.get(Ticket, ticket_id)
         ticket.status = "resolved"
         ticket.resolved_at = datetime.now(timezone.utc)
+        custom_fields = dict(ticket.custom_fields or {})
+        custom_fields["resolution_confirmation"] = {"pending": True, "request_id": str(uuid.uuid4())}
+        custom_fields["resolution_confirmation_pending"] = True
+        ticket.custom_fields = custom_fields
         await session.commit()
 
     foreign_denied = await test_client.post(
