@@ -18,6 +18,7 @@ import {
 } from "../../features/requester/profile-runtime";
 import { requesterErrorMessage } from "../../features/requester/labels";
 import {
+  buildProfileSystemValues,
   fieldsWithRuntimeOptions,
   safeNextPath,
   type ProfileMode,
@@ -54,6 +55,7 @@ export function RequesterProfilePage() {
     [fields],
   );
   const readFields = useMemo(() => fields.filter((field) => field.visible !== false), [fields]);
+  const systemValues = useMemo(() => buildProfileSystemValues(detail), [detail]);
   const isEditing = mode === "edit" || mode === "setup";
   const dirty = useMemo(() => JSON.stringify(values) !== JSON.stringify(savedValues), [savedValues, values]);
   const nextPath = safeNextPath(location.search);
@@ -231,6 +233,7 @@ export function RequesterProfilePage() {
           displayName={displayName}
           fields={readFields}
           profileComplete={profileComplete}
+          systemValues={systemValues}
           values={values}
         />
       ) : (
@@ -250,6 +253,7 @@ export function RequesterProfilePage() {
           savePending={saveMutation.isPending}
           setFieldErrors={setFieldErrors}
           setValues={setValues}
+          systemValues={systemValues}
           values={values}
         />
       )}

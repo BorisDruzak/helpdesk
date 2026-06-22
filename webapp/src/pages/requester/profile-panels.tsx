@@ -17,6 +17,7 @@ import {
   sectionTitle,
   setFieldValue,
   type ProfileMode,
+  type RequesterProfileSystemValues,
 } from "./profile-workflow";
 
 export function ProfileCompletionAlert({ completion }: { completion: RequesterProfileCompletion | undefined }) {
@@ -41,11 +42,13 @@ export function ProfileReadSections({
   displayName,
   fields,
   profileComplete,
+  systemValues,
   values,
 }: {
   displayName: string;
   fields: RequesterProfileSchemaField[];
   profileComplete: boolean;
+  systemValues?: RequesterProfileSystemValues;
   values: RequesterProfileValues;
 }) {
   return (
@@ -59,7 +62,7 @@ export function ProfileReadSections({
                 <div className="rounded-panel border border-slate-200 bg-white px-3 py-2" key={field.key}>
                   <dt className="text-xs font-semibold uppercase text-slate-500">{field.label || field.key}</dt>
                   <dd className="mt-1 break-words text-sm font-semibold text-slate-950">
-                    {formatProfileValue(field, fieldValue(values, field))}
+                    {formatProfileValue(field, fieldValue(values, field, systemValues))}
                   </dd>
                 </div>
               ))}
@@ -88,6 +91,7 @@ export function ProfileEditSections({
   savePending,
   setFieldErrors,
   setValues,
+  systemValues,
   values,
 }: {
   cancelEdit: () => void;
@@ -100,6 +104,7 @@ export function ProfileEditSections({
   savePending: boolean;
   setFieldErrors: Dispatch<SetStateAction<Record<string, string>>>;
   setValues: Dispatch<SetStateAction<RequesterProfileValues>>;
+  systemValues?: RequesterProfileSystemValues;
   values: RequesterProfileValues;
 }) {
   return (
@@ -128,7 +133,7 @@ export function ProfileEditSections({
                     return next;
                   });
                 }}
-                value={fieldValue(values, field) ?? (field.type === "checkbox" ? false : "")}
+                value={fieldValue(values, field, systemValues) ?? (field.type === "checkbox" ? false : "")}
               />
             ))}
           </div>

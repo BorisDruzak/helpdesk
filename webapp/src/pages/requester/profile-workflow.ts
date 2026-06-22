@@ -1,7 +1,13 @@
 import { profileFieldsFromSchema, type RequesterProfileValue, type RequesterProfileValues } from "../../features/requester/profile-runtime";
-import type { RequesterProfileSchema, RequesterProfileSchemaField } from "../../features/requester/types";
+import type {
+  RequesterDevice,
+  RequesterProfileDetail,
+  RequesterProfileSchema,
+  RequesterProfileSchemaField,
+} from "../../features/requester/types";
 
 export type ProfileMode = "read" | "edit" | "setup";
+export type RequesterProfileSystemValues = Partial<Record<"login_identity" | "active_device_links", RequesterProfileValue>>;
 
 const SAFE_APP_PATH_RE = /^\/app(\/[A-Za-z0-9/_-]*)?(\?[A-Za-z0-9%._~=&-]*)?(#[A-Za-z0-9_-]*)?$/;
 
@@ -10,7 +16,45 @@ export function safeNextPath(search: string): string {
   return SAFE_APP_PATH_RE.test(next) ? next : "/app/requester";
 }
 
-export function fieldValue(values: RequesterProfileValues, field: RequesterProfileSchemaField): RequesterProfileValue {
+function activeBindingsWord(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return "активная";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "активные";
+  return "активных";
+}
+
+function requesterDeviceLabel(device: RequesterDevice): string | null {
+  return device.hostname || device.asset_name || null;
+}
+
+export function buildProfileSystemValues(detail: RequesterProfileDetail | null | undefined): RequesterProfileSystemValues {
+  const activeBindings = Array.isArray(detail?.active_bindings) ? detail.active_bindings : [];
+  const bindingIds = new Set(activeBindings.map((binding) => binding.binding_id).filter(Boolean));
+  const devices = Array.isArray(detail?.devices) ? detail.devices : [];
+  const linkedDevices = bindingIds.size
+    ? devices.filter((device) => device.binding_id && bindingIds.has(device.binding_id))
+    : devices.filter((device) => device.binding_id);
+  const count = activeBindings.length || linkedDevices.length;
+  const deviceLabels = linkedDevices.map(requesterDeviceLabel).filter((label): label is string => Boolean(label)).slice(0, 3);
+  const overflowCount = Math.max(0, count - deviceLabels.length);
+  const suffix = deviceLabels.length
+    ? `: ${deviceLabels.join(", ")}${overflowCount ? ` +${overflowCount}` : ""}`
+    : "";
+  return {
+    login_identity: detail?.account_summary?.login || detail?.profile?.email || undefined,
+    active_device_links: count ? `${count} ${activeBindingsWord(count)}${suffix}` : undefined,
+  };
+}
+
+export function fieldValue(
+  values: RequesterProfileValues,
+  field: RequesterProfileSchemaField,
+  systemValues?: RequesterProfileSystemValues,
+): RequesterProfileValue {
+  if (field.key === "login_identity" || field.key === "active_device_links") {
+    return systemValues?.[field.key];
+  }
   if (field.custom) {
     return values.custom_fields[field.key];
   }

@@ -63,6 +63,16 @@ describe("RequesterProfilePage", () => {
     expect(screen.queryByText("active")).not.toBeInTheDocument();
   });
 
+  it("renders account login and active device links from requester profile detail", async () => {
+    installProfileMock();
+    renderProfilePage();
+
+    expect(await screen.findByRole("heading", { name: "Профиль" })).toBeInTheDocument();
+    expect(screen.getByText("ivan.account@example.test")).toBeInTheDocument();
+    expect(screen.getByText("1 активная: WORKSTATION-1")).toBeInTheDocument();
+    expect(screen.queryByText("binding-1")).not.toBeInTheDocument();
+  });
+
   it("renders admin-published custom fields and saves internal extension when phone is blank", async () => {
     const fetchMock = installProfileMock({ complete: false });
     renderProfilePage("/app/requester/profile/setup?next=/app/requester/new");
@@ -181,6 +191,34 @@ function installProfileMock({ complete = true }: { complete?: boolean } = {}) {
             status: "active",
             custom_fields: complete ? { cost_center: "CC-10" } : {},
           },
+          account_summary: {
+            login: "ivan.account@example.test",
+            display_name: "Иван Петров",
+            email: "ivan@example.test",
+            linked_profile: true,
+          },
+          devices: complete
+            ? [
+                {
+                  device_id: "device-1",
+                  binding_id: "binding-1",
+                  binding_status: "active",
+                  relationship_type: "primary_user",
+                  hostname: "WORKSTATION-1",
+                },
+              ]
+            : [],
+          active_bindings: complete
+            ? [
+                {
+                  binding_id: "binding-1",
+                  device_id: "device-1",
+                  relationship_type: "primary_user",
+                  status: "active",
+                },
+              ]
+            : [],
+          pending_registration_claims: [],
           profile_completion: {
             complete,
             status: complete ? "complete" : "required",
@@ -221,6 +259,7 @@ const profileSchema = {
   schema_key: "requester_profile",
   fields: [
     { key: "full_name", label: "ФИО", type: "text", required: true, visible: true, system: true, editable: true },
+    { key: "login_identity", label: "Логин учетной записи", type: "identity", required: false, visible: true, system: true, editable: false },
     {
       key: "department_id",
       label: "Подразделение",
@@ -243,6 +282,7 @@ const profileSchema = {
     },
     { key: "phone", label: "Телефон", type: "phone", required: true, visible: true, system: true, editable: true },
     { key: "internal_extension", label: "Внутренний номер", type: "phone", visible: true, editable: true },
+    { key: "active_device_links", label: "Активные привязки устройств", type: "device_links", required: false, visible: true, system: true, editable: false },
     { key: "cost_center", label: "Центр затрат", type: "text", required: true, visible: true, custom: true, editable: true },
   ],
   custom_fields: [
