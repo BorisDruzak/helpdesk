@@ -135,7 +135,36 @@ python -m pytest server/tests/test_web_support_api.py -m "not manual and not no_
 python scripts/summarize_fixture_timings.py artifacts/ci/manual
 ```
 
-The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_client/setup`, `test_client/teardown`, `test_agent/setup`, and `test_agent/teardown`. Cleanup timings with a `profile` field are also grouped as `cleanup_db:<profile>` and `_cleanup_db_async:<profile>` while preserving the original aggregate rows. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
+The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_app_light/setup`, `test_app_light/teardown`, `test_client/setup`, `test_client/teardown`, `test_client_light/setup`, `test_client_light/teardown`, `test_agent/setup`, and `test_agent/teardown`. Cleanup timings with a `profile` field are also grouped as `cleanup_db:<profile>` and `_cleanup_db_async:<profile>` while preserving the original aggregate rows. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
+
+## Light HTTP App Fixture
+
+`test_app_light` and `test_client_light` are explicit opt-in fixtures for HTTP/API pytest files that only need `create_app()` plus the standard test auth/config patches. They deliberately skip runtime-heavy startup work: no `recover_pending_commands`, no real `DeviceOutboxSender`, and no outbox sender binding. The default `test_app` and `test_client` fixtures keep their historical behavior.
+
+Use light fixtures only after focused validation proves the file does not exercise runtime sender, outbox recovery, WebSocket, or in-process agent semantics. A low-churn module opt-in can shadow the regular fixture name:
+
+```python
+@pytest.fixture
+def test_client(test_client_light):
+    return test_client_light
+```
+
+Do not use light fixtures for files that use `test_agent`, `agent_ws`, `ws_connect`, `DeviceOutboxSender`, `recover_pending_commands`, `outbox_sender`, `enqueue_command_async`, `CommandResultService`, or `AgentConnectionContext`. Keep those tests on the regular `test_client` unless a separate PR proves and documents a safe noop substitute.
+
+The candidate audit is report-only:
+
+```powershell
+python scripts/audit_test_app_light_candidates.py
+```
+
+When validating a new opt-in, run focused pytest with timing and cleanup audit, then the owning canonical layer:
+
+```powershell
+$env:PC_CLIENT_TEST_TIMING = "1"
+$env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
+python -m pytest server/tests/test_registration_api.py -vv --durations=40
+python scripts/run_ci_suite.py --layer server_pytest_db_web_api
+```
 
 ## Server DB Template Mode
 

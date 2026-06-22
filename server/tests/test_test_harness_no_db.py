@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import inspect
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,6 +42,54 @@ def _marker(*args):
     return SimpleNamespace(args=args, kwargs={})
 
 
+class _FakeApp(dict):
+    def __init__(self):
+        super().__init__()
+        self._state = self
+        self["state"] = SimpleNamespace(name="test-state")
+        self.on_startup = [object()]
+        self.on_cleanup = [object()]
+
+
+def _patch_fake_app_runtime(monkeypatch, *, fail_outbox: bool = False):
+    events = []
+
+    async def fake_recover_pending_commands(state):
+        if fail_outbox:
+            raise AssertionError("light app must not recover pending commands")
+        events.append(("recover", state))
+
+    class FakeSender:
+        def __init__(self, state, *, poll_interval):
+            if fail_outbox:
+                raise AssertionError("light app must not construct DeviceOutboxSender")
+            events.append(("sender_init", state, poll_interval))
+            self.stopped = False
+
+        async def start_async(self):
+            events.append(("sender_start",))
+
+        async def stop_async(self):
+            self.stopped = True
+            events.append(("sender_stop",))
+
+    import websocket.device_outbox_sender as device_outbox_sender
+
+    monkeypatch.setattr(test_harness, "create_app", _FakeApp)
+    monkeypatch.setattr(test_harness, "verify_test_database", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(device_outbox_sender, "recover_pending_commands", fake_recover_pending_commands)
+    monkeypatch.setattr(device_outbox_sender, "DeviceOutboxSender", FakeSender)
+    return events
+
+
+async def _yield_fixture_once(fixture_func):
+    fixture = fixture_func(None, object(), "postgresql+asyncpg://example/test")
+    app = await fixture.__anext__()
+    with pytest.raises(StopAsyncIteration):
+        await fixture.__anext__()
+    return app
+
+
 def test_auto_fallback_to_shared_db_when_admin_db_unavailable(monkeypatch):
     probed = []
 
@@ -74,6 +123,59 @@ def test_auto_fallback_to_shared_db_when_admin_db_unavailable(monkeypatch):
         "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/postgres",
         "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test",
     ]
+
+
+@pytest.mark.asyncio
+async def test_test_app_light_skips_outbox_runtime(monkeypatch):
+    events = _patch_fake_app_runtime(monkeypatch, fail_outbox=True)
+
+    app = await _yield_fixture_once(test_harness.test_app_light.__wrapped__)
+
+    assert events == []
+    assert "outbox_sender" not in app
+    assert app.on_startup == []
+    assert app.on_cleanup == []
+
+
+@pytest.mark.asyncio
+async def test_regular_test_app_still_starts_outbox_runtime(monkeypatch):
+    events = _patch_fake_app_runtime(monkeypatch)
+
+    fixture = test_harness.test_app.__wrapped__(None, object(), "postgresql+asyncpg://example/test")
+    app = await fixture.__anext__()
+
+    assert [event[0] for event in events] == ["recover", "sender_init", "sender_start"]
+    assert app["outbox_sender"] is not None
+    assert len(app.on_cleanup) == 1
+
+    await app.on_cleanup[0](app)
+    with pytest.raises(StopAsyncIteration):
+        await fixture.__anext__()
+    assert events[-1] == ("sender_stop",)
+
+
+def test_test_client_light_depends_on_test_app_light():
+    signature = inspect.signature(test_harness.test_client_light.__wrapped__)
+
+    assert list(signature.parameters) == ["test_app_light"]
+
+
+@pytest.mark.asyncio
+async def test_test_app_light_timing_uses_distinct_fixture_name(monkeypatch):
+    _patch_fake_app_runtime(monkeypatch, fail_outbox=True)
+    records = []
+    monkeypatch.setattr(test_harness, "_test_timing_start", lambda: 1.0)
+    monkeypatch.setattr(
+        test_harness,
+        "_record_test_timing",
+        lambda fixture, phase, started_at, **_kwargs: records.append((fixture, phase, started_at)),
+    )
+
+    await _yield_fixture_once(test_harness.test_app_light.__wrapped__)
+
+    assert ("test_app_light", "setup", 1.0) in records
+    assert ("test_app_light", "teardown", 1.0) in records
+    assert all(record[0] != "test_app" for record in records)
 
 
 def test_auto_fallback_is_not_used_when_disabled(monkeypatch):

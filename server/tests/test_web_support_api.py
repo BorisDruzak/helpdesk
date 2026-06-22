@@ -58,6 +58,11 @@ pytestmark = pytest.mark.db_cleanup("web_support")
 
 
 @pytest.fixture
+def test_client(test_client_light):
+    return test_client_light
+
+
+@pytest.fixture
 async def web_support_client():
     @web.middleware
     async def auth_context_middleware(request, handler):

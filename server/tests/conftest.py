@@ -163,6 +163,7 @@ def _apply_ci_layer_markers(item) -> None:
 def pytest_configure(config) -> None:
     config.addinivalue_line("markers", "agent_ws: tests that start the in-process WS agent fixture")
     config.addinivalue_line("markers", "db_cleanup(profile): select an explicit DB cleanup table profile")
+    config.addinivalue_line("markers", "light_app: tests that opt into test_app_light/test_client_light")
 
 
 def pytest_collection_modifyitems(config, items) -> None:
@@ -2016,6 +2017,134 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
 
 
 @pytest_asyncio.fixture
+async def test_app_light(patched_get_session, test_engine, test_database_url: str):
+    """Create aiohttp app for HTTP/API tests without runtime sender startup."""
+    setup_timing_started = _test_timing_start()
+    setup_timing_recorded = False
+    teardown_timing_started = None
+    from auth import middleware as auth_middleware_module
+    from auth.context import AuthContext, AuthType
+    from auth.service import AuthService
+    import config as server_config
+    import tools.service as tools_service_module
+
+    test_builtin_modules = set(server_config.AGENT_BUILTIN_MODULES) | {
+        "test_echo",
+        "test_fail",
+        "test_slow_echo",
+    }
+
+    async def fake_verify_ui_token(self, token: str):
+        if token == TEST_UI_SUPPORT_TOKEN:
+            return {
+                "user_login": "support-test",
+                "actor_role": "support",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "ui",
+            }
+        if token == TEST_UI_ADMIN_TOKEN:
+            return {
+                "user_login": "admin-test",
+                "actor_role": "admin",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "ui",
+            }
+        if token == TEST_UI_AUDITOR_TOKEN:
+            return {
+                "user_login": "auditor-test",
+                "actor_role": "auditor",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "ui",
+            }
+        if token.startswith(TEST_UI_USER_PREFIX):
+            return {
+                "user_login": token.split(":", 1)[1],
+                "actor_role": "user",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "ui",
+            }
+        if token.startswith(TEST_AGENT_PREFIX):
+            return {
+                "user_login": token.split(":", 1)[1],
+                "actor_role": "agent",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "type": "agent",
+            }
+        return None
+
+    async def fake_extract_auth_context(request):
+        auth_header = request.headers.get("Authorization", "")
+        token = None
+        if auth_header:
+            parts = auth_header.split(" ", 1)
+            if len(parts) == 2:
+                token = parts[1].strip()
+        if token == TEST_UI_SUPPORT_TOKEN:
+            return AuthContext(
+                actor_id="support-test",
+                actor_role="support",
+                auth_type=AuthType.UI_TOKEN,
+                token=token,
+            )
+        if token == TEST_UI_ADMIN_TOKEN:
+            return AuthContext(
+                actor_id="admin-test",
+                actor_role="admin",
+                auth_type=AuthType.UI_TOKEN,
+                token=token,
+            )
+        if token == TEST_UI_AUDITOR_TOKEN:
+            return AuthContext(
+                actor_id="auditor-test",
+                actor_role="auditor",
+                auth_type=AuthType.UI_TOKEN,
+                token=token,
+            )
+        if token and token.startswith(TEST_UI_USER_PREFIX):
+            return AuthContext(
+                actor_id=token.split(":", 1)[1],
+                actor_role="user",
+                auth_type=AuthType.UI_TOKEN,
+                token=token,
+            )
+        if token and token.startswith(TEST_AGENT_PREFIX):
+            return AuthContext(
+                actor_id=token.split(":", 1)[1],
+                actor_role="agent",
+                auth_type=AuthType.AGENT_TOKEN,
+                token=token,
+            )
+        return AuthContext(
+            actor_id="support-test",
+            actor_role="support",
+            auth_type=AuthType.UI_TOKEN,
+            token="implicit-test-auth",
+        )
+
+    try:
+        with patch.object(AuthService, "verify_ui_token", fake_verify_ui_token), \
+             patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context), \
+             patch.object(server_config, "AGENT_BUILTIN_MODULES", test_builtin_modules), \
+             patch.object(tools_service_module, "AGENT_BUILTIN_MODULES", test_builtin_modules):
+            app = create_app()
+            verify_test_database(test_database_url)
+
+            app.on_startup.clear()
+            app.on_cleanup.clear()
+
+            _record_test_timing("test_app_light", "setup", setup_timing_started)
+            setup_timing_recorded = True
+            try:
+                yield app
+            finally:
+                teardown_timing_started = _test_timing_start()
+    finally:
+        if not setup_timing_recorded:
+            _record_test_timing("test_app_light", "setup", setup_timing_started)
+        _record_test_timing("test_app_light", "teardown", teardown_timing_started)
+
+
+@pytest_asyncio.fixture
 async def test_client(test_app):
     """aiohttp test client для HTTP запросов."""
     with _test_timing_span("test_client", "setup"):
@@ -2025,6 +2154,32 @@ async def test_client(test_app):
         yield client
     finally:
         with _test_timing_span("test_client", "teardown"):
+            if not getattr(client, "_closed", False):
+                for ws in list(getattr(client, "_websockets", ())):
+                    try:
+                        await ws.close()
+                    except Exception:
+                        pass
+                    response = getattr(ws, "_response", None)
+                    wait_for_close = getattr(response, "wait_for_close", None)
+                    if callable(wait_for_close):
+                        try:
+                            await wait_for_close()
+                        except Exception:
+                            pass
+                await client.close()
+
+
+@pytest_asyncio.fixture
+async def test_client_light(test_app_light):
+    """aiohttp test client backed by test_app_light for HTTP/API tests."""
+    with _test_timing_span("test_client_light", "setup"):
+        client = TestClient(TestServer(test_app_light))
+        await client.start_server()
+    try:
+        yield client
+    finally:
+        with _test_timing_span("test_client_light", "teardown"):
             if not getattr(client, "_closed", False):
                 for ws in list(getattr(client, "_websockets", ())):
                     try:

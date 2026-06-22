@@ -36,6 +36,11 @@ from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPO
 pytestmark = pytest.mark.db_cleanup("registration")
 
 
+@pytest.fixture
+def test_client(test_client_light):
+    return test_client_light
+
+
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
