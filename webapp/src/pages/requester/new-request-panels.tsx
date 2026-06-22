@@ -1,4 +1,4 @@
-import { ArrowRight, CheckCircle2, Search, Send } from "lucide-react";
+import { CheckCircle2, Send } from "lucide-react";
 import type { Dispatch, MutableRefObject, ReactNode, SetStateAction } from "react";
 
 import {
@@ -7,9 +7,8 @@ import {
   type DynamicFormValues,
 } from "../../features/requester/dynamic-form";
 import { requesterDeviceLabel } from "../../features/requester/labels";
-import { Button, FieldShell, FormActions, InlineAlert, Textarea } from "../../features/requester/ui/form-controls";
+import { Button, FormActions, InlineAlert } from "../../features/requester/ui/form-controls";
 import type {
-  KnowledgeSuggestionItem,
   RequestFormDefinition,
   RequesterDevice,
   RequesterOnBehalfPerson,
@@ -24,79 +23,6 @@ import {
   type CategoryOption,
   type WizardStep,
 } from "./new-request-workflow";
-
-export function ProblemStepPanel({
-  goToQuickHelp,
-  knowledgeLoading,
-  problem,
-  setProblem,
-}: {
-  goToQuickHelp: () => void;
-  knowledgeLoading: boolean;
-  problem: string;
-  setProblem: (value: string) => void;
-}) {
-  return (
-    <section className="rounded-panel border border-slate-200 bg-white p-4">
-      <FieldShell label="Что случилось или что нужно?">
-        <Textarea
-          aria-label="Что случилось или что нужно?"
-          className="mt-2 min-h-36 font-normal"
-          onChange={(event) => setProblem(event.currentTarget.value)}
-          value={problem}
-        />
-      </FieldShell>
-      <Button
-        className="mt-4"
-        disabled={!problem.trim() || knowledgeLoading}
-        leadingIcon={<Search className="h-4 w-4" />}
-        onClick={goToQuickHelp}
-        type="button"
-      >
-        Продолжить
-      </Button>
-    </section>
-  );
-}
-
-export function QuickHelpStepPanel({
-  continueToDetails,
-  knowledgeLoading,
-  markKnowledgeNotHelpful,
-  suggestions,
-}: {
-  continueToDetails: () => void;
-  knowledgeLoading: boolean;
-  markKnowledgeNotHelpful: (item: KnowledgeSuggestionItem) => void;
-  suggestions: KnowledgeSuggestionItem[];
-}) {
-  return (
-    <section className="rounded-panel border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-950">Возможно, поможет</h2>
-        {knowledgeLoading ? <span className="text-xs text-slate-500">Ищем...</span> : null}
-      </div>
-      <div className="mt-3 grid gap-2">
-        {suggestions.length ? (
-          suggestions.map((item) => (
-            <article className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2" key={item.item_id}>
-              <p className="font-semibold text-slate-950">{item.title}</p>
-              {item.summary ? <p className="mt-1 text-sm text-slate-600">{item.summary}</p> : null}
-              <Button className="mt-2" onClick={() => markKnowledgeNotHelpful(item)} size="sm" type="button" variant="outline">
-                Не помогло
-              </Button>
-            </article>
-          ))
-        ) : (
-          <p className="text-sm text-slate-600">Подходящих подсказок пока нет.</p>
-        )}
-      </div>
-      <Button className="mt-4" leadingIcon={<ArrowRight className="h-4 w-4" />} onClick={continueToDetails} type="button">
-        Продолжить оформление
-      </Button>
-    </section>
-  );
-}
 
 export function DetailsStepPanel({
   categoryOptions,
@@ -223,7 +149,7 @@ export function DetailsStepPanel({
           />
         ))}
       </div>
-      {selectedForm && (missingFields.length || valueValidation.issues.length || onBehalfMissingRequired) ? (
+      {validationAttempted && selectedForm && (missingFields.length || valueValidation.issues.length || onBehalfMissingRequired) ? (
         <p aria-live="polite" className="mt-3 text-sm text-rose-700" role="status">
           {valueValidation.issues[0]?.message ||
             `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`}
@@ -248,8 +174,9 @@ export function ReviewStepPanel({
   primaryDevice,
   previewResult,
   previewSubmitting,
-  problem,
   runPreview,
+  requestDescription,
+  requestTitle,
   selectedForm,
   selectedOffering,
   submitting,
@@ -259,7 +186,8 @@ export function ReviewStepPanel({
   primaryDevice: RequesterDevice | null;
   previewResult: ServiceCatalogSafePreview | null;
   previewSubmitting: boolean;
-  problem: string;
+  requestDescription: string;
+  requestTitle: string;
   runPreview: () => void;
   selectedForm: RequestFormDefinition | null;
   selectedOffering: CategoryOption["offering"];
@@ -271,8 +199,14 @@ export function ReviewStepPanel({
       <dl className="mt-3 grid gap-2 text-sm">
         <div>
           <dt className="font-semibold text-slate-500">Тема</dt>
-          <dd>{problem.trim().split(/\r?\n/)[0]}</dd>
+          <dd>{requestTitle}</dd>
         </div>
+        {requestDescription && requestDescription !== requestTitle ? (
+          <div>
+            <dt className="font-semibold text-slate-500">Описание</dt>
+            <dd>{requestDescription}</dd>
+          </div>
+        ) : null}
         <div>
           <dt className="font-semibold text-slate-500">Тип</dt>
           <dd>{selectedOffering?.title || selectedForm?.title}</dd>
@@ -305,21 +239,34 @@ export function ReviewStepPanel({
 }
 
 export function RequestWizardShell({
+  canSelectStep,
   children,
+  draftStatusLabel,
   error,
+  onStepSelect,
   step,
 }: {
+  canSelectStep?: (step: WizardStep) => boolean;
   children: ReactNode;
+  draftStatusLabel?: string;
   error: string | null;
+  onStepSelect?: (step: WizardStep) => void;
   step: WizardStep;
 }) {
   return (
     <section className="space-y-4">
       <div>
-        <p className="text-sm font-semibold text-brand-700">Новое обращение</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-brand-700">Новое обращение</p>
+          {draftStatusLabel ? (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
+              {draftStatusLabel}
+            </span>
+          ) : null}
+        </div>
         <h1 className="mt-1 text-2xl font-semibold text-slate-950">{stepTitle(step)}</h1>
       </div>
-      <StepRail step={step} />
+      <StepRail canSelectStep={canSelectStep} onStepSelect={onStepSelect} step={step} />
       {error ? <InlineAlert aria-live="assertive" role="alert" tone="danger">{error}</InlineAlert> : null}
       {children}
     </section>

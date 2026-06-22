@@ -118,27 +118,48 @@ export function StickyActionBar({ children, className }: { children: ReactNode; 
 
 export function Stepper({
   current,
+  onStepSelect,
   steps,
 }: {
   current: string;
-  steps: Array<{ id: string; label: string }>;
+  onStepSelect?: (stepId: string) => void;
+  steps: Array<{ disabled?: boolean; id: string; label: string }>;
 }) {
   return (
     <ol className="grid gap-2 sm:grid-cols-[repeat(auto-fit,minmax(0,1fr))]">
       {steps.map((step, index) => {
         const active = step.id === current;
-        return (
-          <li
-            className={cn(
-              "flex items-center gap-2 rounded-panel border px-3 py-2 text-sm font-semibold",
-              active ? "border-brand-200 bg-brand-50 text-brand-900" : "border-slate-200 bg-white text-slate-600"
-            )}
-            key={step.id}
-          >
+        const className = cn(
+          "flex w-full items-center gap-2 rounded-panel border px-3 py-2 text-left text-sm font-semibold transition-colors",
+          active ? "border-brand-200 bg-brand-50 text-brand-900" : "border-slate-200 bg-white text-slate-600",
+          onStepSelect && !step.disabled ? "hover:border-brand-200 hover:text-brand-800" : "",
+          step.disabled ? "cursor-not-allowed opacity-60" : "",
+        );
+        const content = (
+          <>
             <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs", active ? "bg-brand-700 text-white" : "bg-slate-100 text-slate-600")}>
               {index + 1}
             </span>
             <span className="min-w-0 truncate">{step.label}</span>
+          </>
+        );
+        return (
+          <li key={step.id}>
+            {onStepSelect ? (
+              <button
+                aria-current={active ? "step" : undefined}
+                className={className}
+                disabled={step.disabled}
+                onClick={() => onStepSelect(step.id)}
+                type="button"
+              >
+                {content}
+              </button>
+            ) : (
+              <div aria-current={active ? "step" : undefined} className={className}>
+                {content}
+              </div>
+            )}
           </li>
         );
       })}

@@ -10,7 +10,7 @@ import type {
   ServiceCatalogCurrent,
 } from "../../features/requester/types";
 
-export type WizardStep = "problem" | "quick_help" | "details" | "review";
+export type WizardStep = "details" | "review";
 export const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
 const ASK_TICKET_CONTEXT_MAX_AGE_MS = 30 * 60 * 1000;
 export const OWNER_CHANGE_INTENT = "device_owner_change";
@@ -47,16 +47,23 @@ export type RecommendedOffering = {
   offering: ServiceCatalogCurrent["services"][number]["offerings"][number] & { service_code: string };
 };
 
-export function StepRail({ step }: { step: WizardStep }) {
+export function StepRail({
+  canSelectStep,
+  onStepSelect,
+  step,
+}: {
+  canSelectStep?: (step: WizardStep) => boolean;
+  onStepSelect?: (step: WizardStep) => void;
+  step: WizardStep;
+}) {
   return (
     <Stepper
       current={step}
       steps={[
-        { id: "problem", label: "Описание" },
-        { id: "quick_help", label: "Подсказки" },
-        { id: "details", label: "Детали" },
-        { id: "review", label: "Проверка" },
+        { disabled: canSelectStep ? !canSelectStep("details") : false, id: "details", label: "Категория и форма" },
+        { disabled: canSelectStep ? !canSelectStep("review") : false, id: "review", label: "Проверка" },
       ]}
+      onStepSelect={onStepSelect ? (nextStep) => onStepSelect(nextStep as WizardStep) : undefined}
     />
   );
 }
@@ -412,22 +419,9 @@ export function primaryDeviceResolutionText(resolution: RequesterContextPreview 
   return "Устройство не выбрано.";
 }
 
-export function deviceMetadata(device: RequesterDevice): Record<string, unknown> {
-  return {
-    device_id: device.device_id,
-    hostname: device.hostname,
-    os: device.os,
-    agent_version: device.agent_version,
-    asset_id: device.asset_id,
-    asset_name: device.asset_name,
-  };
-}
-
 export function stepTitle(step: WizardStep): string {
   return {
-    problem: "Опишите проблему",
-    quick_help: "Быстрые подсказки",
-    details: "Детали обращения",
+    details: "Категория и форма",
     review: "Проверка",
   }[step];
 }

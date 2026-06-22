@@ -339,14 +339,16 @@ for (const scenario of routeMatrix) {
 test("requester create flow requires explicit category before preview and submit", async ({ page }) => {
   await page.goto("/app/requester/new");
 
-  await page.getByLabel("Что случилось или что нужно?").fill("VPN stopped connecting after password change");
-  await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByRole("button", { name: "Продолжить оформление" }).click();
-
   await expect(page.getByLabel("Категория обращения")).toBeVisible();
+  await expect(page.getByText("Черновик")).toBeVisible();
+  await expect(page.getByLabel("Что случилось или что нужно?")).toBeHidden();
   await page.getByLabel("Категория обращения").selectOption("form:vpn_access");
   await page.getByLabel("Impact").selectOption("me");
   await page.getByRole("button", { name: "К проверке" }).click();
+  await expect(page.getByText("Проверка перед отправкой")).toBeVisible();
+  await page.getByRole("button", { name: /Категория и форма/ }).click();
+  await expect(page.getByLabel("Impact")).toBeVisible();
+  await page.getByRole("button", { name: /Проверка/ }).click();
   await page.getByRole("button", { name: "Проверить обращение" }).click();
 
   await expect(page.getByText("Безопасная проверка")).toBeVisible();
@@ -396,9 +398,6 @@ test("requester on-behalf flow searches a person and submits affected-person con
   );
 
   await page.goto("/app/requester/new");
-  await page.getByLabel("Что случилось или что нужно?").fill("Need access for Maria");
-  await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByRole("button", { name: "Продолжить оформление" }).click();
   await page.getByLabel("Категория обращения").selectOption("form:on_behalf_access");
   await page.getByLabel("For another employee").check();
   await page.getByLabel("Найти сотрудника").fill("Maria");
@@ -459,9 +458,6 @@ test("requester dynamic multi-select conditions reveal and require conditional f
   );
 
   await page.goto("/app/requester/new");
-  await page.getByLabel("Что случилось или что нужно?").fill("Printer is jammed");
-  await page.getByRole("button", { name: "Продолжить" }).click();
-  await page.getByRole("button", { name: "Продолжить оформление" }).click();
   await page.getByLabel("Категория обращения").selectOption("form:conditional_assets");
   await expect(page.getByLabel("Printer room")).toBeHidden();
   await page.getByLabel("Assets").getByText("Printer").click();

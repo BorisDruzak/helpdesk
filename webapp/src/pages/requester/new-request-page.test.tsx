@@ -52,25 +52,37 @@ afterEach(() => {
 });
 
 describe("RequesterNewRequestPage", () => {
-  it("creates a requester ticket through the guided wizard and navigates to chat", async () => {
+  function draftEntries() {
+    return Array.from({ length: window.sessionStorage.length }, (_, index) => window.sessionStorage.key(index))
+      .filter((key): key is string => Boolean(key?.startsWith("pc_client.requester.new_request.draft.v1")))
+      .map((key) => [key, window.sessionStorage.getItem(key)] as const);
+  }
+
+  async function fillLaptopForm(summary = "Ноутбук не включается") {
+    await chooseCategory("Сломался ноутбук");
+    fireEvent.change(await screen.findByLabelText("Кратко"), {
+      target: { value: summary },
+    });
+  }
+
+  it("starts with category and form fields instead of built-in description and pre-submit hints", async () => {
     const fetchMock = installNewRequestMock();
     renderPage();
 
-    expect(await screen.findByLabelText("Что случилось или что нужно?")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Вариант услуги")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Ноутбук не включается" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
+    expect(await screen.findByLabelText("Категория обращения")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Что случилось или что нужно?")).not.toBeInTheDocument();
+    expect(screen.queryByText("Возможно, поможет")).not.toBeInTheDocument();
 
-    expect(await screen.findByText("Проверьте питание ноутбука")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Не помогло" }));
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить оформление" }));
+    await fillLaptopForm();
+    expect(screen.getByLabelText("Кратко")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/knowledge/suggest")).toBe(false);
+  });
 
-    await chooseCategory("Сломался ноутбук");
-    fireEvent.change(await screen.findByLabelText("Кратко"), {
-      target: { value: "Ноутбук не включается" },
-    });
+  it("creates a requester ticket from the first-step form and navigates to chat", async () => {
+    const fetchMock = installNewRequestMock();
+    renderPage();
+
+    await fillLaptopForm();
     fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
@@ -83,6 +95,8 @@ describe("RequesterNewRequestPage", () => {
       ([input, init]) => String(input) === "/api/web/requester/tickets" && init?.method === "POST",
     );
     expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
+      title: "Ноутбук не включается",
+      description: "Ноутбук не включается",
       device_id: "device-1",
       service_code: "workplace",
       offering_full_code: "workplace.laptop_broken",
@@ -92,115 +106,68 @@ describe("RequesterNewRequestPage", () => {
         summary: "Ноутбук не включается",
         device_id: "device-1",
       },
-      knowledge_attempts: expect.arrayContaining([
-        expect.objectContaining({ item_id: "kb-1", result: "not_helpful", surface: "requester_portal" }),
-      ]),
+      knowledge_attempts: [],
     });
+    expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/knowledge/suggest")).toBe(false);
+    expect(draftEntries()).toHaveLength(0);
   });
 
-  it("recommends a catalog offering from the problem text instead of taking the first offering", async () => {
-    const fetchMock = installNewRequestMock({ withDistractorOffering: true });
+  it("allows moving between form and review through the stepper", async () => {
+    installNewRequestMock();
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Ноутбук не включается после обновления" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-    await chooseCategory("Сломался ноутбук");
-    fireEvent.change(await screen.findByLabelText("Кратко"), {
-      target: { value: "Ноутбук не включается" },
-    });
+    await fillLaptopForm("Ноутбук выключается после входа");
     fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Создать обращение" }));
 
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/app/requester/tickets/T-77"));
-    const createCall = fetchMock.mock.calls.find(
-      ([input, init]) => String(input) === "/api/web/requester/tickets" && init?.method === "POST",
-    );
-    expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({
-      service_code: "workplace",
-      offering_full_code: "workplace.laptop_broken",
-      request_template_key: "breakage",
-    });
+    expect(await screen.findByRole("heading", { name: "Проверка" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Категория и форма/ }));
+    expect(await screen.findByRole("heading", { name: "Категория и форма" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Кратко")).toHaveValue("Ноутбук выключается после входа");
+
+    fireEvent.click(screen.getByRole("button", { name: /Проверка/ }));
+    expect(await screen.findByText("Проверка перед отправкой")).toBeInTheDocument();
   });
 
-  it("requires an explicit category choice when no confident recommendation exists", async () => {
-    installNewRequestMock({ withDistractorOffering: true });
+  it("saves unfinished progress as a draft and restores it after remount", async () => {
+    installNewRequestMock();
+    const view = renderPage();
+
+    await fillLaptopForm("Черновик: ноутбук шумит");
+
+    await waitFor(() => {
+      const entries = draftEntries();
+      expect(entries).toHaveLength(1);
+      expect(JSON.parse(String(entries[0]?.[1]))).toMatchObject({
+        status: "draft",
+        selectedCategoryKey: expect.stringContaining("breakage"),
+        fieldValues: { summary: "Черновик: ноутбук шумит" },
+      });
+    });
+
+    view.unmount();
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Нужно уточнить нестандартный вопрос" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-
-    expect(await screen.findByText("Выберите категорию обращения")).toBeInTheDocument();
-    expect(screen.getByLabelText("Категория обращения")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Категория и форма" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Кратко")).toHaveValue("Черновик: ноутбук шумит");
   });
 
-  it("does not auto-select a weak catalog recommendation without explicit confirmation", async () => {
+  it("requires an explicit category choice when no form is selected", async () => {
     installNewRequestMock({ withDistractorOffering: true });
     renderPage();
-
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Нужна помощь с рабочим местом" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
 
     const selector = await screen.findByLabelText("Категория обращения");
     expect(selector).toHaveValue("");
     expect(screen.getByRole("button", { name: "К проверке" })).toBeDisabled();
     expect(screen.queryByLabelText("Кратко")).not.toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /Сломался ноутбук \(подходит по описанию\)/ })).toBeInTheDocument();
   });
 
-  it("auto-selects a confident printer category without exposing the first laptop form", async () => {
+  it("selects the requested printer category without exposing the laptop form first", async () => {
     installNewRequestMock({ withPrinterOffering: true });
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Не печатает принтер в кабинете 214" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-
+    await chooseCategory("Проблема с принтером");
     expect(await screen.findByRole("heading", { name: "Проблема с принтером" })).toBeInTheDocument();
-    expect(screen.queryByText("Сломался ноутбук")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Выбрать другую категорию" })).toBeInTheDocument();
-  });
-
-  it("keeps a strong printer recommendation confident when weak context words match another offering", async () => {
-    installNewRequestMock({ withDistractorOffering: true, withPrinterOffering: true });
-    renderPage();
-
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Не печатает принтер в кабинете 214" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-
-    expect(await screen.findByRole("heading", { name: "Проблема с принтером" })).toBeInTheDocument();
-    expect(screen.queryByText("Сломался ноутбук")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Выбрать другую категорию" })).toBeInTheDocument();
-  });
-
-  it("shows other categories only after explicit change from a confident recommendation", async () => {
-    installNewRequestMock({ withPrinterOffering: true });
-    renderPage();
-
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Не печатает принтер в кабинете 214" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Выбрать другую категорию" }));
-
-    expect(await screen.findByRole("option", { name: "Сломался ноутбук" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Проблема с принтером" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Проблема с ноутбуком" })).not.toBeInTheDocument();
   });
 
   it("does not treat an on-behalf-only form as available for a self no-device request", async () => {
@@ -210,11 +177,6 @@ describe("RequesterNewRequestPage", () => {
     });
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Нужен доступ для коллеги" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
     await chooseCategory("Доступ для сотрудника");
 
     expect(await screen.findByText("Для обращения за себя нужно основное устройство.")).toBeInTheDocument();
@@ -229,11 +191,6 @@ describe("RequesterNewRequestPage", () => {
     });
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Нужна ручная помощь без диагностики" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
     await chooseCategory("Ручная помощь без устройства");
     fireEvent.change(await screen.findByLabelText("Описание"), {
       target: { value: "Нужно разобраться без выбора устройства" },
@@ -249,21 +206,17 @@ describe("RequesterNewRequestPage", () => {
     const body = JSON.parse(String(createCall?.[1]?.body));
     expect(body).not.toHaveProperty("device_id");
     expect(body.form_payload).not.toHaveProperty("device_id");
+    expect(body).toMatchObject({
+      title: "Нужно разобраться без выбора устройства",
+      description: "Нужно разобраться без выбора устройства",
+    });
   });
 
   it("blocks create when safe preview returns blockers", async () => {
     installNewRequestMock({ previewBlockers: ["Недостаточно данных для маршрута."] });
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Нужна помощь" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-    await chooseCategory("Сломался ноутбук");
-    fireEvent.change(await screen.findByLabelText("Кратко"), {
-      target: { value: "Нужна помощь" },
-    });
+    await fillLaptopForm("Нужна помощь");
     fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
     fireEvent.click(await screen.findByRole("button", { name: "Проверить обращение" }));
 
@@ -280,7 +233,7 @@ describe("RequesterNewRequestPage", () => {
     });
     renderPage();
 
-    expect(await screen.findByLabelText("Что случилось или что нужно?")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Категория обращения")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Сначала заполните профиль" })).not.toBeInTheDocument();
   });
 
@@ -292,11 +245,6 @@ describe("RequesterNewRequestPage", () => {
     });
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Ноутбук не включается без привязанного устройства" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
     await chooseCategory("Ручная помощь без устройства");
 
     expect(await screen.findByLabelText("Описание")).toBeInTheDocument();
@@ -307,27 +255,19 @@ describe("RequesterNewRequestPage", () => {
     installNewRequestMock({ withOwnerChangeForm: true });
     renderPage("/app/requester/new?intent=device_owner_change");
 
-    expect(await screen.findByLabelText("Что случилось или что нужно?")).toHaveValue("Нужно проверить владельца устройства");
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-
     expect(await screen.findByRole("heading", { name: "Проверка владельца устройства" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Что нужно проверить")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Что случилось или что нужно?")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Что нужно проверить")).toHaveValue("Нужно проверить владельца устройства"));
     expect(screen.queryByLabelText("Устройство")).not.toBeInTheDocument();
   });
 
-  it("focuses the first missing dynamic field without exposing technical field names", async () => {
+  it("focuses the first missing dynamic field only after the user tries to continue", async () => {
     installNewRequestMock();
     renderPage();
 
-    fireEvent.change(await screen.findByLabelText("Что случилось или что нужно?"), {
-      target: { value: "Нужна помощь с ноутбуком" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Продолжить" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Продолжить оформление" }));
-
     await chooseCategory("Сломался ноутбук");
     const summary = await screen.findByLabelText("Кратко");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "К проверке" }));
 
     await waitFor(() => expect(summary).toHaveFocus());
