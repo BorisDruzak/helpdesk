@@ -37,7 +37,7 @@ class Ticket(Base):
         String(20), nullable=False, unique=True,
         server_default=sa.text("'T-' || lpad(nextval('ticket_code_seq')::text, 6, '0')"),
     )
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
@@ -451,7 +451,7 @@ class TicketEvent(Base):
     
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     ticket_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     # КРИТИЧНО: agent_seq nullable для server-originated событий (support/user messages)
     # Agent-originated события имеют agent_seq (монотонный, от агента)
     # Server-originated события имеют agent_seq = NULL

@@ -2352,6 +2352,69 @@ def test_validate_form_submission_applies_visible_when_in():
     assert "impact_scope" in [item["key"] for item in hidden["summary_rows"]]
 
 
+def test_validate_form_submission_applies_visible_when_to_multi_select_dependency():
+    pack = validate_form_pack_schema(
+        {
+            "pack_key": "request_forms",
+            "title": "Request catalog",
+            "forms": [
+                {
+                    "key": "hardware_multi",
+                    "request_kind": "hardware",
+                    "title": "Hardware",
+                    "fields": [
+                        {
+                            "key": "assets",
+                            "label": "Assets",
+                            "type": "multi_select",
+                            "required": True,
+                            "options": [
+                                {"value": "printer", "label": "Printer"},
+                                {"value": "scanner", "label": "Scanner"},
+                                {"value": "vpn", "label": "VPN"},
+                            ],
+                        },
+                        {
+                            "key": "printer_model",
+                            "label": "Printer model",
+                            "type": "text",
+                            "required": True,
+                            "visible_when": {"field": "assets", "in": ["printer", "scanner"]},
+                        },
+                    ],
+                }
+            ],
+        },
+        require_version=False,
+    )
+
+    visible = validate_form_submission(
+        pack,
+        form_key="hardware_multi",
+        raw_values={
+            "assets": ["vpn", "printer"],
+            "printer_model": "HP-42",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
+    )
+    hidden = validate_form_submission(
+        pack,
+        form_key="hardware_multi",
+        raw_values={
+            "assets": ["vpn"],
+            "printer_model": "should-be-dropped",
+            "impact_scope": "single_user",
+            "work_continuity": "workaround_available",
+            "business_importance": "normal",
+        },
+    )
+
+    assert visible["submitted_values"]["printer_model"] == "HP-42"
+    assert "printer_model" not in hidden["submitted_values"]
+
+
 def test_form_pack_schema_preserves_validation_and_process_mapping_alias():
     pack = validate_form_pack_schema(
         {

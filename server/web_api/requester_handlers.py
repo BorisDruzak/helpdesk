@@ -225,6 +225,39 @@ async def _resolve_form_availability_policy(
     return dict(_DEFAULT_AVAILABILITY_POLICY)
 
 
+async def _resolve_requester_self_device_context(
+    resolver: RequesterIdentityResolver,
+    *,
+    actor_id: str,
+    supplied_device_id: str,
+    state: Any | None,
+) -> tuple[RegistryPerson | None, Any | None, str | None, str, str, dict[str, Any]]:
+    if supplied_device_id:
+        person, binding = await resolver.require_owned_device(actor_id=actor_id, device_id=supplied_device_id)
+        return person, binding, supplied_device_id, "confirmed_binding", "authenticated_requester_workspace", {
+            "status": "available",
+            "reason_code": "selected_device",
+            "source": "requester_selected_device",
+            "candidate_count": 1,
+        }
+
+    person = await resolver.resolve_person_for_web_user(actor_id)
+    _primary_device, primary_resolution, primary_binding = await resolver.resolve_primary_device(
+        getattr(person, "person_id", None),
+        state=state,
+    )
+    if primary_binding is not None:
+        return (
+            person,
+            primary_binding,
+            primary_binding.device_id,
+            "confirmed_binding",
+            "authenticated_requester_workspace",
+            primary_resolution,
+        )
+    return person, None, None, "browser_no_device", "no_device", primary_resolution
+
+
 def _has_contact_for_emergency(person: RegistryPerson | None, form_payload: dict[str, Any], data: dict[str, Any]) -> bool:
     for value in (getattr(person, "phone", None), getattr(person, "email", None), data.get("user_display_name")):
         if _clean(value, max_length=240):
@@ -1371,7 +1404,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
     if not isinstance(data, dict):
         return _error("JSON body must be an object", status=400)
 
-    device_id = _clean(data.get("device_id"), max_length=80)
+    supplied_device_id = _clean(data.get("device_id"), max_length=80)
     pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
     form_key = _clean(data.get("form_key") or data.get("request_template_key"), max_length=120)
@@ -1381,14 +1414,15 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         profile_schema = await RequesterProfileSchemaService(session).get_schema()
-        binding = None
-        if device_id:
-            try:
-                person, binding = await resolver.require_owned_device(actor_id=auth_context.actor_id, device_id=device_id)
-            except PermissionError as exc:
-                return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
-        else:
-            person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
+        try:
+            person, binding, device_id, account_mode, _request_context, primary_device_resolution = await _resolve_requester_self_device_context(
+                resolver,
+                actor_id=auth_context.actor_id,
+                supplied_device_id=supplied_device_id,
+                state=request.app.get("state"),
+            )
+        except PermissionError as exc:
+            return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
         completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
         availability_policy = await _resolve_form_availability_policy(
             session,
@@ -1417,12 +1451,10 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                 status=400,
                 error_code="REQUESTER_CONTACT_REQUIRED",
             )
-        has_agent_binding = bool(binding)
-        if not has_agent_binding and person is not None:
-            has_agent_binding = bool(await resolver.list_allowed_devices(person.person_id))
+        has_agent_binding = binding is not None
         if (
             form_key
-            and not device_id
+            and not supplied_device_id
             and not has_agent_binding
             and not availability_policy.get("available_without_agent_binding")
             and not _raw_on_behalf_context(data).get("affected_person_id")
@@ -1452,7 +1484,6 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         preview_payload = dict(data)
         if on_behalf_context:
             preview_payload["ticket_context"] = on_behalf_context
-        account_mode = "confirmed_binding" if binding is not None else "browser_no_device"
         requester_context = await resolver.build_requester_context(
             actor_id=auth_context.actor_id,
             person=person,
@@ -1461,6 +1492,7 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             profile_schema=profile_schema,
         )
         context_custom_fields = RequesterIdentityResolver.requester_context_custom_fields(requester_context)
+        context_custom_fields["primary_device_resolution"] = primary_device_resolution
         if form_key:
             context_custom_fields.update(
                 _manual_triage_custom_fields(
@@ -1607,20 +1639,15 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         profile_schema = await RequesterProfileSchemaService(session).get_schema()
-        binding = None
-        if supplied_device_id:
-            try:
-                person, binding = await resolver.require_owned_device(actor_id=auth_context.actor_id, device_id=supplied_device_id)
-            except PermissionError as exc:
-                return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
-            device_id = supplied_device_id
-            account_mode = "confirmed_binding"
-            request_context = "authenticated_requester_workspace"
-        else:
-            person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
-            device_id = str(uuid.uuid4())
-            account_mode = "browser_no_device"
-            request_context = "no_device"
+        try:
+            person, binding, device_id, account_mode, request_context, primary_device_resolution = await _resolve_requester_self_device_context(
+                resolver,
+                actor_id=auth_context.actor_id,
+                supplied_device_id=supplied_device_id,
+                state=request.app.get("state"),
+            )
+        except PermissionError as exc:
+            return _error(str(exc), status=403, error_code="REQUESTER_DEVICE_FORBIDDEN")
         completion = resolver.build_profile_completion(person, profile_schema=profile_schema)
         availability_policy = await _resolve_form_availability_policy(
             session,
@@ -1649,9 +1676,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 status=400,
                 error_code="REQUESTER_CONTACT_REQUIRED",
             )
-        has_agent_binding = bool(binding)
-        if not has_agent_binding and person is not None:
-            has_agent_binding = bool(await resolver.list_allowed_devices(person.person_id))
+        has_agent_binding = binding is not None
         if (
             form_key
             and not supplied_device_id
@@ -1695,6 +1720,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
         requester_profile["room"] = snapshot_profile.get("room")
         extra_custom_fields: dict[str, Any] = {
             "request_context": request_context,
+            "primary_device_resolution": primary_device_resolution,
             **RequesterIdentityResolver.requester_context_custom_fields(requester_context_snapshot),
         }
         on_behalf_context: dict[str, str] | None = None
@@ -1709,7 +1735,7 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             extra_custom_fields["no_device"] = {
                 "created_from": "requester_portal",
                 "device_scope": "none",
-                "placeholder_device_id": device_id,
+                "primary_device_resolution": primary_device_resolution,
             }
         template_context: dict[str, Any] = {}
         catalog_process_fields: dict[str, Any] = {}

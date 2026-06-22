@@ -179,7 +179,9 @@ async def _find_declared_requester_person_id(session: Any, account: dict[str, An
     return None
 
 
-async def _find_registry_asset_id_by_device(session: Any, device_id: str) -> str | None:
+async def _find_registry_asset_id_by_device(session: Any, device_id: str | None) -> str | None:
+    if not device_id:
+        return None
     try:
         from app.repos.registry_repo import RegistryRepo
 
@@ -263,7 +265,7 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
     routing = TicketRoutingService(session, ticket_repo, devices_repo)
     sla = TicketSlaService(session, ticket_repo)
 
-    async def add_routing_event(ticket_id: str, device_id: str, event_type: str, payload: Dict[str, Any]) -> None:
+    async def add_routing_event(ticket_id: str, device_id: str | None, event_type: str, payload: Dict[str, Any]) -> None:
         await ticket_repo.add_event(
             ticket_id=ticket_id,
             device_id=device_id,
@@ -315,7 +317,7 @@ async def apply_create_side_effects(session: Any, ticket_repo: TicketEventsRepo,
 async def create_ticket_with_side_effects(
     session: Any,
     *,
-    device_id: str,
+    device_id: str | None,
     requester_id: str,
     title: str,
     description: str,
@@ -354,7 +356,7 @@ async def create_ticket_with_side_effects(
     try:
         from app.repos.registration_repo import RegistrationRepo
 
-        existing_active_binding = await RegistrationRepo(session).get_active_primary_binding(device_id)
+        existing_active_binding = await RegistrationRepo(session).get_active_primary_binding(device_id) if device_id else None
         if existing_active_binding:
             asset_id = existing_active_binding.asset_id
             registry_context = {
@@ -377,24 +379,27 @@ async def create_ticket_with_side_effects(
             try:
                 from registry.account_session_service import AccountSessionService
 
-                requester_account_session_validation = await AccountSessionService(session).validate_session(
-                    device_id=device_id,
-                    session_id=session_id,
-                    session_token=str(requester_account.get("session_token") or "").strip() or None,
-                )
-                if requester_account_session_validation.get("valid"):
-                    server_session = requester_account_session_validation.get("session") or {}
-                    declared = server_session.get("declared_account") if isinstance(server_session.get("declared_account"), dict) else {}
-                    requester_account = {
-                        **declared,
-                        **server_session,
-                        "account_session_id": server_session.get("session_id"),
-                        "session_token": requester_account.get("session_token"),
-                        "validation": "server_session_verified",
-                    }
-                    account_mode = str(server_session.get("account_mode") or "").strip()
+                if device_id:
+                    requester_account_session_validation = await AccountSessionService(session).validate_session(
+                        device_id=device_id,
+                        session_id=session_id,
+                        session_token=str(requester_account.get("session_token") or "").strip() or None,
+                    )
+                    if requester_account_session_validation.get("valid"):
+                        server_session = requester_account_session_validation.get("session") or {}
+                        declared = server_session.get("declared_account") if isinstance(server_session.get("declared_account"), dict) else {}
+                        requester_account = {
+                            **declared,
+                            **server_session,
+                            "account_session_id": server_session.get("session_id"),
+                            "session_token": requester_account.get("session_token"),
+                            "validation": "server_session_verified",
+                        }
+                        account_mode = str(server_session.get("account_mode") or "").strip()
+                    else:
+                        account_mode = "account_session_invalid"
                 else:
-                    account_mode = "account_session_invalid"
+                    account_mode = str(requester_account.get("account_mode") or "").strip()
             except Exception as exc:
                 logger.warning(f"[create] account session validation failed ticket_id={ticket_id} err={exc}")
                 account_mode = "account_session_invalid"
@@ -445,7 +450,11 @@ async def create_ticket_with_side_effects(
         from registry.registration_service import RegistrationService
 
         registration_service = RegistrationService(session)
-        registration_status = await registration_service.get_device_registration_status(device_id)
+        registration_status = (
+            await registration_service.get_device_registration_status(device_id)
+            if device_id
+            else {"status": "no_device", "active_binding": None, "active_person": None, "pending_claim": None}
+        )
         submitted_registration = registry_context.get("registration") if isinstance(registry_context, dict) else None
         if isinstance(submitted_registration, dict) and submitted_registration.get("status") == "conflict":
             registration_status = {
@@ -842,9 +851,8 @@ async def create_ticket_with_side_effects(
         )
 
     try:
-        if requester_account_session_id:
+        if requester_account_session_id and device_id:
             from registry.account_session_service import AccountSessionService
-
             await AccountSessionService(session).repo.append_event(
                 device_id=device_id,
                 session_id=requester_account_session_id,

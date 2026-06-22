@@ -214,6 +214,15 @@ class RequesterProfileSchemaService:
                 field["help_text"] = _text(raw_override.get("help_text"), max_length=500) or None
             if "validation" in raw_override:
                 field["validation"] = self._normalize_validation(raw_override.get("validation"), details, field_key)
+            section = _text(raw_override.get("section"), max_length=120)
+            if section:
+                field["section"] = section
+            if raw_override.get("order") is not None:
+                try:
+                    field["order"] = int(raw_override.get("order"))
+                except (TypeError, ValueError):
+                    if strict:
+                        details[f"{field_key}.order"] = "РџРѕСЂСЏРґРѕРє РїРѕР»СЏ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‡РёСЃР»РѕРј."
             fields[field_key] = field
 
         custom_fields = self._normalize_custom_fields(config.get("custom_fields") or [], details)
@@ -336,6 +345,14 @@ class RequesterProfileSchemaService:
                 "options": raw.get("options") if isinstance(raw.get("options"), list) else [],
                 "audit_behavior": "profile_custom_field_change",
             }
+            section = _text(raw.get("section"), max_length=120)
+            if section:
+                field["section"] = section
+            if raw.get("order") is not None:
+                try:
+                    field["order"] = int(raw.get("order"))
+                except (TypeError, ValueError):
+                    details[f"{prefix}.order"] = "РџРѕСЂСЏРґРѕРє РїРѕР»СЏ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ С‡РёСЃР»РѕРј."
             normalized.append(field)
         return normalized
 
@@ -378,7 +395,7 @@ class RequesterProfileSchemaService:
                 result[key] = {
                     item_key: item_value
                     for item_key, item_value in value.items()
-                    if item_key in {"visible", "required", "help_text", "validation"}
+                    if item_key in {"visible", "required", "help_text", "validation", "section", "order"}
                 }
         return result
 

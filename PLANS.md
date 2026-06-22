@@ -12,6 +12,34 @@ This file replaces the previous active `PLANS.md`. Completed backend architectur
 
 ---
 
+## Current checkpoint - requester critical follow-up, 2026-06-22
+
+Source: user critical/high-priority defect list from 2026-06-22, rechecked against current `codex/helpdesk-process-model`.
+
+Status: implemented locally. Targeted frontend and server regressions are green; full workspace verification, release deploy and live requester validation remain before final closure.
+
+| ID | Defect / risk | Required outcome | Current status |
+| --- | --- | --- | --- |
+| RCC-23 | Reopen sends feedback reason as `reason_code`. | Reopen uses a dedicated backend-compatible reopen reason list; feedback reasons remain feedback-only. | fixed locally; `tickets-page.test.tsx` covers payload |
+| RCC-24 | Ticket actions can drift from policy. | `can_send_message`, `can_attach_files`, `can_confirm_solution`, `can_rate_solution`, `can_reopen` are calculated once server-side and handlers enforce the same capability result. | verified existing in `server/tickets/requester_policy.py`; no additional code change |
+| RCC-25 | Backend accepts any owned binding as enough device context. | Preview/create without explicit `device_id` must use only resolved `primary_device`; missing/ambiguous primary device cannot satisfy normal device-required forms. | fixed locally; targeted API regression added |
+| RCC-26 | Dynamic-form `visible_when` diverges for `multi_select`. | Server conditional visibility checks each selected array value, matching the frontend dynamic-form runtime. | fixed locally; targeted form-pack regression added |
+| RCC-27 | No-device create stores a random UUID as `device_id`. | No-device tickets store `tickets.device_id = NULL`, ticket events allow null `device_id`, and custom fields keep explicit `no_device` / `primary_device_resolution` context. | fixed locally; migration `127` added |
+| RCC-28 | `pending_consent_count` / `next_actions` can drift to frontend priority logic. | Server bootstrap owns pending consent count and ordered actions. | verified existing in requester bootstrap service/tests |
+| RCC-29 | Requester profile DTO exposes technical identities. | User profile endpoint returns safe `account_summary`; technical identities remain admin-only. | verified existing |
+| RCC-30 | Profile schema safe projection omits `section` / `order`. | Profile schema builder persists layout metadata and requester-safe DTO exposes it for requester profile layout. | fixed locally; API regression added |
+| RCC-31 | Remaining P1 UX items from the review list. | SPA dirty-profile blocker, requester-safe not-found and duplicate create CTA suppression stay covered. | verified existing in current route/page code |
+| RCC-32 | Formal DoD still has hardening backlog. | Complete large-page decomposition, raw-control cleanup and full browser E2E matrix before claiming total plan completion. | remains backlog unless included in a later dedicated hardening pass |
+
+Verification order for this checkpoint:
+
+1. Run targeted server tests for RCC-25/RCC-26/RCC-27/RCC-30 and targeted frontend tests for RCC-23.
+2. Run `python scripts/verify_workspace.py`.
+3. Update CODEMAP/lookup docs for nullable no-device tickets and requester profile schema layout metadata.
+4. Freeze commit, push, deploy through project release scripts and run live requester browser validation for the exact deployed artifact.
+
+---
+
 ## Current checkpoint - requester correctness audit, 2026-06-20
 
 Source: user P0/P1/P2/P3 defect list from 2026-06-20, rechecked against branch `codex/helpdesk-process-model` after the previous requester checkpoint.

@@ -549,7 +549,7 @@ class TicketRoutingService:
     async def apply_routing(
         self,
         ticket_id: str,
-        device_id: str,
+        device_id: str | None,
         *,
         force_clear_lock: bool = False,
         add_events_fn=None,

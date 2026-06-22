@@ -1006,10 +1006,18 @@ def _field_is_visible(field_def: dict[str, Any], values: dict[str, Any]) -> bool
     if not isinstance(rule, dict):
         return True
     current_value = values.get(rule.get("field"))
+    current_values = _condition_values(current_value)
     if "equals" in rule:
-        return str(current_value or "").strip() == str(rule.get("equals") or "").strip()
+        return str(rule.get("equals") or "").strip() in current_values
     allowed_values = {str(item or "").strip() for item in rule.get("in") or []}
-    return str(current_value or "").strip() in allowed_values
+    return bool(current_values & allowed_values)
+
+
+def _condition_values(raw_value: Any) -> set[str]:
+    if isinstance(raw_value, (list, tuple, set)):
+        return {str(item).strip() for item in raw_value if str(item).strip()}
+    text_value = "" if raw_value is None else str(raw_value).strip()
+    return {text_value}
 
 
 def _normalize_field_value(field_def: dict[str, Any], raw_value: Any) -> Any:

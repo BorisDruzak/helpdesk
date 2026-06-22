@@ -648,6 +648,8 @@ async def test_profile_schema_builder_publishes_required_custom_field_to_request
                     "type": "text",
                     "visible": True,
                     "required": True,
+                    "section": "work",
+                    "order": 37,
                     "storage_target": "registry_people.metadata_json.profile_custom_fields.cost_center",
                 }
             ],
@@ -684,6 +686,8 @@ async def test_profile_schema_builder_publishes_required_custom_field_to_request
     schema_fields = {field["key"]: field for field in profile_payload["data"]["profile_schema"]["fields"]}
     assert schema_fields["cost_center"]["required"] is True
     assert schema_fields["cost_center"]["custom"] is True
+    assert schema_fields["cost_center"]["section"] == "work"
+    assert schema_fields["cost_center"]["order"] == 37
 
     saved = await test_client.put(
         "/api/web/requester/profile",
@@ -1209,6 +1213,97 @@ async def test_requester_bootstrap_resolves_primary_device_independently_from_de
 
 
 @pytest.mark.asyncio
+async def test_requester_normal_form_requires_resolved_primary_device(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    suffix = uuid.uuid4().hex[:8]
+    emergency_key = f"emergency_ambiguous_{suffix}"
+    normal_key = f"normal_ambiguous_{suffix}"
+    login = f"requester-ambiguous-device-{suffix}@example.test"
+    first_device_id = str(uuid.uuid4())
+    second_device_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    async with session_maker() as session:
+        person = await _person_for_login(session, login=login)
+        session.add_all(
+            [
+                _device(first_device_id, "ambiguous-device-a"),
+                _device(second_device_id, "ambiguous-device-b"),
+            ]
+        )
+        await session.flush()
+        session.add_all(
+            [
+                DeviceUserBinding(
+                    binding_id=str(uuid.uuid4()),
+                    device_id=first_device_id,
+                    person_id=person.person_id,
+                    relationship_type="shared_user",
+                    status="active",
+                    source="test",
+                    confirmed_at=now,
+                    created_at=now,
+                ),
+                DeviceUserBinding(
+                    binding_id=str(uuid.uuid4()),
+                    device_id=second_device_id,
+                    person_id=person.person_id,
+                    relationship_type="shared_user",
+                    status="active",
+                    source="test",
+                    confirmed_at=now + timedelta(seconds=1),
+                    created_at=now + timedelta(seconds=1),
+                ),
+            ]
+        )
+        await _publish_availability_forms(
+            session,
+            emergency_key=emergency_key,
+            normal_key=normal_key,
+            version=f"ambiguous-device-{suffix}",
+        )
+        await session.commit()
+
+    bootstrap = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+    )
+    bootstrap_payload = await bootstrap.json()
+    assert bootstrap.status == 200, bootstrap_payload
+    assert bootstrap_payload["data"]["primary_device"] is None
+    assert bootstrap_payload["data"]["primary_device_resolution"]["status"] in {"missing", "ambiguous"}
+
+    normal_preview = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "Normal request",
+            "description": "Should require resolved primary device",
+            "form_key": normal_key,
+            "request_template_key": normal_key,
+            "form_payload": {"summary": "Normal"},
+        },
+    )
+    normal_preview_payload = await normal_preview.json()
+    assert normal_preview.status == 403, normal_preview_payload
+    assert normal_preview_payload["error_code"] == "REQUESTER_AGENT_REQUIRED"
+
+    normal_create = await test_client.post(
+        "/api/web/requester/tickets",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "title": "Normal request",
+            "description": "Should require resolved primary device",
+            "form_key": normal_key,
+            "request_template_key": normal_key,
+            "form_payload": {"summary": "Normal"},
+        },
+    )
+    normal_create_payload = await normal_create.json()
+    assert normal_create.status == 403, normal_create_payload
+    assert normal_create_payload["error_code"] == "REQUESTER_AGENT_REQUIRED"
+
+
+@pytest.mark.asyncio
 async def test_requester_device_online_state_is_consistent_across_bootstrap_list_and_detail(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     login = "requester-device-online-state@example.test"
@@ -1662,8 +1757,7 @@ async def test_requester_can_create_no_device_ticket_and_preview_without_device(
         ticket = await session.get(Ticket, ticket_id)
 
     assert ticket is not None
-    assert ticket.device_id
-    assert ticket.device_id != foreign_device_id
+    assert ticket.device_id is None
     assert ticket.requester_id == login
     assert ticket.requester_person_id == person.person_id
     assert ticket.requester_binding_id is None
@@ -1671,6 +1765,8 @@ async def test_requester_can_create_no_device_ticket_and_preview_without_device(
     assert ticket.requester_account_mode == "browser_no_device"
     custom_fields = ticket.custom_fields or {}
     assert custom_fields["request_context"] == "no_device"
+    assert custom_fields["no_device"]["device_scope"] == "none"
+    assert "placeholder_device_id" not in custom_fields["no_device"]
     assert custom_fields["requester_account_context"]["account_mode"] == "browser_no_device"
     assert custom_fields["requester_account_context"]["validation"] == "web_requester_identity_resolved"
     assert custom_fields["requester_registration"]["status"] == "no_device"

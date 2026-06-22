@@ -46,6 +46,21 @@ const filters: Array<{ key: TicketFilter; label: string }> = [
 const actionStatuses = new Set(["waiting_on_user", "resolved"]);
 const closedStatuses = new Set(["closed", "canceled", "archived"]);
 
+const reopenReasonOptions = [
+  { value: "problem_returned", label: "Проблема повторилась" },
+  { value: "not_resolved", label: "Проблема не решена" },
+  { value: "incomplete_work", label: "Работа выполнена не полностью" },
+  { value: "wrong_resolution", label: "Решение не подходит" },
+  { value: "unclear_instruction", label: "Непонятная инструкция" },
+  { value: "requester_disagreed", label: "Не согласен с решением" },
+  { value: "closed_too_early", label: "Закрыто слишком рано" },
+  { value: "new_information", label: "Появилась новая информация" },
+  { value: "wrong_category_or_queue", label: "Нужна другая команда" },
+  { value: "dependency_failed", label: "Смежная проблема не устранена" },
+  { value: "knowledge_article_failed", label: "Статья не помогла" },
+  { value: "other", label: "Другая причина" },
+];
+
 export function RequesterTicketsPage() {
   const { ticketId } = useParams();
   const queryClient = useQueryClient();
@@ -66,6 +81,7 @@ export function RequesterTicketsPage() {
   const [feedbackComment, setFeedbackComment] = useState("");
   const [feedbackId, setFeedbackId] = useState<string | null>(null);
   const [reopenAvailable, setReopenAvailable] = useState(false);
+  const [reopenReason, setReopenReason] = useState("problem_returned");
   const [reopenComment, setReopenComment] = useState("");
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -214,7 +230,7 @@ export function RequesterTicketsPage() {
     setNotice(null);
     try {
       await reopenRequesterTicket(ticketId, {
-        reason_code: feedbackReason,
+        reason_code: reopenReason,
         reason_comment: reopenComment.trim() || feedbackComment.trim() || null,
         linked_feedback_id: feedbackId,
       });
@@ -368,13 +384,24 @@ export function RequesterTicketsPage() {
                       ) : null}
                     </FormActions>
                     {canReopen ? (
-                      <Textarea
+                      <div className="grid gap-3">
+                        <FieldShell label="Причина возврата">
+                          <Select className="mt-1 w-full font-normal" onChange={(event) => setReopenReason(event.currentTarget.value)} value={reopenReason}>
+                            {reopenReasonOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </Select>
+                        </FieldShell>
+                        <Textarea
                         aria-label="Комментарий для возврата в работу"
                         className="min-h-20 text-sm"
                         onChange={(event) => setReopenComment(event.currentTarget.value)}
                         placeholder="Что осталось не решено"
-                        value={reopenComment}
-                      />
+                          value={reopenComment}
+                        />
+                      </div>
                     ) : null}
                   </div>
                 ) : null}

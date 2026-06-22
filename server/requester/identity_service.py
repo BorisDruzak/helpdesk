@@ -338,6 +338,14 @@ class RequesterIdentityResolver:
                 "help_text": raw_field.get("help_text"),
                 "validation": raw_field.get("validation") if isinstance(raw_field.get("validation"), dict) else {},
             }
+            section = _clean_text(raw_field.get("section"), max_length=120)
+            if section:
+                field["section"] = section
+            if raw_field.get("order") is not None:
+                try:
+                    field["order"] = int(raw_field.get("order"))
+                except (TypeError, ValueError):
+                    pass
             if isinstance(raw_field.get("options"), list):
                 field["options"] = raw_field["options"]
             public_fields.append(field)

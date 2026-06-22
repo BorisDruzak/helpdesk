@@ -104,7 +104,7 @@ class TicketAssignmentService:
     async def assign_ticket(
         self,
         ticket_id: str,
-        ticket_device_id: str,
+        ticket_device_id: str | None,
         assignee_id: Optional[str],
         *,
         actor_id: str,

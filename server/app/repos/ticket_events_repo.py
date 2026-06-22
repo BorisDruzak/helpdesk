@@ -102,7 +102,7 @@ class TicketEventsRepo:
     async def add_event(
         self,
         ticket_id: str,
-        device_id: str,
+        device_id: Optional[str],
         agent_seq: Optional[int],  # КРИТИЧНО: nullable для server-originated событий
         event_type: str,
         payload: dict,
@@ -835,7 +835,7 @@ class TicketEventsRepo:
     async def create_ticket(
         self,
         ticket_id: str,
-        device_id: str,
+        device_id: Optional[str],
         title: str,
         description: str,
         status: str = "in_progress",

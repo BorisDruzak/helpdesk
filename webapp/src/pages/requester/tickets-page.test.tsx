@@ -121,12 +121,21 @@ describe("RequesterTicketsPage", () => {
       );
     });
 
+    const reasonSelects = screen.getAllByRole("combobox");
+    expect(reasonSelects).toHaveLength(2);
+    fireEvent.change(reasonSelects[1], { target: { value: "problem_returned" } });
     fireEvent.click(screen.getByRole("button", { name: "Вернуть в работу" }));
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/web/requester/tickets/REQ-1001/reopen",
         expect.objectContaining({ method: "POST" }),
       );
+    });
+    const reopenCall = fetchMock.mock.calls.find(([input]) => String(input) === "/api/web/requester/tickets/REQ-1001/reopen");
+    expect(reopenCall).toBeTruthy();
+    expect(JSON.parse(String(reopenCall?.[1]?.body ?? "{}"))).toMatchObject({
+      reason_code: "problem_returned",
+      linked_feedback_id: "fb-1",
     });
     expect(within(screen.getByRole("list", { name: "История обращения" })).getByText("Оператор запросил диагностику")).toBeInTheDocument();
   });
