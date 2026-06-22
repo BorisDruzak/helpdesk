@@ -30,6 +30,49 @@ Examples:
 - `/ui/automation/run` is not automatically equivalent to GUI until the same account/session/context behavior is verified.
 - Raw WS probe is not equivalent to a full agent and must not receive live pending commands unless this is part of the test.
 
+### Live validation strictness
+
+Choose the evidence depth by risk:
+
+| Risk / severity | Required evidence |
+| --- | --- |
+| P0/P1, data-integrity, protocol, auth, account-session, operation lifecycle | Full evidence matrix: canonical surface, API/transport, server DB, agent local state when involved, logs/action trace, and browser/UI when visible. |
+| P2 visible UI bug | Browser evidence plus the focused API/log check that proves the visible state is backed by the expected server behavior. |
+| Cosmetic-only UI bug | Browser screenshot or DOM-visible evidence plus no relevant console errors. API/DB evidence is optional unless the cosmetic state is data-driven. |
+
+Use the stricter row when a bug crosses boundaries. A small text/layout fix does not need the full P0/P1 matrix unless it touches auth, account-session, protocol, operation state, or data integrity.
+
+### Surface to canonical proof
+
+| Surface | Canonical proof |
+| --- | --- |
+| `/admin` or React admin page | Browser URL + DOM/screenshot + relevant API/network result; server log only when route/runtime behavior changed. |
+| `/app/requester` / web-agent cabinet | Browser account/session/device binding evidence + server DB requester/account fields + target device/primary-agent resolution. |
+| Native agent tray / launcher / Qt GUI | UIA evidence + agent log + agent SQLite/local state; browser evidence only for handoff/cabinet steps. |
+| Protocol V3 ACK/NACK | Raw WS or full-agent path + persisted server event/outbox row or duplicate/no-op proof + agent outbox/seen state. |
+| Operation lifecycle / `run_tool` / cancel / retry | API/transport + `operations`/`device_outbox`/ticket-event DB state + agent local state when involved + UI evidence if visible. |
+| Deployment/runtime-control | Project deploy/runtime script output + service status before/after + health/smoke + logs; browser evidence when behavior is user-visible. |
+
+### Evidence pack scaffold
+
+For non-trivial live runs, create a folder with checklist templates before collecting evidence:
+
+```powershell
+python scripts/live_evidence_pack.py --run-id <run_id> --surface requester --ticket <ticket_code> --device <device_id>
+```
+
+The script creates `artifacts/live/<run_id>/browser.md`, `api.md`, `server-db.md`, `agent-sqlite.md`, `logs.md`, `contamination.md`, and `manifest.json`. It is read-only: it does not query the browser, DB, logs, or agent. Its purpose is to make the required evidence layers explicit before the run starts.
+
+### Stop conditions
+
+Stop the live run and classify the blocker if any of these occur:
+
+- a new data-integrity bug is created;
+- the auth/account boundary is unclear;
+- DB contamination invalidates the evidence;
+- tunnel, deploy, runtime, or remote environment is unstable;
+- two consecutive probes disagree across API/DB/UI and the disagreement cannot be explained.
+
 ## 1. Evidence before fix
 
 Do not fix a bug before recording the failure.
@@ -237,6 +280,8 @@ Do not delete contamination unless the plan explicitly requires cleanup and clea
 ## 12. Blocking bug policy
 
 Most bugs should be recorded and deferred until the current scenario set is complete.
+
+If a bug is not blocking, record it and continue the planned scenario. Do not detour into refactoring or unrelated cleanup during the live run.
 
 A bug may be fixed immediately only if:
 

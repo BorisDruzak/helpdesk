@@ -338,6 +338,7 @@ Auth security update 2026-05-23/24: `server/auth/handlers.py` keeps `POST /api/l
 - `scripts/run_ci_suite.py` — канонический локальный/self-hosted CI run с artifact layout `artifacts/ci/<sha>/`; включает workspace verify, webapp bundle, webapp Vitest, Playwright fixture E2E, server pytest layers with migrated DB template setup, fixture timing summary and pc_agent pytest.
 - `scripts/audit_db_cleanup_profiles.py` — report-only audit for server pytest `db_cleanup` marker coverage; use `--strict` only when missing DB-backed profiles should fail a gate.
 - `scripts/audit_test_app_light_candidates.py` — report-only audit for HTTP/API pytest files that may be safe candidates for explicit `test_client_light` opt-in.
+- `scripts/live_evidence_pack.py` — read-only scaffold for `artifacts/live/<run_id>/` evidence markdown checklists before non-trivial live validation/debug runs.
 - `scripts/run_ci_in_temp_workspace.py` — hook-friendly runner для self-hosted CI в отдельном checkout/venv.
 - `requirements-ci.txt` — минимальный CI dependency set.
 - Корень проекта: `scripts/run_server.py`, `scripts/stop_server.py`, `scripts/restart_server.py`, `scripts/run_control_plane.py`, `scripts/runtime_stack.py`, `scripts/manage_remote_stack.py`, `scripts/release_server_to_remote.py`, `scripts/smoke_test.py`, `scripts/admin_run_tool.py`.
