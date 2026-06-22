@@ -354,6 +354,248 @@ test("requester create flow requires explicit category before preview and submit
   await expect(page).toHaveURL(/\/app\/requester\/tickets\/REQ-1002$/);
 });
 
+test("requester on-behalf flow searches a person and submits affected-person context", async ({ page }) => {
+  await page.unroute("**/public_api/ticket_forms/current?pack_key=request_forms");
+  await page.route("**/public_api/ticket_forms/current?pack_key=request_forms", (route) =>
+    fulfillJson(route, {
+      status: "ok",
+      pack: {
+        key: "request_forms",
+        version: "e2e-on-behalf",
+        forms: [
+          {
+            key: "on_behalf_access",
+            title: "Access for another employee",
+            fields: [],
+            availability_policy: { available_without_agent_binding: true },
+            on_behalf_policy: {
+              allowed: true,
+              label: "For another employee",
+              affected_person_required: true,
+              reason_required: true,
+            },
+          },
+        ],
+      },
+    }),
+  );
+  await page.route("**/api/web/requester/on-behalf/people?**", (route) =>
+    fulfillJson(route, {
+      status: "success",
+      data: {
+        people: [
+          {
+            person_id: "person-affected",
+            display_name: "Maria Affected",
+            email: "maria@example.test",
+            primary_agent: { status: "available" },
+          },
+        ],
+      },
+    }),
+  );
+
+  await page.goto("/app/requester/new");
+  await page.getByLabel("Что случилось или что нужно?").fill("Need access for Maria");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await page.getByRole("button", { name: "Продолжить оформление" }).click();
+  await page.getByLabel("Категория обращения").selectOption("form:on_behalf_access");
+  await page.getByLabel("For another employee").check();
+  await page.getByLabel("Найти сотрудника").fill("Maria");
+  await page.getByRole("button", { name: "Найти" }).click();
+  await page.getByRole("button", { name: /Maria Affected/ }).click();
+  await page.getByLabel("Причина").fill("Employee is away from the workstation");
+  await page.getByRole("button", { name: "К проверке" }).click();
+  await page.getByRole("button", { name: "Проверить обращение" }).click();
+
+  const createRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/web/requester/tickets"));
+  await page.getByRole("button", { name: "Создать обращение" }).click();
+  const payload = createRequest.then((request) => request.postDataJSON() as Promise<Record<string, unknown>>);
+  await expect(payload).resolves.toMatchObject({
+    ticket_context: {
+      affected_person_id: "person-affected",
+      on_behalf_reason: "Employee is away from the workstation",
+      affected_person_lookup: "Maria",
+    },
+  });
+});
+
+test("requester dynamic multi-select conditions reveal and require conditional fields", async ({ page }) => {
+  await page.unroute("**/public_api/ticket_forms/current?pack_key=request_forms");
+  await page.route("**/public_api/ticket_forms/current?pack_key=request_forms", (route) =>
+    fulfillJson(route, {
+      status: "ok",
+      pack: {
+        key: "request_forms",
+        version: "e2e-conditions",
+        forms: [
+          {
+            key: "conditional_assets",
+            title: "Conditional assets",
+            availability_policy: { available_without_agent_binding: true },
+            fields: [
+              {
+                key: "assets",
+                label: "Assets",
+                type: "multi_select",
+                required: true,
+                options: [
+                  { value: "printer", label: "Printer" },
+                  { value: "laptop", label: "Laptop" },
+                ],
+              },
+              {
+                key: "printer_room",
+                label: "Printer room",
+                type: "text",
+                required: true,
+                visible_when: { field: "assets", in: ["printer"] },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+
+  await page.goto("/app/requester/new");
+  await page.getByLabel("Что случилось или что нужно?").fill("Printer is jammed");
+  await page.getByRole("button", { name: "Продолжить" }).click();
+  await page.getByRole("button", { name: "Продолжить оформление" }).click();
+  await page.getByLabel("Категория обращения").selectOption("form:conditional_assets");
+  await expect(page.getByLabel("Printer room")).toBeHidden();
+  await page.getByLabel("Assets").getByText("Printer").click();
+  await expect(page.getByLabel("Printer room")).toBeVisible();
+  await page.getByRole("button", { name: "К проверке" }).click();
+  await expect(page.getByRole("status")).toContainText("Printer room");
+  await page.getByLabel("Printer room").fill("Room 401");
+  await page.getByRole("button", { name: "К проверке" }).click();
+  await page.getByRole("button", { name: "Проверить обращение" }).click();
+
+  const createRequest = page.waitForRequest((request) => request.method() === "POST" && request.url().endsWith("/api/web/requester/tickets"));
+  await page.getByRole("button", { name: "Создать обращение" }).click();
+  const payload = await createRequest.then((request) => request.postDataJSON() as Promise<Record<string, { assets?: string[]; printer_room?: string }>>);
+  expect(payload.form_payload).toMatchObject({ assets: ["printer"], printer_room: "Room 401" });
+});
+
+test("requester consent action is ordered by server data and posts approval decision", async ({ page }) => {
+  await page.unroute("**/api/web/requester/consents**");
+  await page.route("**/api/web/requester/consents/consent-e2e/approve", (route) =>
+    fulfillJson(route, { status: "success", data: { consent: { consent_id: "consent-e2e", status: "approved" } } }),
+  );
+  await page.route("**/api/web/requester/consents?status=pending", (route) =>
+    fulfillJson(route, {
+      status: "success",
+      data: {
+        consents: [
+          {
+            consent_id: "consent-e2e",
+            subject_type: "remote_assist",
+            subject_id: "operation-e2e",
+            ticket_id: ticketId,
+            status: "pending",
+            title: "Approve remote access",
+            description: "Support requests temporary access",
+            requested_by_role: "support",
+            risk_level: "medium",
+            created_at: "2026-06-19T08:30:00Z",
+          },
+        ],
+      },
+    }),
+  );
+
+  await page.goto("/app/requester");
+  await expect(page.getByText("Approve remote access")).toBeVisible();
+  const approveRequest = page.waitForRequest("**/api/web/requester/consents/consent-e2e/approve");
+  await page.getByRole("button", { name: "Разрешить" }).click();
+  await approveRequest;
+});
+
+test("requester profile honors published schema layout and saves safe profile payload", async ({ page }) => {
+  await page.unroute("**/api/web/requester/profile");
+  const profileSchema = {
+    fields: [
+      { key: "full_name", label: "Full name", type: "text", required: true, visible: true, editable: true, section: "identity", order: 1 },
+      { key: "preferred_contact_method", label: "Preferred contact", type: "select", visible: true, editable: true, section: "contact", order: 2, options: [{ value: "chat", label: "Chat" }] },
+      { key: "workplace_label", label: "Workplace label", type: "text", visible: true, editable: true, section: "work", order: 37 },
+    ],
+    custom_fields: [],
+    required_fields: [{ key: "full_name", label: "Full name" }],
+  };
+  await page.route("**/api/web/requester/profile", (route) => {
+    if (route.request().method() === "PUT") {
+      return fulfillJson(route, {
+        status: "success",
+        data: {
+          profile: {
+            person_id: "person-1",
+            full_name: "Alex Requester",
+            display_name: "Alex Requester",
+            preferred_contact_method: "chat",
+            workplace_label: "Desk 42",
+            custom_fields: {},
+          },
+          profile_completion: { complete: true, required_fields: [], missing_fields: [] },
+          profile_policy: { editable: true },
+          profile_schema: profileSchema,
+        },
+      });
+    }
+    return fulfillJson(route, {
+      status: "success",
+      data: {
+        profile: {
+          person_id: "person-1",
+          full_name: "Alex Requester",
+          display_name: "Alex Requester",
+          preferred_contact_method: "chat",
+          workplace_label: "Desk 17",
+          custom_fields: {},
+        },
+        account_summary: { login: "requester@example.test", display_name: "Alex Requester", linked_profile: true },
+        profile_schema: profileSchema,
+        profile_completion: { complete: true, required_fields: [], missing_fields: [] },
+        profile_policy: { editable: true },
+        devices: [],
+        active_bindings: [],
+        pending_registration_claims: [],
+      },
+    });
+  });
+
+  await page.goto("/app/requester/profile");
+  await expect(page.getByText("Workplace label")).toBeVisible();
+  await expect(page.getByText("Desk 17")).toBeVisible();
+  await page.getByRole("button", { name: "Редактировать" }).click();
+  await page.getByLabel("Workplace label").fill("Desk 42");
+  const saveRequest = page.waitForRequest((request) => request.method() === "PUT" && request.url().endsWith("/api/web/requester/profile"));
+  await page.getByRole("button", { name: "Сохранить профиль" }).click();
+  const payload = await saveRequest.then((request) => request.postDataJSON() as Promise<Record<string, unknown>>);
+  expect(payload).toMatchObject({ workplace_label: "Desk 42" });
+});
+
+test("requester workspace is not exposed when archived user has no requester workspace", async ({ page }) => {
+  await page.unroute("**/api/web/session/me");
+  await page.route("**/api/web/session/me", (route) =>
+    fulfillJson(route, {
+      status: "success",
+      data: {
+        user_login: "archived@example.test",
+        actor_role: "user",
+        auth_type: "web_session",
+        default_workspace: null,
+        available_workspaces: [],
+        permissions: [],
+      },
+    }),
+  );
+
+  await page.goto("/app/requester");
+  await expect(page.getByText("Для этой роли рабочая зона пока не назначена")).toBeVisible();
+  await expect(page.getByText("VPN access problem")).toBeHidden();
+});
+
 test("requester ticket message and close mutations stay available through policy actions", async ({ page }) => {
   await page.goto(`/app/requester/tickets/${ticketCode}`);
 

@@ -16,27 +16,26 @@ This file replaces the previous active `PLANS.md`. Completed backend architectur
 
 Source: user critical/high-priority defect list from 2026-06-22, rechecked against current `codex/helpdesk-process-model`.
 
-Status: implemented locally. Targeted frontend and server regressions are green; full workspace verification, release deploy and live requester validation remain before final closure.
+Status: functional P0/P1 closure was committed, pushed, full-CI verified, deployed and live-validated as `2c46f0707012a220f6944c2634111470989ef2ed`. Follow-up P2/P3 hardening is now implemented locally: requester pages are split into page + workflow modules, the Playwright requester matrix covers on-behalf, multi-select dynamic conditions, consent approval, profile schema layout/save, archived/no-workspace access and rating/reopen. Fresh full gate, deploy and live validation are still required for the new hardening commit.
 
 | ID | Defect / risk | Required outcome | Current status |
 | --- | --- | --- | --- |
-| RCC-23 | Reopen sends feedback reason as `reason_code`. | Reopen uses a dedicated backend-compatible reopen reason list; feedback reasons remain feedback-only. | fixed locally; `tickets-page.test.tsx` covers payload |
-| RCC-24 | Ticket actions can drift from policy. | `can_send_message`, `can_attach_files`, `can_confirm_solution`, `can_rate_solution`, `can_reopen` are calculated once server-side and handlers enforce the same capability result. | verified existing in `server/tickets/requester_policy.py`; no additional code change |
-| RCC-25 | Backend accepts any owned binding as enough device context. | Preview/create without explicit `device_id` must use only resolved `primary_device`; missing/ambiguous primary device cannot satisfy normal device-required forms. | fixed locally; targeted API regression added |
-| RCC-26 | Dynamic-form `visible_when` diverges for `multi_select`. | Server conditional visibility checks each selected array value, matching the frontend dynamic-form runtime. | fixed locally; targeted form-pack regression added |
-| RCC-27 | No-device create stores a random UUID as `device_id`. | No-device tickets store `tickets.device_id = NULL`, ticket events allow null `device_id`, and custom fields keep explicit `no_device` / `primary_device_resolution` context. | fixed locally; migration `127` added |
-| RCC-28 | `pending_consent_count` / `next_actions` can drift to frontend priority logic. | Server bootstrap owns pending consent count and ordered actions. | verified existing in requester bootstrap service/tests |
-| RCC-29 | Requester profile DTO exposes technical identities. | User profile endpoint returns safe `account_summary`; technical identities remain admin-only. | verified existing |
-| RCC-30 | Profile schema safe projection omits `section` / `order`. | Profile schema builder persists layout metadata and requester-safe DTO exposes it for requester profile layout. | fixed locally; API regression added |
-| RCC-31 | Remaining P1 UX items from the review list. | SPA dirty-profile blocker, requester-safe not-found and duplicate create CTA suppression stay covered. | verified existing in current route/page code |
-| RCC-32 | Formal DoD still has hardening backlog. | Complete large-page decomposition, raw-control cleanup and full browser E2E matrix before claiming total plan completion. | remains backlog unless included in a later dedicated hardening pass |
+| RCC-23 | Reopen sends feedback reason as `reason_code`. | Reopen uses a dedicated backend-compatible reopen reason list; feedback reasons remain feedback-only. | closed in `2c46f070`; `tickets-page.test.tsx` covers payload |
+| RCC-24 | Ticket actions can drift from policy. | `can_send_message`, `can_attach_files`, `can_confirm_solution`, `can_rate_solution`, `can_reopen` are calculated once server-side and handlers enforce the same capability result. | closed; `server/tickets/requester_policy.py` owns DTO and handler capability checks |
+| RCC-25 | Backend accepts any owned binding as enough device context. | Preview/create without explicit `device_id` must use only resolved `primary_device`; missing/ambiguous primary device cannot satisfy normal device-required forms. | closed in `2c46f070`; targeted API regression added |
+| RCC-26 | Dynamic-form `visible_when` diverges for `multi_select`. | Server conditional visibility checks each selected array value, matching the frontend dynamic-form runtime. | closed in `2c46f070`; server form-pack regression and browser dynamic-condition E2E cover it |
+| RCC-27 | No-device create stores a random UUID as `device_id`. | No-device tickets store `tickets.device_id = NULL`, ticket events allow null `device_id`, and custom fields keep explicit `no_device` / `primary_device_resolution` context. | closed in `2c46f070`; migration `127` deployed |
+| RCC-28 | `pending_consent_count` / `next_actions` can drift to frontend priority logic. | Server bootstrap owns pending consent count and ordered actions. | closed; requester bootstrap service/tests and browser consent E2E cover it |
+| RCC-29 | Requester profile DTO exposes technical identities. | User profile endpoint returns safe `account_summary`; technical identities remain admin-only. | closed |
+| RCC-30 | Profile schema safe projection omits `section` / `order`. | Profile schema builder persists layout metadata and requester-safe DTO exposes it for requester profile layout. | closed in `2c46f070`; API regression and browser profile-schema E2E cover it |
+| RCC-31 | Remaining P1 UX items from the review list. | SPA dirty-profile blocker, requester-safe not-found and duplicate create CTA suppression stay covered. | closed; route/page code plus requester route matrix cover it |
+| RCC-32 | Formal DoD still has hardening backlog. | Complete large-page decomposition, raw-control cleanup and full browser E2E matrix before claiming total plan completion. | implemented locally; page workflow modules and 24-test fixture E2E matrix are green; fresh RC gate/deploy/live pending |
 
-Verification order for this checkpoint:
+Verification for this checkpoint:
 
-1. Run targeted server tests for RCC-25/RCC-26/RCC-27/RCC-30 and targeted frontend tests for RCC-23.
-2. Run `python scripts/verify_workspace.py`.
-3. Update CODEMAP/lookup docs for nullable no-device tickets and requester profile schema layout metadata.
-4. Freeze commit, push, deploy through project release scripts and run live requester browser validation for the exact deployed artifact.
+1. `2c46f0707012a220f6944c2634111470989ef2ed`: full CI green, remote deploy applied migration `127`, remote smoke passed, live requester browser validation passed at `artifacts/browser_live_validation/requester-critical-followup-2c46f070-20260622T093445Z/live-report.json`.
+2. Local hardening follow-up: `pnpm --dir webapp exec tsc --noEmit` passed; `pnpm --dir webapp run test:e2e` passed 24 tests; `pnpm --dir webapp run test` passed 111 files / 563 tests; `python -m pytest scripts/test_web_first_registration_localization.py -q` passed 9 tests.
+3. Remaining before final closure: run `python scripts/verify_workspace.py`, freeze/push the hardening commit, run release-candidate preflight/full gate, deploy that exact commit through project release scripts and repeat live requester browser validation.
 
 ---
 
@@ -44,7 +43,7 @@ Verification order for this checkpoint:
 
 Source: user P0/P1/P2/P3 defect list from 2026-06-20, rechecked against branch `codex/helpdesk-process-model` after the previous requester checkpoint.
 
-Status: implemented locally; release-candidate gate, deploy and live validation remain before final closure. First post-deploy live setup exposed RCA-20 on historical registry data; fixed locally and queued for the next frozen commit.
+Status: P0/P1 functional fixes are closed by `2c46f0707012a220f6944c2634111470989ef2ed` with full CI, deploy and live requester validation. P2/P3 hardening follow-up is implemented locally and awaiting a fresh final gate/deploy/live run.
 
 ### P0 - functional correctness
 
@@ -73,20 +72,20 @@ Status: implemented locally; release-candidate gate, deploy and live validation 
 
 | ID | Defect | Required outcome | Status |
 | --- | --- | --- | --- |
-| RCA-14 | `new-request-page.tsx`, `tickets-page.tsx`, `devices-page.tsx`, `profile-page.tsx` still mix orchestration, form logic and visual blocks. | Extract large remaining pages into focused requester components without changing contracts. | mitigated; form/action orchestration moved to shared requester controls, deeper file splitting remains non-functional hardening |
+| RCA-14 | `new-request-page.tsx`, `tickets-page.tsx`, `devices-page.tsx`, `profile-page.tsx` still mix orchestration, form logic and visual blocks. | Extract large remaining pages into focused requester components without changing contracts. | fixed locally; requester pages now delegate workflow helpers to `new-request-workflow.tsx`, `tickets-workflow.tsx`, `profile-workflow.ts` and `devices-workflow.ts` |
 | RCA-15 | Requester pages still contain raw form controls and repeated Tailwind classes. | Complete shared controls: `FieldShell`, `Textarea`, `SelectField`, `FormActions`, `Stepper`, `InlineAlert`, `StickyActionBar`. | fixed; raw requester controls reduced to native checkbox/radio/file picker |
 | RCA-16 | Requester dynamic-form runtime still contains a `file` branch while file fields are not publishable. | Remove requester runtime support branch for pre-create `file` fields until draft uploads exist; unsupported `file` remains rejected by schema validation. | fixed |
 | RCA-20 | Historical published registry templates can still contain requester-visible `file` fields and break the public requester form pack after `file` removal. | Public `/public_api/ticket_forms/current` skips invalid historical registry templates instead of returning 500, while new `file` schemas remain rejected. | fixed; reproduced on stand logs and covered by `test_public_ticket_forms_current_skips_legacy_registry_file_template` |
-| RCA-21 | Live requester check showed clear printer text still exposed the first laptop category in the wizard, even after removing low-confidence fallback. | Use confidence-aware recommendations: strong catalog matches auto-select only the matching category and keep other categories hidden until the user explicitly asks to change; weak/no matches still require manual choice. | fixed locally; covered by `new-request-page.test.tsx`, awaiting final frozen gate/deploy/live validation |
-| RCA-22 | Live requester check on `c4d392f6` showed the printer recommendation could remain non-confident when weak context words also matched another offering. | Rank recommendation confidence by strong non-generic title/key matches; weak context matches no longer block a clear printer auto-select. | fixed locally; covered by `new-request-page.test.tsx`, awaiting final frozen gate/deploy/live validation |
+| RCA-21 | Live requester check showed clear printer text still exposed the first laptop category in the wizard, even after removing low-confidence fallback. | Use confidence-aware recommendations: strong catalog matches auto-select only the matching category and keep other categories hidden until the user explicitly asks to change; weak/no matches still require manual choice. | closed by `2c46f070`; final live check proved printer category selection without first laptop fallback |
+| RCA-22 | Live requester check on `c4d392f6` showed the printer recommendation could remain non-confident when weak context words also matched another offering. | Rank recommendation confidence by strong non-generic title/key matches; weak context matches no longer block a clear printer auto-select. | closed by `2c46f070`; covered by unit tests and live requester validation |
 
 ### P3 - proof of completion
 
 | ID | Defect | Required outcome | Status |
 | --- | --- | --- | --- |
-| RCA-17 | Playwright E2E is still too small for the stated requester matrix. | Expand deterministic requester E2E into separate scenarios for profile, device, form, on-behalf, consent, rating, reopen, archived, ambiguous, responsive and keyboard flows. | expanded; requester Playwright spec now has 13 route/create/mutation/policy scenarios |
+| RCA-17 | Playwright E2E is still too small for the stated requester matrix. | Expand deterministic requester E2E into separate scenarios for profile, device, form, on-behalf, consent, rating, reopen, archived, ambiguous, responsive and keyboard flows. | fixed locally; requester Playwright spec now runs 24 tests including on-behalf, dynamic multi-select conditions, consent, profile-schema layout/save, archived/no-workspace, rating/reopen and responsive route matrix |
 | RCA-18 | Builder -> publish -> requester coverage must include request and profile constructors. | Add real builder-to-requester tests for request-form constructor and profile-schema constructor. | fixed; Request Studio publish now proves requester form pack/catalog visibility, profile schema publish proves requester profile enforcement |
-| RCA-19 | Final signoff needs a frozen release-candidate gate. | After P0/P1 fixes, run full frontend/server/E2E gate, deploy that exact commit and repeat live requester validation. | pending release-candidate gate, deploy and live validation |
+| RCA-19 | Final signoff needs a frozen release-candidate gate. | After P0/P1 fixes, run full frontend/server/E2E gate, deploy that exact commit and repeat live requester validation. | closed for `2c46f070`; fresh gate/deploy/live is pending for the local hardening follow-up |
 
 Implementation order for this checkpoint:
 
@@ -121,7 +120,7 @@ Status: closed for this iteration. Functional defects RREM-01..RREM-14 are fixed
 | RREM-08 | Requester shell still contains old requester-cabinet wording and user-facing `Email`. | Canonical requester UI uses user-cabinet wording and `Электронная почта`. | fixed; covered by navigation/router/profile tests |
 | RREM-09 | Requester device APIs do not consistently use runtime online state. | Bootstrap, devices list and device detail project `online=true/false/null` from the same runtime state source. | fixed; covered by `test_requester_device_online_state_is_consistent_across_bootstrap_list_and_detail` |
 | RREM-10 | Server-side dynamic-field validation needs regression coverage for forged payloads. | Server rejects forged required/option/min-max/length/pattern/email/url/hidden/version/on-behalf violations. | fixed; dynamic constraints added, version/on-behalf verified by existing API tests |
-| RREM-11 | Requester page decomposition/shared UI extraction is incomplete. | Split large page files into reusable wizard, selector, lifecycle, chat, device and profile components. | partially closed; route pages/shared controls exist, deeper `new-request-page.tsx` extraction remains backlog |
+| RREM-11 | Requester page decomposition/shared UI extraction is incomplete. | Split large page files into reusable wizard, selector, lifecycle, chat, device and profile components. | fixed locally; remaining page files delegate workflow/helpers into requester workflow modules and shared controls |
 | RREM-12 | File-field contract is not fully reflected in docs/DoD. | Docs state requester-visible pre-create file fields are unsupported until draft uploads exist; post-create attachments remain chat flow. | fixed in `docs/QUICK_LOOKUP.md` |
 
 ### P2 - quality and release gate
@@ -130,7 +129,7 @@ Status: closed for this iteration. Functional defects RREM-01..RREM-14 are fixed
 | --- | --- | --- | --- |
 | RREM-13 | `PageShell` defaults to `<main>`, allowing future nested landmarks. | Only the app shell owns `<main>` by default; page sections use `div`/`section` unless explicitly overridden. | fixed; covered by `page-components.test.tsx` and router tests |
 | RREM-14 | Unknown backend status is transformed into a visible enum-ish label. | Unknown statuses display a neutral requester-safe fallback. | fixed; covered by `formatters.test.ts` |
-| RREM-15 | E2E coverage is below the full requester matrix. | Expand deterministic requester E2E for profile/device/form/on-behalf/consent/rating/reopen/archived/ambiguous/responsive/keyboard paths. | release-mitigated; `requester-workspace.spec.ts` fixture now asserts server-owned primary-device context, `pnpm --dir webapp run test:e2e` passed, and deployed live matrix covered home/new/detail/devices; broader regression-pack remains non-blocking hardening |
+| RREM-15 | E2E coverage is below the full requester matrix. | Expand deterministic requester E2E for profile/device/form/on-behalf/consent/rating/reopen/archived/ambiguous/responsive/keyboard paths. | fixed locally; `requester-workspace.spec.ts` now has 24 passing fixture-browser tests across route, create, on-behalf, dynamic condition, consent, profile-schema, archived/no-workspace, message/close and rating/reopen flows |
 | RREM-16 | Last deployment used quick gate only. | Final signoff requires full focused frontend/server/Playwright/live evidence and frozen green CI artifact. | closed; full CI green for `abfacaa40618a653f84c133e5948711978ec08ae`, remote deploy passed, live requester browser summary captured |
 
 Implementation order for this iteration:
