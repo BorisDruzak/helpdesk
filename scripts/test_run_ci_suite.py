@@ -280,7 +280,8 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         step_name: command
         for step_name, command, _log_path, _idle_timeout, _env, _timeout in steps_seen
     }
-    assert command_by_step["webapp_unit_tests"] == run_ci_suite._pnpm_webapp_command(tmp_path, "run", "test")
+    assert command_by_step["webapp_unit_tests"] == run_ci_suite._webapp_unit_test_command(tmp_path)
+    assert command_by_step["webapp_unit_tests"][-2:] == ["--pool=threads", "--maxWorkers=1"]
     assert command_by_step["webapp_fixture_e2e"] == run_ci_suite._pnpm_webapp_command(tmp_path, "run", "test:e2e")
     assert command_by_step["server_pytest_no_db"][-6:] == [
         "-m",

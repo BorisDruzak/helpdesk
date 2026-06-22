@@ -16,7 +16,7 @@ This file replaces the previous active `PLANS.md`. Completed backend architectur
 
 Source: user follow-up review after commit `17351f1dae706891553d6f6bb449d9444b26a5fa`.
 
-Status: code fixed, targeted verification passed. Audit confirmed that reopen reasons, primary-device create/preview, multi-select `visible_when`, nullable no-device tickets and profile schema `section` / `order` are present in current code and re-proved by focused regressions. The two open gaps from current `HEAD` are now patched: `can_confirm_solution` requires `resolution_confirmation_pending`, and `/api/upload` web-user ownership reuses the requester person/binding/session resolver. Large requester pages were further decomposed into page-owned orchestration plus requester panels.
+Status: code fixed, targeted verification passed, release-gate runner hardened. Audit confirmed that reopen reasons, primary-device create/preview, multi-select `visible_when`, nullable no-device tickets and profile schema `section` / `order` are present in current code and re-proved by focused regressions. The two open gaps from current `HEAD` are now patched: `can_confirm_solution` requires `resolution_confirmation_pending`, and `/api/upload` web-user ownership reuses the requester person/binding/session resolver. Large requester pages were further decomposed into page-owned orchestration plus requester panels. Full CI initially exposed a Windows Vitest fork-pool OOM / `spawn UNKNOWN` failure in the canonical gate; `scripts/run_ci_suite.py` now runs webapp unit tests with a deterministic threads pool and bounded Windows timeout cleanup.
 
 | ID | Requirement | Current status |
 | --- | --- | --- |
@@ -26,7 +26,8 @@ Status: code fixed, targeted verification passed. Audit confirmed that reopen re
 | RFR-04 | No-device tickets must not store artificial `device_id`; requester profile schema must expose `section` / `order`; large requester pages must stay decomposed. | closed; no-device API regression shows `device_id=None`; requester pages now use extracted panels |
 | RFR-05 | Show/allow "Подтвердить решение" only when `resolution_confirmation_pending` is true. | closed; `requester_ticket_actions()` and close handler gate now require pending confirmation state |
 | RFR-06 | Attachment upload authorization must align with requester ownership by person/binding/session. | closed; `/api/upload` web-user authorization now reuses `RequesterIdentityResolver.get_ticket()` |
-| RFR-07 | Close a full frozen release gate, deploy and live-check the current commit. | pending after fixes and commit freeze |
+| RFR-07 | Close a full frozen release gate, deploy and live-check the current commit. | pending final full CI, deploy and live requester browser validation after gate-runner hardening |
+| RFR-08 | Canonical release gate must be deterministic on Windows for the current webapp test volume. | closed; `webapp_unit_tests` now uses Vitest threads pool with one worker and bounded Windows process cleanup |
 
 Verification plan:
 
@@ -35,6 +36,10 @@ Targeted verification completed:
 1. `PYTHONPATH=server PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120 python -m pytest server\tests\test_requester_policy.py server\tests\test_ticket_account_access.py::test_web_user_upload_access_uses_requester_person_ownership server\tests\test_requester_workspace_api.py::test_requester_confirm_solution_requires_pending_resolution_confirmation server\tests\test_requester_workspace_api.py::test_requester_ticket_actions_hide_repeated_rating_after_latest_feedback server\tests\test_requester_workspace_api.py::test_requester_bootstrap_resolves_primary_device_independently_from_device_order server\tests\test_requester_workspace_api.py::test_requester_can_create_no_device_ticket_and_preview_without_device server\tests\test_requester_workspace_api.py::test_requester_can_submit_feedback_and_reopen_owned_ticket_only server\tests\test_ticket_form_packs.py::test_validate_form_submission_applies_visible_when_to_multi_select_dependency server\tests\test_quality_contract_no_db.py -q --tb=short -s` - 12 passed.
 2. `pnpm --dir webapp exec tsc --noEmit --pretty false` - passed.
 3. `pnpm --dir webapp exec vitest run src/pages/requester/new-request-page.test.tsx src/pages/requester/tickets-page.test.tsx src/pages/requester/devices-page.test.tsx src/pages/requester/profile-page.test.tsx src/features/requester/dynamic-form/dynamic-form.test.tsx src/features/requester/queries.test.ts --reporter=dot` - 6 files / 47 tests passed.
+4. `pnpm --dir webapp exec vitest run --pool=threads --maxWorkers=1 --reporter=dot` - 111 files / 563 tests passed.
+5. `python scripts\run_ci_suite.py --layer webapp_unit_tests --commit b44d200bcd14e537515b882ce929c7831aa80c16` - canonical layer passed after runner hardening.
+6. `python -m pytest scripts\test_run_ci_suite.py -q` - 19 passed.
+7. `python scripts\verify_workspace.py` - passed.
 
 Release verification still required: commit/push a frozen candidate, run full CI, release preflight, full deploy gate and live requester browser validation for that exact commit.
 

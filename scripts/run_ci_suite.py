@@ -179,14 +179,18 @@ def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
     if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                check=False,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=1,
+            )
+        except subprocess.TimeoutExpired:
+            process.kill()
     else:
         process.kill()
     try:
@@ -783,6 +787,12 @@ def _pnpm_webapp_command(workspace: Path, *args: str) -> list[str]:
     return [_resolve_command("pnpm"), "--dir", str(workspace / "webapp"), *args]
 
 
+def _webapp_unit_test_command(workspace: Path) -> list[str]:
+    # Keep the release gate deterministic on Windows: the default fork pool can
+    # exhaust process memory and leave later route tests in a corrupted jsdom run.
+    return _pnpm_webapp_command(workspace, "exec", "vitest", "run", "--pool=threads", "--maxWorkers=1")
+
+
 def main() -> None:
     args = parse_args()
     max_workers = args.max_workers if args.max_workers is not None else (2 if args.parallel else 1)
@@ -839,7 +849,7 @@ def main() -> None:
         ),
         (
             "webapp_unit_tests",
-            _pnpm_webapp_command(args.workspace, "run", "test"),
+            _webapp_unit_test_command(args.workspace),
             logs_dir / "webapp_unit_tests.log",
             float(DEFAULT_WEB_TEST_TIMEOUT_SECONDS),
             float(args.idle_timeout),
