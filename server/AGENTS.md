@@ -63,6 +63,7 @@ Before claiming completion for server work:
 - Run workspace sanity when available:
   - `python scripts/verify_workspace.py`
 - Run targeted server tests/checks relevant to the changed files.
+- For HTTP/API pytest files, consider `test_client_light` only as an explicit per-file opt-in under `docs/TESTING_RULES.md`; keep runtime, outbox, WebSocket, `test_agent`, and agent update tests on the regular `test_client`.
 - For API/route changes, run the project-approved smoke or route-level check when available.
 - For runtime changes, inspect relevant logs through project scripts rather than ad-hoc remote patching.
 - For release/deploy-sensitive changes, use `.agents/skills/pc-client-release-gate/SKILL.md`.

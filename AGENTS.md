@@ -109,6 +109,7 @@ Before claiming completion:
 1. Run project sanity when available:
    - `python scripts/verify_workspace.py`
 2. Run targeted tests/checks for the changed surface.
+   - For server pytest fixture selection, cleanup profiles, DB template mode, bounded parallelism, and timing artifacts, follow `docs/TESTING_RULES.md`.
 3. For browser-visible changes, collect real browser evidence through the project browser workflow.
 4. For GUI/live-debug work, follow `docs/LIVE_TESTING_DEBUG_RULES.md`.
 5. Report commands run, results, and any checks not run.
