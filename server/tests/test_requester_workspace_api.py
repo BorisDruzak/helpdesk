@@ -2632,7 +2632,7 @@ async def test_requester_ticket_actions_hide_repeated_rating_after_latest_feedba
     assert detail.status == 200, detail_payload
     actions = detail_payload["data"]["ticket"]["actions"]
     assert actions["can_rate_solution"] is False
-    assert actions["can_confirm_solution"] is True
+    assert actions["can_confirm_solution"] is False
 
     feedback = await test_client.post(
         f"/api/web/requester/tickets/{created['ticket'].ticket_code}/feedback",
@@ -2642,6 +2642,67 @@ async def test_requester_ticket_actions_hide_repeated_rating_after_latest_feedba
     feedback_payload = await feedback.json()
     assert feedback.status == 409, feedback_payload
     assert feedback_payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_requester_confirm_solution_requires_pending_resolution_confirmation(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = "requester-confirmation-pending@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "confirmation-pending-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title="Requester confirmation pending gate",
+            description="Confirm solution must require a pending confirmation request",
+            user_display_name="Requester Confirmation Pending",
+            requester_profile={"full_name": "Requester Confirmation Pending", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket = await session.get(Ticket, created["ticket_id"])
+        assert ticket is not None
+        ticket.status = "resolved"
+        ticket.resolved_at = datetime.now(timezone.utc)
+        ticket.custom_fields = {}
+        await session.commit()
+
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+    detail = await test_client.get(f"/api/web/requester/tickets/{created['ticket'].ticket_code}", headers=headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    assert detail_payload["data"]["ticket"]["actions"]["can_confirm_solution"] is False
+
+    close = await test_client.post(
+        f"/api/web/requester/tickets/{created['ticket'].ticket_code}/close",
+        headers=headers,
+        json={"reason": "requester_confirmed_resolution"},
+    )
+    close_payload = await close.json()
+    assert close.status == 409, close_payload
+    assert close_payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, created["ticket_id"])
+        assert ticket is not None
+        ticket.custom_fields = {
+            "resolution_confirmation": {"pending": True, "request_id": str(uuid.uuid4())},
+            "resolution_confirmation_pending": True,
+        }
+        await session.commit()
+
+    detail = await test_client.get(f"/api/web/requester/tickets/{created['ticket'].ticket_code}", headers=headers)
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    assert detail_payload["data"]["ticket"]["actions"]["can_confirm_solution"] is True
 
 
 @pytest.mark.asyncio

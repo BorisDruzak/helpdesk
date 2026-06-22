@@ -16,7 +16,7 @@ from tickets.account_access_service import TicketAccountAccessService
 from tickets.create_flow import create_ticket_with_side_effects
 from tests.conftest import TEST_AGENT_PREFIX
 from tests.test_ticket_form_packs import _ensure_default_sla_policy, _ensure_fallback_queue
-from uploads.handlers import _require_agent_ticket_account_access
+from uploads.handlers import _can_upload_to_ticket, _require_agent_ticket_account_access
 
 
 pytestmark = pytest.mark.db_cleanup("tickets")
@@ -400,6 +400,48 @@ async def test_agent_artifact_download_access_requires_valid_account_session(tes
     assert missing is not None and missing.status == 403
     assert wrong is not None and wrong.status == 403
     assert revoked is not None and revoked.status == 403
+
+
+@pytest.mark.asyncio
+async def test_web_user_upload_access_uses_requester_person_ownership(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id="legacy-requester-id",
+            title="Person-owned upload ticket",
+            description="Upload access must follow requester ownership, not only requester_id",
+            user_display_name="Registered Owner",
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+        )
+        ticket = await session.get(Ticket, created["ticket_id"])
+        assert ticket is not None
+        owner_context = AuthContext(
+            actor_id="owner@example.test",
+            actor_role="user",
+            auth_type=AuthType.UI_TOKEN,
+            token="owner-ui-token",
+        )
+        other_context = AuthContext(
+            actor_id="other@example.test",
+            actor_role="user",
+            auth_type=AuthType.UI_TOKEN,
+            token="other-ui-token",
+        )
+        owner_allowed = await _can_upload_to_ticket(session, owner_context, ticket)
+        other_allowed = await _can_upload_to_ticket(session, other_context, ticket)
+        await session.commit()
+
+    assert owner_allowed is True
+    assert other_allowed is False
 
 
 @pytest.mark.asyncio

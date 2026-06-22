@@ -53,7 +53,7 @@ def _content_disposition_attachment(filename: str) -> str:
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}"
 
 
-def _can_upload_to_ticket(auth_context, ticket) -> bool:
+async def _can_upload_to_ticket(session, auth_context, ticket) -> bool:
     if auth_context.actor_role in {"admin", "support"}:
         return True
     if auth_context.actor_role == "agent":
@@ -61,7 +61,13 @@ def _can_upload_to_ticket(auth_context, ticket) -> bool:
     if auth_context.auth_type == AuthType.PUBLIC_TICKET_TOKEN:
         return auth_context.ticket_scope == getattr(ticket, "ticket_id", None)
     if auth_context.actor_role == "user":
-        return auth_context.actor_id == getattr(ticket, "requester_id", None)
+        from requester.identity_service import RequesterIdentityResolver
+
+        resolved = await RequesterIdentityResolver(session).get_ticket(
+            actor_id=auth_context.actor_id,
+            ticket_id=str(getattr(ticket, "ticket_id", "") or ""),
+        )
+        return resolved is not None
     return False
 
 
@@ -303,7 +309,7 @@ async def handle_upload(request: web.Request) -> web.StreamResponse:
                         {"status": "error", "error": "ticket_not_found"},
                         status=404,
                     )
-                if not _can_upload_to_ticket(auth_context, ticket):
+                if not await _can_upload_to_ticket(session, auth_context, ticket):
                     return web.json_response(
                         {"status": "error", "error": "forbidden"},
                         status=403,

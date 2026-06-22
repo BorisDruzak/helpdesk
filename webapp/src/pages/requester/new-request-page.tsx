@@ -1,4 +1,3 @@
-import { ArrowRight, CheckCircle2, Search, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
@@ -18,7 +17,6 @@ import {
   useRequesterServiceCatalogQuery,
 } from "../../features/requester/queries";
 import {
-  RequestFormFieldControl,
   buildDefaultFieldValues,
   collectVisiblePayload,
   fieldWithRequesterContextOptions,
@@ -29,25 +27,27 @@ import {
   validateDynamicFormValues,
   type DynamicFormValues,
 } from "../../features/requester/dynamic-form";
-import { requesterDeviceLabel, requesterErrorMessage } from "../../features/requester/labels";
-import { Button, FieldShell, FormActions, InlineAlert, Textarea } from "../../features/requester/ui/form-controls";
+import { requesterErrorMessage } from "../../features/requester/labels";
+import {
+  DetailsStepPanel,
+  ProblemStepPanel,
+  QuickHelpStepPanel,
+  RequestSummaryAside,
+  RequestWizardShell,
+  ReviewStepPanel,
+} from "./new-request-panels";
 import {
   ASK_TICKET_CONTEXT_STORAGE_KEY,
-  CategorySelector,
   OWNER_CHANGE_INTENT,
   OWNER_CHANGE_PROBLEM,
-  OnBehalfPanel,
-  StepRail,
   askContextAttempts,
   buildCategoryOptions,
   deviceMetadata,
   isResolvedPrimaryDeviceStatus,
-  primaryDeviceResolutionText,
   readAskContext,
   recommendOffering,
   requesterFormPrefillFromContext,
   resolveRecommendedCategoryKey,
-  stepTitle,
   type WizardStep,
 } from "./new-request-workflow";
 import type {
@@ -415,182 +415,78 @@ export function RequesterNewRequestPage() {
 
   return (
     <div className="mx-auto grid max-w-5xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <section className="space-y-4">
-        <div>
-          <p className="text-sm font-semibold text-brand-700">Новое обращение</p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-950">{stepTitle(step)}</h1>
-        </div>
-        <StepRail step={step} />
-        {error ? <InlineAlert aria-live="assertive" role="alert" tone="danger">{error}</InlineAlert> : null}
+      <RequestWizardShell error={error} step={step}>
         {step === "problem" ? (
-          <section className="rounded-panel border border-slate-200 bg-white p-4">
-            <FieldShell label="Что случилось или что нужно?">
-              <Textarea
-                aria-label="Что случилось или что нужно?"
-                className="mt-2 min-h-36 font-normal"
-                onChange={(event) => setProblem(event.currentTarget.value)}
-                value={problem}
-              />
-            </FieldShell>
-            <Button
-              className="mt-4"
-              disabled={!problem.trim() || knowledgeLoading}
-              leadingIcon={<Search className="h-4 w-4" />}
-              onClick={goToQuickHelp}
-              type="button"
-            >
-              Продолжить
-            </Button>
-          </section>
+          <ProblemStepPanel
+            goToQuickHelp={goToQuickHelp}
+            knowledgeLoading={knowledgeLoading}
+            problem={problem}
+            setProblem={setProblem}
+          />
         ) : null}
         {step === "quick_help" ? (
-          <section className="rounded-panel border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold text-slate-950">Возможно, поможет</h2>
-              {knowledgeLoading ? <span className="text-xs text-slate-500">Ищем...</span> : null}
-            </div>
-            <div className="mt-3 grid gap-2">
-              {(knowledgeResult?.suggestions ?? []).length ? (
-                (knowledgeResult?.suggestions ?? []).map((item) => (
-                  <article className="rounded-panel border border-slate-200 bg-slate-50 px-3 py-2" key={item.item_id}>
-                    <p className="font-semibold text-slate-950">{item.title}</p>
-                    {item.summary ? <p className="mt-1 text-sm text-slate-600">{item.summary}</p> : null}
-                    <Button className="mt-2" onClick={() => markKnowledge(item, "not_helpful")} size="sm" type="button" variant="outline">
-                      Не помогло
-                    </Button>
-                  </article>
-                ))
-              ) : (
-                <p className="text-sm text-slate-600">Подходящих подсказок пока нет.</p>
-              )}
-            </div>
-            <Button className="mt-4" leadingIcon={<ArrowRight className="h-4 w-4" />} onClick={() => setStep("details")} type="button">
-              Продолжить оформление
-            </Button>
-          </section>
+          <QuickHelpStepPanel
+            continueToDetails={() => setStep("details")}
+            knowledgeLoading={knowledgeLoading}
+            markKnowledgeNotHelpful={(item) => markKnowledge(item, "not_helpful")}
+            suggestions={knowledgeResult?.suggestions ?? []}
+          />
         ) : null}
         {step === "details" ? (
-          <section className="rounded-panel border border-slate-200 bg-white p-4">
-            <CategorySelector
-              canShowAll={categorySelectorOptions.length < categoryOptions.length}
-              onShowAll={() => setShowAllCategoryOptions(true)}
-              options={categorySelectorOptions}
-              recommendedKey={recommendedCategoryKey}
-              selectedKey={selectedCategoryKey}
-              onChange={(key) => {
-                setSelectedCategoryKey(key);
-                setError(null);
-              }}
-            />
-            {!selectedForm ? (
-              <p className="mt-3 text-sm text-slate-600">Выберите категорию, чтобы увидеть нужные поля и безопасную проверку.</p>
-            ) : null}
-            {selectedForm ? <h2 className="mt-4 text-lg font-semibold text-slate-950">{selectedForm.title}</h2> : null}
-            {requiresOnBehalfForAvailability ? (
-              <InlineAlert className="mt-3" tone="warning">
-                Для обращения за себя нужно основное устройство.
-              </InlineAlert>
-            ) : null}
-            {selectedForm && onBehalfPolicy?.allowed ? (
-              <OnBehalfPanel
-                enabled={onBehalfActive}
-                onQueryChange={setOnBehalfQuery}
-                onReasonChange={setOnBehalfReason}
-                onSearch={runOnBehalfSearch}
-                onSelect={setSelectedOnBehalfPerson}
-                people={onBehalfPeople}
-                policy={onBehalfPolicy}
-                query={onBehalfQuery}
-                reason={onBehalfReason}
-                required={requiresOnBehalfForAvailability}
-                selectedPerson={selectedOnBehalfPerson}
-                setEnabled={setOnBehalfEnabled}
-              />
-            ) : null}
-            <div className="mt-4 grid gap-3">
-              {contextualFields.map((field) => (
-                <RequestFormFieldControl
-                  error={
-                    validationAttempted
-                      ? missingFieldDetails.some((item) => item.key === field.key)
-                        ? `Заполните поле: ${field.label}.`
-                        : valueValidation.issues.find((item) => item.path === `fields.${field.key}`)?.message ?? null
-                      : null
-                  }
-                  field={field}
-                  inputRef={(element) => {
-                    fieldRefs.current[field.key] = element;
-                  }}
-                  key={field.key}
-                  onChange={(value) => {
-                    setFieldValues((current) => ({ ...current, [field.key]: value }));
-                    setError(null);
-                  }}
-                  userPickerAllowed={Boolean(onBehalfPolicy?.allowed)}
-                  value={fieldValues[field.key]}
-                />
-              ))}
-            </div>
-            {selectedForm && (missingFields.length || valueValidation.issues.length || onBehalfMissingRequired) ? (
-              <p aria-live="polite" className="mt-3 text-sm text-rose-700" role="status">
-                {valueValidation.issues[0]?.message ||
-                  `Заполните: ${[...missingFields, onBehalfMissingRequired ? "данные сотрудника" : ""].filter(Boolean).join(", ")}.`}
-              </p>
-            ) : null}
-            <Button
-              className="mt-4"
-              disabled={!problem.trim() || !selectedForm}
-              leadingIcon={<CheckCircle2 className="h-4 w-4" />}
-              onClick={goToReview}
-              type="button"
-            >
-              К проверке
-            </Button>
-          </section>
+          <DetailsStepPanel
+            categoryOptions={categoryOptions}
+            categorySelectorOptions={categorySelectorOptions}
+            contextualFields={contextualFields}
+            fieldRefs={fieldRefs}
+            fieldValues={fieldValues}
+            goToReview={goToReview}
+            missingFieldDetails={missingFieldDetails}
+            missingFields={missingFields}
+            onBehalfActive={onBehalfActive}
+            onBehalfMissingRequired={onBehalfMissingRequired}
+            onBehalfPeople={onBehalfPeople}
+            onBehalfPolicy={onBehalfPolicy}
+            onBehalfQuery={onBehalfQuery}
+            onBehalfReason={onBehalfReason}
+            recommendedCategoryKey={recommendedCategoryKey}
+            requiresOnBehalfForAvailability={requiresOnBehalfForAvailability}
+            runOnBehalfSearch={runOnBehalfSearch}
+            selectedCategoryKey={selectedCategoryKey}
+            selectedForm={selectedForm}
+            selectedOnBehalfPerson={selectedOnBehalfPerson}
+            setError={setError}
+            setFieldValues={setFieldValues}
+            setOnBehalfEnabled={setOnBehalfEnabled}
+            setOnBehalfQuery={setOnBehalfQuery}
+            setOnBehalfReason={setOnBehalfReason}
+            setSelectedCategoryKey={setSelectedCategoryKey}
+            setSelectedOnBehalfPerson={setSelectedOnBehalfPerson}
+            setShowAllCategoryOptions={setShowAllCategoryOptions}
+            validationAttempted={validationAttempted}
+            valueValidation={valueValidation}
+          />
         ) : null}
         {step === "review" ? (
-          <section className="rounded-panel border border-slate-200 bg-white p-4">
-            <h2 className="text-lg font-semibold text-slate-950">Проверка перед отправкой</h2>
-            <dl className="mt-3 grid gap-2 text-sm">
-              <div><dt className="font-semibold text-slate-500">Тема</dt><dd>{problem.trim().split(/\r?\n/)[0]}</dd></div>
-              <div><dt className="font-semibold text-slate-500">Тип</dt><dd>{selectedOffering?.title || selectedForm?.title}</dd></div>
-              {primaryDevice ? <div><dt className="font-semibold text-slate-500">Устройство</dt><dd>{requesterDeviceLabel(primaryDevice, "Основное устройство")}</dd></div> : null}
-            </dl>
-            {previewResult ? (
-              <div className="mt-3 rounded-panel border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                <p className="font-semibold text-slate-950">Безопасная проверка</p>
-                {previewResult.request_type_label ? <p>Тип: {previewResult.request_type_label}</p> : null}
-                {previewResult.diagnostics?.text ? <p>{previewResult.diagnostics.text}</p> : null}
-                {(previewResult.blockers ?? []).map((blocker) => <p className="text-rose-700" key={blocker}>{blocker}</p>)}
-              </div>
-            ) : null}
-            <FormActions className="mt-4">
-              <Button disabled={previewSubmitting} onClick={runPreview} type="button" variant="outline">
-                {previewSubmitting ? "Проверяем..." : "Проверить обращение"}
-              </Button>
-              <Button disabled={!canCreate} leadingIcon={<Send className="h-4 w-4" />} onClick={createTicket} type="button">
-                {submitting ? "Создаем..." : "Создать обращение"}
-              </Button>
-            </FormActions>
-          </section>
+          <ReviewStepPanel
+            canCreate={canCreate}
+            createTicket={createTicket}
+            primaryDevice={primaryDevice}
+            previewResult={previewResult}
+            previewSubmitting={previewSubmitting}
+            problem={problem}
+            runPreview={runPreview}
+            selectedForm={selectedForm}
+            selectedOffering={selectedOffering}
+            submitting={submitting}
+          />
         ) : null}
-      </section>
-      <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
-        <div className="rounded-panel border border-slate-200 bg-white p-4 text-sm">
-          <p className="font-semibold text-slate-950">Категория обращения</p>
-          <p className="mt-2 text-slate-700">{selectedCategory?.label || "Выберите категорию"}</p>
-          <p className="mt-1 text-slate-500">{selectedService?.title || "Каталог обращений"}</p>
-        </div>
-        <div className="rounded-panel border border-slate-200 bg-white p-4 text-sm">
-          <p className="font-semibold text-slate-950">Контекст</p>
-          <p className="mt-2 text-slate-700">{bootstrap?.profile?.display_name || bootstrap?.profile?.full_name || "Заявитель"}</p>
-          {primaryDevice ? (
-            <p className="mt-1 text-slate-500">{requesterDeviceLabel(primaryDevice, "Основное устройство")}</p>
-          ) : (
-            <p className="mt-1 text-amber-700">{primaryDeviceResolutionText(bootstrap?.primary_device_resolution)}</p>
-          )}
-        </div>
-      </aside>
+      </RequestWizardShell>
+      <RequestSummaryAside
+        bootstrap={bootstrap}
+        primaryDevice={primaryDevice}
+        selectedCategory={selectedCategory}
+        selectedService={selectedService}
+      />
     </div>
   );
 }

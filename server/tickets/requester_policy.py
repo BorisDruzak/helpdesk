@@ -46,6 +46,16 @@ def _requester_action_policy(ticket: Any) -> dict[str, Any]:
     return {}
 
 
+def _resolution_confirmation_pending(ticket: Any) -> bool:
+    custom_fields = _custom_fields(ticket)
+    state = custom_fields.get("resolution_confirmation")
+    if isinstance(state, dict):
+        return bool(state.get("pending"))
+    if "resolution_confirmation_pending" in custom_fields:
+        return bool(custom_fields.get("resolution_confirmation_pending"))
+    return False
+
+
 def _policy_enabled(policy: dict[str, Any], key: str, default: bool = True) -> bool:
     if key not in policy:
         return default
@@ -87,6 +97,7 @@ def requester_ticket_actions(ticket: Any, *, now: datetime | None = None) -> dic
     can_attach_files = can_send_message and _policy_enabled(policy, "can_attach_files", True)
     can_confirm_solution = (
         status == "resolved"
+        and _resolution_confirmation_pending(ticket)
         and _policy_enabled(policy, "can_confirm_solution", True)
     )
     can_rate_solution = (
