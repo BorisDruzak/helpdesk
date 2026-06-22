@@ -51,3 +51,6 @@
 - [x] `python scripts/test_web_first_registration_localization.py` - 9 passed.
 - [x] `git diff --check` - passed, only CRLF warnings.
 - [x] `python scripts/verify_workspace.py` - passed.
+- [x] `python scripts/release_server_to_remote.py --branch codex/helpdesk-process-model --gate quick --allow-local-dirty --leave-running --smoke-insecure-tls` - passed; remote stand updated to commit `4e79d34b64efc20788c2be729a0bd6e77980dc4d`, smoke health returned 200.
+- [x] `python artifacts\browser_live_validation\requester-cabinet-f9267606-20260621T-live-final\requester_cabinet_live_check.py --base-url https://192.168.100.17:9443 --run-id requester-inline-validation-4e79d34b-20260623T033120Z --artifact-dir artifacts\browser_live_validation\requester-create-inline-validation-4e79d34b-20260623T032521Z --insecure-tls` - passed; screenshots: `00-single-form-initial.png`, `01-no-category-inline-error.png`, `02-required-field-inline-error.png`; verified no old review/suggestion step, category error inline, required field errors inline, and no preview/create/knowledge requests before local validation passes.
+- [x] `python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 stop server` and `python scripts\manage_remote_stack.py --remote altserver@192.168.100.17 stop control` - remote services stopped after live validation.
