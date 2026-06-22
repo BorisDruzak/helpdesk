@@ -1646,8 +1646,12 @@ async def test_web_requester_closure_confirmed_writes_observer_event(test_client
     async with session_maker() as session:
         ticket = await session.get(Ticket, ticket_id)
         assert ticket is not None
+        custom_fields = dict(ticket.custom_fields or {})
+        custom_fields["resolution_confirmation"] = {"pending": True, "request_id": str(uuid.uuid4())}
+        custom_fields["resolution_confirmation_pending"] = True
         ticket.status = "resolved"
         ticket.resolved_at = datetime.now(timezone.utc)
+        ticket.custom_fields = custom_fields
         await session.commit()
 
     closed = await test_client.post(
