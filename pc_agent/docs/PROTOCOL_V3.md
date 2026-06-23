@@ -373,7 +373,10 @@ non-resumable command is `in_progress`, startup recovery records a terminal
 If a duplicate command reaches the new runtime before startup replay has sent
 that recovery result, the duplicate path performs the same conversion and does
 not emit `command_ack`. Duplicates of that recovered command return the cached
-terminal error and must not execute the tool again.
+terminal error and must not execute the tool again. Cached terminal duplicate
+responses are written to `pending_command_results` before send, so a websocket
+drop during duplicate-send remains replayable after reconnect until
+`command_result_ack`.
 
 Результат выполнения команды от агента к серверу.
 

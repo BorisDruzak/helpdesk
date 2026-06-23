@@ -152,7 +152,9 @@ CREATE TABLE seen_commands (
 Durable replay queue for terminal server-command results. Rows are written
 before sending `command_result` and removed only after `command_result_ack`.
 This keeps tool results and agent-restart recovery reports durable across WS
-disconnects, server restarts and agent reconnects.
+disconnects, server restarts and agent reconnects. Cached terminal duplicate
+responses are also upserted here before send, so a duplicate-send dropped by the
+websocket is replayed after reconnect until the server ACKs it.
 
 **Schema:**
 ```sql

@@ -153,7 +153,9 @@
   runtime `seen_commands.in_progress` rows become terminal `AGENT_RESTARTED`
   recovery results on startup/reconnect, and the duplicate command path performs
   the same recovery if the server redelivers a previous-runtime `in_progress`
-  command before startup replay sends it. Late terminal results replayed after
+  command before startup replay sends it. Cached terminal duplicate responses
+  are also upserted into `pending_command_results` before send, so a dropped
+  duplicate-send is replayed after reconnect until `command_result_ack`. Late terminal results replayed after
   watchdog timeout reconcile the original operation unless a retry/replacement
   exists; timeline payloads mark `late_result=true` and preserve the previous
   `timed_out` state for audit, while successful reconciliation clears current

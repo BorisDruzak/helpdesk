@@ -1928,6 +1928,38 @@ class WSAgent:
             f"(request_id={request_id}, trace_id={trace_id}, command_id={command_id})"
         )
     
+    async def _send_durable_command_result(
+        self,
+        ws: ClientWebSocketResponse,
+        *,
+        request_id: str,
+        command_id: str,
+        payload: Dict[str, Any],
+        trace_id: Optional[str] = None,
+        ticket_id: Optional[str] = None,
+        job_id: Optional[str] = None,
+        actor_role: Optional[str] = "agent",
+    ) -> None:
+        if self.db_manager:
+            await self.db_manager.enqueue_pending_command_result(
+                command_id=command_id,
+                payload=payload,
+                trace_id=trace_id,
+                ticket_id=ticket_id,
+                job_id=job_id,
+                actor_role=actor_role,
+            )
+        await self.send_envelope(
+            ws,
+            "command_result",
+            request_id,
+            payload,
+            trace_id=trace_id,
+            ticket_id=ticket_id,
+            job_id=job_id,
+            actor_role=actor_role,
+        )
+
     async def replay_pending_command_results(self, ws: ClientWebSocketResponse) -> int:
         if not self.db_manager:
             return 0
@@ -2281,8 +2313,11 @@ class WSAgent:
                             job_id_ctx = envelope.get("job_id")
                             actor_role_meta = envelope.get("meta", {}).get("actor_role", "agent")
                             
-                            await self.send_envelope(
-                                ws, "command_result", request_id, cached_payload,
+                            await self._send_durable_command_result(
+                                ws,
+                                request_id=request_id,
+                                command_id=command_id,
+                                payload=cached_payload,
                                 trace_id=trace_id,
                                 ticket_id=ticket_id_ctx,
                                 job_id=job_id_ctx,
@@ -2315,8 +2350,11 @@ class WSAgent:
                                 job_id_ctx = envelope.get("job_id")
                                 actor_role_meta = envelope.get("meta", {}).get("actor_role", "agent")
 
-                                await self.send_envelope(
-                                    ws, "command_result", request_id, cached_payload,
+                                await self._send_durable_command_result(
+                                    ws,
+                                    request_id=request_id,
+                                    command_id=command_id,
+                                    payload=cached_payload,
                                     trace_id=trace_id,
                                     ticket_id=ticket_id_ctx,
                                     job_id=job_id_ctx,
@@ -2339,11 +2377,11 @@ class WSAgent:
                                         f"Previous runtime left command {command_id} in_progress; "
                                         "sending recovery command_result without rerunning"
                                     )
-                                    await self.send_envelope(
+                                    await self._send_durable_command_result(
                                         ws,
-                                        "command_result",
-                                        request_id,
-                                        recovery_payload,
+                                        request_id=request_id,
+                                        command_id=command_id,
+                                        payload=recovery_payload,
                                         trace_id=envelope.get("trace_id"),
                                         ticket_id=envelope.get("ticket_id"),
                                         job_id=envelope.get("job_id"),

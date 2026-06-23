@@ -339,3 +339,92 @@ async def test_duplicate_after_restart_recovery_returns_cached_error(tmp_path: P
     assert sent[0]["payload"]["meta"]["cached"] is True
     assert sent[0]["trace_id"] == "trace-recovery-duplicate"
     assert sent[0]["ticket_id"] == "ticket-1"
+
+
+@pytest.mark.asyncio
+async def test_cached_terminal_duplicate_send_failure_remains_pending_for_replay(tmp_path: Path):
+    db_path = tmp_path / "storage.db"
+    DatabaseManager._instance = None
+    db = DatabaseManager(str(db_path))
+    await db.init_db()
+
+    command_id = "00000000-0000-0000-0000-00000000d006"
+    cached_payload = {
+        "status": "success",
+        "data": {"observations": {"value": 42}},
+        "error": {},
+        "meta": {"request_id": command_id},
+    }
+    await db.mark_command_seen(
+        command_id=command_id,
+        status="success",
+        result_json=json.dumps(cached_payload),
+    )
+
+    agent = WSAgent(data_root=tmp_path)
+    agent.db_manager = db
+    agent.device_id = "device-1"
+
+    async def fail_execute_command(*_args, **_kwargs):
+        raise AssertionError("cached terminal duplicate must not execute again")
+
+    sent = []
+
+    async def flaky_send_envelope(
+        _ws,
+        msg_type,
+        request_id,
+        payload,
+        *,
+        trace_id=None,
+        ticket_id=None,
+        job_id=None,
+        actor_role=None,
+    ):
+        sent.append(
+            {
+                "msg_type": msg_type,
+                "request_id": request_id,
+                "payload": payload,
+                "trace_id": trace_id,
+                "ticket_id": ticket_id,
+                "job_id": job_id,
+                "actor_role": actor_role,
+            }
+        )
+        if msg_type == "command_result":
+            raise RuntimeError("websocket closed before duplicate result send")
+
+    agent.execute_command = fail_execute_command
+    agent.send_envelope = flaky_send_envelope
+
+    await agent.handle_message(
+        None,
+        json.dumps(
+            {
+                "type": "command",
+                "protocol_version": "ws_ticket_v3",
+                "request_id": command_id,
+                "device_id": "device-1",
+                "trace_id": "trace-duplicate-replay",
+                "ticket_id": "ticket-1",
+                "job_id": "job-1",
+                "payload": {
+                    "command": "run_tool",
+                    "params": {"tool": "screen.record", "params": {}},
+                },
+                "meta": {"actor_role": "support"},
+            }
+        ),
+    )
+
+    assert sent[0]["msg_type"] == "command_result"
+    pending = await db.list_pending_command_results()
+    assert [item["command_id"] for item in pending] == [command_id]
+    assert pending[0]["trace_id"] == "trace-duplicate-replay"
+    assert pending[0]["ticket_id"] == "ticket-1"
+    assert pending[0]["job_id"] == "job-1"
+    assert pending[0]["actor_role"] == "support"
+    pending_payload = json.loads(pending[0]["payload_json"])
+    assert pending_payload["status"] == "success"
+    assert pending_payload["meta"]["cached"] is True
