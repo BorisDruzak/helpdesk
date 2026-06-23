@@ -352,6 +352,7 @@ async def _seed_support_ticket(
     *,
     device_id: str = "device-rbac",
     status: str = "in_progress",
+    assignee_id: str | None = "support-test",
 ) -> str:
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
@@ -368,7 +369,7 @@ async def _seed_support_ticket(
             status=status,
             requester_id="user-rbac",
             queue_id=queue.id,
-            assignee_id="support-test",
+            assignee_id=assignee_id,
         )
         ticket_id = ticket.ticket_id
         session.add(ticket)
@@ -551,6 +552,84 @@ async def test_web_support_message_retry_is_idempotent_by_message_id(test_client
 
 
 @pytest.mark.asyncio
+async def test_web_support_internal_note_does_not_stop_frt_until_public_reply(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    ticket_id = await _seed_support_ticket(
+        test_engine,
+        device_id=f"device-support-frt-{suffix}",
+        status="in_progress",
+    )
+    first_response_due_at = datetime.now(timezone.utc) + timedelta(minutes=20)
+    internal_text = f"internal FRT note {suffix}"
+    public_text = f"public FRT reply {suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        ticket.first_response_due_at = first_response_due_at
+        await session.commit()
+
+    internal_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/messages",
+        headers=_support_headers(),
+        json={"text": internal_text, "visibility": "internal"},
+    )
+
+    assert internal_response.status == 200, await internal_response.text()
+    internal_payload = await internal_response.json()
+    internal_message = internal_payload["data"]["message"]
+    assert internal_message["visibility"] == "internal"
+    assert internal_message["requester_timeline_text"] is None
+    assert internal_message["requester_timeline_kind"] is None
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        stop_events = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "sla_first_response_stopped",
+                )
+            )
+        ).scalars().all()
+    assert ticket.first_response_at is None
+    assert stop_events == []
+
+    public_response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/messages",
+        headers=_support_headers(),
+        json={"text": public_text, "visibility": "public"},
+    )
+
+    assert public_response.status == 200, await public_response.text()
+    public_payload = await public_response.json()
+    public_message = public_payload["data"]["message"]
+    assert public_message["visibility"] == "public"
+    assert public_message["requester_timeline_text"] == public_text
+    assert public_message["requester_timeline_kind"] == "support_message"
+    assert public_message["requester_timeline_payload"] == {}
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        stop_events = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "sla_first_response_stopped",
+                )
+            )
+        ).scalars().all()
+        chat_events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id, TicketEvent.event_type == "chat_message")
+                .order_by(TicketEvent.id)
+            )
+        ).scalars().all()
+    assert ticket.first_response_at is not None
+    assert len(stop_events) == 1
+    assert stop_events[0].payload["trigger"] == "first_public_support_reply_sent"
+    assert [event.payload["visibility"] for event in chat_events] == ["internal", "public"]
+
+
+@pytest.mark.asyncio
 async def test_web_support_resolve_writes_status_and_confirmation_observer_events_without_raw_reason(
     test_client,
     test_engine,
@@ -677,6 +756,75 @@ async def test_web_support_resolve_writes_status_and_confirmation_observer_event
     detail_payload = await detail.json()
     assert detail_payload["data"]["observer"]["web_flow"]["support_status"] == "succeeded"
     assert detail_payload["data"]["observer"]["web_flow"]["latest_event_type"] == "resolution_confirmation_requested"
+
+
+@pytest.mark.asyncio
+async def test_web_support_assign_writes_observer_event_without_raw_actor_or_reason(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    ticket_id = await _seed_support_ticket(
+        test_engine,
+        device_id=f"device-support-assign-{suffix}",
+        status="queued",
+        assignee_id=None,
+    )
+    request_id = f"phase-d-support-assign-{suffix}"
+    raw_reason = f"raw assign reason {suffix}"
+    raw_comment = f"raw assign comment {suffix}"
+
+    response = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/assign",
+        headers={**_support_headers(), "X-Request-ID": request_id},
+        json={
+            "assignee_id": "support-test",
+            "reason": raw_reason,
+            "comment": raw_comment,
+        },
+    )
+
+    assert response.status == 200, await response.text()
+    payload = await response.json()
+    assert payload["data"]["assignee_id"] == "support-test"
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        traces = await ObserverOverlayService(session).search_traces(
+            TraceOverlayFilters(
+                root_kind="requester_web",
+                source="support_assignment",
+                route=f"/api/web/support/tickets/{ticket_id}/assign",
+                event_type="support_assignment_changed",
+                ticket_id=ticket_id,
+                query=request_id,
+            ),
+            limit=10,
+        )
+        assert len(traces) == 1
+        trace = await session.get(ObserverTrace, traces[0]["trace_id"])
+        span = (
+            await session.execute(select(ObserverSpan).where(ObserverSpan.trace_id == traces[0]["trace_id"]))
+        ).scalar_one()
+
+    assert trace is not None
+    assert trace.status == "succeeded"
+    assert trace.attrs_json["source"] == "support_assignment"
+    assert trace.attrs_json["event_type"] == "support_assignment_changed"
+    assert span.attrs_json["payload"] == {
+        "assignee_present": True,
+        "previous_assignee_present": False,
+        "assignee_changed": True,
+        "auto_assigned": False,
+        "reason_present": True,
+        "comment_present": True,
+    }
+    serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
+    for raw_value in (raw_reason, raw_comment, "support-test"):
+        assert raw_value not in serialized
+
+    detail = await test_client.get(f"/api/web/support/tickets/{ticket_id}", headers=_support_headers())
+    assert detail.status == 200, await detail.text()
+    detail_payload = await detail.json()
+    assert detail_payload["data"]["observer"]["web_flow"]["support_assignment"] == "succeeded"
+    assert detail_payload["data"]["observer"]["web_flow"]["latest_event_type"] == "support_assignment_changed"
 
 
 @pytest.mark.asyncio

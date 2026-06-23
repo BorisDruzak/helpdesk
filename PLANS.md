@@ -1128,7 +1128,7 @@ Blocking:
 - [x] `BEH-201` Requester create/block/no-device/on-behalf matrix.
 - [x] `BEH-202` Chat retry/idempotency.
 - [x] `BEH-203` Resolve/feedback/reopen.
-- [ ] `BEH-204` Support claim/status/SLA/privacy.
+- [x] `BEH-204` Support claim/status/SLA/privacy.
 - [ ] `BEH-205` Tool operation/outbox/result/ACK.
 - [ ] `BEH-206` Consent approve/deny/timeout/cancel race.
 - [ ] `BEH-207` Agent reconnect/replay/duplicate.
@@ -1214,6 +1214,8 @@ Checkpoint 2026-06-23 BEH-201: `server/tests/test_requester_workspace_api.py` no
 Checkpoint 2026-06-23 BEH-202: requester and support chat endpoints now treat API retries with the same `message_id` as idempotent. A duplicate `message_id` resolves the already persisted `chat_message` and returns its original event id instead of creating a second row; retry responses do not repeat requester workflow transitions, support first-response SLA closure, Observer writes, or realtime pushes. Coverage is `test_requester_ticket_message_retry_is_idempotent_by_message_id` and `test_web_support_message_retry_is_idempotent_by_message_id`.
 
 Checkpoint 2026-06-23 BEH-203: requester lifecycle actions now keep feedback/reopen consistent with Quality Loop policy. Latest positive feedback disables `actions.can_reopen` and blocks direct requester `/reopen`; latest low-CSAT feedback still permits reopen and records `ticket_reopen_events`. Existing requester close/feedback/reopen Observer tests cover redacted `requester_closure` lifecycle traces for `closure_confirmed`, `feedback_submitted` and `ticket_reopened`.
+
+Checkpoint 2026-06-23 BEH-204: support assignment now writes a redacted web-cabinet Observer trace `source=support_assignment`, `event_type=support_assignment_changed`, and typed support detail projects it as `observer.web_flow.support_assignment`. The BEH-204 matrix now covers support assign Observer redaction, status/confirmation Observer redaction, support chat retry idempotency, and first-response SLA/privacy behavior: internal support notes do not stop FRT or project into requester timeline fields, while the first public support reply stops FRT once and returns requester-safe projection fields.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

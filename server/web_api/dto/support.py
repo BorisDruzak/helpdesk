@@ -511,6 +511,7 @@ class SupportTicketObserverWebFlow(BaseModel):
     closure: str | None = None
     support_chat: str | None = None
     support_status: str | None = None
+    support_assignment: str | None = None
     latest_event_type: str | None = None
     latest_error_code: str | None = None
     latest_trace_url: str | None = None

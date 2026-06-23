@@ -2709,6 +2709,23 @@ def _support_status_observer_payload(
     }
 
 
+def _support_assignment_observer_payload(
+    *,
+    old_assignee: str | None,
+    assignee_id: str | None,
+    data: dict[str, Any],
+    auto_assigned: bool,
+) -> dict[str, Any]:
+    return {
+        "assignee_present": bool(_support_observer_clean(assignee_id, max_length=120)),
+        "previous_assignee_present": bool(_support_observer_clean(old_assignee, max_length=120)),
+        "assignee_changed": old_assignee != assignee_id,
+        "auto_assigned": bool(auto_assigned),
+        "reason_present": bool(_support_observer_clean(data.get("reason"), max_length=200)),
+        "comment_present": bool(_support_observer_clean(data.get("comment"), max_length=200)),
+    }
+
+
 def _support_confirmation_observer_payload(
     *,
     to_status: str,
@@ -2733,6 +2750,7 @@ _WEB_OBSERVER_FLOW_SOURCES = {
     "requester_closure": "closure",
     "support_chat": "support_chat",
     "support_status": "support_status",
+    "support_assignment": "support_assignment",
 }
 
 _WEB_OBSERVER_EVENT_PRIORITY = {
@@ -2757,6 +2775,7 @@ def _support_observer_web_flow(observer_data: dict[str, Any]) -> dict[str, Any]:
         "closure": None,
         "support_chat": None,
         "support_status": None,
+        "support_assignment": None,
         "latest_event_type": None,
         "latest_error_code": None,
         "latest_trace_url": None,
@@ -6300,6 +6319,7 @@ async def handle_web_support_assign_ticket(request: web.Request):
             except TicketAssignmentError as exc:
                 return _support_json_error(str(exc), status=400, error_code="ASSIGNMENT_ERROR")
             assignee_id = selection["assignee_id"]
+            old_assignee = getattr(ticket, "assignee_id", None)
             result = await assignment_service.assign_ticket(
                 ticket.ticket_id,
                 ticket.device_id,
@@ -6308,17 +6328,35 @@ async def handle_web_support_assign_ticket(request: web.Request):
                 actor_role=auth_context.actor_role,
                 reason=str(data.get("reason") or "").strip() or None,
                 comment=str(data.get("comment") or "").strip() or None,
-                old_assignee=getattr(ticket, "assignee_id", None),
+                old_assignee=old_assignee,
                 auto_assigned=selection["auto_assigned"],
                 active_count=selection["active_count"],
                 limit=MAX_ACTIVE_TICKETS_PER_OPERATOR,
                 db_session=session,
                 close_ola=True,
             )
+            await _write_support_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="support_assignment",
+                event_type="support_assignment_changed",
+                severity="info",
+                result="succeeded",
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                person_id=_support_observer_ticket_person_id(ticket),
+                payload=_support_assignment_observer_payload(
+                    old_assignee=old_assignee,
+                    assignee_id=assignee_id,
+                    data=data,
+                    auto_assigned=bool(selection["auto_assigned"]),
+                ),
+            )
             await session.commit()
             payload = {
                 "field_name": "assignee_id",
-                "old_value": getattr(ticket, "assignee_id", None),
+                "old_value": old_assignee,
                 "new_value": assignee_id,
                 "assignee_id": assignee_id,
                 "actor_id": auth_context.actor_id,

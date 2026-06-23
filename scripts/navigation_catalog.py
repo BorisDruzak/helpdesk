@@ -3962,6 +3962,8 @@ TOPICS: tuple[Topic, ...] = (
             "support_message_sent",
             "support_status",
             "support_status_changed",
+            "support_assignment",
+            "support_assignment_changed",
             "resolution_confirmation_requested",
             "device_linking",
             "browser_pairing_lookup_succeeded",
