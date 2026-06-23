@@ -397,6 +397,14 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert timeout_by_step["server_pytest_db_web_api"] == 45 * 60
     assert timeout_by_step["server_pytest_agent_ws"] == 45 * 60
 
+    summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["evidence_layers"]["webapp_fixture_e2e"] == {
+        "mode": "fixture_e2e",
+        "surface": "browser",
+        "canonical_live_browser": False,
+        "description": "Playwright against the local fixture server; not a live browser signoff.",
+    }
+
 
 def test_server_db_api_layer_paths_groups_every_test_file_once(tmp_path):
     tests_dir = tmp_path / "server" / "tests"

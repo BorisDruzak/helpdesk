@@ -50,6 +50,14 @@ DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
 OUTPUT_POLL_INTERVAL_SECONDS = 0.2
 STEP_TIMEOUT_EXIT_CODE = 124
+CI_EVIDENCE_LAYERS = {
+    "webapp_fixture_e2e": {
+        "mode": "fixture_e2e",
+        "surface": "browser",
+        "canonical_live_browser": False,
+        "description": "Playwright against the local fixture server; not a live browser signoff.",
+    },
+}
 
 Step = tuple[str, list[str], Path, float, float, dict[str, str] | None]
 
@@ -1037,6 +1045,7 @@ def main() -> None:
             "parallel_enabled": bool(args.parallel),
             "max_workers": max_workers,
             "parallel_groups": parallel_groups,
+            "evidence_layers": CI_EVIDENCE_LAYERS,
             "artifacts": {
                 "summary": str(summary_path),
                 "fixture_timings_dir": str(fixture_timings_dir),
