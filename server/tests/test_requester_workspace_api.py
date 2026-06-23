@@ -2911,6 +2911,7 @@ async def test_requester_ticket_actions_hide_repeated_rating_after_latest_feedba
     actions = detail_payload["data"]["ticket"]["actions"]
     assert actions["can_rate_solution"] is False
     assert actions["can_confirm_solution"] is False
+    assert actions["can_reopen"] is False
 
     feedback = await test_client.post(
         f"/api/web/requester/tickets/{created['ticket'].ticket_code}/feedback",
@@ -2920,6 +2921,15 @@ async def test_requester_ticket_actions_hide_repeated_rating_after_latest_feedba
     feedback_payload = await feedback.json()
     assert feedback.status == 409, feedback_payload
     assert feedback_payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
+
+    reopen = await test_client.post(
+        f"/api/web/requester/tickets/{created['ticket'].ticket_code}/reopen",
+        headers=headers,
+        json={"reason_code": "problem_returned"},
+    )
+    reopen_payload = await reopen.json()
+    assert reopen.status == 409, reopen_payload
+    assert reopen_payload["error_code"] == "REQUESTER_TICKET_ACTION_NOT_AVAILABLE"
 
 
 @pytest.mark.asyncio

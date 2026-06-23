@@ -38,6 +38,7 @@ Support/admin/auditor:
 - Feedback is accepted only for `resolved` or `closed` tickets within the default 14-day window.
 - Low CSAT is deterministic: rating at or below the effective `low_csat_threshold`, or `problem_resolved=false`.
 - Low CSAT creates a QA review. Knowledge failure reasons can create an improvement action for KB updates.
+- Requester action projection uses the same latest-feedback signal for reopen availability: latest positive feedback hides requester reopen controls and blocks direct requester reopen, while latest low CSAT keeps reopen available.
 - Reopen requires a reason code; `other` requires a comment. Reopen uses the existing workflow service and records a first-class reopen event.
 - Improvement actions are not tickets. They require source, action type, status, priority and audit fields; moving into assigned/in-progress requires an owner and closing requires outcome notes.
 - `TicketFeedbackService` locks the ticket row while replacing latest feedback. Concurrent submissions serialize, old latest rows are marked non-latest, and the DB partial unique index rejects accidental duplicate latest rows.
@@ -47,7 +48,7 @@ Support/admin/auditor:
 
 ## Surfaces
 
-- Requester ticket page shows CSAT and reopen controls for resolved/closed tickets.
+- Requester ticket page shows CSAT controls for resolved/closed tickets and exposes reopen only when policy, feedback window and latest-feedback signal allow it.
 - Support ticket detail includes a Quality section with latest CSAT, reopen count, QA reviews and improvement actions.
 - Admin `/app/admin/quality` shows aggregate CSAT/reopen/SLA/KB/QA/action metrics, the last snapshot timestamp, internal review/action work queues and a service/offering quality-policy override editor with effective-policy preview.
 - Admin `/app/admin/problems` and the support ticket Quality tab expose P4 problem candidates/links without exposing requester-internal problem/RCA data to requester pages.

@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.db.models import TicketFeedback
 from quality.feedback_service import DEFAULT_FEEDBACK_WINDOW_DAYS
+from quality.policy_service import QualityPolicyService
 from tickets.closure_policy import get_template_closure_policy
 
 
@@ -83,6 +84,11 @@ def has_latest_requester_feedback(ticket: Any) -> bool:
     return bool(getattr(ticket, "_requester_has_latest_feedback", False))
 
 
+def latest_requester_feedback_allows_reopen(ticket: Any) -> bool:
+    value = getattr(ticket, "_requester_latest_feedback_reopen_available", None)
+    return True if value is None else bool(value)
+
+
 def requester_ticket_actions(ticket: Any, *, now: datetime | None = None) -> dict[str, bool]:
     status = str(getattr(ticket, "status", None) or "").strip().lower()
     policy = _requester_action_policy(ticket)
@@ -110,6 +116,7 @@ def requester_ticket_actions(ticket: Any, *, now: datetime | None = None) -> dic
         status in REQUESTER_FEEDBACK_STATUSES
         and in_feedback_window
         and _closure_allows_reopen(ticket)
+        and latest_requester_feedback_allows_reopen(ticket)
         and _policy_enabled(policy, "can_reopen", True)
     )
     return {
@@ -126,10 +133,36 @@ async def annotate_requester_ticket_policy_state(session: Any, tickets: list[Any
     if not ticket_ids:
         return
     result = await session.execute(
-        select(TicketFeedback.ticket_id)
+        select(TicketFeedback)
         .where(TicketFeedback.ticket_id.in_(ticket_ids))
         .where(TicketFeedback.is_latest.is_(True))
     )
-    latest_feedback_ticket_ids = {str(ticket_id) for ticket_id in result.scalars().all()}
+    latest_feedback_by_ticket_id = {str(feedback.ticket_id): feedback for feedback in result.scalars().all()}
+    policy_service = QualityPolicyService(session)
+    policy_cache: dict[tuple[str | None, str | None, int | None], dict[str, Any]] = {}
     for ticket in tickets:
-        setattr(ticket, "_requester_has_latest_feedback", str(getattr(ticket, "ticket_id", "") or "") in latest_feedback_ticket_ids)
+        ticket_id = str(getattr(ticket, "ticket_id", "") or "")
+        feedback = latest_feedback_by_ticket_id.get(ticket_id)
+        setattr(ticket, "_requester_has_latest_feedback", feedback is not None)
+        if feedback is None:
+            setattr(ticket, "_requester_latest_feedback_reopen_available", None)
+            continue
+        cache_key = (
+            getattr(ticket, "service_code", None),
+            getattr(ticket, "offering_code", None),
+            getattr(ticket, "queue_id", None),
+        )
+        policy = policy_cache.get(cache_key)
+        if policy is None:
+            policy = await policy_service.effective_policy(
+                service_code=cache_key[0],
+                offering_code=cache_key[1],
+                queue_id=cache_key[2],
+            )
+            policy_cache[cache_key] = policy
+        threshold = int(policy.get("low_csat_threshold", 3))
+        setattr(
+            ticket,
+            "_requester_latest_feedback_reopen_available",
+            int(feedback.rating) <= threshold or feedback.problem_resolved is False,
+        )
