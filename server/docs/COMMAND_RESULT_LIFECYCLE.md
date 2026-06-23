@@ -17,9 +17,11 @@
 > received. On agent process restart, stale previous-runtime
 > `seen_commands.status='in_progress'` rows for non-resumable commands are
 > converted to terminal `error` payloads with `error.code=AGENT_RESTARTED` and
-> replayed as `command_result`; the server must mark the operation terminal
-> failed and reconcile the matching `device_outbox` row instead of leaving it
-> `sent`.
+> replayed as `command_result`. If the server redelivers the command before
+> startup replay sends that result, the agent duplicate path performs the same
+> conversion without emitting `command_ack` or rerunning the tool. The server
+> must mark the operation terminal failed and reconcile the matching
+> `device_outbox` row instead of leaving it `sent`.
 
 ## Инварианты
 

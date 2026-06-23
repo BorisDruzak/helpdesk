@@ -309,7 +309,9 @@ Auth security update 2026-05-23/24: `server/auth/handlers.py` keeps `POST /api/l
   - terminal result ACK back to the agent (`command_result_ack`) so the agent
     can remove durable `pending_command_results`; recovery results with
     `error.code=AGENT_RESTARTED` use this same path and must reconcile the
-    operation plus target `device_outbox`. Late terminal results replayed after
+    operation plus target `device_outbox`; a duplicate command redelivered to a
+    new runtime before startup replay still sends this terminal result without
+    `command_ack` or tool rerun. Late terminal results replayed after
     watchdog timeout reconcile the original operation when no retry/replacement
     exists; otherwise the original timeout is preserved and linked late-result
     evidence is written for audit.

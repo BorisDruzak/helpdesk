@@ -370,8 +370,10 @@ terminal results after reconnect. If the agent process restarts while a
 non-resumable command is `in_progress`, startup recovery records a terminal
 `status="error"` result with `error.code="AGENT_RESTARTED"` and
 `meta.recovery=true`, then sends it through the normal `command_result` path.
-Duplicates of that recovered command return the cached terminal error and must
-not execute the tool again.
+If a duplicate command reaches the new runtime before startup replay has sent
+that recovery result, the duplicate path performs the same conversion and does
+not emit `command_ack`. Duplicates of that recovered command return the cached
+terminal error and must not execute the tool again.
 
 Результат выполнения команды от агента к серверу.
 
@@ -446,6 +448,7 @@ RPC-вызовы для выполнения методов (альтернат�
 **Политика:**
 - Если команда уже выполнена (status=success), возвращается кэшированный результат
 - Если команда в `in_progress` и уже выполняется в текущем процессе, дубликат ждёт тот же Future
+- If `owner_instance_id` differs from the current runtime, the duplicate path sends terminal `AGENT_RESTARTED` `command_result` without `command_ack` or tool rerun before applying fresh/stale `in_progress` policy.
 - Если команда в `in_progress` и запись свежая (младше `IN_PROGRESS_STALE_SEC`), агент возвращает `command_result.error.code=COMMAND_IN_PROGRESS` с `retryable=true` (без повторного запуска)
 - Если `in_progress` stale (старше `IN_PROGRESS_STALE_SEC`), разрешается ровно один controlled retry (с обновлением `started_at`/`owner_instance_id`)
 - Политика "не затирать success" — успешные результаты не перезаписываются

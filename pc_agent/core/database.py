@@ -2234,6 +2234,7 @@ class DatabaseManager:
         *,
         current_owner_instance_id: str,
         reason_code: str = "AGENT_RESTARTED",
+        target_command_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         now = int(time.time())
         recovered: List[Dict[str, Any]] = []
@@ -2241,15 +2242,21 @@ class DatabaseManager:
             await db.execute("PRAGMA busy_timeout=5000")
             await db.execute("BEGIN IMMEDIATE")
             try:
+                where_command = " AND command_id=?" if target_command_id else ""
+                params: Tuple[Any, ...] = (
+                    current_owner_instance_id,
+                    target_command_id,
+                ) if target_command_id else (current_owner_instance_id,)
                 cursor = await db.execute(
-                    """
+                    f"""
                     SELECT command_id, owner_instance_id
                     FROM seen_commands
                     WHERE status='in_progress'
                       AND (owner_instance_id IS NULL OR owner_instance_id != ?)
+                      {where_command}
                     ORDER BY started_at ASC
                     """,
-                    (current_owner_instance_id,),
+                    params,
                 )
                 rows = await cursor.fetchall()
                 for command_id, previous_owner in rows:

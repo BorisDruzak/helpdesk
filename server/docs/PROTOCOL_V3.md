@@ -86,7 +86,10 @@ Handshake `client_kind` defaults to `agent_runtime`. Only `agent_runtime` update
   and may replay them after reconnect. Agent-restart recovery uses the normal
   `command_result` path with `status="error"`, `error.code="AGENT_RESTARTED"`
   and `meta.recovery=true`; the server must mark the operation terminal and
-  reconcile the matching `device_outbox` row instead of leaving it `sent`.
+  reconcile the matching `device_outbox` row instead of leaving it `sent`. If
+  redelivery reaches a new agent runtime before startup replay sends the
+  recovery result, the agent duplicate path sends the same terminal result
+  without `command_ack` and without rerunning the tool.
   If replay arrives after the server watchdog already marked the original
   operation `timed_out`, the server must not silently drop it. With no
   retry/replacement operation, the late terminal result reconciles the original

@@ -131,6 +131,90 @@ async def test_ws_agent_replays_startup_recovery_command_result(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_previous_runtime_in_progress_command_recovers_without_ack_or_rerun(tmp_path: Path):
+    db_path = tmp_path / "storage.db"
+    DatabaseManager._instance = None
+    db = DatabaseManager(str(db_path))
+    await db.init_db()
+
+    command_id = "00000000-0000-0000-0000-00000000d006"
+    await db.mark_command_started(command_id, owner_instance_id="old-runtime")
+
+    agent = WSAgent(data_root=tmp_path)
+    agent.db_manager = db
+    agent.device_id = "device-1"
+    agent._session_id = "new-runtime"
+
+    async def should_not_execute(*_args, **_kwargs):
+        raise AssertionError("previous-runtime in_progress command must not execute again")
+
+    sent = []
+
+    async def fake_send_envelope(
+        _ws,
+        msg_type,
+        request_id,
+        payload,
+        *,
+        trace_id=None,
+        ticket_id=None,
+        job_id=None,
+        actor_role=None,
+    ):
+        sent.append(
+            {
+                "msg_type": msg_type,
+                "request_id": request_id,
+                "payload": payload,
+                "trace_id": trace_id,
+                "ticket_id": ticket_id,
+                "job_id": job_id,
+                "actor_role": actor_role,
+            }
+        )
+
+    agent.execute_command = should_not_execute
+    agent.send_envelope = fake_send_envelope
+
+    await agent.handle_message(
+        None,
+        json.dumps(
+            {
+                "type": "command",
+                "protocol_version": "ws_ticket_v3",
+                "request_id": command_id,
+                "device_id": "device-1",
+                "trace_id": "trace-previous-runtime",
+                "ticket_id": "ticket-1",
+                "payload": {
+                    "command": "run_tool",
+                    "params": {"tool": "screen.record", "params": {}},
+                },
+                "meta": {"actor_role": "support"},
+            }
+        ),
+    )
+
+    assert [item["msg_type"] for item in sent] == ["command_result"]
+    assert sent[0]["request_id"] == command_id
+    assert sent[0]["payload"]["status"] == "error"
+    assert sent[0]["payload"]["error"]["code"] == "AGENT_RESTARTED"
+    assert sent[0]["payload"]["meta"]["recovery"] is True
+    assert sent[0]["payload"]["meta"]["previous_owner_instance_id"] == "old-runtime"
+    assert sent[0]["trace_id"] == "trace-previous-runtime"
+    assert sent[0]["ticket_id"] == "ticket-1"
+    assert sent[0]["actor_role"] == "support"
+
+    cached = await db.get_command_result(command_id)
+    assert cached is not None
+    assert cached["status"] == "error"
+
+    pending = await db.list_pending_command_results()
+    assert [item["command_id"] for item in pending] == [command_id]
+    assert json.loads(pending[0]["payload_json"])["error"]["code"] == "AGENT_RESTARTED"
+
+
+@pytest.mark.asyncio
 async def test_command_result_ack_clears_pending_result(tmp_path: Path):
     db_path = tmp_path / "storage.db"
     DatabaseManager._instance = None

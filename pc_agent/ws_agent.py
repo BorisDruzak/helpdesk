@@ -2326,6 +2326,30 @@ class WSAgent:
 
                         elif cached_result["status"] == "in_progress":
                             # Команда в процессе: либо ждём тот же execution, либо разрешаем повтор по TTL
+                            previous_owner = cached_result.get("owner_instance_id")
+                            if previous_owner != self._session_id:
+                                recovered = await self.db_manager.recover_in_progress_commands_on_startup(
+                                    current_owner_instance_id=self._session_id,
+                                    reason_code="AGENT_RESTARTED",
+                                    target_command_id=command_id,
+                                )
+                                if recovered:
+                                    recovery_payload = recovered[0]["payload"]
+                                    logger.warning(
+                                        f"Previous runtime left command {command_id} in_progress; "
+                                        "sending recovery command_result without rerunning"
+                                    )
+                                    await self.send_envelope(
+                                        ws,
+                                        "command_result",
+                                        request_id,
+                                        recovery_payload,
+                                        trace_id=envelope.get("trace_id"),
+                                        ticket_id=envelope.get("ticket_id"),
+                                        job_id=envelope.get("job_id"),
+                                        actor_role=envelope.get("meta", {}).get("actor_role", "agent"),
+                                    )
+                                    return
                             started_at = cached_result.get("started_at") or 0
                             age_sec = time.time() - started_at if started_at else float("inf")
                             if age_sec > IN_PROGRESS_STALE_SEC:

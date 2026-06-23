@@ -123,7 +123,9 @@ controlled retry counters. On agent startup/reconnect, stale `in_progress` rows
 owned by a previous runtime session are finalized as terminal `error` results
 with `error.code="AGENT_RESTARTED"` for non-resumable commands. The terminal
 result is queued in `pending_command_results` for server replay instead of
-silently clearing the row.
+silently clearing the row. If the server redelivers that command before the
+startup replay path runs, the command handler performs the same single-command
+recovery and does not write `command_ack` or rerun the tool.
 
 Идемпотентность команд (кэш результатов).
 

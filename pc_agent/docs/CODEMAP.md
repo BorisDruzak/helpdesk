@@ -167,7 +167,8 @@ P2 Knowledge Platform agent integration is HTTP-only and does not change Protoco
   `core/database.py`, `docs/PROTOCOL_V3.md`, `docs/DATABASE.md`;
   terminal command results are kept in `pending_command_results` until
   `command_result_ack`, and previous-runtime `seen_commands.in_progress`
-  rows become terminal `AGENT_RESTARTED` recovery results on startup.
+  rows become terminal `AGENT_RESTARTED` recovery results on startup or when a
+  duplicate command reaches the new runtime before startup replay sends them.
 - **run_tool, command** — `core/orchestrator.py`, обработка command/envelope V3 в `ws_agent.py`; current contract accepts canonical semantic tool ids and legacy aliases, while runtime still binds them к текущему module registry
 - **run_recipe, agent recipe** — `core/orchestrator.py` handles the Protocol V3 `run_recipe` command and delegates to `core/recipe_runner_bridge.py`; bridge results must be normalized to `ToolResponse` before common command-result post-processing.
 - **schedule_task, cancel_task, list_tasks, task_run_now** — `ws_agent.py` (Scheduler RPC), `core/database.py` (scheduled_tasks storage)
