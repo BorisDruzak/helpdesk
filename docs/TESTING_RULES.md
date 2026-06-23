@@ -67,6 +67,7 @@ To run a single canonical layer:
 
 ```powershell
 python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
+python scripts/run_ci_suite.py --layer test_inventory_audit
 python scripts/run_ci_suite.py --layer scripts_pytest_no_db
 python scripts/run_ci_suite.py --layer webapp_unit_tests
 python scripts/run_ci_suite.py --layer webapp_fixture_e2e
@@ -122,6 +123,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `PC_CLIENT_TEST_TIMING=1` and `PC_CLIENT_TEST_TIMING_PATH=artifacts/ci/<sha>/fixture-timings/<layer>.jsonl` for server pytest layers.
 - `PC_CLIENT_TEST_DB_TEMPLATE=1` for DB/WS server pytest layers, so isolated layer databases are cloned from a migrated PostgreSQL template keyed by the Alembic migration fingerprint.
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled.
+- `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
 - `scripts_pytest_no_db` runs `scripts/test_*.py -m "not manual"` with `junit-scripts-no-db.xml` before server pytest layers.
 - Optional `--parallel --max-workers 2` for bounded server DB/WS layer concurrency; this does not change pytest markers,
   cleanup profiles, DB template behavior, pool settings, or test fixture semantics.
@@ -221,6 +223,7 @@ Cleanup profiles may rely on database cascades from parent tables already listed
 To audit current file-level coverage without changing pytest behavior:
 
 ```powershell
+python scripts/audit_test_inventory.py --strict
 python scripts/audit_db_cleanup_profiles.py
 python scripts/audit_db_cleanup_profiles.py --strict  # optional gate for missing DB-backed profiles
 python scripts/audit_db_cleanup_schema.py --schema-from-models --strict

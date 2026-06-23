@@ -721,6 +721,16 @@ def _scripts_pytest_no_db_command(workspace: Path, junit_path: Path) -> list[str
     ]
 
 
+def _test_inventory_audit_command(workspace: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(workspace / "scripts" / "audit_test_inventory.py"),
+        "--workspace",
+        str(workspace),
+        "--strict",
+    ]
+
+
 def _classify_server_db_api_test_file(filename: str) -> str:
     for layer_name, patterns in SERVER_DB_API_LAYER_RULES:
         if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
@@ -883,6 +893,14 @@ def main() -> None:
             float(DEFAULT_WEB_TEST_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             {"CI": "1"},
+        ),
+        (
+            "test_inventory_audit",
+            _test_inventory_audit_command(args.workspace),
+            logs_dir / "test_inventory_audit.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
         ),
         (
             "scripts_pytest_no_db",

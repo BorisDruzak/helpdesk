@@ -1,6 +1,13 @@
 # Canonical CI/test-suite catalog for non-server helper checks.
 
 [[suites]]
+name = "test_inventory_audit"
+runner = "script"
+command = ["python", "scripts/audit_test_inventory.py", "--strict"]
+database = "none"
+description = "Fails the full gate on unknown pytest markers, no_db tests that request DB fixtures, unowned DB tests, or direct live/network client calls in PR suites."
+
+[[suites]]
 name = "scripts_pytest_no_db"
 runner = "pytest"
 paths = ["scripts/test_*.py"]
