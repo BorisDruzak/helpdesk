@@ -1102,7 +1102,7 @@ Blocking:
 - [x] `QG-001` Добавить `scripts_pytest_no_db`.
 - [x] `QG-002` Добавить strict test inventory audit.
 - [ ] `QG-003` Включить `audit_db_cleanup_profiles.py --strict`.
-- [ ] `QG-004` Сохранить baseline JUnit/durations/retries.
+- [x] `QG-004` Сохранить baseline JUnit/durations/retries.
 - [x] `QG-005` Маркировать fixture E2E отдельно от live browser.
 - [x] `QG-006` Запретить release-pass на shared DB.
 
@@ -1200,6 +1200,8 @@ Checkpoint 2026-06-23: items 1-10 are implemented locally. Live pilot `quality-o
 Checkpoint 2026-06-23 QG-002: `scripts/audit_test_inventory.py --strict` is implemented and wired into `scripts/run_ci_suite.py` as `test_inventory_audit` before pytest layers. Current inventory audit reports 422 test files, all owned by canonical suites, with zero strict issues. `QG-003` remains open: current `python scripts/audit_db_cleanup_profiles.py --strict` still reports existing DB cleanup profile debt.
 
 Checkpoint 2026-06-23 QG-006: `scripts/ci_artifacts.py::require_green_ci_artifact` rejects otherwise-green CI summaries when any server DB/WS layer log contains a shared-test-DB fallback marker. Release preflight, deploy and full release gates now cannot use shared `pc_support_test` fallback as release-pass evidence; rerun full CI with `TEST_DATABASE_ADMIN_URL` and isolated `pc_support_test_<runid>` databases.
+
+Checkpoint 2026-06-23 QG-004: `scripts/run_ci_suite.py` now writes `summary.baseline_artifacts` with canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and Playwright fixture retry policy. `pc_agent_pytest` now also runs with `-vv --durations=80 --junitxml`, and fixture E2E records `ci_retries=1`, `trace=on-first-retry` and `passed_after_retry_status=flaky`.
 
 Checkpoint 2026-06-23 QG-005: `scripts/run_ci_suite.py` writes `summary.evidence_layers.webapp_fixture_e2e` with `mode=fixture_e2e` and `canonical_live_browser=false`. Playwright fixture E2E remains a CI/browser-fixture layer and cannot be confused with live browser signoff evidence from `docs/LIVE_TESTING_DEBUG_RULES.md`.
 

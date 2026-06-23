@@ -692,6 +692,57 @@ def _server_fixture_timing_path(artifact_dir: Path, layer_name: str) -> Path:
     return artifact_dir / "fixture-timings" / f"{layer_name}.jsonl"
 
 
+def _junit_artifacts(artifact_dir: Path, workspace: Path) -> dict[str, object]:
+    return {
+        "scripts_pytest_no_db": str(artifact_dir / "junit-scripts-no-db.xml"),
+        "server_pytest_no_db": str(artifact_dir / "junit-server-no-db.xml"),
+        "server_pytest_db_api_layers": {
+            layer_name: str(
+                artifact_dir / f"{layer_name.replace('server_pytest_', 'junit-server-').replace('_', '-')}.xml"
+            )
+            for layer_name, _paths in _server_db_api_layer_paths(workspace)
+        },
+        "server_pytest_agent_ws": str(artifact_dir / "junit-server-agent-ws.xml"),
+        "pc_agent_pytest": str(artifact_dir / "junit-pc-agent.xml"),
+    }
+
+
+def _duration_baseline(junit_path: str, slowest_count: int) -> dict[str, object]:
+    return {"pytest_durations": slowest_count, "junit": junit_path}
+
+
+def _baseline_artifacts(
+    *,
+    junit_artifacts: dict[str, object],
+    fixture_timings_dir: Path,
+    fixture_timings_summary_path: Path,
+) -> dict[str, object]:
+    db_api_junit = junit_artifacts["server_pytest_db_api_layers"]
+    return {
+        "junit": junit_artifacts,
+        "durations": {
+            "scripts_pytest_no_db": _duration_baseline(str(junit_artifacts["scripts_pytest_no_db"]), 40),
+            "server_pytest_no_db": _duration_baseline(str(junit_artifacts["server_pytest_no_db"]), 80),
+            "server_pytest_db_api_layers": {
+                layer_name: _duration_baseline(str(junit_path), 80) for layer_name, junit_path in db_api_junit.items()
+            },
+            "server_pytest_agent_ws": _duration_baseline(str(junit_artifacts["server_pytest_agent_ws"]), 80),
+            "pc_agent_pytest": _duration_baseline(str(junit_artifacts["pc_agent_pytest"]), 80),
+            "fixture_timings_dir": str(fixture_timings_dir),
+            "fixture_timings_summary": str(fixture_timings_summary_path),
+        },
+        "retries": {
+            "webapp_fixture_e2e": {
+                "ci_retries": 1,
+                "local_retries": 0,
+                "trace": "on-first-retry",
+                "first_attempt_failures_are_flaky": True,
+                "passed_after_retry_status": "flaky",
+            }
+        },
+    }
+
+
 def _server_pytest_command(marker_expr: str, junit_path: Path, paths: list[Path | str] | None = None) -> list[str]:
     test_paths = [str(path) for path in (paths or ["server/tests"])]
     return [
@@ -962,6 +1013,8 @@ def main() -> None:
                 "pc_agent/tests",
                 "-m",
                 "not manual",
+                "-vv",
+                "--durations=80",
                 "--junitxml",
                 str(artifact_dir / "junit-pc-agent.xml"),
             ],
@@ -1035,6 +1088,7 @@ def main() -> None:
         except Exception as exc:  # pragma: no cover - defensive CI artifact path.
             fixture_timings_error = f"{type(exc).__name__}: {exc}"
             print(f"[ci] fixture timing summary error: {fixture_timings_error}", file=sys.stderr)
+        junit_artifacts = _junit_artifacts(artifact_dir, args.workspace)
         summary = {
             "commit": commit,
             "status": status,
@@ -1046,23 +1100,22 @@ def main() -> None:
             "max_workers": max_workers,
             "parallel_groups": parallel_groups,
             "evidence_layers": CI_EVIDENCE_LAYERS,
+            "baseline_artifacts": _baseline_artifacts(
+                junit_artifacts=junit_artifacts,
+                fixture_timings_dir=fixture_timings_dir,
+                fixture_timings_summary_path=fixture_timings_summary_path,
+            ),
             "artifacts": {
                 "summary": str(summary_path),
                 "fixture_timings_dir": str(fixture_timings_dir),
                 "fixture_timings_summary": str(fixture_timings_summary_path),
                 "webapp_bundle_dir": str(webapp_bundle_dir),
                 "webapp_bundle_archive": str(webapp_bundle_archive),
-                "junit_scripts_no_db": str(artifact_dir / "junit-scripts-no-db.xml"),
-                "junit_server_no_db": str(artifact_dir / "junit-server-no-db.xml"),
-                "junit_server_db_api_layers": {
-                    layer_name: str(
-                        artifact_dir
-                        / f"{layer_name.replace('server_pytest_', 'junit-server-').replace('_', '-')}.xml"
-                    )
-                    for layer_name, _paths in _server_db_api_layer_paths(args.workspace)
-                },
-                "junit_server_agent_ws": str(artifact_dir / "junit-server-agent-ws.xml"),
-                "junit_pc_agent": str(artifact_dir / "junit-pc-agent.xml"),
+                "junit_scripts_no_db": junit_artifacts["scripts_pytest_no_db"],
+                "junit_server_no_db": junit_artifacts["server_pytest_no_db"],
+                "junit_server_db_api_layers": junit_artifacts["server_pytest_db_api_layers"],
+                "junit_server_agent_ws": junit_artifacts["server_pytest_agent_ws"],
+                "junit_pc_agent": junit_artifacts["pc_agent_pytest"],
             },
             "steps": results,
         }

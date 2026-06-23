@@ -340,6 +340,15 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "--junitxml",
         str(summary_path.parent / "junit-server-agent-ws.xml"),
     ]
+    assert command_by_step["pc_agent_pytest"][-7:] == [
+        "pc_agent/tests",
+        "-m",
+        "not manual",
+        "-vv",
+        "--durations=80",
+        "--junitxml",
+        str(summary_path.parent / "junit-pc-agent.xml"),
+    ]
     env_by_step = {
         step_name: env
         for step_name, _command, _log_path, _idle_timeout, env, _timeout in steps_seen
@@ -403,6 +412,37 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "surface": "browser",
         "canonical_live_browser": False,
         "description": "Playwright against the local fixture server; not a live browser signoff.",
+    }
+    assert summary["baseline_artifacts"]["junit"]["scripts_pytest_no_db"] == str(
+        summary_path.parent / "junit-scripts-no-db.xml"
+    )
+    assert summary["baseline_artifacts"]["junit"]["server_pytest_db_api_layers"]["server_pytest_db_knowledge"] == str(
+        summary_path.parent / "junit-server-db-knowledge.xml"
+    )
+    assert summary["baseline_artifacts"]["durations"]["scripts_pytest_no_db"] == {
+        "pytest_durations": 40,
+        "junit": str(summary_path.parent / "junit-scripts-no-db.xml"),
+    }
+    assert summary["baseline_artifacts"]["durations"]["server_pytest_db_api_layers"]["server_pytest_db_web_api"] == {
+        "pytest_durations": 80,
+        "junit": str(summary_path.parent / "junit-server-db-web-api.xml"),
+    }
+    assert summary["baseline_artifacts"]["durations"]["pc_agent_pytest"] == {
+        "pytest_durations": 80,
+        "junit": str(summary_path.parent / "junit-pc-agent.xml"),
+    }
+    assert summary["baseline_artifacts"]["durations"]["fixture_timings_dir"] == str(
+        summary_path.parent / "fixture-timings"
+    )
+    assert summary["baseline_artifacts"]["durations"]["fixture_timings_summary"] == str(
+        summary_path.parent / "fixture-timings-summary.json"
+    )
+    assert summary["baseline_artifacts"]["retries"]["webapp_fixture_e2e"] == {
+        "ci_retries": 1,
+        "local_retries": 0,
+        "trace": "on-first-retry",
+        "first_attempt_failures_are_flaky": True,
+        "passed_after_retry_status": "flaky",
     }
 
 
