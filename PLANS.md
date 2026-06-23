@@ -1147,7 +1147,7 @@ Blocking:
 - [ ] `LIVE-305` Создать critical behavior data pack.
 - [ ] `LIVE-306` Автоматизировать requester/support browser scenarios.
 - [ ] `LIVE-307` Автоматизировать agent/operation scenarios.
-- [ ] `LIVE-308` Доказать cleanup.
+- [x] `LIVE-308` Доказать cleanup.
 - [ ] `LIVE-309` Интегрировать Observer canary report.
 - [ ] `LIVE-310` Сформировать один release summary.
 
@@ -1193,9 +1193,9 @@ Blocking:
 7. [x] Tests web trace repeated/retry/error→success.
 8. [x] Strict successful create-trace predicate.
 9. [x] Evidence manifest v2 validator.
-10. Один pilot live journey: requester create → ticket DB → Observer trace → real browser → cleanup.
+10. [x] Один pilot live journey: requester create → ticket DB → Observer trace → real browser → cleanup.
 
-Checkpoint 2026-06-23: items 1-9 are implemented locally with focused tests. Item 10 remains the next live-evidence step and must use the canonical stand/browser workflow plus `pc_client.live_evidence.v2` validation.
+Checkpoint 2026-06-23: items 1-10 are implemented locally. Live pilot `quality-observer-pilot-4cf3137c-20260623` used deployed commit `4cf3137ce085c0b772ac1599ae960f7c6cd456a1`, browser requester create `T-000783`, DB/Observer proof, exact cleanup dry-run/apply/verify, and a passing `pc_client.live_evidence.v2` manifest under `artifacts/live/quality-observer-pilot-4cf3137c-20260623/`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 
