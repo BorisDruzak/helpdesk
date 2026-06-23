@@ -4153,6 +4153,7 @@ TOPICS: tuple[Topic, ...] = (
             "scripts/docs_inventory.py",
             "scripts/build_context_pack.py",
             "scripts/run_ci_suite.py",
+            "scripts/ci_artifacts.py",
             "scripts/audit_test_inventory.py",
             "scripts/audit_db_cleanup_profiles.py",
             "scripts/release_candidate_preflight.py",

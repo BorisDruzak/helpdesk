@@ -185,7 +185,7 @@ $env:PC_CLIENT_TEST_DB_TEMPLATE_KEEP = "1"     # keep the migrated template for 
 $env:PC_CLIENT_TEST_DB_TEMPLATE_REBUILD = "1"  # force rebuild for the current fingerprint
 ```
 
-`scripts/run_ci_suite.py` enables `PC_CLIENT_TEST_DB_TEMPLATE_KEEP=1` for DB/WS layers so the migrated template is reused across pytest processes. Without `KEEP=1`, the harness best-effort drops the template after the pytest session. Only databases named `pc_support_test_template_*` are template caches and are safe to drop manually. Do not drop arbitrary PostgreSQL databases from cleanup scripts. Shared DB fallback (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1` or automatic fallback to `pc_support_test`) is not a valid full DB/API gate path; template mode requires isolated admin database access and fails clearly if the run falls back to the shared DB.
+`scripts/run_ci_suite.py` enables `PC_CLIENT_TEST_DB_TEMPLATE_KEEP=1` for DB/WS layers so the migrated template is reused across pytest processes. Without `KEEP=1`, the harness best-effort drops the template after the pytest session. Only databases named `pc_support_test_template_*` are template caches and are safe to drop manually. Do not drop arbitrary PostgreSQL databases from cleanup scripts. Shared DB fallback (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1` or automatic fallback to `pc_support_test`) is not a valid full DB/API gate path; template mode requires isolated admin database access and fails clearly if the run falls back to the shared DB. `scripts/ci_artifacts.py` rejects green CI artifacts whose DB/WS layer logs contain shared-test-DB fallback markers, so release preflight, deploy and full release gates cannot turn shared `pc_support_test` fallback into release-pass evidence.
 
 ## Server DB Cleanup Profiles
 
@@ -263,7 +263,7 @@ python scripts/run_ci_suite.py --layer server_pytest_db_web_api
 
 On Windows shared-test-DB fallback, the harness tries `pg_terminate_backend` once. If admin privileges are unavailable, it caches that fact for the pytest session and skips repeated terminate attempts; per-test `TRUNCATE ... RESTART IDENTITY CASCADE` still provides cleanup.
 
-On Windows default DB-backed pytest, the harness opens the configured SSH tunnel and creates an isolated `pc_support_test_<domain>_<pid_or_worker>_<short_hash>` database through `TEST_DATABASE_ADMIN_URL` semantics. `run_ci_suite.py` passes the CI layer name as `PC_CLIENT_TEST_DB_DOMAIN`, and `--keep-test-db` keeps isolated DBs for debugging. Shared `pc_support_test` is for explicit fallback/debug only (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1`) or automatic fallback when the admin database cannot be reached; any shared fallback warning means the run is not valid for the full DB/API gate.
+On Windows default DB-backed pytest, the harness opens the configured SSH tunnel and creates an isolated `pc_support_test_<domain>_<pid_or_worker>_<short_hash>` database through `TEST_DATABASE_ADMIN_URL` semantics. `run_ci_suite.py` passes the CI layer name as `PC_CLIENT_TEST_DB_DOMAIN`, and `--keep-test-db` keeps isolated DBs for debugging. Shared `pc_support_test` is for explicit fallback/debug only (`PC_CLIENT_ALLOW_SHARED_TEST_DB=1`) or automatic fallback when the admin database cannot be reached; any shared fallback warning means the run is not valid for the full DB/API gate and is rejected as a green release artifact.
 
 ## When To Run What
 

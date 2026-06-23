@@ -1104,7 +1104,7 @@ Blocking:
 - [ ] `QG-003` Включить `audit_db_cleanup_profiles.py --strict`.
 - [ ] `QG-004` Сохранить baseline JUnit/durations/retries.
 - [ ] `QG-005` Маркировать fixture E2E отдельно от live browser.
-- [ ] `QG-006` Запретить release-pass на shared DB.
+- [x] `QG-006` Запретить release-pass на shared DB.
 
 **Gate:** все существующие тесты имеют owner; scripts tests реально запускаются; DB mode виден в summary.
 
@@ -1198,6 +1198,8 @@ Blocking:
 Checkpoint 2026-06-23: items 1-10 are implemented locally. Live pilot `quality-observer-pilot-4cf3137c-20260623` used deployed commit `4cf3137ce085c0b772ac1599ae960f7c6cd456a1`, browser requester create `T-000783`, DB/Observer proof, exact cleanup dry-run/apply/verify, and a passing `pc_client.live_evidence.v2` manifest under `artifacts/live/quality-observer-pilot-4cf3137c-20260623/`.
 
 Checkpoint 2026-06-23 QG-002: `scripts/audit_test_inventory.py --strict` is implemented and wired into `scripts/run_ci_suite.py` as `test_inventory_audit` before pytest layers. Current inventory audit reports 422 test files, all owned by canonical suites, with zero strict issues. `QG-003` remains open: current `python scripts/audit_db_cleanup_profiles.py --strict` still reports existing DB cleanup profile debt.
+
+Checkpoint 2026-06-23 QG-006: `scripts/ci_artifacts.py::require_green_ci_artifact` rejects otherwise-green CI summaries when any server DB/WS layer log contains a shared-test-DB fallback marker. Release preflight, deploy and full release gates now cannot use shared `pc_support_test` fallback as release-pass evidence; rerun full CI with `TEST_DATABASE_ADMIN_URL` and isolated `pc_support_test_<runid>` databases.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

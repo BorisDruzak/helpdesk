@@ -12,6 +12,12 @@ DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 DEFAULT_ARTIFACTS_ROOT = Path("artifacts") / "ci"
 DEFAULT_WEBAPP_BUNDLE_DIRNAME = "webapp-dist"
 DEFAULT_WEBAPP_BUNDLE_ARCHIVE_NAME = "webapp-dist.tar.gz"
+SERVER_DB_GATE_LAYER_PREFIX = "server_pytest_db_"
+SERVER_DB_GATE_LAYER_NAMES = {"server_pytest_agent_ws"}
+SHARED_DB_FALLBACK_MARKERS = (
+    "shared test DB fallback",
+    "PC_CLIENT_ALLOW_SHARED_TEST_DB=1",
+)
 
 
 def detect_commit(workspace: Path, commit: str | None = None) -> str:
@@ -45,6 +51,44 @@ def load_summary(summary_path: Path) -> dict[str, Any]:
         return json.load(handle)
 
 
+def _is_server_db_gate_step(step_name: str) -> bool:
+    return step_name.startswith(SERVER_DB_GATE_LAYER_PREFIX) or step_name in SERVER_DB_GATE_LAYER_NAMES
+
+
+def _log_path_from_step(summary_path: Path, step: dict[str, Any]) -> Path | None:
+    raw_log = step.get("log")
+    if not raw_log:
+        return None
+    log_path = Path(str(raw_log))
+    if log_path.is_absolute():
+        return log_path
+    return summary_path.parent / log_path
+
+
+def _log_contains_shared_db_fallback(log_path: Path) -> bool:
+    if not log_path.exists():
+        return False
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    return any(marker in text for marker in SHARED_DB_FALLBACK_MARKERS)
+
+
+def shared_db_fallback_logs(summary_path: Path, summary: dict[str, Any]) -> list[tuple[str, Path]]:
+    offenders: list[tuple[str, Path]] = []
+    raw_steps = summary.get("steps") or []
+    if not isinstance(raw_steps, list):
+        return offenders
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        step_name = str(raw_step.get("name") or "")
+        if not _is_server_db_gate_step(step_name):
+            continue
+        log_path = _log_path_from_step(summary_path, raw_step)
+        if log_path is not None and _log_contains_shared_db_fallback(log_path):
+            offenders.append((step_name, log_path))
+    return offenders
+
+
 def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
     summary_path = summary_path_for_commit(workspace, commit)
     if not summary_path.exists():
@@ -68,6 +112,15 @@ def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
             "Deploy/release requires a green CI artifact. "
             f"{summary_path} reports status={summary.get('status')!r}.\n"
             "Use --gate quick only for staging/live iteration; do not make a final release claim from quick gate."
+        )
+    shared_db_logs = shared_db_fallback_logs(summary_path, summary)
+    if shared_db_logs:
+        offenders = "\n".join(f"  {step_name}: {log_path}" for step_name, log_path in shared_db_logs)
+        raise SystemExit(
+            "Green CI artifact used shared test DB fallback, which is not valid for full release gate.\n"
+            f"{offenders}\n"
+            "Set TEST_DATABASE_ADMIN_URL so DB/WS layers use isolated pc_support_test_<runid> databases, "
+            "then rerun full CI for the frozen commit."
         )
     return summary_path
 
