@@ -13,6 +13,7 @@ from app.db.models import (
     Device,
     DeviceUserBinding,
     KnowledgeFeedbackEvent,
+    ObserverTrace,
     RegistryAdminEvent,
     RegistryAdminPolicy,
     RegistryAsset,
@@ -50,6 +51,19 @@ def _headers(token: str) -> dict[str, str]:
 
 def _admin_headers() -> dict[str, str]:
     return _headers(TEST_UI_ADMIN_TOKEN)
+
+
+_UNSET = object()
+
+
+async def _observer_traces(session, *, ticket_id=_UNSET, device_id=_UNSET, **attrs):
+    rows = (await session.execute(select(ObserverTrace))).scalars().all()
+    traces = [trace for trace in rows if all(trace.attrs_json.get(key) == value for key, value in attrs.items())]
+    if ticket_id is not _UNSET:
+        traces = [trace for trace in traces if trace.ticket_id == ticket_id]
+    if device_id is not _UNSET:
+        traces = [trace for trace in traces if trace.device_id == device_id]
+    return traces
 
 
 def _device(device_id: str, hostname: str = "requester-device") -> Device:
@@ -903,7 +917,7 @@ async def test_no_agent_user_cannot_create_normal_form_without_agent_binding(tes
             normal_key=normal_key,
             version=f"availability-no-agent-{suffix}",
         )
-        await _person_for_login(session, login=login)
+        person = await _person_for_login(session, login=login)
         await session.commit()
 
     normal = await test_client.post(
@@ -920,6 +934,16 @@ async def test_no_agent_user_cannot_create_normal_form_without_agent_binding(tes
     normal_payload = await normal.json()
     assert normal.status == 403, normal_payload
     assert normal_payload["error_code"] == "REQUESTER_AGENT_REQUIRED"
+    async with session_maker() as session:
+        blocked_traces = await _observer_traces(
+            session,
+            source="requester_ticket_create",
+            event_type="ticket_create_blocked",
+            error_code="REQUESTER_AGENT_REQUIRED",
+            person_id=person.person_id,
+        )
+    assert len(blocked_traces) == 1
+    assert blocked_traces[0].status == "failed"
 
     emergency = await test_client.post(
         "/api/web/requester/tickets",
@@ -1755,6 +1779,33 @@ async def test_requester_can_create_no_device_ticket_and_preview_without_device(
 
     async with session_maker() as session:
         ticket = await session.get(Ticket, ticket_id)
+        event_rows = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type.in_(
+                        [
+                            "ticket_context_resolved",
+                            "customer_history_ticket_created",
+                            "requester_ticket_create_audit",
+                        ]
+                    ),
+                )
+            )
+        ).scalars().all()
+        preview_traces = await _observer_traces(
+            session,
+            source="requester_ticket_preview",
+            event_type="ticket_preview_succeeded",
+            person_id=person.person_id,
+        )
+        create_traces = await _observer_traces(
+            session,
+            source="requester_ticket_create",
+            event_type="ticket_create_succeeded",
+            ticket_id=ticket_id,
+            person_id=person.person_id,
+        )
 
     assert ticket is not None
     assert ticket.device_id is None
@@ -1763,6 +1814,19 @@ async def test_requester_can_create_no_device_ticket_and_preview_without_device(
     assert ticket.requester_binding_id is None
     assert ticket.requester_registration_status == "no_device"
     assert ticket.requester_account_mode == "browser_no_device"
+    events_by_type = {row.event_type: row for row in event_rows}
+    assert set(events_by_type) == {
+        "ticket_context_resolved",
+        "customer_history_ticket_created",
+        "requester_ticket_create_audit",
+    }
+    assert events_by_type["customer_history_ticket_created"].payload["requester_account_mode"] == "browser_no_device"
+    assert events_by_type["customer_history_ticket_created"].payload["created_on_behalf"] is False
+    assert events_by_type["requester_ticket_create_audit"].payload["visibility"] == "internal"
+    assert len(preview_traces) == 1
+    assert preview_traces[0].status == "succeeded"
+    assert len(create_traces) == 1
+    assert create_traces[0].status == "succeeded"
     custom_fields = ticket.custom_fields or {}
     assert custom_fields["request_context"] == "no_device"
     assert custom_fields["no_device"]["device_scope"] == "none"
@@ -2332,6 +2396,25 @@ async def test_requester_on_behalf_preview_and_create_reject_out_of_scope_person
     created_payload = await created.json()
     assert created.status == 403, created_payload
     assert created_payload["error_code"] == "ON_BEHALF_SCOPE_DENIED"
+    async with session_maker() as session:
+        preview_blocked_traces = await _observer_traces(
+            session,
+            source="requester_ticket_preview",
+            event_type="ticket_preview_blocked",
+            error_code="ON_BEHALF_SCOPE_DENIED",
+            person_id=requester.person_id,
+        )
+        create_blocked_traces = await _observer_traces(
+            session,
+            source="requester_ticket_create",
+            event_type="ticket_create_blocked",
+            error_code="ON_BEHALF_SCOPE_DENIED",
+            person_id=requester.person_id,
+        )
+    assert len(preview_blocked_traces) == 1
+    assert preview_blocked_traces[0].status == "failed"
+    assert len(create_blocked_traces) == 1
+    assert create_blocked_traces[0].status == "failed"
 
 
 @pytest.mark.asyncio
@@ -2469,6 +2552,27 @@ async def test_requester_on_behalf_create_stores_authorized_ticket_context(test_
 
     async with session_maker() as session:
         ticket = await session.get(Ticket, payload["data"]["ticket_id"])
+        event_rows = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == payload["data"]["ticket_id"],
+                    TicketEvent.event_type.in_(
+                        [
+                            "ticket_context_resolved",
+                            "customer_history_ticket_created",
+                            "requester_ticket_create_audit",
+                        ]
+                    ),
+                )
+            )
+        ).scalars().all()
+        create_traces = await _observer_traces(
+            session,
+            source="requester_ticket_create",
+            event_type="ticket_create_succeeded",
+            ticket_id=payload["data"]["ticket_id"],
+            person_id=requester_approved["person"]["person_id"],
+        )
 
     assert ticket is not None
     custom_fields = ticket.custom_fields or {}
@@ -2479,6 +2583,16 @@ async def test_requester_on_behalf_create_stores_authorized_ticket_context(test_
     assert custom_fields["target_device_id"] == affected_device_id
     assert custom_fields["target_binding_id"] == affected_approved["binding"]["binding_id"]
     assert custom_fields["diagnostic_target_source"] == "affected_user_primary_agent"
+    events_by_type = {row.event_type: row for row in event_rows}
+    assert set(events_by_type) == {
+        "ticket_context_resolved",
+        "customer_history_ticket_created",
+        "requester_ticket_create_audit",
+    }
+    assert events_by_type["customer_history_ticket_created"].payload["created_on_behalf"] is True
+    assert events_by_type["requester_ticket_create_audit"].payload["visibility"] == "internal"
+    assert len(create_traces) == 1
+    assert create_traces[0].status == "succeeded"
 
 
 @pytest.mark.asyncio

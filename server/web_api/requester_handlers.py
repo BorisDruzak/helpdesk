@@ -1459,6 +1459,26 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
             and not availability_policy.get("available_without_agent_binding")
             and not _raw_on_behalf_context(data).get("affected_person_id")
         ):
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_ticket_preview",
+                event_type="ticket_preview_blocked",
+                severity="warning",
+                result="blocked",
+                person_id=getattr(person, "person_id", None),
+                error_code="REQUESTER_AGENT_REQUIRED",
+                payload={
+                    "action": "ticket_preview",
+                    "form_key": form_key,
+                    "request_template_key": request_template_key,
+                    "has_agent_binding": has_agent_binding,
+                    "available_without_agent_binding": bool(
+                        availability_policy.get("available_without_agent_binding")
+                    ),
+                },
+            )
             return _error(
                 "Для этой формы нужно основное устройство. Выберите форму для экстренного обращения или привяжите устройство.",
                 status=403,
@@ -1479,6 +1499,24 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
                 data=data,
             )
         except _OnBehalfRequestError as exc:
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_ticket_preview",
+                event_type="ticket_preview_blocked",
+                severity="warning",
+                result="blocked",
+                device_id=device_id or None,
+                person_id=getattr(person, "person_id", None),
+                error_code=exc.error_code,
+                payload={
+                    "action": "ticket_preview",
+                    "form_key": form_key,
+                    "request_template_key": request_template_key,
+                    "has_on_behalf_request": bool(_raw_on_behalf_context(data).get("affected_person_id")),
+                },
+            )
             return _error(str(exc), status=exc.status, error_code=exc.error_code)
 
         preview_payload = dict(data)
@@ -1684,6 +1722,26 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             and not availability_policy.get("available_without_agent_binding")
             and not _raw_on_behalf_context(data).get("affected_person_id")
         ):
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_ticket_create",
+                event_type="ticket_create_blocked",
+                severity="warning",
+                result="blocked",
+                person_id=getattr(person, "person_id", None),
+                error_code="REQUESTER_AGENT_REQUIRED",
+                payload={
+                    "action": "ticket_create",
+                    "form_key": form_key,
+                    "request_template_key": request_template_key,
+                    "has_agent_binding": has_agent_binding,
+                    "available_without_agent_binding": bool(
+                        availability_policy.get("available_without_agent_binding")
+                    ),
+                },
+            )
             return _error(
                 "Для этой формы нужно основное устройство. Выберите форму для экстренного обращения или привяжите устройство.",
                 status=403,
@@ -1822,6 +1880,24 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 data=data,
             )
         except _OnBehalfRequestError as exc:
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_ticket_create",
+                event_type="ticket_create_blocked",
+                severity="warning",
+                result="blocked",
+                device_id=device_id or None,
+                person_id=getattr(person, "person_id", None),
+                error_code=exc.error_code,
+                payload={
+                    "action": "ticket_create",
+                    "form_key": form_key,
+                    "request_template_key": request_template_key,
+                    "has_on_behalf_request": bool(_raw_on_behalf_context(data).get("affected_person_id")),
+                },
+            )
             return _error(str(exc), status=exc.status, error_code=exc.error_code)
         extra_custom_fields = attach_knowledge_attempts(extra_custom_fields, knowledge_attempts)
         created = await create_ticket_with_side_effects(
