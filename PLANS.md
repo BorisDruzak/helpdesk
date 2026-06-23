@@ -1130,7 +1130,7 @@ Blocking:
 - [x] `BEH-203` Resolve/feedback/reopen.
 - [x] `BEH-204` Support claim/status/SLA/privacy.
 - [x] `BEH-205` Tool operation/outbox/result/ACK.
-- [ ] `BEH-206` Consent approve/deny/timeout/cancel race.
+- [x] `BEH-206` Consent approve/deny/timeout/cancel race.
 - [ ] `BEH-207` Agent reconnect/replay/duplicate.
 - [ ] `BEH-208` Auth/account/session isolation.
 - [ ] `BEH-209` Knowledge/Registry audience rules.
@@ -1218,6 +1218,8 @@ Checkpoint 2026-06-23 BEH-203: requester lifecycle actions now keep feedback/reo
 Checkpoint 2026-06-23 BEH-204: support assignment now writes a redacted web-cabinet Observer trace `source=support_assignment`, `event_type=support_assignment_changed`, and typed support detail projects it as `observer.web_flow.support_assignment`. The BEH-204 matrix now covers support assign Observer redaction, status/confirmation Observer redaction, support chat retry idempotency, and first-response SLA/privacy behavior: internal support notes do not stop FRT or project into requester timeline fields, while the first public support reply stops FRT once and returns requester-safe projection fields.
 
 Checkpoint 2026-06-24 BEH-205/TD-502: Protocol V3 agent recovery now handles an incoming duplicate command whose `seen_commands.status='in_progress'` row belongs to a previous runtime before the normal startup replay path runs. The agent converts that row to a durable terminal `command_result` with `error.code=AGENT_RESTARTED`, queues it in `pending_command_results` until `command_result_ack`, sends no `command_ack`, and does not rerun the side-effecting tool. Coverage: `pc_agent/tests/test_command_restart_recovery.py::test_previous_runtime_in_progress_command_recovers_without_ack_or_rerun` plus the existing restart replay, pending ACK cleanup, controlled retry metadata and canceled-command idempotency tests.
+
+Checkpoint 2026-06-23 BEH-206: `UserConsentService` now re-checks the linked operation before applying browser/agent approve or deny. If an operation consent is still pending but the operation already reached `cancel_requested`, `canceled`, `denied`, `failed`, `succeeded` or `timed_out`, the server atomically marks the consent `canceled`, writes `user_consent_canceled`, and skips both `ConsentDecision` and `DeviceOutbox` side effects. `OperationService.approve_consent()` / `deny_consent()` also write `ConsentDecision` only after the guarded operation transition succeeds. Coverage: requester approve-after-cancel and deny-after-timeout paths in `server/tests/test_user_consent_api.py::test_requester_decision_after_operation_no_longer_actionable_cancels_consent_without_side_effects`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

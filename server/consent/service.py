@@ -16,6 +16,14 @@ from app.services.operation_service import OperationService
 
 FINAL_STATUSES = {"approved", "denied", "expired", "superseded", "canceled"}
 OPERATION_SUBJECT_TYPES = {"operation", "tool_run", "diagnostic"}
+OPERATION_CONSENT_NO_LONGER_ACTIONABLE_STATUSES = {
+    "cancel_requested",
+    "canceled",
+    "denied",
+    "failed",
+    "succeeded",
+    "timed_out",
+}
 PENDING_SUBJECT_UNIQUE_INDEX = "ux_user_consent_requests_pending_subject"
 
 
@@ -268,6 +276,9 @@ class UserConsentService:
         if current is None:
             raise ConsentAccessError("consent not found", error_code="NOT_FOUND", status=404)
         await self._ensure_active_scope(current)
+        stale = await self._cancel_if_operation_no_longer_actionable(current)
+        if stale is not None:
+            return stale
 
         changed = await self.repo.decide_pending(
             current.consent_id,
@@ -305,6 +316,19 @@ class UserConsentService:
                 raise ConsentAccessError("requester account session mismatch", error_code="ACCOUNT_SESSION_MISMATCH", status=403)
             if row.device_id and account_session.device_id != row.device_id:
                 raise ConsentAccessError("requester account session device mismatch", error_code="ACCOUNT_SESSION_MISMATCH", status=403)
+
+    async def _cancel_if_operation_no_longer_actionable(self, row: UserConsentRequest) -> UserConsentRequest | None:
+        if row.subject_type not in OPERATION_SUBJECT_TYPES:
+            return None
+        operation = await OperationsRepo(self.session).get_by_operation_id(row.subject_id)
+        if operation is None or operation.status not in OPERATION_CONSENT_NO_LONGER_ACTIONABLE_STATUSES:
+            return None
+        reason = f"Operation is {operation.status}; consent is no longer actionable"
+        changed = await self.repo.cancel_pending(row.consent_id, reason=reason)
+        canceled = await self.repo.get(row.consent_id)
+        if changed and canceled is not None:
+            await self._append_ticket_event(canceled, "user_consent_canceled", actor_id="system", actor_role="system")
+        return canceled or row
 
     async def _expire_if_due_with_event(self, row: UserConsentRequest) -> bool:
         now = _now()

@@ -549,3 +549,83 @@ async def test_expired_consent_does_not_start_operation(test_client, test_engine
         )
     assert operation.status == "waiting_consent"
     assert outbox_count == 0
+
+
+@pytest.mark.asyncio
+async def test_requester_decision_after_operation_no_longer_actionable_cancels_consent_without_side_effects(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    scenarios = [
+        {
+            "decision": "approve",
+            "login": "consent-cancel-race@example.test",
+            "operation_status": "cancel_requested",
+        },
+        {
+            "decision": "deny",
+            "login": "consent-timeout-race@example.test",
+            "operation_status": "timed_out",
+        },
+    ]
+
+    for scenario in scenarios:
+        async with session_maker() as session:
+            seeded = await _seed_operation_consent(session, login=scenario["login"])
+            cancel_operation_id = str(uuid.uuid4()) if scenario["operation_status"] == "cancel_requested" else None
+            update_kwargs = {
+                "operation_id": seeded["operation_id"],
+                "new_status": scenario["operation_status"],
+                "expected_statuses": ["waiting_consent"],
+            }
+            if scenario["operation_status"] == "cancel_requested":
+                update_kwargs.update(
+                    status_before_cancel="waiting_consent",
+                    active_cancel_operation_id=cancel_operation_id,
+                    cancel_reason="cancel won before requester consent",
+                )
+            else:
+                update_kwargs.update(
+                    timestamp_field="finished_at",
+                    error_code="TIMEOUT",
+                    error_message="consent wait timed out",
+                    clear_deadline=True,
+                )
+            changed = await OperationsRepo(session).update_status(**update_kwargs)
+            assert changed is True
+            await session.commit()
+
+        response = await test_client.post(
+            f"/api/web/requester/consents/{seeded['consent_id']}/{scenario['decision']}",
+            headers=_headers(f"{TEST_UI_USER_PREFIX}{scenario['login']}"),
+            json={"reason": "too late"},
+        )
+        payload = await response.json()
+        assert response.status == 200, payload
+        assert payload["data"]["consent"]["status"] == "canceled"
+
+        async with session_maker() as session:
+            operation = await session.get(Operation, seeded["operation_id"])
+            decision_count = await session.scalar(
+                select(func.count()).select_from(ConsentDecision).where(ConsentDecision.operation_id == seeded["operation_id"])
+            )
+            outbox_count = await session.scalar(
+                select(func.count()).select_from(DeviceOutbox).where(DeviceOutbox.operation_id == seeded["operation_id"])
+            )
+            decided_events = await session.scalar(
+                select(func.count())
+                .select_from(TicketEvent)
+                .where(TicketEvent.ticket_id == seeded["ticket_id"], TicketEvent.event_type == "user_consent_decided")
+            )
+            canceled_events = await session.scalar(
+                select(func.count())
+                .select_from(TicketEvent)
+                .where(TicketEvent.ticket_id == seeded["ticket_id"], TicketEvent.event_type == "user_consent_canceled")
+            )
+        assert operation.status == scenario["operation_status"]
+        if cancel_operation_id is not None:
+            assert operation.active_cancel_operation_id == cancel_operation_id
+        else:
+            assert operation.error_code == "TIMEOUT"
+        assert decision_count == 0
+        assert outbox_count == 0
+        assert decided_events == 0
+        assert canceled_events == 1

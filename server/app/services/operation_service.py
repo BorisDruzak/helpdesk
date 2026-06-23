@@ -871,14 +871,6 @@ class OperationService:
             )
             return False
         
-        # Create consent decision
-        await self.repo.create_consent_decision(
-            operation_id=operation_id,
-            decision="approved",
-            decided_by=decided_by,
-            reason=reason
-        )
-        
         # Transition: waiting_consent → queued
         new_deadline = self.calculate_deadline(operation)  # Will recalculate for queued status
         success = await self.repo.update_status(
@@ -894,6 +886,14 @@ class OperationService:
             )
             return False
         
+        # Persist the decision only after the operation CAS succeeds.
+        await self.repo.create_consent_decision(
+            operation_id=operation_id,
+            decision="approved",
+            decided_by=decided_by,
+            reason=reason
+        )
+
         # КРИТИЧНО: Enqueue command в device_outbox
         # Восстанавливаем команду из operation
         if operation.kind == "tool_call" and operation.tool_name:
@@ -1010,14 +1010,6 @@ class OperationService:
             )
             return False
         
-        # Create consent decision
-        await self.repo.create_consent_decision(
-            operation_id=operation_id,
-            decision="denied",
-            decided_by=decided_by,
-            reason=reason
-        )
-        
         # Transition: waiting_consent → denied (terminal)
         success = await self.repo.update_status(
             operation_id=operation_id,
@@ -1030,6 +1022,12 @@ class OperationService:
         )
         
         if success:
+            await self.repo.create_consent_decision(
+                operation_id=operation_id,
+                decision="denied",
+                decided_by=decided_by,
+                reason=reason
+            )
             logger.info(
                 f"[OperationService] Denied consent: operation_id={operation_id} "
                 f"decided_by={decided_by} reason={reason}"

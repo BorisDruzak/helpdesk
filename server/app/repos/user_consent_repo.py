@@ -77,6 +77,32 @@ class UserConsentRepo:
         )
         return result.rowcount > 0
 
+    async def cancel_pending(
+        self,
+        consent_id: str,
+        *,
+        reason: str | None = None,
+        now: datetime | None = None,
+    ) -> bool:
+        now = now or datetime.now(timezone.utc)
+        values: dict[str, Any] = {
+            "status": "canceled",
+            "updated_at": now,
+        }
+        if reason:
+            values["reason"] = reason
+        result = await self.session.execute(
+            update(UserConsentRequest)
+            .where(
+                and_(
+                    UserConsentRequest.consent_id == str(consent_id),
+                    UserConsentRequest.status == "pending",
+                )
+            )
+            .values(**values)
+        )
+        return result.rowcount > 0
+
     async def decide_pending(
         self,
         consent_id: str,
