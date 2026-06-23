@@ -140,6 +140,7 @@ EXPLICIT_CLEAR_TABLES = {
     "ai_request_audit",
     "artifacts",
     "auth_sessions",
+    "changes",
     "connection_requests",
     "consent_decisions",
     "continuous_improvement_actions",
@@ -170,6 +171,7 @@ EXPLICIT_CLEAR_TABLES = {
     "smart_views",
     "support_queue_saved_views",
     "ui_tokens",
+    "ui_password_reset_requests",
     "ui_user_audit",
     "user_consent_requests",
 }

@@ -60,6 +60,14 @@ def stable_event_id(dedupe_key: str) -> str:
     return str(uuid.uuid5(OBSERVER_INTEGRITY_NAMESPACE, dedupe_key))
 
 
+def _status_for_seen_condition(existing_status: str | None, *, suppression_reason: str | None) -> str:
+    if suppression_reason:
+        return "suppressed"
+    if existing_status == "acknowledged":
+        return "acknowledged"
+    return "active"
+
+
 class ObserverIntegrityRepo:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -111,7 +119,7 @@ class ObserverIntegrityRepo:
         existing.event_type = _compact(event.event_type, max_len=120) or existing.event_type
         existing.severity = _normalize_severity(event.severity)
         existing.source = _compact(event.source, max_len=120) or existing.source
-        existing.status = status
+        existing.status = _status_for_seen_condition(existing.status, suppression_reason=suppression_reason)
         existing.detected_at = detected_at
         existing.last_seen_at = now
         existing.resolved_at = None

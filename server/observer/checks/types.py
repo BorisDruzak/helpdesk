@@ -1,0 +1,13 @@
+"""Shared Observer integrity checker result contracts."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
+
+
+@dataclass(slots=True)
+class ObserverIntegrityCheckResult:
+    source: str
+    events: list[ObserverIntegrityEventInput] = field(default_factory=list)
+    complete: bool = True

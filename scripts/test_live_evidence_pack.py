@@ -35,10 +35,12 @@ def test_live_evidence_pack_creates_expected_markdown_files(tmp_path):
         assert (output_dir / name).is_file(), name
 
     manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema"] == "pc_client.live_evidence.v2"
     assert manifest["run_id"] == "live-20260622-smoke"
-    assert manifest["ticket"] == "T-000123"
-    assert manifest["device"] == "device-abc"
-    assert manifest["surface"] == "requester"
+    assert manifest["scenario"] == "requester"
+    assert manifest["entities"]["ticket_id"] == "T-000123"
+    assert manifest["entities"]["device_id"] == "device-abc"
+    assert manifest["status"] == "blocked"
 
 
 def test_requester_surface_template_includes_account_session_and_binding_checks(tmp_path):

@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeviceOutbox, Operation, TicketEvent
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
+from observer.checks.types import ObserverIntegrityCheckResult
 
 
 SOURCE = "observer.operation_lifecycle"
+QUERY_LIMIT = 200
 TERMINAL_OPERATION_STATUSES = {"succeeded", "success", "failed", "denied", "timed_out", "canceled", "cancelled"}
 ACTIVE_OPERATION_STATUSES = {"queued", "sent", "accepted", "running", "waiting_consent", "cancel_requested"}
 ACTIVE_OUTBOX_STATUSES = {"pending", "sent", "accepted", "running", "cancel_requested"}
@@ -43,13 +45,29 @@ async def check_operation_lifecycle(
     run_id: str | None = None,
     stale_after: timedelta = timedelta(minutes=10),
     active_after: timedelta = timedelta(minutes=30),
-) -> list[ObserverIntegrityEventInput]:
+) -> ObserverIntegrityCheckResult:
     now = _now()
     events: list[ObserverIntegrityEventInput] = []
-    events.extend(await _terminal_operation_with_active_outbox(session, now=now, stale_after=stale_after, run_id=run_id))
-    events.extend(await _active_operation_stuck(session, now=now, active_after=active_after, run_id=run_id))
-    events.extend(await _terminal_tool_operation_missing_result_event(session, run_id=run_id))
-    return events
+    terminal_outbox = await _terminal_operation_with_active_outbox(
+        session,
+        now=now,
+        stale_after=stale_after,
+        run_id=run_id,
+    )
+    stuck_active = await _active_operation_stuck(session, now=now, active_after=active_after, run_id=run_id)
+    missing_result = await _terminal_tool_operation_missing_result_event(session, run_id=run_id)
+    events.extend(terminal_outbox)
+    events.extend(stuck_active)
+    events.extend(missing_result)
+    complete = all(
+        len(check_events) < QUERY_LIMIT
+        for check_events in (
+            terminal_outbox,
+            stuck_active,
+            missing_result,
+        )
+    )
+    return ObserverIntegrityCheckResult(source=SOURCE, events=events, complete=complete)
 
 
 async def _terminal_operation_with_active_outbox(
@@ -69,7 +87,7 @@ async def _terminal_operation_with_active_outbox(
             DeviceOutbox.created_at <= cutoff,
         )
         .order_by(DeviceOutbox.created_at.asc())
-        .limit(200)
+        .limit(QUERY_LIMIT)
     )
     events: list[ObserverIntegrityEventInput] = []
     for operation, outbox in result.all():
@@ -125,7 +143,7 @@ async def _active_operation_stuck(
         select(Operation)
         .where(Operation.status.in_(ACTIVE_OPERATION_STATUSES), Operation.queued_at <= cutoff)
         .order_by(Operation.queued_at.asc())
-        .limit(200)
+        .limit(QUERY_LIMIT)
     )
     events: list[ObserverIntegrityEventInput] = []
     for operation in result.scalars().all():
@@ -172,7 +190,7 @@ async def _terminal_tool_operation_missing_result_event(
             Operation.ticket_id.is_not(None),
         )
         .order_by(Operation.finished_at.desc().nullslast(), Operation.queued_at.desc())
-        .limit(200)
+        .limit(QUERY_LIMIT)
     )
     events: list[ObserverIntegrityEventInput] = []
     for operation in result.scalars().all():

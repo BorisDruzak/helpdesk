@@ -100,6 +100,16 @@ def _actor_ref(actor_context: Any) -> str | None:
     return f"actor:{digest}"
 
 
+def _execution_ref(actor_context: Any) -> str | None:
+    if not isinstance(actor_context, dict):
+        return None
+    for key in ("server_request_id", "request_id", "correlation_id", "idempotency_key", "operation_id"):
+        value = _compact(actor_context.get(key), max_len=120)
+        if value:
+            return value
+    return None
+
+
 def _trace_id_for_event(
     *,
     source: str,
@@ -110,10 +120,7 @@ def _trace_id_for_event(
     person_id: str | None,
     actor_context: Any,
 ) -> str:
-    correlation_id = None
-    if isinstance(actor_context, dict):
-        correlation_id = _compact(actor_context.get("correlation_id"), max_len=120)
-    stable_ref = ticket_id or correlation_id or person_id or device_id
+    stable_ref = _execution_ref(actor_context) or ticket_id or person_id or device_id
     if stable_ref:
         raw = "|".join([source, event_type, route, stable_ref])
         return str(uuid.uuid5(WEB_OBSERVER_NAMESPACE, raw))
@@ -166,8 +173,11 @@ async def write_web_cabinet_observer_event(
         person_id=person_id,
         actor_context=actor_context,
     )
-    span_id = str(uuid.uuid5(WEB_OBSERVER_NAMESPACE, f"span:{trace_id}"))
-    source_ref = str(uuid.uuid5(WEB_OBSERVER_NAMESPACE, f"{trace_id}:{source}:{event_type}"))
+    span_status_key = "error" if is_error else "ok"
+    source_ref = str(
+        uuid.uuid5(WEB_OBSERVER_NAMESPACE, f"{trace_id}:{source}:{event_type}:{span_status_key}:{error_code or result}")
+    )
+    span_id = str(uuid.uuid5(WEB_OBSERVER_NAMESPACE, f"span:{source_ref}"))
     safe_payload = _redact_web_payload(payload or {})
 
     attrs = {
@@ -187,6 +197,8 @@ async def write_web_cabinet_observer_event(
     span_attrs = {**attrs, "payload": safe_payload}
 
     trace = await session.get(ObserverTrace, trace_id)
+    previous_error_count = int(getattr(trace, "error_count", 0) or 0) if trace is not None else 0
+    previous_span_count = int(getattr(trace, "span_count", 0) or 0) if trace is not None else 0
     if trace is None:
         trace = ObserverTrace(trace_id=trace_id, created_at=now, updated_at=now)
         session.add(trace)
@@ -197,11 +209,10 @@ async def write_web_cabinet_observer_event(
     trace.operation_id = None
     trace.job_id = None
     trace.status = status
-    trace.started_at = now
+    trace.started_at = trace.started_at or now
     trace.finished_at = now
     trace.duration_ms = 0
-    trace.span_count = 1
-    trace.error_count = 1 if is_error else 0
+    trace.error_count = previous_error_count + (1 if is_error else 0)
     trace.attrs_json = attrs
     trace.updated_at = now
     await session.flush()
@@ -226,6 +237,9 @@ async def write_web_cabinet_observer_event(
             started_at=now,
         )
         session.add(existing_span)
+        trace.span_count = max(1, previous_span_count + 1)
+    else:
+        trace.span_count = max(1, previous_span_count)
     existing_span.parent_span_id = None
     existing_span.component = WEB_OBSERVER_COMPONENT
     existing_span.event_type = event_type

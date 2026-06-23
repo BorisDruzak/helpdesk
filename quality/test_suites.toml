@@ -1,0 +1,10 @@
+# Canonical CI/test-suite catalog for non-server helper checks.
+
+[[suites]]
+name = "scripts_pytest_no_db"
+runner = "pytest"
+paths = ["scripts/test_*.py"]
+marker_expression = "not manual"
+junit = "junit-scripts-no-db.xml"
+database = "none"
+description = "Runs project script tests without DB fixtures before server pytest layers."

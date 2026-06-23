@@ -59,6 +59,8 @@ Runtime-audit-only auth/provisioning events are first-class projection sources t
 
 OBS1 Operational Integrity Observer adds a durable integrity-event stream on top of the trace overlay. It does not replace traces and does not mutate product state. It persists runtime invariant violations with `dedupe_key`, severity, source, status, occurrence count, runbook, redacted evidence, optional correlation ids (`device_id`, `ticket_id`, `operation_id`, `command_id`, `device_outbox_id`, `trace_id`) and resolution/suppression state. Known P0-P6 contamination is represented narrowly in `observer_known_contamination` by exact entity ids or stable dedupe keys.
 
+Integrity scans are fail-closed by source. Checkers that return incomplete coverage, or raise during orchestration, do not resolve existing `active`/`acknowledged` events for that source. A failed checker creates an `observer.integrity_runner` self-health event, and scan API responses include both `incomplete_sources` and `failed_sources`. Repeated observations preserve operator `acknowledged` state; only a complete scan where the condition disappears resolves it.
+
 Ticket-root anchor:
 
 - `tickets.observer_root_trace_id`
@@ -164,6 +166,8 @@ OBS1 checkers live under `server/observer/checks/*` and are orchestrated by `ser
 Typed admin observer trace rows expose operator-readable context in addition to raw identifiers: `ticket_code`, `ticket_title`, ticket status/priority/queue, requester label, `device_hostname`, `device_label`, operation/tool labels, latest error label/stage and `display_title` / `display_subtitle`. Raw `trace_id`, `ticket_id`, `operation_id`, `device_id`, `span_id` and `error_signature` stay available for diagnostics and deep links, but UI must treat them as secondary metadata.
 
 Typed admin observer trace search supports web-cabinet filters in addition to the existing runtime filters: `root_kind=requester_web`, `source`, `person_id`, `error_code`, `event_type`, `route`, `ticket_id` and `device_id`. These filters search redacted trace/span attrs and keep requester web diagnostics out of ticket business state.
+
+Web-cabinet trace identity prefers execution keys from `server_request_id`, `request_id`, `correlation_id`, `idempotency_key` or `operation_id` before entity ids such as `ticket_id`. Two independent actions on the same ticket must not collapse into one trace; a retry with the same execution key may update the same trace while preserving error occurrences/spans. Requester ticket-create integrity coverage is successful only when a trace has `root_kind=requester_web`, `source=requester_ticket_create`, a success create event type, `status=succeeded`, and a success result.
 
 Typed admin observer trace detail also exposes an explanation projection through `explanation` on `GET /api/web/admin/observer/traces/{trace_id}` and the compatibility alias `GET /api/web/admin/observer/trace-detail/{trace_id}`. This projection is the operator-facing layer above raw spans: `launch_source` / `launch_source_label`, actor fields, tool/module labels, preset label/description, `error_code`, human diagnosis, launch path, next actions, agent online label and debug refs. The raw `spans`, `span_links`, `error_occurrences`, agent actions and attrs remain present for debug mode.
 

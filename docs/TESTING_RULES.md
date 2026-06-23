@@ -67,6 +67,7 @@ To run a single canonical layer:
 
 ```powershell
 python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
+python scripts/run_ci_suite.py --layer scripts_pytest_no_db
 python scripts/run_ci_suite.py --layer webapp_unit_tests
 python scripts/run_ci_suite.py --layer webapp_fixture_e2e
 python scripts/run_ci_suite.py --layer pc_agent_pytest
@@ -121,6 +122,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `PC_CLIENT_TEST_TIMING=1` and `PC_CLIENT_TEST_TIMING_PATH=artifacts/ci/<sha>/fixture-timings/<layer>.jsonl` for server pytest layers.
 - `PC_CLIENT_TEST_DB_TEMPLATE=1` for DB/WS server pytest layers, so isolated layer databases are cloned from a migrated PostgreSQL template keyed by the Alembic migration fingerprint.
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled.
+- `scripts_pytest_no_db` runs `scripts/test_*.py -m "not manual"` with `junit-scripts-no-db.xml` before server pytest layers.
 - Optional `--parallel --max-workers 2` for bounded server DB/WS layer concurrency; this does not change pytest markers,
   cleanup profiles, DB template behavior, pool settings, or test fixture semantics.
 
@@ -214,16 +216,18 @@ Profile selection guide:
 
 Do not automatically map mixed `web_api` files to `tickets`. Use `web_support` only when the file is a support/requester web workspace flow and focused validation with `PC_CLIENT_TEST_CLEANUP_AUDIT=1` is green. Keep a file on `full` when it is mixed-domain beyond a documented profile, uses `test_agent`/`agent_ws`, writes through broad web/API flows that are not covered by `web_support`, or is otherwise hard to prove from the existing cleanup profile. If a focused run fails after adding a marker, revert that file to `full` instead of weakening assertions or expanding cleanup behavior in the same pass.
 
-Cleanup profiles may rely on database cascades from parent tables already listed in `FULL_CLEANUP_TABLES`. Do not add child tables that are not present in `FULL_CLEANUP_TABLES`; document the gap instead. Known child tables such as `device_user_bindings`, `device_account_sessions`, `device_registration_claims`, `device_browser_pairings`, `ticket_approvals`, `ticket_notifications`, and `user_consent_requests` are not currently explicit cleanup tables, so profile changes should be validated by focused runs rather than by adding those names ad hoc.
+Cleanup profiles may rely on database cascades from parent tables already listed in `FULL_CLEANUP_TABLES`. Runtime child tables such as `device_user_bindings`, `device_account_sessions`, `device_registration_claims`, `device_browser_pairings`, `ticket_approvals`, `ticket_notifications`, and `user_consent_requests` are now explicit full-cleanup tables; if a new runtime table appears, classify it in `quality/db_table_classification.toml` and make the schema audit pass instead of relying on implicit cascade behavior.
 
 To audit current file-level coverage without changing pytest behavior:
 
 ```powershell
 python scripts/audit_db_cleanup_profiles.py
 python scripts/audit_db_cleanup_profiles.py --strict  # optional gate for missing DB-backed profiles
+python scripts/audit_db_cleanup_schema.py --schema-from-models --strict
 ```
 
 The audit report prints `file`, inferred domain layer, explicit profile or `missing`, module/file-level `no_db`, likely `agent_ws`, and a summary. Normal mode is report-only; `--strict` returns non-zero for DB-backed, non-`agent_ws` files that still have no explicit profile.
+The schema audit verifies every table is classified exactly once, runtime tables are covered by static/full cleanup and dynamic reset policy, cleanup lists have no stale tables, and FK cleanup blockers are visible.
 
 For contamination checks on a small focused sample, enable audit mode:
 

@@ -79,10 +79,12 @@ async def handle_web_admin_observer_integrity_scan(request: web.Request) -> web.
             payload = {
                 "run_id": result.run_id,
                 "generated": result.generated,
-                "active": result.active,
-                "suppressed": result.suppressed,
-                "resolved": result.resolved,
-                "event_ids": result.event_ids,
+        "active": result.active,
+        "suppressed": result.suppressed,
+        "resolved": result.resolved,
+        "incomplete_sources": result.incomplete_sources,
+        "failed_sources": result.failed_sources,
+        "event_ids": result.event_ids,
             }
     except Exception as exc:
         logger.exception(f"[observer_integrity] scan failed: {exc}")

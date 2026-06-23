@@ -175,14 +175,28 @@ def create_pack(
     )
     for filename, template in TEMPLATES.items():
         (output_dir / filename).write_text(template(pack), encoding="utf-8")
+    created_at = datetime.now(timezone.utc).isoformat()
     manifest = {
-        "schema": "pc_client.live_evidence_pack.v1",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "schema": "pc_client.live_evidence.v2",
         "run_id": run_id,
-        "surface": surface,
-        "ticket": ticket,
-        "device": device,
-        "files": sorted(TEMPLATES),
+        "scenario": surface,
+        "status": "blocked",
+        "commit": None,
+        "deployed_commit": None,
+        "environment": None,
+        "started_at": created_at,
+        "finished_at": None,
+        "entities": {
+            "ticket_id": ticket,
+            "device_id": device,
+            "operation_id": None,
+            "trace_ids": [],
+        },
+        "checks": [],
+        "artifacts": [],
+        "contamination": {"status": "not_reviewed"},
+        "cleanup": {"status": "not_started"},
+        "template_files": sorted(TEMPLATES),
     }
     (output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",

@@ -700,6 +700,27 @@ def _server_pytest_command(marker_expr: str, junit_path: Path, paths: list[Path 
     ]
 
 
+def _scripts_pytest_paths(workspace: Path) -> list[Path]:
+    scripts_dir = workspace / "scripts"
+    paths = sorted(path.relative_to(workspace) for path in scripts_dir.glob("test_*.py"))
+    return paths or [Path("scripts")]
+
+
+def _scripts_pytest_no_db_command(workspace: Path, junit_path: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "pytest",
+        *[str(path) for path in _scripts_pytest_paths(workspace)],
+        "-m",
+        "not manual",
+        "-vv",
+        "--durations=40",
+        "--junitxml",
+        str(junit_path),
+    ]
+
+
 def _classify_server_db_api_test_file(filename: str) -> str:
     for layer_name, patterns in SERVER_DB_API_LAYER_RULES:
         if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
@@ -864,6 +885,14 @@ def main() -> None:
             {"CI": "1"},
         ),
         (
+            "scripts_pytest_no_db",
+            _scripts_pytest_no_db_command(args.workspace, artifact_dir / "junit-scripts-no-db.xml"),
+            logs_dir / "scripts_pytest_no_db.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
+        ),
+        (
             "server_pytest_no_db",
             _server_pytest_command("not manual and no_db", artifact_dir / "junit-server-no-db.xml"),
             logs_dir / "server_pytest_no_db.log",
@@ -996,6 +1025,7 @@ def main() -> None:
                 "fixture_timings_summary": str(fixture_timings_summary_path),
                 "webapp_bundle_dir": str(webapp_bundle_dir),
                 "webapp_bundle_archive": str(webapp_bundle_archive),
+                "junit_scripts_no_db": str(artifact_dir / "junit-scripts-no-db.xml"),
                 "junit_server_no_db": str(artifact_dir / "junit-server-no-db.xml"),
                 "junit_server_db_api_layers": {
                     layer_name: str(

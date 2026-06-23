@@ -194,6 +194,9 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     steps_seen: list[tuple[str, list[str], Path, float | None, dict[str, str] | None, float]] = []
     tests_dir = tmp_path / "server" / "tests"
     tests_dir.mkdir(parents=True)
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir(parents=True)
+    (scripts_dir / "test_ci_helper.py").write_text("def test_placeholder(): pass\n", encoding="utf-8")
     for filename in (
         "test_knowledge_api.py",
         "test_ticket_closure_policy.py",
@@ -245,6 +248,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "webapp_bundle",
         "webapp_unit_tests",
         "webapp_fixture_e2e",
+        "scripts_pytest_no_db",
         "server_pytest_no_db",
         "server_pytest_db_knowledge",
         "server_pytest_db_tickets",
@@ -270,6 +274,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert idle_by_step["webapp_bundle"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["webapp_unit_tests"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["webapp_fixture_e2e"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_knowledge"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
@@ -283,6 +288,17 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert command_by_step["webapp_unit_tests"] == run_ci_suite._webapp_unit_test_command(tmp_path)
     assert command_by_step["webapp_unit_tests"][-2:] == ["--pool=threads", "--maxWorkers=1"]
     assert command_by_step["webapp_fixture_e2e"] == run_ci_suite._pnpm_webapp_command(tmp_path, "run", "test:e2e")
+    assert command_by_step["scripts_pytest_no_db"][3] == (
+        "scripts\\test_ci_helper.py" if sys.platform == "win32" else "scripts/test_ci_helper.py"
+    )
+    assert command_by_step["scripts_pytest_no_db"][-6:] == [
+        "-m",
+        "not manual",
+        "-vv",
+        "--durations=40",
+        "--junitxml",
+        str(summary_path.parent / "junit-scripts-no-db.xml"),
+    ]
     assert command_by_step["server_pytest_no_db"][-6:] == [
         "-m",
         "not manual and no_db",
@@ -321,6 +337,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert env_by_step["webapp_unit_tests"] == {"CI": "1"}
     assert env_by_step["webapp_fixture_e2e"] == {"CI": "1"}
+    assert env_by_step["scripts_pytest_no_db"] is None
     assert env_by_step["server_pytest_no_db"] == {
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
         "PC_CLIENT_TEST_TIMING": "1",
@@ -363,6 +380,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert timeout_by_step["webapp_unit_tests"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
     assert timeout_by_step["webapp_fixture_e2e"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
+    assert timeout_by_step["scripts_pytest_no_db"] == 45 * 60
     assert timeout_by_step["server_pytest_no_db"] == 45 * 60
     assert timeout_by_step["server_pytest_db_knowledge"] == 45 * 60
     assert timeout_by_step["server_pytest_db_web_api"] == 45 * 60
@@ -562,11 +580,12 @@ def test_parallel_mode_groups_only_server_db_ws_layers_and_respects_max_workers(
         "server_pytest_db_tickets",
     ]
     assert set(started_db_layers) == db_layer_names
-    assert completed_steps[:5] == [
+    assert completed_steps[:6] == [
         "verify_workspace",
         "webapp_bundle",
         "webapp_unit_tests",
         "webapp_fixture_e2e",
+        "scripts_pytest_no_db",
         "server_pytest_no_db",
     ]
     assert completed_steps[-1] == "pc_agent_pytest"

@@ -28,6 +28,8 @@ WEB_REQUEST_CONTEXTS = {
 REQUESTER_KNOWLEDGE_SURFACES = {"", "requester_portal", "agent_gui"}
 CREATOR_KNOWLEDGE_VISIBILITY_SCOPE = "creator_visible"
 CREATOR_KNOWLEDGE_AUDIENCE_SCOPE = "creator"
+SUCCESSFUL_CREATE_EVENT_TYPES = ("ticket_create_succeeded", "ticket_create_created")
+SUCCESSFUL_CREATE_RESULTS = ("created", "ok", "success", "succeeded")
 
 
 def _custom_fields(ticket: Ticket) -> dict[str, Any]:
@@ -334,11 +336,10 @@ async def _has_create_observer_trace(session: AsyncSession, ticket_id: str) -> b
             .where(
                 ObserverTrace.ticket_id == ticket_id,
                 ObserverTrace.root_kind == "requester_web",
-                or_(
-                    ObserverTrace.attrs_json["source"].astext == "requester_ticket_create",
-                    ObserverTrace.attrs_json["event_type"].astext == "ticket_create_succeeded",
-                    ObserverTrace.attrs_json["event_type"].astext == "ticket_create_created",
-                ),
+                ObserverTrace.status == "succeeded",
+                ObserverTrace.attrs_json["source"].astext == "requester_ticket_create",
+                ObserverTrace.attrs_json["event_type"].astext.in_(SUCCESSFUL_CREATE_EVENT_TYPES),
+                ObserverTrace.attrs_json["result"].astext.in_(SUCCESSFUL_CREATE_RESULTS),
             )
         )
         or 0

@@ -24,6 +24,7 @@ from observer.checks.protocol_integrity import SOURCE as PROTOCOL_SOURCE
 from observer.checks.protocol_integrity import check_protocol_integrity
 from observer.checks.runtime_presence import SOURCE as RUNTIME_SOURCE
 from observer.checks.runtime_presence import check_runtime_presence
+from observer.checks.types import ObserverIntegrityCheckResult
 from observer.checks.web_cabinet import SOURCE as WEB_CABINET_SOURCE
 from observer.checks.web_cabinet import check_web_cabinet
 
@@ -49,6 +50,7 @@ DEFAULT_KNOWN_CONTAMINATION: list[dict[str, Any]] = [
         "reason": "Historical non-P6 agent_offline_active tasks are excluded from OBS1 current baseline.",
     },
 ]
+INTEGRITY_RUNNER_SOURCE = "observer.integrity_runner"
 
 
 @dataclass(slots=True)
@@ -58,6 +60,8 @@ class ObserverIntegrityScanResult:
     active: int
     suppressed: int
     resolved: int
+    incomplete_sources: list[str]
+    failed_sources: list[str]
     event_ids: list[str]
 
 
@@ -73,13 +77,47 @@ class ObserverIntegrityService:
     async def run_scan(self, *, run_id: str | None = None) -> ObserverIntegrityScanResult:
         await self.seed_known_contamination()
         generated: list[ObserverIntegrityEventInput] = []
-        generated.extend(await check_operation_lifecycle(self.session, run_id=run_id))
-        generated.extend(await check_protocol_integrity(self.session, run_id=run_id))
-        generated.extend(await check_runtime_presence(self.session, state=self.state, run_id=run_id))
-        generated.extend(await check_account_boundary(self.session, run_id=run_id))
-        generated.extend(await check_module_toolset(self.session, run_id=run_id))
-        generated.extend(await check_governance(self.session, run_id=run_id))
-        generated.extend(await check_web_cabinet(self.session, run_id=run_id))
+        source_complete: dict[str, bool] = {}
+        failed_sources: list[str] = []
+
+        def collect(result: list[ObserverIntegrityEventInput] | ObserverIntegrityCheckResult) -> None:
+            if isinstance(result, ObserverIntegrityCheckResult):
+                source_complete[result.source] = source_complete.get(result.source, True) and result.complete
+                generated.extend(result.events)
+                return
+            generated.extend(result)
+
+        async def collect_checker(source: str, checker_call: Any) -> None:
+            try:
+                collect(await checker_call())
+            except Exception as exc:
+                source_complete[source] = False
+                failed_sources.append(source)
+                generated.append(
+                    ObserverIntegrityEventInput(
+                        event_type="observer_integrity_checker_failed",
+                        severity="error",
+                        source=INTEGRITY_RUNNER_SOURCE,
+                        dedupe_key=f"observer_integrity_checker_failed:{source}",
+                        expected="Observer integrity checker should complete without blocking independent checkers.",
+                        actual=f"{type(exc).__name__}: {str(exc)[:300]}",
+                        evidence={
+                            "checker_source": source,
+                            "error_type": type(exc).__name__,
+                            "error_message": str(exc)[:300],
+                        },
+                        runbook="docs/runbooks/observer_integrity.md",
+                        run_id=run_id,
+                    )
+                )
+
+        await collect_checker(OPERATION_SOURCE, lambda: check_operation_lifecycle(self.session, run_id=run_id))
+        await collect_checker(PROTOCOL_SOURCE, lambda: check_protocol_integrity(self.session, run_id=run_id))
+        await collect_checker(RUNTIME_SOURCE, lambda: check_runtime_presence(self.session, state=self.state, run_id=run_id))
+        await collect_checker(ACCOUNT_SOURCE, lambda: check_account_boundary(self.session, run_id=run_id))
+        await collect_checker(MODULE_TOOLSET_SOURCE, lambda: check_module_toolset(self.session, run_id=run_id))
+        await collect_checker(GOVERNANCE_SOURCE, lambda: check_governance(self.session, run_id=run_id))
+        await collect_checker(WEB_CABINET_SOURCE, lambda: check_web_cabinet(self.session, run_id=run_id))
 
         active_dedupe_by_source: dict[str, set[str]] = {}
         event_ids: list[str] = []
@@ -107,7 +145,10 @@ class ObserverIntegrityService:
             MODULE_TOOLSET_SOURCE,
             GOVERNANCE_SOURCE,
             WEB_CABINET_SOURCE,
+            INTEGRITY_RUNNER_SOURCE,
         ):
+            if source_complete.get(source, True) is False:
+                continue
             resolved += await self.repo.resolve_missing(
                 source=source,
                 active_dedupe_keys=active_dedupe_by_source.get(source, set()),
@@ -120,6 +161,8 @@ class ObserverIntegrityService:
             active=active,
             suppressed=suppressed,
             resolved=resolved,
+            incomplete_sources=sorted(source for source, complete in source_complete.items() if not complete),
+            failed_sources=sorted(failed_sources),
             event_ids=event_ids,
         )
 
