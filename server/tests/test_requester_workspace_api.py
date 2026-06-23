@@ -2119,6 +2119,116 @@ async def test_requester_preview_ticket_accepts_catalog_form_payload(test_client
 
 
 @pytest.mark.asyncio
+async def test_requester_preview_accepts_public_registry_augmented_pack_version(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    version = f"test-{suffix}"
+    service_code = f"requester_preview_registry_{suffix}"
+    template_code = f"software_install_{suffix}"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"requester-preview-registry-version-{suffix}@example.test"
+    async with session_maker() as session:
+        queue = TicketQueue(
+            code=f"requester_preview_registry_queue_{suffix}",
+            name="Requester preview registry queue",
+            is_active=True,
+        )
+        session.add_all([_device(device_id, "preview-registry-version-device"), queue])
+        await session.flush()
+        forms_repo = TicketFormPacksRepo(session)
+        await forms_repo.upsert_pack(
+            pack_key="request_forms",
+            version=version,
+            schema_json={
+                "pack_key": "request_forms",
+                "version": version,
+                "forms": [
+                    {
+                        "key": template_code,
+                        "request_template_key": template_code,
+                        "title": "Software install",
+                        "request_kind": "request",
+                        "ticket_type": "request",
+                        "fields": [
+                            {"key": "software_name", "label": "Software", "type": "text", "required": True},
+                        ],
+                    }
+                ],
+            },
+            created_by="test",
+        )
+        await forms_repo.set_preferred(pack_key="request_forms", version=version, updated_by="test")
+        session.add(
+            RequestTemplate(
+                template_code=template_code,
+                version="1",
+                public_title="Software install",
+                ticket_type="service_request",
+                config_json={"default_queue_id": queue.id, "no_sla": True},
+                is_active=True,
+                published_at=datetime.now(timezone.utc),
+            )
+        )
+        repo = ServiceCatalogRepo(session)
+        await repo.upsert_service_draft(
+            {
+                "code": service_code,
+                "public_title": "Requester registry preview workplace",
+                "short_description": "Requester registry preview support",
+                "visibility": "public",
+                "owner_queue_id": queue.id,
+                "default_queue_id": queue.id,
+                "business_criticality": "medium",
+                "reporting_category": "requester_preview_registry",
+            },
+            actor_id="test",
+            actor_role="admin",
+        )
+        offering = await repo.upsert_offering_draft(
+            {
+                "service_code": service_code,
+                "code": "software_install",
+                "public_title": "Software install preview",
+                "short_description": "Install workplace software",
+                "request_type": "service_request",
+                "request_template_key": template_code,
+                "visibility": "public",
+                "reporting_category": "requester_preview_registry",
+            },
+            actor_id="test",
+            actor_role="admin",
+        )
+        await repo.publish_service(service_code, actor_id="test", actor_role="admin")
+        await repo.publish_offering(offering["full_code"], actor_id="test", actor_role="admin")
+        await _approved_binding(session, device_id=device_id, login=login)
+        await session.commit()
+
+    response = await test_client.post(
+        "/api/web/requester/tickets/preview",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{login}"),
+        json={
+            "device_id": device_id,
+            "service_code": service_code,
+            "offering_code": "software_install",
+            "form_pack_key": "request_forms",
+            "form_pack_version": f"{version}+registry.1",
+            "form_key": template_code,
+            "request_template_key": template_code,
+            "form_payload": {"software_name": "Office"},
+            "title": "Install software",
+            "description": "Install Office",
+        },
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    assert payload["status"] == "success"
+    assert payload["data"]["ok"] is True
+    assert payload["data"]["service"]["code"] == service_code
+    assert payload["data"]["offering"]["full_code"] == f"{service_code}.software_install"
+
+
+@pytest.mark.asyncio
 async def test_requester_on_behalf_people_search_filters_by_policy_scope(test_client, test_engine):
     suffix = uuid.uuid4().hex[:8]
     template_code = f"on_behalf_search_{suffix}"

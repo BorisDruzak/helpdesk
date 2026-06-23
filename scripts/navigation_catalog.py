@@ -4428,7 +4428,7 @@ DRIFT_RULES: tuple[DriftRule, ...] = (
     DriftRule(
         key="tickets",
         title="Ticket or chat flow changed",
-        reason="Ticket lifecycle and chat contracts should stay discoverable in docs.",
+        reason="Ticket lifecycle, transient requester form-pack versions and chat contracts should stay discoverable in docs.",
         path_prefixes=("server/tickets/", "server/chat/"),
         exact_paths=("server/api/events.py", "server/api/operations.py"),
         required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),

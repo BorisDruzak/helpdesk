@@ -15,6 +15,7 @@ from tickets.workflow_profiles import DEFAULT_WORKFLOW_PROFILE
 
 DEFAULT_TICKET_FORM_PACK_KEY = "request_forms"
 DEFAULT_TICKET_FORM_PACK_VERSION = "1.0.0"
+_REGISTRY_AUGMENTED_VERSION_SEPARATOR = "+registry."
 ALLOWED_FIELD_TYPES = {
     "text",
     "textarea",
@@ -74,6 +75,16 @@ DEFAULT_PRIORITY_FIELD_ROLES = {
     "critical_service": ["passport_fact"],
     "public_service": ["visibility_public"],
 }
+
+
+def _base_version_from_registry_augmented(version: Optional[str]) -> Optional[str]:
+    text = str(version or "").strip()
+    if not text or _REGISTRY_AUGMENTED_VERSION_SEPARATOR not in text:
+        return None
+    base_version = text.split(_REGISTRY_AUGMENTED_VERSION_SEPARATOR, 1)[0].strip()
+    return base_version or None
+
+
 _REQUEST_KIND_FALLBACK_LABELS = {
     "request": "Запрос",
     "incident": "Инцидент",
@@ -1526,6 +1537,13 @@ async def resolve_ticket_form_pack(
             return _finalize(validate_form_pack_schema(pack.schema_json))
         if version == builtin.get("version") and pack_key == builtin.get("pack_key"):
             return _finalize(builtin)
+        base_version = _base_version_from_registry_augmented(version)
+        if base_version and base_version != version:
+            pack = await repo.get_pack(pack_key, base_version)
+            if pack is not None and isinstance(pack.schema_json, dict):
+                return _finalize(validate_form_pack_schema(pack.schema_json))
+            if base_version == builtin.get("version") and pack_key == builtin.get("pack_key"):
+                return _finalize(builtin)
         raise ValueError(f"ticket form pack not found: {pack_key}@{version}")
 
     preferred = await repo.get_preferred(pack_key)
