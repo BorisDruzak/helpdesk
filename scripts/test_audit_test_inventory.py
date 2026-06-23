@@ -59,13 +59,25 @@ def test_inventory_audit_accepts_owned_server_db_and_agent_ws_files(tmp_path):
         "test_operation_retry.py",
         "async def test_retry(test_client, test_agent, test_engine):\n    pass\n",
     )
+    _write_test(
+        tests_dir,
+        "test_migration_schema_contract.py",
+        (
+            "import pytest\n\n"
+            "pytestmark = pytest.mark.db_cleanup('full')\n\n"
+            "async def test_migrations(test_engine):\n"
+            "    pass\n"
+        ),
+    )
 
     records = {record.file.name: record for record in audit.audit_paths([tests_dir], workspace=tmp_path).records}
 
     assert records["test_knowledge_api.py"].suite == "server_pytest_db_knowledge"
     assert records["test_operation_retry.py"].suite == "server_pytest_agent_ws"
+    assert records["test_migration_schema_contract.py"].suite == "migration_schema"
     assert records["test_knowledge_api.py"].issues == ()
     assert records["test_operation_retry.py"].issues == ()
+    assert records["test_migration_schema_contract.py"].issues == ()
 
 
 def test_inventory_audit_strict_mode_fails_only_for_inventory_issues(tmp_path, capsys):

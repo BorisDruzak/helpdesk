@@ -60,6 +60,7 @@ CI_EVIDENCE_LAYERS = {
 }
 
 Step = tuple[str, list[str], Path, float, float, dict[str, str] | None]
+MIGRATION_SCHEMA_TEST_PATH = Path("server/tests/test_migration_schema_contract.py")
 
 SERVER_DB_WS_PARALLEL_LAYER_ORDER: tuple[str, ...] = (
     "server_pytest_db_web_api",
@@ -672,14 +673,16 @@ def _server_pytest_env(
     commit: str | None = None,
     keep_test_db: bool = False,
     timing_path: Path | None = None,
+    use_template: bool = True,
 ) -> dict[str, str]:
     env = {"PC_CLIENT_PYTEST_WATCHDOG_SECONDS": str(DEFAULT_PYTEST_WATCHDOG_SECONDS)}
     if timing_path is not None:
         env["PC_CLIENT_TEST_TIMING"] = "1"
         env["PC_CLIENT_TEST_TIMING_PATH"] = str(timing_path)
     if layer_name and layer_name != "server_pytest_no_db":
-        env["PC_CLIENT_TEST_DB_TEMPLATE"] = "1"
-        env["PC_CLIENT_TEST_DB_TEMPLATE_KEEP"] = "1"
+        env["PC_CLIENT_TEST_DB_TEMPLATE"] = "1" if use_template else "0"
+        if use_template:
+            env["PC_CLIENT_TEST_DB_TEMPLATE_KEEP"] = "1"
         env["PC_CLIENT_TEST_DB_DOMAIN"] = _test_db_domain_for_layer(layer_name)
         if commit:
             env["PC_CLIENT_TEST_DB_RUN_ID"] = commit[:12]
@@ -696,6 +699,7 @@ def _junit_artifacts(artifact_dir: Path, workspace: Path) -> dict[str, object]:
     return {
         "scripts_pytest_no_db": str(artifact_dir / "junit-scripts-no-db.xml"),
         "server_pytest_no_db": str(artifact_dir / "junit-server-no-db.xml"),
+        "migration_schema": str(artifact_dir / "junit-migration-schema.xml"),
         "server_pytest_db_api_layers": {
             layer_name: str(
                 artifact_dir / f"{layer_name.replace('server_pytest_', 'junit-server-').replace('_', '-')}.xml"
@@ -723,6 +727,7 @@ def _baseline_artifacts(
         "durations": {
             "scripts_pytest_no_db": _duration_baseline(str(junit_artifacts["scripts_pytest_no_db"]), 40),
             "server_pytest_no_db": _duration_baseline(str(junit_artifacts["server_pytest_no_db"]), 80),
+            "migration_schema": _duration_baseline(str(junit_artifacts["migration_schema"]), 80),
             "server_pytest_db_api_layers": {
                 layer_name: _duration_baseline(str(junit_path), 80) for layer_name, junit_path in db_api_junit.items()
             },
@@ -800,7 +805,17 @@ def _db_cleanup_profile_audit_command(workspace: Path) -> list[str]:
     ]
 
 
+def _migration_schema_command(workspace: Path, junit_path: Path) -> list[str]:
+    return _server_pytest_command(
+        "not manual and not no_db and not agent_ws",
+        junit_path,
+        [MIGRATION_SCHEMA_TEST_PATH],
+    )
+
+
 def _classify_server_db_api_test_file(filename: str) -> str:
+    if filename == MIGRATION_SCHEMA_TEST_PATH.name:
+        return "migration_schema"
     for layer_name, patterns in SERVER_DB_API_LAYER_RULES:
         if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
             return layer_name
@@ -815,6 +830,8 @@ def _server_db_api_layer_paths(workspace: Path) -> list[tuple[str, list[Path]]]:
 
     grouped: dict[str, list[Path]] = {}
     for path in test_files:
+        if path.name == MIGRATION_SCHEMA_TEST_PATH.name:
+            continue
         layer_name = _classify_server_db_api_test_file(path.name)
         grouped.setdefault(layer_name, []).append(path.relative_to(workspace))
 
@@ -998,6 +1015,20 @@ def main() -> None:
                 commit=commit,
                 keep_test_db=args.keep_test_db,
                 timing_path=_server_fixture_timing_path(artifact_dir, "server_pytest_no_db"),
+            ),
+        ),
+        (
+            "migration_schema",
+            _migration_schema_command(args.workspace, artifact_dir / "junit-migration-schema.xml"),
+            logs_dir / "migration_schema.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            _server_pytest_env(
+                layer_name="migration_schema",
+                commit=commit,
+                keep_test_db=args.keep_test_db,
+                timing_path=_server_fixture_timing_path(artifact_dir, "migration_schema"),
+                use_template=False,
             ),
         ),
         *_server_db_api_layer_steps(

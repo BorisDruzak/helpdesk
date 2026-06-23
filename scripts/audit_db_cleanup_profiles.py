@@ -28,6 +28,12 @@ KNOWN_PROFILES = {
 
 LAYER_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
+        "migration_schema",
+        (
+            "test_migration_schema_contract.py",
+        ),
+    ),
+    (
         "registration",
         (
             "test_account_session_service.py",

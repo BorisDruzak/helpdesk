@@ -256,6 +256,8 @@ def _classify_server_db_api_file(filename: str) -> str:
 
         return run_ci_suite._classify_server_db_api_test_file(filename)
     except Exception:
+        if filename == "test_migration_schema_contract.py":
+            return "migration_schema"
         layer_rules: tuple[tuple[str, tuple[str, ...]], ...] = (
             ("server_pytest_db_knowledge", ("test_knowledge_*.py", "test_support_knowledge_provider.py")),
             (

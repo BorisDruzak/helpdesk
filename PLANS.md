@@ -1119,7 +1119,7 @@ Blocking:
 - [x] `DB-101` Создать schema-to-cleanup audit.
 - [x] `DB-102` Классифицировать все текущие tables.
 - [x] `DB-103` Закрыть `change_*` и новый Knowledge cleanup drift.
-- [ ] `DB-104` Добавить migration suite.
+- [x] `DB-104` Добавить migration suite.
 
 **Gate:** incomplete checker не resolve-ит события; cleanup audit показывает zero drift; fresh/baseline migrations green.
 
@@ -1207,6 +1207,8 @@ Checkpoint 2026-06-23 QG-004: `scripts/run_ci_suite.py` now writes `summary.base
 
 Checkpoint 2026-06-23 QG-005: `scripts/run_ci_suite.py` writes `summary.evidence_layers.webapp_fixture_e2e` with `mode=fixture_e2e` and `canonical_live_browser=false`. Playwright fixture E2E remains a CI/browser-fixture layer and cannot be confused with live browser signoff evidence from `docs/LIVE_TESTING_DEBUG_RULES.md`.
 
+Checkpoint 2026-06-23 DB-104: `server/tests/test_migration_schema_contract.py` is wired into `scripts/run_ci_suite.py` as the `migration_schema` layer with `PC_CLIENT_TEST_DB_TEMPLATE=0`, `junit-migration-schema.xml` and fixture timing artifacts. The layer proves direct empty-DB Alembic upgrade to exact heads, idempotent repeated `upgrade head`, actual migrated schema vs SQLAlchemy metadata plus explicit migration-only allowlist, DB cleanup schema zero drift, required constraints/indexes/defaults including nullable no-device ticket columns, and smoke insert/select/delete for recent runtime tables. The first strict migration run found missing cleanup coverage for `knowledge_article_segments`, `knowledge_segmentation_*`, `ticket_*_archive` and `ticket_retention_runs`; cleanup classification/static full-cleanup coverage is now updated and `scripts/audit_db_cleanup_schema.py --schema-from-models --strict` reports zero drift.
+
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 
 ---
@@ -1288,6 +1290,7 @@ python -m pytest scripts/test_run_ci_suite.py -vv
 ```powershell
 python -m pytest server/tests/test_db_cleanup_schema_contract.py -vv
 python -m pytest server/tests/test_migration_schema_contract.py -vv
+python scripts/run_ci_suite.py --layer migration_schema
 ```
 
 Эти два DB/migration modules являются deliverables Phase 1 и до их создания не должны указываться как выполненная проверка.

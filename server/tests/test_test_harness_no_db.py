@@ -375,13 +375,21 @@ def test_cleanup_truncate_sql_uses_selected_profile_tables_only():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 132
+    assert len(full_tables) == 212
     assert full_tables[:3] == (
         "observer_integrity_events",
         "observer_known_contamination",
         "observer_error_occurrences",
     )
-    assert full_tables[-3:] == ("ui_users", "modules", "tickets")
+    assert {
+        "knowledge_article_segments",
+        "knowledge_segmentation_jobs",
+        "knowledge_segmentation_profiles",
+        "ticket_admin_audit_archive",
+        "ticket_events_archive",
+        "ticket_retention_runs",
+    } <= set(full_tables)
+    assert full_tables[-3:] == ("modules", "ticket_retention_runs", "tickets")
 
 
 @pytest.mark.asyncio

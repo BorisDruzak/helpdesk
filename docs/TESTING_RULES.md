@@ -22,12 +22,14 @@ Use these layers instead of the old single long `server/tests` run when you need
 python -m pytest server/tests -m "not manual and no_db" -vv --durations=80
 python -m pytest server/tests/test_knowledge_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
 python -m pytest server/tests/test_ticket_*.py server/tests/test_helpdesk_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
+python -m pytest server/tests/test_migration_schema_contract.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
 python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80
 ```
 
 Layer meanings:
 
 - `no_db`: pure unit/contract checks that must not require PostgreSQL setup or cleanup.
+- `migration_schema`: fresh PostgreSQL Alembic contract for empty-DB upgrade, exact heads, idempotent upgrade, actual schema cleanup audit, required constraints/indexes/defaults and smoke DML. This layer must run with template DB disabled.
 - DB/API domain layers: DB/API/server contract tests without the in-process WS agent, split by filename into knowledge, tickets/helpdesk, observer/diagnostics, agent runtime, and web/API catch-all layers by `scripts/run_ci_suite.py`.
 - `agent_ws`: tests that use the in-process WS agent runtime. This marker is auto-applied to tests that request the `test_agent` fixture.
 
@@ -69,6 +71,7 @@ To run a single canonical layer:
 python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
 python scripts/run_ci_suite.py --layer test_inventory_audit
 python scripts/run_ci_suite.py --layer db_cleanup_profile_audit
+python scripts/run_ci_suite.py --layer migration_schema
 python scripts/run_ci_suite.py --layer scripts_pytest_no_db
 python scripts/run_ci_suite.py --layer webapp_unit_tests
 python scripts/run_ci_suite.py --layer webapp_fixture_e2e
@@ -122,13 +125,14 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `-vv --durations=80` for each server layer and `pc_agent_pytest`.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
 - `PC_CLIENT_TEST_TIMING=1` and `PC_CLIENT_TEST_TIMING_PATH=artifacts/ci/<sha>/fixture-timings/<layer>.jsonl` for server pytest layers.
-- `PC_CLIENT_TEST_DB_TEMPLATE=1` for DB/WS server pytest layers, so isolated layer databases are cloned from a migrated PostgreSQL template keyed by the Alembic migration fingerprint.
+- `PC_CLIENT_TEST_DB_TEMPLATE=1` for DB/WS server pytest layers, so isolated layer databases are cloned from a migrated PostgreSQL template keyed by the Alembic migration fingerprint. The `migration_schema` layer is the exception and forces `PC_CLIENT_TEST_DB_TEMPLATE=0` to prove the direct empty-DB Alembic path.
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled; fixture E2E has one CI retry and records first-attempt failures as flaky evidence, not clean green.
 - `summary.evidence_layers.webapp_fixture_e2e` marks Playwright fixture E2E as `mode=fixture_e2e` and `canonical_live_browser=false`; it is CI browser-fixture coverage, not live browser signoff evidence.
 - `summary.baseline_artifacts` records canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and fixture E2E retry policy for release/preflight consumers.
 - `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
 - `db_cleanup_profile_audit` runs `python scripts/audit_db_cleanup_profiles.py --strict` before pytest layers and fails on DB-backed, non-agent-ws server test files without an explicit `db_cleanup` profile.
 - `scripts_pytest_no_db` runs `scripts/test_*.py -m "not manual"` with `--durations=40` and `junit-scripts-no-db.xml` before server pytest layers.
+- `migration_schema` runs `server/tests/test_migration_schema_contract.py` with `junit-migration-schema.xml`, timing artifacts, direct fresh Alembic migration, exact head verification and required schema contract checks before the broad DB/API layers.
 - Optional `--parallel --max-workers 2` for bounded server DB/WS layer concurrency; this does not change pytest markers,
   cleanup profiles, DB template behavior, pool settings, or test fixture semantics.
 
@@ -231,6 +235,7 @@ python scripts/audit_test_inventory.py --strict
 python scripts/audit_db_cleanup_profiles.py
 python scripts/audit_db_cleanup_profiles.py --strict  # canonical CI gate for missing DB-backed profiles
 python scripts/audit_db_cleanup_schema.py --schema-from-models --strict
+python scripts/run_ci_suite.py --layer migration_schema
 ```
 
 The audit report prints `file`, inferred domain layer, explicit profile or `missing`, module/file-level `no_db`, likely `agent_ws`, and a summary. Normal mode is report-only; `--strict` returns non-zero for DB-backed, non-`agent_ws` files that still have no explicit profile.

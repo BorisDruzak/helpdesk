@@ -30,6 +30,14 @@ ALLOWED_CLASSIFICATIONS = {
 }
 CLEANUP_REQUIRED_CLASSIFICATIONS = {"ephemeral_test_data"}
 CASCADE_SAFE_ACTIONS = {"CASCADE", "SET NULL", "SET DEFAULT"}
+MIGRATION_ONLY_TABLES = {
+    "knowledge_article_segments",
+    "knowledge_segmentation_jobs",
+    "knowledge_segmentation_profiles",
+    "ticket_admin_audit_archive",
+    "ticket_events_archive",
+    "ticket_retention_runs",
+}
 
 
 @dataclass(frozen=True)
@@ -197,6 +205,7 @@ def load_schema_from_models(workspace: Path) -> SchemaSnapshot:
             )
     tables = set(Base.metadata.tables)
     tables.add("alembic_version")
+    tables.update(MIGRATION_ONLY_TABLES)
     return SchemaSnapshot(tables=tables, foreign_keys=tuple(foreign_keys))
 
 
