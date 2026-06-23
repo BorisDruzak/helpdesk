@@ -512,6 +512,45 @@ async def test_web_support_message_writes_observer_event_without_raw_text(test_c
 
 
 @pytest.mark.asyncio
+async def test_web_support_message_retry_is_idempotent_by_message_id(test_client, test_engine):
+    suffix = uuid.uuid4().hex[:8]
+    ticket_id = await _seed_support_ticket(test_engine, device_id=f"device-support-retry-{suffix}")
+    message_id = f"support-retry-{suffix}"
+    body = {"message_id": message_id, "text": "Support retry idempotency", "visibility": "public"}
+
+    first = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/messages",
+        headers=_support_headers(),
+        json=body,
+    )
+    first_payload = await first.json()
+    assert first.status == 200, first_payload
+
+    retry = await test_client.post(
+        f"/api/web/support/tickets/{ticket_id}/messages",
+        headers=_support_headers(),
+        json=body,
+    )
+    retry_payload = await retry.json()
+    assert retry.status == 200, retry_payload
+    assert retry_payload["data"]["message"]["message_id"] == message_id
+    assert retry_payload["data"]["message"]["event_id"] == first_payload["data"]["message"]["event_id"]
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        matching_messages = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "chat_message",
+                    TicketEvent.payload["message_id"].astext == message_id,
+                )
+            )
+        ).scalars().all()
+    assert len(matching_messages) == 1
+
+
+@pytest.mark.asyncio
 async def test_web_support_resolve_writes_status_and_confirmation_observer_events_without_raw_reason(
     test_client,
     test_engine,

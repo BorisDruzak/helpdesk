@@ -1145,9 +1145,25 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
             event_id=message_id,
         )
 
+        inserted_message = result is not None
+        event_id = int(result[0]) if result and result[0] is not None else None
+        attachments_count = len(attachments)
+        if not inserted_message:
+            existing_message = await repo.get_chat_message_by_message_id(ticket.ticket_id, message_id)
+            if existing_message is None:
+                return _error("message retry could not be resolved", status=409, error_code="MESSAGE_RETRY_NOT_FOUND")
+            event_id = int(existing_message.id)
+            existing_payload = existing_message.payload if isinstance(existing_message.payload, dict) else {}
+            existing_attachments = existing_payload.get("attachments")
+            existing_attachment_refs = existing_payload.get("attachment_refs")
+            if isinstance(existing_attachments, list):
+                attachments_count = len(existing_attachments)
+            elif isinstance(existing_attachment_refs, list):
+                attachments_count = len(existing_attachment_refs)
+
         status_result = None
         status_payload: dict[str, Any] | None = None
-        if getattr(ticket, "status", None) == "waiting_on_user":
+        if inserted_message and getattr(ticket, "status", None) == "waiting_on_user":
             workflow = TicketWorkflowService(session, repo)
             transition = await workflow.apply_triggered_transition(
                 ticket_id=ticket.ticket_id,
@@ -1163,29 +1179,31 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
             status_result = transition.get("event_result")
             status_payload = transition.get("event_payload") or {}
 
-        await _write_requester_web_observer_event(
-            session,
-            request=request,
-            auth_context=auth_context,
-            source="requester_chat",
-            event_type="chat_message_sent",
-            severity="info",
-            result="succeeded",
-            ticket_id=ticket.ticket_id,
-            device_id=ticket.device_id,
-            person_id=getattr(ticket, "requester_person_id", None),
-            payload=_requester_chat_message_observer_payload(
-                message_payload=payload,
-                attachments=attachments,
-                status_result=status_result,
-            ),
-        )
+        if inserted_message:
+            await _write_requester_web_observer_event(
+                session,
+                request=request,
+                auth_context=auth_context,
+                source="requester_chat",
+                event_type="chat_message_sent",
+                severity="info",
+                result="succeeded",
+                ticket_id=ticket.ticket_id,
+                device_id=ticket.device_id,
+                person_id=getattr(ticket, "requester_person_id", None),
+                payload=_requester_chat_message_observer_payload(
+                    message_payload=payload,
+                    attachments=attachments,
+                    status_result=status_result,
+                ),
+            )
         await session.commit()
 
-    await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
-    if status_result:
+    if inserted_message:
+        await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
+    if inserted_message and status_result:
         await _push_ticket_event(request, ticket.ticket_id, status_result, "status_changed", status_payload or {})
-    return _success({"message_id": message_id, "event_id": result[0] if result else None, "attachments_count": len(attachments)})
+    return _success({"message_id": message_id, "event_id": event_id, "attachments_count": attachments_count})
 
 
 @require_auth("user")

@@ -1126,7 +1126,7 @@ Blocking:
 ### Phase 2 — behavioral contracts
 
 - [x] `BEH-201` Requester create/block/no-device/on-behalf matrix.
-- [ ] `BEH-202` Chat retry/idempotency.
+- [x] `BEH-202` Chat retry/idempotency.
 - [ ] `BEH-203` Resolve/feedback/reopen.
 - [ ] `BEH-204` Support claim/status/SLA/privacy.
 - [ ] `BEH-205` Tool operation/outbox/result/ACK.
@@ -1210,6 +1210,8 @@ Checkpoint 2026-06-23 QG-005: `scripts/run_ci_suite.py` writes `summary.evidence
 Checkpoint 2026-06-23 DB-104: `server/tests/test_migration_schema_contract.py` is wired into `scripts/run_ci_suite.py` as the `migration_schema` layer with `PC_CLIENT_TEST_DB_TEMPLATE=0`, `junit-migration-schema.xml` and fixture timing artifacts. The layer proves direct empty-DB Alembic upgrade to exact heads, idempotent repeated `upgrade head`, actual migrated schema vs SQLAlchemy metadata plus explicit migration-only allowlist, DB cleanup schema zero drift, required constraints/indexes/defaults including nullable no-device ticket columns, and smoke insert/select/delete for recent runtime tables. The first strict migration run found missing cleanup coverage for `knowledge_article_segments`, `knowledge_segmentation_*`, `ticket_*_archive` and `ticket_retention_runs`; cleanup classification/static full-cleanup coverage is now updated and `scripts/audit_db_cleanup_schema.py --schema-from-models --strict` reports zero drift.
 
 Checkpoint 2026-06-23 BEH-201: `server/tests/test_requester_workspace_api.py` now carries an API + DB + Observer matrix for requester create paths: no-agent normal-form block (`REQUESTER_AGENT_REQUIRED`), no-device preview/create, on-behalf out-of-scope deny (`ON_BEHALF_SCOPE_DENIED`), and authorized on-behalf create. `server/web_api/requester_handlers.py` writes redacted `requester_web` Observer traces for requester preview/create block paths (`ticket_preview_blocked`, `ticket_create_blocked`) without raw person/device/request payloads. Focused verification: four BEH-201 scenarios passed in one DB-backed run.
+
+Checkpoint 2026-06-23 BEH-202: requester and support chat endpoints now treat API retries with the same `message_id` as idempotent. A duplicate `message_id` resolves the already persisted `chat_message` and returns its original event id instead of creating a second row; retry responses do not repeat requester workflow transitions, support first-response SLA closure, Observer writes, or realtime pushes. Coverage is `test_requester_ticket_message_retry_is_idempotent_by_message_id` and `test_web_support_message_retry_is_idempotent_by_message_id`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

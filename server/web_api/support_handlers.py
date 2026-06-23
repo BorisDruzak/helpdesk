@@ -5939,7 +5939,7 @@ async def handle_web_support_send_message(request: web.Request):
                     )
 
             sender_role = _message_role_from_auth(auth_context)
-            message_id = str(uuid.uuid4())
+            message_id = str(data.get("message_id") or "").strip()[:120] or str(uuid.uuid4())
             payload = {
                 "message_id": message_id,
                 "sender_role": sender_role,
@@ -5960,27 +5960,50 @@ async def handle_web_support_send_message(request: web.Request):
                 payload=payload,
                 event_id=message_id,
             )
-            if is_public_support_reply_payload(payload):
+            inserted_message = result is not None
+            if not inserted_message:
+                existing_message = await repo.get_chat_message_by_message_id(ticket.ticket_id, message_id)
+                if existing_message is None:
+                    return web.json_response(
+                        {
+                            "status": "error",
+                            "error": "message retry could not be resolved",
+                            "error_code": "MESSAGE_RETRY_NOT_FOUND",
+                        },
+                        status=409,
+                    )
+                result = (existing_message.id, existing_message.created_at)
+                existing_payload = existing_message.payload if isinstance(existing_message.payload, dict) else {}
+                if existing_payload:
+                    payload = existing_payload
+                    sender_role = str(payload.get("sender_role") or sender_role)
+                    visibility = str(payload.get("visibility") or visibility)
+                    text = str(payload.get("text") or "")
+                    existing_attachments = payload.get("attachments")
+                    attachments = existing_attachments if isinstance(existing_attachments, list) else []
+            if inserted_message and is_public_support_reply_payload(payload):
                 await TicketSlaService(session, repo).close_frt(ticket.ticket_id)
-            await _write_support_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="support_chat",
-                event_type="support_message_sent",
-                severity="info",
-                result="succeeded",
-                ticket_id=ticket.ticket_id,
-                device_id=ticket.device_id,
-                person_id=_support_observer_ticket_person_id(ticket),
-                payload=_support_chat_observer_payload(
-                    message_payload=payload,
-                    attachments=attachments,
-                ),
-            )
+            if inserted_message:
+                await _write_support_web_observer_event(
+                    session,
+                    request=request,
+                    auth_context=auth_context,
+                    source="support_chat",
+                    event_type="support_message_sent",
+                    severity="info",
+                    result="succeeded",
+                    ticket_id=ticket.ticket_id,
+                    device_id=ticket.device_id,
+                    person_id=_support_observer_ticket_person_id(ticket),
+                    payload=_support_chat_observer_payload(
+                        message_payload=payload,
+                        attachments=attachments,
+                    ),
+                )
             await session.commit()
 
-        await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
+        if inserted_message:
+            await _push_ticket_event(request, ticket.ticket_id, result, "chat_message", payload)
         message = SupportTicketMessage(
             message_id=message_id,
             event_id=int(result[0]) if result and result[0] is not None else None,

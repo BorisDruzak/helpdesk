@@ -239,6 +239,8 @@ if agent_seq is None and payload.get("message_id"):
 
 **ВАЖНО:** `message_id` должен быть уникальным в пределах тикета для server events.
 
+Authenticated web chat endpoints accept a client-provided `message_id` as the retry/idempotency key. `POST /api/web/requester/tickets/{ticket_ref}/message` and `POST /api/web/support/tickets/{ticket_id}/messages` must return the already persisted `chat_message` event id when the same `message_id` is submitted again for the same ticket. A retry must not create another `ticket_events` row and must not repeat side effects such as requester workflow transitions, support first-response SLA closure, Observer web-cabinet writes, or realtime ticket pushes.
+
 ---
 
 ## API Endpoints

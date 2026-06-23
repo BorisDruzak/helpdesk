@@ -2671,6 +2671,60 @@ async def test_requester_ticket_detail_and_message_are_owned_only(test_client, t
 
 
 @pytest.mark.asyncio
+async def test_requester_ticket_message_retry_is_idempotent_by_message_id(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"requester-message-retry-{uuid.uuid4().hex[:8]}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "requester-message-retry-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title="Requester message retry ticket",
+            description="Retry should not duplicate requester chat.",
+            user_display_name="Requester Message Retry",
+            requester_profile={"full_name": "Requester Message Retry", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
+        await session.commit()
+
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+    message_id = f"requester-retry-{uuid.uuid4().hex}"
+    body = {"message_id": message_id, "text": "Requester retry idempotency"}
+    first = await test_client.post(f"/api/web/requester/tickets/{ticket_ref}/message", headers=headers, json=body)
+    first_payload = await first.json()
+    assert first.status == 200, first_payload
+
+    retry = await test_client.post(f"/api/web/requester/tickets/{ticket_ref}/message", headers=headers, json=body)
+    retry_payload = await retry.json()
+    assert retry.status == 200, retry_payload
+    assert retry_payload["data"]["message_id"] == message_id
+    assert retry_payload["data"]["event_id"] == first_payload["data"]["event_id"]
+
+    async with session_maker() as session:
+        matching_messages = (
+            await session.execute(
+                select(TicketEvent).where(
+                    TicketEvent.ticket_id == ticket_id,
+                    TicketEvent.event_type == "chat_message",
+                    TicketEvent.payload["message_id"].astext == message_id,
+                )
+            )
+        ).scalars().all()
+    assert len(matching_messages) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("terminal_status", ["resolved", "closed"])
 async def test_requester_ticket_message_rejects_terminal_statuses_and_exposes_actions(
     test_client,
