@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from problem.problem_service import ProblemService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_problem_service_lists_created_problem(test_engine) -> None:

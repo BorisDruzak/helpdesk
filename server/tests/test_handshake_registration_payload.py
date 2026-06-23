@@ -2,6 +2,8 @@ import pytest
 
 from websocket.agent_handshake import build_registration_payload_for_handshake
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 class _FakeSessionFactory:
     async def __aenter__(self):

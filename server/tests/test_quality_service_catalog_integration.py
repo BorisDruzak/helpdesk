@@ -10,6 +10,8 @@ from app.db.models import Ticket
 from quality.feedback_service import TicketFeedbackService
 from quality.analytics_service import ServiceQualityAnalyticsService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_quality_signals_snapshot_service_catalog_fields(test_engine) -> None:

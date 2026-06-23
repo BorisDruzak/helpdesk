@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from change.change_service import ChangeService
 from change.risk_service import RiskAssessmentService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_risk_assessment_scores_and_requires_override_reason(test_engine) -> None:

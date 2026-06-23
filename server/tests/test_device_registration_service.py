@@ -23,6 +23,8 @@ from registry.policy_service import RegistryPolicyService
 from registry.registration_form_service import build_registration_form_payload
 from registry.service import RegistryIngestionService
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 
 def _device(device_id: str, *, hostname: str = "reg-pc") -> Device:
     now = datetime.now(timezone.utc)

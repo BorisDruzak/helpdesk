@@ -6,6 +6,8 @@ from sqlalchemy import select
 from app.db.engine import async_sessionmaker
 from app.db.models import Ticket
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_admin_run_tool_system_ticket_uses_canonical_status(test_client, test_engine, monkeypatch):

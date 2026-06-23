@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ContinuousImprovementAction, KnowledgeFeedbackEvent, Ticket
 from quality.feedback_service import TicketFeedbackService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_knowledge_article_failed_feedback_creates_kb_improvement_action(test_engine) -> None:

@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import ServerRuntimeSnapshot
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 ADMIN_TOKEN = "test-ui-admin-token"
 USER_TOKEN = "test-ui-user:plain-user"
 

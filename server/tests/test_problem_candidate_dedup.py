@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ProblemCandidate, Ticket, TicketReopenEvent
 from problem.candidate_service import ProblemCandidateService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_repeated_scan_updates_existing_candidate_metadata(test_engine) -> None:

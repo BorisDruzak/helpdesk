@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ProblemCandidate
 from problem.candidate_service import ProblemCandidateService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_candidate_list_evidence_is_redacted_for_operational_views(test_engine) -> None:

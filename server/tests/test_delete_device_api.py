@@ -18,6 +18,8 @@ from app.db.models import (
     Operation,
 )
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"

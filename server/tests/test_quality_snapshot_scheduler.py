@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ServiceQualitySnapshot, Ticket, TicketFeedback
 from app.services.quality_snapshot_scheduler import QualitySnapshotScheduler
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_quality_snapshot_scheduler_recomputes_daily_and_weekly_snapshots(test_engine) -> None:

@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import KnowledgeFeedbackEvent, KnowledgeItem, KnowledgeSpace, ProblemCandidate, Ticket
 from problem.candidate_service import ProblemCandidateService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_failed_kb_ticket_after_knowledge_pattern_creates_candidate(test_engine) -> None:

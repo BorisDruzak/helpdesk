@@ -12,6 +12,8 @@ from app.db.models import Device, DiagnosticCapability, DiagnosticProvider
 from inventory.scheduler import InventoryRefreshRuntime
 from inventory.service import DeviceInventoryService, extract_tool_result_payload
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 
 INVENTORY_SCHEMA = {
     "version": "1.0",

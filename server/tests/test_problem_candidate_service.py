@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import HelpdeskService, HelpdeskServiceOffering, ProblemCandidate, Ticket, TicketFeedback, TicketReopenEvent
 from problem.candidate_service import ProblemCandidateService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _ticket(ticket_id: str, *, title: str = "VPN issue") -> Ticket:
     now = datetime.now(timezone.utc)

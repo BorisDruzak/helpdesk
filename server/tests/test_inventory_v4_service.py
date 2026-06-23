@@ -14,10 +14,13 @@ from inventory.service import DeviceInventoryService
 from presence.service import DevicePresenceService
 
 
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="DB-backed inventory v4 tests run on Linux/CI; local Windows test_engine fixture can block on DB startup.",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="DB-backed inventory v4 tests run on Linux/CI; local Windows test_engine fixture can block on DB startup.",
+    ),
+    pytest.mark.db_cleanup("full"),
+]
 
 
 def _device(device_id: str, *, hostname: str, online: bool = True) -> Device:

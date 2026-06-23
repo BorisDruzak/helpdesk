@@ -9,6 +9,9 @@ from sqlalchemy import select
 from app.db.engine import async_sessionmaker
 from app.repos.operations_repo import OperationsRepo
 from app.db.models import TicketEvent, Operation
+import pytest
+
+pytestmark = pytest.mark.db_cleanup("full")
 
 TEST_ECHO_TOOL = "test_echo.echo"
 TEST_FAIL_TOOL = "test_fail.fail"

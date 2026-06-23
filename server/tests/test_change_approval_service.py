@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from change.approval_service import ChangeApprovalService
 from change.change_service import ChangeService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_change_approval_enforces_approver_identity_and_rejection_blocks(test_engine) -> None:

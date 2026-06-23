@@ -7,6 +7,8 @@ from app.db.models import Problem
 from app.repos.change_repo import ChangeRepo
 from change.change_service import ChangeService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_change_repo_get_by_key_and_problem(test_engine) -> None:

@@ -8,6 +8,8 @@ from app.db.models import ContinuousImprovementAction
 from change.change_service import ChangeService
 from quality.improvement_service import ContinuousImprovementService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_change_can_be_created_from_improvement_action(test_engine) -> None:

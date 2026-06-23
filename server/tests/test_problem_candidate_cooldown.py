@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ProblemCandidate, Ticket, TicketReopenEvent
 from problem.candidate_service import ProblemCandidateService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 async def _seed_reopen_pattern(session, now: datetime) -> None:
     for _ in range(2):

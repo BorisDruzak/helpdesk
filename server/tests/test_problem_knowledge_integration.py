@@ -8,6 +8,8 @@ from app.db.models import KnowledgeItem, Problem, ProblemKnownErrorLink
 from problem.known_error_service import ProblemKnownErrorService
 from problem.problem_service import ProblemService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_problem_known_error_uses_knowledge_platform_draft_visibility(test_engine) -> None:

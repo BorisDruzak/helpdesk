@@ -5,6 +5,8 @@ from sqlalchemy import text
 
 from ai.provider_registry import AIProviderRegistry
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_ai_settings_tables_exist_after_migration(test_engine) -> None:

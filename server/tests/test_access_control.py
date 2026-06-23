@@ -9,6 +9,8 @@ from routes import setup_routes
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
 from web_api.session_handlers import _build_session_payload
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
 
 @pytest.fixture
 async def web_admin_client():

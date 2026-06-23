@@ -16,6 +16,8 @@ from routes import setup_routes
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN
 import web_api.settings_handlers as settings_handlers_module
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.fixture
 async def web_settings_client():

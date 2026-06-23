@@ -68,6 +68,7 @@ To run a single canonical layer:
 ```powershell
 python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
 python scripts/run_ci_suite.py --layer test_inventory_audit
+python scripts/run_ci_suite.py --layer db_cleanup_profile_audit
 python scripts/run_ci_suite.py --layer scripts_pytest_no_db
 python scripts/run_ci_suite.py --layer webapp_unit_tests
 python scripts/run_ci_suite.py --layer webapp_fixture_e2e
@@ -126,6 +127,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `summary.evidence_layers.webapp_fixture_e2e` marks Playwright fixture E2E as `mode=fixture_e2e` and `canonical_live_browser=false`; it is CI browser-fixture coverage, not live browser signoff evidence.
 - `summary.baseline_artifacts` records canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and fixture E2E retry policy for release/preflight consumers.
 - `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
+- `db_cleanup_profile_audit` runs `python scripts/audit_db_cleanup_profiles.py --strict` before pytest layers and fails on DB-backed, non-agent-ws server test files without an explicit `db_cleanup` profile.
 - `scripts_pytest_no_db` runs `scripts/test_*.py -m "not manual"` with `--durations=40` and `junit-scripts-no-db.xml` before server pytest layers.
 - Optional `--parallel --max-workers 2` for bounded server DB/WS layer concurrency; this does not change pytest markers,
   cleanup profiles, DB template behavior, pool settings, or test fixture semantics.
@@ -227,7 +229,7 @@ To audit current file-level coverage without changing pytest behavior:
 ```powershell
 python scripts/audit_test_inventory.py --strict
 python scripts/audit_db_cleanup_profiles.py
-python scripts/audit_db_cleanup_profiles.py --strict  # optional gate for missing DB-backed profiles
+python scripts/audit_db_cleanup_profiles.py --strict  # canonical CI gate for missing DB-backed profiles
 python scripts/audit_db_cleanup_schema.py --schema-from-models --strict
 ```
 

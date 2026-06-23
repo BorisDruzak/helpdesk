@@ -18,6 +18,8 @@ from remote_assist.service import RemoteAssistService
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}

@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from quality.policy_service import QualityPolicyService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_quality_policy_default_and_service_override(test_engine) -> None:

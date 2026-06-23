@@ -10,6 +10,8 @@ from app.db.models import Ticket, UiUser
 from registry.account_session_service import AccountSessionService
 from tests.test_ticket_account_access import _approved_binding, _device, _agent_headers
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _user_headers(user_login: str) -> dict[str, str]:
     return {"Authorization": f"Bearer test-ui-user:{user_login}"}

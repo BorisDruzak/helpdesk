@@ -11,6 +11,8 @@ from registry.policy_service import RegistryPolicyService
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.registration_service import RegistrationService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _new_id() -> str:
     return str(uuid.uuid4())

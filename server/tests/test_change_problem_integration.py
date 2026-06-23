@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Change, Problem, ProblemActivityEvent
 from change.change_service import ChangeService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_problem_to_change_records_problem_activity_without_auto_closing_problem(test_engine) -> None:

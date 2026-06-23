@@ -10,6 +10,8 @@ from app.db.models import Device, DeviceBrowserPairing
 from registry.browser_pairing_service import BrowserPairingService
 from registry.registration_service import RegistrationService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _device(device_id: str) -> Device:
     now = datetime.now(timezone.utc)

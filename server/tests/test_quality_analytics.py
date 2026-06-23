@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import KnowledgeFeedbackEvent, ServiceQualitySnapshot, Ticket, TicketFeedback, TicketReopenEvent
 from quality.analytics_service import ServiceQualityAnalyticsService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_service_quality_analytics_aggregates_without_requester_pii(test_engine) -> None:

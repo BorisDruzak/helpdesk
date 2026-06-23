@@ -18,6 +18,8 @@ from app.db.models import (
     VisibilityPolicy,
 )
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-admin-token"}

@@ -11,6 +11,8 @@ from app.db.models import Ticket, TicketFeedback, TicketReopenEvent
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_low_csat_feedback_can_link_to_reopen_event(test_engine) -> None:

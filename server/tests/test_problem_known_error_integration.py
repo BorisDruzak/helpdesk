@@ -9,6 +9,8 @@ from knowledge.contracts import actor_visible_visibilities
 from problem.known_error_service import ProblemKnownErrorService
 from problem.problem_service import ProblemService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_problem_creates_internal_known_error_and_workaround_drafts(test_engine) -> None:

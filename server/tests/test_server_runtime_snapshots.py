@@ -10,6 +10,8 @@ from app.db.models import Device, DevicePresenceSnapshot, ServerRuntimeSnapshot
 from observer.debug_facade import agent_presence_snapshot, runtime_snapshot
 from observer.runtime_snapshot_writer import build_runtime_snapshot_payload, persist_runtime_snapshot
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_runtime_snapshot_returns_fresh_persisted_server_snapshot(test_engine) -> None:

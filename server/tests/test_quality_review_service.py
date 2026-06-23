@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Ticket, TicketQualityReview
 from quality.review_service import QualityReviewService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_review_lifecycle_assign_start_complete_and_dismiss(test_engine) -> None:

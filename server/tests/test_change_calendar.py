@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from change.calendar_service import ChangeCalendarService
 from change.change_service import ChangeService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_blackout_blocks_schedule_unless_override_has_justification(test_engine) -> None:

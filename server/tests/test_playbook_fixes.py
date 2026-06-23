@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Playbook, PlaybookStep, PlaybookStepRun, PlaybookVersion
 from app.services import playbook_engine
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 # --- Без БД ---
 
 

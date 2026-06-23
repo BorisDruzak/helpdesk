@@ -11,6 +11,8 @@ from change.analytics_service import ChangeAnalyticsService
 from change.change_service import ChangeService
 from change.policy_service import ChangePolicyService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_change_analytics_groups_by_type_status_and_service_without_pii(test_engine) -> None:

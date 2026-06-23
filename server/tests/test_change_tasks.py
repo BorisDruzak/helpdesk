@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from change.change_service import ChangeService
 from change.task_service import ChangeTaskService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_change_tasks_must_complete_before_implemented(test_engine) -> None:

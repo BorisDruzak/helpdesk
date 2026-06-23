@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
 from tickets.requester_policy import requester_ticket_actions
+import pytest
+
+pytestmark = pytest.mark.db_cleanup("policies_config")
 
 
 def test_confirm_solution_requires_pending_resolution_confirmation() -> None:

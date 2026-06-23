@@ -8,6 +8,13 @@ database = "none"
 description = "Fails the full gate on unknown pytest markers, no_db tests that request DB fixtures, unowned DB tests, or direct live/network client calls in PR suites."
 
 [[suites]]
+name = "db_cleanup_profile_audit"
+runner = "script"
+command = ["python", "scripts/audit_db_cleanup_profiles.py", "--strict"]
+database = "none"
+description = "Fails the full gate when DB-backed, non-agent-ws server pytest files do not declare an explicit db_cleanup profile."
+
+[[suites]]
 name = "scripts_pytest_no_db"
 runner = "pytest"
 paths = ["scripts/test_*.py"]

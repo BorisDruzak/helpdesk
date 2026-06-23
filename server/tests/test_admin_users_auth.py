@@ -2,6 +2,8 @@ import pytest
 
 from tests.conftest import TEST_UI_ADMIN_TOKEN
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _admin_headers():
     return {"Authorization": "Bearer " + TEST_UI_ADMIN_TOKEN}

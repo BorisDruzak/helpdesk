@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from problem.problem_service import ProblemService
 from problem.rca_service import RCAService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_rca_records_are_versioned_and_require_human_approval(test_engine) -> None:

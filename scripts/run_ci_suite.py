@@ -790,6 +790,16 @@ def _test_inventory_audit_command(workspace: Path) -> list[str]:
     ]
 
 
+def _db_cleanup_profile_audit_command(workspace: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(workspace / "scripts" / "audit_db_cleanup_profiles.py"),
+        "--tests-dir",
+        str(workspace / "server" / "tests"),
+        "--strict",
+    ]
+
+
 def _classify_server_db_api_test_file(filename: str) -> str:
     for layer_name, patterns in SERVER_DB_API_LAYER_RULES:
         if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
@@ -957,6 +967,14 @@ def main() -> None:
             "test_inventory_audit",
             _test_inventory_audit_command(args.workspace),
             logs_dir / "test_inventory_audit.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
+        ),
+        (
+            "db_cleanup_profile_audit",
+            _db_cleanup_profile_audit_command(args.workspace),
+            logs_dir / "db_cleanup_profile_audit.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
             None,

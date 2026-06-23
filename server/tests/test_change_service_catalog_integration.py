@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import HelpdeskService, HelpdeskServiceOffering
 from change.change_service import ChangeService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_change_rejects_invalid_service_offering_when_catalog_exists(test_engine) -> None:

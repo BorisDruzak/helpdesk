@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket, TicketReopenEvent
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _support_headers() -> dict[str, str]:
     return {"Authorization": "Bearer test-ui-support-token"}

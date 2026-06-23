@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Problem, ProblemCandidate, ProblemTicketLink, Ticket
 from problem.analytics_service import ProblemAnalyticsService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_problem_analytics_groups_by_service_without_requester_pii(test_engine) -> None:

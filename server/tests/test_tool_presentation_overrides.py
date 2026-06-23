@@ -13,6 +13,8 @@ from diagnostics.presentation_overrides import (
     ToolPresentationOverrideService,
 )
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 
 DEFAULT_SCHEMA = {
     "version": "1.0",

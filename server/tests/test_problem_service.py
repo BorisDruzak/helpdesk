@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ContinuousImprovementAction, Problem, ProblemActivityEvent, ProblemTicketLink, Ticket
 from problem.problem_service import ProblemService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _ticket(ticket_id: str, *, service_code: str = "network", offering_code: str = "network.vpn_issue") -> Ticket:
     return Ticket(

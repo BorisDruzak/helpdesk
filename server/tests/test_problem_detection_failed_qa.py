@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ProblemCandidate, Ticket, TicketQualityReview
 from problem.candidate_service import ProblemCandidateService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_failed_qa_review_pattern_scan_creates_candidate(test_engine) -> None:

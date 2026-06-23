@@ -8,6 +8,8 @@ from app.db.models import Device, DiagnosticSession, Operation, Ticket, TicketAp
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _support_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_SUPPORT_TOKEN}"}

@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Device, DeviceDesiredModule, DeviceModule, Module, ServerConfig
 from diagnostics.runner_rollout import RunnerRolloutService, RunnerRolloutStateError
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 
 RUNNER = "agent_recipe_runner"
 

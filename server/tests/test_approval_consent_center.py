@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Change, ChangeApproval, Operation, RemoteAccessSession, Ticket, TicketApproval
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _admin_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {TEST_UI_ADMIN_TOKEN}"}

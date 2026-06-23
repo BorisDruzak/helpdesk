@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ContinuousImprovementAction
 from quality.improvement_service import ContinuousImprovementService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_improvement_action_lifecycle_requires_owner_and_outcome(test_engine) -> None:

@@ -18,6 +18,8 @@ from app.db.models import (
 from customer_history.projection_service import CustomerHistoryProjectionService
 from tests.conftest import TEST_UI_SUPPORT_TOKEN, TEST_UI_USER_PREFIX
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}

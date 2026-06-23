@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Problem
 from problem.analytics_service import ProblemAnalyticsService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_problem_analytics_reports_overdue_and_aging_metrics(test_engine) -> None:

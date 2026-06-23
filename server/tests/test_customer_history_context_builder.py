@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import KnowledgeFeedbackEvent, RegistryPerson, Ticket, TicketEvent
 from customer_history.context_builder import CustomerHistoryContextBuilder
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_ticket_context_pack_is_bounded_deterministic_and_redacted(test_engine) -> None:

@@ -9,6 +9,8 @@ from sqlalchemy import select
 from app.db import get_session
 from app.db.models import ConnectionRequest, Device
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
 
 

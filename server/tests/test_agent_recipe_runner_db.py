@@ -28,6 +28,8 @@ from diagnostics.agent_recipes import AgentRecipeValidationError
 from diagnostics.agent_recipes_repo import AgentRecipeRepo
 from diagnostics.recipe_execution_service import RecipeExecutionService
 
+pytestmark = pytest.mark.db_cleanup("agent_runtime")
+
 
 def _ticket(ticket_id: str, device_id: str) -> Ticket:
     return Ticket(

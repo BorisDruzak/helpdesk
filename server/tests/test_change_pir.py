@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from change.change_service import ChangeService
 from change.pir_service import PIRService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_pir_approval_allows_change_closure(test_engine) -> None:

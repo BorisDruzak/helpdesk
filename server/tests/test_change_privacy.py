@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _user_headers(login: str = "alice") -> dict[str, str]:
     return {"Authorization": f"Bearer test-ui-user:{login}"}

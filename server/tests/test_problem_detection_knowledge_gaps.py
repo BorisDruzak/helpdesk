@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import KnowledgeGapFinding, ProblemCandidate, Ticket
 from problem.candidate_service import ProblemCandidateService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_knowledge_gap_plus_repeated_tickets_creates_candidate(test_engine) -> None:

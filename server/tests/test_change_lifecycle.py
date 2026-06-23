@@ -8,6 +8,8 @@ from change.change_service import ChangeService
 from change.plan_service import ChangePlanService
 from change.risk_service import RiskAssessmentService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_normal_change_requires_risk_plan_rollback_and_approval(test_engine) -> None:

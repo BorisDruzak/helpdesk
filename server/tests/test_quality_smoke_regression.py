@@ -13,6 +13,8 @@ from quality.feedback_service import TicketFeedbackService
 from quality.improvement_service import ContinuousImprovementService
 from quality.reopen_service import TicketReopenService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_p3_quality_smoke_low_csat_reopen_action_and_private_analytics(test_engine) -> None:

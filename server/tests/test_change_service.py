@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Change, ChangeActivityEvent, Problem, ProblemAffectedObject
 from change.change_service import ChangeService
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_create_change_and_create_from_problem_copies_context(test_engine) -> None:

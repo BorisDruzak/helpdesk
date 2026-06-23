@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import ProblemScannerRun, Ticket, TicketReopenEvent
 from app.services.problem_candidate_scheduler import ProblemCandidateScheduler
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.mark.asyncio
 async def test_problem_scheduler_disabled_does_not_start(test_engine) -> None:

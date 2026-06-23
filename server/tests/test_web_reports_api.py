@@ -17,6 +17,8 @@ from tests.conftest import TEST_UI_SUPPORT_TOKEN
 from tests.test_ticket_queue_routing_contracts import _seed_queue
 import web_api.reports_handlers as reports_handlers_module
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 @pytest.fixture
 async def web_reports_client():

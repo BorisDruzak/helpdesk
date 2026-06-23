@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import ContinuousImprovementAction, Ticket, TicketQualityReview
 
+pytestmark = pytest.mark.db_cleanup("full")
+
 
 def _user_headers(user_login: str) -> dict[str, str]:
     return {"Authorization": f"Bearer test-ui-user:{user_login}"}
