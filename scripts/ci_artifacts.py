@@ -12,6 +12,8 @@ DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 DEFAULT_ARTIFACTS_ROOT = Path("artifacts") / "ci"
 DEFAULT_WEBAPP_BUNDLE_DIRNAME = "webapp-dist"
 DEFAULT_WEBAPP_BUNDLE_ARCHIVE_NAME = "webapp-dist.tar.gz"
+DEFAULT_LIVE_RELEASE_SUMMARY_PATH = Path("artifacts") / "live" / "release-summary.json"
+LIVE_RELEASE_SUMMARY_SCHEMA = "pc_client.live_release_summary.v1"
 SERVER_DB_GATE_LAYER_PREFIX = "server_pytest_db_"
 SERVER_DB_GATE_LAYER_NAMES = {"server_pytest_agent_ws"}
 SHARED_DB_FALLBACK_MARKERS = (
@@ -154,3 +156,71 @@ def require_webapp_bundle_artifact(workspace: Path, commit: str) -> Path:
             f"Missing: {archive_path}"
         )
     return archive_path
+
+
+def live_release_summary_path(workspace: Path, summary_path: Path | str | None = None) -> Path:
+    if summary_path is None:
+        return workspace / DEFAULT_LIVE_RELEASE_SUMMARY_PATH
+    path = Path(summary_path)
+    return path if path.is_absolute() else workspace / path
+
+
+def require_live_release_summary(
+    workspace: Path,
+    commit: str,
+    environment: str,
+    *,
+    summary_path: Path | str | None = None,
+    release_run_id: str | None = None,
+    expected_schema_head: str | None = None,
+) -> Path:
+    path = live_release_summary_path(workspace, summary_path)
+    if not path.exists():
+        raise SystemExit(
+            "Passing live release summary is required before full release gate. "
+            f"Missing: {path}\n"
+            "Build it with `python scripts/build_live_release_summary.py --commit <sha> "
+            "--environment <name> --release-run-id <id> --expected-schema-head <head> "
+            "--output artifacts/live/release-summary.json` after the critical live behavior pack passes."
+        )
+    try:
+        summary = load_summary(path)
+    except Exception as exc:
+        raise SystemExit(f"Could not read live release summary {path}: {type(exc).__name__}: {exc}") from exc
+
+    release_context = summary.get("release_context") if isinstance(summary.get("release_context"), dict) else {}
+    coverage = summary.get("coverage") if isinstance(summary.get("coverage"), dict) else {}
+    errors: list[str] = []
+    if summary.get("schema") != LIVE_RELEASE_SUMMARY_SCHEMA:
+        errors.append(f"schema={summary.get('schema')!r}, expected {LIVE_RELEASE_SUMMARY_SCHEMA!r}")
+    if str(summary.get("status") or "").strip().lower() != "pass":
+        errors.append(f"status={summary.get('status')!r}, expected 'pass'")
+    actual_commit = str(release_context.get("commit") or "").strip()
+    if actual_commit != commit:
+        errors.append(f"release_context.commit={actual_commit!r}, expected {commit!r}")
+    actual_environment = str(release_context.get("environment") or "").strip()
+    if actual_environment != environment:
+        errors.append(f"release_context.environment={actual_environment!r}, expected {environment!r}")
+    if release_run_id is not None:
+        actual_release_run_id = str(release_context.get("release_run_id") or "").strip()
+        if actual_release_run_id != release_run_id:
+            errors.append(f"release_context.release_run_id={actual_release_run_id!r}, expected {release_run_id!r}")
+    if expected_schema_head is not None:
+        actual_schema_head = str(release_context.get("expected_schema_head") or "").strip()
+        if actual_schema_head != expected_schema_head:
+            errors.append(
+                f"release_context.expected_schema_head={actual_schema_head!r}, expected {expected_schema_head!r}"
+            )
+    failed_keys = coverage.get("failed_scenario_keys") or []
+    missing_keys = coverage.get("missing_scenario_keys") or []
+    if failed_keys:
+        errors.append(f"failed_scenario_keys={failed_keys!r}")
+    if missing_keys:
+        errors.append(f"missing_scenario_keys={missing_keys!r}")
+    if errors:
+        details = "\n".join(f"  - {error}" for error in errors)
+        raise SystemExit(
+            "Passing live release summary is required before full release gate.\n"
+            f"{path} is not acceptable:\n{details}"
+        )
+    return path

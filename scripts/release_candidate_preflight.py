@@ -13,6 +13,7 @@ try:
         DEFAULT_WORKSPACE,
         detect_commit,
         require_green_ci_artifact,
+        require_live_release_summary,
         require_webapp_bundle_artifact,
     )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
@@ -21,6 +22,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
         DEFAULT_WORKSPACE,
         detect_commit,
         require_green_ci_artifact,
+        require_live_release_summary,
         require_webapp_bundle_artifact,
     )
 
@@ -41,6 +43,18 @@ def parse_args() -> argparse.Namespace:
         "--skip-webapp-bundle",
         action="store_true",
         help="Skip checking the webapp bundle artifact for the candidate commit.",
+    )
+    parser.add_argument(
+        "--environment",
+        default="stand",
+        help="Release environment name expected in artifacts/live/release-summary.json.",
+    )
+    parser.add_argument("--release-run-id", help="Optional release-run id expected in the live release summary.")
+    parser.add_argument("--expected-schema-head", help="Optional schema head expected in the live release summary.")
+    parser.add_argument(
+        "--live-summary",
+        type=Path,
+        help="Path to pc_client.live_release_summary.v1 JSON. Defaults to artifacts/live/release-summary.json.",
     )
     return parser.parse_args()
 
@@ -108,6 +122,16 @@ def main() -> None:
     if not args.skip_webapp_bundle:
         bundle_path = require_webapp_bundle_artifact(workspace, commit)
         print(f"[release-preflight] webapp_bundle={bundle_path}")
+
+    live_summary_path = require_live_release_summary(
+        workspace,
+        commit,
+        args.environment,
+        summary_path=args.live_summary,
+        release_run_id=args.release_run_id,
+        expected_schema_head=args.expected_schema_head,
+    )
+    print(f"[release-preflight] live_release_summary={live_summary_path}")
 
     print(
         "[release-preflight] OK: frozen release candidate is ready for full gate. "

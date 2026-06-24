@@ -12,6 +12,10 @@ def make_args(**overrides: object) -> argparse.Namespace:
         "commit": None,
         "allow_local_dirty": False,
         "skip_webapp_bundle": False,
+        "environment": "stand",
+        "release_run_id": None,
+        "expected_schema_head": None,
+        "live_summary": None,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -47,7 +51,7 @@ def test_main_refuses_dirty_workspace_before_freeze(monkeypatch: pytest.MonkeyPa
 
 
 def test_main_checks_exact_ci_and_bundle_for_clean_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
-    recorded: list[tuple[str, Path, str]] = []
+    recorded: list[tuple[str, Path, str, str | None, str | None, str | None]] = []
 
     monkeypatch.setattr(preflight, "parse_args", lambda: make_args())
     monkeypatch.setattr(preflight, "detect_commit", lambda workspace, commit=None: "abc123")
@@ -55,18 +59,37 @@ def test_main_checks_exact_ci_and_bundle_for_clean_candidate(monkeypatch: pytest
     monkeypatch.setattr(
         preflight,
         "require_green_ci_artifact",
-        lambda workspace, commit: recorded.append(("ci", workspace, commit)) or workspace / "summary.json",
+        lambda workspace, commit: recorded.append(("ci", workspace, commit, None, None, None)) or workspace / "summary.json",
     )
     monkeypatch.setattr(
         preflight,
         "require_webapp_bundle_artifact",
-        lambda workspace, commit: recorded.append(("bundle", workspace, commit)) or workspace / "webapp-dist.tar.gz",
+        lambda workspace, commit: recorded.append(("bundle", workspace, commit, None, None, None)) or workspace / "webapp-dist.tar.gz",
+    )
+    monkeypatch.setattr(
+        preflight,
+        "require_live_release_summary",
+        lambda workspace, commit, environment, **kwargs: recorded.append(
+            (
+                "live",
+                workspace,
+                commit,
+                environment,
+                kwargs.get("release_run_id"),
+                kwargs.get("expected_schema_head"),
+            )
+        )
+        or workspace / "artifacts" / "live" / "release-summary.json",
     )
 
     preflight.main()
 
     workspace = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
-    assert recorded == [("ci", workspace, "abc123"), ("bundle", workspace, "abc123")]
+    assert recorded == [
+        ("ci", workspace, "abc123", None, None, None),
+        ("bundle", workspace, "abc123", None, None, None),
+        ("live", workspace, "abc123", "stand", None, None),
+    ]
 
 
 def test_git_status_short_returns_non_empty_lines(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

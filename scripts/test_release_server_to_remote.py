@@ -21,6 +21,10 @@ def make_args(**overrides: object) -> argparse.Namespace:
         "leave_running": False,
         "smoke_attempts": 10,
         "smoke_delay": 2.0,
+        "environment": "stand",
+        "release_run_id": None,
+        "expected_schema_head": None,
+        "live_summary": None,
     }
     values.update(overrides)
     return argparse.Namespace(**values)
@@ -155,6 +159,11 @@ def test_main_full_gate_passes_full_gate_to_deploy(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(release, "require_green_ci_artifact", lambda workspace, commit: workspace / "summary.json")
     monkeypatch.setattr(
         release,
+        "require_live_release_summary",
+        lambda workspace, commit, environment, **kwargs: workspace / "artifacts" / "live" / "release-summary.json",
+    )
+    monkeypatch.setattr(
+        release,
         "prepare_webapp_bundle_archive",
         lambda workspace, commit, *, skip_ci_check: workspace / "artifacts" / "ci" / commit / "webapp-dist.tar.gz",
     )
@@ -267,13 +276,19 @@ def test_main_requires_green_ci_by_default(monkeypatch: pytest.MonkeyPatch) -> N
     def fake_run_step(command: list[str], *, cwd: Path, label: str) -> None:
         calls.append((label, command))
 
-    recorded: list[tuple[Path, str]] = []
+    recorded: list[tuple[str, Path, str, str | None]] = []
 
     def fake_require_green(workspace: Path, commit: str) -> Path:
-        recorded.append((workspace, commit))
+        recorded.append(("ci", workspace, commit, None))
         return workspace / "artifacts" / "ci" / commit / "summary.json"
 
     monkeypatch.setattr(release, "require_green_ci_artifact", fake_require_green)
+    monkeypatch.setattr(
+        release,
+        "require_live_release_summary",
+        lambda workspace, commit, environment, **kwargs: recorded.append(("live", workspace, commit, environment))
+        or workspace / "artifacts" / "live" / "release-summary.json",
+    )
     monkeypatch.setattr(
         release,
         "prepare_webapp_bundle_archive",
@@ -285,7 +300,10 @@ def test_main_requires_green_ci_by_default(monkeypatch: pytest.MonkeyPatch) -> N
 
     release.main()
 
-    assert recorded == [(Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123")]
+    assert recorded == [
+        ("ci", Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123", None),
+        ("live", Path(r"C:\Users\admin-2\CodexProjects\pc_client"), "abc123", "stand"),
+    ]
 
 
 def test_prepare_webapp_bundle_archive_uses_existing_ci_artifact(monkeypatch: pytest.MonkeyPatch) -> None:

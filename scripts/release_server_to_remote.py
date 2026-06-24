@@ -19,6 +19,7 @@ try:
     from scripts.ci_artifacts import (
         detect_commit,
         require_green_ci_artifact,
+        require_live_release_summary,
         require_webapp_bundle_artifact,
     )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
@@ -26,6 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from scripts.ci_artifacts import (
         detect_commit,
         require_green_ci_artifact,
+        require_live_release_summary,
         require_webapp_bundle_artifact,
     )
 
@@ -123,6 +125,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=str(os.environ.get("REMOTE_SMOKE_INSECURE_TLS", "")).strip().lower() in {"1", "true", "yes", "on"},
         help="Allow self-signed HTTPS certs during remote smoke.",
+    )
+    parser.add_argument(
+        "--environment",
+        default="stand",
+        help="Release environment name expected in artifacts/live/release-summary.json for full gate.",
+    )
+    parser.add_argument("--release-run-id", help="Optional release-run id expected in the live release summary.")
+    parser.add_argument("--expected-schema-head", help="Optional schema head expected in the live release summary.")
+    parser.add_argument(
+        "--live-summary",
+        type=Path,
+        help="Path to pc_client.live_release_summary.v1 JSON. Defaults to artifacts/live/release-summary.json.",
     )
     parser.add_argument(
         "--release-status-path",
@@ -449,6 +463,15 @@ def main() -> None:
         if effective_gate == "full":
             summary_path = require_green_ci_artifact(workspace, commit)
             print(f"[ci] using green artifact {summary_path}")
+            live_summary_path = require_live_release_summary(
+                workspace,
+                commit,
+                args.environment,
+                summary_path=args.live_summary,
+                release_run_id=args.release_run_id,
+                expected_schema_head=args.expected_schema_head,
+            )
+            print(f"[live] using release summary {live_summary_path}")
         else:
             print(
                 "[ci] quick gate selected; skipping green CI artifact requirement. "

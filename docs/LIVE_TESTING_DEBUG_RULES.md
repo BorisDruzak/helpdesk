@@ -82,10 +82,10 @@ The runner captures browser evidence through `webapp/scripts/live-browser-scenar
 After scenario manifests are filled, build one release summary from the critical behavior pack and live manifest folder:
 
 ```powershell
-python scripts/build_live_release_summary.py --pack test_data_packs/critical_behavior_v1.json --live-root artifacts/live --output artifacts/live/release-summary.json --markdown-output artifacts/live/release-summary.md
+python scripts/build_live_release_summary.py --pack test_data_packs/critical_behavior_v1.json --live-root artifacts/live --commit <release-commit> --environment <stand|prod-like> --release-run-id <release-run-id> --expected-schema-head <schema-head> --output artifacts/live/release-summary.json --markdown-output artifacts/live/release-summary.md
 ```
 
-The summary is `pass` only when every critical behavior scenario has a passing `pc_client.live_evidence.v2` manifest; otherwise it reports `blocked` or `fail` with release blockers.
+The summary is `pass` only when every critical behavior scenario has a passing `pc_client.live_evidence.v2` manifest for the exact release commit, environment, release run id and expected schema head; otherwise it reports `blocked` or `fail` with release blockers. `release_candidate_preflight.py` and `release_server_to_remote.py --gate full` require `artifacts/live/release-summary.json` to match the candidate commit/environment and to have no failed or missing scenarios.
 
 ### Stop conditions
 

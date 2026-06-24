@@ -3,11 +3,18 @@ from pathlib import Path
 
 import pytest
 
-from scripts.ci_artifacts import require_green_ci_artifact
+from scripts.ci_artifacts import require_green_ci_artifact, require_live_release_summary
 
 
 def write_summary(workspace: Path, commit: str, payload: dict[str, object]) -> Path:
     summary_path = workspace / "artifacts" / "ci" / commit / "summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(payload), encoding="utf-8")
+    return summary_path
+
+
+def write_live_summary(workspace: Path, payload: dict[str, object]) -> Path:
+    summary_path = workspace / "artifacts" / "live" / "release-summary.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(payload), encoding="utf-8")
     return summary_path
@@ -105,3 +112,61 @@ def test_require_green_ci_artifact_rejects_shared_db_fallback_in_db_layer_log(tm
     assert "shared test DB fallback" in message
     assert "not valid for full release gate" in message
     assert "TEST_DATABASE_ADMIN_URL" in message
+
+
+def test_require_live_release_summary_accepts_exact_pass_context(tmp_path: Path) -> None:
+    summary_path = write_live_summary(
+        tmp_path,
+        {
+            "schema": "pc_client.live_release_summary.v1",
+            "status": "pass",
+            "release_context": {
+                "commit": "abc123",
+                "environment": "stand",
+                "release_run_id": "rel-1",
+                "expected_schema_head": "schema-a",
+            },
+            "coverage": {
+                "failed_scenario_keys": [],
+                "missing_scenario_keys": [],
+            },
+        },
+    )
+
+    assert (
+        require_live_release_summary(
+            tmp_path,
+            "abc123",
+            "stand",
+            release_run_id="rel-1",
+            expected_schema_head="schema-a",
+        )
+        == summary_path
+    )
+
+
+def test_require_live_release_summary_rejects_old_or_blocked_summary(tmp_path: Path) -> None:
+    write_live_summary(
+        tmp_path,
+        {
+            "schema": "pc_client.live_release_summary.v1",
+            "status": "blocked",
+            "release_context": {
+                "commit": "old456",
+                "environment": "stand",
+            },
+            "coverage": {
+                "failed_scenario_keys": [],
+                "missing_scenario_keys": ["requester_create"],
+            },
+        },
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        require_live_release_summary(tmp_path, "abc123", "stand")
+
+    message = str(exc_info.value)
+    assert "live release summary" in message
+    assert "old456" in message
+    assert "abc123" in message
+    assert "blocked" in message

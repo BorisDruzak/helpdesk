@@ -76,13 +76,64 @@ def _manifest_scenario_key(manifest: Mapping[str, Any]) -> str:
     return str(manifest.get("scenario") or "").strip()
 
 
-def collect_manifest_summaries(live_root: Path) -> list[dict[str, Any]]:
+def _manifest_release_run_id(manifest: Mapping[str, Any]) -> str:
+    explicit = str(manifest.get("release_run_id") or "").strip()
+    if explicit:
+        return explicit
+    release = manifest.get("release")
+    if isinstance(release, Mapping):
+        return str(release.get("run_id") or "").strip()
+    return ""
+
+
+def _manifest_expected_schema_head(manifest: Mapping[str, Any]) -> str:
+    preflight = manifest.get("preflight")
+    if isinstance(preflight, Mapping):
+        return str(preflight.get("expected_schema_head") or "").strip()
+    return ""
+
+
+def _matches_release_context(
+    manifest: Mapping[str, Any],
+    *,
+    commit: str | None,
+    environment: str | None,
+    release_run_id: str | None,
+    expected_schema_head: str | None,
+) -> bool:
+    if commit is not None and str(manifest.get("commit") or "").strip() != commit:
+        return False
+    if environment is not None and str(manifest.get("environment") or "").strip() != environment:
+        return False
+    if release_run_id is not None and _manifest_release_run_id(manifest) != release_run_id:
+        return False
+    if expected_schema_head is not None and _manifest_expected_schema_head(manifest) != expected_schema_head:
+        return False
+    return True
+
+
+def collect_manifest_summaries(
+    live_root: Path,
+    *,
+    commit: str | None = None,
+    environment: str | None = None,
+    release_run_id: str | None = None,
+    expected_schema_head: str | None = None,
+) -> list[dict[str, Any]]:
     if not live_root.exists():
         return []
     summaries: list[dict[str, Any]] = []
     for manifest_path in sorted(live_root.glob("**/manifest.json")):
         try:
             manifest = load_manifest(manifest_path)
+            if not _matches_release_context(
+                manifest,
+                commit=commit,
+                environment=environment,
+                release_run_id=release_run_id,
+                expected_schema_head=expected_schema_head,
+            ):
+                continue
             errors = validate_manifest(manifest, manifest_dir=manifest_path.parent)
             manifest_status = str(manifest.get("status") or "")
             validation_status = "pass" if manifest_status == "pass" and not errors else "fail"
@@ -90,6 +141,10 @@ def collect_manifest_summaries(live_root: Path) -> list[dict[str, Any]]:
                 {
                     "path": _repo_rel(manifest_path),
                     "run_id": manifest.get("run_id"),
+                    "release_run_id": _manifest_release_run_id(manifest) or None,
+                    "commit": manifest.get("commit"),
+                    "environment": manifest.get("environment"),
+                    "expected_schema_head": _manifest_expected_schema_head(manifest) or None,
                     "scenario": manifest.get("scenario"),
                     "scenario_key": _manifest_scenario_key(manifest),
                     "status": manifest_status,
@@ -124,7 +179,15 @@ def _suite_plan(pack: Mapping[str, Any]) -> dict[str, int]:
     }
 
 
-def build_summary(*, pack_path: Path, live_root: Path) -> dict[str, Any]:
+def build_summary(
+    *,
+    pack_path: Path,
+    live_root: Path,
+    commit: str | None = None,
+    environment: str | None = None,
+    release_run_id: str | None = None,
+    expected_schema_head: str | None = None,
+) -> dict[str, Any]:
     pack = load_pack(pack_path)
     scenarios = iter_live_scenarios(pack)
     scenario_keys = [scenario["scenario_key"] for scenario in scenarios if scenario["scenario_key"]]
@@ -136,20 +199,27 @@ def build_summary(*, pack_path: Path, live_root: Path) -> dict[str, Any]:
             if isinstance(section, str) and section
         }
     )
-    manifests = collect_manifest_summaries(live_root)
+    manifests = collect_manifest_summaries(
+        live_root,
+        commit=commit,
+        environment=environment,
+        release_run_id=release_run_id,
+        expected_schema_head=expected_schema_head,
+    )
     required_key_set = set(scenario_keys)
-    passed_key_set = {
-        str(item["scenario_key"])
-        for item in manifests
-        if item.get("scenario_key") in required_key_set and item.get("validation_status") == "pass"
-    }
-    failed_key_set = {
-        str(item["scenario_key"])
-        for item in manifests
-        if item.get("scenario_key") in required_key_set and item.get("validation_status") != "pass"
-    }
-    missing_keys = [key for key in scenario_keys if key not in passed_key_set]
-    failed_keys = [key for key in scenario_keys if key in failed_key_set and key not in passed_key_set]
+    scenario_status: dict[str, str] = {}
+    for item in manifests:
+        scenario_key = str(item.get("scenario_key") or "")
+        if scenario_key not in required_key_set:
+            continue
+        if item.get("validation_status") == "pass":
+            scenario_status.setdefault(scenario_key, "pass")
+        else:
+            scenario_status[scenario_key] = "fail"
+    passed_key_set = {key for key, status in scenario_status.items() if status == "pass"}
+    failed_key_set = {key for key, status in scenario_status.items() if status == "fail"}
+    missing_keys = [key for key in scenario_keys if key not in scenario_status]
+    failed_keys = [key for key in scenario_keys if key in failed_key_set]
 
     release_blockers: list[str] = []
     if failed_keys:
@@ -168,6 +238,12 @@ def build_summary(*, pack_path: Path, live_root: Path) -> dict[str, Any]:
         "schema": SCHEMA,
         "generated_at": _utc_now(),
         "status": status,
+        "release_context": {
+            "commit": commit,
+            "environment": environment,
+            "release_run_id": release_run_id,
+            "expected_schema_head": expected_schema_head,
+        },
         "pack": _repo_rel(pack_path),
         "pack_schema": pack.get("schema"),
         "pack_version": pack.get("version"),
@@ -189,12 +265,17 @@ def build_summary(*, pack_path: Path, live_root: Path) -> dict[str, Any]:
 def render_markdown(summary: Mapping[str, Any]) -> str:
     coverage = summary.get("coverage") if isinstance(summary.get("coverage"), dict) else {}
     blockers = summary.get("release_blockers") if isinstance(summary.get("release_blockers"), list) else []
+    release_context = summary.get("release_context") if isinstance(summary.get("release_context"), dict) else {}
     lines = [
         "# Live Release Summary",
         "",
         f"- Status: `{summary.get('status')}`",
         f"- Generated: `{summary.get('generated_at')}`",
         f"- Pack: `{summary.get('pack')}`",
+        f"- Commit: `{release_context.get('commit')}`",
+        f"- Environment: `{release_context.get('environment')}`",
+        f"- Release run: `{release_context.get('release_run_id')}`",
+        f"- Expected schema: `{release_context.get('expected_schema_head')}`",
         f"- Scenarios: `{coverage.get('scenario_count', 0)}`",
         f"- Passed: `{len(coverage.get('passed_scenario_keys') or [])}`",
         f"- Missing: `{len(coverage.get('missing_scenario_keys') or [])}`",
@@ -227,13 +308,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--live-root", type=Path, default=DEFAULT_LIVE_ROOT)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--markdown-output", type=Path)
+    parser.add_argument("--commit")
+    parser.add_argument("--environment")
+    parser.add_argument("--release-run-id")
+    parser.add_argument("--expected-schema-head")
     parser.add_argument("--json", action="store_true", dest="json_output")
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    summary = build_summary(pack_path=args.pack, live_root=args.live_root)
+    summary = build_summary(
+        pack_path=args.pack,
+        live_root=args.live_root,
+        commit=args.commit,
+        environment=args.environment,
+        release_run_id=args.release_run_id,
+        expected_schema_head=args.expected_schema_head,
+    )
     payload = json.dumps(summary, ensure_ascii=False, indent=2) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -36,7 +36,16 @@ def _write_pack(path: Path, *, scenario_keys: list[str]) -> None:
     )
 
 
-def _write_complete_manifest(root: Path, *, scenario_key: str) -> Path:
+def _write_complete_manifest(
+    root: Path,
+    *,
+    scenario_key: str,
+    commit: str = "abc1234",
+    environment: str = "stand",
+    release_run_id: str = "release-run-1",
+    expected_schema_head: str = "schema-a",
+    status: str = "pass",
+) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / "browser.png").write_bytes(b"fake-png")
     (root / "observer-canary.md").write_text("# Observer Canary Report\n", encoding="utf-8")
@@ -65,11 +74,12 @@ def _write_complete_manifest(root: Path, *, scenario_key: str) -> Path:
     manifest = {
         "schema": "pc_client.live_evidence.v2",
         "run_id": f"live-{scenario_key}",
+        "release_run_id": release_run_id,
         "scenario": scenario_key,
-        "status": "pass",
-        "commit": "abc1234",
-        "deployed_commit": "abc1234",
-        "environment": "stand",
+        "status": status,
+        "commit": commit,
+        "deployed_commit": commit,
+        "environment": environment,
         "started_at": "2026-06-23T01:00:00+00:00",
         "finished_at": "2026-06-23T01:01:00+00:00",
         "entities": {
@@ -80,10 +90,10 @@ def _write_complete_manifest(root: Path, *, scenario_key: str) -> Path:
         },
         "preflight": {
             "branch": "codex/helpdesk-process-model",
-            "local_commit": "abc1234",
-            "deployed_commit": "abc1234",
-            "expected_schema_head": "schema-a",
-            "actual_schema_head": "schema-a",
+            "local_commit": commit,
+            "deployed_commit": commit,
+            "expected_schema_head": expected_schema_head,
+            "actual_schema_head": expected_schema_head,
             "schema_status": "pass",
             "service_health": "pass",
             "checked_at": "2026-06-23T01:00:05+00:00",
@@ -204,3 +214,49 @@ def test_build_live_release_summary_accepts_complete_manifest_and_writes_outputs
     assert payload["coverage"]["passed_scenario_keys"] == ["requester_create"]
     assert payload["release_blockers"] == []
     assert "requester_create" in markdown_path.read_text(encoding="utf-8")
+
+
+def test_build_live_release_summary_filters_to_exact_release_context_and_fail_wins(tmp_path):
+    summary_builder = importlib.import_module("scripts.build_live_release_summary")
+    pack_path = tmp_path / "critical_behavior.json"
+    _write_pack(pack_path, scenario_keys=["requester_create"])
+    _write_complete_manifest(
+        tmp_path / "live" / "old-pass",
+        scenario_key="requester_create",
+        commit="oldcommit",
+        environment="stand",
+        release_run_id="old-release",
+        expected_schema_head="schema-a",
+        status="pass",
+    )
+    _write_complete_manifest(
+        tmp_path / "live" / "current-fail",
+        scenario_key="requester_create",
+        commit="abc1234",
+        environment="stand",
+        release_run_id="release-run-1",
+        expected_schema_head="schema-a",
+        status="fail",
+    )
+
+    summary = summary_builder.build_summary(
+        pack_path=pack_path,
+        live_root=tmp_path / "live",
+        commit="abc1234",
+        environment="stand",
+        release_run_id="release-run-1",
+        expected_schema_head="schema-a",
+    )
+
+    assert summary["status"] == "fail"
+    assert summary["release_context"] == {
+        "commit": "abc1234",
+        "environment": "stand",
+        "release_run_id": "release-run-1",
+        "expected_schema_head": "schema-a",
+    }
+    assert summary["coverage"]["passed_scenario_keys"] == []
+    assert summary["coverage"]["failed_scenario_keys"] == ["requester_create"]
+    assert summary["coverage"]["missing_scenario_keys"] == []
+    assert len(summary["live_manifests"]) == 1
+    assert Path(summary["live_manifests"][0]["path"]).parts[-2:] == ("current-fail", "manifest.json")
