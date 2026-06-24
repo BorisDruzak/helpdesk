@@ -168,13 +168,14 @@ async def test_observer_integrity_known_contamination_is_suppressed(test_engine)
     now = datetime.now(timezone.utc).replace(microsecond=0)
     device_id = f"obs1-device-{uuid.uuid4().hex[:8]}"
     operation_id = str(uuid.uuid4())
+    outbox_id = 900_000 + (uuid.uuid4().int % 100_000)
     async with session_maker() as session:
         await _seed_device(session, device_id=device_id)
         session.add(
             ObserverKnownContamination(
                 source_phase="OBS1-test",
                 entity_type="device_outbox",
-                entity_id="135",
+                entity_id=str(outbox_id),
                 suppression_scope="observer_integrity",
                 reason="test historical contamination",
                 active=True,
@@ -197,7 +198,7 @@ async def test_observer_integrity_known_contamination_is_suppressed(test_engine)
         )
         session.add(
             DeviceOutbox(
-                id=135,
+                id=outbox_id,
                 device_id=device_id,
                 command_id=str(uuid.uuid4()),
                 command="system.collect",

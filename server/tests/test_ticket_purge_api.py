@@ -170,6 +170,13 @@ async def _count(session, model) -> int:
     return await session.scalar(select(func.count()).select_from(model))
 
 
+async def _count_where(session, model, *criteria) -> int:
+    query = select(func.count()).select_from(model)
+    for criterion in criteria:
+        query = query.where(criterion)
+    return await session.scalar(query)
+
+
 @pytest.mark.asyncio
 async def test_ticket_purge_preview_is_admin_only_and_reports_related_counts(test_client, test_engine):
     ticket_id = "purge-preview"
@@ -267,8 +274,8 @@ async def test_ticket_purge_confirmed_removes_fk_and_non_fk_rows(test_client, te
         assert await _count(session, RemoteAccessSession) == 0
         assert await _count(session, RemoteAccessEvent) == 0
         assert await _count(session, Artifact) == 0
-        assert await _count(session, AgentRuntimeAudit) == 0
-        assert await _count(session, AgentObserverEvent) == 0
+        assert await _count_where(session, AgentRuntimeAudit, AgentRuntimeAudit.ticket_id == ticket_id) == 0
+        assert await _count_where(session, AgentObserverEvent, AgentObserverEvent.ticket_id == ticket_id) == 0
 
 
 @pytest.mark.asyncio
