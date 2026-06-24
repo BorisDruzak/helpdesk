@@ -13,7 +13,7 @@ from auth.middleware import require_auth
 from auth.password_service import PasswordPolicyError
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
-from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
+from consent.service import OPERATION_SUBJECT_TYPES, ConsentAccessError, UserConsentService, serialize_user_consent
 from observer.web_event_writer import write_web_cabinet_observer_event
 from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
@@ -27,6 +27,7 @@ from registry.registration_service import RegistrationConflictError, Registratio
 from registry.service import RegistryIngestionService, RegistrySnapshotService
 from registry.profile_schema_service import ProfileSchemaValidationError, RequesterProfileSchemaService
 from requester.identity_service import RequesterIdentityResolver
+from tools.service import ToolExecutionService
 
 import uuid
 
@@ -1313,6 +1314,20 @@ async def _handle_registry_agent_consent_decision(request: web.Request, decision
         except ValueError as exc:
             await session.rollback()
             return web.json_response({"status": "error", "error": str(exc), "error_code": "VALIDATION_ERROR"}, status=400)
+    if decision == "approved" and row.status == "approved" and row.subject_type in OPERATION_SUBJECT_TYPES:
+        dispatch_result = await ToolExecutionService(request.app.get("state")).resume_approved_operation(
+            row.subject_id,
+            auth_context=request["auth_context"],
+        )
+        if dispatch_result.get("status") != "accepted":
+            return web.json_response(
+                {
+                    "status": "error",
+                    "error": dispatch_result.get("error") or "approved operation dispatch failed",
+                    "error_code": dispatch_result.get("error_code") or "APPROVED_OPERATION_DISPATCH_FAILED",
+                },
+                status=500,
+            )
     return _success({"consent": serialize_user_consent(row)})
 
 

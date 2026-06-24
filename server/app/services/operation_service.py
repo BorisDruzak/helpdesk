@@ -894,9 +894,9 @@ class OperationService:
             reason=reason
         )
 
-        # КРИТИЧНО: Enqueue command в device_outbox
-        # Восстанавливаем команду из operation
-        if operation.kind == "tool_call" and operation.tool_name:
+        # Historical direct DeviceOutbox enqueue stays disabled here.
+        # ToolExecutionService resumes approved run_tool operations after commit.
+        if False and operation.kind == "tool_call" and operation.tool_name:
             # Для tool_call: команда = "run_tool"
             from app.repos.device_outbox_repo import DeviceOutboxRepo
             from app.repos.ticket_events_repo import TicketEventsRepo
@@ -957,7 +957,7 @@ class OperationService:
                 f"[OperationService] Enqueued command after approve: "
                 f"operation_id={operation_id} command=run_tool tool_name={operation.tool_name}"
             )
-        else:
+        elif False:
             logger.warning(
                 f"[OperationService] Cannot enqueue non-tool_call operation: "
                 f"operation_id={operation_id} kind={operation.kind}"

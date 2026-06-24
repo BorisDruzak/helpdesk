@@ -15,7 +15,7 @@ from app.repos import ArtifactsRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import require_auth
-from consent.service import ConsentAccessError, UserConsentService, serialize_user_consent
+from consent.service import OPERATION_SUBJECT_TYPES, ConsentAccessError, UserConsentService, serialize_user_consent
 from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
 from knowledge.feedback_service import KnowledgeFeedbackService
 from observer.web_event_writer import write_web_cabinet_observer_event
@@ -48,6 +48,7 @@ from tickets.service_catalog_runtime import ServiceCatalogResolutionError, Servi
 from tickets.statuses import enrich_chat_payload_with_requester_name
 from tickets.ticket_context import TicketContextBuilder, project_requester_ticket_context
 from tickets.workflow_service import TicketWorkflowService
+from tools.service import ToolExecutionService
 
 _ON_BEHALF_EXCLUDED_PERSON_STATUSES = frozenset({"archived", "deleted", "disabled", "inactive", "merged"})
 _AVAILABILITY_POLICY_FIELDS = (
@@ -976,6 +977,17 @@ async def _handle_web_requester_consent_decision(request: web.Request, decision:
         except ValueError as exc:
             await session.rollback()
             return _error(str(exc), status=400, error_code="VALIDATION_ERROR")
+    if decision == "approved" and row.status == "approved" and row.subject_type in OPERATION_SUBJECT_TYPES:
+        dispatch_result = await ToolExecutionService(request.app.get("state")).resume_approved_operation(
+            row.subject_id,
+            auth_context=auth_context,
+        )
+        if dispatch_result.get("status") != "accepted":
+            return _error(
+                dispatch_result.get("error") or "approved operation dispatch failed",
+                status=500,
+                error_code=dispatch_result.get("error_code") or "APPROVED_OPERATION_DISPATCH_FAILED",
+            )
     return _success({"consent": serialize_user_consent(row)})
 
 

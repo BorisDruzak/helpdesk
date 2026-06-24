@@ -433,6 +433,15 @@ async def test_requester_approve_consent_queues_operation_idempotently(test_clie
         outbox_count = await session.scalar(
             select(func.count()).select_from(DeviceOutbox).where(DeviceOutbox.operation_id == seeded["operation_id"])
         )
+        started_events = await session.scalar(
+            select(func.count())
+            .select_from(TicketEvent)
+            .where(
+                TicketEvent.ticket_id == seeded["ticket_id"],
+                TicketEvent.event_type == "tool_call_started",
+                TicketEvent.operation_id == seeded["operation_id"],
+            )
+        )
         decided_events = await session.scalar(
             select(func.count())
             .select_from(TicketEvent)
@@ -440,6 +449,7 @@ async def test_requester_approve_consent_queues_operation_idempotently(test_clie
         )
     assert old_decisions == 1
     assert outbox_count == 1
+    assert started_events == 1
     assert decided_events == 1
 
 

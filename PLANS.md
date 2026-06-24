@@ -1174,7 +1174,7 @@ Blocking:
 
 - [x] `TD-501` Перенести active risks из архивного документа в реестр.
 - [x] `TD-502` Закрыть ACK/in-progress race tests.
-- [ ] `TD-503` Унифицировать run_tool facade.
+- [x] `TD-503` Унифицировать run_tool facade.
 - [ ] `TD-504` Удалить бессрочные contaminations.
 - [ ] `TD-505` Проверить Observer retention/query plans на объемах.
 - [ ] `TD-506` Обновить CODEMAP/QUICK_LOOKUP/TESTING_RULES.

@@ -646,6 +646,7 @@ class ToolService:
         timeout: float = None,
         auth_context: Optional[object] = None,  # AuthContext type hint
         wait_for_result: bool = True,
+        require_online: bool = True,
     ) -> Dict:
         """
         Запускает инструмент на агенте.
@@ -668,10 +669,14 @@ class ToolService:
         logger.info(f"🔧 Запуск tool {tool_name} на {device_id}")
         requested_operation_id_raw = params.get("_operation_id")
         requested_operation_id = str(requested_operation_id_raw).strip() if requested_operation_id_raw else None
+        requested_trace_id_raw = params.get("_trace_id")
+        requested_trace_id = str(requested_trace_id_raw).strip() if requested_trace_id_raw else None
+        requested_job_id_raw = params.get("_job_id")
+        requested_job_id = str(requested_job_id_raw).strip() if requested_job_id_raw else None
         actor_role = getattr(auth_context, "actor_role", None) or "support"
-        trace_id = None
+        trace_id = requested_trace_id or None
 
-        if ticket_id and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
+        if not trace_id and ticket_id and DB_AVAILABLE and ENABLE_DB_PERSISTENCE:
             try:
                 async with self._session_context() as session:
                     ticket_repo = TicketEventsRepo(session)
@@ -683,7 +688,9 @@ class ToolService:
             trace_id = str(uuid.uuid4())
         
         # Проверка и при необходимости установка модуля по owner module из server registry.
-        ensure_err = await self._ensure_module_installed(device_id, tool_name, auth_context)
+        ensure_err = None
+        if require_online:
+            ensure_err = await self._ensure_module_installed(device_id, tool_name, auth_context)
         if ensure_err:
             error_message = str(ensure_err.get("error") or "Tool dispatch precheck failed")
             error_code = str(ensure_err.get("error_code") or "TOOL_PRECHECK_FAILED")
@@ -710,7 +717,7 @@ class ToolService:
         operation_id = requested_operation_id
         
         try:
-            from websocket.protocol import WsCommandQueueFullError, send_ws_command
+            from websocket.protocol import WsCommandQueueFullError, enqueue_command_async, send_ws_command
             
             # Получаем job_id из сессии тикета (опционально, для обратной совместимости)
             # КРИТИЧНО: В Protocol V3 события сохраняются в ticket_events, а не в job_events
@@ -721,6 +728,8 @@ class ToolService:
             # КРИТИЧНО: Извлекаем operation_id из params (если есть)
             # operation_id должен быть передан из handlers.py для корреляции
             operation_id = params.pop("_operation_id", None)  # Извлекаем и удаляем из params
+            params.pop("_trace_id", None)
+            params.pop("_job_id", None)
             if operation_id:
                 operation_id = str(operation_id).strip()
             else:
@@ -803,6 +812,8 @@ class ToolService:
             
             # КРИТИЧНО: Передаём tool_name в params — для операции (protocol) и для агента (orchestrator)
             command_params["tool_name"] = tool_name
+            if not chat_job_id and requested_job_id:
+                chat_job_id = requested_job_id
             # Добавляем chat_job_id если он есть (для обратной совместимости с legacy кодом)
             if chat_job_id:
                 command_params["chat_job_id"] = chat_job_id
@@ -811,6 +822,27 @@ class ToolService:
             # События сохраняются в ticket_events через TicketEventsRepo независимо от job_id
             
             # Передаём trace_id и auth_context в send_ws_command для корреляции
+            if not wait_for_result and not require_online:
+                deferred_params = dict(command_params)
+                deferred_params.pop("_operation_id", None)
+                command_id = await enqueue_command_async(
+                    state=self.state,
+                    device_id=device_id,
+                    command="run_tool",
+                    params=deferred_params,
+                    actor_role=actor_role,
+                    trace_id=trace_id,
+                    ticket_id=ticket_id,
+                    job_id=chat_job_id,
+                    operation_id=operation_id,
+                    require_online=False,
+                )
+                return {
+                    "status": "accepted",
+                    "operation_id": command_id,
+                    "trace_id": trace_id,
+                }
+
             result = await send_ws_command(
                 state=self.state,
                 device_id=device_id,
@@ -898,9 +930,155 @@ class ToolService:
 
 
 class ToolExecutionService(ToolService):
-    """
-    Канонический фасад выполнения run_tool.
+    """Canonical run_tool execution facade."""
 
-    ToolService сохранен для обратной совместимости, а все новые вызовы
-    должны использовать ToolExecutionService.
-    """
+    async def _restore_approved_operation_params(
+        self,
+        session,
+        *,
+        operation_id: str,
+        ticket_id: Optional[str],
+    ) -> Dict:
+        try:
+            from sqlalchemy import select
+            from app.db.models import TicketEvent, UserConsentRequest
+
+            consent_stmt = (
+                select(UserConsentRequest)
+                .where(UserConsentRequest.subject_type.in_(("operation", "tool_run", "diagnostic")))
+                .where(UserConsentRequest.subject_id == operation_id)
+                .where(UserConsentRequest.status == "approved")
+                .order_by(UserConsentRequest.decided_at.desc(), UserConsentRequest.updated_at.desc())
+                .limit(1)
+            )
+            consent = (await session.execute(consent_stmt)).scalars().first()
+            if consent is not None:
+                payload = consent.requested_action_payload_redacted or {}
+                params = payload.get("params") if isinstance(payload, dict) else None
+                if isinstance(params, dict):
+                    return dict(params)
+
+            if ticket_id:
+                event_stmt = (
+                    select(TicketEvent)
+                    .where(TicketEvent.ticket_id == ticket_id)
+                    .where(TicketEvent.operation_id == operation_id)
+                    .where(TicketEvent.event_type == "tool_call_started")
+                    .order_by(TicketEvent.id.desc())
+                    .limit(1)
+                )
+                event = (await session.execute(event_stmt)).scalars().first()
+                if event is not None and isinstance(event.payload, dict):
+                    params = event.payload.get("params")
+                    if isinstance(params, dict):
+                        return dict(params)
+        except Exception as exc:
+            logger.warning(
+                f"[ToolExecutionService] Failed to restore approved operation params: "
+                f"operation_id={operation_id} error={exc}"
+            )
+        return {}
+
+    async def resume_approved_operation(
+        self,
+        operation_id: str,
+        *,
+        auth_context: Optional[object] = None,
+    ) -> Dict:
+        """
+        Resume a pre-created waiting_consent operation after approval.
+
+        Consent approval keeps deferred outbox semantics, so this path can enqueue
+        run_tool while the agent is offline, but still uses the canonical facade
+        for tool_call_started and command payload construction.
+        """
+        if not (DB_AVAILABLE and ENABLE_DB_PERSISTENCE):
+            return {
+                "status": "error",
+                "error": "DB persistence is unavailable",
+                "error_code": "DB_UNAVAILABLE",
+                "operation_id": operation_id,
+            }
+
+        try:
+            from app.repos.device_outbox_repo import DeviceOutboxRepo
+            from app.repos.operations_repo import OperationsRepo
+            from auth.context import AuthContext, AuthType
+
+            async with self._session_context() as session:
+                operation = await OperationsRepo(session).get_by_operation_id(operation_id)
+                if operation is None:
+                    return {
+                        "status": "error",
+                        "error": "Operation not found",
+                        "error_code": "NOT_FOUND",
+                        "operation_id": operation_id,
+                    }
+                if operation.kind != "tool_call" or not operation.tool_name:
+                    return {
+                        "status": "error",
+                        "error": "Operation is not a tool_call",
+                        "error_code": "INVALID_OPERATION_KIND",
+                        "operation_id": operation_id,
+                    }
+                if operation.status != "queued":
+                    return {
+                        "status": "error",
+                        "error": f"Operation is not queued after approval (current: {operation.status})",
+                        "error_code": "INVALID_STATUS",
+                        "operation_id": operation_id,
+                    }
+                existing_outbox = await DeviceOutboxRepo(session).get_latest_by_operation_id(operation_id)
+                if existing_outbox is not None:
+                    return {
+                        "status": "accepted",
+                        "operation_id": operation_id,
+                        "trace_id": existing_outbox.trace_id or operation.trace_id,
+                    }
+
+                restored_params = await self._restore_approved_operation_params(
+                    session,
+                    operation_id=operation.operation_id,
+                    ticket_id=operation.ticket_id,
+                )
+                device_id = operation.device_id
+                ticket_id = operation.ticket_id or ""
+                tool_name = operation.tool_name
+                job_id = operation.job_id
+                trace_id = operation.trace_id
+                actor_role = operation.actor_role or "support"
+
+            facade_auth = AuthContext(
+                actor_id=getattr(auth_context, "actor_id", None) or "consent-approved-operation",
+                actor_role=actor_role,
+                auth_type=AuthType.SYSTEM,
+                token=None,
+            )
+            params_with_operation = dict(restored_params)
+            params_with_operation["_operation_id"] = operation_id
+            params_with_operation["_trace_id"] = trace_id
+            if job_id:
+                params_with_operation["_job_id"] = job_id
+
+            return await self.run_tool(
+                device_id=device_id,
+                ticket_id=ticket_id,
+                tool_name=tool_name,
+                params=params_with_operation,
+                call_id=operation_id,
+                auth_context=facade_auth,
+                wait_for_result=False,
+                require_online=False,
+            )
+        except Exception as exc:
+            logger.error(
+                f"[ToolExecutionService] Failed to resume approved operation: "
+                f"operation_id={operation_id} error={exc}",
+                exc_info=True,
+            )
+            return {
+                "status": "error",
+                "error": str(exc),
+                "error_code": "APPROVED_OPERATION_DISPATCH_FAILED",
+                "operation_id": operation_id,
+            }

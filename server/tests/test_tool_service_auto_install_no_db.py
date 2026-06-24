@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tools.service import ToolService
+from tools.service import ToolExecutionService, ToolService
 
 
 class _FakeSession:
@@ -183,3 +183,124 @@ def test_run_tool_does_not_mutate_caller_params():
     assert params == {"_operation_id": "op-tool-immut-1", "message": "hello"}
     assert captured["params"]["_operation_id"] == "op-tool-immut-1"
     assert captured["params"]["params"] == {"message": "hello"}
+
+
+@pytest.mark.no_db
+def test_run_tool_deferred_outbox_uses_enqueue_without_online_precheck():
+    state = SimpleNamespace(get_session_by_ticket=lambda _ticket_id: None)
+    service = ToolService(state)
+    captured = {}
+
+    async def unexpected_ensure_module_installed(*_args, **_kwargs):  # pragma: no cover - should stay unreachable
+        raise AssertionError("deferred outbox dispatch must not require online module install precheck")
+
+    async def unexpected_send_ws_command(**kwargs):  # pragma: no cover - should stay unreachable
+        raise AssertionError(f"deferred outbox dispatch must not call send_ws_command: {kwargs}")
+
+    async def fake_enqueue_command_async(**kwargs):
+        captured.update(kwargs)
+        return kwargs["operation_id"]
+
+    params = {
+        "_operation_id": "op-deferred-1",
+        "_trace_id": "trace-deferred-1",
+        "_job_id": "job-deferred-1",
+        "message": "approved",
+    }
+
+    with patch.object(service, "_ensure_module_installed", new=unexpected_ensure_module_installed), \
+         patch("websocket.protocol.enqueue_command_async", new=fake_enqueue_command_async), \
+         patch("websocket.protocol.send_ws_command", new=unexpected_send_ws_command):
+        result = asyncio.run(
+            service.run_tool(
+                device_id="device-deferred-1",
+                ticket_id="ticket-deferred-1",
+                tool_name="system.echo",
+                params=params,
+                call_id="call-deferred-1",
+                wait_for_result=False,
+                require_online=False,
+            )
+        )
+
+    assert result == {
+        "status": "accepted",
+        "operation_id": "op-deferred-1",
+        "trace_id": "trace-deferred-1",
+    }
+    assert captured["command"] == "run_tool"
+    assert captured["operation_id"] == "op-deferred-1"
+    assert captured["trace_id"] == "trace-deferred-1"
+    assert captured["ticket_id"] == "ticket-deferred-1"
+    assert captured["job_id"] == "job-deferred-1"
+    assert captured["actor_role"] == "support"
+    assert captured["require_online"] is False
+    assert captured["params"]["params"] == {"message": "approved"}
+    assert "_operation_id" not in captured["params"]
+
+
+@pytest.mark.no_db
+def test_resume_approved_operation_dispatches_through_deferred_run_tool():
+    state = SimpleNamespace(get_session_by_ticket=lambda _ticket_id: None)
+    service = ToolExecutionService(state)
+    captured = {}
+    operation = SimpleNamespace(
+        operation_id="op-approved-1",
+        device_id="device-approved-1",
+        ticket_id="ticket-approved-1",
+        job_id="job-approved-1",
+        kind="tool_call",
+        tool_name="system.echo",
+        status="queued",
+        trace_id="trace-approved-1",
+        actor_role="support",
+    )
+
+    class FakeOperationsRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_by_operation_id(self, operation_id):
+            assert operation_id == "op-approved-1"
+            return operation
+
+    class FakeDeviceOutboxRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_latest_by_operation_id(self, operation_id):
+            assert operation_id == "op-approved-1"
+            return None
+
+    async def fake_restore_params(_session, *, operation_id, ticket_id):
+        assert operation_id == "op-approved-1"
+        assert ticket_id == "ticket-approved-1"
+        return {"message": "approved"}
+
+    async def fake_run_tool(**kwargs):
+        captured.update(kwargs)
+        return {"status": "accepted", "operation_id": kwargs["params"]["_operation_id"]}
+
+    with patch("tools.service.DB_AVAILABLE", True), \
+         patch("tools.service.ENABLE_DB_PERSISTENCE", True), \
+         patch.object(ToolExecutionService, "_session_context", new=staticmethod(_fake_session_ctx)), \
+         patch("app.repos.operations_repo.OperationsRepo", FakeOperationsRepo), \
+         patch("app.repos.device_outbox_repo.DeviceOutboxRepo", FakeDeviceOutboxRepo), \
+         patch.object(service, "_restore_approved_operation_params", new=fake_restore_params), \
+         patch.object(service, "run_tool", new=fake_run_tool):
+        result = asyncio.run(service.resume_approved_operation("op-approved-1"))
+
+    assert result == {"status": "accepted", "operation_id": "op-approved-1"}
+    assert captured["device_id"] == "device-approved-1"
+    assert captured["ticket_id"] == "ticket-approved-1"
+    assert captured["tool_name"] == "system.echo"
+    assert captured["params"] == {
+        "message": "approved",
+        "_operation_id": "op-approved-1",
+        "_trace_id": "trace-approved-1",
+        "_job_id": "job-approved-1",
+    }
+    assert captured["call_id"] == "op-approved-1"
+    assert captured["auth_context"].actor_role == "support"
+    assert captured["wait_for_result"] is False
+    assert captured["require_online"] is False

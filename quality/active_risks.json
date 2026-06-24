@@ -159,6 +159,10 @@
         {
           "ref": "server/tests/test_tool_dispatch_failure.py::test_send_ws_command_async_releases_run_tool_slot",
           "purpose": "Guards async send behavior under run_tool concurrency limits."
+        },
+        {
+          "ref": "server/tests/test_tool_service_auto_install_no_db.py::test_resume_approved_operation_dispatches_through_deferred_run_tool",
+          "purpose": "Guards approved-consent resume through the ToolExecutionService run_tool facade."
         }
       ],
       "last_reviewed": "2026-06-24"

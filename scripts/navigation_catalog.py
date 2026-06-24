@@ -252,6 +252,8 @@ TOPICS: tuple[Topic, ...] = (
             "api/web/requester/consents",
             "api/registry/agent/consents",
             "approve_consent",
+            "resume_approved_operation",
+            "approved consent resume",
             "user_consent_requests",
             "send_ws_command",
             "запуск инструмента",
@@ -290,6 +292,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         suggested_commands=(
             'python scripts/agent_find.py "run_tool" --dir server',
+            "python -m pytest server/tests/test_tool_service_auto_install_no_db.py::test_resume_approved_operation_dispatches_through_deferred_run_tool -q --tb=short",
             "python -m pytest server/tests/test_user_consent_api.py -q --tb=short",
             "python -m pytest server/tests/test_operation_retry.py::test_retry_consent_required_operation_creates_waiting_consent_without_dispatch -q --tb=short",
             "python -m pytest server/tests/test_tools_async_response_contract.py::test_legacy_tools_run_creates_user_consent_for_waiting_operation -q --tb=short",

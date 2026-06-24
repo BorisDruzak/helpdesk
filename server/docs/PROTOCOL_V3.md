@@ -156,12 +156,12 @@ Wire-contract Protocol V3 при этом не меняется: формат en
 
 ### 9. Пути запуска `run_tool` (инвариантная карта)
 
-В текущей реализации есть два легитимных пути, которые сходятся в `device_outbox`:
+В текущей реализации `ToolExecutionService` является единым фасадом для запуска `run_tool`:
 
 1. **Прямой запуск из API/UI**: `ToolExecutionService.run_tool` создаёт `tool_call_started` (идемпотентно по `(ticket_id, operation_id, event_type)`), затем вызывает `send_ws_command`.
-2. **Через consent approve**: `OperationService.approve_consent()` enqueue команды `run_tool` после одобрения уже созданной операции.
+2. **Через consent approve**: `OperationService.approve_consent()` только переводит уже созданную операцию из `waiting_consent` в `queued` и фиксирует решение; после commit `ToolExecutionService.resume_approved_operation()` возобновляет pre-created operation через тот же `run_tool` facade и deferred `device_outbox` enqueue без требования live websocket.
 
-Оба пути должны сохранять общий инвариант: `operation_id` является первичной корреляцией для lifecycle и command_result.
+Оба входа фасада сохраняют общий инвариант: `operation_id` является первичной корреляцией для lifecycle и command_result, а `tool_call_started` создаётся сервером до постановки `run_tool` в транспорт/outbox.
 
 Практическое замечание по нагрузке: transport-функция `send_ws_command` поддерживает `wait_for_result=False` для async API-сценариев (enqueue без удержания корутины до `command_result`).
 

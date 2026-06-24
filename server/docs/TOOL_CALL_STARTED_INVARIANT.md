@@ -27,6 +27,12 @@ WHERE operation_id IS NOT NULL
 
 Событие создаётся в `server/tools/service.py` в методе `ToolService.run_tool`:
 
+`ToolExecutionService.resume_approved_operation()` also resumes approved
+`waiting_consent` operations through this same `run_tool` facade. In that
+deferred mode `run_tool` creates the same idempotent `tool_call_started` event
+before enqueuing `run_tool` into `device_outbox` without requiring a live
+websocket connection.
+
 1. **До отправки команды**: Событие создаётся ПЕРЕД вызовом `send_ws_command`
 2. **С operation_id сразу**: Событие создаётся с `operation_id` сразу (не обновляется потом)
 3. **Server-originated**: `agent_seq = None` (событие создаётся на сервере)
@@ -64,5 +70,4 @@ WHERE operation_id IS NOT NULL
 1. **Не использовать call_id для поиска**: Корреляция только по `operation_id`
 2. **Событие создаётся на сервере**: Агент может отправлять своё `tool_call_started`, но оно будет игнорироваться как дубликат (если есть server-originated)
 3. **Идемпотентность критична**: При ретраях/реконнектах повторное создание события безопасно
-
 

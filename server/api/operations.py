@@ -1111,6 +1111,18 @@ async def handle_approve_consent(request: web.Request) -> web.Response:
                 }, status=500)
             
             await session.commit()
+
+            dispatch_result = await ToolExecutionService(state).resume_approved_operation(
+                operation_id,
+                auth_context=auth_context,
+            )
+            if dispatch_result.get("status") != "accepted":
+                return web.json_response({
+                    "status": "error",
+                    "error": dispatch_result.get("error") or "approved operation dispatch failed",
+                    "error_code": dispatch_result.get("error_code") or "APPROVED_OPERATION_DISPATCH_FAILED",
+                    "operation_id": operation_id,
+                }, status=500)
             
             logger.info(
                 f"[handle_approve_consent] Consent approved: "
