@@ -375,8 +375,9 @@ def test_cleanup_truncate_sql_uses_selected_profile_tables_only():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 212
-    assert full_tables[:3] == (
+    assert len(full_tables) == 213
+    assert full_tables[:4] == (
+        "observer_integrity_check_runs",
         "observer_integrity_events",
         "observer_known_contamination",
         "observer_error_occurrences",
