@@ -1134,7 +1134,7 @@ Blocking:
 - [x] `BEH-207` Agent reconnect/replay/duplicate.
 - [x] `BEH-208` Auth/account/session isolation.
 - [x] `BEH-209` Knowledge/Registry audience rules.
-- [ ] `BEH-210` Observer non-mutation/redaction property tests.
+- [x] `BEH-210` Observer non-mutation/redaction property tests.
 
 **Gate:** каждый critical journey имеет API, DB и Observer assertions; visible journeys имеют fixture UI tests.
 
@@ -1226,6 +1226,8 @@ Checkpoint 2026-06-23 BEH-207: agent duplicate terminal command responses now us
 Checkpoint 2026-06-24 BEH-208: React web-session state now treats bootstrap, refresh, login and logout as ordered account transitions. A delayed `/api/web/session/me` bootstrap for a previous account cannot overwrite a newer successful login/logout state, which closes the account-switch stale UI bootstrap case while server-side `AuthContext`, cookie, account-session and requester visibility boundaries remain authoritative. Coverage: RED/GREEN `webapp/src/features/auth/session-provider.test.tsx::ignores stale bootstrap responses after a newer login succeeds` plus existing web-session logout/revoke/CSRF and requester/account-session isolation tests.
 
 Checkpoint 2026-06-24 BEH-209: Knowledge search analytics now redacts requester PII and Registry identifiers from stored `query_text_redacted` before zero-result/gap analytics. The redactor keeps query hashes for aggregation but removes raw emails, phone numbers, person/account-session/ticket ids and secret-like key/value markers while existing audience-rule enforcement continues to filter search, suggestions, portal, Ask/RAG and support suggestions before projection. Coverage: RED/GREEN `server/tests/test_knowledge_contract_no_db.py::test_search_analytics_redaction_removes_registry_ids_phone_and_secret_markers` plus `server/tests/test_knowledge_access_service.py` department-tree/audience-group contract tests.
+
+Checkpoint 2026-06-24 BEH-210: Observer redaction helpers now treat `collections.abc.Mapping` payloads like normal dicts, returning a new redacted dict without mutating the original custom mapping. This closes the custom-mapping branch of the C6 nested payload matrix and adds a pure non-mutation assertion for Observer redaction before detail/export writers consume the payload. Coverage: RED/GREEN `server/tests/test_observer_redaction_no_db.py::test_observer_redaction_handles_custom_mapping_without_mutating_input` plus existing web event writer and integrity no-DB observer tests.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

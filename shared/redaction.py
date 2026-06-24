@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -76,7 +77,7 @@ def redact_sensitive_payload(
     payload = _normalize_scalar(payload)
     if field_name and is_sensitive_key(field_name, extra_markers=extra_markers):
         return REDACTED
-    if isinstance(payload, dict):
+    if isinstance(payload, Mapping):
         return {
             str(key): redact_sensitive_payload(
                 value,

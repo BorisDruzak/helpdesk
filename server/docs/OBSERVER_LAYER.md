@@ -291,7 +291,7 @@ Observer runtime обязан:
 
 - хранить settings в DB-backed конфиге;
 - не тащить чувствительные поля в detail/export/raw attrs;
-- редактировать секреты через `shared/redaction.py`;
+- редактировать секреты через `shared/redaction.py`, включая вложенные `Mapping` payloads без мутации исходных объектов;
 - иметь управляемый sampling для шумных success traces.
 
 Observer detail должен оставаться пригодным для диагностики, но не превращаться в экспорт сырых секретов.

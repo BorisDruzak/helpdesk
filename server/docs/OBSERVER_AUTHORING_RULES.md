@@ -125,7 +125,7 @@ Spans нужны не “для галочки”, а чтобы человек 
 - секреты внешних интеграций;
 - чувствительные персональные поля без необходимости.
 
-Все подобные поля идут через redaction helpers.
+Все подобные поля идут через redaction helpers. Helpers должны возвращать redacted copy, а не мутировать исходные payload objects; custom `Mapping` values обрабатываются как обычные dict.
 
 ### 3.7.1 OBS1 integrity events
 
