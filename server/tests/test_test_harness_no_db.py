@@ -372,6 +372,25 @@ def test_cleanup_truncate_sql_uses_selected_profile_tables_only():
     assert sql.strip().endswith("RESTART IDENTITY CASCADE")
 
 
+def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
+    tables = set(test_harness.CLEANUP_TABLES_BY_PROFILE["agent_runtime"])
+
+    assert {
+        "diagnostic_providers",
+        "diagnostic_capabilities",
+        "tool_presentation_overrides",
+        "agent_recipe_versions",
+        "device_inventory_snapshots",
+        "device_registration_claims",
+        "registry_people",
+        "registry_departments",
+        "registry_locations",
+        "server_config",
+        "ticket_events",
+        "tickets",
+    } <= tables
+
+
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 

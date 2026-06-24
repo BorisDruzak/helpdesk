@@ -12,6 +12,7 @@ from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.operations_repo import OperationsRepo
 from tests.test_helpers import TEST_ECHO_TOOL
 from tests.test_ticket_queue_routing_contracts import _seed_queue
+from tools.service import ToolExecutionService
 
 
 def _device(device_id: str) -> Device:
@@ -330,6 +331,7 @@ async def test_retry_consent_required_operation_creates_waiting_consent_without_
         assert "secret" not in started_event.payload["params"]["nested"]
         assert "raw-api-token" not in str(started_event.payload)
 
+    monkeypatch.setattr("api.operations.ToolExecutionService", ToolExecutionService)
     approve_response = await test_client.post(
         f"/api/operations/{retry_operation_id}/approve",
         json={"reason": "requester consent approved"},
