@@ -41,6 +41,8 @@ def test_live_evidence_pack_creates_expected_markdown_files(tmp_path):
     assert manifest["entities"]["ticket_id"] == "T-000123"
     assert manifest["entities"]["device_id"] == "device-abc"
     assert manifest["status"] == "blocked"
+    assert manifest["preflight"]["schema_status"] == "blocked"
+    assert manifest["preflight"]["service_health"] == "blocked"
 
 
 def test_requester_surface_template_includes_account_session_and_binding_checks(tmp_path):

@@ -1142,7 +1142,7 @@ Blocking:
 
 - [x] `LIVE-301` Ввести evidence manifest v2.
 - [x] `LIVE-302` Реализовать validator.
-- [ ] `LIVE-303` Добавить exact commit/schema preflight.
+- [x] `LIVE-303` Добавить exact commit/schema preflight.
 - [ ] `LIVE-304` Добавить before/after integrity delta.
 - [ ] `LIVE-305` Создать critical behavior data pack.
 - [ ] `LIVE-306` Автоматизировать requester/support browser scenarios.
@@ -1228,6 +1228,8 @@ Checkpoint 2026-06-24 BEH-208: React web-session state now treats bootstrap, ref
 Checkpoint 2026-06-24 BEH-209: Knowledge search analytics now redacts requester PII and Registry identifiers from stored `query_text_redacted` before zero-result/gap analytics. The redactor keeps query hashes for aggregation but removes raw emails, phone numbers, person/account-session/ticket ids and secret-like key/value markers while existing audience-rule enforcement continues to filter search, suggestions, portal, Ask/RAG and support suggestions before projection. Coverage: RED/GREEN `server/tests/test_knowledge_contract_no_db.py::test_search_analytics_redaction_removes_registry_ids_phone_and_secret_markers` plus `server/tests/test_knowledge_access_service.py` department-tree/audience-group contract tests.
 
 Checkpoint 2026-06-24 BEH-210: Observer redaction helpers now treat `collections.abc.Mapping` payloads like normal dicts, returning a new redacted dict without mutating the original custom mapping. This closes the custom-mapping branch of the C6 nested payload matrix and adds a pure non-mutation assertion for Observer redaction before detail/export writers consume the payload. Coverage: RED/GREEN `server/tests/test_observer_redaction_no_db.py::test_observer_redaction_handles_custom_mapping_without_mutating_input` plus existing web event writer and integrity no-DB observer tests.
+
+Checkpoint 2026-06-24 LIVE-303: `pc_client.live_evidence.v2` manifests now require an explicit `preflight` block for branch, local/deployed commit, expected/actual schema head, schema status, service health and `checked_at`. The validator enforces commit parity across top-level and preflight fields, rejects deployed/local commit drift, requires actual schema head to match expected head, and blocks non-pass schema/health preflight statuses. `scripts/live_evidence_pack.py` scaffolds the preflight block with blocked placeholders so draft manifests remain invalid until exact commit/schema evidence is filled. Coverage: RED/GREEN `scripts/test_validate_live_evidence.py::test_validate_live_evidence_requires_commit_schema_preflight` and `::test_validate_live_evidence_rejects_commit_or_schema_preflight_mismatch`, plus `scripts/test_live_evidence_pack.py`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

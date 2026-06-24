@@ -343,7 +343,7 @@ Auth security update 2026-05-23/24: `server/auth/handlers.py` keeps `POST /api/l
 - `scripts/run_ci_suite.py` — канонический локальный/self-hosted CI run с artifact layout `artifacts/ci/<sha>/`; включает workspace verify, webapp bundle, webapp Vitest, Playwright fixture E2E, `scripts_pytest_no_db`, server pytest layers with migrated DB template setup, fixture timing summary and pc_agent pytest.
 - `scripts/audit_db_cleanup_profiles.py` — report-only audit for server pytest `db_cleanup` marker coverage; use `--strict` only when missing DB-backed profiles should fail a gate.
 - `scripts/audit_db_cleanup_schema.py` — schema/classification cleanup drift gate for DB tables; validates `quality/db_table_classification.toml`, static pytest cleanup, dynamic reset policy and FK cleanup blockers.
-- `scripts/validate_live_evidence.py` — validates `pc_client.live_evidence.v2` manifests created or completed from `scripts/live_evidence_pack.py` folders.
+- `scripts/validate_live_evidence.py` — validates `pc_client.live_evidence.v2` manifests created or completed from `scripts/live_evidence_pack.py` folders, including required preflight commit parity, expected/actual schema head parity and service/schema health status.
 - `scripts/audit_test_app_light_candidates.py` — report-only audit for HTTP/API pytest files that may be safe candidates for explicit `test_client_light` opt-in.
 - `scripts/live_evidence_pack.py` — read-only scaffold for `artifacts/live/<run_id>/` evidence markdown checklists before non-trivial live validation/debug runs.
 - `scripts/run_ci_in_temp_workspace.py` — hook-friendly runner для self-hosted CI в отдельном checkout/venv.

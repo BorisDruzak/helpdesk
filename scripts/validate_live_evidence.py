@@ -14,6 +14,7 @@ SCHEMA = "pc_client.live_evidence.v2"
 RUN_STATUSES = {"pass", "fail", "blocked"}
 CHECK_STATUSES = {"pass", "fail", "blocked", "skipped"}
 REDACTION_STATUSES = {"redacted", "not_applicable", "none"}
+PREFLIGHT_STATUSES = {"pass", "fail", "blocked"}
 REQUIRED_TOP_LEVEL = (
     "schema",
     "run_id",
@@ -25,6 +26,7 @@ REQUIRED_TOP_LEVEL = (
     "started_at",
     "finished_at",
     "entities",
+    "preflight",
     "checks",
     "artifacts",
     "contamination",
@@ -42,6 +44,16 @@ REQUIRED_CHECK_FIELDS = (
     "redaction_status",
 )
 REQUIRED_ARTIFACT_FIELDS = ("kind", "path", "description", "redaction_status")
+REQUIRED_PREFLIGHT_FIELDS = (
+    "branch",
+    "local_commit",
+    "deployed_commit",
+    "expected_schema_head",
+    "actual_schema_head",
+    "schema_status",
+    "service_health",
+    "checked_at",
+)
 
 
 def _non_empty(value: Any) -> bool:
@@ -100,6 +112,40 @@ def _validate_artifact(item: Any, *, index: int, manifest_dir: Path, errors: lis
         errors.append(f"artifacts[{index}].path does not exist: {artifact_path}")
 
 
+def _validate_preflight(preflight_value: Any, *, manifest: Mapping[str, Any], errors: list[str]) -> None:
+    preflight = _require_mapping(preflight_value, field="preflight", errors=errors)
+    if preflight is None:
+        return
+    for field in REQUIRED_PREFLIGHT_FIELDS:
+        if field not in preflight or not _non_empty(preflight[field]):
+            errors.append(f"preflight.{field} is required")
+    local_commit = str(preflight.get("local_commit") or "").strip()
+    deployed_commit = str(preflight.get("deployed_commit") or "").strip()
+    manifest_commit = str(manifest.get("commit") or "").strip()
+    manifest_deployed_commit = str(manifest.get("deployed_commit") or "").strip()
+    if local_commit and manifest_commit and local_commit != manifest_commit:
+        errors.append("preflight.local_commit must match commit")
+    if deployed_commit and manifest_deployed_commit and deployed_commit != manifest_deployed_commit:
+        errors.append("preflight.deployed_commit must match deployed_commit")
+    if local_commit and deployed_commit and local_commit != deployed_commit:
+        errors.append("commit and deployed_commit must match")
+    expected_schema_head = str(preflight.get("expected_schema_head") or "").strip()
+    actual_schema_head = str(preflight.get("actual_schema_head") or "").strip()
+    if expected_schema_head and actual_schema_head and actual_schema_head != expected_schema_head:
+        errors.append("preflight actual_schema_head must match expected_schema_head")
+    schema_status = str(preflight.get("schema_status") or "")
+    if schema_status and schema_status not in PREFLIGHT_STATUSES:
+        errors.append(f"preflight.schema_status must be one of {sorted(PREFLIGHT_STATUSES)}")
+    elif schema_status and schema_status != "pass":
+        errors.append("preflight.schema_status must be pass")
+    service_health = str(preflight.get("service_health") or "")
+    if service_health and service_health not in PREFLIGHT_STATUSES:
+        errors.append(f"preflight.service_health must be one of {sorted(PREFLIGHT_STATUSES)}")
+    elif service_health and service_health != "pass":
+        errors.append("preflight.service_health must be pass")
+    _parse_timestamp(preflight.get("checked_at"), field="preflight.checked_at", errors=errors)
+
+
 def validate_manifest(manifest: Mapping[str, Any], *, manifest_dir: Path) -> list[str]:
     errors: list[str] = []
     for field in REQUIRED_TOP_LEVEL:
@@ -110,6 +156,9 @@ def validate_manifest(manifest: Mapping[str, Any], *, manifest_dir: Path) -> lis
     for field in ("run_id", "scenario", "commit", "deployed_commit", "environment"):
         if not _non_empty(manifest.get(field)):
             errors.append(f"{field} is required")
+    if _non_empty(manifest.get("commit")) and _non_empty(manifest.get("deployed_commit")):
+        if str(manifest.get("commit")).strip() != str(manifest.get("deployed_commit")).strip():
+            errors.append("commit and deployed_commit must match")
     status = str(manifest.get("status") or "")
     if status not in RUN_STATUSES:
         errors.append(f"status must be one of {sorted(RUN_STATUSES)}")
@@ -123,6 +172,8 @@ def validate_manifest(manifest: Mapping[str, Any], *, manifest_dir: Path) -> lis
         trace_ids = entities.get("trace_ids")
         if not isinstance(trace_ids, list):
             errors.append("entities.trace_ids must be a list")
+
+    _validate_preflight(manifest.get("preflight"), manifest=manifest, errors=errors)
 
     checks = manifest.get("checks")
     if not isinstance(checks, list):
