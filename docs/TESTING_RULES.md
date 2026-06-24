@@ -137,6 +137,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
 - `db_cleanup_profile_audit` runs `python scripts/audit_db_cleanup_profiles.py --strict` before pytest layers and fails on DB-backed, non-agent-ws server test files without an explicit `db_cleanup` profile.
 - `scripts_pytest_no_db` runs `scripts/test_*.py -m "not manual"` with `--durations=40` and `junit-scripts-no-db.xml` before server pytest layers.
+- `server/tests/test_property_state_contracts_no_db.py` runs in `server_pytest_no_db` and provides deterministic property/state-machine coverage for redaction, ticket status normalization and workflow profile FSM contracts without a new dependency.
 - `migration_schema` runs `server/tests/test_migration_schema_contract.py` with `junit-migration-schema.xml`, timing artifacts, direct fresh Alembic migration, exact head verification and required schema contract checks before the broad DB/API layers.
 - Optional `--parallel --max-workers 2` for bounded server DB/WS layer concurrency; this does not change pytest markers,
   cleanup profiles, DB template behavior, pool settings, or test fixture semantics.

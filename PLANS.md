@@ -1158,7 +1158,7 @@ Blocking:
 - [x] `PERF-401` Test fixture timing budget.
 - [x] `PERF-402` Domain-level bounded parallelism по измерениям.
 - [x] `FLAKE-403` Retry/flaky registry.
-- [ ] `PROP-404` Property/state-machine tests.
+- [x] `PROP-404` Property/state-machine tests.
 - [ ] `COV-405` Targeted branch coverage critical packages.
 - [ ] `MUT-406` Mutation testing для status/policy/redaction/idempotency pure logic.
 - [ ] `FIX-407` Schema-validated fixture builders.
@@ -1206,6 +1206,8 @@ Checkpoint 2026-06-23 QG-006: `scripts/ci_artifacts.py::require_green_ci_artifac
 Checkpoint 2026-06-23 QG-004: `scripts/run_ci_suite.py` now writes `summary.baseline_artifacts` with canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and Playwright fixture retry policy. `pc_agent_pytest` now also runs with `-vv --durations=80 --junitxml`, and fixture E2E records `ci_retries=1`, `trace=on-first-retry` and `passed_after_retry_status=flaky`.
 
 Checkpoint 2026-06-24 FLAKE-403: `scripts/run_ci_suite.py` now enforces a tracked retry/flaky registry at `quality/flaky_registry.json`. The `webapp_fixture_e2e` layer runs Playwright with `--reporter=list,json`, writes `artifacts/ci/<sha>/playwright-webapp-fixture-e2e.json`, and records `summary.flaky_summary` with `passed_after_retry` node ids, first/final statuses, worker indexes, previous error and trace/video/log attachments. Unknown or invalid retry-pass records turn the CI summary red; registry-matched records remain flaky evidence and never become clean green. Coverage: RED/GREEN `scripts/test_run_ci_suite.py::test_flaky_summary_fails_unknown_retry_pass` and `::test_flaky_summary_allows_registry_match_without_clean_green`, plus full `scripts/test_run_ci_suite.py`.
+
+Checkpoint 2026-06-24 PROP-404: `server/tests/test_property_state_contracts_no_db.py` adds deterministic property/state-machine coverage without a new dependency. The pack checks Observer redaction over nested dict/list/tuple/set payloads for non-mutation, idempotency, safe hash/id preservation and secret removal; ticket status normalization for canonical/legacy/strict-vs-soft mode invariants; and workflow profile FSM graphs for valid allowed-status edges, suggested path validity, requester transition boundaries, reachable terminal states and default profile serialization round-trips. Coverage: RED/GREEN focused module run, then `server_pytest_no_db` ownership via inventory audit.
 
 Checkpoint 2026-06-23 QG-005: `scripts/run_ci_suite.py` writes `summary.evidence_layers.webapp_fixture_e2e` with `mode=fixture_e2e` and `canonical_live_browser=false`. Playwright fixture E2E remains a CI/browser-fixture layer and cannot be confused with live browser signoff evidence from `docs/LIVE_TESTING_DEBUG_RULES.md`.
 
