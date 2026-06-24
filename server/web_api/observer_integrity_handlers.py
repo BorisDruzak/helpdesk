@@ -7,7 +7,7 @@ from loguru import logger
 
 from app.db import get_session
 from auth.middleware import require_auth
-from observer.integrity_service import ObserverIntegrityService
+from observer.integrity_service import ObserverIntegrityService, serialize_observer_integrity_check_report
 from web_api.dto.common import SuccessResponse, json_model_response
 
 
@@ -77,14 +77,18 @@ async def handle_web_admin_observer_integrity_scan(request: web.Request) -> web.
             result = await ObserverIntegrityService(session, state=request.app.get("state")).run_scan(run_id=run_id)
             await session.commit()
             payload = {
+                "scan_id": result.scan_id,
                 "run_id": result.run_id,
+                "status": result.status,
+                "duration_ms": result.duration_ms,
                 "generated": result.generated,
-        "active": result.active,
-        "suppressed": result.suppressed,
-        "resolved": result.resolved,
-        "incomplete_sources": result.incomplete_sources,
-        "failed_sources": result.failed_sources,
-        "event_ids": result.event_ids,
+                "active": result.active,
+                "suppressed": result.suppressed,
+                "resolved": result.resolved,
+                "incomplete_sources": result.incomplete_sources,
+                "failed_sources": result.failed_sources,
+                "event_ids": result.event_ids,
+                "checks": [serialize_observer_integrity_check_report(report) for report in result.checks],
             }
     except Exception as exc:
         logger.exception(f"[observer_integrity] scan failed: {exc}")

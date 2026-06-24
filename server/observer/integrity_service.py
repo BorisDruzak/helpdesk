@@ -1,9 +1,12 @@
 """OBS1 Operational Integrity Observer orchestration."""
 from __future__ import annotations
 
+import asyncio
 import json
+import time
+import uuid
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,6 +37,7 @@ from observer.checks.web_cabinet import check_web_cabinet
 
 KNOWN_CONTAMINATION_MANIFEST = Path(__file__).resolve().parents[2] / "quality" / "observer_known_contamination.json"
 INTEGRITY_RUNNER_SOURCE = "observer.integrity_runner"
+DEFAULT_CHECKER_TIMEOUT_SECONDS = 30.0
 
 
 def _parse_manifest_datetime(value: Any) -> datetime | None:
@@ -99,8 +103,29 @@ DEFAULT_KNOWN_CONTAMINATION: list[dict[str, Any]] = load_known_contamination_man
 
 
 @dataclass(slots=True)
+class ObserverIntegrityCheckReport:
+    source: str
+    status: str
+    complete: bool
+    started_at: datetime
+    finished_at: datetime
+    duration_ms: int
+    generated_count: int = 0
+    active_count: int = 0
+    suppressed_count: int = 0
+    resolved_count: int = 0
+    scanned_count: int = 0
+    limit: int | None = None
+    window: dict[str, Any] = field(default_factory=dict)
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+@dataclass(slots=True)
 class ObserverIntegrityScanResult:
+    scan_id: str
     run_id: str | None
+    status: str
     generated: int
     active: int
     suppressed: int
@@ -108,36 +133,111 @@ class ObserverIntegrityScanResult:
     incomplete_sources: list[str]
     failed_sources: list[str]
     event_ids: list[str]
+    checks: list[ObserverIntegrityCheckReport]
+    duration_ms: int
+
+
+def serialize_observer_integrity_check_report(report: ObserverIntegrityCheckReport) -> dict[str, Any]:
+    return {
+        "source": report.source,
+        "status": report.status,
+        "complete": report.complete,
+        "started_at": report.started_at.isoformat(),
+        "finished_at": report.finished_at.isoformat(),
+        "duration_ms": report.duration_ms,
+        "generated_count": report.generated_count,
+        "active_count": report.active_count,
+        "suppressed_count": report.suppressed_count,
+        "resolved_count": report.resolved_count,
+        "scanned_count": report.scanned_count,
+        "limit": report.limit,
+        "window": report.window,
+        "error_type": report.error_type,
+        "error_message": report.error_message,
+    }
 
 
 class ObserverIntegrityService:
-    def __init__(self, session: AsyncSession, *, state: Any = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        state: Any = None,
+        checker_timeout_seconds: float = DEFAULT_CHECKER_TIMEOUT_SECONDS,
+    ) -> None:
         self.session = session
         self.state = state
+        self.checker_timeout_seconds = max(float(checker_timeout_seconds), 0.001)
         self.repo = ObserverIntegrityRepo(session)
 
     async def seed_known_contamination(self) -> int:
         return await self.repo.ensure_contamination(rows=load_known_contamination_manifest())
 
     async def run_scan(self, *, run_id: str | None = None) -> ObserverIntegrityScanResult:
+        scan_id = str(uuid.uuid4())
+        scan_started_monotonic = time.perf_counter()
         await self.seed_known_contamination()
         generated: list[ObserverIntegrityEventInput] = []
         source_complete: dict[str, bool] = {INTEGRITY_RUNNER_SOURCE: True}
         failed_sources: list[str] = []
+        check_reports: list[ObserverIntegrityCheckReport] = []
 
-        def collect(source: str, result: Any) -> None:
+        def collect(source: str, result: Any, *, started_at: datetime, finished_at: datetime, duration_ms: int) -> ObserverIntegrityCheckReport:
             if isinstance(result, ObserverIntegrityCheckResult):
+                generated.extend(result.events)
+                window = {
+                    "scanned_count": result.scanned_count,
+                    "limit": result.limit,
+                    "complete": result.complete,
+                }
                 if result.source != source:
                     source_complete[source] = False
                     source_complete[result.source] = False
+                    return ObserverIntegrityCheckReport(
+                        source=source,
+                        status="degraded",
+                        complete=False,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=duration_ms,
+                        generated_count=len(result.events),
+                        scanned_count=result.scanned_count,
+                        limit=result.limit,
+                        window=window | {"reported_source": result.source},
+                        error_type="SourceMismatch",
+                        error_message=f"checker returned source {result.source!r}",
+                    )
                 else:
-                    source_complete[result.source] = source_complete.get(result.source, True) and result.complete
-                generated.extend(result.events)
-                return
+                    complete = bool(result.complete)
+                    source_complete[result.source] = complete
+                    return ObserverIntegrityCheckReport(
+                        source=source,
+                        status="passed" if complete else "degraded",
+                        complete=complete,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=duration_ms,
+                        generated_count=len(result.events),
+                        scanned_count=result.scanned_count,
+                        limit=result.limit,
+                        window=window,
+                    )
             source_complete[source] = False
             if isinstance(result, list):
                 generated.extend(result)
-                return
+                return ObserverIntegrityCheckReport(
+                    source=source,
+                    status="degraded",
+                    complete=False,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_ms=duration_ms,
+                    generated_count=len(result),
+                    scanned_count=len(result),
+                    window={"legacy_result": True},
+                    error_type="LegacyListResult",
+                    error_message="checker returned a legacy list without explicit complete coverage",
+                )
             raise TypeError(
                 f"Observer integrity checker {source} returned unsupported result type {type(result).__name__}"
             )
@@ -149,35 +249,113 @@ class ObserverIntegrityService:
             async with begin_nested():
                 return await checker_call()
 
+        def failure_report(
+            source: str,
+            *,
+            status: str,
+            exc: BaseException,
+            started_at: datetime,
+            finished_at: datetime,
+            duration_ms: int,
+        ) -> ObserverIntegrityCheckReport:
+            message = str(exc)[:300]
+            if not message and status == "timed_out":
+                message = f"checker exceeded {self.checker_timeout_seconds:g}s"
+            return ObserverIntegrityCheckReport(
+                source=source,
+                status=status,
+                complete=False,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms,
+                error_type=type(exc).__name__,
+                error_message=message,
+            )
+
+        def append_failure_event(source: str, exc: BaseException, *, status: str) -> None:
+            message = str(exc)[:300]
+            if not message and status == "timed_out":
+                message = f"checker exceeded {self.checker_timeout_seconds:g}s"
+            generated.append(
+                ObserverIntegrityEventInput(
+                    event_type="observer_integrity_checker_failed",
+                    severity="error",
+                    source=INTEGRITY_RUNNER_SOURCE,
+                    dedupe_key=f"observer_integrity_checker_failed:{source}",
+                    expected="Observer integrity checker should complete without blocking independent checkers.",
+                    actual=f"{type(exc).__name__}: {message}",
+                    evidence={
+                        "checker_source": source,
+                        "checker_status": status,
+                        "error_type": type(exc).__name__,
+                        "error_message": message,
+                    },
+                    runbook="docs/runbooks/observer_integrity.md",
+                    run_id=run_id,
+                )
+            )
+
         async def collect_checker(source: str, checker_call: Any) -> None:
             has_savepoint = getattr(self.session, "begin_nested", None) is not None
+            started_at = datetime.now(timezone.utc)
+            started_monotonic = time.perf_counter()
             try:
-                collect(source, await run_checker(checker_call))
-            except Exception as exc:
+                result = await asyncio.wait_for(run_checker(checker_call), timeout=self.checker_timeout_seconds)
+                finished_at = datetime.now(timezone.utc)
+                duration_ms = int((time.perf_counter() - started_monotonic) * 1000)
+                check_reports.append(
+                    collect(
+                        source,
+                        result,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=duration_ms,
+                    )
+                )
+            except asyncio.TimeoutError as exc:
                 source_complete[source] = False
-                failed_sources.append(source)
+                if source not in failed_sources:
+                    failed_sources.append(source)
+                finished_at = datetime.now(timezone.utc)
+                duration_ms = int((time.perf_counter() - started_monotonic) * 1000)
+                check_reports.append(
+                    failure_report(
+                        source,
+                        status="timed_out",
+                        exc=exc,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=duration_ms,
+                    )
+                )
                 if not has_savepoint:
                     with suppress(Exception):
                         rollback = getattr(self.session, "rollback", None)
                         if rollback is not None:
                             await rollback()
-                generated.append(
-                    ObserverIntegrityEventInput(
-                        event_type="observer_integrity_checker_failed",
-                        severity="error",
-                        source=INTEGRITY_RUNNER_SOURCE,
-                        dedupe_key=f"observer_integrity_checker_failed:{source}",
-                        expected="Observer integrity checker should complete without blocking independent checkers.",
-                        actual=f"{type(exc).__name__}: {str(exc)[:300]}",
-                        evidence={
-                            "checker_source": source,
-                            "error_type": type(exc).__name__,
-                            "error_message": str(exc)[:300],
-                        },
-                        runbook="docs/runbooks/observer_integrity.md",
-                        run_id=run_id,
+                append_failure_event(source, exc, status="timed_out")
+            except Exception as exc:
+                source_complete[source] = False
+                if source not in failed_sources:
+                    failed_sources.append(source)
+                finished_at = datetime.now(timezone.utc)
+                duration_ms = int((time.perf_counter() - started_monotonic) * 1000)
+                check_reports.append(
+                    failure_report(
+                        source,
+                        status="failed",
+                        exc=exc,
+                        started_at=started_at,
+                        finished_at=finished_at,
+                        duration_ms=duration_ms,
                     )
                 )
+                if not has_savepoint:
+                    with suppress(Exception):
+                        rollback = getattr(self.session, "rollback", None)
+                        if rollback is not None:
+                            await rollback()
+                append_failure_event(source, exc, status="failed")
 
         await collect_checker(OPERATION_SOURCE, lambda: check_operation_lifecycle(self.session, run_id=run_id))
         await collect_checker(PROTOCOL_SOURCE, lambda: check_protocol_integrity(self.session, run_id=run_id))
@@ -188,6 +366,7 @@ class ObserverIntegrityService:
         await collect_checker(WEB_CABINET_SOURCE, lambda: check_web_cabinet(self.session, run_id=run_id))
 
         active_dedupe_by_source: dict[str, set[str]] = {}
+        reports_by_source = {report.source: report for report in check_reports}
         event_ids: list[str] = []
         active = 0
         suppressed = 0
@@ -199,10 +378,15 @@ class ObserverIntegrityService:
                 suppression_reason = f"{contamination.source_phase}: {contamination.reason}"
             row = await self.repo.upsert_event(event, suppression_reason=suppression_reason)
             event_ids.append(row.event_id)
+            report = reports_by_source.get(event.source)
             if row.status == "suppressed":
                 suppressed += 1
+                if report is not None:
+                    report.suppressed_count += 1
             else:
                 active += 1
+                if report is not None:
+                    report.active_count += 1
 
         resolved = 0
         for source in (
@@ -215,16 +399,36 @@ class ObserverIntegrityService:
             WEB_CABINET_SOURCE,
             INTEGRITY_RUNNER_SOURCE,
         ):
-            if source_complete.get(source) is not True:
+            report = reports_by_source.get(source)
+            if source == INTEGRITY_RUNNER_SOURCE:
+                if source_complete.get(source) is not True:
+                    continue
+            elif report is None or report.status != "passed" or report.complete is not True:
                 continue
-            resolved += await self.repo.resolve_missing(
+            resolved_count = await self.repo.resolve_missing(
                 source=source,
                 active_dedupe_keys=active_dedupe_by_source.get(source, set()),
                 run_id=run_id,
             )
-        await self.session.flush()
-        return ObserverIntegrityScanResult(
+            resolved += resolved_count
+            if report is not None:
+                report.resolved_count += resolved_count
+        await self.repo.record_check_reports(
+            scan_id=scan_id,
             run_id=run_id,
+            reports=[serialize_observer_integrity_check_report(report) for report in check_reports],
+        )
+        await self.session.flush()
+        scan_duration_ms = int((time.perf_counter() - scan_started_monotonic) * 1000)
+        scan_status = (
+            "passed"
+            if check_reports and all(report.status == "passed" and report.complete for report in check_reports)
+            else "degraded"
+        )
+        return ObserverIntegrityScanResult(
+            scan_id=scan_id,
+            run_id=run_id,
+            status=scan_status,
             generated=len(generated),
             active=active,
             suppressed=suppressed,
@@ -232,6 +436,8 @@ class ObserverIntegrityService:
             incomplete_sources=sorted(source for source, complete in source_complete.items() if not complete),
             failed_sources=sorted(failed_sources),
             event_ids=event_ids,
+            checks=check_reports,
+            duration_ms=scan_duration_ms,
         )
 
     async def list_events(

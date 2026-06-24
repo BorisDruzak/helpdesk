@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -25,6 +26,7 @@ class _FakeIntegrityRepo:
     def __init__(self) -> None:
         self.resolved_sources: list[str] = []
         self.upserted_events: list[ObserverIntegrityEventInput] = []
+        self.recorded_check_reports: list[dict] = []
 
     async def ensure_contamination(self, *, rows):
         return 0
@@ -39,6 +41,10 @@ class _FakeIntegrityRepo:
     async def resolve_missing(self, *, source, active_dedupe_keys, run_id=None):
         self.resolved_sources.append(source)
         return 1
+
+    async def record_check_reports(self, *, scan_id, run_id, reports):
+        self.recorded_check_reports.extend(reports)
+        return []
 
 
 class _FakeSession:
@@ -289,6 +295,106 @@ async def test_run_scan_isolates_failed_checker_and_does_not_resolve_its_source(
     assert OPERATION_SOURCE in result.incomplete_sources
     assert OPERATION_SOURCE not in repo.resolved_sources
     assert PROTOCOL_SOURCE in repo.resolved_sources
+    assert any(event.event_type == "observer_integrity_checker_failed" for event in repo.upserted_events)
+
+
+@pytest.mark.asyncio
+async def test_run_scan_reports_checker_status_counts_and_resolves_only_passed_complete(monkeypatch):
+    repo = _FakeIntegrityRepo()
+    service = ObserverIntegrityService(session=_FakeSession())
+    service.repo = repo
+
+    async def complete_operation_checker(_session, *, run_id=None):
+        return integrity_module.ObserverIntegrityCheckResult(
+            source=OPERATION_SOURCE,
+            events=[_event(OPERATION_SOURCE, "operation:complete")],
+            complete=True,
+            scanned_count=7,
+            limit=200,
+        )
+
+    async def degraded_protocol_checker(_session, *, run_id=None):
+        return integrity_module.ObserverIntegrityCheckResult(
+            source=PROTOCOL_SOURCE,
+            events=[_event(PROTOCOL_SOURCE, "protocol:degraded")],
+            complete=False,
+            scanned_count=501,
+            limit=500,
+        )
+
+    async def failed_runtime_checker(_session, *, state=None, run_id=None):
+        raise RuntimeError("runtime checker exploded")
+
+    async def empty_checker(source):
+        return integrity_module.ObserverIntegrityCheckResult(source=source, events=[], complete=True)
+
+    monkeypatch.setattr(integrity_module, "check_operation_lifecycle", complete_operation_checker)
+    monkeypatch.setattr(integrity_module, "check_protocol_integrity", degraded_protocol_checker)
+    monkeypatch.setattr(integrity_module, "check_runtime_presence", failed_runtime_checker)
+    monkeypatch.setattr(integrity_module, "check_account_boundary", lambda *_args, **_kwargs: empty_checker(integrity_module.ACCOUNT_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_module_toolset", lambda *_args, **_kwargs: empty_checker(integrity_module.MODULE_TOOLSET_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_governance", lambda *_args, **_kwargs: empty_checker(integrity_module.GOVERNANCE_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_web_cabinet", lambda *_args, **_kwargs: empty_checker(integrity_module.WEB_CABINET_SOURCE))
+
+    result = await service.run_scan(run_id="checker-report-test")
+
+    reports = {report.source: report for report in result.checks}
+    assert reports[OPERATION_SOURCE].status == "passed"
+    assert reports[OPERATION_SOURCE].complete is True
+    assert reports[OPERATION_SOURCE].generated_count == 1
+    assert reports[OPERATION_SOURCE].active_count == 1
+    assert reports[OPERATION_SOURCE].suppressed_count == 0
+    assert reports[OPERATION_SOURCE].resolved_count == 1
+    assert reports[OPERATION_SOURCE].scanned_count == 7
+    assert reports[OPERATION_SOURCE].limit == 200
+    assert reports[OPERATION_SOURCE].duration_ms >= 0
+    assert reports[PROTOCOL_SOURCE].status == "degraded"
+    assert reports[PROTOCOL_SOURCE].complete is False
+    assert reports[PROTOCOL_SOURCE].scanned_count == 501
+    assert reports[PROTOCOL_SOURCE].limit == 500
+    assert reports[PROTOCOL_SOURCE].resolved_count == 0
+    assert reports[RUNTIME_SOURCE].status == "failed"
+    assert reports[RUNTIME_SOURCE].complete is False
+    assert reports[RUNTIME_SOURCE].error_type == "RuntimeError"
+    assert {report["source"]: report["status"] for report in repo.recorded_check_reports}[RUNTIME_SOURCE] == "failed"
+    assert OPERATION_SOURCE in repo.resolved_sources
+    assert PROTOCOL_SOURCE not in repo.resolved_sources
+    assert RUNTIME_SOURCE not in repo.resolved_sources
+    assert any(event.event_type == "observer_integrity_checker_failed" for event in repo.upserted_events)
+
+
+@pytest.mark.asyncio
+async def test_run_scan_times_out_slow_checker_and_does_not_resolve_source(monkeypatch):
+    repo = _FakeIntegrityRepo()
+    service = ObserverIntegrityService(session=_FakeSession(), checker_timeout_seconds=0.01)
+    service.repo = repo
+
+    async def slow_operation_checker(_session, *, run_id=None):
+        await asyncio.sleep(10)
+        return integrity_module.ObserverIntegrityCheckResult(source=OPERATION_SOURCE, events=[], complete=True)
+
+    async def complete_checker(source):
+        return integrity_module.ObserverIntegrityCheckResult(source=source, events=[], complete=True)
+
+    monkeypatch.setattr(integrity_module, "check_operation_lifecycle", slow_operation_checker)
+    monkeypatch.setattr(integrity_module, "check_protocol_integrity", lambda *_args, **_kwargs: complete_checker(PROTOCOL_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_runtime_presence", lambda *_args, **_kwargs: complete_checker(RUNTIME_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_account_boundary", lambda *_args, **_kwargs: complete_checker(integrity_module.ACCOUNT_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_module_toolset", lambda *_args, **_kwargs: complete_checker(integrity_module.MODULE_TOOLSET_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_governance", lambda *_args, **_kwargs: complete_checker(integrity_module.GOVERNANCE_SOURCE))
+    monkeypatch.setattr(integrity_module, "check_web_cabinet", lambda *_args, **_kwargs: complete_checker(integrity_module.WEB_CABINET_SOURCE))
+
+    result = await asyncio.wait_for(service.run_scan(run_id="timeout-checker-test"), timeout=0.5)
+
+    reports = {report.source: report for report in result.checks}
+    assert reports[OPERATION_SOURCE].status == "timed_out"
+    assert reports[OPERATION_SOURCE].complete is False
+    assert reports[OPERATION_SOURCE].error_type == "TimeoutError"
+    assert reports[OPERATION_SOURCE].duration_ms >= 0
+    assert {report["source"]: report["status"] for report in repo.recorded_check_reports}[OPERATION_SOURCE] == "timed_out"
+    assert OPERATION_SOURCE in result.failed_sources
+    assert OPERATION_SOURCE in result.incomplete_sources
+    assert OPERATION_SOURCE not in repo.resolved_sources
     assert any(event.event_type == "observer_integrity_checker_failed" for event in repo.upserted_events)
 
 

@@ -3,14 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, Operation, Ticket, TicketEvent
+from app.db.models import Device, ObserverIntegrityCheckRun, Operation, Ticket, TicketEvent
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput, ObserverIntegrityRepo
 from observer import integrity_service as integrity_module
 from observer.checks.operation_lifecycle import QUERY_LIMIT as OPERATION_QUERY_LIMIT
 from observer.checks.operation_lifecycle import SOURCE as OPERATION_SOURCE
 from observer.checks.operation_lifecycle import check_operation_lifecycle
+from observer.checks.protocol_integrity import SOURCE as PROTOCOL_SOURCE
 from observer.checks.runtime_presence import check_runtime_presence
 from observer.checks.types import ObserverIntegrityCheckResult
 from observer.checks.web_cabinet import check_web_cabinet
@@ -230,3 +232,81 @@ async def test_run_scan_resolves_only_current_missing_event_after_complete_db_sc
         assert OPERATION_SOURCE not in complete_result.incomplete_sources
         assert visible is not None and visible.status == "resolved"
         assert outside is not None and outside.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_run_scan_persists_per_checker_reports(test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async def complete_operation_checker(_session, *, run_id=None):
+        return ObserverIntegrityCheckResult(
+            source=OPERATION_SOURCE,
+            events=[_integrity_event(OPERATION_SOURCE, "operation:report-visible")],
+            complete=True,
+            scanned_count=7,
+            limit=OPERATION_QUERY_LIMIT,
+        )
+
+    async def degraded_runtime_checker(_session, *, state=None, run_id=None):
+        return ObserverIntegrityCheckResult(
+            source=integrity_module.RUNTIME_SOURCE,
+            events=[],
+            complete=False,
+            scanned_count=501,
+            limit=500,
+        )
+
+    async def failed_protocol_checker(_session, *, run_id=None):
+        raise RuntimeError("protocol report failure")
+
+    monkeypatch.setattr(integrity_module, "check_operation_lifecycle", complete_operation_checker)
+    monkeypatch.setattr(integrity_module, "check_protocol_integrity", failed_protocol_checker)
+    monkeypatch.setattr(integrity_module, "check_runtime_presence", degraded_runtime_checker)
+    monkeypatch.setattr(
+        integrity_module,
+        "check_account_boundary",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.ACCOUNT_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_module_toolset",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.MODULE_TOOLSET_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_governance",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.GOVERNANCE_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_web_cabinet",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.WEB_CABINET_SOURCE),
+    )
+
+    async with session_maker() as session:
+        result = await ObserverIntegrityService(session).run_scan(run_id="checker-report-db")
+        rows = list(
+            (
+                await session.execute(
+                    select(ObserverIntegrityCheckRun).where(
+                        ObserverIntegrityCheckRun.scan_id == result.scan_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    reports = {row.source: row for row in rows}
+    assert len(rows) == 7
+    assert reports[OPERATION_SOURCE].status == "passed"
+    assert reports[OPERATION_SOURCE].complete is True
+    assert reports[OPERATION_SOURCE].generated_count == 1
+    assert reports[OPERATION_SOURCE].active_count == 1
+    assert reports[OPERATION_SOURCE].scanned_count == 7
+    assert reports[OPERATION_SOURCE].limit_value == OPERATION_QUERY_LIMIT
+    assert reports[integrity_module.RUNTIME_SOURCE].status == "degraded"
+    assert reports[integrity_module.RUNTIME_SOURCE].complete is False
+    assert reports[integrity_module.RUNTIME_SOURCE].scanned_count == 501
+    assert reports[PROTOCOL_SOURCE].status == "failed"
+    assert reports[PROTOCOL_SOURCE].error_type == "RuntimeError"

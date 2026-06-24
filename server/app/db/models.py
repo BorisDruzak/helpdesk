@@ -5798,6 +5798,45 @@ class ObserverIntegrityEvent(Base):
     )
 
 
+class ObserverIntegrityCheckRun(Base):
+    """Durable per-check report for one Observer integrity scan execution."""
+
+    __tablename__ = "observer_integrity_check_runs"
+
+    check_run_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    scan_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    run_id: Mapped[Optional[str]] = mapped_column(String(120), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    finished_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    duration_ms: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    generated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    active_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    suppressed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolved_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    scanned_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    limit_value: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    window_json: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    error_type: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "status IN ('passed', 'degraded', 'failed', 'timed_out')",
+            name="ck_observer_integrity_check_runs_status",
+        ),
+        Index("ix_observer_integrity_check_runs_scan_source", "scan_id", "source"),
+        Index("ix_observer_integrity_check_runs_status_started", "status", "started_at"),
+    )
+
+
 class ObserverKnownContamination(Base):
     """Narrow suppression registry for historical P0-P6 contamination."""
 

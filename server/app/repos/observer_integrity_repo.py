@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ObserverIntegrityEvent, ObserverKnownContamination
+from app.db.models import ObserverIntegrityCheckRun, ObserverIntegrityEvent, ObserverKnownContamination
 from shared.redaction import redact_sensitive_payload
 
 
@@ -191,6 +191,40 @@ class ObserverIntegrityRepo:
                 row.run_id = run_id
         await self.session.flush()
         return len(rows)
+
+    async def record_check_reports(
+        self,
+        *,
+        scan_id: str,
+        run_id: str | None,
+        reports: list[dict[str, Any]],
+    ) -> list[ObserverIntegrityCheckRun]:
+        rows: list[ObserverIntegrityCheckRun] = []
+        for report in reports:
+            window = report.get("window") if isinstance(report.get("window"), dict) else {}
+            row = ObserverIntegrityCheckRun(
+                scan_id=_compact(scan_id, max_len=36) or str(uuid.uuid4()),
+                run_id=_compact(run_id, max_len=120),
+                source=_compact(report.get("source"), max_len=120) or "observer.unknown",
+                status=_compact(report.get("status"), max_len=30) or "failed",
+                complete=bool(report.get("complete")),
+                started_at=_coerce_datetime(report.get("started_at")) or _now(),
+                finished_at=_coerce_datetime(report.get("finished_at")) or _now(),
+                duration_ms=max(int(report.get("duration_ms") or 0), 0),
+                generated_count=max(int(report.get("generated_count") or 0), 0),
+                active_count=max(int(report.get("active_count") or 0), 0),
+                suppressed_count=max(int(report.get("suppressed_count") or 0), 0),
+                resolved_count=max(int(report.get("resolved_count") or 0), 0),
+                scanned_count=max(int(report.get("scanned_count") or 0), 0),
+                limit_value=report.get("limit") if report.get("limit") is None else max(int(report.get("limit") or 0), 0),
+                window_json=redact_sensitive_payload(window),
+                error_type=_compact(report.get("error_type"), max_len=120),
+                error_message=_compact(report.get("error_message"), max_len=1000),
+            )
+            self.session.add(row)
+            rows.append(row)
+        await self.session.flush()
+        return rows
 
     async def list_events(
         self,
