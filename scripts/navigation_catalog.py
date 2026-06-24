@@ -3602,6 +3602,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/check_phase_e_live_gate.py --vm-check <vm-check.json> --evidence-manifest <broad-live-evidence.json>",
             "python -m pytest server/tests/test_critical_behavior_data_pack.py -q",
             "python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --surfaces requester,support --dry-run --json",
+            "python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --mode agent-operation --surfaces native_agent,operation_lifecycle --dry-run --json",
             "python scripts/verify_workspace.py",
         ),
         mode="Debug / Root Cause",

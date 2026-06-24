@@ -71,7 +71,13 @@ Requester/support live browser probes can be planned or run from the critical be
 python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --surfaces requester,support --dry-run --json
 ```
 
-The runner captures browser evidence through `webapp/scripts/live-browser-scenarios.mjs`. It does not replace the manifest's API, DB, Observer, cleanup, or preflight evidence.
+Agent/runtime and operation-lifecycle probes use the same pack with a different runner mode:
+
+```powershell
+python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --mode agent-operation --surfaces native_agent,operation_lifecycle --dry-run --json
+```
+
+The runner captures browser evidence through `webapp/scripts/live-browser-scenarios.mjs` and agent/operation evidence through existing UIA/WS probes. It does not replace the manifest's API, DB, Observer, cleanup, or preflight evidence.
 
 ### Stop conditions
 

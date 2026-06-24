@@ -57,6 +57,48 @@ def test_dry_run_outputs_live_browser_commands(tmp_path, capsys) -> None:
         assert "https://stand.example.test" in command
 
 
+def test_discovers_agent_operation_scenarios_from_pack() -> None:
+    runner = importlib.import_module("scripts.run_live_behavior_suite")
+    pack = runner.load_pack(PACK_PATH)
+
+    scenarios = runner.discover_agent_operation_scenarios(pack, surfaces={"native_agent", "operation_lifecycle"})
+
+    keys = {scenario["scenario_key"] for scenario in scenarios}
+    assert keys == {"tool_run_approve_deny_timeout", "windows_linux_vm_agent_runtime"}
+    assert all("agent_sqlite" in scenario["required_evidence"] for scenario in scenarios)
+    assert {scenario["surface"] for scenario in scenarios} == {"native_agent", "operation_lifecycle"}
+
+
+def test_agent_operation_dry_run_outputs_probe_commands(tmp_path, capsys) -> None:
+    runner = importlib.import_module("scripts.run_live_behavior_suite")
+
+    exit_code = runner.main(
+        [
+            "--pack",
+            str(PACK_PATH),
+            "--mode",
+            "agent-operation",
+            "--surfaces",
+            "native_agent,operation_lifecycle",
+            "--out-dir",
+            str(tmp_path),
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["mode"] == "dry_run"
+    assert payload["runner_mode"] == "agent-operation"
+    assert payload["scenario_count"] == 2
+    commands = {item["scenario_key"]: item["command"] for item in payload["scenarios"]}
+    assert commands["windows_linux_vm_agent_runtime"][:2] == ["python", "scripts/live_agent_uia_state_probe.py"]
+    assert "--expect-connected" in commands["windows_linux_vm_agent_runtime"]
+    assert commands["tool_run_approve_deny_timeout"][:2] == ["python", "scripts/live_ws_v3_probe.py"]
+    assert "malformed-outbox" in commands["tool_run_approve_deny_timeout"]
+
+
 def test_live_browser_script_uses_real_routes_without_network_mocks() -> None:
     script = BROWSER_SCRIPT.read_text(encoding="utf-8")
 

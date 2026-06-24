@@ -14,12 +14,15 @@ from typing import Any, Mapping, Sequence
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACK_PATH = ROOT / "test_data_packs" / "critical_behavior_v1.json"
 DEFAULT_BROWSER_SCRIPT = Path("webapp/scripts/live-browser-scenarios.mjs")
+DEFAULT_UIA_PROBE = Path("scripts/live_agent_uia_state_probe.py")
+DEFAULT_WS_PROBE = Path("scripts/live_ws_v3_probe.py")
 DEFAULT_BASE_URL = (
     os.environ.get("PC_CLIENT_BROWSER_BASE_URL")
     or os.environ.get("REMOTE_SMOKE_BASE_URL")
     or "https://192.168.100.17:9443"
 )
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "live_behavior_suite"
+AGENT_OPERATION_SURFACES = {"native_agent", "operation_lifecycle", "protocol_v3"}
 
 
 def _repo_rel(path: Path) -> str:
@@ -80,6 +83,49 @@ def discover_browser_scenarios(
     return selected
 
 
+def discover_agent_operation_scenarios(
+    pack: Mapping[str, Any],
+    *,
+    surfaces: set[str] | None = None,
+    scenario_keys: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    for domain in pack.get("domains") or []:
+        if not isinstance(domain, dict):
+            continue
+        for scenario in domain.get("live_scenarios") or []:
+            if not isinstance(scenario, dict):
+                continue
+            surface = str(scenario.get("surface") or "")
+            scenario_key = str(scenario.get("key") or "")
+            required_evidence = list(scenario.get("required_evidence") or [])
+            is_agent_operation = surface in AGENT_OPERATION_SURFACES or "uia" in required_evidence
+            if not is_agent_operation:
+                continue
+            if surfaces and surface not in surfaces:
+                continue
+            if scenario_keys and scenario_key not in scenario_keys:
+                continue
+            selected.append(
+                {
+                    "domain_key": domain.get("key"),
+                    "owner": domain.get("owner"),
+                    "priority": domain.get("priority"),
+                    "scenario_key": scenario_key,
+                    "surface": surface,
+                    "required_evidence": required_evidence,
+                    "manifest_requirements": list(scenario.get("manifest_requirements") or []),
+                    "data_refs": scenario.get("data_refs") or {},
+                    "expected_outcomes": list(scenario.get("expected_outcomes") or []),
+                }
+            )
+    return selected
+
+
+def _scenario_out_dir(out_dir: Path, scenario: Mapping[str, Any]) -> Path:
+    return out_dir / f"{scenario['domain_key']}__{scenario['scenario_key']}"
+
+
 def build_browser_command(
     scenario: Mapping[str, Any],
     *,
@@ -87,8 +133,7 @@ def build_browser_command(
     out_dir: Path,
     browser_script: Path = DEFAULT_BROWSER_SCRIPT,
 ) -> list[str]:
-    scenario_dir_name = f"{scenario['domain_key']}__{scenario['scenario_key']}"
-    scenario_out_dir = out_dir / scenario_dir_name
+    scenario_out_dir = _scenario_out_dir(out_dir, scenario)
     return [
         "node",
         browser_script.as_posix(),
@@ -105,9 +150,49 @@ def build_browser_command(
     ]
 
 
+def build_agent_operation_command(
+    scenario: Mapping[str, Any],
+    *,
+    out_dir: Path,
+    uia_probe: Path = DEFAULT_UIA_PROBE,
+    ws_probe: Path = DEFAULT_WS_PROBE,
+) -> list[str]:
+    scenario_out_dir = _scenario_out_dir(out_dir, scenario)
+    surface = str(scenario["surface"])
+    scenario_key = str(scenario["scenario_key"])
+    if surface == "native_agent":
+        return [
+            "python",
+            uia_probe.as_posix(),
+            "--expect-connected",
+            "--output",
+            str(scenario_out_dir / "uia-state.json"),
+            "--screenshot",
+            str(scenario_out_dir / "uia-state.png"),
+        ]
+    if surface == "operation_lifecycle":
+        return [
+            "python",
+            ws_probe.as_posix(),
+            "--timeout",
+            "15",
+            "malformed-outbox",
+            "--run-id",
+            scenario_key,
+        ]
+    return [
+        "python",
+        ws_probe.as_posix(),
+        "--timeout",
+        "15",
+        "double-connect",
+    ]
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pack", type=Path, default=DEFAULT_PACK_PATH)
+    parser.add_argument("--mode", choices=["browser", "agent-operation"], default="browser")
     parser.add_argument("--surfaces", default="requester,support")
     parser.add_argument("--scenario-key", action="append", dest="scenario_keys")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
@@ -139,9 +224,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     surfaces = _split_csv(args.surfaces)
     scenario_keys = set(args.scenario_keys or [])
     browser_script = args.browser_script
-    scenarios = discover_browser_scenarios(pack, surfaces=surfaces, scenario_keys=scenario_keys or None)
+    if args.mode == "browser":
+        scenarios = discover_browser_scenarios(pack, surfaces=surfaces, scenario_keys=scenario_keys or None)
+    else:
+        scenarios = discover_agent_operation_scenarios(pack, surfaces=surfaces, scenario_keys=scenario_keys or None)
     if not scenarios:
-        print("No matching browser scenarios found.", flush=True)
+        print(f"No matching {args.mode} scenarios found.", flush=True)
         return 1
     if not args.dry_run and not (ROOT / browser_script).is_file():
         print(f"Browser script not found: {browser_script}", flush=True)
@@ -151,12 +239,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     items: list[dict[str, Any]] = []
     exit_code = 0
     for scenario in scenarios:
-        command = build_browser_command(
-            scenario,
-            base_url=args.base_url,
-            out_dir=args.out_dir,
-            browser_script=browser_script,
-        )
+        scenario_out_dir = _scenario_out_dir(args.out_dir, scenario)
+        scenario_out_dir.mkdir(parents=True, exist_ok=True)
+        if args.mode == "browser":
+            command = build_browser_command(
+                scenario,
+                base_url=args.base_url,
+                out_dir=args.out_dir,
+                browser_script=browser_script,
+            )
+        else:
+            command = build_agent_operation_command(
+                scenario,
+                out_dir=args.out_dir,
+            )
         item = {
             **scenario,
             "command": command,
@@ -171,6 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = {
         "schema": "pc_client.live_behavior_suite_run.v1",
         "mode": "dry_run" if args.dry_run else "run",
+        "runner_mode": args.mode,
         "pack": _repo_rel(args.pack),
         "browser_script": browser_script.as_posix(),
         "base_url": args.base_url,

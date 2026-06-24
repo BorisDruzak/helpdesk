@@ -1146,7 +1146,7 @@ Blocking:
 - [x] `LIVE-304` Добавить before/after integrity delta.
 - [x] `LIVE-305` Создать critical behavior data pack.
 - [x] `LIVE-306` Автоматизировать requester/support browser scenarios.
-- [ ] `LIVE-307` Автоматизировать agent/operation scenarios.
+- [x] `LIVE-307` Автоматизировать agent/operation scenarios.
 - [x] `LIVE-308` Доказать cleanup.
 - [ ] `LIVE-309` Интегрировать Observer canary report.
 - [ ] `LIVE-310` Сформировать один release summary.
@@ -1236,6 +1236,8 @@ Checkpoint 2026-06-24 LIVE-304: `pc_client.live_evidence.v2` manifests now requi
 Checkpoint 2026-06-24 LIVE-305: `test_data_packs/critical_behavior_v1.json` now defines a versioned `pc_client.critical_behavior_data_pack.v1` for Workstream D critical behavior live gates. The pack covers all 17 domain records from the matrix with owners, critical invariants, existing automated test refs, live scenario refs, mandatory API/DB/Observer/live-manifest evidence, browser evidence for visible scenarios and required `preflight`/`observer_delta` manifest sections. It references `test_data_packs/web_first_phase_e.json` for shared users/agents/forms and contains no raw secret fields. Coverage: RED/GREEN `server/tests/test_critical_behavior_data_pack.py`.
 
 Checkpoint 2026-06-24 LIVE-306: `scripts/run_live_behavior_suite.py` now reads `test_data_packs/critical_behavior_v1.json`, selects requester/support live scenarios that require browser evidence, and builds/runs per-scenario commands for `webapp/scripts/live-browser-scenarios.mjs`. The Node Playwright probe uses real `/app/requester`, `/app/requester/tickets`, `/app/requester/new`, `/app/help`, `/app/support` and `/app/tickets` routes without `page.route()` mocks, logs in with role-specific environment credentials, captures screenshots plus DOM snippets, checks Russian page/title markers, and fails on console/page errors. Dry-run output lists eight requester/support browser scenarios and their exact commands; full live pass still requires API/DB/Observer evidence in the v2 manifest. Coverage: RED/GREEN `scripts/test_run_live_behavior_suite.py`, dry-run `python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --surfaces requester,support --dry-run --json`, and `node --check webapp/scripts/live-browser-scenarios.mjs`.
+
+Checkpoint 2026-06-24 LIVE-307: `scripts/run_live_behavior_suite.py` now also supports `--mode agent-operation` for agent/runtime and operation-lifecycle scenarios from `test_data_packs/critical_behavior_v1.json`. The mode selects `native_agent` and `operation_lifecycle` records and builds commands for existing safe probes: `scripts/live_agent_uia_state_probe.py` with `--expect-connected` plus bounded UIA output/screenshot paths, and `scripts/live_ws_v3_probe.py malformed-outbox` with a scenario run id for protocol/operation evidence. Dry-run output currently lists `tool_run_approve_deny_timeout` and `windows_linux_vm_agent_runtime`; full live pass still requires API/DB/Observer/agent SQLite evidence in the v2 manifest. Coverage: RED/GREEN `scripts/test_run_live_behavior_suite.py`, dry-run `python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --mode agent-operation --surfaces native_agent,operation_lifecycle --dry-run --json`, plus `python scripts/live_agent_uia_state_probe.py --help` and `python scripts/live_ws_v3_probe.py --help`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 
