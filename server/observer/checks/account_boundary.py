@@ -8,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentRuntimeAudit
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
+from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 
 
 SOURCE = "observer.account_boundary"
+QUERY_LIMIT = 200
 BOUNDARY_AUDIT_EVENTS = {
     "account_boundary_mutation_success",
     "public_boundary_mutation_success",
@@ -23,16 +25,17 @@ async def check_account_boundary(
     *,
     run_id: str | None = None,
     lookback: timedelta = timedelta(hours=24),
-) -> list[ObserverIntegrityEventInput]:
+) -> ObserverIntegrityCheckResult:
     cutoff = datetime.now(timezone.utc) - lookback
-    rows = (
+    audit_rows = (
         await session.execute(
             select(AgentRuntimeAudit)
             .where(AgentRuntimeAudit.event_type.in_(BOUNDARY_AUDIT_EVENTS), AgentRuntimeAudit.created_at >= cutoff)
             .order_by(AgentRuntimeAudit.created_at.desc())
-            .limit(200)
+            .limit(QUERY_LIMIT + 1)
         )
     ).scalars().all()
+    rows, complete = limit_plus_one_window(audit_rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
     for row in rows:
         details = row.details_json if isinstance(row.details_json, dict) else {}
@@ -63,4 +66,10 @@ async def check_account_boundary(
                 run_id=run_id,
             )
         )
-    return events
+    return ObserverIntegrityCheckResult(
+        source=SOURCE,
+        events=events,
+        complete=complete,
+        scanned_count=len(audit_rows),
+        limit=QUERY_LIMIT,
+    )

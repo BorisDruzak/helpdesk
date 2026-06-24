@@ -8,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Artifact, Device, DeviceDesiredModule, DeviceModule, DeviceToolsetSnapshot, TicketEvent
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
+from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 
 
 SOURCE = "observer.module_toolset"
+QUERY_LIMIT = 500
 
 
 async def check_module_toolset(
@@ -18,12 +20,29 @@ async def check_module_toolset(
     *,
     run_id: str | None = None,
     drift_after: timedelta = timedelta(minutes=15),
-) -> list[ObserverIntegrityEventInput]:
+) -> ObserverIntegrityCheckResult:
     events: list[ObserverIntegrityEventInput] = []
-    events.extend(await _toolset_hash_drift(session, run_id=run_id, drift_after=drift_after))
-    events.extend(await _desired_actual_module_drift(session, run_id=run_id, drift_after=drift_after))
-    events.extend(await _missing_artifacts(session, run_id=run_id))
-    return events
+    toolset_events, toolset_complete, toolset_scanned = await _toolset_hash_drift(
+        session,
+        run_id=run_id,
+        drift_after=drift_after,
+    )
+    desired_events, desired_complete, desired_scanned = await _desired_actual_module_drift(
+        session,
+        run_id=run_id,
+        drift_after=drift_after,
+    )
+    artifact_events, artifact_complete, artifact_scanned = await _missing_artifacts(session, run_id=run_id)
+    events.extend(toolset_events)
+    events.extend(desired_events)
+    events.extend(artifact_events)
+    return ObserverIntegrityCheckResult(
+        source=SOURCE,
+        events=events,
+        complete=toolset_complete and desired_complete and artifact_complete,
+        scanned_count=toolset_scanned + desired_scanned + artifact_scanned,
+        limit=QUERY_LIMIT,
+    )
 
 
 async def _toolset_hash_drift(
@@ -31,15 +50,16 @@ async def _toolset_hash_drift(
     *,
     run_id: str | None,
     drift_after: timedelta,
-) -> list[ObserverIntegrityEventInput]:
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     now = datetime.now(timezone.utc)
-    devices = (
+    device_rows = (
         await session.execute(
             select(Device)
             .where(Device.deleted_at.is_(None), Device.current_toolset_hash.is_not(None))
-            .limit(500)
+            .limit(QUERY_LIMIT + 1)
         )
     ).scalars().all()
+    devices, complete = limit_plus_one_window(device_rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
     for device in devices:
         latest = (
@@ -76,7 +96,7 @@ async def _toolset_hash_drift(
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(device_rows)
 
 
 async def _desired_actual_module_drift(
@@ -84,17 +104,18 @@ async def _desired_actual_module_drift(
     *,
     run_id: str | None,
     drift_after: timedelta,
-) -> list[ObserverIntegrityEventInput]:
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     cutoff = datetime.now(timezone.utc) - drift_after
     desired_rows = (
         await session.execute(
             select(DeviceDesiredModule)
             .where(DeviceDesiredModule.state == "installed", DeviceDesiredModule.updated_at <= cutoff)
-            .limit(500)
+            .limit(QUERY_LIMIT + 1)
         )
     ).scalars().all()
+    desired_window, complete = limit_plus_one_window(desired_rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for desired in desired_rows:
+    for desired in desired_window:
         actual = (
             await session.execute(
                 select(DeviceModule)
@@ -132,20 +153,25 @@ async def _desired_actual_module_drift(
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(desired_rows)
 
 
-async def _missing_artifacts(session: AsyncSession, *, run_id: str | None) -> list[ObserverIntegrityEventInput]:
+async def _missing_artifacts(
+    session: AsyncSession,
+    *,
+    run_id: str | None,
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     rows = (
         await session.execute(
             select(TicketEvent)
             .where(TicketEvent.event_type == "tool_call_result", TicketEvent.operation_id.is_not(None))
             .order_by(TicketEvent.created_at.desc())
-            .limit(500)
+            .limit(QUERY_LIMIT + 1)
         )
     ).scalars().all()
+    event_window, complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for event in rows:
+    for event in event_window:
         payload = event.payload if isinstance(event.payload, dict) else {}
         artifacts = payload.get("artifacts") or payload.get("_artifacts") or []
         if not isinstance(artifacts, list) or not artifacts:
@@ -181,4 +207,4 @@ async def _missing_artifacts(session: AsyncSession, *, run_id: str | None) -> li
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(rows)

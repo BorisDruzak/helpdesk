@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -121,22 +122,45 @@ class ObserverIntegrityService:
     async def run_scan(self, *, run_id: str | None = None) -> ObserverIntegrityScanResult:
         await self.seed_known_contamination()
         generated: list[ObserverIntegrityEventInput] = []
-        source_complete: dict[str, bool] = {}
+        source_complete: dict[str, bool] = {INTEGRITY_RUNNER_SOURCE: True}
         failed_sources: list[str] = []
 
-        def collect(result: list[ObserverIntegrityEventInput] | ObserverIntegrityCheckResult) -> None:
+        def collect(source: str, result: Any) -> None:
             if isinstance(result, ObserverIntegrityCheckResult):
-                source_complete[result.source] = source_complete.get(result.source, True) and result.complete
+                if result.source != source:
+                    source_complete[source] = False
+                    source_complete[result.source] = False
+                else:
+                    source_complete[result.source] = source_complete.get(result.source, True) and result.complete
                 generated.extend(result.events)
                 return
-            generated.extend(result)
+            source_complete[source] = False
+            if isinstance(result, list):
+                generated.extend(result)
+                return
+            raise TypeError(
+                f"Observer integrity checker {source} returned unsupported result type {type(result).__name__}"
+            )
+
+        async def run_checker(checker_call: Any) -> Any:
+            begin_nested = getattr(self.session, "begin_nested", None)
+            if begin_nested is None:
+                return await checker_call()
+            async with begin_nested():
+                return await checker_call()
 
         async def collect_checker(source: str, checker_call: Any) -> None:
+            has_savepoint = getattr(self.session, "begin_nested", None) is not None
             try:
-                collect(await checker_call())
+                collect(source, await run_checker(checker_call))
             except Exception as exc:
                 source_complete[source] = False
                 failed_sources.append(source)
+                if not has_savepoint:
+                    with suppress(Exception):
+                        rollback = getattr(self.session, "rollback", None)
+                        if rollback is not None:
+                            await rollback()
                 generated.append(
                     ObserverIntegrityEventInput(
                         event_type="observer_integrity_checker_failed",
@@ -191,7 +215,7 @@ class ObserverIntegrityService:
             WEB_CABINET_SOURCE,
             INTEGRITY_RUNNER_SOURCE,
         ):
-            if source_complete.get(source, True) is False:
+            if source_complete.get(source) is not True:
                 continue
             resolved += await self.repo.resolve_missing(
                 source=source,

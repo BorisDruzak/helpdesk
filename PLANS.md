@@ -2,10 +2,11 @@
 
 ## Статус и область
 
-- **Статус:** активный master-plan.
+- **Статус:** implementation largely complete; release/live validation blocked.
 - **Дата анализа:** 2026-06-23.
 - **Анализируемая ветка:** `codex/helpdesk-process-model`.
-- **Анализируемая ревизия:** `ebaab32dc52e573c4cfde0aafe9a6aa7ee8fedcb`.
+- **Current implementation revision:** `9c85d7ce1046409308d47f02c2d0846e6f64bba8`.
+- **Release readiness:** blocked.
 - **Основная цель:** сделать исправление багов воспроизводимым, тесты — достоверными, live-проверки — доказательными, а технический долг — управляемым.
 - **Критические зоны:** ticket/requester/support behavior, Protocol V3, agent runtime, PostgreSQL, Observer overlay, webapp, CI/release scripts.
 - **Не является целью:** превращать Observer в источник бизнес-истины, подменять live-проверку fixture/mocked E2E-тестом или запускать разрушающие проверки на production-данных.
@@ -1114,16 +1115,16 @@ Blocking:
 
 ### Phase 1 — Observer и DB safety
 
-- [x] `OBS-101` Написать >limit false-resolve regression.
-- [x] `OBS-102` Реализовать complete-scope resolution.
+- [ ] `OBS-101` Написать >limit false-resolve regression.
+- [ ] `OBS-102` Реализовать complete-scope resolution.
 - [x] `OBS-103` Сохранить acknowledged state при повторном scan.
-- [x] `OBS-104` Добавить per-check execution report и failure isolation.
+- [ ] `OBS-104` Добавить per-check execution report и failure isolation.
 - [x] `OBS-105` Ужесточить successful create trace predicate.
-- [x] `OBS-106` Characterize и исправить web execution trace identity.
+- [~] `OBS-106` Characterize и исправить web execution trace identity.
 - [x] `DB-101` Создать schema-to-cleanup audit.
 - [x] `DB-102` Классифицировать все текущие tables.
 - [x] `DB-103` Закрыть `change_*` и новый Knowledge cleanup drift.
-- [x] `DB-104` Добавить migration suite.
+- [~] `DB-104` Добавить migration suite.
 
 **Gate:** incomplete checker не resolve-ит события; cleanup audit показывает zero drift; fresh/baseline migrations green.
 
@@ -1149,11 +1150,11 @@ Blocking:
 - [x] `LIVE-303` Добавить exact commit/schema preflight.
 - [x] `LIVE-304` Добавить before/after integrity delta.
 - [x] `LIVE-305` Создать critical behavior data pack.
-- [x] `LIVE-306` Автоматизировать requester/support browser scenarios.
-- [x] `LIVE-307` Автоматизировать agent/operation scenarios.
+- [~] `LIVE-306` Автоматизировать requester/support browser scenarios.
+- [~] `LIVE-307` Автоматизировать agent/operation scenarios.
 - [x] `LIVE-308` Доказать cleanup.
 - [x] `LIVE-309` Интегрировать Observer canary report.
-- [x] `LIVE-310` Сформировать один release summary.
+- [ ] `LIVE-310` Сформировать один release summary.
 
 **Gate:** pass невозможен без browser/API/DB/Observer evidence и commit parity.
 
@@ -1163,7 +1164,7 @@ Blocking:
 - [x] `PERF-402` Domain-level bounded parallelism по измерениям.
 - [x] `FLAKE-403` Retry/flaky registry.
 - [x] `PROP-404` Property/state-machine tests.
-- [x] `COV-405` Targeted branch coverage critical packages.
+- [~] `COV-405` Targeted branch coverage critical packages.
 - [x] `MUT-406` Mutation testing для status/policy/redaction/idempotency pure logic.
 - [x] `FIX-407` Schema-validated fixture builders.
 - [x] `CI-408` Affected-suite selection с обязательным full merge gate.

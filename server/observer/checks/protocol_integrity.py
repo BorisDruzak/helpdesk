@@ -8,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AgentRuntimeAudit
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
+from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 
 
 SOURCE = "observer.protocol_integrity"
+QUERY_LIMIT = 500
 ACK_AUDIT_EVENTS = {"outbox_ack_emitted", "outbox_ack_persisted", "protocol_ack_persisted"}
 NACK_CODES = {"UNKNOWN_TICKET", "DEVICE_MISMATCH", "VALIDATION_ERROR"}
 
@@ -21,7 +23,7 @@ async def check_protocol_integrity(
     run_id: str | None = None,
     lookback: timedelta = timedelta(hours=24),
     nack_threshold: int = 5,
-) -> list[ObserverIntegrityEventInput]:
+) -> ObserverIntegrityCheckResult:
     now = datetime.now(timezone.utc)
     cutoff = now - lookback
     events: list[ObserverIntegrityEventInput] = []
@@ -31,12 +33,13 @@ async def check_protocol_integrity(
             select(AgentRuntimeAudit)
             .where(AgentRuntimeAudit.event_type.in_(ACK_AUDIT_EVENTS), AgentRuntimeAudit.created_at >= cutoff)
             .order_by(AgentRuntimeAudit.created_at.desc())
-            .limit(500)
+            .limit(QUERY_LIMIT + 1)
         )
     ).scalars().all()
+    ack_rows, ack_complete = limit_plus_one_window(ack_audits, limit=QUERY_LIMIT)
     ack_contract_v2 = [
         row
-        for row in ack_audits
+        for row in ack_rows
         if isinstance(row.details_json, dict) and int(row.details_json.get("audit_contract_version") or 0) >= 2
     ]
     if not ack_contract_v2:
@@ -109,11 +112,12 @@ async def check_protocol_integrity(
                 AgentRuntimeAudit.severity.in_(("warning", "error", "critical")),
             )
             .order_by(AgentRuntimeAudit.created_at.desc())
-            .limit(500)
+            .limit(QUERY_LIMIT + 1)
         )
     ).scalars().all()
+    nack_rows, nack_complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
     nack_by_device: dict[tuple[str, str], int] = {}
-    for row in rows:
+    for row in nack_rows:
         details = row.details_json if isinstance(row.details_json, dict) else {}
         code = str(details.get("error_code") or details.get("nack_error_code") or "").strip().upper()
         if code not in NACK_CODES:
@@ -137,4 +141,10 @@ async def check_protocol_integrity(
                 run_id=run_id,
             )
         )
-    return events
+    return ObserverIntegrityCheckResult(
+        source=SOURCE,
+        events=events,
+        complete=ack_complete and nack_complete,
+        scanned_count=len(ack_audits) + len(rows),
+        limit=QUERY_LIMIT,
+    )

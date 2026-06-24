@@ -6,23 +6,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Change, ChangePlan, ChangeRiskAssessment, ProblemCandidate
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
+from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 
 
 SOURCE = "observer.governance"
+DUPLICATE_QUERY_LIMIT = 100
+CHANGE_QUERY_LIMIT = 300
 
 
-async def check_governance(session: AsyncSession, *, run_id: str | None = None) -> list[ObserverIntegrityEventInput]:
+async def check_governance(session: AsyncSession, *, run_id: str | None = None) -> ObserverIntegrityCheckResult:
     events: list[ObserverIntegrityEventInput] = []
-    events.extend(await _duplicate_problem_candidates(session, run_id=run_id))
-    events.extend(await _approved_changes_missing_package(session, run_id=run_id))
-    return events
+    duplicate_events, duplicate_complete, duplicate_scanned = await _duplicate_problem_candidates(session, run_id=run_id)
+    change_events, change_complete, change_scanned = await _approved_changes_missing_package(session, run_id=run_id)
+    events.extend(duplicate_events)
+    events.extend(change_events)
+    return ObserverIntegrityCheckResult(
+        source=SOURCE,
+        events=events,
+        complete=duplicate_complete and change_complete,
+        scanned_count=duplicate_scanned + change_scanned,
+        limit=max(DUPLICATE_QUERY_LIMIT, CHANGE_QUERY_LIMIT),
+    )
 
 
 async def _duplicate_problem_candidates(
     session: AsyncSession,
     *,
     run_id: str | None,
-) -> list[ObserverIntegrityEventInput]:
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     rows = (
         await session.execute(
             select(
@@ -40,11 +51,12 @@ async def _duplicate_problem_candidates(
                 ProblemCandidate.request_type,
             )
             .having(func.count(ProblemCandidate.candidate_id) > 1)
-            .limit(100)
+            .limit(DUPLICATE_QUERY_LIMIT + 1)
         )
     ).all()
+    rows_window, complete = limit_plus_one_window(rows, limit=DUPLICATE_QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for signal_type, service_code, offering_code, request_type, count in rows:
+    for signal_type, service_code, offering_code, request_type, count in rows_window:
         key = "|".join(str(value or "none") for value in (signal_type, service_code, offering_code, request_type))
         events.append(
             ObserverIntegrityEventInput(
@@ -65,23 +77,24 @@ async def _duplicate_problem_candidates(
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(rows)
 
 
 async def _approved_changes_missing_package(
     session: AsyncSession,
     *,
     run_id: str | None,
-) -> list[ObserverIntegrityEventInput]:
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     rows = (
         await session.execute(
             select(Change)
             .where(Change.status.in_(("approved", "scheduled", "implementation_in_progress", "implemented", "closed")))
-            .limit(300)
+            .limit(CHANGE_QUERY_LIMIT + 1)
         )
     ).scalars().all()
+    change_window, complete = limit_plus_one_window(rows, limit=CHANGE_QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for change in rows:
+    for change in change_window:
         risk_count = int(
             await session.scalar(
                 select(func.count())
@@ -121,4 +134,4 @@ async def _approved_changes_missing_package(
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(rows)

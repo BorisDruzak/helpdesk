@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeviceOutbox, Operation, TicketEvent
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
-from observer.checks.types import ObserverIntegrityCheckResult
+from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 
 
 SOURCE = "observer.operation_lifecycle"
@@ -48,26 +48,32 @@ async def check_operation_lifecycle(
 ) -> ObserverIntegrityCheckResult:
     now = _now()
     events: list[ObserverIntegrityEventInput] = []
-    terminal_outbox = await _terminal_operation_with_active_outbox(
+    terminal_outbox, terminal_outbox_complete, terminal_outbox_scanned = await _terminal_operation_with_active_outbox(
         session,
         now=now,
         stale_after=stale_after,
         run_id=run_id,
     )
-    stuck_active = await _active_operation_stuck(session, now=now, active_after=active_after, run_id=run_id)
-    missing_result = await _terminal_tool_operation_missing_result_event(session, run_id=run_id)
+    stuck_active, stuck_active_complete, stuck_active_scanned = await _active_operation_stuck(
+        session,
+        now=now,
+        active_after=active_after,
+        run_id=run_id,
+    )
+    missing_result, missing_result_complete, missing_result_scanned = await _terminal_tool_operation_missing_result_event(
+        session,
+        run_id=run_id,
+    )
     events.extend(terminal_outbox)
     events.extend(stuck_active)
     events.extend(missing_result)
-    complete = all(
-        len(check_events) < QUERY_LIMIT
-        for check_events in (
-            terminal_outbox,
-            stuck_active,
-            missing_result,
-        )
+    return ObserverIntegrityCheckResult(
+        source=SOURCE,
+        events=events,
+        complete=terminal_outbox_complete and stuck_active_complete and missing_result_complete,
+        scanned_count=terminal_outbox_scanned + stuck_active_scanned + missing_result_scanned,
+        limit=QUERY_LIMIT,
     )
-    return ObserverIntegrityCheckResult(source=SOURCE, events=events, complete=complete)
 
 
 async def _terminal_operation_with_active_outbox(
@@ -76,7 +82,7 @@ async def _terminal_operation_with_active_outbox(
     now: datetime,
     stale_after: timedelta,
     run_id: str | None,
-) -> list[ObserverIntegrityEventInput]:
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     cutoff = now - stale_after
     result = await session.execute(
         select(Operation, DeviceOutbox)
@@ -87,10 +93,12 @@ async def _terminal_operation_with_active_outbox(
             DeviceOutbox.created_at <= cutoff,
         )
         .order_by(DeviceOutbox.created_at.asc())
-        .limit(QUERY_LIMIT)
+        .limit(QUERY_LIMIT + 1)
     )
+    rows = result.all()
+    window, complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for operation, outbox in result.all():
+    for operation, outbox in window:
         operation_status = str(operation.status or "").lower()
         severity = "critical" if operation_status in {"succeeded", "success", "canceled", "cancelled"} else "error"
         age = _age_seconds(now, outbox.created_at)
@@ -128,7 +136,7 @@ async def _terminal_operation_with_active_outbox(
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(rows)
 
 
 async def _active_operation_stuck(
@@ -137,16 +145,18 @@ async def _active_operation_stuck(
     now: datetime,
     active_after: timedelta,
     run_id: str | None,
-) -> list[ObserverIntegrityEventInput]:
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     cutoff = now - active_after
     result = await session.execute(
         select(Operation)
         .where(Operation.status.in_(ACTIVE_OPERATION_STATUSES), Operation.queued_at <= cutoff)
         .order_by(Operation.queued_at.asc())
-        .limit(QUERY_LIMIT)
+        .limit(QUERY_LIMIT + 1)
     )
+    rows = result.scalars().all()
+    window, complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for operation in result.scalars().all():
+    for operation in window:
         age = _age_seconds(now, operation.queued_at)
         severity = "error" if age is not None and age > int(active_after.total_seconds() * 2) else "warning"
         events.append(
@@ -174,14 +184,14 @@ async def _active_operation_stuck(
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(rows)
 
 
 async def _terminal_tool_operation_missing_result_event(
     session: AsyncSession,
     *,
     run_id: str | None,
-) -> list[ObserverIntegrityEventInput]:
+) -> tuple[list[ObserverIntegrityEventInput], bool, int]:
     result = await session.execute(
         select(Operation)
         .where(
@@ -190,10 +200,12 @@ async def _terminal_tool_operation_missing_result_event(
             Operation.ticket_id.is_not(None),
         )
         .order_by(Operation.finished_at.desc().nullslast(), Operation.queued_at.desc())
-        .limit(QUERY_LIMIT)
+        .limit(QUERY_LIMIT + 1)
     )
+    rows = result.scalars().all()
+    window, complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for operation in result.scalars().all():
+    for operation in window:
         count = int(
             await session.scalar(
                 select(func.count())
@@ -230,4 +242,4 @@ async def _terminal_tool_operation_missing_result_event(
                 run_id=run_id,
             )
         )
-    return events
+    return events, complete, len(rows)

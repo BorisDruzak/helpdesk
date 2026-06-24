@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import ObserverTrace, RegistryPerson, Ticket
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
 from customer_history.projection_service import CustomerHistoryProjectionService
+from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 from registry.profile_schema_service import RequesterProfileSchemaService
 from requester.identity_service import RequesterIdentityResolver
 
@@ -565,8 +566,9 @@ async def check_web_cabinet(
     *,
     run_id: str | None = None,
     limit: int = 300,
-) -> list[ObserverIntegrityEventInput]:
-    rows = (
+) -> ObserverIntegrityCheckResult:
+    query_limit = max(1, min(int(limit or 300), 1000))
+    ticket_rows = (
         await session.execute(
             select(Ticket)
             .where(
@@ -578,9 +580,10 @@ async def check_web_cabinet(
                 )
             )
             .order_by(Ticket.created_at.desc(), Ticket.ticket_id.desc())
-            .limit(max(1, min(int(limit or 300), 1000)))
+            .limit(query_limit + 1)
         )
     ).scalars().all()
+    rows, complete = limit_plus_one_window(ticket_rows, limit=query_limit)
 
     events: list[ObserverIntegrityEventInput] = []
     for ticket in rows:
@@ -641,4 +644,10 @@ async def check_web_cabinet(
                     run_id=run_id,
                 )
             )
-    return events
+    return ObserverIntegrityCheckResult(
+        source=SOURCE,
+        events=events,
+        complete=complete,
+        scanned_count=len(ticket_rows),
+        limit=query_limit,
+    )

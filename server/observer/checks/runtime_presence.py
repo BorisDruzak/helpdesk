@@ -9,9 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Device
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
+from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
 
 
 SOURCE = "observer.runtime_presence"
+QUERY_LIMIT = 500
 
 
 def _as_utc(value: datetime | None) -> datetime | None:
@@ -28,13 +30,15 @@ async def check_runtime_presence(
     state: Any = None,
     run_id: str | None = None,
     stale_after: timedelta = timedelta(minutes=15),
-) -> list[ObserverIntegrityEventInput]:
+) -> ObserverIntegrityCheckResult:
     if state is None or not hasattr(state, "is_agent_online"):
-        return []
+        return ObserverIntegrityCheckResult(source=SOURCE, events=[], complete=False, scanned_count=0, limit=QUERY_LIMIT)
     now = datetime.now(timezone.utc)
-    result = await session.execute(select(Device).where(Device.deleted_at.is_(None)).limit(500))
+    result = await session.execute(select(Device).where(Device.deleted_at.is_(None)).limit(QUERY_LIMIT + 1))
+    rows = result.scalars().all()
+    devices, complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
     events: list[ObserverIntegrityEventInput] = []
-    for device in result.scalars().all():
+    for device in devices:
         device_id = str(device.device_id or "")
         if not device_id:
             continue
@@ -62,4 +66,10 @@ async def check_runtime_presence(
                     run_id=run_id,
                 )
             )
-    return events
+    return ObserverIntegrityCheckResult(
+        source=SOURCE,
+        events=events,
+        complete=complete,
+        scanned_count=len(rows),
+        limit=QUERY_LIMIT,
+    )
