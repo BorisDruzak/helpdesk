@@ -251,6 +251,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "test_inventory_audit",
         "db_cleanup_profile_audit",
         "branch_coverage_audit",
+        "mutation_smoke",
         "scripts_pytest_no_db",
         "server_pytest_no_db",
         "migration_schema",
@@ -281,6 +282,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert idle_by_step["test_inventory_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["db_cleanup_profile_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["branch_coverage_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["mutation_smoke"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["migration_schema"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
@@ -316,6 +318,12 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "--workspace",
         str(tmp_path),
         "--strict",
+    ]
+    assert command_by_step["mutation_smoke"] == [
+        sys.executable,
+        str(tmp_path / "scripts" / "run_mutation_smoke.py"),
+        "--workspace",
+        str(tmp_path),
     ]
     assert command_by_step["scripts_pytest_no_db"][3] == (
         "scripts\\test_ci_helper.py" if sys.platform == "win32" else "scripts/test_ci_helper.py"
@@ -395,6 +403,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert env_by_step["test_inventory_audit"] is None
     assert env_by_step["db_cleanup_profile_audit"] is None
     assert env_by_step["branch_coverage_audit"] is None
+    assert env_by_step["mutation_smoke"] is None
     assert env_by_step["scripts_pytest_no_db"] is None
     assert env_by_step["server_pytest_no_db"] == {
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
@@ -449,6 +458,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert timeout_by_step["test_inventory_audit"] == 45 * 60
     assert timeout_by_step["db_cleanup_profile_audit"] == 45 * 60
     assert timeout_by_step["branch_coverage_audit"] == 45 * 60
+    assert timeout_by_step["mutation_smoke"] == 45 * 60
     assert timeout_by_step["scripts_pytest_no_db"] == 45 * 60
     assert timeout_by_step["server_pytest_no_db"] == 45 * 60
     assert timeout_by_step["migration_schema"] == 45 * 60
@@ -696,7 +706,7 @@ def test_parallel_mode_groups_only_server_db_ws_layers_and_respects_max_workers(
         "server_pytest_db_tickets",
     ]
     assert set(started_db_layers) == db_layer_names
-    assert completed_steps[:10] == [
+    assert completed_steps[:11] == [
         "verify_workspace",
         "webapp_bundle",
         "webapp_unit_tests",
@@ -704,6 +714,7 @@ def test_parallel_mode_groups_only_server_db_ws_layers_and_respects_max_workers(
         "test_inventory_audit",
         "db_cleanup_profile_audit",
         "branch_coverage_audit",
+        "mutation_smoke",
         "scripts_pytest_no_db",
         "server_pytest_no_db",
         "migration_schema",

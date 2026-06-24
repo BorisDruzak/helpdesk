@@ -1160,7 +1160,7 @@ Blocking:
 - [x] `FLAKE-403` Retry/flaky registry.
 - [x] `PROP-404` Property/state-machine tests.
 - [x] `COV-405` Targeted branch coverage critical packages.
-- [ ] `MUT-406` Mutation testing для status/policy/redaction/idempotency pure logic.
+- [x] `MUT-406` Mutation testing для status/policy/redaction/idempotency pure logic.
 - [ ] `FIX-407` Schema-validated fixture builders.
 - [ ] `CI-408` Affected-suite selection с обязательным full merge gate.
 
@@ -1210,6 +1210,8 @@ Checkpoint 2026-06-24 FLAKE-403: `scripts/run_ci_suite.py` now enforces a tracke
 Checkpoint 2026-06-24 PROP-404: `server/tests/test_property_state_contracts_no_db.py` adds deterministic property/state-machine coverage without a new dependency. The pack checks Observer redaction over nested dict/list/tuple/set payloads for non-mutation, idempotency, safe hash/id preservation and secret removal; ticket status normalization for canonical/legacy/strict-vs-soft mode invariants; and workflow profile FSM graphs for valid allowed-status edges, suggested path validity, requester transition boundaries, reachable terminal states and default profile serialization round-trips. Coverage: RED/GREEN focused module run, then `server_pytest_no_db` ownership via inventory audit.
 
 Checkpoint 2026-06-24 COV-405: `quality/critical_branch_coverage.json` now records targeted branch coverage for critical pure logic in `shared/redaction.py`, `server/tickets/statuses.py` and `server/tickets/workflow_profiles.py`. `scripts/audit_branch_coverage.py --strict` validates schema, package owners, unique branch ids, non-empty `tested_by` refs and existing pytest node ids, and `scripts/run_ci_suite.py` runs it as `branch_coverage_audit` before pytest layers. Current registry covers 3 packages and 9 branch records with zero audit issues. Coverage: RED/GREEN `scripts/test_audit_branch_coverage.py`, `scripts/test_run_ci_suite.py`, and strict audit output.
+
+Checkpoint 2026-06-24 MUT-406: `quality/mutation_smoke_targets.json` and `scripts/run_mutation_smoke.py` add targeted temp-workspace mutation smoke for critical pure logic without mutating the real working tree. The runner copies `server/shared/scripts/quality/mcp_helpdesk_server` into a temp workspace, applies exact source replacements, runs configured pytest node ids, treats only assertion failures as killed mutants, and fails on survivors or collection/infrastructure errors. Current registry has 4 mutants covering bearer scalar redaction, safe token hash evidence, strict status FSM aliases and workflow self-loop policy; `python scripts/run_mutation_smoke.py --json --timeout 60` kills all 4, and `scripts/run_ci_suite.py --layer mutation_smoke` passes. Coverage: RED/GREEN `scripts/test_run_mutation_smoke.py` and runner step tests.
 
 Checkpoint 2026-06-23 QG-005: `scripts/run_ci_suite.py` writes `summary.evidence_layers.webapp_fixture_e2e` with `mode=fixture_e2e` and `canonical_live_browser=false`. Playwright fixture E2E remains a CI/browser-fixture layer and cannot be confused with live browser signoff evidence from `docs/LIVE_TESTING_DEBUG_RULES.md`.
 

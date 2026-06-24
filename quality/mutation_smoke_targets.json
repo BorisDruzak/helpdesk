@@ -1,0 +1,65 @@
+{
+  "schema": "pc_client.mutation_smoke.v1",
+  "mutants": [
+    {
+      "id": "redaction.disable_bearer_scalar_detection",
+      "file": "shared/redaction.py",
+      "reason": "Bearer/token scalar values must not leak when they appear outside a sensitive key.",
+      "replacements": [
+        {
+          "old": "_BEARER_RE = re.compile(r\"^\\s*(bearer|token)\\s+[a-z0-9._\\-]+=*\\s*$\", re.IGNORECASE)",
+          "new": "_BEARER_RE = re.compile(r\"^$\", re.IGNORECASE)"
+        }
+      ],
+      "tests": [
+        "server/tests/test_property_state_contracts_no_db.py::test_redaction_property_nested_payloads_are_non_mutating_idempotent_and_secret_free"
+      ]
+    },
+    {
+      "id": "redaction.treat_token_hash_as_sensitive",
+      "file": "shared/redaction.py",
+      "reason": "Token hash evidence must stay visible while raw token fields are redacted.",
+      "replacements": [
+        {
+          "old": "SAFE_SENSITIVE_SUFFIXES = (\"_hash\", \"_hash_prefix\", \"_prefix\", \"_count\", \"_ms\", \"_sec\")",
+          "new": "SAFE_SENSITIVE_SUFFIXES = (\"_hash_prefix\", \"_prefix\", \"_count\", \"_ms\", \"_sec\")"
+        },
+        {
+          "old": "        if \"hash\" in key_normalized and \"token\" in key_normalized:\n            return False",
+          "new": "        if \"hash\" in key_normalized and \"token\" in key_normalized:\n            return True"
+        }
+      ],
+      "tests": [
+        "server/tests/test_property_state_contracts_no_db.py::test_redaction_property_nested_payloads_are_non_mutating_idempotent_and_secret_free"
+      ]
+    },
+    {
+      "id": "statuses.strict_mode_accepts_aliases",
+      "file": "server/tickets/statuses.py",
+      "reason": "FSM strict mode must reject legacy aliases even when soft boundary normalization accepts them.",
+      "replacements": [
+        {
+          "old": "    if fsm_mode == \"strict\":",
+          "new": "    if False and fsm_mode == \"strict\":"
+        }
+      ],
+      "tests": [
+        "server/tests/test_property_state_contracts_no_db.py::test_ticket_status_normalization_property_is_idempotent_and_strict_mode_rejects_aliases"
+      ]
+    },
+    {
+      "id": "workflow_profiles.resolved_self_loop",
+      "file": "server/tickets/workflow_profiles.py",
+      "reason": "Workflow profile graphs must not allow no-op self-loop transitions.",
+      "replacements": [
+        {
+          "old": "    \"resolved\": (\"new\", \"in_progress\", \"closed\"),",
+          "new": "    \"resolved\": (\"resolved\", \"new\", \"in_progress\", \"closed\"),"
+        }
+      ],
+      "tests": [
+        "server/tests/test_property_state_contracts_no_db.py::test_workflow_profiles_state_machine_property_has_valid_edges_and_no_dead_nonterminal_states"
+      ]
+    }
+  ]
+}

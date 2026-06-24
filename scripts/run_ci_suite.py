@@ -1068,6 +1068,15 @@ def _branch_coverage_audit_command(workspace: Path) -> list[str]:
     ]
 
 
+def _mutation_smoke_command(workspace: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(workspace / "scripts" / "run_mutation_smoke.py"),
+        "--workspace",
+        str(workspace),
+    ]
+
+
 def _migration_schema_command(workspace: Path, junit_path: Path) -> list[str]:
     return _server_pytest_command(
         "not manual and not no_db and not agent_ws",
@@ -1276,6 +1285,14 @@ def main() -> None:
             "branch_coverage_audit",
             _branch_coverage_audit_command(args.workspace),
             logs_dir / "branch_coverage_audit.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
+        ),
+        (
+            "mutation_smoke",
+            _mutation_smoke_command(args.workspace),
+            logs_dir / "mutation_smoke.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
             None,
