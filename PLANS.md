@@ -1177,7 +1177,7 @@ Blocking:
 - [x] `TD-503` Унифицировать run_tool facade.
 - [x] `TD-504` Удалить бессрочные contaminations.
 - [x] `TD-505` Проверить Observer retention/query plans на объемах.
-- [ ] `TD-506` Обновить CODEMAP/QUICK_LOOKUP/TESTING_RULES.
+- [x] `TD-506` Обновить CODEMAP/QUICK_LOOKUP/TESTING_RULES.
 - [ ] `TD-507` Зафиксировать multi-instance outbox prerequisites.
 
 **Gate:** у каждого active risk есть owner, test и measurable acceptance criteria.
@@ -1185,6 +1185,8 @@ Blocking:
 Checkpoint 2026-06-24 TD-504: Observer known contamination is now manifest-owned in `quality/observer_known_contamination.json` instead of a hardcoded indefinite runtime list. `scripts/audit_observer_contamination.py --strict` and CI layer `observer_contamination_audit` fail active rows without owner, linked issue, exact scope, reason, created/expiry dates, review status or evidence path, and fail expired or broad suppressions. Runtime seeding reads the manifest, updates old NULL-expiry DB rows with the manifest expiry, and `ObserverIntegrityRepo.find_contamination()` no longer treats `expires_at=NULL` as a match. Current reviewed rows are three exact historical P0/P1/P6 entries, all expiring on 2026-07-24.
 
 Checkpoint 2026-06-24 TD-505: Observer retention/search/detail volume paths now have an explicit no-DB query-plan contract in `server/tests/test_observer_query_plan_no_db.py` and Alembic revision `128`. The contract keeps retention cleanup on `observer_traces(status, started_at)`, trace list filters on `(root_kind|ticket_id|device_id|operation_id|job_id, started_at)`, trace detail/span filters on `observer_spans(trace_id, started_at|tool_name|module_name|event_type)`, and error/detail/signature stats on `observer_error_occurrences(trace_id, created_at|error_kind|error_signature)` plus `(ticket_id, error_signature, created_at)`. Coverage: RED/GREEN focused test, model metadata indexes, and idempotent migration `server/app/db/migrations/versions/20260624_128_observer_query_plan_indexes.py`.
+
+Checkpoint 2026-06-24 TD-506: CODEMAP, QUICK_LOOKUP and TESTING_RULES now name the same CI gate set for the quality/Observer work: `test_inventory_audit`, `db_cleanup_profile_audit`, `fixture_builder_audit`, `active_risk_audit`, `observer_contamination_audit`, `branch_coverage_audit`, `mutation_smoke`, `migration_schema`, `scripts_pytest_no_db`, server pytest layers and agent/webapp layers. The docs also route Observer retention/query-plan work to `server/tests/test_observer_query_plan_no_db.py` and migration `128`, so future docs/context lookup no longer omits active-risk or contamination gates.
 
 ---
 

@@ -77,6 +77,8 @@ python scripts/run_ci_suite.py --layer db_cleanup_profile_audit
 python scripts/run_ci_suite.py --layer fixture_builder_audit
 python scripts/run_ci_suite.py --layer active_risk_audit
 python scripts/run_ci_suite.py --layer observer_contamination_audit
+python scripts/run_ci_suite.py --layer branch_coverage_audit
+python scripts/run_ci_suite.py --layer mutation_smoke
 python scripts/run_ci_suite.py --layer migration_schema
 python scripts/run_ci_suite.py --layer scripts_pytest_no_db
 python scripts/run_ci_suite.py --layer webapp_unit_tests
