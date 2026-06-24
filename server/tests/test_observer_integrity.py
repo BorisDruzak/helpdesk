@@ -179,6 +179,7 @@ async def test_observer_integrity_known_contamination_is_suppressed(test_engine)
                 reason="test historical contamination",
                 active=True,
                 created_at=now,
+                expires_at=now + timedelta(days=7),
             )
         )
         session.add(

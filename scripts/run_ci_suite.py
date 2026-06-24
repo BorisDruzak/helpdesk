@@ -138,6 +138,7 @@ AFFECTED_BASE_LAYERS: tuple[str, ...] = (
     "db_cleanup_profile_audit",
     "fixture_builder_audit",
     "active_risk_audit",
+    "observer_contamination_audit",
     "branch_coverage_audit",
     "mutation_smoke",
     "scripts_pytest_no_db",
@@ -1164,6 +1165,16 @@ def _active_risk_audit_command(workspace: Path) -> list[str]:
     ]
 
 
+def _observer_contamination_audit_command(workspace: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(workspace / "scripts" / "audit_observer_contamination.py"),
+        "--workspace",
+        str(workspace),
+        "--strict",
+    ]
+
+
 def _branch_coverage_audit_command(workspace: Path) -> list[str]:
     return [
         sys.executable,
@@ -1512,6 +1523,14 @@ def main() -> None:
             "active_risk_audit",
             _active_risk_audit_command(args.workspace),
             logs_dir / "active_risk_audit.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
+        ),
+        (
+            "observer_contamination_audit",
+            _observer_contamination_audit_command(args.workspace),
+            logs_dir / "observer_contamination_audit.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
             None,

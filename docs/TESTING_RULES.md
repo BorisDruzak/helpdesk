@@ -76,6 +76,7 @@ python scripts/run_ci_suite.py --layer test_inventory_audit
 python scripts/run_ci_suite.py --layer db_cleanup_profile_audit
 python scripts/run_ci_suite.py --layer fixture_builder_audit
 python scripts/run_ci_suite.py --layer active_risk_audit
+python scripts/run_ci_suite.py --layer observer_contamination_audit
 python scripts/run_ci_suite.py --layer migration_schema
 python scripts/run_ci_suite.py --layer scripts_pytest_no_db
 python scripts/run_ci_suite.py --layer webapp_unit_tests
@@ -150,6 +151,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `db_cleanup_profile_audit` runs `python scripts/audit_db_cleanup_profiles.py --strict` before pytest layers and fails on DB-backed, non-agent-ws server test files without an explicit `db_cleanup` profile.
 - `fixture_builder_audit` runs `python scripts/audit_fixture_builders.py --strict` before branch/mutation gates and fails when `quality/fixture_builders.json` or registered fixture/data packs drift from their JSON Schema builders, source-pack refs, test refs, live evidence requirements, or secret-free contract.
 - `active_risk_audit` runs `python scripts/audit_active_risks.py --strict` before branch/mutation gates and fails when `quality/active_risks.json` loses active-risk owners, linked tests, measurable acceptance criteria, evidence/source refs, or required archive risk coverage.
+- `observer_contamination_audit` runs `python scripts/audit_observer_contamination.py --strict` before branch/mutation gates and fails when `quality/observer_known_contamination.json` contains active Observer suppressions that are indefinite, expired, unowned, unreviewed, broad, or missing evidence.
 - `branch_coverage_audit` runs `python scripts/audit_branch_coverage.py --strict` before pytest layers and fails when `quality/critical_branch_coverage.json` has missing owners, duplicate branch ids, empty branch test refs, or refs to missing pytest nodes.
 - `mutation_smoke` runs `python scripts/run_mutation_smoke.py` before pytest layers. It mutates only a temp workspace copy, then fails on surviving mutants or pytest collection/infrastructure errors for the configured critical pure-logic targets.
 - `scripts_pytest_no_db` runs `scripts/test_*.py -m "not manual"` with `--durations=40` and `junit-scripts-no-db.xml` before server pytest layers.

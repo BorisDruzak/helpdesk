@@ -1175,12 +1175,14 @@ Blocking:
 - [x] `TD-501` Перенести active risks из архивного документа в реестр.
 - [x] `TD-502` Закрыть ACK/in-progress race tests.
 - [x] `TD-503` Унифицировать run_tool facade.
-- [ ] `TD-504` Удалить бессрочные contaminations.
+- [x] `TD-504` Удалить бессрочные contaminations.
 - [ ] `TD-505` Проверить Observer retention/query plans на объемах.
 - [ ] `TD-506` Обновить CODEMAP/QUICK_LOOKUP/TESTING_RULES.
 - [ ] `TD-507` Зафиксировать multi-instance outbox prerequisites.
 
 **Gate:** у каждого active risk есть owner, test и measurable acceptance criteria.
+
+Checkpoint 2026-06-24 TD-504: Observer known contamination is now manifest-owned in `quality/observer_known_contamination.json` instead of a hardcoded indefinite runtime list. `scripts/audit_observer_contamination.py --strict` and CI layer `observer_contamination_audit` fail active rows without owner, linked issue, exact scope, reason, created/expiry dates, review status or evidence path, and fail expired or broad suppressions. Runtime seeding reads the manifest, updates old NULL-expiry DB rows with the manifest expiry, and `ObserverIntegrityRepo.find_contamination()` no longer treats `expires_at=NULL` as a match. Current reviewed rows are three exact historical P0/P1/P6 entries, all expiring on 2026-07-24.
 
 ---
 

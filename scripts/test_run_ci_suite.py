@@ -252,6 +252,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "db_cleanup_profile_audit",
         "fixture_builder_audit",
         "active_risk_audit",
+        "observer_contamination_audit",
         "branch_coverage_audit",
         "mutation_smoke",
         "scripts_pytest_no_db",
@@ -285,6 +286,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert idle_by_step["db_cleanup_profile_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["fixture_builder_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["active_risk_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
+    assert idle_by_step["observer_contamination_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["branch_coverage_audit"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["mutation_smoke"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
@@ -326,6 +328,13 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert command_by_step["active_risk_audit"] == [
         sys.executable,
         str(tmp_path / "scripts" / "audit_active_risks.py"),
+        "--workspace",
+        str(tmp_path),
+        "--strict",
+    ]
+    assert command_by_step["observer_contamination_audit"] == [
+        sys.executable,
+        str(tmp_path / "scripts" / "audit_observer_contamination.py"),
         "--workspace",
         str(tmp_path),
         "--strict",
@@ -422,6 +431,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert env_by_step["db_cleanup_profile_audit"] is None
     assert env_by_step["fixture_builder_audit"] is None
     assert env_by_step["active_risk_audit"] is None
+    assert env_by_step["observer_contamination_audit"] is None
     assert env_by_step["branch_coverage_audit"] is None
     assert env_by_step["mutation_smoke"] is None
     assert env_by_step["scripts_pytest_no_db"] is None
@@ -479,6 +489,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert timeout_by_step["db_cleanup_profile_audit"] == 45 * 60
     assert timeout_by_step["fixture_builder_audit"] == 45 * 60
     assert timeout_by_step["active_risk_audit"] == 45 * 60
+    assert timeout_by_step["observer_contamination_audit"] == 45 * 60
     assert timeout_by_step["branch_coverage_audit"] == 45 * 60
     assert timeout_by_step["mutation_smoke"] == 45 * 60
     assert timeout_by_step["scripts_pytest_no_db"] == 45 * 60
@@ -683,6 +694,7 @@ def test_main_can_run_affected_gate_for_changed_server_domain(tmp_path, monkeypa
         "db_cleanup_profile_audit",
         "fixture_builder_audit",
         "active_risk_audit",
+        "observer_contamination_audit",
         "branch_coverage_audit",
         "mutation_smoke",
         "scripts_pytest_no_db",
@@ -822,7 +834,7 @@ def test_parallel_mode_groups_only_server_db_ws_layers_and_respects_max_workers(
         "server_pytest_db_tickets",
     ]
     assert set(started_db_layers) == db_layer_names
-    assert completed_steps[:13] == [
+    assert completed_steps[:14] == [
         "verify_workspace",
         "webapp_bundle",
         "webapp_unit_tests",
@@ -831,6 +843,7 @@ def test_parallel_mode_groups_only_server_db_ws_layers_and_respects_max_workers(
         "db_cleanup_profile_audit",
         "fixture_builder_audit",
         "active_risk_audit",
+        "observer_contamination_audit",
         "branch_coverage_audit",
         "mutation_smoke",
         "scripts_pytest_no_db",

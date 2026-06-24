@@ -29,6 +29,13 @@ database = "none"
 description = "Fails the full gate when active technical-debt risks lose owner, tests, measurable acceptance criteria, evidence refs, or required archive source coverage."
 
 [[suites]]
+name = "observer_contamination_audit"
+runner = "script"
+command = ["python", "scripts/audit_observer_contamination.py", "--strict"]
+database = "none"
+description = "Fails the full gate when active Observer known-contamination suppressions are indefinite, unowned, expired, broad, unreviewed, or missing evidence."
+
+[[suites]]
 name = "branch_coverage_audit"
 runner = "script"
 command = ["python", "scripts/audit_branch_coverage.py", "--strict"]

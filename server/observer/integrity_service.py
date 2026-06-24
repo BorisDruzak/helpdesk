@@ -1,8 +1,10 @@
 """OBS1 Operational Integrity Observer orchestration."""
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,28 +31,70 @@ from observer.checks.web_cabinet import SOURCE as WEB_CABINET_SOURCE
 from observer.checks.web_cabinet import check_web_cabinet
 
 
-DEFAULT_KNOWN_CONTAMINATION: list[dict[str, Any]] = [
-    {
-        "source_phase": "P1",
-        "entity_type": "device_outbox",
-        "entity_id": "135",
-        "reason": "Historical P1 malformed/reconnect probe contamination; not current OBS1 evidence.",
-        "notes": "Narrow suppression for device_outbox.id=135 only.",
-    },
-    {
-        "source_phase": "P0",
-        "entity_type": "dedupe_key",
-        "entity_id": "p0:phantom_malformed_rows",
-        "reason": "Historical P0 phantom/malformed rows listed in PLANS.md.",
-    },
-    {
-        "source_phase": "P6",
-        "entity_type": "dedupe_key",
-        "entity_id": "p6:historical_non_p6_agent_offline_active",
-        "reason": "Historical non-P6 agent_offline_active tasks are excluded from OBS1 current baseline.",
-    },
-]
+KNOWN_CONTAMINATION_MANIFEST = Path(__file__).resolve().parents[2] / "quality" / "observer_known_contamination.json"
 INTEGRITY_RUNNER_SOURCE = "observer.integrity_runner"
+
+
+def _parse_manifest_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _manifest_notes(item: dict[str, Any]) -> str | None:
+    notes = str(item.get("notes") or "").strip()
+    review = " ".join(
+        part
+        for part in (
+            f"owner={item.get('owner_zone')}" if item.get("owner_zone") else "",
+            f"issue={item.get('linked_issue')}" if item.get("linked_issue") else "",
+            f"review={item.get('review_status')}" if item.get("review_status") else "",
+            f"evidence={item.get('evidence_path')}" if item.get("evidence_path") else "",
+        )
+        if part
+    )
+    if notes and review:
+        return f"{notes} {review}"
+    return notes or review or None
+
+
+def load_known_contamination_manifest(path: Path = KNOWN_CONTAMINATION_MANIFEST) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return []
+    rows: list[dict[str, Any]] = []
+    for item in payload.get("contaminations") if isinstance(payload.get("contaminations"), list) else []:
+        if not isinstance(item, dict) or item.get("status") != "active":
+            continue
+        expires_at = _parse_manifest_datetime(item.get("expires_at"))
+        if expires_at is None:
+            continue
+        rows.append(
+            {
+                "source_phase": item.get("source_phase"),
+                "entity_type": item.get("entity_type"),
+                "entity_id": item.get("entity_id"),
+                "suppression_scope": item.get("suppression_scope") or "observer_integrity",
+                "reason": item.get("reason"),
+                "notes": _manifest_notes(item),
+                "active": True,
+                "expires_at": expires_at,
+            }
+        )
+    return rows
+
+
+DEFAULT_KNOWN_CONTAMINATION: list[dict[str, Any]] = load_known_contamination_manifest()
 
 
 @dataclass(slots=True)
@@ -72,7 +116,7 @@ class ObserverIntegrityService:
         self.repo = ObserverIntegrityRepo(session)
 
     async def seed_known_contamination(self) -> int:
-        return await self.repo.ensure_contamination(rows=DEFAULT_KNOWN_CONTAMINATION)
+        return await self.repo.ensure_contamination(rows=load_known_contamination_manifest())
 
     async def run_scan(self, *, run_id: str | None = None) -> ObserverIntegrityScanResult:
         await self.seed_known_contamination()

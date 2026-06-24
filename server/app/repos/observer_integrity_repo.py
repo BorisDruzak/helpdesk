@@ -51,6 +51,25 @@ def _compact(value: Any, *, max_len: int | None = None) -> str | None:
     return text[:max_len] if max_len else text
 
 
+def _coerce_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    if isinstance(value, str) and value.strip():
+        text = value.strip()
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    return None
+
+
 def _normalize_severity(value: Any) -> str:
     text = str(value or "").strip().lower()
     return text if text in ALLOWED_SEVERITIES else "warning"
@@ -266,10 +285,7 @@ class ObserverIntegrityRepo:
                 select(ObserverKnownContamination)
                 .where(
                     ObserverKnownContamination.active.is_(True),
-                    or_(
-                        ObserverKnownContamination.expires_at.is_(None),
-                        ObserverKnownContamination.expires_at > now,
-                    ),
+                    ObserverKnownContamination.expires_at > now,
                     or_(*filters),
                 )
                 .order_by(ObserverKnownContamination.created_at.desc())
@@ -285,7 +301,8 @@ class ObserverIntegrityRepo:
             entity_id = _compact(item.get("entity_id"), max_len=160)
             scope = _compact(item.get("suppression_scope"), max_len=160) or "observer_integrity"
             reason = _compact(item.get("reason")) or "historical contamination"
-            if not source_phase or not entity_type or not entity_id:
+            expires_at = _coerce_datetime(item.get("expires_at"))
+            if not source_phase or not entity_type or not entity_id or expires_at is None:
                 continue
             existing = (
                 await self.session.execute(
@@ -299,6 +316,11 @@ class ObserverIntegrityRepo:
                 )
             ).scalar_one_or_none()
             if existing is not None:
+                existing.source_phase = source_phase
+                existing.reason = reason
+                existing.notes = _compact(item.get("notes"))
+                existing.active = bool(item.get("active", True))
+                existing.expires_at = expires_at
                 continue
             self.session.add(
                 ObserverKnownContamination(
@@ -310,7 +332,7 @@ class ObserverIntegrityRepo:
                     notes=_compact(item.get("notes")),
                     active=bool(item.get("active", True)),
                     created_at=_now(),
-                    expires_at=item.get("expires_at") if isinstance(item.get("expires_at"), datetime) else None,
+                    expires_at=expires_at,
                 )
             )
             created += 1
