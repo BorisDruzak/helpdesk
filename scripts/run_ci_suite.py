@@ -50,6 +50,7 @@ DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
 OUTPUT_POLL_INTERVAL_SECONDS = 0.2
 STEP_TIMEOUT_EXIT_CODE = 124
+DEFAULT_FLAKY_REGISTRY_PATH = Path("quality/flaky_registry.json")
 CI_EVIDENCE_LAYERS = {
     "webapp_fixture_e2e": {
         "mode": "fixture_e2e",
@@ -175,6 +176,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=DEFAULT_IDLE_TIMEOUT_SECONDS,
         help="Fail a step if it produces no output for this many seconds. Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--flaky-registry",
+        type=Path,
+        default=DEFAULT_FLAKY_REGISTRY_PATH,
+        help="JSON registry of allowed retry-pass flaky records. Unknown retry-pass records fail the CI summary.",
     )
     return parser.parse_args(argv)
 
@@ -610,6 +617,213 @@ def _parallel_measurement_decision(measurements_path: Path, *, requested_max_wor
     }
 
 
+def _resolve_workspace_path(workspace: Path, path: Path) -> Path:
+    return path if path.is_absolute() else workspace / path
+
+
+def _load_flaky_registry(registry_path: Path) -> tuple[list[dict[str, object]], str | None]:
+    try:
+        payload = json.loads(registry_path.read_text(encoding="utf-8-sig"))
+    except FileNotFoundError:
+        return [], None
+    except (OSError, json.JSONDecodeError) as exc:
+        return [], f"{type(exc).__name__}: {exc}"
+    entries = payload.get("entries") if isinstance(payload, dict) else None
+    if not isinstance(entries, list):
+        return [], "flaky registry must contain an entries list"
+    normalized = [entry for entry in entries if isinstance(entry, dict)]
+    if len(normalized) != len(entries):
+        return [], "flaky registry entries must be objects"
+    return normalized, None
+
+
+def _first_error_message(result: dict[str, object]) -> str | None:
+    errors = result.get("errors")
+    if not isinstance(errors, list) or not errors:
+        return None
+    first = errors[0]
+    if isinstance(first, dict):
+        message = first.get("message")
+        if isinstance(message, str) and message.strip():
+            return message.strip()
+    if isinstance(first, str) and first.strip():
+        return first.strip()
+    return None
+
+
+def _result_artifacts(results: list[dict[str, object]]) -> list[dict[str, str]]:
+    artifacts: list[dict[str, str]] = []
+    for result in results:
+        attachments = result.get("attachments")
+        if not isinstance(attachments, list):
+            continue
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+            path = attachment.get("path")
+            if not isinstance(path, str) or not path:
+                continue
+            artifacts.append(
+                {
+                    "name": str(attachment.get("name") or ""),
+                    "path": path,
+                    "content_type": str(attachment.get("contentType") or attachment.get("content_type") or ""),
+                }
+            )
+    return artifacts
+
+
+def _playwright_retry_records(layer_name: str, report_path: Path) -> tuple[list[dict[str, object]], str | None]:
+    if not report_path.exists():
+        return [], None
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [], f"{type(exc).__name__}: {exc}"
+
+    records: list[dict[str, object]] = []
+
+    def walk_suites(suites: object, inherited_file: str | None = None) -> None:
+        if not isinstance(suites, list):
+            return
+        for suite in suites:
+            if not isinstance(suite, dict):
+                continue
+            suite_file = suite.get("file") if isinstance(suite.get("file"), str) else inherited_file
+            specs = suite.get("specs")
+            if isinstance(specs, list):
+                for spec in specs:
+                    if not isinstance(spec, dict):
+                        continue
+                    spec_file = spec.get("file") if isinstance(spec.get("file"), str) else suite_file
+                    if not spec_file:
+                        spec_file = "unknown"
+                    spec_title = str(spec.get("title") or "<untitled>")
+                    tests = spec.get("tests")
+                    if not isinstance(tests, list):
+                        continue
+                    for test in tests:
+                        if not isinstance(test, dict):
+                            continue
+                        raw_results = test.get("results")
+                        if not isinstance(raw_results, list) or len(raw_results) < 2:
+                            continue
+                        results = [result for result in raw_results if isinstance(result, dict)]
+                        if len(results) < 2:
+                            continue
+                        final_status = str(results[-1].get("status") or "")
+                        previous_results = results[:-1]
+                        previous_failure = next(
+                            (
+                                result
+                                for result in previous_results
+                                if str(result.get("status") or "") not in {"passed", "skipped"}
+                            ),
+                            None,
+                        )
+                        if final_status != "passed" or previous_failure is None:
+                            continue
+                        project = str(test.get("projectName") or "").strip()
+                        node_id = f"{spec_file}::{spec_title}"
+                        if project:
+                            node_id = f"{node_id} [{project}]"
+                        records.append(
+                            {
+                                "layer": layer_name,
+                                "node_id": node_id,
+                                "file": spec_file,
+                                "line": spec.get("line"),
+                                "project": project or None,
+                                "classification": "passed_after_retry",
+                                "attempt_count": len(results),
+                                "first_attempt_status": str(results[0].get("status") or ""),
+                                "final_attempt_status": final_status,
+                                "first_worker_index": results[0].get("workerIndex"),
+                                "final_worker_index": results[-1].get("workerIndex"),
+                                "seed": os.getenv("PLAYWRIGHT_RANDOM_SEED") or os.getenv("PYTEST_RANDOMLY_SEED"),
+                                "previous_error": _first_error_message(previous_failure),
+                                "artifacts": _result_artifacts(previous_results),
+                            }
+                        )
+            walk_suites(suite.get("suites"), suite_file)
+
+    walk_suites(payload.get("suites") if isinstance(payload, dict) else None)
+    return records, None
+
+
+def _flaky_registry_match(
+    record: dict[str, object],
+    entries: list[dict[str, object]],
+) -> dict[str, object] | None:
+    record_layer = str(record.get("layer") or "")
+    record_node_id = str(record.get("node_id") or "")
+    today = datetime.now(timezone.utc).date().isoformat()
+    for entry in entries:
+        entry_layer = str(entry.get("layer") or "*")
+        if entry_layer not in {"*", record_layer}:
+            continue
+        pattern = str(entry.get("node_id") or "*")
+        if not fnmatch.fnmatch(record_node_id, pattern):
+            continue
+        expires = str(entry.get("expires") or "")
+        if expires and expires < today:
+            continue
+        return {
+            "id": str(entry.get("id") or ""),
+            "owner": str(entry.get("owner") or ""),
+            "reason": str(entry.get("reason") or ""),
+            "expires": expires or None,
+        }
+    return None
+
+
+def _build_flaky_summary(
+    *,
+    registry_path: Path,
+    report_paths: dict[str, Path],
+) -> dict[str, object]:
+    registry_entries, registry_error = _load_flaky_registry(registry_path)
+    records: list[dict[str, object]] = []
+    report_errors: dict[str, str] = {}
+    missing_reports: list[str] = []
+    for layer_name, report_path in report_paths.items():
+        if not report_path.exists():
+            missing_reports.append(layer_name)
+            continue
+        layer_records, report_error = _playwright_retry_records(layer_name, report_path)
+        records.extend(layer_records)
+        if report_error:
+            report_errors[layer_name] = report_error
+
+    allowed_records: list[dict[str, object]] = []
+    unknown_records: list[dict[str, object]] = []
+    for record in records:
+        registry_match = _flaky_registry_match(record, registry_entries)
+        if registry_match:
+            record["registry_match"] = registry_match
+            allowed_records.append(record)
+        else:
+            unknown_records.append(record)
+
+    status = "pass"
+    if registry_error or report_errors or unknown_records:
+        status = "fail"
+
+    return {
+        "schema": "pc_client.flaky_summary.v1",
+        "registry_path": str(registry_path),
+        "reports": {layer_name: str(path) for layer_name, path in report_paths.items()},
+        "status": status,
+        "clean_green": not records,
+        "records": records,
+        "allowed_records": allowed_records,
+        "unknown_records": unknown_records,
+        "missing_reports": missing_reports,
+        "report_errors": report_errors,
+        "registry_error": registry_error,
+    }
+
+
 def _run_step(step: Step, *, workspace: Path, mirror_output: bool) -> dict[str, object]:
     step_name, command, log_path, timeout_seconds, idle_timeout_seconds, env_overrides = step
     return run_and_capture(
@@ -949,6 +1163,10 @@ def _webapp_unit_test_command(workspace: Path) -> list[str]:
     return _pnpm_webapp_command(workspace, "exec", "vitest", "run", "--pool=threads", "--maxWorkers=1")
 
 
+def _webapp_fixture_e2e_command(workspace: Path) -> list[str]:
+    return _pnpm_webapp_command(workspace, "exec", "playwright", "test", "--reporter=list,json")
+
+
 def main() -> None:
     args = parse_args()
     max_workers = args.max_workers if args.max_workers is not None else (2 if args.parallel else 1)
@@ -975,8 +1193,10 @@ def main() -> None:
     logs_dir = artifact_dir / "logs"
     fixture_timings_dir = artifact_dir / "fixture-timings"
     fixture_timings_summary_path = artifact_dir / "fixture-timings-summary.json"
+    webapp_fixture_e2e_report = artifact_dir / "playwright-webapp-fixture-e2e.json"
     webapp_bundle_dir = webapp_bundle_dir_for_commit(args.workspace, commit)
     webapp_bundle_archive = webapp_bundle_archive_for_commit(args.workspace, commit)
+    flaky_registry_path = _resolve_workspace_path(args.workspace, args.flaky_registry)
     started_at = now_iso()
 
     steps: list[Step] = [
@@ -1020,11 +1240,11 @@ def main() -> None:
         ),
         (
             "webapp_fixture_e2e",
-            _pnpm_webapp_command(args.workspace, "run", "test:e2e"),
+            _webapp_fixture_e2e_command(args.workspace),
             logs_dir / "webapp_fixture_e2e.log",
             float(DEFAULT_WEB_TEST_TIMEOUT_SECONDS),
             float(args.idle_timeout),
-            {"CI": "1"},
+            {"CI": "1", "PLAYWRIGHT_JSON_OUTPUT_NAME": str(webapp_fixture_e2e_report)},
         ),
         (
             "test_inventory_audit",
@@ -1127,6 +1347,7 @@ def main() -> None:
     status = "green"
     runner_error: str | None = None
     fixture_timings_error: str | None = None
+    flaky_gate_error: str | None = None
     try:
         if args.parallel:
             before_steps, parallel_steps, after_steps = _split_steps_for_parallel(steps)
@@ -1183,6 +1404,14 @@ def main() -> None:
         except Exception as exc:  # pragma: no cover - defensive CI artifact path.
             fixture_timings_error = f"{type(exc).__name__}: {exc}"
             print(f"[ci] fixture timing summary error: {fixture_timings_error}", file=sys.stderr)
+        flaky_summary = _build_flaky_summary(
+            registry_path=flaky_registry_path,
+            report_paths={"webapp_fixture_e2e": webapp_fixture_e2e_report},
+        )
+        if status == "green" and flaky_summary["status"] != "pass":
+            status = "red"
+            flaky_gate_error = "Unknown or invalid retry-pass flaky records are present"
+            print(f"[ci] flaky gate error: {flaky_gate_error}", file=sys.stderr)
         junit_artifacts = _junit_artifacts(artifact_dir, args.workspace)
         summary = {
             "commit": commit,
@@ -1206,12 +1435,14 @@ def main() -> None:
                 "fixture_timings_summary": str(fixture_timings_summary_path),
                 "webapp_bundle_dir": str(webapp_bundle_dir),
                 "webapp_bundle_archive": str(webapp_bundle_archive),
+                "webapp_fixture_e2e_report": str(webapp_fixture_e2e_report),
                 "junit_scripts_no_db": junit_artifacts["scripts_pytest_no_db"],
                 "junit_server_no_db": junit_artifacts["server_pytest_no_db"],
                 "junit_server_db_api_layers": junit_artifacts["server_pytest_db_api_layers"],
                 "junit_server_agent_ws": junit_artifacts["server_pytest_agent_ws"],
                 "junit_pc_agent": junit_artifacts["pc_agent_pytest"],
             },
+            "flaky_summary": flaky_summary,
             "steps": results,
         }
         if runner_error:
@@ -1222,6 +1453,8 @@ def main() -> None:
             summary["parallel_measurement_decision"] = parallel_measurement_decision
         if fixture_timings_error:
             summary["fixture_timings_error"] = fixture_timings_error
+        if flaky_gate_error:
+            summary["flaky_gate_error"] = flaky_gate_error
         write_summary(summary_path, summary)
 
     if status != "green":

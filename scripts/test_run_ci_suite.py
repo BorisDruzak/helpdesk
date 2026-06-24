@@ -293,7 +293,7 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert command_by_step["webapp_unit_tests"] == run_ci_suite._webapp_unit_test_command(tmp_path)
     assert command_by_step["webapp_unit_tests"][-2:] == ["--pool=threads", "--maxWorkers=1"]
-    assert command_by_step["webapp_fixture_e2e"] == run_ci_suite._pnpm_webapp_command(tmp_path, "run", "test:e2e")
+    assert command_by_step["webapp_fixture_e2e"] == run_ci_suite._webapp_fixture_e2e_command(tmp_path)
     assert command_by_step["test_inventory_audit"] == [
         sys.executable,
         str(tmp_path / "scripts" / "audit_test_inventory.py"),
@@ -379,7 +379,10 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         for step_name, _command, _log_path, _idle_timeout, env, _timeout in steps_seen
     }
     assert env_by_step["webapp_unit_tests"] == {"CI": "1"}
-    assert env_by_step["webapp_fixture_e2e"] == {"CI": "1"}
+    assert env_by_step["webapp_fixture_e2e"] == {
+        "CI": "1",
+        "PLAYWRIGHT_JSON_OUTPUT_NAME": str(summary_path.parent / "playwright-webapp-fixture-e2e.json"),
+    }
     assert env_by_step["test_inventory_audit"] is None
     assert env_by_step["db_cleanup_profile_audit"] is None
     assert env_by_step["scripts_pytest_no_db"] is None
@@ -914,6 +917,133 @@ def test_parallel_measurements_can_disable_parallel_group(tmp_path, monkeypatch)
     assert summary["max_workers"] == 1
     assert summary["parallel_groups"] == []
     assert summary["parallel_measurement_decision"]["effective_max_workers"] == 1
+
+
+def _write_playwright_retry_report(path: Path, *, status: str = "passed") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        run_ci_suite.json.dumps(
+            {
+                "suites": [
+                    {
+                        "title": "webapp tests",
+                        "suites": [
+                            {
+                                "title": "requester-workspace.spec.ts",
+                                "file": "webapp/tests/requester-workspace.spec.ts",
+                                "specs": [
+                                    {
+                                        "title": "renders requester dashboard",
+                                        "file": "webapp/tests/requester-workspace.spec.ts",
+                                        "line": 42,
+                                        "tests": [
+                                            {
+                                                "projectName": "chromium",
+                                                "expectedStatus": "passed",
+                                                "status": "flaky",
+                                                "results": [
+                                                    {
+                                                        "retry": 0,
+                                                        "workerIndex": 1,
+                                                        "status": "failed",
+                                                        "errors": [{"message": "locator timeout"}],
+                                                        "attachments": [
+                                                            {
+                                                                "name": "trace",
+                                                                "path": "test-results/trace.zip",
+                                                                "contentType": "application/zip",
+                                                            }
+                                                        ],
+                                                    },
+                                                    {
+                                                        "retry": 1,
+                                                        "workerIndex": 2,
+                                                        "status": status,
+                                                        "errors": [],
+                                                        "attachments": [],
+                                                    },
+                                                ],
+                                            }
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_flaky_summary_fails_unknown_retry_pass(tmp_path):
+    report_path = tmp_path / "playwright-report.json"
+    registry_path = tmp_path / "flaky-registry.json"
+    _write_playwright_retry_report(report_path)
+    registry_path.write_text(
+        run_ci_suite.json.dumps({"schema": "pc_client.flaky_registry.v1", "entries": []}),
+        encoding="utf-8",
+    )
+
+    summary = run_ci_suite._build_flaky_summary(
+        registry_path=registry_path,
+        report_paths={"webapp_fixture_e2e": report_path},
+    )
+
+    assert summary["status"] == "fail"
+    assert len(summary["records"]) == 1
+    assert summary["records"][0]["node_id"] == (
+        "webapp/tests/requester-workspace.spec.ts::renders requester dashboard [chromium]"
+    )
+    assert summary["records"][0]["first_attempt_status"] == "failed"
+    assert summary["records"][0]["final_attempt_status"] == "passed"
+    assert summary["records"][0]["previous_error"] == "locator timeout"
+    assert summary["records"][0]["artifacts"] == [
+        {
+            "name": "trace",
+            "path": "test-results/trace.zip",
+            "content_type": "application/zip",
+        }
+    ]
+    assert summary["unknown_records"] == [summary["records"][0]]
+    assert summary["allowed_records"] == []
+
+
+def test_flaky_summary_allows_registry_match_without_clean_green(tmp_path):
+    report_path = tmp_path / "playwright-report.json"
+    registry_path = tmp_path / "flaky-registry.json"
+    _write_playwright_retry_report(report_path)
+    registry_path.write_text(
+        run_ci_suite.json.dumps(
+            {
+                "schema": "pc_client.flaky_registry.v1",
+                "entries": [
+                    {
+                        "id": "fixture-requester-dashboard-retry",
+                        "layer": "webapp_fixture_e2e",
+                        "node_id": "webapp/tests/requester-workspace.spec.ts::*",
+                        "owner": "webapp",
+                        "reason": "documented fixture retry while live gate remains separate",
+                        "expires": "2026-07-31",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = run_ci_suite._build_flaky_summary(
+        registry_path=registry_path,
+        report_paths={"webapp_fixture_e2e": report_path},
+    )
+
+    assert summary["status"] == "pass"
+    assert summary["records"][0]["classification"] == "passed_after_retry"
+    assert summary["records"][0]["registry_match"]["id"] == "fixture-requester-dashboard-retry"
+    assert summary["clean_green"] is False
+    assert summary["allowed_records"] == summary["records"]
+    assert summary["unknown_records"] == []
 
 
 def test_windows_parallel_tunnel_uses_explicit_admin_url_without_starting_ssh(monkeypatch):
