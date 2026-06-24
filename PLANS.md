@@ -1081,6 +1081,10 @@ Blocking:
 | `TD-013` | P2 | Agent ACK/in-progress race из risk register | deterministic concurrency/restart tests |
 | `TD-014` | P2 | Два run_tool entry paths | single facade contract test |
 | `TD-015` | P3 | Single-process outbox dispatch scaling | load/locking design + multi-instance test plan |
+| `TD-016` | P2 | Scheduler RPC historical NOT_IMPLEMENTED risk | scheduler runtime/admin RPC tests linked in `quality/active_risks.json` |
+| `TD-017` | P2 | Legacy orchestrator execution branches | execution scheduler/action trace tests linked in `quality/active_risks.json` |
+| `TD-018` | P3 | ModuleManager handshake inventory edge case | startup inventory + handshake reconcile tests linked in `quality/active_risks.json` |
+| `TD-019` | P3 | SERVER_PUBLIC_BASE_URL production reachability | release/config evidence tracked in `quality/active_risks.json` |
 
 ### H3. Debt budget
 
@@ -1168,7 +1172,7 @@ Blocking:
 
 ### Phase 5 — закрытие активного техдолга
 
-- [ ] `TD-501` Перенести active risks из архивного документа в реестр.
+- [x] `TD-501` Перенести active risks из архивного документа в реестр.
 - [x] `TD-502` Закрыть ACK/in-progress race tests.
 - [ ] `TD-503` Унифицировать run_tool facade.
 - [ ] `TD-504` Удалить бессрочные contaminations.

@@ -137,6 +137,7 @@ AFFECTED_BASE_LAYERS: tuple[str, ...] = (
     "test_inventory_audit",
     "db_cleanup_profile_audit",
     "fixture_builder_audit",
+    "active_risk_audit",
     "branch_coverage_audit",
     "mutation_smoke",
     "scripts_pytest_no_db",
@@ -1153,6 +1154,16 @@ def _fixture_builder_audit_command(workspace: Path) -> list[str]:
     ]
 
 
+def _active_risk_audit_command(workspace: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(workspace / "scripts" / "audit_active_risks.py"),
+        "--workspace",
+        str(workspace),
+        "--strict",
+    ]
+
+
 def _branch_coverage_audit_command(workspace: Path) -> list[str]:
     return [
         sys.executable,
@@ -1343,6 +1354,7 @@ def _affected_selection_for_paths(changed_paths: list[str], available_layers: li
             add_layer("server_pytest_no_db", path)
         elif path.startswith("test_data_packs/") or path.startswith("quality/"):
             add_layer("fixture_builder_audit", path)
+            add_layer("active_risk_audit", path)
         elif path.startswith("artifacts/") or path.startswith("output/"):
             continue
         elif not (
@@ -1492,6 +1504,14 @@ def main() -> None:
             "fixture_builder_audit",
             _fixture_builder_audit_command(args.workspace),
             logs_dir / "fixture_builder_audit.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
+        ),
+        (
+            "active_risk_audit",
+            _active_risk_audit_command(args.workspace),
+            logs_dir / "active_risk_audit.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
             None,

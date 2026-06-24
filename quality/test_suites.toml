@@ -22,6 +22,13 @@ database = "none"
 description = "Fails the full gate when schema-validated fixture/data packs drift from their JSON Schema builders, source-pack refs, test refs, live evidence requirements, or secret-free contract."
 
 [[suites]]
+name = "active_risk_audit"
+runner = "script"
+command = ["python", "scripts/audit_active_risks.py", "--strict"]
+database = "none"
+description = "Fails the full gate when active technical-debt risks lose owner, tests, measurable acceptance criteria, evidence refs, or required archive source coverage."
+
+[[suites]]
 name = "branch_coverage_audit"
 runner = "script"
 command = ["python", "scripts/audit_branch_coverage.py", "--strict"]
