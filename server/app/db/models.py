@@ -5917,6 +5917,11 @@ class ObserverTrace(Base):
     __table_args__ = (
         Index("ix_observer_traces_started_at", "started_at"),
         Index("ix_observer_traces_status_started_at", "status", "started_at"),
+        Index("ix_observer_traces_root_kind_started_at", "root_kind", "started_at"),
+        Index("ix_observer_traces_ticket_started_at", "ticket_id", "started_at"),
+        Index("ix_observer_traces_device_started_at", "device_id", "started_at"),
+        Index("ix_observer_traces_operation_started_at", "operation_id", "started_at"),
+        Index("ix_observer_traces_job_started_at", "job_id", "started_at"),
     )
 
 
@@ -5955,6 +5960,10 @@ class ObserverSpan(Base):
         UniqueConstraint("trace_id", "source_type", "source_ref", name="uq_observer_spans_trace_source"),
         Index("ix_observer_spans_trace_parent", "trace_id", "parent_span_id"),
         Index("ix_observer_spans_status_started_at", "status", "started_at"),
+        Index("ix_observer_spans_trace_started", "trace_id", "started_at"),
+        Index("ix_observer_spans_trace_tool", "trace_id", "tool_name"),
+        Index("ix_observer_spans_trace_module", "trace_id", "module_name"),
+        Index("ix_observer_spans_trace_event", "trace_id", "event_type"),
     )
 
 
@@ -6061,6 +6070,9 @@ class ObserverErrorOccurrence(Base):
     __table_args__ = (
         Index("ix_observer_error_occurrences_signature_created", "error_signature", "created_at"),
         Index("ix_observer_error_occurrences_trace_created", "trace_id", "created_at"),
+        Index("ix_observer_error_occurrences_trace_kind", "trace_id", "error_kind"),
+        Index("ix_observer_error_occurrences_trace_signature", "trace_id", "error_signature"),
+        Index("ix_observer_error_occurrences_ticket_signature_created", "ticket_id", "error_signature", "created_at"),
     )
 
 
