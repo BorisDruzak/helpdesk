@@ -3,15 +3,32 @@
 ## Статус и область
 
 - **Статус:** implementation largely complete; release/live validation blocked.
-- **Дата анализа:** 2026-06-23.
+- **Дата анализа:** 2026-06-24.
 - **Анализируемая ветка:** `codex/helpdesk-process-model`.
-- **Current implementation revision:** `9c85d7ce1046409308d47f02c2d0846e6f64bba8`.
+- **Current implementation revision:** `93911118c8c37c8fa76385298fdbd6807991c524`.
 - **Release readiness:** blocked.
 - **Основная цель:** сделать исправление багов воспроизводимым, тесты — достоверными, live-проверки — доказательными, а технический долг — управляемым.
 - **Критические зоны:** ticket/requester/support behavior, Protocol V3, agent runtime, PostgreSQL, Observer overlay, webapp, CI/release scripts.
 - **Не является целью:** превращать Observer в источник бизнес-истины, подменять live-проверку fixture/mocked E2E-тестом или запускать разрушающие проверки на production-данных.
 
 Этот документ заменяет узкий task-local план по форме создания обращения. Завершенная работа по той задаче сохранена в приложении в конце файла.
+
+## План полного закрытия замечаний 2026-06-24
+
+Статусы: `[ ]` не начато или нет достаточной реализации, `[~]` частично реализовано и требуется доказательство/доработка, `[x]` закрыто кодом и проверками.
+
+- [~] **P0 Observer scan completeness**: code-side fail-closed path реализован в `93911118` (`ObserverIntegrityCheckResult` для top-level checkers, `LIMIT + 1` windows, `runtime_presence` incomplete при отсутствии state, неизвестная `source_complete` больше не считается complete по умолчанию, no-DB regression прошел). Для `[x]` еще нужны green DB-backed 201/301/501 tests в isolated PostgreSQL, сценарий "исправили одну ошибку - resolved только она, не строки вне текущей страницы", и включение этой проверки в актуальный CI/release evidence.
+- [~] **P0/P1 integrity checker isolation**: savepoint isolation и scanned-window metadata начаты, но еще нет bounded timeout, persisted per-check run report, duration/cursor/window в отчете и правила resolve только при `status=passed && complete=true`.
+- [ ] **P0 full live behavior pack**: нужно выполнить весь `critical_behavior_v1.json` на одном frozen commit/environment и получить 17 passing `pc_client.live_evidence.v2` manifests.
+- [ ] **P0 strict live release summary aggregator**: `build_live_release_summary.py` должен выбирать manifests только по `--commit`, `--environment`, `--release-run-id`, `--expected-schema-head`; старый pass не должен перекрывать новый fail.
+- [ ] **P0 release preflight live summary gate**: добавить обязательный `require_live_release_summary(commit, environment)` в preflight и full release gate.
+- [ ] **P0 full green CI for current HEAD**: нужен plain full `python scripts/run_ci_suite.py` и `release_candidate_preflight.py --commit <HEAD>` на isolated PostgreSQL без shared fallback.
+- [~] **P1 web Observer execution identity**: текущий writer частично использует request/correlation/idempotency reference, но нужны server-side request id middleware, durable idempotency/retry coverage и DB/API tests без клиентского `X-Request-ID`.
+- [~] **Active risks are not eliminated**: Phase 5 означает governance/registry/gating, а не устранение всех underlying risks; `TD-012`, `TD-013`, `TD-014`, `TD-015`, `TD-017`, `TD-019` остаются active/accepted до отдельных implementation/live proofs.
+- [ ] **P1/P2 suite catalog source of truth**: выбрать и реализовать один источник истины для runner, inventory audit и docs (`quality/test_suites.toml` или удаление ложного каталога).
+- [~] **P2 branch coverage wording**: `COV-405` сейчас является реестром заявленных targeted branches, не measured coverage engine; для `[x]` нужен реальный targeted coverage gate.
+- [~] **P1/P2 DB/migration checks**: `DB-104` покрывает fresh/idempotent/schema smoke, но еще не доказывает old baseline snapshot upgrade, partial migration recovery, dynamic sentinel cleanup/concurrency и reference-fixture preservation.
+- [ ] **P1 integrity `occurrence_count` semantics**: разделить scan observation count, recurrence count и first/last seen/reopened timestamps, чтобы scanner loops не выглядели как реальные repeated incidents.
 
 ---
 
@@ -1115,10 +1132,10 @@ Blocking:
 
 ### Phase 1 — Observer и DB safety
 
-- [ ] `OBS-101` Написать >limit false-resolve regression.
-- [ ] `OBS-102` Реализовать complete-scope resolution.
+- [~] `OBS-101` Написать >limit false-resolve regression.
+- [~] `OBS-102` Реализовать complete-scope resolution.
 - [x] `OBS-103` Сохранить acknowledged state при повторном scan.
-- [ ] `OBS-104` Добавить per-check execution report и failure isolation.
+- [~] `OBS-104` Добавить per-check execution report и failure isolation.
 - [x] `OBS-105` Ужесточить successful create trace predicate.
 - [~] `OBS-106` Characterize и исправить web execution trace identity.
 - [x] `DB-101` Создать schema-to-cleanup audit.
@@ -1171,7 +1188,7 @@ Blocking:
 
 **Gate:** ускорение не уменьшает coverage и не использует timeout/retry как маскировку.
 
-### Phase 5 — закрытие активного техдолга
+### Phase 5 — управление активным техдолгом
 
 - [x] `TD-501` Перенести active risks из архивного документа в реестр.
 - [x] `TD-502` Закрыть ACK/in-progress race tests.
@@ -1181,7 +1198,9 @@ Blocking:
 - [x] `TD-506` Обновить CODEMAP/QUICK_LOOKUP/TESTING_RULES.
 - [x] `TD-507` Зафиксировать multi-instance outbox prerequisites.
 
-**Gate:** у каждого active risk есть owner, test и measurable acceptance criteria.
+**Gate:** у каждого active risk есть owner, test и measurable acceptance criteria. `[x]` в этой фазе означает governance/registry/gating, а не устранение всех underlying risks из `quality/active_risks.json`.
+
+Checkpoint 2026-06-24 OBS-101/OBS-102/OBS-104: `93911118` перевел Observer integrity scan на fail-closed completeness contract. Top-level checkers теперь возвращают `ObserverIntegrityCheckResult`, bounded checkers используют `LIMIT + 1` windows, `runtime_presence` возвращает incomplete при отсутствии state, unknown `source_complete` больше не resolve-ит source по умолчанию, а runner source явно помечается complete. Per-check savepoints добавлены как первый шаг isolation. Coverage: `server/tests/test_observer_integrity_scan_scope.py` passed, `server_pytest_no_db` passed, `server/tests/test_observer_integrity_scan_completeness.py` added and collects DB-backed 201/301/501 tests. Remaining for `[x]`: DB-backed execution green in isolated PostgreSQL, resolve-one-only-one DB scenario, persisted per-check report/timeout/duration/window, and full CI/release evidence.
 
 Checkpoint 2026-06-24 TD-504: Observer known contamination is now manifest-owned in `quality/observer_known_contamination.json` instead of a hardcoded indefinite runtime list. `scripts/audit_observer_contamination.py --strict` and CI layer `observer_contamination_audit` fail active rows without owner, linked issue, exact scope, reason, created/expiry dates, review status or evidence path, and fail expired or broad suppressions. Runtime seeding reads the manifest, updates old NULL-expiry DB rows with the manifest expiry, and `ObserverIntegrityRepo.find_contamination()` no longer treats `expires_at=NULL` as a match. Current reviewed rows are three exact historical P0/P1/P6 entries, all expiring on 2026-07-24.
 
