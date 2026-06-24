@@ -79,6 +79,14 @@ python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavi
 
 The runner captures browser evidence through `webapp/scripts/live-browser-scenarios.mjs` and agent/operation evidence through existing UIA/WS probes. It does not replace the manifest's API, DB, Observer delta, Observer canary, cleanup, or preflight evidence.
 
+After scenario manifests are filled, build one release summary from the critical behavior pack and live manifest folder:
+
+```powershell
+python scripts/build_live_release_summary.py --pack test_data_packs/critical_behavior_v1.json --live-root artifacts/live --output artifacts/live/release-summary.json --markdown-output artifacts/live/release-summary.md
+```
+
+The summary is `pass` only when every critical behavior scenario has a passing `pc_client.live_evidence.v2` manifest; otherwise it reports `blocked` or `fail` with release blockers.
+
 ### Stop conditions
 
 Stop the live run and classify the blocker if any of these occur:

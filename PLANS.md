@@ -1149,7 +1149,7 @@ Blocking:
 - [x] `LIVE-307` Автоматизировать agent/operation scenarios.
 - [x] `LIVE-308` Доказать cleanup.
 - [x] `LIVE-309` Интегрировать Observer canary report.
-- [ ] `LIVE-310` Сформировать один release summary.
+- [x] `LIVE-310` Сформировать один release summary.
 
 **Gate:** pass невозможен без browser/API/DB/Observer evidence и commit parity.
 
@@ -1241,6 +1241,8 @@ Checkpoint 2026-06-24 LIVE-307: `scripts/run_live_behavior_suite.py` now also su
 
 Checkpoint 2026-06-24 LIVE-309: `pc_client.live_evidence.v2` manifests now require an `observer_canary` block that points to the JSON and Markdown reports from `scripts/run_observer_canary_suite.py`. The validator loads the JSON report, requires coverage `ok=true`, non-empty required root kinds, no missing root kinds, no failed scenarios, report/manifest summary parity, pass coverage/status fields and an ISO `checked_at`; `scripts/live_evidence_pack.py` creates `observer-canary.md` and blocked manifest placeholders so a live pass cannot be claimed without canary evidence. Coverage: RED/GREEN `scripts/test_validate_live_evidence.py::test_validate_live_evidence_requires_observer_canary_report`, `::test_validate_live_evidence_rejects_observer_canary_failures`, and `scripts/test_live_evidence_pack.py`.
 
+Checkpoint 2026-06-24 LIVE-310: `scripts/build_live_release_summary.py` now produces a single `pc_client.live_release_summary.v1` JSON/Markdown summary from `test_data_packs/critical_behavior_v1.json` and completed `artifacts/live/**/manifest.json` files. It validates each manifest through `scripts/validate_live_evidence.py`, reports browser and agent-operation suite plan counts, required manifest sections, pass/fail/missing scenario coverage and release blockers; CLI exit is non-zero until every critical behavior scenario has a passing v2 manifest. Current default run against existing artifacts is correctly `blocked` with 17 missing critical scenario manifests. Coverage: RED/GREEN `scripts/test_build_live_release_summary.py` and dry-run `python scripts/build_live_release_summary.py --pack test_data_packs/critical_behavior_v1.json --live-root artifacts/live --json`.
+
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 
 ---
@@ -1256,9 +1258,11 @@ Checkpoint 2026-06-24 LIVE-309: `pc_client.live_evidence.v2` manifests now requi
 - `scripts/audit_db_cleanup_schema.py`
 - `scripts/validate_live_evidence.py`
 - `scripts/run_live_behavior_suite.py`
+- `scripts/build_live_release_summary.py`
 - `scripts/test_audit_test_inventory.py`
 - `scripts/test_audit_db_cleanup_schema.py`
 - `scripts/test_validate_live_evidence.py`
+- `scripts/test_build_live_release_summary.py`
 - `server/tests/test_observer_integrity_scan_scope.py`
 - `server/tests/test_observer_integrity_runner.py`
 - `server/tests/test_observer_web_event_identity.py`
@@ -1334,6 +1338,7 @@ python scripts/audit_test_inventory.py --strict
 python scripts/audit_db_cleanup_schema.py --strict
 python scripts/validate_live_evidence.py --manifest artifacts/live/<run_id>/manifest.json
 python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json
+python scripts/build_live_release_summary.py --pack test_data_packs/critical_behavior_v1.json --live-root artifacts/live --json
 ```
 
 ---
