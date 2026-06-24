@@ -16,6 +16,7 @@ CHECK_STATUSES = {"pass", "fail", "blocked", "skipped"}
 REDACTION_STATUSES = {"redacted", "not_applicable", "none"}
 PREFLIGHT_STATUSES = {"pass", "fail", "blocked"}
 OBSERVER_DELTA_STATUSES = {"pass", "fail", "blocked", "incomplete"}
+OBSERVER_CANARY_STATUSES = {"pass", "fail", "blocked"}
 REQUIRED_TOP_LEVEL = (
     "schema",
     "run_id",
@@ -29,6 +30,7 @@ REQUIRED_TOP_LEVEL = (
     "entities",
     "preflight",
     "observer_delta",
+    "observer_canary",
     "checks",
     "artifacts",
     "contamination",
@@ -82,6 +84,17 @@ REQUIRED_OBSERVER_TRACE_FIELDS = (
     "trace_outcome",
     "consistency_status",
 )
+REQUIRED_OBSERVER_CANARY_FIELDS = (
+    "json_report_path",
+    "markdown_report_path",
+    "required_root_kinds",
+    "observed_root_kinds",
+    "missing_root_kinds",
+    "failed_scenarios",
+    "coverage_status",
+    "status",
+    "checked_at",
+)
 
 
 def _non_empty(value: Any) -> bool:
@@ -127,6 +140,28 @@ def _validate_pass_status(value: Any, *, field: str, errors: list[str]) -> None:
         errors.append(f"{field} must be one of {sorted(OBSERVER_DELTA_STATUSES)}")
     elif status != "pass":
         errors.append(f"{field} must be pass")
+
+
+def _validate_canary_status(value: Any, *, field: str, errors: list[str]) -> None:
+    status = str(value or "")
+    if not status:
+        return
+    if status not in OBSERVER_CANARY_STATUSES:
+        errors.append(f"{field} must be one of {sorted(OBSERVER_CANARY_STATUSES)}")
+    elif status != "pass":
+        errors.append(f"{field} must be pass")
+
+
+def _load_report_json(path: Path, *, field: str, errors: list[str]) -> Mapping[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        errors.append(f"{field} could not be read as JSON: {exc}")
+        return None
+    if not isinstance(data, dict):
+        errors.append(f"{field} root must be an object")
+        return None
+    return data
 
 
 def _validate_check(item: Any, *, index: int, manifest_dir: Path, errors: list[str]) -> None:
@@ -316,6 +351,120 @@ def _validate_observer_delta(observer_delta_value: Any, *, manifest: Mapping[str
     _parse_timestamp(observer_delta.get("checked_at"), field="observer_delta.checked_at", errors=errors)
 
 
+def _validate_observer_canary_report(
+    report: Mapping[str, Any],
+    *,
+    canary: Mapping[str, Any],
+    errors: list[str],
+) -> None:
+    _parse_timestamp(report.get("generated_at"), field="observer_canary report generated_at", errors=errors)
+    coverage = _require_mapping(report.get("coverage"), field="observer_canary report coverage", errors=errors)
+    if coverage is None:
+        return
+    if coverage.get("ok") is not True:
+        errors.append("observer_canary report coverage.ok must be true")
+
+    manifest_required = _require_string_list(
+        canary.get("required_root_kinds"),
+        field="observer_canary.required_root_kinds",
+        errors=errors,
+    )
+    manifest_observed = _require_string_list(
+        canary.get("observed_root_kinds"),
+        field="observer_canary.observed_root_kinds",
+        errors=errors,
+    )
+    manifest_missing = _require_string_list(
+        canary.get("missing_root_kinds"),
+        field="observer_canary.missing_root_kinds",
+        errors=errors,
+    )
+    report_required = _require_string_list(
+        coverage.get("required_root_kinds"),
+        field="observer_canary report coverage.required_root_kinds",
+        errors=errors,
+    )
+    report_observed = _require_string_list(
+        coverage.get("observed_root_kinds"),
+        field="observer_canary report coverage.observed_root_kinds",
+        errors=errors,
+    )
+    report_missing = _require_string_list(
+        coverage.get("missing_root_kinds"),
+        field="observer_canary report coverage.missing_root_kinds",
+        errors=errors,
+    )
+    if report_required == []:
+        errors.append("observer_canary report coverage.required_root_kinds must contain at least one item")
+    if report_missing:
+        errors.append("observer_canary report coverage.missing_root_kinds must be empty")
+    if manifest_required is not None and not manifest_required:
+        errors.append("observer_canary.required_root_kinds must contain at least one item")
+    if manifest_missing:
+        errors.append("observer_canary.missing_root_kinds must be empty")
+    if manifest_required is not None and report_required is not None and manifest_required != report_required:
+        errors.append("observer_canary.required_root_kinds must match report coverage.required_root_kinds")
+    if manifest_observed is not None and report_observed is not None and manifest_observed != report_observed:
+        errors.append("observer_canary.observed_root_kinds must match report coverage.observed_root_kinds")
+    if manifest_missing is not None and report_missing is not None and manifest_missing != report_missing:
+        errors.append("observer_canary.missing_root_kinds must match report coverage.missing_root_kinds")
+
+    results = report.get("results")
+    if not isinstance(results, list):
+        errors.append("observer_canary report results must be a list")
+        return
+    failed_scenarios: list[str] = []
+    for index, item in enumerate(results):
+        if not isinstance(item, dict):
+            errors.append(f"observer_canary report results[{index}] must be an object")
+            continue
+        if item.get("ok") is not True:
+            name = str(item.get("name") or f"#{index}").strip()
+            failed_scenarios.append(name)
+    manifest_failed = _require_string_list(
+        canary.get("failed_scenarios"),
+        field="observer_canary.failed_scenarios",
+        errors=errors,
+    )
+    if failed_scenarios:
+        errors.append("observer_canary report results must all pass")
+    if manifest_failed:
+        errors.append("observer_canary.failed_scenarios must be empty")
+    if manifest_failed is not None and manifest_failed != failed_scenarios:
+        errors.append("observer_canary.failed_scenarios must match report failed result names")
+
+
+def _validate_observer_canary(observer_canary_value: Any, *, manifest_dir: Path, errors: list[str]) -> None:
+    canary = _require_mapping(observer_canary_value, field="observer_canary", errors=errors)
+    if canary is None:
+        return
+    for field in REQUIRED_OBSERVER_CANARY_FIELDS:
+        if field not in canary:
+            errors.append(f"observer_canary.{field} is required")
+        elif field in {"json_report_path", "markdown_report_path", "coverage_status", "status", "checked_at"} and not _non_empty(
+            canary[field]
+        ):
+            errors.append(f"observer_canary.{field} is required")
+
+    report: Mapping[str, Any] | None = None
+    json_report_path = canary.get("json_report_path")
+    if _non_empty(json_report_path):
+        resolved = manifest_dir / str(json_report_path)
+        if not resolved.exists():
+            errors.append(f"observer_canary.json_report_path does not exist: {json_report_path}")
+        else:
+            report = _load_report_json(resolved, field="observer_canary.json_report_path", errors=errors)
+    markdown_report_path = canary.get("markdown_report_path")
+    if _non_empty(markdown_report_path) and not (manifest_dir / str(markdown_report_path)).exists():
+        errors.append(f"observer_canary.markdown_report_path does not exist: {markdown_report_path}")
+
+    _validate_canary_status(canary.get("coverage_status"), field="observer_canary.coverage_status", errors=errors)
+    _validate_canary_status(canary.get("status"), field="observer_canary.status", errors=errors)
+    _parse_timestamp(canary.get("checked_at"), field="observer_canary.checked_at", errors=errors)
+    if report is not None:
+        _validate_observer_canary_report(report, canary=canary, errors=errors)
+
+
 def validate_manifest(manifest: Mapping[str, Any], *, manifest_dir: Path) -> list[str]:
     errors: list[str] = []
     for field in REQUIRED_TOP_LEVEL:
@@ -345,6 +494,7 @@ def validate_manifest(manifest: Mapping[str, Any], *, manifest_dir: Path) -> lis
 
     _validate_preflight(manifest.get("preflight"), manifest=manifest, errors=errors)
     _validate_observer_delta(manifest.get("observer_delta"), manifest=manifest, errors=errors)
+    _validate_observer_canary(manifest.get("observer_canary"), manifest_dir=manifest_dir, errors=errors)
 
     checks = manifest.get("checks")
     if not isinstance(checks, list):

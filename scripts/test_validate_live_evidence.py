@@ -6,6 +6,33 @@ from pathlib import Path
 def _complete_manifest(root: Path) -> Path:
     screenshot = root / "browser.png"
     screenshot.write_bytes(b"fake-png")
+    canary_report = root / "observer-canary.json"
+    canary_report.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-23T01:00:45+00:00",
+                "base_url": "https://192.168.100.17:9443",
+                "device_id": "device-abc",
+                "coverage": {
+                    "ok": True,
+                    "required_root_kinds": ["module_install", "web_auth"],
+                    "observed_root_kinds": ["module_install", "web_auth"],
+                    "missing_root_kinds": [],
+                    "trace_refs": [
+                        {"scenario": "module_install", "root_kind": "module_install", "trace_id": "trace-canary-1"},
+                        {"scenario": "coverage_web_auth", "root_kind": "web_auth", "trace_id": "trace-canary-2"},
+                    ],
+                },
+                "results": [
+                    {"name": "module_install", "ok": True, "summary": "Installed canary module."},
+                    {"name": "coverage_web_auth", "ok": True, "summary": "Observed web auth trace."},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    canary_markdown = root / "observer-canary.md"
+    canary_markdown.write_text("# Observer Canary Report\n\nCoverage: passed\n", encoding="utf-8")
     manifest = {
         "schema": "pc_client.live_evidence.v2",
         "run_id": "live-validator-pass",
@@ -64,6 +91,17 @@ def _complete_manifest(root: Path) -> Path:
             "correlation_status": "pass",
             "status": "pass",
             "checked_at": "2026-06-23T01:00:55+00:00",
+        },
+        "observer_canary": {
+            "json_report_path": "observer-canary.json",
+            "markdown_report_path": "observer-canary.md",
+            "required_root_kinds": ["module_install", "web_auth"],
+            "observed_root_kinds": ["module_install", "web_auth"],
+            "missing_root_kinds": [],
+            "failed_scenarios": [],
+            "coverage_status": "pass",
+            "status": "pass",
+            "checked_at": "2026-06-23T01:00:58+00:00",
         },
         "checks": [
             {
@@ -155,6 +193,67 @@ def test_validate_live_evidence_requires_observer_integrity_delta(tmp_path, caps
     assert "observer_delta is required" in output
 
 
+def test_validate_live_evidence_requires_observer_canary_report(tmp_path, capsys):
+    validator = importlib.import_module("scripts.validate_live_evidence")
+    manifest_path = _complete_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("observer_canary", None)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert validator.main(["--manifest", str(manifest_path)]) == 1
+
+    output = capsys.readouterr().out
+    assert "observer_canary is required" in output
+
+
+def test_validate_live_evidence_rejects_observer_canary_failures(tmp_path, capsys):
+    validator = importlib.import_module("scripts.validate_live_evidence")
+    manifest_path = _complete_manifest(tmp_path)
+    failed_report_path = tmp_path / "observer-canary-failed.json"
+    failed_report_path.write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-23T01:00:45+00:00",
+                "coverage": {
+                    "ok": False,
+                    "required_root_kinds": ["module_install", "web_auth"],
+                    "observed_root_kinds": ["module_install"],
+                    "missing_root_kinds": ["web_auth"],
+                    "trace_refs": [{"scenario": "module_install", "root_kind": "module_install", "trace_id": "trace-canary-1"}],
+                },
+                "results": [
+                    {"name": "module_install", "ok": True, "summary": "Installed canary module."},
+                    {"name": "coverage_web_auth", "ok": False, "summary": "No web auth trace."},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["observer_canary"] = {
+        "json_report_path": "observer-canary-failed.json",
+        "markdown_report_path": "observer-canary.md",
+        "required_root_kinds": ["module_install", "web_auth"],
+        "observed_root_kinds": ["module_install"],
+        "missing_root_kinds": ["web_auth"],
+        "failed_scenarios": ["coverage_web_auth"],
+        "coverage_status": "fail",
+        "status": "fail",
+        "checked_at": "2026-06-23T01:00:58+00:00",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert validator.main(["--manifest", str(manifest_path)]) == 1
+
+    output = capsys.readouterr().out
+    assert "observer_canary.coverage_status must be pass" in output
+    assert "observer_canary.status must be pass" in output
+    assert "observer_canary.missing_root_kinds must be empty" in output
+    assert "observer_canary.failed_scenarios must be empty" in output
+    assert "observer_canary report coverage.ok must be true" in output
+    assert "observer_canary report results must all pass" in output
+
+
 def test_validate_live_evidence_rejects_observer_integrity_delta_stop_conditions(tmp_path, capsys):
     validator = importlib.import_module("scripts.validate_live_evidence")
     manifest_path = _complete_manifest(tmp_path)
@@ -223,4 +322,5 @@ def test_validate_live_evidence_rejects_template_manifest(tmp_path, capsys):
     assert "commit is required" in output
     assert "preflight.local_commit is required" in output
     assert "observer_delta.baseline_run_id is required" in output
+    assert "observer_canary.json_report_path is required" in output
     assert "artifacts must contain at least one item" in output

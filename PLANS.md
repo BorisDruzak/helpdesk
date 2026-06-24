@@ -1148,7 +1148,7 @@ Blocking:
 - [x] `LIVE-306` Автоматизировать requester/support browser scenarios.
 - [x] `LIVE-307` Автоматизировать agent/operation scenarios.
 - [x] `LIVE-308` Доказать cleanup.
-- [ ] `LIVE-309` Интегрировать Observer canary report.
+- [x] `LIVE-309` Интегрировать Observer canary report.
 - [ ] `LIVE-310` Сформировать один release summary.
 
 **Gate:** pass невозможен без browser/API/DB/Observer evidence и commit parity.
@@ -1238,6 +1238,8 @@ Checkpoint 2026-06-24 LIVE-305: `test_data_packs/critical_behavior_v1.json` now 
 Checkpoint 2026-06-24 LIVE-306: `scripts/run_live_behavior_suite.py` now reads `test_data_packs/critical_behavior_v1.json`, selects requester/support live scenarios that require browser evidence, and builds/runs per-scenario commands for `webapp/scripts/live-browser-scenarios.mjs`. The Node Playwright probe uses real `/app/requester`, `/app/requester/tickets`, `/app/requester/new`, `/app/help`, `/app/support` and `/app/tickets` routes without `page.route()` mocks, logs in with role-specific environment credentials, captures screenshots plus DOM snippets, checks Russian page/title markers, and fails on console/page errors. Dry-run output lists eight requester/support browser scenarios and their exact commands; full live pass still requires API/DB/Observer evidence in the v2 manifest. Coverage: RED/GREEN `scripts/test_run_live_behavior_suite.py`, dry-run `python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --surfaces requester,support --dry-run --json`, and `node --check webapp/scripts/live-browser-scenarios.mjs`.
 
 Checkpoint 2026-06-24 LIVE-307: `scripts/run_live_behavior_suite.py` now also supports `--mode agent-operation` for agent/runtime and operation-lifecycle scenarios from `test_data_packs/critical_behavior_v1.json`. The mode selects `native_agent` and `operation_lifecycle` records and builds commands for existing safe probes: `scripts/live_agent_uia_state_probe.py` with `--expect-connected` plus bounded UIA output/screenshot paths, and `scripts/live_ws_v3_probe.py malformed-outbox` with a scenario run id for protocol/operation evidence. Dry-run output currently lists `tool_run_approve_deny_timeout` and `windows_linux_vm_agent_runtime`; full live pass still requires API/DB/Observer/agent SQLite evidence in the v2 manifest. Coverage: RED/GREEN `scripts/test_run_live_behavior_suite.py`, dry-run `python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --mode agent-operation --surfaces native_agent,operation_lifecycle --dry-run --json`, plus `python scripts/live_agent_uia_state_probe.py --help` and `python scripts/live_ws_v3_probe.py --help`.
+
+Checkpoint 2026-06-24 LIVE-309: `pc_client.live_evidence.v2` manifests now require an `observer_canary` block that points to the JSON and Markdown reports from `scripts/run_observer_canary_suite.py`. The validator loads the JSON report, requires coverage `ok=true`, non-empty required root kinds, no missing root kinds, no failed scenarios, report/manifest summary parity, pass coverage/status fields and an ISO `checked_at`; `scripts/live_evidence_pack.py` creates `observer-canary.md` and blocked manifest placeholders so a live pass cannot be claimed without canary evidence. Coverage: RED/GREEN `scripts/test_validate_live_evidence.py::test_validate_live_evidence_requires_observer_canary_report`, `::test_validate_live_evidence_rejects_observer_canary_failures`, and `scripts/test_live_evidence_pack.py`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 
@@ -1330,7 +1332,7 @@ python scripts/run_ci_suite.py --layer migration_schema
 ```powershell
 python scripts/audit_test_inventory.py --strict
 python scripts/audit_db_cleanup_schema.py --strict
-python scripts/validate_live_evidence.py artifacts/live/<run_id>/manifest.json
+python scripts/validate_live_evidence.py --manifest artifacts/live/<run_id>/manifest.json
 python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json
 ```
 

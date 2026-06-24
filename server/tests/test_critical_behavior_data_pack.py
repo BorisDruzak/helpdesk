@@ -79,7 +79,9 @@ def test_critical_behavior_data_pack_covers_workstream_d_matrix() -> None:
             assert MANDATORY_EVIDENCE <= evidence, scenario["key"]
             if scenario["surface"] in VISIBLE_SURFACES:
                 assert "browser" in evidence, scenario["key"]
-            assert {"preflight", "observer_delta"} <= set(scenario["manifest_requirements"]), scenario["key"]
+            assert {"preflight", "observer_delta", "observer_canary", "cleanup"} <= set(
+                scenario["manifest_requirements"]
+            ), scenario["key"]
             assert scenario["data_refs"], scenario["key"]
             assert scenario["expected_outcomes"], scenario["key"]
 

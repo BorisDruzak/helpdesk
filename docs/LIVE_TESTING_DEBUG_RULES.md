@@ -61,9 +61,9 @@ For non-trivial live runs, create a folder with checklist templates before colle
 python scripts/live_evidence_pack.py --run-id <run_id> --surface requester --ticket <ticket_code> --device <device_id>
 ```
 
-The script creates `artifacts/live/<run_id>/browser.md`, `api.md`, `server-db.md`, `agent-sqlite.md`, `logs.md`, `contamination.md`, `observer-delta.md`, and `manifest.json`. It is read-only: it does not query the browser, DB, logs, Observer, or agent. Its purpose is to make the required evidence layers explicit before the run starts.
+The script creates `artifacts/live/<run_id>/browser.md`, `api.md`, `server-db.md`, `agent-sqlite.md`, `logs.md`, `contamination.md`, `observer-delta.md`, `observer-canary.md`, and `manifest.json`. It is read-only: it does not query the browser, DB, logs, Observer, or agent. Its purpose is to make the required evidence layers explicit before the run starts.
 
-The `pc_client.live_evidence.v2` manifest must be filled with exact preflight commit/schema evidence and before/after Observer integrity delta evidence. A live pass is invalid if local/deployed commit or schema heads drift, if the baseline and scenario integrity scans are missing/incomplete, if a new active critical/high/error integrity event appears, if an unexpected suppression appears, if required traces are missing, or if trace outcome contradicts the DB outcome.
+The `pc_client.live_evidence.v2` manifest must be filled with exact preflight commit/schema evidence, before/after Observer integrity delta evidence, and an Observer canary JSON/Markdown report from `scripts/run_observer_canary_suite.py`. A live pass is invalid if local/deployed commit or schema heads drift, if the baseline and scenario integrity scans are missing/incomplete, if a new active critical/high/error integrity event appears, if an unexpected suppression appears, if required traces are missing, if trace outcome contradicts the DB outcome, or if the canary report has missing root kinds or failed scenarios.
 
 Requester/support live browser probes can be planned or run from the critical behavior pack:
 
@@ -77,7 +77,7 @@ Agent/runtime and operation-lifecycle probes use the same pack with a different 
 python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --mode agent-operation --surfaces native_agent,operation_lifecycle --dry-run --json
 ```
 
-The runner captures browser evidence through `webapp/scripts/live-browser-scenarios.mjs` and agent/operation evidence through existing UIA/WS probes. It does not replace the manifest's API, DB, Observer, cleanup, or preflight evidence.
+The runner captures browser evidence through `webapp/scripts/live-browser-scenarios.mjs` and agent/operation evidence through existing UIA/WS probes. It does not replace the manifest's API, DB, Observer delta, Observer canary, cleanup, or preflight evidence.
 
 ### Stop conditions
 

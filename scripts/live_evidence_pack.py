@@ -165,6 +165,24 @@ def _observer_delta_template(pack: EvidencePack) -> str:
     )
 
 
+def _observer_canary_template(pack: EvidencePack) -> str:
+    return (
+        "# Observer Canary Report\n\n"
+        f"{_base_context(pack)}\n"
+        "Run:\n"
+        "- [ ] `python scripts/run_observer_canary_suite.py --report-path <json> --markdown-report-path <md>` executed on the target stand\n"
+        "- [ ] JSON report path recorded in `manifest.json` as `observer_canary.json_report_path`\n"
+        "- [ ] Markdown report path recorded in `manifest.json` as `observer_canary.markdown_report_path`\n\n"
+        "Coverage:\n"
+        "- [ ] required root kinds recorded\n"
+        "- [ ] observed root kinds recorded\n"
+        "- [ ] missing root kinds is empty\n"
+        "- [ ] failed scenarios is empty\n"
+        "- [ ] coverage/status fields are `pass`\n\n"
+        "Evidence:\n\n"
+    )
+
+
 TEMPLATES = {
     "browser.md": _browser_template,
     "api.md": _api_template,
@@ -173,6 +191,7 @@ TEMPLATES = {
     "logs.md": _logs_template,
     "contamination.md": _contamination_template,
     "observer-delta.md": _observer_delta_template,
+    "observer-canary.md": _observer_canary_template,
 }
 
 
@@ -252,6 +271,17 @@ def create_pack(
             "checker_status": "blocked",
             "writer_status": "blocked",
             "correlation_status": "blocked",
+            "status": "blocked",
+            "checked_at": None,
+        },
+        "observer_canary": {
+            "json_report_path": None,
+            "markdown_report_path": None,
+            "required_root_kinds": [],
+            "observed_root_kinds": [],
+            "missing_root_kinds": [],
+            "failed_scenarios": [],
+            "coverage_status": "blocked",
             "status": "blocked",
             "checked_at": None,
         },

@@ -32,6 +32,7 @@ def test_live_evidence_pack_creates_expected_markdown_files(tmp_path):
         "logs.md",
         "contamination.md",
         "observer-delta.md",
+        "observer-canary.md",
     ]:
         assert (output_dir / name).is_file(), name
 
@@ -47,6 +48,8 @@ def test_live_evidence_pack_creates_expected_markdown_files(tmp_path):
     assert manifest["observer_delta"]["status"] == "blocked"
     assert manifest["observer_delta"]["before"]["scan_status"] == "blocked"
     assert manifest["observer_delta"]["after"]["scan_status"] == "blocked"
+    assert manifest["observer_canary"]["coverage_status"] == "blocked"
+    assert manifest["observer_canary"]["status"] == "blocked"
 
 
 def test_requester_surface_template_includes_account_session_and_binding_checks(tmp_path):
