@@ -1058,6 +1058,16 @@ def _db_cleanup_profile_audit_command(workspace: Path) -> list[str]:
     ]
 
 
+def _fixture_builder_audit_command(workspace: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(workspace / "scripts" / "audit_fixture_builders.py"),
+        "--workspace",
+        str(workspace),
+        "--strict",
+    ]
+
+
 def _branch_coverage_audit_command(workspace: Path) -> list[str]:
     return [
         sys.executable,
@@ -1277,6 +1287,14 @@ def main() -> None:
             "db_cleanup_profile_audit",
             _db_cleanup_profile_audit_command(args.workspace),
             logs_dir / "db_cleanup_profile_audit.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
+        ),
+        (
+            "fixture_builder_audit",
+            _fixture_builder_audit_command(args.workspace),
+            logs_dir / "fixture_builder_audit.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
             None,

@@ -8,6 +8,7 @@ asyncpg
 python-dateutil
 python-dotenv
 SQLAlchemy>=2.0
+jsonschema
 
 pytest
 pytest-asyncio
