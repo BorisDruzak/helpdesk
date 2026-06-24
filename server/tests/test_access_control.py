@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
@@ -153,16 +155,18 @@ def _support_headers() -> dict[str, str]:
 @pytest.mark.asyncio
 async def test_web_admin_access_group_crud_grants_effective_permissions(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    queue_code = f"access_network_{uuid.uuid4().hex[:8]}"
+    queue_name = "Network"
 
     async with session_maker() as session:
         session.add_all(
             [
                 UiUser(user_login="support-l2", password_hash="secret", actor_role="support", is_active=True),
-                TicketQueue(code="network", name="Network", is_triage=False, is_active=True),
+                TicketQueue(code=queue_code, name=queue_name, is_triage=False, is_active=True),
             ]
         )
         await session.commit()
-        queue = (await session.execute(TicketQueue.__table__.select().where(TicketQueue.code == "network"))).first()
+        queue = (await session.execute(TicketQueue.__table__.select().where(TicketQueue.code == queue_code))).first()
         queue_id = int(queue.id)
         session.add(TicketQueueMember(queue_id=queue_id, actor_id="support-l2", role_in_queue=None))
         await session.commit()
@@ -211,8 +215,8 @@ async def test_web_admin_access_group_crud_grants_effective_permissions(test_cli
     assert queue_grants == [
         {
             "queue_id": queue_id,
-            "queue_code": "network",
-            "queue_name": "Network",
+            "queue_code": queue_code,
+            "queue_name": queue_name,
             "role_in_queue": "lead",
         }
     ]
@@ -226,7 +230,7 @@ async def test_web_admin_access_group_crud_grants_effective_permissions(test_cli
     assert "support_l2" in effective["groups"]
     assert "admin.forms.view" in effective["permissions"]
     assert "settings.manage_queues" in effective["permissions"]
-    assert any(queue["queue_code"] == "network" and queue["role_in_queue"] == "lead" for queue in effective["queues"])
+    assert any(queue["queue_code"] == queue_code and queue["role_in_queue"] == "lead" for queue in effective["queues"])
     assert effective["sources"]["groups"] == ["support_l2"]
 
     audit_response = await test_client.get("/api/web/admin/access/audit", headers=_admin_headers())
