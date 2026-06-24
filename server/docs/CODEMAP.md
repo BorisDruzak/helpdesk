@@ -23,6 +23,7 @@
 | Сценарий | Открыть сначала | Затем |
 |------|------------------|-------|
 | Handshake / Protocol V3 | `server/websocket/agent_handshake.py` | `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md` |
+| Outbox multi-instance prerequisites | `quality/outbox_multi_instance_prerequisites.json`, `quality/active_risks.json`, `server/tests/test_outbox_multi_instance_prerequisites.py` | `server/websocket/device_outbox_sender.py`, `server/app/repos/device_outbox_repo.py`, `server/docs/COMMAND_RESULT_LIFECYCLE.md`; horizontal DeviceOutbox dispatch is blocked until TD-015 prerequisites pass |
 | `run_tool` / consent | `server/tools/service.py` | `server/app/services/operation_service.py`, `server/web_api/requester_handlers.py`, `server/web_api/registry_handlers.py`, `server/api/operations.py`, `server/docs/TOOL_CALL_STARTED_INVARIANT.md`; `ToolExecutionService` is the canonical facade for direct run_tool and approved-consent resume, while `OperationService.approve_consent()` only transitions the pre-created operation to `queued` and records the decision |
 | Remote Assist / WebRTC | `server/remote_assist/service.py` | `server/remote_assist/handlers.py`, `server/remote_assist/signaling.py`, `server/remote_assist/policy.py`, `server/remote_assist/ice.py`, `server/app/repos/remote_access_repo.py`, `server/docs/PROTOCOL_V3.md`; agent runtime-module bootstrap lives in `pc_agent/remote_assist/runtime_host.py` and managed package `pc_agent/modules_packages/remote_assist_runtime` |
 | Тикеты / очередь / чат | `server/tickets/handlers.py` | `server/tickets/create_flow.py`, `server/tickets/ticket_context.py`, `server/tickets/workflow_service.py`, `server/docs/TICKET_SYSTEM.md` |
@@ -266,6 +267,7 @@ Auth security update 2026-05-23/24: `server/auth/handlers.py` keeps `POST /api/l
 - **outbox_ack, outbox_nack** — `websocket/agent_services.py`, `websocket/outbox_ingest_components.py`, `websocket/protocol.py`
 - **run_tool** — `websocket/ui_handler.py`, `api/admin.py`, `tools/handlers.py`
 - **device_outbox, DeviceOutboxSender** — `websocket/device_outbox_sender.py`, `app/repos/device_outbox_repo.py`, `config.py` (`DEVICE_DISPATCH_*`); retry exhaustion теперь коррелируется обратно в `operations` и `agent_runtime_audit`
+- **outbox multi-instance gate** — `quality/outbox_multi_instance_prerequisites.json`, `quality/active_risks.json` TD-015, `server/tests/test_outbox_multi_instance_prerequisites.py`; horizontal dispatch is blocked until prerequisites pass
 - **command_result** — `websocket/agent_services.py`, `websocket/command_result_components.py`, `websocket/command_result_parser.py`, `app/repos/operations_repo.py`
 - **tool_call_started** — сервер создаёт до run_tool; идемпотентность: `docs/TOOL_CALL_STARTED_INVARIANT.md`
 - **device_seq, agent_seq** — тип события только по ним; `websocket/validator.py`, `app/repos/device_events_repo.py`, `app/repos/ticket_events_repo.py`

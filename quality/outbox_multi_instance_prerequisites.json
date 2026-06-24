@@ -1,0 +1,95 @@
+{
+  "schema": "pc_client.outbox_multi_instance_prerequisites.v1",
+  "status": "single_process_only",
+  "owner_zone": "server_runtime",
+  "last_reviewed": "2026-06-24",
+  "deployment_gate": {
+    "horizontal_server_dispatch": "blocked_until_prerequisites_pass",
+    "reason": "Current DeviceOutbox dispatch is safe for one server runtime owner; multi-instance deployment needs explicit DB coordination, lock ownership, connection ownership, lease recovery, and concurrency evidence before enabling more than one dispatching server process."
+  },
+  "current_runtime_contract": {
+    "dispatcher": "server/websocket/device_outbox_sender.py::ShardDispatcher",
+    "device_worker": "server/websocket/device_outbox_sender.py::DeviceDispatchService",
+    "coordination_table": "dispatch_ready_devices",
+    "lease_claim": "server/app/repos/device_outbox_repo.py::DeviceOutboxRepo.claim_dispatch_ready_device",
+    "ready_marker": "server/app/repos/device_outbox_repo.py::DeviceOutboxRepo.upsert_dispatch_ready_device",
+    "single_process_sharding": "stable hash(device_id) % DEVICE_DISPATCH_SHARDS inside one server process"
+  },
+  "current_single_process_guards": [
+    "server/tests/test_device_dispatch_integration.py::test_shard_dispatcher_light_load_50_devices_no_scheduling_loss",
+    "server/tests/test_device_dispatch_runtime.py::test_sharded_dispatch_commits_each_command_before_next_send"
+  ],
+  "required_before_horizontal_scaling": [
+    {
+      "id": "db_coordination",
+      "owner_zone": "server_runtime",
+      "requirement": "Prove PostgreSQL coordination for dispatch-ready devices across independent server processes, including atomic claim, expired-lease takeover, and no duplicate ready-owner drain for the same device.",
+      "evidence_refs": [
+        "server/app/repos/device_outbox_repo.py::DeviceOutboxRepo.claim_dispatch_ready_device",
+        "server/app/db/models.py::DispatchReadyDevice"
+      ],
+      "test_plan": [
+        "DB-backed concurrent claim test with two independent sessions and one dispatch_ready_devices row.",
+        "DB-backed expired lease takeover test that proves a second owner can claim only after lease_until is in the past."
+      ]
+    },
+    {
+      "id": "lock_ownership",
+      "owner_zone": "server_runtime",
+      "requirement": "Define lease_owner identity, heartbeat/renewal behavior, release semantics, and stale-owner cleanup so only the owner that claimed a device can reschedule or release it.",
+      "evidence_refs": [
+        "server/websocket/device_outbox_sender.py::DeviceDispatchService._drain_device",
+        "server/app/repos/device_outbox_repo.py::DeviceOutboxRepo.reschedule_dispatch_ready_device",
+        "server/app/repos/device_outbox_repo.py::DeviceOutboxRepo.release_dispatch_ready_device"
+      ],
+      "test_plan": [
+        "Unit test that non-owner reschedule/release cannot clear another live owner's lease.",
+        "Crash simulation test where an owner disappears and the next process drains after lease expiry without command loss."
+      ]
+    },
+    {
+      "id": "agent_connection_ownership",
+      "owner_zone": "server_runtime",
+      "requirement": "Record which server process owns each live agent WebSocket and route dispatch only through that owner, or provide a shared connection registry/forwarding path before non-owner processes can claim dispatch.",
+      "evidence_refs": [
+        "server/state_manager.py",
+        "server/websocket/agent_handler.py",
+        "server/websocket/device_outbox_sender.py::DeviceDispatchService._drain_device"
+      ],
+      "test_plan": [
+        "Multi-instance handoff test where a device reconnects to a second process while the first has a stale dispatch lease.",
+        "Routing test that a non-owner dispatch claim does not attempt to send over a missing local WebSocket."
+      ]
+    },
+    {
+      "id": "lease_recovery",
+      "owner_zone": "server_runtime",
+      "requirement": "Bound all lease durations, retries, and reconciliation intervals so missed wakeups and process crashes recover without duplicate sends or permanently stuck pending commands.",
+      "evidence_refs": [
+        "server/websocket/device_outbox_sender.py::DispatchReconciler",
+        "server/app/repos/device_outbox_repo.py::DeviceOutboxRepo.list_devices_with_pending",
+        "server/app/repos/device_outbox_repo.py::DeviceOutboxRepo.has_pending_for_device"
+      ],
+      "test_plan": [
+        "Integration test that drops an in-memory wakeup and proves the reconciler recreates the ready marker.",
+        "Integration test that sends a command, crashes before release, waits for lease expiry, and verifies exactly one terminal outbox/operation outcome."
+      ]
+    },
+    {
+      "id": "multi_instance_test_plan",
+      "owner_zone": "server_runtime",
+      "requirement": "Add a dedicated multi-instance dispatch test plan before deployment enables more than one dispatching server process.",
+      "evidence_refs": [
+        "server/tests/test_device_dispatch_runtime.py",
+        "server/tests/test_device_dispatch_integration.py",
+        "server/docs/COMMAND_RESULT_LIFECYCLE.md"
+      ],
+      "test_plan": [
+        "Concurrent PostgreSQL claim tests for dispatch_ready_devices.",
+        "Two-server-process smoke with one agent connection owner and one non-owner contender.",
+        "Duplicate-send sentinel using operation_id/command_id/device_outbox ids.",
+        "Observer integrity scan after the scenario with no active critical/high outbox lifecycle events."
+      ]
+    }
+  ]
+}

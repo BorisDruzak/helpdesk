@@ -23,6 +23,17 @@
 > must mark the operation terminal failed and reconcile the matching
 > `device_outbox` row instead of leaving it `sent`.
 
+## Multi-instance dispatch gate
+
+DeviceOutbox dispatch is currently a single-process runtime contract. More than
+one dispatching server process must not be enabled until
+`quality/outbox_multi_instance_prerequisites.json` is fully implemented and the
+TD-015 gate in `quality/active_risks.json` passes. The blocked prerequisites are
+DB coordination for `dispatch_ready_devices`, lock owner semantics, live agent
+connection ownership, lease recovery, and a multi-instance duplicate-send test
+plan. The current guard is `server/tests/test_outbox_multi_instance_prerequisites.py`
+plus the existing sharded single-process dispatcher tests.
+
 ## Инварианты
 
 ### Инвариант 0: terminal `tool_call` публикует `tool_call_result` в ticket_events

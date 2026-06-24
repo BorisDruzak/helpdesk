@@ -170,7 +170,7 @@
     {
       "id": "TD-015",
       "priority": "P3",
-      "status": "active",
+      "status": "accepted",
       "owner_zone": "server_runtime",
       "risk": "Device outbox dispatch is still process-local for runtime ownership; multi-instance deployment needs explicit DB coordination and locking prerequisites.",
       "affected_contracts": [
@@ -199,9 +199,10 @@
       "evidence_refs": [
         "server/docs/PROTOCOL_V3.md",
         "server/docs/CODEMAP.md",
+        "quality/outbox_multi_instance_prerequisites.json",
         "docs/IMPLEMENTATION_PLAN_THIN_HANDLER_OUTBOX_ASYNC.md"
       ],
-      "escalation_trigger": "Deployment adds multiple server dispatch instances before TD-507 records DB locking/lease prerequisites and tests.",
+      "escalation_trigger": "Deployment adds multiple server dispatch instances before quality/outbox_multi_instance_prerequisites.json is fully implemented and its DB locking/lease/connection-owner tests pass.",
       "acceptance_criteria": [
         {
           "metric": "single-process dispatch regression",
@@ -209,10 +210,14 @@
         },
         {
           "metric": "multi-instance prerequisite record",
-          "target": "TD-507 records DB coordination, lock ownership, and test plan before horizontal scaling"
+          "target": "quality/outbox_multi_instance_prerequisites.json records DB coordination, lock ownership, connection ownership, lease recovery, and test plan before horizontal scaling"
         }
       ],
       "linked_tests": [
+        {
+          "ref": "server/tests/test_outbox_multi_instance_prerequisites.py::test_outbox_multi_instance_prerequisites_are_recorded",
+          "purpose": "Guards the multi-instance dispatch prerequisite record and horizontal scaling deployment gate."
+        },
         {
           "ref": "server/tests/test_device_dispatch_integration.py::test_shard_dispatcher_light_load_50_devices_no_scheduling_loss",
           "purpose": "Guards current sharded dispatch scheduling under light load."
