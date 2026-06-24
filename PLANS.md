@@ -2,10 +2,11 @@
 
 ## Статус и область
 
-- **Статус:** implementation in progress; P0 Observer completeness and release/live validation remain blocked.
+- **Статус:** implementation largely complete; release/live validation blocked; P0 Observer scan completeness remains `[~]`.
 - **Дата анализа:** 2026-06-24.
 - **Анализируемая ветка:** `codex/helpdesk-process-model`.
-- **Current branch revision at start of release-summary gate slice:** `f7575937b1d9f1dd62419a28062d58fa59fa0e60`; last Observer completeness code revision: `93911118c8c37c8fa76385298fdbd6807991c524`.
+- **Current implementation revision:** `273d03d7fffd4b65fdee6d1f37d56220c0212164`; last Observer completeness code revision: `93911118c8c37c8fa76385298fdbd6807991c524`.
+- **Latest Observer scan completeness evidence:** DB-backed `runtime_presence` 501-row boundary test passed on current HEAD (`server/tests/test_observer_integrity_scan_completeness.py::test_runtime_presence_marks_incomplete_at_device_limit_plus_one`, 1 passed in 452.28s); the full P0 item is still open until 201/301 DB boundaries, resolve-only-current-finding, and CI/release evidence are green.
 - **Release readiness:** blocked; P0 Observer scan completeness is `[~]`, not `[x]`.
 - **Основная цель:** сделать исправление багов воспроизводимым, тесты — достоверными, live-проверки — доказательными, а технический долг — управляемым.
 - **Критические зоны:** ticket/requester/support behavior, Protocol V3, agent runtime, PostgreSQL, Observer overlay, webapp, CI/release scripts.
@@ -17,7 +18,7 @@
 
 Статусы: `[ ]` не начато или нет достаточной реализации, `[~]` частично реализовано и требуется доказательство/доработка, `[x]` закрыто кодом и проверками.
 
-- [~] **P0 Observer scan completeness**: **статус 2026-06-24: частично закрыт, не `[x]`.** Code-side fail-closed path реализован в `93911118` (`ObserverIntegrityCheckResult` для top-level checkers, `LIMIT + 1` windows, `runtime_presence` incomplete при отсутствии state, неизвестная `source_complete` больше не считается complete по умолчанию, no-DB regression прошел). Недостающее для закрытия: green DB-backed 201/301/501 tests в isolated PostgreSQL для current HEAD, DB-сценарий "исправили одну ошибку - resolved только она, не строки вне текущей страницы", и включение этой проверки в актуальный CI/release evidence. Следующий шаг: сделать DB-backed scan completeness tests детерминированными, добавить resolve-only-current-finding сценарий и только после green CI/release evidence перевести пункт в `[x]`.
+- [~] **P0 Observer scan completeness**: **статус 2026-06-24: частично закрыт, не `[x]`.** Code-side fail-closed path реализован в `93911118` (`ObserverIntegrityCheckResult` для top-level checkers, `LIMIT + 1` windows, `runtime_presence` incomplete при отсутствии state, неизвестная `source_complete` больше не считается complete по умолчанию, no-DB regression прошел). Свежая DB-улика на current HEAD: `runtime_presence` 501-row boundary test прошел в isolated PostgreSQL (`1 passed in 452.28s`), но setup занял 448.95s и не заменяет полный набор. Недостающее для закрытия: green DB-backed 201/301/501 tests как единый стабильный набор на current HEAD, DB-сценарий "исправили одну ошибку - resolved только она, не строки вне текущей страницы", и включение этой проверки в актуальный CI/release evidence. Следующий шаг: добавить resolve-only-current-finding сценарий, прогнать весь `server/tests/test_observer_integrity_scan_completeness.py` без shared fallback и только после green CI/release evidence перевести пункт в `[x]`.
 - [~] **P0/P1 integrity checker isolation**: savepoint isolation и scanned-window metadata начаты, но еще нет bounded timeout, persisted per-check run report, duration/cursor/window в отчете и правила resolve только при `status=passed && complete=true`.
 - [ ] **P0 full live behavior pack**: нужно выполнить весь `critical_behavior_v1.json` на одном frozen commit/environment и получить 17 passing `pc_client.live_evidence.v2` manifests.
 - [x] **P0 strict live release summary aggregator**: `build_live_release_summary.py` теперь выбирает manifests только по `--commit`, `--environment`, `--release-run-id`, `--expected-schema-head`; fail текущего release context доминирует над pass из старого commit/run/schema. Доказательства: RED/GREEN `scripts/test_build_live_release_summary.py::test_build_live_release_summary_filters_to_exact_release_context_and_fail_wins`; smoke для current HEAD `f7575937...`/`stand`/`f7575937-stand`/schema `080` корректно вернул `blocked` и 17 missing без учета старых manifests.
