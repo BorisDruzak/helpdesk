@@ -262,6 +262,7 @@ Security update 2026-06-15:
 - `default_workspace`, `available_workspaces`, `permissions` и `permissions_version` формируются сервером по effective access и считаются каноничным источником истины для redirect/access-gate и element-visibility логики нового `/app/*`; React-клиент не должен заново вычислять эти права из произвольных role-switch веток.
 - `POST /api/web/session/logout` отзывает текущий UI token server-side и очищает cookie.
 - Новый React `webapp` под `/app/*` не хранит bearer token в `localStorage`; сервер остаётся источником истины для web session через cookie и `AuthContext`.
+- React `SessionProvider` treats `/api/web/session/me` bootstrap, manual refresh, login and logout as ordered session transitions: stale earlier responses must not overwrite a newer account state after login/logout.
 - `GET /api/web/realtime/bootstrap` возвращает typed transport contract для нового `webapp` (`transport`, `auth_mode`, `socket_url`, `hello_message_type`, channel contracts). Реальное websocket-подключение идёт в `/ws_ui` и использует ту же cookie-session без раскрытия raw token в JS.
 
 ### 5.5 Web access-control catalog: `/api/web/admin/access/*`

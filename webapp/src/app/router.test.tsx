@@ -823,7 +823,7 @@ describe("appRoutes", () => {
     const { router } = renderApp(["/app/requester/create"], fetchMock as typeof fetch);
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/app/requester/new"));
-    expect(await screen.findByRole("heading", { name: "Опишите проблему" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Категория и форма" })).toBeInTheDocument();
   });
 
   it("renders a requester-safe not-found page for unknown requester routes", async () => {

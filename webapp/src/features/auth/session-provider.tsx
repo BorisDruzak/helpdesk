@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   fetchCurrentSession,
@@ -29,40 +29,58 @@ type SessionProviderProps = {
 export function SessionProvider({ children }: SessionProviderProps) {
   const [session, setSession] = useState<WebSession | null>(null);
   const [status, setStatus] = useState<SessionStatus>("loading");
+  const sessionRequestVersion = useRef(0);
 
   async function refreshSession() {
+    const requestVersion = sessionRequestVersion.current + 1;
+    sessionRequestVersion.current = requestVersion;
     const currentSession = await fetchCurrentSession();
+    if (requestVersion !== sessionRequestVersion.current) {
+      return;
+    }
 
     setSession(currentSession);
     setStatus(currentSession ? "authenticated" : "anonymous");
   }
 
   async function login(credentials: { login: string; password: string }) {
+    const requestVersion = sessionRequestVersion.current + 1;
+    sessionRequestVersion.current = requestVersion;
     const nextSession = await loginWebSession(credentials);
+    if (requestVersion !== sessionRequestVersion.current) {
+      return nextSession;
+    }
     setSession(nextSession);
     setStatus("authenticated");
     return nextSession;
   }
 
   async function logout() {
+    const requestVersion = sessionRequestVersion.current + 1;
+    sessionRequestVersion.current = requestVersion;
     await logoutWebSession();
+    if (requestVersion !== sessionRequestVersion.current) {
+      return;
+    }
     setSession(null);
     setStatus("anonymous");
   }
 
   useEffect(() => {
     let active = true;
+    const requestVersion = sessionRequestVersion.current + 1;
+    sessionRequestVersion.current = requestVersion;
 
     void (async () => {
       try {
         const currentSession = await fetchCurrentSession();
-        if (!active) {
+        if (!active || requestVersion !== sessionRequestVersion.current) {
           return;
         }
         setSession(currentSession);
         setStatus(currentSession ? "authenticated" : "anonymous");
       } catch {
-        if (!active) {
+        if (!active || requestVersion !== sessionRequestVersion.current) {
           return;
         }
         setSession(null);

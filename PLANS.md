@@ -1132,7 +1132,7 @@ Blocking:
 - [x] `BEH-205` Tool operation/outbox/result/ACK.
 - [x] `BEH-206` Consent approve/deny/timeout/cancel race.
 - [x] `BEH-207` Agent reconnect/replay/duplicate.
-- [ ] `BEH-208` Auth/account/session isolation.
+- [x] `BEH-208` Auth/account/session isolation.
 - [ ] `BEH-209` Knowledge/Registry audience rules.
 - [ ] `BEH-210` Observer non-mutation/redaction property tests.
 
@@ -1222,6 +1222,8 @@ Checkpoint 2026-06-24 BEH-205/TD-502: Protocol V3 agent recovery now handles an 
 Checkpoint 2026-06-23 BEH-206: `UserConsentService` now re-checks the linked operation before applying browser/agent approve or deny. If an operation consent is still pending but the operation already reached `cancel_requested`, `canceled`, `denied`, `failed`, `succeeded` or `timed_out`, the server atomically marks the consent `canceled`, writes `user_consent_canceled`, and skips both `ConsentDecision` and `DeviceOutbox` side effects. `OperationService.approve_consent()` / `deny_consent()` also write `ConsentDecision` only after the guarded operation transition succeeds. Coverage: requester approve-after-cancel and deny-after-timeout paths in `server/tests/test_user_consent_api.py::test_requester_decision_after_operation_no_longer_actionable_cancels_consent_without_side_effects`.
 
 Checkpoint 2026-06-23 BEH-207: agent duplicate terminal command responses now use the durable `pending_command_results` path before sending. If a cached `success`/`canceled` result or cached/recovered `AGENT_RESTARTED` result is redelivered and the websocket drops during duplicate-send, the result remains queued for reconnect replay until `command_result_ack`. Coverage: `pc_agent/tests/test_command_restart_recovery.py::test_cached_terminal_duplicate_send_failure_remains_pending_for_replay` plus command-result replay/ACK cleanup, seen-command retry policy, canceled-command idempotency and server `command_result_ack` tests.
+
+Checkpoint 2026-06-24 BEH-208: React web-session state now treats bootstrap, refresh, login and logout as ordered account transitions. A delayed `/api/web/session/me` bootstrap for a previous account cannot overwrite a newer successful login/logout state, which closes the account-switch stale UI bootstrap case while server-side `AuthContext`, cookie, account-session and requester visibility boundaries remain authoritative. Coverage: RED/GREEN `webapp/src/features/auth/session-provider.test.tsx::ignores stale bootstrap responses after a newer login succeeds` plus existing web-session logout/revoke/CSRF and requester/account-session isolation tests.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SessionProvider, useSession } from "./session-provider";
@@ -21,6 +21,26 @@ function SessionProbe() {
     <div>
       <span>{status}</span>
       <span>{session?.user_login ?? "anon"}</span>
+    </div>
+  );
+}
+
+
+function LoginProbe() {
+  const { login, session, status } = useSession();
+
+  return (
+    <div>
+      <span data-testid="status">{status}</span>
+      <span data-testid="user">{session?.user_login ?? "anon"}</span>
+      <button
+        type="button"
+        onClick={() => {
+          void login({ login: "support2", password: "secret" });
+        }}
+      >
+        login support
+      </button>
     </div>
   );
 }
@@ -78,5 +98,66 @@ describe("SessionProvider", () => {
 
     expect(await screen.findByText("anonymous")).toBeInTheDocument();
     expect(screen.getByText("anon")).toBeInTheDocument();
+  });
+
+  it("ignores stale bootstrap responses after a newer login succeeds", async () => {
+    let resolveBootstrap!: (response: Response) => void;
+    const bootstrapResponse = new Promise<Response>((resolve) => {
+      resolveBootstrap = resolve;
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: unknown, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/web/session/me") {
+          return bootstrapResponse;
+        }
+        if (url === "/api/web/session/login" && init?.method === "POST") {
+          return Promise.resolve(
+            jsonResponse({
+              status: "success",
+              data: {
+                user_login: "support2",
+                actor_role: "support",
+                auth_type: "ui_token",
+                default_workspace: "support",
+                available_workspaces: ["support"]
+              }
+            })
+          );
+        }
+        return Promise.resolve(jsonResponse({ status: "error", error: "unexpected fetch" }, 404));
+      })
+    );
+
+    render(
+      <SessionProvider>
+        <LoginProbe />
+      </SessionProvider>
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "login support" }));
+
+    expect(await screen.findByText("support2")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveBootstrap(
+        jsonResponse({
+          status: "success",
+          data: {
+            user_login: "admin1",
+            actor_role: "admin",
+            auth_type: "ui_token",
+            default_workspace: "admin",
+            available_workspaces: ["admin", "support"]
+          }
+        })
+      );
+      await bootstrapResponse;
+    });
+
+    expect(screen.getByTestId("status")).toHaveTextContent("authenticated");
+    expect(screen.getByTestId("user")).toHaveTextContent("support2");
   });
 });
