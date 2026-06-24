@@ -4159,7 +4159,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="release",
         title="Release / deploy / smoke",
-        summary="Local verification, root pytest collection, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, selectable marker/domain layered pytest CI with isolated test DBs, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
+        summary="Local verification, root pytest collection, quick deploy gates for iteration, explicit-request full CI/full gate for final release checkpoints, affected-suite fast gate, selectable marker/domain layered pytest CI with isolated test DBs, deploy to Linux, runtime control, canonical server/control wrappers, smoke and browser checks.",
         aliases=(
             "release",
             "deploy",
@@ -4187,6 +4187,10 @@ TOPICS: tuple[Topic, ...] = (
             "fixture builder audit",
             "fixture builders",
             "schema-validated fixture",
+            "affected-suite",
+            "affected suite",
+            "affected gate",
+            "full merge gate",
         ),
         first_files=(
             "scripts/verify_workspace.py",
@@ -4235,6 +4239,8 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest server/tests/test_property_state_contracts_no_db.py -q --tb=short",
             "python scripts/run_ci_suite.py --layer webapp_fixture_e2e",
             "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
+            "python scripts/run_ci_suite.py --changed-path server/knowledge/search_service.py",
+            "python scripts/run_ci_suite.py --affected-from origin/main",
             "python scripts/run_ci_suite.py --parallel --parallel-measurements artifacts/ci/<sha>/fixture-timings-summary.json",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
             "python scripts/summarize_fixture_timings.py artifacts/ci/<sha> --enforce-budget",
@@ -4260,6 +4266,8 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest server/tests/test_property_state_contracts_no_db.py -q --tb=short",
             "python scripts/run_ci_suite.py --layer webapp_fixture_e2e",
             "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
+            "python scripts/run_ci_suite.py --changed-path server/knowledge/search_service.py",
+            "python scripts/run_ci_suite.py --affected-from origin/main",
             "python scripts/run_ci_suite.py --parallel --parallel-measurements artifacts/ci/<sha>/fixture-timings-summary.json",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
             "python scripts/summarize_fixture_timings.py artifacts/ci/<sha> --enforce-budget",

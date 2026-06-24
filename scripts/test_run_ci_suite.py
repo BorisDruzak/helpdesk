@@ -625,6 +625,99 @@ def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
     assert "webapp_bundle" in summary["available_layers"]
 
 
+def test_main_can_run_affected_gate_for_changed_server_domain(tmp_path, monkeypatch):
+    summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
+    _write_layer_test_files(tmp_path)
+    steps_seen: list[str] = []
+
+    monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
+    monkeypatch.setattr(run_ci_suite, "summary_path_for_commit", lambda workspace, commit: summary_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_ci_suite.py",
+            "--workspace",
+            str(tmp_path),
+            "--commit",
+            "deadbeef",
+            "--changed-path",
+            "server/knowledge/search_service.py",
+        ],
+    )
+
+    def fake_run_and_capture(
+        command: list[str],
+        *,
+        cwd: Path,
+        log_path: Path,
+        step_name: str,
+        timeout_seconds: float,
+        idle_timeout_seconds: float | None,
+        env_overrides: dict[str, str] | None = None,
+        mirror_output: bool = True,
+    ) -> dict[str, object]:
+        steps_seen.append(step_name)
+        return _fake_ci_result(step_name, log_path, timeout_seconds)
+
+    monkeypatch.setattr(run_ci_suite, "run_and_capture", fake_run_and_capture)
+
+    run_ci_suite.main()
+
+    assert steps_seen == [
+        "verify_workspace",
+        "webapp_bundle",
+        "webapp_unit_tests",
+        "test_inventory_audit",
+        "db_cleanup_profile_audit",
+        "fixture_builder_audit",
+        "branch_coverage_audit",
+        "mutation_smoke",
+        "scripts_pytest_no_db",
+        "server_pytest_no_db",
+        "server_pytest_db_knowledge",
+    ]
+    summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["gate_mode"] == "affected"
+    assert summary["full_merge_gate_required"] is True
+    assert summary["full_merge_gate_satisfied"] is False
+    assert summary["effective_layers"] == steps_seen
+    assert summary["affected_selection"]["changed_paths"] == ["server/knowledge/search_service.py"]
+    assert summary["affected_selection"]["affected_layers"] == steps_seen
+    assert "server/knowledge/search_service.py" in summary["affected_selection"]["selection_reasons"][
+        "server_pytest_db_knowledge"
+    ]
+
+
+def test_main_rejects_combining_layer_and_affected_selection(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
+    monkeypatch.setattr(
+        run_ci_suite,
+        "summary_path_for_commit",
+        lambda workspace, commit: tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_ci_suite.py",
+            "--workspace",
+            str(tmp_path),
+            "--commit",
+            "deadbeef",
+            "--changed-path",
+            "server/knowledge/search_service.py",
+            "--layer",
+            "server_pytest_db_knowledge",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_ci_suite.main()
+
+    assert "--layer cannot be combined with affected-suite selection" in str(exc_info.value)
+
+
 def _write_layer_test_files(tmp_path: Path) -> None:
     tests_dir = tmp_path / "server" / "tests"
     tests_dir.mkdir(parents=True)

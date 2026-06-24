@@ -130,6 +130,75 @@ SERVER_DB_API_LAYER_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
 )
 
+AFFECTED_BASE_LAYERS: tuple[str, ...] = (
+    "verify_workspace",
+    "webapp_bundle",
+    "webapp_unit_tests",
+    "test_inventory_audit",
+    "db_cleanup_profile_audit",
+    "fixture_builder_audit",
+    "branch_coverage_audit",
+    "mutation_smoke",
+    "scripts_pytest_no_db",
+)
+
+SERVER_DB_DOMAIN_LAYERS: tuple[str, ...] = tuple(name for name, _patterns in SERVER_DB_API_LAYER_RULES) + (
+    "server_pytest_db_web_api",
+)
+
+SERVER_SOURCE_LAYER_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "server_pytest_db_knowledge",
+        (
+            "server/knowledge/",
+            "server/customer_history/",
+            "server/web_api/knowledge",
+            "content_packs/knowledge/",
+        ),
+    ),
+    (
+        "server_pytest_db_tickets",
+        (
+            "server/tickets/",
+            "server/requester/",
+            "server/registry/",
+            "server/access_control/",
+            "server/playbooks/",
+            "server/web_api/requester",
+            "server/web_api/support",
+            "server/web_api/registry",
+            "server/web_api/access",
+            "server/web_api/settings",
+            "server/web_api/reports",
+            "server/web_api/admin",
+        ),
+    ),
+    (
+        "server_pytest_db_observer_diagnostics",
+        (
+            "server/observer/",
+            "server/tech/",
+            "server/diagnostic",
+            "server/web_api/tech",
+            "server/web_api/observer",
+        ),
+    ),
+    (
+        "server_pytest_db_agent_runtime",
+        (
+            "server/websocket/",
+            "server/tools/",
+            "server/modules/",
+            "server/device_operations/",
+            "server/approvals/",
+            "server/remote_assist/",
+            "server/app/services/operation",
+            "server/app/repos/device",
+            "server/app/repos/outbox",
+        ),
+    ),
+)
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 if hasattr(sys.stderr, "reconfigure"):
@@ -166,6 +235,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--parallel-measurements",
         type=Path,
         help="Fixture timing summary JSON used to cap --parallel worker count from measured budget status.",
+    )
+    parser.add_argument(
+        "--affected-from",
+        help=(
+            "Run a fast affected-suite gate for files changed since this git ref. "
+            "The resulting summary is not a full merge gate."
+        ),
+    )
+    parser.add_argument(
+        "--changed-path",
+        action="append",
+        default=[],
+        help=(
+            "Add a changed path to affected-suite selection. May be supplied multiple times. "
+            "Cannot be combined with --layer."
+        ),
     )
     parser.add_argument("--verify-timeout", type=float, default=DEFAULT_VERIFY_TIMEOUT_SECONDS)
     parser.add_argument("--web-build-timeout", type=float, default=DEFAULT_WEB_BUILD_TIMEOUT_SECONDS)
@@ -1171,6 +1256,112 @@ def _filter_steps_by_layer(
     return [step for step in steps if step[0] in requested]
 
 
+def _normalize_changed_path(path: str) -> str:
+    return path.replace("\\", "/").strip().lstrip("./")
+
+
+def _changed_paths_from_git(workspace: Path, base_ref: str) -> list[str]:
+    errors: list[str] = []
+    for revision_range in (f"{base_ref}...HEAD", f"{base_ref}..HEAD"):
+        completed = subprocess.run(
+            ["git", "diff", "--name-only", "--diff-filter=ACMRTUXB", revision_range],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        if completed.returncode == 0:
+            return [
+                normalized
+                for normalized in (_normalize_changed_path(line) for line in completed.stdout.splitlines())
+                if normalized
+            ]
+        errors.append((completed.stderr or completed.stdout or "").strip())
+    detail = "; ".join(error for error in errors if error) or "git diff failed"
+    raise SystemExit(f"Could not compute affected paths from {base_ref!r}: {detail}")
+
+
+def _server_db_layers_for_changed_path(path: str) -> list[str]:
+    filename = Path(path).name
+    if path.startswith("server/tests/"):
+        if filename == MIGRATION_SCHEMA_TEST_PATH.name:
+            return ["migration_schema"]
+        if "no_db" in filename:
+            return []
+        return [_classify_server_db_api_test_file(filename)]
+
+    if (
+        path.startswith("server/app/db/")
+        or path.startswith("server/app/models")
+        or path.startswith("server/models")
+        or path == "quality/db_table_classification.toml"
+    ):
+        return ["migration_schema", *SERVER_DB_DOMAIN_LAYERS]
+
+    for layer_name, prefixes in SERVER_SOURCE_LAYER_RULES:
+        if any(path.startswith(prefix) for prefix in prefixes):
+            return [layer_name]
+
+    if path.startswith("server/web_api/"):
+        return ["server_pytest_db_web_api"]
+    if path.startswith("server/"):
+        return list(SERVER_DB_DOMAIN_LAYERS)
+    return []
+
+
+def _affected_selection_for_paths(changed_paths: list[str], available_layers: list[str]) -> dict[str, object]:
+    available = set(available_layers)
+    selected: set[str] = set()
+    reasons: dict[str, list[str]] = {}
+
+    def add_layer(layer_name: str, reason: str) -> None:
+        if layer_name not in available:
+            return
+        selected.add(layer_name)
+        reasons.setdefault(layer_name, [])
+        if reason not in reasons[layer_name]:
+            reasons[layer_name].append(reason)
+
+    for layer_name in AFFECTED_BASE_LAYERS:
+        add_layer(layer_name, "base_fast_gate")
+
+    normalized_paths = [_normalize_changed_path(path) for path in changed_paths]
+    normalized_paths = [path for path in normalized_paths if path]
+    if not normalized_paths:
+        reasons.setdefault("verify_workspace", []).append("no_changed_paths")
+
+    for path in normalized_paths:
+        if path.startswith("webapp/"):
+            add_layer("webapp_fixture_e2e", path)
+        elif path.startswith("pc_agent/"):
+            add_layer("pc_agent_pytest", path)
+        elif path.startswith("server/"):
+            add_layer("server_pytest_no_db", path)
+            for layer_name in _server_db_layers_for_changed_path(path):
+                add_layer(layer_name, path)
+        elif path.startswith("shared/"):
+            add_layer("server_pytest_no_db", path)
+        elif path.startswith("test_data_packs/") or path.startswith("quality/"):
+            add_layer("fixture_builder_audit", path)
+        elif path.startswith("artifacts/") or path.startswith("output/"):
+            continue
+        elif not (
+            path.startswith("scripts/")
+            or path.startswith("docs/")
+            or path in {"PLANS.md", "requirements-ci.txt", "pytest.ini"}
+        ):
+            for layer_name in available_layers:
+                add_layer(layer_name, f"unknown_path:{path}")
+
+    affected_layers = [layer_name for layer_name in available_layers if layer_name in selected]
+    return {
+        "schema": "pc_client.affected_suite_selection.v1",
+        "changed_paths": normalized_paths,
+        "affected_layers": affected_layers,
+        "selection_reasons": {layer_name: reasons.get(layer_name, []) for layer_name in affected_layers},
+    }
+
+
 def _resolve_command(name: str) -> str:
     candidates = [name]
     if os.name == "nt":
@@ -1198,6 +1389,12 @@ def _webapp_fixture_e2e_command(workspace: Path) -> list[str]:
 
 def main() -> None:
     args = parse_args()
+    affected_mode = bool(args.affected_from or args.changed_path)
+    if args.layer and affected_mode:
+        raise SystemExit("--layer cannot be combined with affected-suite selection")
+    changed_paths = [_normalize_changed_path(path) for path in args.changed_path]
+    if args.affected_from:
+        changed_paths.extend(_changed_paths_from_git(args.workspace, args.affected_from))
     max_workers = args.max_workers if args.max_workers is not None else (2 if args.parallel else 1)
     if max_workers < 1:
         raise SystemExit("--max-workers must be >= 1")
@@ -1393,7 +1590,14 @@ def main() -> None:
         ),
     ]
     available_layers = [step_name for step_name, *_rest in steps]
-    steps = _filter_steps_by_layer(steps, args.layer)
+    affected_selection: dict[str, object] | None = None
+    requested_layers = list(args.layer)
+    if affected_mode:
+        affected_selection = _affected_selection_for_paths(changed_paths, available_layers)
+        requested_layers = list(affected_selection["affected_layers"])
+    steps = _filter_steps_by_layer(steps, requested_layers)
+    effective_layers = [step_name for step_name, *_rest in steps]
+    gate_mode = "affected" if affected_mode else ("selected" if args.layer else "full")
 
     results: list[dict[str, object]] = []
     parallel_groups: list[dict[str, object]] = []
@@ -1466,6 +1670,7 @@ def main() -> None:
             flaky_gate_error = "Unknown or invalid retry-pass flaky records are present"
             print(f"[ci] flaky gate error: {flaky_gate_error}", file=sys.stderr)
         junit_artifacts = _junit_artifacts(artifact_dir, args.workspace)
+        full_merge_gate_satisfied = status == "green" and effective_layers == available_layers
         summary = {
             "commit": commit,
             "status": status,
@@ -1473,6 +1678,10 @@ def main() -> None:
             "finished_at": now_iso(),
             "requested_layers": args.layer,
             "available_layers": available_layers,
+            "effective_layers": effective_layers,
+            "gate_mode": gate_mode,
+            "full_merge_gate_required": not full_merge_gate_satisfied,
+            "full_merge_gate_satisfied": full_merge_gate_satisfied,
             "parallel_enabled": bool(args.parallel),
             "max_workers": max_workers,
             "parallel_groups": parallel_groups,
@@ -1504,6 +1713,8 @@ def main() -> None:
             summary["parallel_warning"] = parallel_warning
         if parallel_measurement_decision:
             summary["parallel_measurement_decision"] = parallel_measurement_decision
+        if affected_selection:
+            summary["affected_selection"] = affected_selection
         if fixture_timings_error:
             summary["fixture_timings_error"] = fixture_timings_error
         if flaky_gate_error:

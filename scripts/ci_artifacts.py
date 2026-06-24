@@ -89,6 +89,18 @@ def shared_db_fallback_logs(summary_path: Path, summary: dict[str, Any]) -> list
     return offenders
 
 
+def _is_full_merge_gate_summary(summary: dict[str, Any]) -> bool:
+    gate_mode = str(summary.get("gate_mode") or "").strip().lower()
+    if gate_mode in {"affected", "selected"}:
+        return False
+    if summary.get("full_merge_gate_satisfied") is False:
+        return False
+    requested_layers = summary.get("requested_layers")
+    if isinstance(requested_layers, list) and requested_layers:
+        return False
+    return True
+
+
 def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
     summary_path = summary_path_for_commit(workspace, commit)
     if not summary_path.exists():
@@ -112,6 +124,15 @@ def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
             "Deploy/release requires a green CI artifact. "
             f"{summary_path} reports status={summary.get('status')!r}.\n"
             "Use --gate quick only for staging/live iteration; do not make a final release claim from quick gate."
+        )
+    if not _is_full_merge_gate_summary(summary):
+        gate_mode = str(summary.get("gate_mode") or "selected")
+        effective_layers = summary.get("effective_layers") or summary.get("requested_layers") or []
+        raise SystemExit(
+            "Deploy/release requires a green full merge gate artifact. "
+            f"{summary_path} reports gate_mode={gate_mode!r} and layers={effective_layers!r}.\n"
+            "Affected-suite and --layer runs are fast PR evidence only. "
+            "Run `python scripts/run_ci_suite.py` for the frozen commit before full release/deploy."
         )
     shared_db_logs = shared_db_fallback_logs(summary_path, summary)
     if shared_db_logs:

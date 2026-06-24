@@ -52,6 +52,29 @@ def test_require_green_ci_artifact_rejects_red_artifact_with_quick_gate_hint(tmp
     assert "--gate quick" in message
 
 
+def test_require_green_ci_artifact_rejects_affected_or_selected_gate_summary(tmp_path: Path) -> None:
+    write_summary(
+        tmp_path,
+        "abc123",
+        {
+            "commit": "abc123",
+            "status": "green",
+            "gate_mode": "affected",
+            "full_merge_gate_required": True,
+            "full_merge_gate_satisfied": False,
+            "effective_layers": ["verify_workspace", "server_pytest_db_knowledge"],
+        },
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        require_green_ci_artifact(tmp_path, "abc123")
+
+    message = str(exc_info.value)
+    assert "full merge gate" in message
+    assert "affected" in message
+    assert "python scripts/run_ci_suite.py" in message
+
+
 def test_require_green_ci_artifact_rejects_shared_db_fallback_in_db_layer_log(tmp_path: Path) -> None:
     log_path = tmp_path / "artifacts" / "ci" / "abc123" / "logs" / "server_pytest_db_web_api.log"
     log_path.parent.mkdir(parents=True)

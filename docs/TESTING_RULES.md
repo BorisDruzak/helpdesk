@@ -82,6 +82,15 @@ python scripts/run_ci_suite.py --layer webapp_fixture_e2e
 python scripts/run_ci_suite.py --layer pc_agent_pytest
 ```
 
+For a fast affected-suite PR gate, provide explicit changed paths or a git base ref:
+
+```powershell
+python scripts/run_ci_suite.py --changed-path server/knowledge/search_service.py
+python scripts/run_ci_suite.py --affected-from origin/main
+```
+
+Affected-suite summaries use `gate_mode=affected`, list `effective_layers`, and set `full_merge_gate_required=true` unless the full canonical layer list actually ran green. They are fast PR evidence only: deploy/release preflight rejects affected or `--layer` summaries as full merge-gate artifacts. Run plain `python scripts/run_ci_suite.py` on the frozen commit for the required full merge gate.
+
 ## Agent Pytest
 
 Run agent tests after changes under `pc_agent/`:
@@ -133,6 +142,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled; fixture E2E has one CI retry and records first-attempt failures as flaky evidence, not clean green.
 - `quality/flaky_registry.json` is the only allowlist for retry-pass records. `webapp_fixture_e2e` writes `playwright-webapp-fixture-e2e.json`, and `summary.flaky_summary` records `passed_after_retry` node ids, first/final status, worker indexes, previous error and trace/video/log attachments. Unknown or invalid retry-pass records turn the CI summary red instead of being treated as clean green.
 - `summary.evidence_layers.webapp_fixture_e2e` marks Playwright fixture E2E as `mode=fixture_e2e` and `canonical_live_browser=false`; it is CI browser-fixture coverage, not live browser signoff evidence.
+- `summary.gate_mode`, `summary.effective_layers`, `summary.full_merge_gate_required` and `summary.full_merge_gate_satisfied` distinguish full, selected and affected-suite runs. Release/preflight consumers accept only green full merge-gate artifacts.
 - `summary.baseline_artifacts` records canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and fixture E2E retry policy for release/preflight consumers.
 - `fixture-timings-summary.json` includes the default fixture timing budget result: `budget_profile`, `budget_status` and `budget_violations`.
 - `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
