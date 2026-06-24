@@ -2,11 +2,11 @@
 
 ## Статус и область
 
-- **Статус:** implementation largely complete; release/live validation blocked.
+- **Статус:** implementation in progress; P0 Observer completeness and release/live validation remain blocked.
 - **Дата анализа:** 2026-06-24.
 - **Анализируемая ветка:** `codex/helpdesk-process-model`.
-- **Current implementation revision:** `93911118c8c37c8fa76385298fdbd6807991c524`.
-- **Release readiness:** blocked.
+- **Current branch revision:** `388a55df62d9bf9ac2e30aa152ce50fdec528219`; last Observer completeness code revision: `93911118c8c37c8fa76385298fdbd6807991c524`.
+- **Release readiness:** blocked; P0 Observer scan completeness is `[~]`, not `[x]`.
 - **Основная цель:** сделать исправление багов воспроизводимым, тесты — достоверными, live-проверки — доказательными, а технический долг — управляемым.
 - **Критические зоны:** ticket/requester/support behavior, Protocol V3, agent runtime, PostgreSQL, Observer overlay, webapp, CI/release scripts.
 - **Не является целью:** превращать Observer в источник бизнес-истины, подменять live-проверку fixture/mocked E2E-тестом или запускать разрушающие проверки на production-данных.
@@ -17,7 +17,7 @@
 
 Статусы: `[ ]` не начато или нет достаточной реализации, `[~]` частично реализовано и требуется доказательство/доработка, `[x]` закрыто кодом и проверками.
 
-- [~] **P0 Observer scan completeness**: code-side fail-closed path реализован в `93911118` (`ObserverIntegrityCheckResult` для top-level checkers, `LIMIT + 1` windows, `runtime_presence` incomplete при отсутствии state, неизвестная `source_complete` больше не считается complete по умолчанию, no-DB regression прошел). Для `[x]` еще нужны green DB-backed 201/301/501 tests в isolated PostgreSQL, сценарий "исправили одну ошибку - resolved только она, не строки вне текущей страницы", и включение этой проверки в актуальный CI/release evidence.
+- [~] **P0 Observer scan completeness**: **статус 2026-06-24: частично закрыт, не `[x]`.** Code-side fail-closed path реализован в `93911118` (`ObserverIntegrityCheckResult` для top-level checkers, `LIMIT + 1` windows, `runtime_presence` incomplete при отсутствии state, неизвестная `source_complete` больше не считается complete по умолчанию, no-DB regression прошел). Недостающее для закрытия: green DB-backed 201/301/501 tests в isolated PostgreSQL для current HEAD, DB-сценарий "исправили одну ошибку - resolved только она, не строки вне текущей страницы", и включение этой проверки в актуальный CI/release evidence. Следующий шаг: сделать DB-backed scan completeness tests детерминированными, добавить resolve-only-current-finding сценарий и только после green CI/release evidence перевести пункт в `[x]`.
 - [~] **P0/P1 integrity checker isolation**: savepoint isolation и scanned-window metadata начаты, но еще нет bounded timeout, persisted per-check run report, duration/cursor/window в отчете и правила resolve только при `status=passed && complete=true`.
 - [ ] **P0 full live behavior pack**: нужно выполнить весь `critical_behavior_v1.json` на одном frozen commit/environment и получить 17 passing `pc_client.live_evidence.v2` manifests.
 - [ ] **P0 strict live release summary aggregator**: `build_live_release_summary.py` должен выбирать manifests только по `--commit`, `--environment`, `--release-run-id`, `--expected-schema-head`; старый pass не должен перекрывать новый fail.
