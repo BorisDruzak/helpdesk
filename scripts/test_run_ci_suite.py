@@ -828,6 +828,94 @@ def test_parallel_single_requested_db_layer_runs_sequentially(tmp_path, monkeypa
     assert summary["parallel_groups"] == []
 
 
+def test_parallel_measurements_cap_workers_after_budget_failure(tmp_path):
+    measurements = tmp_path / "fixture-timings-summary.json"
+    measurements.write_text(
+        run_ci_suite.json.dumps(
+            {
+                "schema": "pc_client.fixture_timings_summary.v1",
+                "budget_status": "fail",
+                "budget_violations": [
+                    {
+                        "fixture": "cleanup_db",
+                        "phase": "setup",
+                        "metric": "p95_seconds",
+                        "actual_seconds": 45.0,
+                        "budget_seconds": 30.0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    decision = run_ci_suite._parallel_measurement_decision(measurements, requested_max_workers=3)
+
+    assert decision == {
+        "path": str(measurements),
+        "budget_status": "fail",
+        "recommended_max_workers": 1,
+        "effective_max_workers": 1,
+        "reason": "fixture timing budget failed; run DB/WS layers sequentially until timings recover",
+        "violation_count": 1,
+    }
+
+
+def test_parallel_measurements_can_disable_parallel_group(tmp_path, monkeypatch):
+    summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
+    measurements = tmp_path / "fixture-timings-summary.json"
+    measurements.write_text(
+        run_ci_suite.json.dumps(
+            {"schema": "pc_client.fixture_timings_summary.v1", "budget_status": "fail", "budget_violations": []}
+        ),
+        encoding="utf-8",
+    )
+    _write_layer_test_files(tmp_path)
+    seen: list[tuple[str, bool]] = []
+
+    monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
+    monkeypatch.setattr(run_ci_suite, "summary_path_for_commit", lambda workspace, commit: summary_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_ci_suite.py",
+            "--workspace",
+            str(tmp_path),
+            "--commit",
+            "deadbeef",
+            "--parallel",
+            "--parallel-measurements",
+            str(measurements),
+        ],
+    )
+
+    def fake_run_and_capture(
+        command: list[str],
+        *,
+        cwd: Path,
+        log_path: Path,
+        step_name: str,
+        timeout_seconds: float,
+        idle_timeout_seconds: float | None,
+        env_overrides: dict[str, str] | None = None,
+        mirror_output: bool = True,
+    ) -> dict[str, object]:
+        seen.append((step_name, mirror_output))
+        return _fake_ci_result(step_name, log_path, timeout_seconds)
+
+    monkeypatch.setattr(run_ci_suite, "run_and_capture", fake_run_and_capture)
+
+    run_ci_suite.main()
+
+    assert all(mirror_output for _step_name, mirror_output in seen)
+    summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["parallel_enabled"] is True
+    assert summary["max_workers"] == 1
+    assert summary["parallel_groups"] == []
+    assert summary["parallel_measurement_decision"]["effective_max_workers"] == 1
+
+
 def test_windows_parallel_tunnel_uses_explicit_admin_url_without_starting_ssh(monkeypatch):
     monkeypatch.setattr(run_ci_suite.os, "name", "nt")
     monkeypatch.setenv("TEST_DATABASE_ADMIN_URL", "postgresql+asyncpg://example/postgres")

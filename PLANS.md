@@ -1156,7 +1156,7 @@ Blocking:
 ### Phase 4 — надежность и скорость
 
 - [x] `PERF-401` Test fixture timing budget.
-- [ ] `PERF-402` Domain-level bounded parallelism по измерениям.
+- [x] `PERF-402` Domain-level bounded parallelism по измерениям.
 - [ ] `FLAKE-403` Retry/flaky registry.
 - [ ] `PROP-404` Property/state-machine tests.
 - [ ] `COV-405` Targeted branch coverage critical packages.
@@ -1244,6 +1244,8 @@ Checkpoint 2026-06-24 LIVE-309: `pc_client.live_evidence.v2` manifests now requi
 Checkpoint 2026-06-24 LIVE-310: `scripts/build_live_release_summary.py` now produces a single `pc_client.live_release_summary.v1` JSON/Markdown summary from `test_data_packs/critical_behavior_v1.json` and completed `artifacts/live/**/manifest.json` files. It validates each manifest through `scripts/validate_live_evidence.py`, reports browser and agent-operation suite plan counts, required manifest sections, pass/fail/missing scenario coverage and release blockers; CLI exit is non-zero until every critical behavior scenario has a passing v2 manifest. Current default run against existing artifacts is correctly `blocked` with 17 missing critical scenario manifests. Coverage: RED/GREEN `scripts/test_build_live_release_summary.py` and dry-run `python scripts/build_live_release_summary.py --pack test_data_packs/critical_behavior_v1.json --live-root artifacts/live --json`.
 
 Checkpoint 2026-06-24 PERF-401: `scripts/summarize_fixture_timings.py` now applies a default fixture timing budget to CI timing JSONL artifacts and writes `budget_profile`, `budget_status` and `budget_violations` into `fixture-timings-summary.json`. Budgets are attached to the affected fixture/phase stats and currently cover heavy setup/teardown phases such as `run_migrations`, `cleanup_db`, `_cleanup_db_async`, `test_app`, `test_client`, light HTTP fixtures and `test_agent`; `--enforce-budget` makes the summarizer exit non-zero on budget violations without raising pytest timeouts. Coverage: RED/GREEN `scripts/test_summarize_fixture_timings.py`.
+
+Checkpoint 2026-06-24 PERF-402: `scripts/run_ci_suite.py` now accepts `--parallel-measurements <fixture-timings-summary.json>` to cap bounded DB/WS layer parallelism from measured fixture timing budget status. Passing/no-data summaries keep conservative parallelism, while `budget_status=fail` caps effective workers to 1 and records `summary.parallel_measurement_decision`; this prevents increasing DB/WS concurrency when timing evidence already shows slow fixture setup. Coverage: RED/GREEN `scripts/test_run_ci_suite.py::test_parallel_measurements_cap_workers_after_budget_failure` and `::test_parallel_measurements_can_disable_parallel_group`, plus full `scripts/test_run_ci_suite.py`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

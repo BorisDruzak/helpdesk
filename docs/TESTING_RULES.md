@@ -47,6 +47,7 @@ layer-level parallelism instead of `pytest-xdist`:
 ```powershell
 python scripts/run_ci_suite.py --parallel --max-workers 2
 python scripts/run_ci_suite.py --parallel --max-workers 2 --layer server_pytest_db_agent_runtime --layer server_pytest_agent_ws
+python scripts/run_ci_suite.py --parallel --parallel-measurements artifacts/ci/<sha>/fixture-timings-summary.json
 ```
 
 `--parallel` only groups independent server DB/WS pytest layers. The runner still keeps `verify_workspace`,
@@ -63,7 +64,9 @@ already-open tunnel is a compatibility path and the runner cannot keep that exte
 
 Parallel layer output is intentionally high-level in the terminal; detailed pytest output remains in each
 `artifacts/ci/<sha>/logs/<layer>.log`. `summary.json` preserves the `steps` list and adds `parallel_enabled`,
-`max_workers`, and `parallel_groups` metadata.
+`max_workers`, and `parallel_groups` metadata. When `--parallel-measurements` is supplied, the runner reads a prior
+`fixture-timings-summary.json`; if its `budget_status` is `fail`, the effective worker count is capped at 1 and DB/WS
+layers run sequentially until timings recover. The decision is recorded as `summary.parallel_measurement_decision`.
 
 To run a single canonical layer:
 

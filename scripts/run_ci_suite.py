@@ -161,6 +161,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Maximum active subprocesses for --parallel. Defaults to 2.",
     )
+    parser.add_argument(
+        "--parallel-measurements",
+        type=Path,
+        help="Fixture timing summary JSON used to cap --parallel worker count from measured budget status.",
+    )
     parser.add_argument("--verify-timeout", type=float, default=DEFAULT_VERIFY_TIMEOUT_SECONDS)
     parser.add_argument("--web-build-timeout", type=float, default=DEFAULT_WEB_BUILD_TIMEOUT_SECONDS)
     parser.add_argument("--server-pytest-timeout", type=float, default=DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS)
@@ -571,6 +576,40 @@ def _split_steps_for_parallel(steps: list[Step]) -> tuple[list[Step], list[Step]
     return before, ordered_db_steps, after
 
 
+def _parallel_measurement_decision(measurements_path: Path, *, requested_max_workers: int) -> dict[str, object]:
+    try:
+        payload = json.loads(measurements_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "path": str(measurements_path),
+            "budget_status": "unreadable",
+            "recommended_max_workers": 1,
+            "effective_max_workers": 1,
+            "reason": f"fixture timing measurements could not be read: {type(exc).__name__}",
+            "violation_count": 0,
+        }
+    budget_status = str(payload.get("budget_status") or "unknown")
+    budget_violations = payload.get("budget_violations")
+    violation_count = len(budget_violations) if isinstance(budget_violations, list) else 0
+    if budget_status == "fail":
+        recommended_max_workers = 1
+        reason = "fixture timing budget failed; run DB/WS layers sequentially until timings recover"
+    elif budget_status == "pass":
+        recommended_max_workers = 2
+        reason = "fixture timing budget passed; bounded DB/WS parallelism allowed"
+    else:
+        recommended_max_workers = 2
+        reason = f"fixture timing budget status is {budget_status}; use conservative parallelism"
+    return {
+        "path": str(measurements_path),
+        "budget_status": budget_status,
+        "recommended_max_workers": recommended_max_workers,
+        "effective_max_workers": min(requested_max_workers, recommended_max_workers),
+        "reason": reason,
+        "violation_count": violation_count,
+    }
+
+
 def _run_step(step: Step, *, workspace: Path, mirror_output: bool) -> dict[str, object]:
     step_name, command, log_path, timeout_seconds, idle_timeout_seconds, env_overrides = step
     return run_and_capture(
@@ -915,6 +954,13 @@ def main() -> None:
     max_workers = args.max_workers if args.max_workers is not None else (2 if args.parallel else 1)
     if max_workers < 1:
         raise SystemExit("--max-workers must be >= 1")
+    parallel_measurement_decision: dict[str, object] | None = None
+    if args.parallel and args.parallel_measurements:
+        parallel_measurement_decision = _parallel_measurement_decision(
+            args.parallel_measurements,
+            requested_max_workers=max_workers,
+        )
+        max_workers = int(parallel_measurement_decision["effective_max_workers"])
     parallel_warning: str | None = None
     if args.parallel and max_workers > 3:
         parallel_warning = (
@@ -1087,7 +1133,7 @@ def main() -> None:
         else:
             before_steps, parallel_steps, after_steps = steps, [], []
 
-        if len(parallel_steps) < 2:
+        if max_workers < 2 or len(parallel_steps) < 2:
             before_steps = steps
             parallel_steps = []
             after_steps = []
@@ -1172,6 +1218,8 @@ def main() -> None:
             summary["runner_error"] = runner_error
         if parallel_warning:
             summary["parallel_warning"] = parallel_warning
+        if parallel_measurement_decision:
+            summary["parallel_measurement_decision"] = parallel_measurement_decision
         if fixture_timings_error:
             summary["fixture_timings_error"] = fixture_timings_error
         write_summary(summary_path, summary)
