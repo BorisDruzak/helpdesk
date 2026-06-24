@@ -1143,7 +1143,7 @@ Blocking:
 - [x] `LIVE-301` Ввести evidence manifest v2.
 - [x] `LIVE-302` Реализовать validator.
 - [x] `LIVE-303` Добавить exact commit/schema preflight.
-- [ ] `LIVE-304` Добавить before/after integrity delta.
+- [x] `LIVE-304` Добавить before/after integrity delta.
 - [ ] `LIVE-305` Создать critical behavior data pack.
 - [ ] `LIVE-306` Автоматизировать requester/support browser scenarios.
 - [ ] `LIVE-307` Автоматизировать agent/operation scenarios.
@@ -1230,6 +1230,8 @@ Checkpoint 2026-06-24 BEH-209: Knowledge search analytics now redacts requester 
 Checkpoint 2026-06-24 BEH-210: Observer redaction helpers now treat `collections.abc.Mapping` payloads like normal dicts, returning a new redacted dict without mutating the original custom mapping. This closes the custom-mapping branch of the C6 nested payload matrix and adds a pure non-mutation assertion for Observer redaction before detail/export writers consume the payload. Coverage: RED/GREEN `server/tests/test_observer_redaction_no_db.py::test_observer_redaction_handles_custom_mapping_without_mutating_input` plus existing web event writer and integrity no-DB observer tests.
 
 Checkpoint 2026-06-24 LIVE-303: `pc_client.live_evidence.v2` manifests now require an explicit `preflight` block for branch, local/deployed commit, expected/actual schema head, schema status, service health and `checked_at`. The validator enforces commit parity across top-level and preflight fields, rejects deployed/local commit drift, requires actual schema head to match expected head, and blocks non-pass schema/health preflight statuses. `scripts/live_evidence_pack.py` scaffolds the preflight block with blocked placeholders so draft manifests remain invalid until exact commit/schema evidence is filled. Coverage: RED/GREEN `scripts/test_validate_live_evidence.py::test_validate_live_evidence_requires_commit_schema_preflight` and `::test_validate_live_evidence_rejects_commit_or_schema_preflight_mismatch`, plus `scripts/test_live_evidence_pack.py`.
+
+Checkpoint 2026-06-24 LIVE-304: `pc_client.live_evidence.v2` manifests now require `observer_delta` with separate baseline/scenario integrity scan ids, before/after active and suppressed event refs, stop-condition delta refs, required/linked/missing trace ids, DB/trace consistency, checker/writer/correlation statuses and `checked_at`. The validator blocks live pass when a scan is incomplete, new active critical/high/error refs appear, unexpected suppressions appear, required traces are missing, trace outcome contradicts DB outcome, Observer writer/correlation is not pass, or baseline/scenario run ids are not separate. `scripts/live_evidence_pack.py` now creates `observer-delta.md` and a blocked `observer_delta` scaffold. Coverage: RED/GREEN `scripts/test_validate_live_evidence.py::test_validate_live_evidence_requires_observer_integrity_delta` and `::test_validate_live_evidence_rejects_observer_integrity_delta_stop_conditions`, plus `scripts/test_live_evidence_pack.py`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

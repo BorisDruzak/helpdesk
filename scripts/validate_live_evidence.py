@@ -15,6 +15,7 @@ RUN_STATUSES = {"pass", "fail", "blocked"}
 CHECK_STATUSES = {"pass", "fail", "blocked", "skipped"}
 REDACTION_STATUSES = {"redacted", "not_applicable", "none"}
 PREFLIGHT_STATUSES = {"pass", "fail", "blocked"}
+OBSERVER_DELTA_STATUSES = {"pass", "fail", "blocked", "incomplete"}
 REQUIRED_TOP_LEVEL = (
     "schema",
     "run_id",
@@ -27,6 +28,7 @@ REQUIRED_TOP_LEVEL = (
     "finished_at",
     "entities",
     "preflight",
+    "observer_delta",
     "checks",
     "artifacts",
     "contamination",
@@ -54,6 +56,32 @@ REQUIRED_PREFLIGHT_FIELDS = (
     "service_health",
     "checked_at",
 )
+REQUIRED_OBSERVER_DELTA_FIELDS = (
+    "baseline_run_id",
+    "scenario_run_id",
+    "before",
+    "after",
+    "delta",
+    "traces",
+    "checker_status",
+    "writer_status",
+    "correlation_status",
+    "status",
+    "checked_at",
+)
+REQUIRED_OBSERVER_SNAPSHOT_FIELDS = ("active_refs", "suppressed_refs", "scan_status", "checked_at")
+REQUIRED_OBSERVER_DELTA_RESULT_FIELDS = (
+    "new_active_critical_high_error_refs",
+    "unexpected_suppression_refs",
+)
+REQUIRED_OBSERVER_TRACE_FIELDS = (
+    "required_trace_ids",
+    "linked_trace_ids",
+    "missing_required_trace_ids",
+    "db_outcome",
+    "trace_outcome",
+    "consistency_status",
+)
 
 
 def _non_empty(value: Any) -> bool:
@@ -76,6 +104,29 @@ def _require_mapping(value: Any, *, field: str, errors: list[str]) -> Mapping[st
         errors.append(f"{field} must be an object")
         return None
     return value
+
+
+def _require_string_list(value: Any, *, field: str, errors: list[str]) -> list[str] | None:
+    if not isinstance(value, list):
+        errors.append(f"{field} must be a list")
+        return None
+    strings: list[str] = []
+    for index, item in enumerate(value):
+        if not _non_empty(item):
+            errors.append(f"{field}[{index}] must be a non-empty string")
+            continue
+        strings.append(str(item).strip())
+    return strings
+
+
+def _validate_pass_status(value: Any, *, field: str, errors: list[str]) -> None:
+    status = str(value or "")
+    if not status:
+        return
+    if status not in OBSERVER_DELTA_STATUSES:
+        errors.append(f"{field} must be one of {sorted(OBSERVER_DELTA_STATUSES)}")
+    elif status != "pass":
+        errors.append(f"{field} must be pass")
 
 
 def _validate_check(item: Any, *, index: int, manifest_dir: Path, errors: list[str]) -> None:
@@ -146,6 +197,125 @@ def _validate_preflight(preflight_value: Any, *, manifest: Mapping[str, Any], er
     _parse_timestamp(preflight.get("checked_at"), field="preflight.checked_at", errors=errors)
 
 
+def _validate_observer_snapshot(value: Any, *, field: str, errors: list[str]) -> None:
+    snapshot = _require_mapping(value, field=field, errors=errors)
+    if snapshot is None:
+        return
+    for snapshot_field in REQUIRED_OBSERVER_SNAPSHOT_FIELDS:
+        if snapshot_field not in snapshot:
+            errors.append(f"{field}.{snapshot_field} is required")
+    if "active_refs" in snapshot:
+        _require_string_list(snapshot.get("active_refs"), field=f"{field}.active_refs", errors=errors)
+    if "suppressed_refs" in snapshot:
+        _require_string_list(snapshot.get("suppressed_refs"), field=f"{field}.suppressed_refs", errors=errors)
+    _validate_pass_status(snapshot.get("scan_status"), field=f"{field}.scan_status", errors=errors)
+    _parse_timestamp(snapshot.get("checked_at"), field=f"{field}.checked_at", errors=errors)
+
+
+def _validate_observer_delta_result(value: Any, *, errors: list[str]) -> None:
+    delta = _require_mapping(value, field="observer_delta.delta", errors=errors)
+    if delta is None:
+        return
+    for field in REQUIRED_OBSERVER_DELTA_RESULT_FIELDS:
+        if field not in delta:
+            errors.append(f"observer_delta.delta.{field} is required")
+    new_active_refs = None
+    if "new_active_critical_high_error_refs" in delta:
+        new_active_refs = _require_string_list(
+            delta.get("new_active_critical_high_error_refs"),
+            field="observer_delta.delta.new_active_critical_high_error_refs",
+            errors=errors,
+        )
+    if new_active_refs:
+        errors.append("observer_delta.delta.new_active_critical_high_error_refs must be empty")
+    unexpected_suppression_refs = None
+    if "unexpected_suppression_refs" in delta:
+        unexpected_suppression_refs = _require_string_list(
+            delta.get("unexpected_suppression_refs"),
+            field="observer_delta.delta.unexpected_suppression_refs",
+            errors=errors,
+        )
+    if unexpected_suppression_refs:
+        errors.append("observer_delta.delta.unexpected_suppression_refs must be empty")
+
+
+def _validate_observer_traces(value: Any, *, errors: list[str]) -> None:
+    traces = _require_mapping(value, field="observer_delta.traces", errors=errors)
+    if traces is None:
+        return
+    for field in REQUIRED_OBSERVER_TRACE_FIELDS:
+        if field not in traces or (field in {"db_outcome", "trace_outcome"} and not _non_empty(traces[field])):
+            errors.append(f"observer_delta.traces.{field} is required")
+    required_trace_ids = None
+    if "required_trace_ids" in traces:
+        required_trace_ids = _require_string_list(
+            traces.get("required_trace_ids"),
+            field="observer_delta.traces.required_trace_ids",
+            errors=errors,
+        )
+    linked_trace_ids = None
+    if "linked_trace_ids" in traces:
+        linked_trace_ids = _require_string_list(
+            traces.get("linked_trace_ids"),
+            field="observer_delta.traces.linked_trace_ids",
+            errors=errors,
+        )
+    missing_required_trace_ids = None
+    if "missing_required_trace_ids" in traces:
+        missing_required_trace_ids = _require_string_list(
+            traces.get("missing_required_trace_ids"),
+            field="observer_delta.traces.missing_required_trace_ids",
+            errors=errors,
+        )
+    if missing_required_trace_ids:
+        errors.append("observer_delta.traces.missing_required_trace_ids must be empty")
+    if required_trace_ids is not None and linked_trace_ids is not None:
+        missing_linked = set(required_trace_ids) - set(linked_trace_ids)
+        if missing_linked:
+            errors.append("observer_delta.traces linked_trace_ids must include every required_trace_ids item")
+    _validate_pass_status(
+        traces.get("consistency_status"),
+        field="observer_delta.traces.consistency_status",
+        errors=errors,
+    )
+
+
+def _validate_observer_delta(observer_delta_value: Any, *, manifest: Mapping[str, Any], errors: list[str]) -> None:
+    observer_delta = _require_mapping(observer_delta_value, field="observer_delta", errors=errors)
+    if observer_delta is None:
+        return
+    for field in REQUIRED_OBSERVER_DELTA_FIELDS:
+        if field not in observer_delta or (
+            field
+            in {
+                "baseline_run_id",
+                "scenario_run_id",
+                "checker_status",
+                "writer_status",
+                "correlation_status",
+                "status",
+            }
+            and not _non_empty(observer_delta[field])
+        ):
+            errors.append(f"observer_delta.{field} is required")
+
+    baseline_run_id = str(observer_delta.get("baseline_run_id") or "").strip()
+    scenario_run_id = str(observer_delta.get("scenario_run_id") or "").strip()
+    manifest_run_id = str(manifest.get("run_id") or "").strip()
+    if scenario_run_id and manifest_run_id and scenario_run_id != manifest_run_id:
+        errors.append("observer_delta.scenario_run_id must match run_id")
+    if baseline_run_id and scenario_run_id and baseline_run_id == scenario_run_id:
+        errors.append("observer_delta.baseline_run_id must differ from scenario_run_id")
+
+    _validate_observer_snapshot(observer_delta.get("before"), field="observer_delta.before", errors=errors)
+    _validate_observer_snapshot(observer_delta.get("after"), field="observer_delta.after", errors=errors)
+    _validate_observer_delta_result(observer_delta.get("delta"), errors=errors)
+    _validate_observer_traces(observer_delta.get("traces"), errors=errors)
+    for field in ("checker_status", "writer_status", "correlation_status", "status"):
+        _validate_pass_status(observer_delta.get(field), field=f"observer_delta.{field}", errors=errors)
+    _parse_timestamp(observer_delta.get("checked_at"), field="observer_delta.checked_at", errors=errors)
+
+
 def validate_manifest(manifest: Mapping[str, Any], *, manifest_dir: Path) -> list[str]:
     errors: list[str] = []
     for field in REQUIRED_TOP_LEVEL:
@@ -174,6 +344,7 @@ def validate_manifest(manifest: Mapping[str, Any], *, manifest_dir: Path) -> lis
             errors.append("entities.trace_ids must be a list")
 
     _validate_preflight(manifest.get("preflight"), manifest=manifest, errors=errors)
+    _validate_observer_delta(manifest.get("observer_delta"), manifest=manifest, errors=errors)
 
     checks = manifest.get("checks")
     if not isinstance(checks, list):

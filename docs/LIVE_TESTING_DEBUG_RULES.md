@@ -61,7 +61,9 @@ For non-trivial live runs, create a folder with checklist templates before colle
 python scripts/live_evidence_pack.py --run-id <run_id> --surface requester --ticket <ticket_code> --device <device_id>
 ```
 
-The script creates `artifacts/live/<run_id>/browser.md`, `api.md`, `server-db.md`, `agent-sqlite.md`, `logs.md`, `contamination.md`, and `manifest.json`. It is read-only: it does not query the browser, DB, logs, or agent. Its purpose is to make the required evidence layers explicit before the run starts.
+The script creates `artifacts/live/<run_id>/browser.md`, `api.md`, `server-db.md`, `agent-sqlite.md`, `logs.md`, `contamination.md`, `observer-delta.md`, and `manifest.json`. It is read-only: it does not query the browser, DB, logs, Observer, or agent. Its purpose is to make the required evidence layers explicit before the run starts.
+
+The `pc_client.live_evidence.v2` manifest must be filled with exact preflight commit/schema evidence and before/after Observer integrity delta evidence. A live pass is invalid if local/deployed commit or schema heads drift, if the baseline and scenario integrity scans are missing/incomplete, if a new active critical/high/error integrity event appears, if an unexpected suppression appears, if required traces are missing, or if trace outcome contradicts the DB outcome.
 
 ### Stop conditions
 

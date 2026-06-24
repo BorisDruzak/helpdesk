@@ -146,6 +146,25 @@ def _contamination_template(pack: EvidencePack) -> str:
     )
 
 
+def _observer_delta_template(pack: EvidencePack) -> str:
+    return (
+        "# Observer Integrity Delta\n\n"
+        f"{_base_context(pack)}\n"
+        "Before scenario:\n"
+        "- [ ] baseline integrity scan run id recorded\n"
+        "- [ ] existing active integrity events recorded\n"
+        "- [ ] existing suppressed integrity events recorded\n\n"
+        "After scenario:\n"
+        "- [ ] scenario integrity scan run id recorded\n"
+        "- [ ] related traces requested and attached\n"
+        "- [ ] required trace/span coverage compared with DB outcome\n"
+        "- [ ] no new active critical/high/error event linked to the run\n"
+        "- [ ] no unexpected suppression\n"
+        "- [ ] Observer writer/correlation health confirmed\n\n"
+        "Evidence:\n\n"
+    )
+
+
 TEMPLATES = {
     "browser.md": _browser_template,
     "api.md": _api_template,
@@ -153,6 +172,7 @@ TEMPLATES = {
     "agent-sqlite.md": _agent_sqlite_template,
     "logs.md": _logs_template,
     "contamination.md": _contamination_template,
+    "observer-delta.md": _observer_delta_template,
 }
 
 
@@ -200,6 +220,39 @@ def create_pack(
             "actual_schema_head": None,
             "schema_status": "blocked",
             "service_health": "blocked",
+            "checked_at": None,
+        },
+        "observer_delta": {
+            "baseline_run_id": None,
+            "scenario_run_id": run_id,
+            "before": {
+                "active_refs": [],
+                "suppressed_refs": [],
+                "scan_status": "blocked",
+                "checked_at": None,
+            },
+            "after": {
+                "active_refs": [],
+                "suppressed_refs": [],
+                "scan_status": "blocked",
+                "checked_at": None,
+            },
+            "delta": {
+                "new_active_critical_high_error_refs": [],
+                "unexpected_suppression_refs": [],
+            },
+            "traces": {
+                "required_trace_ids": [],
+                "linked_trace_ids": [],
+                "missing_required_trace_ids": [],
+                "db_outcome": None,
+                "trace_outcome": None,
+                "consistency_status": "blocked",
+            },
+            "checker_status": "blocked",
+            "writer_status": "blocked",
+            "correlation_status": "blocked",
+            "status": "blocked",
             "checked_at": None,
         },
         "checks": [],

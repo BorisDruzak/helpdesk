@@ -31,6 +31,7 @@ def test_live_evidence_pack_creates_expected_markdown_files(tmp_path):
         "agent-sqlite.md",
         "logs.md",
         "contamination.md",
+        "observer-delta.md",
     ]:
         assert (output_dir / name).is_file(), name
 
@@ -43,6 +44,9 @@ def test_live_evidence_pack_creates_expected_markdown_files(tmp_path):
     assert manifest["status"] == "blocked"
     assert manifest["preflight"]["schema_status"] == "blocked"
     assert manifest["preflight"]["service_health"] == "blocked"
+    assert manifest["observer_delta"]["status"] == "blocked"
+    assert manifest["observer_delta"]["before"]["scan_status"] == "blocked"
+    assert manifest["observer_delta"]["after"]["scan_status"] == "blocked"
 
 
 def test_requester_surface_template_includes_account_session_and_binding_checks(tmp_path):

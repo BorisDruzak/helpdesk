@@ -32,6 +32,39 @@ def _complete_manifest(root: Path) -> Path:
             "service_health": "pass",
             "checked_at": "2026-06-23T01:00:05+00:00",
         },
+        "observer_delta": {
+            "baseline_run_id": "observer-baseline-live-validator-pass",
+            "scenario_run_id": "live-validator-pass",
+            "before": {
+                "active_refs": [],
+                "suppressed_refs": [],
+                "scan_status": "pass",
+                "checked_at": "2026-06-23T01:00:10+00:00",
+            },
+            "after": {
+                "active_refs": [],
+                "suppressed_refs": [],
+                "scan_status": "pass",
+                "checked_at": "2026-06-23T01:00:50+00:00",
+            },
+            "delta": {
+                "new_active_critical_high_error_refs": [],
+                "unexpected_suppression_refs": [],
+            },
+            "traces": {
+                "required_trace_ids": ["trace-1"],
+                "linked_trace_ids": ["trace-1"],
+                "missing_required_trace_ids": [],
+                "db_outcome": "ticket appears in requester cabinet",
+                "trace_outcome": "requester create trace succeeded",
+                "consistency_status": "pass",
+            },
+            "checker_status": "pass",
+            "writer_status": "pass",
+            "correlation_status": "pass",
+            "status": "pass",
+            "checked_at": "2026-06-23T01:00:55+00:00",
+        },
         "checks": [
             {
                 "layer": "browser",
@@ -109,6 +142,73 @@ def test_validate_live_evidence_rejects_commit_or_schema_preflight_mismatch(tmp_
     assert "preflight.schema_status must be pass" in output
 
 
+def test_validate_live_evidence_requires_observer_integrity_delta(tmp_path, capsys):
+    validator = importlib.import_module("scripts.validate_live_evidence")
+    manifest_path = _complete_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.pop("observer_delta", None)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert validator.main(["--manifest", str(manifest_path)]) == 1
+
+    output = capsys.readouterr().out
+    assert "observer_delta is required" in output
+
+
+def test_validate_live_evidence_rejects_observer_integrity_delta_stop_conditions(tmp_path, capsys):
+    validator = importlib.import_module("scripts.validate_live_evidence")
+    manifest_path = _complete_manifest(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["observer_delta"] = {
+        "baseline_run_id": "observer-baseline-live-validator-pass",
+        "scenario_run_id": "live-validator-pass",
+        "before": {
+            "active_refs": [],
+            "suppressed_refs": [],
+            "scan_status": "pass",
+            "checked_at": "2026-06-23T01:00:10+00:00",
+        },
+        "after": {
+            "active_refs": [],
+            "suppressed_refs": ["observer.integrity:unexpected"],
+            "scan_status": "incomplete",
+            "checked_at": "2026-06-23T01:00:50+00:00",
+        },
+        "delta": {
+            "new_active_critical_high_error_refs": ["observer.integrity:critical"],
+            "unexpected_suppression_refs": ["observer.integrity:unexpected"],
+        },
+        "traces": {
+            "required_trace_ids": ["trace-1", "trace-2"],
+            "linked_trace_ids": ["trace-1"],
+            "missing_required_trace_ids": ["trace-2"],
+            "db_outcome": "ticket appears in requester cabinet",
+            "trace_outcome": "trace missing terminal success",
+            "consistency_status": "fail",
+        },
+        "checker_status": "incomplete",
+        "writer_status": "fail",
+        "correlation_status": "blocked",
+        "status": "fail",
+        "checked_at": "2026-06-23T01:00:55+00:00",
+    }
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    assert validator.main(["--manifest", str(manifest_path)]) == 1
+
+    output = capsys.readouterr().out
+    assert "observer_delta.after.scan_status must be pass" in output
+    assert "observer_delta.delta.new_active_critical_high_error_refs must be empty" in output
+    assert "observer_delta.delta.unexpected_suppression_refs must be empty" in output
+    assert "observer_delta.traces.missing_required_trace_ids must be empty" in output
+    assert "observer_delta.traces linked_trace_ids must include every required_trace_ids item" in output
+    assert "observer_delta.traces.consistency_status must be pass" in output
+    assert "observer_delta.checker_status must be pass" in output
+    assert "observer_delta.writer_status must be pass" in output
+    assert "observer_delta.correlation_status must be pass" in output
+    assert "observer_delta.status must be pass" in output
+
+
 def test_validate_live_evidence_rejects_template_manifest(tmp_path, capsys):
     pack = importlib.import_module("scripts.live_evidence_pack")
     validator = importlib.import_module("scripts.validate_live_evidence")
@@ -122,4 +222,5 @@ def test_validate_live_evidence_rejects_template_manifest(tmp_path, capsys):
     assert "checks must contain at least one item" in output
     assert "commit is required" in output
     assert "preflight.local_commit is required" in output
+    assert "observer_delta.baseline_run_id is required" in output
     assert "artifacts must contain at least one item" in output
