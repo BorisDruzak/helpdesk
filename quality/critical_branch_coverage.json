@@ -1,0 +1,97 @@
+{
+  "schema": "pc_client.critical_branch_coverage.v1",
+  "packages": [
+    {
+      "path": "shared/redaction.py",
+      "owner": "observer",
+      "branches": [
+        {
+          "id": "redaction.sensitive_key_markers",
+          "description": "Sensitive keys, extra markers and bearer/token scalar values are redacted.",
+          "criticality": "P1",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_redaction_property_nested_payloads_are_non_mutating_idempotent_and_secret_free"
+          ]
+        },
+        {
+          "id": "redaction.safe_id_and_hash_markers",
+          "description": "Trace/request ids and token hash or prefix fields remain usable as safe evidence.",
+          "criticality": "P1",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_redaction_property_nested_payloads_are_non_mutating_idempotent_and_secret_free"
+          ]
+        },
+        {
+          "id": "redaction.custom_mapping_non_mutation",
+          "description": "Mapping-compatible payloads redact into new dicts without mutating source objects.",
+          "criticality": "P1",
+          "tested_by": [
+            "server/tests/test_observer_redaction_no_db.py::test_observer_redaction_handles_custom_mapping_without_mutating_input",
+            "server/tests/test_property_state_contracts_no_db.py::test_redaction_property_nested_payloads_are_non_mutating_idempotent_and_secret_free"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "server/tickets/statuses.py",
+      "owner": "tickets",
+      "branches": [
+        {
+          "id": "statuses.canonical_soft_strict_modes",
+          "description": "Canonical statuses are idempotent in soft and strict modes.",
+          "criticality": "P1",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_ticket_status_normalization_property_is_idempotent_and_strict_mode_rejects_aliases"
+          ]
+        },
+        {
+          "id": "statuses.legacy_aliases_soft_only",
+          "description": "Legacy aliases normalize in soft mode and are rejected by strict FSM mode.",
+          "criticality": "P1",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_ticket_status_normalization_property_is_idempotent_and_strict_mode_rejects_aliases"
+          ]
+        },
+        {
+          "id": "statuses.requester_projection_labels",
+          "description": "Every canonical internal status has requester-safe projection and Russian labels.",
+          "criticality": "P2",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_ticket_status_normalization_property_is_idempotent_and_strict_mode_rejects_aliases",
+            "server/tests/test_ticket_status_contract_no_db.py::test_labels_and_requester_projection_cover_every_canonical_status"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "server/tickets/workflow_profiles.py",
+      "owner": "tickets",
+      "branches": [
+        {
+          "id": "workflow_profiles.allowed_status_edges",
+          "description": "Default workflow profile transitions only connect allowed canonical statuses.",
+          "criticality": "P1",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_workflow_profiles_state_machine_property_has_valid_edges_and_no_dead_nonterminal_states"
+          ]
+        },
+        {
+          "id": "workflow_profiles.requester_boundary",
+          "description": "Requester transitions remain narrower than support/admin profile transitions.",
+          "criticality": "P1",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_workflow_profiles_state_machine_property_has_valid_edges_and_no_dead_nonterminal_states"
+          ]
+        },
+        {
+          "id": "workflow_profiles.serialization_roundtrip",
+          "description": "Default profile FSM declarations serialize and normalize without drift.",
+          "criticality": "P2",
+          "tested_by": [
+            "server/tests/test_property_state_contracts_no_db.py::test_workflow_profile_serialization_property_round_trips_default_state_machines"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1058,6 +1058,16 @@ def _db_cleanup_profile_audit_command(workspace: Path) -> list[str]:
     ]
 
 
+def _branch_coverage_audit_command(workspace: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(workspace / "scripts" / "audit_branch_coverage.py"),
+        "--workspace",
+        str(workspace),
+        "--strict",
+    ]
+
+
 def _migration_schema_command(workspace: Path, junit_path: Path) -> list[str]:
     return _server_pytest_command(
         "not manual and not no_db and not agent_ws",
@@ -1258,6 +1268,14 @@ def main() -> None:
             "db_cleanup_profile_audit",
             _db_cleanup_profile_audit_command(args.workspace),
             logs_dir / "db_cleanup_profile_audit.log",
+            float(args.server_pytest_timeout),
+            float(args.idle_timeout),
+            None,
+        ),
+        (
+            "branch_coverage_audit",
+            _branch_coverage_audit_command(args.workspace),
+            logs_dir / "branch_coverage_audit.log",
             float(args.server_pytest_timeout),
             float(args.idle_timeout),
             None,

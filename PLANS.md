@@ -1159,7 +1159,7 @@ Blocking:
 - [x] `PERF-402` Domain-level bounded parallelism по измерениям.
 - [x] `FLAKE-403` Retry/flaky registry.
 - [x] `PROP-404` Property/state-machine tests.
-- [ ] `COV-405` Targeted branch coverage critical packages.
+- [x] `COV-405` Targeted branch coverage critical packages.
 - [ ] `MUT-406` Mutation testing для status/policy/redaction/idempotency pure logic.
 - [ ] `FIX-407` Schema-validated fixture builders.
 - [ ] `CI-408` Affected-suite selection с обязательным full merge gate.
@@ -1208,6 +1208,8 @@ Checkpoint 2026-06-23 QG-004: `scripts/run_ci_suite.py` now writes `summary.base
 Checkpoint 2026-06-24 FLAKE-403: `scripts/run_ci_suite.py` now enforces a tracked retry/flaky registry at `quality/flaky_registry.json`. The `webapp_fixture_e2e` layer runs Playwright with `--reporter=list,json`, writes `artifacts/ci/<sha>/playwright-webapp-fixture-e2e.json`, and records `summary.flaky_summary` with `passed_after_retry` node ids, first/final statuses, worker indexes, previous error and trace/video/log attachments. Unknown or invalid retry-pass records turn the CI summary red; registry-matched records remain flaky evidence and never become clean green. Coverage: RED/GREEN `scripts/test_run_ci_suite.py::test_flaky_summary_fails_unknown_retry_pass` and `::test_flaky_summary_allows_registry_match_without_clean_green`, plus full `scripts/test_run_ci_suite.py`.
 
 Checkpoint 2026-06-24 PROP-404: `server/tests/test_property_state_contracts_no_db.py` adds deterministic property/state-machine coverage without a new dependency. The pack checks Observer redaction over nested dict/list/tuple/set payloads for non-mutation, idempotency, safe hash/id preservation and secret removal; ticket status normalization for canonical/legacy/strict-vs-soft mode invariants; and workflow profile FSM graphs for valid allowed-status edges, suggested path validity, requester transition boundaries, reachable terminal states and default profile serialization round-trips. Coverage: RED/GREEN focused module run, then `server_pytest_no_db` ownership via inventory audit.
+
+Checkpoint 2026-06-24 COV-405: `quality/critical_branch_coverage.json` now records targeted branch coverage for critical pure logic in `shared/redaction.py`, `server/tickets/statuses.py` and `server/tickets/workflow_profiles.py`. `scripts/audit_branch_coverage.py --strict` validates schema, package owners, unique branch ids, non-empty `tested_by` refs and existing pytest node ids, and `scripts/run_ci_suite.py` runs it as `branch_coverage_audit` before pytest layers. Current registry covers 3 packages and 9 branch records with zero audit issues. Coverage: RED/GREEN `scripts/test_audit_branch_coverage.py`, `scripts/test_run_ci_suite.py`, and strict audit output.
 
 Checkpoint 2026-06-23 QG-005: `scripts/run_ci_suite.py` writes `summary.evidence_layers.webapp_fixture_e2e` with `mode=fixture_e2e` and `canonical_live_browser=false`. Playwright fixture E2E remains a CI/browser-fixture layer and cannot be confused with live browser signoff evidence from `docs/LIVE_TESTING_DEBUG_RULES.md`.
 

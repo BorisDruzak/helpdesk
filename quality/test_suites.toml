@@ -15,6 +15,13 @@ database = "none"
 description = "Fails the full gate when DB-backed, non-agent-ws server pytest files do not declare an explicit db_cleanup profile."
 
 [[suites]]
+name = "branch_coverage_audit"
+runner = "script"
+command = ["python", "scripts/audit_branch_coverage.py", "--strict"]
+database = "none"
+description = "Fails the full gate when critical pure-logic branch coverage records are missing owners, branch refs, or existing pytest node ids."
+
+[[suites]]
 name = "migration_schema"
 runner = "pytest"
 paths = ["server/tests/test_migration_schema_contract.py"]
