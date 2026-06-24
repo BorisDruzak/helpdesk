@@ -6,11 +6,15 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, Operation, Ticket, TicketEvent
+from app.repos.observer_integrity_repo import ObserverIntegrityEventInput, ObserverIntegrityRepo
+from observer import integrity_service as integrity_module
 from observer.checks.operation_lifecycle import QUERY_LIMIT as OPERATION_QUERY_LIMIT
+from observer.checks.operation_lifecycle import SOURCE as OPERATION_SOURCE
 from observer.checks.operation_lifecycle import check_operation_lifecycle
 from observer.checks.runtime_presence import check_runtime_presence
 from observer.checks.types import ObserverIntegrityCheckResult
 from observer.checks.web_cabinet import check_web_cabinet
+from observer.integrity_service import ObserverIntegrityService
 
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -19,6 +23,22 @@ pytestmark = pytest.mark.db_cleanup("full")
 class _OnlineState:
     def is_agent_online(self, _device_id: str) -> bool:
         return True
+
+
+def _integrity_event(source: str, dedupe_key: str) -> ObserverIntegrityEventInput:
+    return ObserverIntegrityEventInput(
+        event_type="observer_test_event",
+        severity="warning",
+        source=source,
+        dedupe_key=dedupe_key,
+        expected="expected",
+        actual="actual",
+        evidence={},
+    )
+
+
+async def _complete_empty(source: str) -> ObserverIntegrityCheckResult:
+    return ObserverIntegrityCheckResult(source=source, events=[], complete=True)
 
 
 @pytest.mark.asyncio
@@ -76,7 +96,7 @@ async def test_web_cabinet_marks_incomplete_at_ticket_limit_plus_one(test_engine
                     ticket_id=f"obs-web-ticket-{index:03d}",
                     title=f"Observer web ticket {index}",
                     description="Observer completeness fixture",
-                    status="open",
+                    status="new",
                     requester_id=f"requester-{index:03d}",
                     requester_account_mode="browser_no_device",
                     custom_fields={"request_context": "requester_portal"},
@@ -125,3 +145,88 @@ async def test_runtime_presence_marks_incomplete_at_device_limit_plus_one(test_e
     assert isinstance(result, ObserverIntegrityCheckResult)
     assert result.complete is False
     assert len(result.events) == 500
+
+
+@pytest.mark.asyncio
+async def test_run_scan_resolves_only_current_missing_event_after_complete_db_scan(test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    visible_key = "operation:fixed-visible-finding"
+    outside_key = "operation:still-broken-outside-window"
+
+    async with session_maker() as session:
+        repo = ObserverIntegrityRepo(session)
+        await repo.upsert_event(_integrity_event(OPERATION_SOURCE, visible_key))
+        await repo.upsert_event(_integrity_event(OPERATION_SOURCE, outside_key))
+        await session.commit()
+
+    async def incomplete_operation_checker(_session, *, run_id=None):
+        return ObserverIntegrityCheckResult(
+            source=OPERATION_SOURCE,
+            events=[],
+            complete=False,
+            scanned_count=OPERATION_QUERY_LIMIT + 1,
+            limit=OPERATION_QUERY_LIMIT,
+        )
+
+    async def complete_operation_checker(_session, *, run_id=None):
+        return ObserverIntegrityCheckResult(
+            source=OPERATION_SOURCE,
+            events=[_integrity_event(OPERATION_SOURCE, outside_key)],
+            complete=True,
+            scanned_count=1,
+            limit=OPERATION_QUERY_LIMIT,
+        )
+
+    monkeypatch.setattr(
+        integrity_module,
+        "check_protocol_integrity",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.PROTOCOL_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_runtime_presence",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.RUNTIME_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_account_boundary",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.ACCOUNT_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_module_toolset",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.MODULE_TOOLSET_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_governance",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.GOVERNANCE_SOURCE),
+    )
+    monkeypatch.setattr(
+        integrity_module,
+        "check_web_cabinet",
+        lambda *_args, **_kwargs: _complete_empty(integrity_module.WEB_CABINET_SOURCE),
+    )
+
+    monkeypatch.setattr(integrity_module, "check_operation_lifecycle", incomplete_operation_checker)
+    async with session_maker() as session:
+        incomplete_result = await ObserverIntegrityService(session).run_scan(run_id="resolve-window-incomplete")
+        repo = ObserverIntegrityRepo(session)
+        visible = await repo.get_by_dedupe_key(visible_key)
+        outside = await repo.get_by_dedupe_key(outside_key)
+        assert incomplete_result.resolved == 0
+        assert OPERATION_SOURCE in incomplete_result.incomplete_sources
+        assert visible is not None and visible.status == "active"
+        assert outside is not None and outside.status == "active"
+        await session.commit()
+
+    monkeypatch.setattr(integrity_module, "check_operation_lifecycle", complete_operation_checker)
+    async with session_maker() as session:
+        complete_result = await ObserverIntegrityService(session).run_scan(run_id="resolve-window-complete")
+        repo = ObserverIntegrityRepo(session)
+        visible = await repo.get_by_dedupe_key(visible_key)
+        outside = await repo.get_by_dedupe_key(outside_key)
+        assert complete_result.resolved == 1
+        assert OPERATION_SOURCE not in complete_result.incomplete_sources
+        assert visible is not None and visible.status == "resolved"
+        assert outside is not None and outside.status == "active"
