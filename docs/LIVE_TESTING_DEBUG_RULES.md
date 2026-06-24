@@ -65,6 +65,14 @@ The script creates `artifacts/live/<run_id>/browser.md`, `api.md`, `server-db.md
 
 The `pc_client.live_evidence.v2` manifest must be filled with exact preflight commit/schema evidence and before/after Observer integrity delta evidence. A live pass is invalid if local/deployed commit or schema heads drift, if the baseline and scenario integrity scans are missing/incomplete, if a new active critical/high/error integrity event appears, if an unexpected suppression appears, if required traces are missing, or if trace outcome contradicts the DB outcome.
 
+Requester/support live browser probes can be planned or run from the critical behavior pack:
+
+```powershell
+python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --surfaces requester,support --dry-run --json
+```
+
+The runner captures browser evidence through `webapp/scripts/live-browser-scenarios.mjs`. It does not replace the manifest's API, DB, Observer, cleanup, or preflight evidence.
+
 ### Stop conditions
 
 Stop the live run and classify the blocker if any of these occur:

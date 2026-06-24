@@ -1145,7 +1145,7 @@ Blocking:
 - [x] `LIVE-303` Добавить exact commit/schema preflight.
 - [x] `LIVE-304` Добавить before/after integrity delta.
 - [x] `LIVE-305` Создать critical behavior data pack.
-- [ ] `LIVE-306` Автоматизировать requester/support browser scenarios.
+- [x] `LIVE-306` Автоматизировать requester/support browser scenarios.
 - [ ] `LIVE-307` Автоматизировать agent/operation scenarios.
 - [x] `LIVE-308` Доказать cleanup.
 - [ ] `LIVE-309` Интегрировать Observer canary report.
@@ -1234,6 +1234,8 @@ Checkpoint 2026-06-24 LIVE-303: `pc_client.live_evidence.v2` manifests now requi
 Checkpoint 2026-06-24 LIVE-304: `pc_client.live_evidence.v2` manifests now require `observer_delta` with separate baseline/scenario integrity scan ids, before/after active and suppressed event refs, stop-condition delta refs, required/linked/missing trace ids, DB/trace consistency, checker/writer/correlation statuses and `checked_at`. The validator blocks live pass when a scan is incomplete, new active critical/high/error refs appear, unexpected suppressions appear, required traces are missing, trace outcome contradicts DB outcome, Observer writer/correlation is not pass, or baseline/scenario run ids are not separate. `scripts/live_evidence_pack.py` now creates `observer-delta.md` and a blocked `observer_delta` scaffold. Coverage: RED/GREEN `scripts/test_validate_live_evidence.py::test_validate_live_evidence_requires_observer_integrity_delta` and `::test_validate_live_evidence_rejects_observer_integrity_delta_stop_conditions`, plus `scripts/test_live_evidence_pack.py`.
 
 Checkpoint 2026-06-24 LIVE-305: `test_data_packs/critical_behavior_v1.json` now defines a versioned `pc_client.critical_behavior_data_pack.v1` for Workstream D critical behavior live gates. The pack covers all 17 domain records from the matrix with owners, critical invariants, existing automated test refs, live scenario refs, mandatory API/DB/Observer/live-manifest evidence, browser evidence for visible scenarios and required `preflight`/`observer_delta` manifest sections. It references `test_data_packs/web_first_phase_e.json` for shared users/agents/forms and contains no raw secret fields. Coverage: RED/GREEN `server/tests/test_critical_behavior_data_pack.py`.
+
+Checkpoint 2026-06-24 LIVE-306: `scripts/run_live_behavior_suite.py` now reads `test_data_packs/critical_behavior_v1.json`, selects requester/support live scenarios that require browser evidence, and builds/runs per-scenario commands for `webapp/scripts/live-browser-scenarios.mjs`. The Node Playwright probe uses real `/app/requester`, `/app/requester/tickets`, `/app/requester/new`, `/app/help`, `/app/support` and `/app/tickets` routes without `page.route()` mocks, logs in with role-specific environment credentials, captures screenshots plus DOM snippets, checks Russian page/title markers, and fails on console/page errors. Dry-run output lists eight requester/support browser scenarios and their exact commands; full live pass still requires API/DB/Observer evidence in the v2 manifest. Coverage: RED/GREEN `scripts/test_run_live_behavior_suite.py`, dry-run `python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --surfaces requester,support --dry-run --json`, and `node --check webapp/scripts/live-browser-scenarios.mjs`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 
