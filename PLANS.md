@@ -1133,7 +1133,7 @@ Blocking:
 - [x] `BEH-206` Consent approve/deny/timeout/cancel race.
 - [x] `BEH-207` Agent reconnect/replay/duplicate.
 - [x] `BEH-208` Auth/account/session isolation.
-- [ ] `BEH-209` Knowledge/Registry audience rules.
+- [x] `BEH-209` Knowledge/Registry audience rules.
 - [ ] `BEH-210` Observer non-mutation/redaction property tests.
 
 **Gate:** каждый critical journey имеет API, DB и Observer assertions; visible journeys имеют fixture UI tests.
@@ -1224,6 +1224,8 @@ Checkpoint 2026-06-23 BEH-206: `UserConsentService` now re-checks the linked ope
 Checkpoint 2026-06-23 BEH-207: agent duplicate terminal command responses now use the durable `pending_command_results` path before sending. If a cached `success`/`canceled` result or cached/recovered `AGENT_RESTARTED` result is redelivered and the websocket drops during duplicate-send, the result remains queued for reconnect replay until `command_result_ack`. Coverage: `pc_agent/tests/test_command_restart_recovery.py::test_cached_terminal_duplicate_send_failure_remains_pending_for_replay` plus command-result replay/ACK cleanup, seen-command retry policy, canceled-command idempotency and server `command_result_ack` tests.
 
 Checkpoint 2026-06-24 BEH-208: React web-session state now treats bootstrap, refresh, login and logout as ordered account transitions. A delayed `/api/web/session/me` bootstrap for a previous account cannot overwrite a newer successful login/logout state, which closes the account-switch stale UI bootstrap case while server-side `AuthContext`, cookie, account-session and requester visibility boundaries remain authoritative. Coverage: RED/GREEN `webapp/src/features/auth/session-provider.test.tsx::ignores stale bootstrap responses after a newer login succeeds` plus existing web-session logout/revoke/CSRF and requester/account-session isolation tests.
+
+Checkpoint 2026-06-24 BEH-209: Knowledge search analytics now redacts requester PII and Registry identifiers from stored `query_text_redacted` before zero-result/gap analytics. The redactor keeps query hashes for aggregation but removes raw emails, phone numbers, person/account-session/ticket ids and secret-like key/value markers while existing audience-rule enforcement continues to filter search, suggestions, portal, Ask/RAG and support suggestions before projection. Coverage: RED/GREEN `server/tests/test_knowledge_contract_no_db.py::test_search_analytics_redaction_removes_registry_ids_phone_and_secret_markers` plus `server/tests/test_knowledge_access_service.py` department-tree/audience-group contract tests.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

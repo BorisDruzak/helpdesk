@@ -16,7 +16,20 @@ def _new_id() -> str:
 
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
-MARKER_RE = re.compile(r"\b(?:device_id|requester_id|queue_id|trace_id|operation_id)\s*=\s*[\w.-]+", re.IGNORECASE)
+PHONE_RE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
+SENSITIVE_MARKER_KEY_RE = (
+    r"(?:"
+    r"device_id|requester_id|person_id|manager_person_id|responsible_person_id|"
+    r"account_session_id|requester_account_session_id|session_id|ticket_id|"
+    r"queue_id|trace_id|operation_id|request_id|access_code|public_access_code|"
+    r"session_token|api_key|password|secret|token|email|phone|"
+    r"[\w.-]*(?:token|secret|password|cookie)[\w.-]*"
+    r")"
+)
+MARKER_RE = re.compile(
+    rf"\b(?P<key>{SENSITIVE_MARKER_KEY_RE})\s*=\s*(?P<value>\+?\d[\d\s().-]{{6,}}\d|[\w.@:+/-]+)",
+    re.IGNORECASE,
+)
 ALLOWED_SURFACES = {"requester_portal", "agent_gui", "support_workspace", "admin", "api", "search"}
 
 
@@ -25,7 +38,8 @@ def redact_search_query(query_text: str | None) -> str | None:
     if not text:
         return None
     text = EMAIL_RE.sub("[redacted-email]", text)
-    text = MARKER_RE.sub(lambda match: match.group(0).split("=", 1)[0].strip() + "=[redacted]", text)
+    text = MARKER_RE.sub(lambda match: match.group("key").strip() + "=[redacted]", text)
+    text = PHONE_RE.sub("[redacted-phone]", text)
     return text[:240]
 
 

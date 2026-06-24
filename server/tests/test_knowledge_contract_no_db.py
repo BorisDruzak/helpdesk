@@ -17,6 +17,7 @@ from knowledge.contracts import (
     normalize_knowledge_slug,
     sanitize_requester_knowledge_projection,
 )
+from knowledge.search_analytics_service import redact_search_query
 
 
 pytestmark = pytest.mark.no_db
@@ -119,3 +120,26 @@ def test_requester_safe_projection_strips_internal_knowledge_fields_recursively(
         "visibility": "requester",
         "version_id": "version-1",
     }
+
+
+def test_search_analytics_redaction_removes_registry_ids_phone_and_secret_markers() -> None:
+    redacted = redact_search_query(
+        "VPN for ivan@example.com +7 (343) 222-33-44 "
+        "person_id=person-secret account_session_id=session-secret "
+        "ticket_id=TCK-123 password=raw-secret"
+    )
+
+    assert redacted is not None
+    for raw_value in (
+        "ivan@example.com",
+        "+7 (343) 222-33-44",
+        "person-secret",
+        "session-secret",
+        "TCK-123",
+        "raw-secret",
+    ):
+        assert raw_value not in redacted
+    assert "person_id=[redacted]" in redacted
+    assert "account_session_id=[redacted]" in redacted
+    assert "ticket_id=[redacted]" in redacted
+    assert "password=[redacted]" in redacted

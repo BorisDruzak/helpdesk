@@ -260,7 +260,7 @@ P2.2.1 requester and agent flows consume the effective rollout decision from `PO
 
 Migration `086` adds `knowledge_search_events`.
 
-`KnowledgeSearchAnalyticsService` records surface, actor role, service/offering context, result count and optional clicked item reference. Raw query text is not stored directly. Query hashes are stored, and `query_text_redacted` is limited to redacted text with email and explicit `device_id=` / `requester_id=` markers removed.
+`KnowledgeSearchAnalyticsService` records surface, actor role, service/offering context, result count and optional clicked item reference. Raw query text is not stored directly. Query hashes are stored, and `query_text_redacted` is limited to redacted text with emails, phone numbers, Registry/request/session/ticket identifiers and secret-like key/value markers removed.
 
 Zero-result and high-frequency query signals are intended to feed gap detection without exposing requester identifiers, device identifiers or raw custom fields.
 
