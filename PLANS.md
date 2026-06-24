@@ -1155,7 +1155,7 @@ Blocking:
 
 ### Phase 4 — надежность и скорость
 
-- [ ] `PERF-401` Test fixture timing budget.
+- [x] `PERF-401` Test fixture timing budget.
 - [ ] `PERF-402` Domain-level bounded parallelism по измерениям.
 - [ ] `FLAKE-403` Retry/flaky registry.
 - [ ] `PROP-404` Property/state-machine tests.
@@ -1242,6 +1242,8 @@ Checkpoint 2026-06-24 LIVE-307: `scripts/run_live_behavior_suite.py` now also su
 Checkpoint 2026-06-24 LIVE-309: `pc_client.live_evidence.v2` manifests now require an `observer_canary` block that points to the JSON and Markdown reports from `scripts/run_observer_canary_suite.py`. The validator loads the JSON report, requires coverage `ok=true`, non-empty required root kinds, no missing root kinds, no failed scenarios, report/manifest summary parity, pass coverage/status fields and an ISO `checked_at`; `scripts/live_evidence_pack.py` creates `observer-canary.md` and blocked manifest placeholders so a live pass cannot be claimed without canary evidence. Coverage: RED/GREEN `scripts/test_validate_live_evidence.py::test_validate_live_evidence_requires_observer_canary_report`, `::test_validate_live_evidence_rejects_observer_canary_failures`, and `scripts/test_live_evidence_pack.py`.
 
 Checkpoint 2026-06-24 LIVE-310: `scripts/build_live_release_summary.py` now produces a single `pc_client.live_release_summary.v1` JSON/Markdown summary from `test_data_packs/critical_behavior_v1.json` and completed `artifacts/live/**/manifest.json` files. It validates each manifest through `scripts/validate_live_evidence.py`, reports browser and agent-operation suite plan counts, required manifest sections, pass/fail/missing scenario coverage and release blockers; CLI exit is non-zero until every critical behavior scenario has a passing v2 manifest. Current default run against existing artifacts is correctly `blocked` with 17 missing critical scenario manifests. Coverage: RED/GREEN `scripts/test_build_live_release_summary.py` and dry-run `python scripts/build_live_release_summary.py --pack test_data_packs/critical_behavior_v1.json --live-root artifacts/live --json`.
+
+Checkpoint 2026-06-24 PERF-401: `scripts/summarize_fixture_timings.py` now applies a default fixture timing budget to CI timing JSONL artifacts and writes `budget_profile`, `budget_status` and `budget_violations` into `fixture-timings-summary.json`. Budgets are attached to the affected fixture/phase stats and currently cover heavy setup/teardown phases such as `run_migrations`, `cleanup_db`, `_cleanup_db_async`, `test_app`, `test_client`, light HTTP fixtures and `test_agent`; `--enforce-budget` makes the summarizer exit non-zero on budget violations without raising pytest timeouts. Coverage: RED/GREEN `scripts/test_summarize_fixture_timings.py`.
 
 После pilot расширять matrix, а не создавать отдельные несвязанные live scripts.
 

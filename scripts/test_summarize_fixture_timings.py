@@ -34,7 +34,7 @@ def test_summarize_artifact_dir_groups_fixture_phase_stats(tmp_path):
     summary = summarize.summarize_artifact_dir(artifact_dir)
 
     cleanup_setup = summary["fixtures"]["cleanup_db"]["setup"]
-    assert cleanup_setup == {
+    assert {key: value for key, value in cleanup_setup.items() if key != "budget"} == {
         "count": 4,
         "total_seconds": 10.0,
         "avg_seconds": 2.5,
@@ -103,3 +103,48 @@ def test_main_prints_summary_table_and_ignores_bad_records(tmp_path, capsys):
     summary = json.loads((artifact_dir / "fixture-timings-summary.json").read_text(encoding="utf-8"))
     assert summary["record_count"] == 1
     assert summary["invalid_record_count"] == 2
+
+
+def test_summarize_artifact_dir_flags_fixture_budget_violations(tmp_path):
+    summarize = importlib.import_module("scripts.summarize_fixture_timings")
+    artifact_dir = tmp_path / "artifacts" / "ci" / "abc123"
+    _write_jsonl(
+        artifact_dir / "fixture-timings" / "server_pytest_db_web_api.jsonl",
+        [
+            {"fixture": "cleanup_db", "phase": "setup", "duration_seconds": 1.0},
+            {"fixture": "cleanup_db", "phase": "setup", "duration_seconds": 45.0},
+            {"fixture": "test_app", "phase": "setup", "duration_seconds": 0.5},
+        ],
+    )
+
+    summary = summarize.summarize_artifact_dir(artifact_dir)
+
+    assert summary["budget_status"] == "fail"
+    assert summary["fixtures"]["cleanup_db"]["setup"]["budget"] == {
+        "p95_seconds": 30.0,
+        "max_seconds": 45.0,
+    }
+    assert summary["budget_violations"] == [
+        {
+            "fixture": "cleanup_db",
+            "phase": "setup",
+            "metric": "p95_seconds",
+            "actual_seconds": 45.0,
+            "budget_seconds": 30.0,
+        }
+    ]
+
+
+def test_main_can_enforce_fixture_timing_budget(tmp_path):
+    summarize = importlib.import_module("scripts.summarize_fixture_timings")
+    artifact_dir = tmp_path / "artifacts" / "ci" / "abc123"
+    _write_jsonl(
+        artifact_dir / "fixture-timings" / "server_pytest_db_web_api.jsonl",
+        [{"fixture": "test_agent", "phase": "setup", "duration_seconds": 95.0}],
+    )
+
+    exit_code = summarize.main([str(artifact_dir), "--enforce-budget"])
+
+    assert exit_code == 1
+    summary = json.loads((artifact_dir / "fixture-timings-summary.json").read_text(encoding="utf-8"))
+    assert summary["budget_status"] == "fail"

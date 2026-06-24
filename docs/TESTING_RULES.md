@@ -129,6 +129,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled; fixture E2E has one CI retry and records first-attempt failures as flaky evidence, not clean green.
 - `summary.evidence_layers.webapp_fixture_e2e` marks Playwright fixture E2E as `mode=fixture_e2e` and `canonical_live_browser=false`; it is CI browser-fixture coverage, not live browser signoff evidence.
 - `summary.baseline_artifacts` records canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and fixture E2E retry policy for release/preflight consumers.
+- `fixture-timings-summary.json` includes the default fixture timing budget result: `budget_profile`, `budget_status` and `budget_violations`.
 - `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
 - `db_cleanup_profile_audit` runs `python scripts/audit_db_cleanup_profiles.py --strict` before pytest layers and fails on DB-backed, non-agent-ws server test files without an explicit `db_cleanup` profile.
 - `scripts_pytest_no_db` runs `scripts/test_*.py -m "not manual"` with `--durations=40` and `junit-scripts-no-db.xml` before server pytest layers.
@@ -145,9 +146,10 @@ $env:PC_CLIENT_TEST_TIMING = "1"
 $env:PC_CLIENT_TEST_TIMING_PATH = "artifacts/ci/manual/fixture-timings/focused.jsonl"
 python -m pytest server/tests/test_web_support_api.py -m "not manual and not no_db and not agent_ws" -q
 python scripts/summarize_fixture_timings.py artifacts/ci/manual
+python scripts/summarize_fixture_timings.py artifacts/ci/manual --enforce-budget
 ```
 
-The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_app_light/setup`, `test_app_light/teardown`, `test_client/setup`, `test_client/teardown`, `test_client_light/setup`, `test_client_light/teardown`, `test_agent/setup`, and `test_agent/teardown`. Cleanup timings with a `profile` field are also grouped as `cleanup_db:<profile>` and `_cleanup_db_async:<profile>` while preserving the original aggregate rows. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
+The summary is written to `artifacts/ci/<sha>/fixture-timings-summary.json` and printed as a table with `total`, `count`, `avg`, `p50`, `p95`, and `max` per fixture phase. Current measured phases are `run_migrations/setup`, `cleanup_db/setup`, `_cleanup_db_async/call`, `test_app/setup`, `test_app/teardown`, `test_app_light/setup`, `test_app_light/teardown`, `test_client/setup`, `test_client/teardown`, `test_client_light/setup`, `test_client_light/teardown`, `test_agent/setup`, and `test_agent/teardown`. Cleanup timings with a `profile` field are also grouped as `cleanup_db:<profile>` and `_cleanup_db_async:<profile>` while preserving the original aggregate rows. The default budget profile annotates matching fixture/phase rows with a `budget` object and reports violations when `p95_seconds` or `max_seconds` exceeds the budget; `--enforce-budget` exits non-zero on those violations. Some timings are nested, so do not sum every row as a single wall-clock total; use the rows to identify which fixture phase should be optimized next.
 
 ## Light HTTP App Fixture
 

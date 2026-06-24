@@ -11,6 +11,24 @@ from statistics import median
 from typing import Iterable
 
 
+DEFAULT_FIXTURE_TIMING_BUDGETS: dict[str, dict[str, dict[str, float]]] = {
+    "run_migrations": {"setup": {"p95_seconds": 120.0, "max_seconds": 180.0}},
+    "cleanup_db": {"setup": {"p95_seconds": 30.0, "max_seconds": 45.0}},
+    "_cleanup_db_async": {"call": {"p95_seconds": 30.0, "max_seconds": 45.0}},
+    "test_app": {"setup": {"p95_seconds": 5.0, "max_seconds": 8.0}, "teardown": {"p95_seconds": 5.0, "max_seconds": 8.0}},
+    "test_app_light": {
+        "setup": {"p95_seconds": 3.0, "max_seconds": 5.0},
+        "teardown": {"p95_seconds": 3.0, "max_seconds": 5.0},
+    },
+    "test_client": {"setup": {"p95_seconds": 5.0, "max_seconds": 8.0}, "teardown": {"p95_seconds": 5.0, "max_seconds": 8.0}},
+    "test_client_light": {
+        "setup": {"p95_seconds": 3.0, "max_seconds": 5.0},
+        "teardown": {"p95_seconds": 3.0, "max_seconds": 5.0},
+    },
+    "test_agent": {"setup": {"p95_seconds": 60.0, "max_seconds": 90.0}, "teardown": {"p95_seconds": 30.0, "max_seconds": 45.0}},
+}
+
+
 def _round_seconds(value: float) -> float:
     return round(float(value), 6)
 
@@ -67,11 +85,41 @@ def _load_records(files: Iterable[Path]) -> tuple[dict[str, dict[str, list[float
     return grouped, valid_count, invalid_count
 
 
+def _apply_budgets(
+    fixtures: dict[str, dict[str, dict[str, float | int]]],
+    budgets: dict[str, dict[str, dict[str, float]]],
+) -> list[dict[str, object]]:
+    violations: list[dict[str, object]] = []
+    for fixture, phases in fixtures.items():
+        fixture_budget = budgets.get(fixture)
+        if not fixture_budget:
+            continue
+        for phase, stats in phases.items():
+            phase_budget = fixture_budget.get(phase)
+            if not phase_budget:
+                continue
+            stats["budget"] = {metric: _round_seconds(limit) for metric, limit in sorted(phase_budget.items())}
+            for metric, limit in sorted(phase_budget.items()):
+                actual = float(stats.get(metric) or 0.0)
+                if actual > limit:
+                    violations.append(
+                        {
+                            "fixture": fixture,
+                            "phase": phase,
+                            "metric": metric,
+                            "actual_seconds": _round_seconds(actual),
+                            "budget_seconds": _round_seconds(limit),
+                        }
+                    )
+    return violations
+
+
 def summarize_artifact_dir(
     artifact_dir: Path | str,
     *,
     timings_dir: Path | str | None = None,
     output_path: Path | str | None = None,
+    budgets: dict[str, dict[str, dict[str, float]]] | None = None,
 ) -> dict[str, object]:
     artifact_dir = Path(artifact_dir)
     timings_dir = Path(timings_dir) if timings_dir is not None else artifact_dir / "fixture-timings"
@@ -83,6 +131,13 @@ def summarize_artifact_dir(
         fixture: {phase: _stats(values) for phase, values in sorted(phases.items())}
         for fixture, phases in sorted(grouped.items())
     }
+    budget_violations = _apply_budgets(fixtures, DEFAULT_FIXTURE_TIMING_BUDGETS if budgets is None else budgets)
+    if not valid_count:
+        budget_status = "no_data"
+    elif budget_violations:
+        budget_status = "fail"
+    else:
+        budget_status = "pass"
     summary: dict[str, object] = {
         "schema": "pc_client.fixture_timings_summary.v1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -91,6 +146,9 @@ def summarize_artifact_dir(
         "files": [str(path) for path in files],
         "record_count": valid_count,
         "invalid_record_count": invalid_count,
+        "budget_profile": "default" if budgets is None else "custom",
+        "budget_status": budget_status,
+        "budget_violations": budget_violations,
         "fixtures": fixtures,
     }
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +175,16 @@ def _print_summary(summary: dict[str, object]) -> None:
                 f"{stats.get('p50_seconds', 0.0)} {stats.get('p95_seconds', 0.0)} "
                 f"{stats.get('max_seconds', 0.0)}"
             )
+    print(f"fixture timing budget: {summary.get('budget_status')}")
+    violations = summary.get("budget_violations")
+    if isinstance(violations, list):
+        for item in violations:
+            if not isinstance(item, dict):
+                continue
+            print(
+                f"budget violation: {item.get('fixture')}/{item.get('phase')} "
+                f"{item.get('metric')}={item.get('actual_seconds')} > {item.get('budget_seconds')}"
+            )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -124,6 +192,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("artifact_dir", type=Path, help="CI artifact dir, for example artifacts/ci/<sha>.")
     parser.add_argument("--timings-dir", type=Path, help="Override fixture-timings JSONL directory.")
     parser.add_argument("--output", type=Path, help="Override summary JSON output path.")
+    parser.add_argument("--enforce-budget", action="store_true", help="Exit non-zero when fixture timing budgets fail.")
     return parser.parse_args(argv)
 
 
@@ -135,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         output_path=args.output,
     )
     _print_summary(summary)
-    return 0
+    return 1 if args.enforce_budget and summary.get("budget_status") == "fail" else 0
 
 
 if __name__ == "__main__":
