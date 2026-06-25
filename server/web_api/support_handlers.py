@@ -45,7 +45,7 @@ from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
 from app.services.operation_service import OperationService
 from app.services.playbook_engine import start_run
-from auth.middleware import require_auth
+from auth.middleware import ensure_server_request_id, require_auth
 from consent.operation_consent import create_operation_user_consent
 from consent.service import ConsentAccessError
 from core.policy_engine import PolicyDecision, PolicyEngine
@@ -2600,7 +2600,13 @@ def _support_observer_clean(value: object, *, max_length: int = 500) -> str:
     return str(value or "").strip()[:max_length]
 
 
-def _support_observer_actor_context(request: web.Request, auth_context: Any) -> dict[str, Any]:
+def _support_observer_actor_context(
+    request: web.Request,
+    auth_context: Any,
+    *,
+    idempotency_key: str | None = None,
+    operation_id: str | None = None,
+) -> dict[str, Any]:
     correlation_id = (
         _support_observer_clean(request.headers.get("X-Request-ID"), max_length=120)
         or _support_observer_clean(request.headers.get("X-Correlation-ID"), max_length=120)
@@ -2610,7 +2616,11 @@ def _support_observer_actor_context(request: web.Request, auth_context: Any) -> 
         "actor_id": getattr(auth_context, "actor_id", None),
         "actor_role": getattr(auth_context, "actor_role", None),
         "method": request.method,
+        "server_request_id": ensure_server_request_id(request),
+        "request_id": _support_observer_clean(request.headers.get("X-Request-ID"), max_length=120),
         "correlation_id": correlation_id,
+        "idempotency_key": _support_observer_clean(idempotency_key, max_length=120),
+        "operation_id": _support_observer_clean(operation_id, max_length=120),
     }
 
 
@@ -2627,6 +2637,8 @@ async def _write_support_web_observer_event(
     device_id: str | None = None,
     person_id: str | None = None,
     error_code: str | None = None,
+    idempotency_key: str | None = None,
+    operation_id: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> None:
     try:
@@ -2637,7 +2649,12 @@ async def _write_support_web_observer_event(
                 event_type=event_type,
                 severity=severity,
                 route=request.path,
-                actor_context=_support_observer_actor_context(request, auth_context),
+                actor_context=_support_observer_actor_context(
+                    request,
+                    auth_context,
+                    idempotency_key=idempotency_key,
+                    operation_id=operation_id,
+                ),
                 ticket_id=ticket_id,
                 device_id=device_id,
                 person_id=person_id,
@@ -6014,6 +6031,7 @@ async def handle_web_support_send_message(request: web.Request):
                     ticket_id=ticket.ticket_id,
                     device_id=ticket.device_id,
                     person_id=_support_observer_ticket_person_id(ticket),
+                    idempotency_key=message_id,
                     payload=_support_chat_observer_payload(
                         message_payload=payload,
                         attachments=attachments,

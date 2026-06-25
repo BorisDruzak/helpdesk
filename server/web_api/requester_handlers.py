@@ -14,7 +14,7 @@ from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson
 from app.repos import ArtifactsRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
-from auth.middleware import require_auth
+from auth.middleware import ensure_server_request_id, require_auth
 from consent.service import OPERATION_SUBJECT_TYPES, ConsentAccessError, UserConsentService, serialize_user_consent
 from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
 from knowledge.feedback_service import KnowledgeFeedbackService
@@ -123,7 +123,13 @@ def _profile_incomplete_error(completion: dict[str, Any]) -> web.Response:
     )
 
 
-def _web_observer_actor_context(request: web.Request, auth_context: Any) -> dict[str, Any]:
+def _web_observer_actor_context(
+    request: web.Request,
+    auth_context: Any,
+    *,
+    idempotency_key: str | None = None,
+    operation_id: str | None = None,
+) -> dict[str, Any]:
     correlation_id = (
         _clean(request.headers.get("X-Request-ID"), max_length=120)
         or _clean(request.headers.get("X-Correlation-ID"), max_length=120)
@@ -133,7 +139,11 @@ def _web_observer_actor_context(request: web.Request, auth_context: Any) -> dict
         "actor_id": getattr(auth_context, "actor_id", None),
         "actor_role": getattr(auth_context, "actor_role", None),
         "method": request.method,
+        "server_request_id": ensure_server_request_id(request),
+        "request_id": _clean(request.headers.get("X-Request-ID"), max_length=120),
         "correlation_id": correlation_id,
+        "idempotency_key": _clean(idempotency_key, max_length=120),
+        "operation_id": _clean(operation_id, max_length=120),
     }
 
 
@@ -150,6 +160,8 @@ async def _write_requester_web_observer_event(
     device_id: str | None = None,
     person_id: str | None = None,
     error_code: str | None = None,
+    idempotency_key: str | None = None,
+    operation_id: str | None = None,
     payload: dict[str, Any] | None = None,
 ) -> None:
     try:
@@ -160,7 +172,12 @@ async def _write_requester_web_observer_event(
                 event_type=event_type,
                 severity=severity,
                 route=request.path,
-                actor_context=_web_observer_actor_context(request, auth_context),
+                actor_context=_web_observer_actor_context(
+                    request,
+                    auth_context,
+                    idempotency_key=idempotency_key,
+                    operation_id=operation_id,
+                ),
                 ticket_id=ticket_id,
                 device_id=device_id,
                 person_id=person_id,
@@ -1203,6 +1220,7 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
                 ticket_id=ticket.ticket_id,
                 device_id=ticket.device_id,
                 person_id=getattr(ticket, "requester_person_id", None),
+                idempotency_key=message_id,
                 payload=_requester_chat_message_observer_payload(
                     message_payload=payload,
                     attachments=attachments,

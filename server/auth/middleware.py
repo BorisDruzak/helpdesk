@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from loguru import logger
 from typing import Optional
 from urllib.parse import urlsplit
+import uuid
 import config
 from auth.context import AuthContext, AuthType
 from auth.service import AuthService
@@ -18,6 +19,8 @@ from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 
 
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
+SERVER_REQUEST_ID_KEY = "server_request_id"
+SERVER_REQUEST_ID_HEADER = "X-Server-Request-ID"
 WEB_AUTH_AUDIT_DEVICE_ID = "00000000-0000-0000-0000-00000000a11d"
 WEB_AUTH_AUDIT_WINDOW_SEC = 60
 _WEB_AUTH_AUDIT_LAST_SEEN: dict[tuple[str, str, str, str], datetime] = {}
@@ -90,6 +93,28 @@ def get_recent_query_token_auth_paths(limit: int = 10) -> list[dict[str, object]
 
 def reset_query_token_auth_attempts() -> None:
     _QUERY_TOKEN_AUTH_ATTEMPTS.clear()
+
+
+def ensure_server_request_id(request: web.Request) -> str:
+    existing = str(request.get(SERVER_REQUEST_ID_KEY) or "").strip()
+    if existing:
+        return existing[:120]
+    generated = str(uuid.uuid4())
+    request[SERVER_REQUEST_ID_KEY] = generated
+    return generated
+
+
+@web.middleware
+async def request_id_middleware(request: web.Request, handler):
+    request_id = ensure_server_request_id(request)
+    try:
+        response = await handler(request)
+    except web.HTTPException as exc:
+        exc.headers.setdefault(SERVER_REQUEST_ID_HEADER, request_id)
+        raise
+    if not getattr(response, "prepared", False):
+        response.headers.setdefault(SERVER_REQUEST_ID_HEADER, request_id)
+    return response
 
 
 def extract_token_from_header(request: web.Request) -> Optional[str]:
@@ -351,6 +376,7 @@ async def _write_web_auth_audit(
         "route": route,
         "path": request.path,
         "method": request.method,
+        "server_request_id": ensure_server_request_id(request),
         "error_code": error_code,
         "error_kind": error_code,
         "failure_stage": event_type,
@@ -442,6 +468,8 @@ async def auth_middleware(request: web.Request, handler):
     Returns:
         Response from handler or 401 if authentication failed
     """
+    ensure_server_request_id(request)
+
     # Skip authentication for non-API endpoints
     if not request.path.startswith("/api/"):
         return await handler(request)

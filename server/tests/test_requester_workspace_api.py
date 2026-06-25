@@ -2725,6 +2725,75 @@ async def test_requester_ticket_message_retry_is_idempotent_by_message_id(test_c
 
 
 @pytest.mark.asyncio
+async def test_requester_distinct_messages_without_client_request_id_get_distinct_observer_traces(
+    test_client,
+    test_engine,
+):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    login = f"requester-message-trace-{uuid.uuid4().hex[:8]}@example.test"
+    async with session_maker() as session:
+        session.add(_device(device_id, "requester-message-trace-device"))
+        approved = await _approved_binding(session, device_id=device_id, login=login)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=login,
+            title="Requester message trace ticket",
+            description="Distinct requester messages need distinct observer traces.",
+            user_display_name="Requester Message Trace",
+            requester_profile={"full_name": "Requester Message Trace", "email": login},
+            normalized_priority=build_default_priority_payload({}),
+            requester_account={
+                "account_mode": "confirmed_binding",
+                "person_id": approved["person"]["person_id"],
+                "binding_id": approved["binding"]["binding_id"],
+            },
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        ticket_ref = created["ticket"].ticket_code
+        await session.commit()
+
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+    first = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_ref}/message",
+        headers=headers,
+        json={"message_id": f"requester-msg-one-{uuid.uuid4().hex}", "text": "first message"},
+    )
+    first_payload = await first.json()
+    assert first.status == 200, first_payload
+    first_server_request_id = first.headers.get("X-Server-Request-ID")
+    assert first_server_request_id
+
+    second = await test_client.post(
+        f"/api/web/requester/tickets/{ticket_ref}/message",
+        headers=headers,
+        json={"message_id": f"requester-msg-two-{uuid.uuid4().hex}", "text": "second message"},
+    )
+    second_payload = await second.json()
+    assert second.status == 200, second_payload
+    second_server_request_id = second.headers.get("X-Server-Request-ID")
+    assert second_server_request_id
+    assert second_server_request_id != first_server_request_id
+
+    async with session_maker() as session:
+        traces = await _observer_traces(
+            session,
+            ticket_id=ticket_id,
+            source="requester_chat",
+            event_type="chat_message_sent",
+        )
+
+    assert len(traces) == 2
+    assert len({trace.trace_id for trace in traces}) == 2
+    assert {trace.attrs_json["server_request_id"] for trace in traces} == {
+        first_server_request_id,
+        second_server_request_id,
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("terminal_status", ["resolved", "closed"])
 async def test_requester_ticket_message_rejects_terminal_statuses_and_exposes_actions(
     test_client,

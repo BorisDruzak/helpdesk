@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.db import get_session
 from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
 from app.repos.auth_tokens_repo import AuthTokensRepo
-from auth.middleware import require_auth
+from auth.middleware import ensure_server_request_id, require_auth
 from auth.password_service import PasswordPolicyError
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
@@ -129,6 +129,8 @@ def _observer_actor_context(
         "actor_id": actor_id,
         "actor_role": actor_role,
         "method": request.method,
+        "server_request_id": ensure_server_request_id(request),
+        "request_id": _text(request.headers.get("X-Request-ID"), max_length=120),
         "correlation_id": (
             _text(request.headers.get("X-Request-ID"), max_length=120)
             or _text(request.headers.get("X-Correlation-ID"), max_length=120)

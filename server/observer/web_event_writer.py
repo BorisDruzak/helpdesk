@@ -103,7 +103,7 @@ def _actor_ref(actor_context: Any) -> str | None:
 def _execution_ref(actor_context: Any) -> str | None:
     if not isinstance(actor_context, dict):
         return None
-    for key in ("server_request_id", "request_id", "correlation_id", "idempotency_key", "operation_id"):
+    for key in ("idempotency_key", "operation_id", "server_request_id", "request_id", "correlation_id"):
         value = _compact(actor_context.get(key), max_len=120)
         if value:
             return value
@@ -154,11 +154,19 @@ async def write_web_cabinet_observer_event(
     person_id = _compact(person_id, max_len=36)
     error_code = _compact(error_code, max_len=120)
     method = None
+    server_request_id = None
+    request_id = None
     correlation_id = None
+    idempotency_key = None
+    operation_id = None
     actor_role = None
     if isinstance(actor_context, dict):
         method = _compact(actor_context.get("method"), max_len=16)
+        server_request_id = _compact(actor_context.get("server_request_id"), max_len=120)
+        request_id = _compact(actor_context.get("request_id"), max_len=120)
         correlation_id = _compact(actor_context.get("correlation_id"), max_len=120)
+        idempotency_key = _compact(actor_context.get("idempotency_key"), max_len=120)
+        operation_id = _compact(actor_context.get("operation_id"), max_len=120)
         actor_role = _compact(actor_context.get("actor_role"), max_len=30)
 
     now = _now()
@@ -191,7 +199,11 @@ async def write_web_cabinet_observer_event(
         "person_id": person_id,
         "actor_role": actor_role,
         "actor_ref": _actor_ref(actor_context),
+        "server_request_id": server_request_id,
+        "request_id": request_id,
         "correlation_id": correlation_id,
+        "idempotency_key": idempotency_key,
+        "operation_id": operation_id,
     }
     attrs = {key: value for key, value in attrs.items() if value is not None}
     span_attrs = {**attrs, "payload": safe_payload}

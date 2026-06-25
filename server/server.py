@@ -433,8 +433,9 @@ def create_app() -> web.Application:
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
     
-    # КРИТИЧНО: Регистрируем auth middleware ПЕРЕД маршрутами
-    from auth.middleware import auth_middleware
+    # КРИТИЧНО: Регистрируем request/auth middleware ПЕРЕД маршрутами
+    from auth.middleware import auth_middleware, request_id_middleware
+    app.middlewares.append(request_id_middleware)
     app.middlewares.append(auth_middleware)
     
     # Регистрируем маршруты

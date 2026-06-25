@@ -10,7 +10,7 @@ from access_control.service import resolve_session_access
 from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
 from app.repos.ui_users_repo import VALID_ROLES, UiUsersRepo
-from auth.middleware import WEB_SESSION_COOKIE_NAME, extract_auth_context, require_auth
+from auth.middleware import WEB_SESSION_COOKIE_NAME, ensure_server_request_id, extract_auth_context, require_auth
 from auth.password_service import PasswordPolicyError, hash_password, validate_password_policy
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
@@ -86,6 +86,8 @@ def _account_session_observer_actor_context(
         "actor_id": actor_id,
         "actor_role": actor_role,
         "method": request.method,
+        "server_request_id": ensure_server_request_id(request),
+        "request_id": _clean_header(request.headers.get("X-Request-ID")),
         "correlation_id": (
             _clean_header(request.headers.get("X-Request-ID"))
             or _clean_header(request.headers.get("X-Correlation-ID"))

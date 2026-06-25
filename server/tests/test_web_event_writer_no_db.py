@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -8,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 from app.db.models import ObserverErrorOccurrence, ObserverErrorSignature, ObserverSpan, ObserverTrace
 from observer.checks.web_cabinet import _has_create_observer_trace
 from observer.web_event_writer import write_web_cabinet_observer_event
+from web_api.requester_handlers import _web_observer_actor_context
 
 
 pytestmark = pytest.mark.no_db
@@ -66,6 +68,13 @@ class _FakeSession:
         return _FakeResult(row=(count, first, last, affected_devices))
 
 
+class _FakeRequest(dict):
+    def __init__(self) -> None:
+        super().__init__()
+        self.headers: dict[str, str] = {}
+        self.method = "POST"
+
+
 async def _write(session: _FakeSession, *, correlation_id: str, result: str, error_code: str | None = None) -> str:
     return await write_web_cabinet_observer_event(
         session,
@@ -79,6 +88,22 @@ async def _write(session: _FakeSession, *, correlation_id: str, result: str, err
         error_code=error_code,
         payload={"field": "value"},
     )
+
+
+def test_web_observer_actor_context_generates_server_request_id_without_client_header():
+    auth_context = SimpleNamespace(actor_id="requester-1", actor_role="user")
+    first_request = _FakeRequest()
+    second_request = _FakeRequest()
+
+    first_context = _web_observer_actor_context(first_request, auth_context)
+    second_context = _web_observer_actor_context(second_request, auth_context)
+
+    assert first_context["server_request_id"]
+    assert second_context["server_request_id"]
+    assert first_context["server_request_id"] == first_request["server_request_id"]
+    assert second_context["server_request_id"] == second_request["server_request_id"]
+    assert first_context["server_request_id"] != second_context["server_request_id"]
+    assert first_context["correlation_id"] is None
 
 
 @pytest.mark.asyncio

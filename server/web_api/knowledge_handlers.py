@@ -12,7 +12,7 @@ from app.db import get_session
 from app.db.models import KnowledgeContentPack, KnowledgeGapFinding, KnowledgeIngestionJob, KnowledgeNode, KnowledgeReviewTask, KnowledgeSpace
 from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.knowledge_repo import KnowledgeRepo
-from auth.middleware import require_auth
+from auth.middleware import ensure_server_request_id, require_auth
 from knowledge.contracts import (
     KNOWLEDGE_RELATION_TYPES,
     KnowledgePublicationBlockedError,
@@ -66,6 +66,8 @@ def _knowledge_observer_actor_context(request: web.Request, *, actor_id: str | N
         "actor_id": actor_id,
         "actor_role": actor_role,
         "method": request.method,
+        "server_request_id": ensure_server_request_id(request),
+        "request_id": _clean_header(request.headers.get("X-Request-ID")),
         "correlation_id": (
             _clean_header(request.headers.get("X-Request-ID"))
             or _clean_header(request.headers.get("X-Correlation-ID"))
