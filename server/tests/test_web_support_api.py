@@ -2239,9 +2239,14 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["observer"]["web_flow"]["closure"] == "succeeded"
     assert payload["data"]["observer"]["web_flow"]["latest_event_type"] == "closure_confirmed"
     assert payload["data"]["observer"]["web_flow"]["latest_trace_url"] == f"/app/admin/observer?trace_id={closure_trace_id}"
-    assert payload["data"]["observer"]["integrity_events"][0]["event_type"] == "web_ticket_missing_ticket_context_v1"
-    assert payload["data"]["observer"]["integrity_events"][0]["severity"] == "critical"
-    assert payload["data"]["observer"]["integrity_events"][0]["trace_url"] == f"/app/admin/observer?trace_id={web_trace_id}"
+    integrity_event = payload["data"]["observer"]["integrity_events"][0]
+    assert integrity_event["event_type"] == "web_ticket_missing_ticket_context_v1"
+    assert integrity_event["severity"] == "critical"
+    assert integrity_event["trace_url"] == f"/app/admin/observer?trace_id={web_trace_id}"
+    assert integrity_event["scan_observation_count"] == 1
+    assert integrity_event["recurrence_count"] == 1
+    assert integrity_event["occurrence_count"] == 1
+    assert integrity_event["last_reopened_at"] is None
     if observer_summary["root_trace_id"]:
         assert observer_summary["root_trace_url"] == f"/app/admin/observer?trace_id={observer_summary['root_trace_id']}"
         assert payload["data"]["observer"]["root_trace"]["trace_id"] == observer_summary["root_trace_id"]

@@ -528,6 +528,9 @@ class SupportTicketObserverIntegrityEvent(BaseModel):
     dedupe_key: str | None = None
     last_seen_at: str | None = None
     occurrence_count: int = 0
+    scan_observation_count: int = 0
+    recurrence_count: int = 0
+    last_reopened_at: str | None = None
     runbook: str | None = None
     trace_id: str | None = None
     trace_url: str | None = None

@@ -87,6 +87,20 @@ def _status_for_seen_condition(existing_status: str | None, *, suppression_reaso
     return "active"
 
 
+def _positive_counter(row: Any, attr: str, *, fallback: int = 0) -> int:
+    try:
+        value = getattr(row, attr)
+    except AttributeError:
+        value = None
+    if value is None and attr != "occurrence_count":
+        value = getattr(row, "occurrence_count", None)
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        number = fallback
+    return max(number, fallback)
+
+
 class ObserverIntegrityRepo:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -114,6 +128,9 @@ class ObserverIntegrityRepo:
                 last_seen_at=now,
                 dedupe_key=_compact(event.dedupe_key, max_len=300) or stable_event_id(str(now)),
                 occurrence_count=1,
+                scan_observation_count=1,
+                recurrence_count=1,
+                last_reopened_at=None,
                 device_id=_compact(event.device_id, max_len=36),
                 ticket_id=_compact(event.ticket_id, max_len=36),
                 operation_id=_compact(event.operation_id, max_len=36),
@@ -138,11 +155,19 @@ class ObserverIntegrityRepo:
         existing.event_type = _compact(event.event_type, max_len=120) or existing.event_type
         existing.severity = _normalize_severity(event.severity)
         existing.source = _compact(event.source, max_len=120) or existing.source
-        existing.status = _status_for_seen_condition(existing.status, suppression_reason=suppression_reason)
+        previous_status = existing.status
+        existing.status = _status_for_seen_condition(previous_status, suppression_reason=suppression_reason)
         existing.detected_at = detected_at
         existing.last_seen_at = now
         existing.resolved_at = None
-        existing.occurrence_count = int(existing.occurrence_count or 0) + 1
+        existing.scan_observation_count = _positive_counter(existing, "scan_observation_count", fallback=0) + 1
+        recurrence_count = _positive_counter(existing, "recurrence_count", fallback=1)
+        if previous_status == "resolved":
+            recurrence_count += 1
+            existing.last_reopened_at = now
+        existing.recurrence_count = recurrence_count
+        # Backward-compatible API field: it now means real recurrences, not scan observations.
+        existing.occurrence_count = recurrence_count
         existing.device_id = _compact(event.device_id, max_len=36)
         existing.ticket_id = _compact(event.ticket_id, max_len=36)
         existing.operation_id = _compact(event.operation_id, max_len=36)
@@ -384,6 +409,7 @@ def serialize_observer_integrity_event(row: ObserverIntegrityEvent) -> dict[str,
         "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
         "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
         "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+        "last_reopened_at": row.last_reopened_at.isoformat() if row.last_reopened_at else None,
         "device_id": row.device_id,
         "ticket_id": row.ticket_id,
         "operation_id": row.operation_id,
@@ -400,5 +426,7 @@ def serialize_observer_integrity_event(row: ObserverIntegrityEvent) -> dict[str,
         "status": row.status,
         "suppression_reason": row.suppression_reason,
         "occurrence_count": row.occurrence_count,
+        "scan_observation_count": row.scan_observation_count,
+        "recurrence_count": row.recurrence_count,
         "run_id": row.run_id,
     }

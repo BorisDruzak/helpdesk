@@ -248,6 +248,9 @@ export type ObserverIntegrityEvent = {
   status: "active" | "acknowledged" | "resolved" | "suppressed" | string;
   suppression_reason?: string | null;
   occurrence_count?: number | null;
+  scan_observation_count?: number | null;
+  recurrence_count?: number | null;
+  last_reopened_at?: string | null;
   run_id?: string | null;
 };
 

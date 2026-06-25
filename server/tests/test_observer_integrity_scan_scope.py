@@ -400,15 +400,20 @@ async def test_run_scan_times_out_slow_checker_and_does_not_resolve_source(monke
 
 @pytest.mark.asyncio
 async def test_upsert_event_preserves_acknowledged_status_when_condition_persists():
+    first_seen_at = datetime.now(timezone.utc) - timedelta(minutes=10)
     existing = SimpleNamespace(
         event_type="observer_test_event",
         severity="warning",
         source=PROTOCOL_SOURCE,
         status="acknowledged",
         detected_at=None,
-        last_seen_at=None,
+        first_seen_at=first_seen_at,
+        last_seen_at=first_seen_at,
         resolved_at=None,
         occurrence_count=1,
+        scan_observation_count=1,
+        recurrence_count=1,
+        last_reopened_at=None,
         device_id=None,
         ticket_id=None,
         operation_id=None,
@@ -435,4 +440,59 @@ async def test_upsert_event_preserves_acknowledged_status_when_condition_persist
     row = await repo.upsert_event(_event(PROTOCOL_SOURCE, "protocol:acknowledged"))
 
     assert row.status == "acknowledged"
+    assert row.scan_observation_count == 2
+    assert row.recurrence_count == 1
+    assert row.occurrence_count == 1
+    assert row.first_seen_at == first_seen_at
+    assert row.last_reopened_at is None
+
+
+@pytest.mark.asyncio
+async def test_upsert_event_counts_recurrence_only_when_resolved_condition_returns():
+    first_seen_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    resolved_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    existing = SimpleNamespace(
+        event_type="observer_test_event",
+        severity="warning",
+        source=PROTOCOL_SOURCE,
+        status="resolved",
+        detected_at=None,
+        first_seen_at=first_seen_at,
+        last_seen_at=resolved_at,
+        resolved_at=resolved_at,
+        occurrence_count=1,
+        scan_observation_count=3,
+        recurrence_count=1,
+        last_reopened_at=None,
+        device_id=None,
+        ticket_id=None,
+        operation_id=None,
+        command_id=None,
+        device_outbox_id=None,
+        outbox_id=None,
+        trace_id=None,
+        actor_role=None,
+        expected="old expected",
+        actual="old actual",
+        evidence_json={},
+        runbook=None,
+        suppression_reason=None,
+        run_id=None,
+        updated_at=None,
+    )
+    repo = ObserverIntegrityRepo(_FakeSession())
+
+    async def fake_get_by_dedupe_key(_dedupe_key):
+        return existing
+
+    repo.get_by_dedupe_key = fake_get_by_dedupe_key
+
+    row = await repo.upsert_event(_event(PROTOCOL_SOURCE, "protocol:reopened"))
+
+    assert row.status == "active"
+    assert row.scan_observation_count == 4
+    assert row.recurrence_count == 2
     assert row.occurrence_count == 2
+    assert row.first_seen_at == first_seen_at
+    assert row.last_reopened_at is not None
+    assert row.last_reopened_at > resolved_at

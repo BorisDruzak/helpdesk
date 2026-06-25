@@ -19,6 +19,7 @@ from app.db.models import (
     ProblemCandidate,
     UiUser,
 )
+from app.repos.observer_integrity_repo import ObserverIntegrityEventInput, ObserverIntegrityRepo
 from observer.integrity_service import ObserverIntegrityService
 from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 
@@ -451,7 +452,52 @@ async def test_observer_integrity_protocol_gap_resolves_and_repeated_scan_dedupe
             )
         ).scalars().all()
         assert len(rows) == 1
-        assert rows[0].occurrence_count == 2
+        assert rows[0].scan_observation_count == 2
+        assert rows[0].recurrence_count == 1
+        assert rows[0].occurrence_count == 1
+        assert rows[0].last_reopened_at is None
+
+
+@pytest.mark.asyncio
+async def test_observer_integrity_recurrence_count_increments_only_after_resolution(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    source = "observer.protocol_integrity"
+    event = ObserverIntegrityEventInput(
+        event_type="protocol_ack_without_persistence",
+        severity="warning",
+        source=source,
+        dedupe_key=f"recurrence-semantics:{uuid.uuid4()}",
+        expected="ack persisted",
+        actual="missing persisted event",
+        evidence={"case": "recurrence-semantics"},
+    )
+    async with session_maker() as session:
+        repo = ObserverIntegrityRepo(session)
+        row = await repo.upsert_event(event)
+        await repo.upsert_event(event)
+        await session.flush()
+
+        assert row.status == "active"
+        assert row.scan_observation_count == 2
+        assert row.recurrence_count == 1
+        assert row.occurrence_count == 1
+        assert row.last_reopened_at is None
+
+        await repo.resolve_missing(source=source, active_dedupe_keys=set())
+        await session.flush()
+        assert row.status == "resolved"
+        resolved_at = row.resolved_at
+
+        await repo.upsert_event(event)
+        await session.flush()
+
+        assert row.status == "active"
+        assert row.scan_observation_count == 3
+        assert row.recurrence_count == 2
+        assert row.occurrence_count == 2
+        assert row.last_reopened_at is not None
+        assert resolved_at is not None
+        assert row.last_reopened_at >= resolved_at
 
 
 @pytest.mark.asyncio
