@@ -576,6 +576,53 @@ def test_server_db_api_layer_paths_groups_every_test_file_once(tmp_path):
     assert Path("server/tests/test_inventory_v3_service.py") in web_api_paths
 
 
+def test_server_db_api_layer_paths_uses_workspace_suite_catalog(tmp_path):
+    tests_dir = tmp_path / "server" / "tests"
+    tests_dir.mkdir(parents=True)
+    (tmp_path / "quality").mkdir()
+    (tmp_path / "quality" / "test_suites.toml").write_text(
+        """
+[[suites]]
+name = "server_pytest_db_knowledge"
+runner = "pytest"
+server_db_api_patterns = ["test_custom_knowledge_*.py"]
+
+[[suites]]
+name = "server_pytest_db_tickets"
+runner = "pytest"
+server_db_api_patterns = ["test_ticket_*.py"]
+
+[[suites]]
+name = "server_pytest_db_observer_diagnostics"
+runner = "pytest"
+server_db_api_patterns = ["test_observer_*.py"]
+
+[[suites]]
+name = "server_pytest_db_agent_runtime"
+runner = "pytest"
+server_db_api_patterns = ["test_agent_*.py"]
+
+[[suites]]
+name = "server_pytest_db_web_api"
+runner = "pytest"
+server_db_api_catch_all = true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+    (tests_dir / "test_custom_knowledge_contract.py").write_text(
+        "def test_placeholder(): pass\n",
+        encoding="utf-8",
+    )
+
+    layers = dict(run_ci_suite._server_db_api_layer_paths(tmp_path))
+
+    assert Path("server/tests/test_custom_knowledge_contract.py") in layers["server_pytest_db_knowledge"]
+    assert Path("server/tests/test_custom_knowledge_contract.py") not in layers.get(
+        "server_pytest_db_web_api", []
+    )
+
+
 def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
     summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
     tests_dir = tmp_path / "server" / "tests"

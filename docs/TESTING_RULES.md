@@ -30,7 +30,7 @@ Layer meanings:
 
 - `no_db`: pure unit/contract checks that must not require PostgreSQL setup or cleanup.
 - `migration_schema`: fresh PostgreSQL Alembic contract for empty-DB upgrade, exact heads, idempotent upgrade, actual schema cleanup audit, required constraints/indexes/defaults and smoke DML. This layer must run with template DB disabled.
-- DB/API domain layers: DB/API/server contract tests without the in-process WS agent, split by filename into knowledge, tickets/helpdesk, observer/diagnostics, agent runtime, and web/API catch-all layers by `scripts/run_ci_suite.py`.
+- DB/API domain layers: DB/API/server contract tests without the in-process WS agent, split into knowledge, tickets/helpdesk, observer/diagnostics, agent runtime, and web/API catch-all layers by the canonical `quality/test_suites.toml` catalog. `scripts/run_ci_suite.py` and `scripts/audit_test_inventory.py` load the same catalog for filename ownership, affected-suite source-prefix routing, layer order and DB/WS parallel grouping.
 - `agent_ws`: tests that use the in-process WS agent runtime. This marker is auto-applied to tests that request the `test_agent` fixture.
 
 Pure server tests that do not request `test_client`, `test_app`, `test_engine`, `patched_get_session`, `test_database_url`, `test_database_admin_url` or `run_migrations` should set module-level `pytestmark = pytest.mark.no_db`. This keeps them out of the DB/API layer and avoids paying the migration/cleanup cost for tests that do not touch PostgreSQL.
@@ -148,6 +148,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `summary.evidence_layers.webapp_fixture_e2e` marks Playwright fixture E2E as `mode=fixture_e2e` and `canonical_live_browser=false`; it is CI browser-fixture coverage, not live browser signoff evidence.
 - `summary.gate_mode`, `summary.effective_layers`, `summary.full_merge_gate_required` and `summary.full_merge_gate_satisfied` distinguish full, selected and affected-suite runs. Release/preflight consumers accept only green full merge-gate artifacts.
 - `summary.baseline_artifacts` records canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and fixture E2E retry policy for release/preflight consumers.
+- `quality/test_suites.toml` is the canonical CI/test-suite catalog. The runner fails on layer-order/catalog drift, and the inventory audit uses the same catalog for server DB/API ownership instead of maintaining a second routing table.
 - `fixture-timings-summary.json` includes the default fixture timing budget result: `budget_profile`, `budget_status` and `budget_violations`.
 - `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
 - `db_cleanup_profile_audit` runs `python scripts/audit_db_cleanup_profiles.py --strict` before pytest layers and fails on DB-backed, non-agent-ws server test files without an explicit `db_cleanup` profile.

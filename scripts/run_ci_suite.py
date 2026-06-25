@@ -28,6 +28,7 @@ try:
         webapp_bundle_archive_for_commit,
         webapp_bundle_dir_for_commit,
     )
+    from scripts.suite_catalog import load_suite_catalog, require_catalog_layers
     from scripts.summarize_fixture_timings import summarize_artifact_dir
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -38,6 +39,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
         webapp_bundle_archive_for_commit,
         webapp_bundle_dir_for_commit,
     )
+    from scripts.suite_catalog import load_suite_catalog, require_catalog_layers
     from scripts.summarize_fixture_timings import summarize_artifact_dir
 
 
@@ -62,143 +64,15 @@ CI_EVIDENCE_LAYERS = {
 
 Step = tuple[str, list[str], Path, float, float, dict[str, str] | None]
 MIGRATION_SCHEMA_TEST_PATH = Path("server/tests/test_migration_schema_contract.py")
-
-SERVER_DB_WS_PARALLEL_LAYER_ORDER: tuple[str, ...] = (
-    "server_pytest_db_web_api",
-    "server_pytest_db_tickets",
-    "server_pytest_db_knowledge",
-    "server_pytest_db_observer_diagnostics",
-    "server_pytest_db_agent_runtime",
-    "server_pytest_agent_ws",
-)
-
+DEFAULT_SUITE_CATALOG = load_suite_catalog()
+SERVER_DB_WS_PARALLEL_LAYER_ORDER: tuple[str, ...] = DEFAULT_SUITE_CATALOG.parallel_layer_order("server-db")
 SERVER_DB_API_LAYER_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "server_pytest_db_knowledge",
-        (
-            "test_knowledge_*.py",
-            "test_support_knowledge_provider.py",
-        ),
-    ),
-    (
-        "server_pytest_db_tickets",
-        (
-            "test_ticket_*.py",
-            "test_helpdesk_*.py",
-            "test_form_*.py",
-            "test_policy_health*.py",
-            "test_public_queue_privacy.py",
-            "test_service_catalog_*.py",
-            "test_reports_service_catalog.py",
-            "test_requester_timeline_projection.py",
-            "test_stage8.py",
-            "test_support_playbook_readiness.py",
-            "test_registry_*.py",
-        ),
-    ),
-    (
-        "server_pytest_db_observer_diagnostics",
-        (
-            "test_admin_tech_api.py",
-            "test_control_plane_api.py",
-            "test_diagnostic_*.py",
-            "test_manual_capability_provider.py",
-            "test_observer_*.py",
-            "test_trace_overlay_api.py",
-            "test_workflow_side_effect_observability.py",
-            "test_zabbix_provider_no_db.py",
-        ),
-    ),
-    (
-        "server_pytest_db_agent_runtime",
-        (
-            "test_agent_*.py",
-            "test_cancel_operations.py",
-            "test_command_result_*.py",
-            "test_device_*.py",
-            "test_handshake_module_reconcile.py",
-            "test_modules_*.py",
-            "test_operation_*.py",
-            "test_outbox_*.py",
-            "test_protocol_*.py",
-            "test_remote_assist_*.py",
-            "test_state_manager_agent_registry.py",
-            "test_subscription_registry.py",
-            "test_tool_*.py",
-            "test_tools_*.py",
-        ),
-    ),
+    DEFAULT_SUITE_CATALOG.server_db_api_layer_rules
 )
-
-AFFECTED_BASE_LAYERS: tuple[str, ...] = (
-    "verify_workspace",
-    "webapp_bundle",
-    "webapp_unit_tests",
-    "test_inventory_audit",
-    "db_cleanup_profile_audit",
-    "fixture_builder_audit",
-    "active_risk_audit",
-    "observer_contamination_audit",
-    "branch_coverage_audit",
-    "mutation_smoke",
-    "scripts_pytest_no_db",
-)
-
-SERVER_DB_DOMAIN_LAYERS: tuple[str, ...] = tuple(name for name, _patterns in SERVER_DB_API_LAYER_RULES) + (
-    "server_pytest_db_web_api",
-)
-
+AFFECTED_BASE_LAYERS: tuple[str, ...] = DEFAULT_SUITE_CATALOG.affected_base_layers
+SERVER_DB_DOMAIN_LAYERS: tuple[str, ...] = DEFAULT_SUITE_CATALOG.server_db_domain_layers
 SERVER_SOURCE_LAYER_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (
-        "server_pytest_db_knowledge",
-        (
-            "server/knowledge/",
-            "server/customer_history/",
-            "server/web_api/knowledge",
-            "content_packs/knowledge/",
-        ),
-    ),
-    (
-        "server_pytest_db_tickets",
-        (
-            "server/tickets/",
-            "server/requester/",
-            "server/registry/",
-            "server/access_control/",
-            "server/playbooks/",
-            "server/web_api/requester",
-            "server/web_api/support",
-            "server/web_api/registry",
-            "server/web_api/access",
-            "server/web_api/settings",
-            "server/web_api/reports",
-            "server/web_api/admin",
-        ),
-    ),
-    (
-        "server_pytest_db_observer_diagnostics",
-        (
-            "server/observer/",
-            "server/tech/",
-            "server/diagnostic",
-            "server/web_api/tech",
-            "server/web_api/observer",
-        ),
-    ),
-    (
-        "server_pytest_db_agent_runtime",
-        (
-            "server/websocket/",
-            "server/tools/",
-            "server/modules/",
-            "server/device_operations/",
-            "server/approvals/",
-            "server/remote_assist/",
-            "server/app/services/operation",
-            "server/app/repos/device",
-            "server/app/repos/outbox",
-        ),
-    ),
+    DEFAULT_SUITE_CATALOG.server_source_layer_rules
 )
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -1202,29 +1076,61 @@ def _migration_schema_command(workspace: Path, junit_path: Path) -> list[str]:
     )
 
 
-def _classify_server_db_api_test_file(filename: str) -> str:
+def _suite_catalog_for_workspace(workspace: Path | None = None):
+    return load_suite_catalog(workspace)
+
+
+def _classify_server_db_api_test_file(filename: str, *, workspace: Path | None = None) -> str:
+    catalog = _suite_catalog_for_workspace(workspace)
+    return catalog.classify_server_db_api_test_file(
+        filename,
+        migration_schema_name=MIGRATION_SCHEMA_TEST_PATH.name,
+    )
+
+
+def _server_db_api_layer_order(workspace: Path) -> list[str]:
+    catalog = _suite_catalog_for_workspace(workspace)
+    return [name for name, _patterns in catalog.server_db_api_layer_rules] + [
+        catalog.server_db_api_catch_all_layer
+    ]
+
+
+def _server_db_domain_layers(workspace: Path) -> tuple[str, ...]:
+    return _suite_catalog_for_workspace(workspace).server_db_domain_layers
+
+
+def _server_source_layer_rules(workspace: Path) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    return _suite_catalog_for_workspace(workspace).server_source_layer_rules
+
+
+def _affected_base_layers(workspace: Path) -> tuple[str, ...]:
+    return _suite_catalog_for_workspace(workspace).affected_base_layers
+
+
+def _classify_server_db_api_test_file_legacy(filename: str) -> str:
+    """Compatibility wrapper for older callers; prefer the workspace-aware helper."""
     if filename == MIGRATION_SCHEMA_TEST_PATH.name:
         return "migration_schema"
     for layer_name, patterns in SERVER_DB_API_LAYER_RULES:
         if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
             return layer_name
-    return "server_pytest_db_web_api"
+    return DEFAULT_SUITE_CATALOG.server_db_api_catch_all_layer
 
 
 def _server_db_api_layer_paths(workspace: Path) -> list[tuple[str, list[Path]]]:
     tests_dir = workspace / "server" / "tests"
     test_files = sorted(tests_dir.glob("test_*.py"))
     if not test_files:
-        return [("server_pytest_db_api", [Path("server/tests")])]
+        return []
 
     grouped: dict[str, list[Path]] = {}
     for path in test_files:
         if path.name == MIGRATION_SCHEMA_TEST_PATH.name:
             continue
-        layer_name = _classify_server_db_api_test_file(path.name)
+        layer_name = _classify_server_db_api_test_file(path.name, workspace=workspace)
         grouped.setdefault(layer_name, []).append(path.relative_to(workspace))
 
-    layer_order = [name for name, _patterns in SERVER_DB_API_LAYER_RULES] + ["server_pytest_db_web_api"]
+    layer_order = _server_db_api_layer_order(workspace)
     return [(name, grouped[name]) for name in layer_order if grouped.get(name)]
 
 
@@ -1303,14 +1209,14 @@ def _changed_paths_from_git(workspace: Path, base_ref: str) -> list[str]:
     raise SystemExit(f"Could not compute affected paths from {base_ref!r}: {detail}")
 
 
-def _server_db_layers_for_changed_path(path: str) -> list[str]:
+def _server_db_layers_for_changed_path(path: str, *, workspace: Path) -> list[str]:
     filename = Path(path).name
     if path.startswith("server/tests/"):
         if filename == MIGRATION_SCHEMA_TEST_PATH.name:
             return ["migration_schema"]
         if "no_db" in filename:
             return []
-        return [_classify_server_db_api_test_file(filename)]
+        return [_classify_server_db_api_test_file(filename, workspace=workspace)]
 
     if (
         path.startswith("server/app/db/")
@@ -1318,20 +1224,25 @@ def _server_db_layers_for_changed_path(path: str) -> list[str]:
         or path.startswith("server/models")
         or path == "quality/db_table_classification.toml"
     ):
-        return ["migration_schema", *SERVER_DB_DOMAIN_LAYERS]
+        return ["migration_schema", *_server_db_domain_layers(workspace)]
 
-    for layer_name, prefixes in SERVER_SOURCE_LAYER_RULES:
+    for layer_name, prefixes in _server_source_layer_rules(workspace):
         if any(path.startswith(prefix) for prefix in prefixes):
             return [layer_name]
 
     if path.startswith("server/web_api/"):
-        return ["server_pytest_db_web_api"]
+        return [_suite_catalog_for_workspace(workspace).server_db_api_catch_all_layer]
     if path.startswith("server/"):
-        return list(SERVER_DB_DOMAIN_LAYERS)
+        return list(_server_db_domain_layers(workspace))
     return []
 
 
-def _affected_selection_for_paths(changed_paths: list[str], available_layers: list[str]) -> dict[str, object]:
+def _affected_selection_for_paths(
+    changed_paths: list[str],
+    available_layers: list[str],
+    *,
+    workspace: Path,
+) -> dict[str, object]:
     available = set(available_layers)
     selected: set[str] = set()
     reasons: dict[str, list[str]] = {}
@@ -1344,7 +1255,7 @@ def _affected_selection_for_paths(changed_paths: list[str], available_layers: li
         if reason not in reasons[layer_name]:
             reasons[layer_name].append(reason)
 
-    for layer_name in AFFECTED_BASE_LAYERS:
+    for layer_name in _affected_base_layers(workspace):
         add_layer(layer_name, "base_fast_gate")
 
     normalized_paths = [_normalize_changed_path(path) for path in changed_paths]
@@ -1359,7 +1270,7 @@ def _affected_selection_for_paths(changed_paths: list[str], available_layers: li
             add_layer("pc_agent_pytest", path)
         elif path.startswith("server/"):
             add_layer("server_pytest_no_db", path)
-            for layer_name in _server_db_layers_for_changed_path(path):
+            for layer_name in _server_db_layers_for_changed_path(path, workspace=workspace):
                 add_layer(layer_name, path)
         elif path.startswith("shared/"):
             add_layer("server_pytest_no_db", path)
@@ -1629,10 +1540,18 @@ def main() -> None:
         ),
     ]
     available_layers = [step_name for step_name, *_rest in steps]
+    try:
+        require_catalog_layers(available_layers, workspace=args.workspace)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     affected_selection: dict[str, object] | None = None
     requested_layers = list(args.layer)
     if affected_mode:
-        affected_selection = _affected_selection_for_paths(changed_paths, available_layers)
+        affected_selection = _affected_selection_for_paths(
+            changed_paths,
+            available_layers,
+            workspace=args.workspace,
+        )
         requested_layers = list(affected_selection["affected_layers"])
     steps = _filter_steps_by_layer(steps, requested_layers)
     effective_layers = [step_name for step_name, *_rest in steps]

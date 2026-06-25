@@ -1,10 +1,46 @@
-# Canonical CI/test-suite catalog for non-server helper checks.
+# Canonical CI/test-suite catalog.
+#
+# scripts/run_ci_suite.py and scripts/audit_test_inventory.py load this file for
+# layer order, affected-suite base layers, server DB test ownership, source
+# routing, and server DB/WS parallel grouping.
+
+[[suites]]
+name = "verify_workspace"
+runner = "script"
+command = ["python", "scripts/verify_workspace.py", "--workspace", "<workspace>"]
+database = "none"
+affected_base = true
+description = "Project sanity check for import visibility, navigation metadata, docs links, and workflow invariants."
+
+[[suites]]
+name = "webapp_bundle"
+runner = "script"
+command = ["python", "scripts/build_webapp_bundle.py", "--workspace", "<workspace>"]
+database = "none"
+affected_base = true
+description = "Builds the production React webapp bundle and archive used by release/preflight."
+
+[[suites]]
+name = "webapp_unit_tests"
+runner = "node"
+command = ["pnpm", "--dir", "webapp", "exec", "vitest", "run", "--pool=threads", "--maxWorkers=1"]
+database = "none"
+affected_base = true
+description = "Runs deterministic webapp unit/component tests."
+
+[[suites]]
+name = "webapp_fixture_e2e"
+runner = "node"
+command = ["pnpm", "--dir", "webapp", "exec", "playwright", "test", "--reporter=list,json"]
+database = "none"
+description = "Fixture Playwright E2E against a local fixture server; not canonical live-browser evidence."
 
 [[suites]]
 name = "test_inventory_audit"
 runner = "script"
 command = ["python", "scripts/audit_test_inventory.py", "--strict"]
 database = "none"
+affected_base = true
 description = "Fails the full gate on unknown pytest markers, no_db tests that request DB fixtures, unowned DB tests, or direct live/network client calls in PR suites."
 
 [[suites]]
@@ -12,6 +48,7 @@ name = "db_cleanup_profile_audit"
 runner = "script"
 command = ["python", "scripts/audit_db_cleanup_profiles.py", "--strict"]
 database = "none"
+affected_base = true
 description = "Fails the full gate when DB-backed, non-agent-ws server pytest files do not declare an explicit db_cleanup profile."
 
 [[suites]]
@@ -19,6 +56,7 @@ name = "fixture_builder_audit"
 runner = "script"
 command = ["python", "scripts/audit_fixture_builders.py", "--strict"]
 database = "none"
+affected_base = true
 description = "Fails the full gate when schema-validated fixture/data packs drift from their JSON Schema builders, source-pack refs, test refs, live evidence requirements, or secret-free contract."
 
 [[suites]]
@@ -26,6 +64,7 @@ name = "active_risk_audit"
 runner = "script"
 command = ["python", "scripts/audit_active_risks.py", "--strict"]
 database = "none"
+affected_base = true
 description = "Fails the full gate when active technical-debt risks lose owner, tests, measurable acceptance criteria, evidence refs, or required archive source coverage."
 
 [[suites]]
@@ -33,6 +72,7 @@ name = "observer_contamination_audit"
 runner = "script"
 command = ["python", "scripts/audit_observer_contamination.py", "--strict"]
 database = "none"
+affected_base = true
 description = "Fails the full gate when active Observer known-contamination suppressions are indefinite, unowned, expired, broad, unreviewed, or missing evidence."
 
 [[suites]]
@@ -40,6 +80,7 @@ name = "branch_coverage_audit"
 runner = "script"
 command = ["python", "scripts/audit_branch_coverage.py", "--strict"]
 database = "none"
+affected_base = true
 description = "Fails the full gate when critical pure-logic branch coverage records are missing owners, branch refs, or existing pytest node ids."
 
 [[suites]]
@@ -47,16 +88,8 @@ name = "mutation_smoke"
 runner = "script"
 command = ["python", "scripts/run_mutation_smoke.py"]
 database = "none"
+affected_base = true
 description = "Runs targeted temp-workspace mutation smoke for critical pure logic and fails when any configured mutant survives or cannot be collected."
-
-[[suites]]
-name = "migration_schema"
-runner = "pytest"
-paths = ["server/tests/test_migration_schema_contract.py"]
-marker_expression = "not manual and not no_db and not agent_ws"
-junit = "junit-migration-schema.xml"
-database = "isolated-postgres"
-description = "Fresh PostgreSQL Alembic migration gate: empty DB upgrade, exact heads, idempotent upgrade, schema/cleanup catalog diff, required constraints/indexes/defaults, and smoke DML."
 
 [[suites]]
 name = "scripts_pytest_no_db"
@@ -65,4 +98,175 @@ paths = ["scripts/test_*.py"]
 marker_expression = "not manual"
 junit = "junit-scripts-no-db.xml"
 database = "none"
+affected_base = true
 description = "Runs project script tests without DB fixtures before server pytest layers."
+
+[[suites]]
+name = "server_pytest_no_db"
+runner = "pytest"
+paths = ["server/tests"]
+marker_expression = "not manual and no_db"
+junit = "junit-server-no-db.xml"
+database = "none"
+description = "Runs pure server unit/contract tests that must not require PostgreSQL setup or cleanup."
+
+[[suites]]
+name = "migration_schema"
+runner = "pytest"
+paths = ["server/tests/test_migration_schema_contract.py"]
+marker_expression = "not manual and not no_db and not agent_ws"
+junit = "junit-migration-schema.xml"
+database = "isolated-postgres-no-template"
+description = "Fresh PostgreSQL Alembic migration gate: empty DB upgrade, exact heads, idempotent upgrade, schema/cleanup catalog diff, required constraints/indexes/defaults, and smoke DML."
+
+[[suites]]
+name = "server_pytest_db_knowledge"
+runner = "pytest"
+marker_expression = "not manual and not no_db and not agent_ws"
+junit = "junit-server-db-knowledge.xml"
+database = "isolated-postgres"
+server_db_api_patterns = [
+  "test_knowledge_*.py",
+  "test_support_knowledge_provider.py",
+]
+server_source_prefixes = [
+  "server/knowledge/",
+  "server/customer_history/",
+  "server/web_api/knowledge",
+  "content_packs/knowledge/",
+]
+parallel_group = "server-db"
+parallel_order = 3
+description = "Knowledge, customer-history, and Knowledge web API DB/API tests."
+
+[[suites]]
+name = "server_pytest_db_tickets"
+runner = "pytest"
+marker_expression = "not manual and not no_db and not agent_ws"
+junit = "junit-server-db-tickets.xml"
+database = "isolated-postgres"
+server_db_api_patterns = [
+  "test_ticket_*.py",
+  "test_helpdesk_*.py",
+  "test_form_*.py",
+  "test_policy_health*.py",
+  "test_public_queue_privacy.py",
+  "test_service_catalog_*.py",
+  "test_reports_service_catalog.py",
+  "test_requester_timeline_projection.py",
+  "test_stage8.py",
+  "test_support_playbook_readiness.py",
+  "test_registry_*.py",
+]
+server_source_prefixes = [
+  "server/tickets/",
+  "server/requester/",
+  "server/registry/",
+  "server/access_control/",
+  "server/playbooks/",
+  "server/web_api/requester",
+  "server/web_api/support",
+  "server/web_api/registry",
+  "server/web_api/access",
+  "server/web_api/settings",
+  "server/web_api/reports",
+  "server/web_api/admin",
+]
+parallel_group = "server-db"
+parallel_order = 2
+description = "Ticket, requester, registry, access-control, reports/settings/support, policy-health, and service-catalog DB/API tests."
+
+[[suites]]
+name = "server_pytest_db_observer_diagnostics"
+runner = "pytest"
+marker_expression = "not manual and not no_db and not agent_ws"
+junit = "junit-server-db-observer-diagnostics.xml"
+database = "isolated-postgres"
+server_db_api_patterns = [
+  "test_admin_tech_api.py",
+  "test_control_plane_api.py",
+  "test_diagnostic_*.py",
+  "test_manual_capability_provider.py",
+  "test_observer_*.py",
+  "test_trace_overlay_api.py",
+  "test_workflow_side_effect_observability.py",
+  "test_zabbix_provider_no_db.py",
+]
+server_source_prefixes = [
+  "server/observer/",
+  "server/tech/",
+  "server/diagnostic",
+  "server/web_api/tech",
+  "server/web_api/observer",
+]
+parallel_group = "server-db"
+parallel_order = 4
+description = "Observer, diagnostics, tech, trace overlay, control-plane, and provider DB/API tests."
+
+[[suites]]
+name = "server_pytest_db_agent_runtime"
+runner = "pytest"
+marker_expression = "not manual and not no_db and not agent_ws"
+junit = "junit-server-db-agent-runtime.xml"
+database = "isolated-postgres"
+server_db_api_patterns = [
+  "test_agent_*.py",
+  "test_cancel_operations.py",
+  "test_command_result_*.py",
+  "test_device_*.py",
+  "test_handshake_module_reconcile.py",
+  "test_modules_*.py",
+  "test_operation_*.py",
+  "test_outbox_*.py",
+  "test_protocol_*.py",
+  "test_remote_assist_*.py",
+  "test_state_manager_agent_registry.py",
+  "test_subscription_registry.py",
+  "test_tool_*.py",
+  "test_tools_*.py",
+]
+server_source_prefixes = [
+  "server/websocket/",
+  "server/tools/",
+  "server/modules/",
+  "server/device_operations/",
+  "server/approvals/",
+  "server/remote_assist/",
+  "server/app/services/operation",
+  "server/app/repos/device",
+  "server/app/repos/outbox",
+]
+parallel_group = "server-db"
+parallel_order = 5
+description = "Server-side agent runtime, protocol, tool/outbox, operations, modules, approvals, device operations, and remote-assist DB/API tests."
+
+[[suites]]
+name = "server_pytest_db_web_api"
+runner = "pytest"
+marker_expression = "not manual and not no_db and not agent_ws"
+junit = "junit-server-db-web-api.xml"
+database = "isolated-postgres"
+server_db_api_catch_all = true
+parallel_group = "server-db"
+parallel_order = 1
+description = "DB/API catch-all for server tests not owned by a narrower DB/API domain layer."
+
+[[suites]]
+name = "server_pytest_agent_ws"
+runner = "pytest"
+paths = ["server/tests"]
+marker_expression = "not manual and agent_ws"
+junit = "junit-server-agent-ws.xml"
+database = "isolated-postgres"
+parallel_group = "server-db"
+parallel_order = 6
+description = "Server tests that use the in-process WS agent runtime."
+
+[[suites]]
+name = "pc_agent_pytest"
+runner = "pytest"
+paths = ["pc_agent/tests"]
+marker_expression = "not manual"
+junit = "junit-pc-agent.xml"
+database = "agent-sqlite"
+description = "PC agent unit/integration tests that do not require manual live runtime steps."

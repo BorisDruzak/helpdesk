@@ -6,12 +6,17 @@ from __future__ import annotations
 import argparse
 import ast
 import configparser
-import fnmatch
 import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
+
+try:
+    from scripts.suite_catalog import load_suite_catalog
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from scripts.suite_catalog import load_suite_catalog
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -250,69 +255,12 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
         return False
 
 
-def _classify_server_db_api_file(filename: str) -> str:
-    try:
-        from scripts import run_ci_suite
-
-        return run_ci_suite._classify_server_db_api_test_file(filename)
-    except Exception:
-        if filename == "test_migration_schema_contract.py":
-            return "migration_schema"
-        layer_rules: tuple[tuple[str, tuple[str, ...]], ...] = (
-            ("server_pytest_db_knowledge", ("test_knowledge_*.py", "test_support_knowledge_provider.py")),
-            (
-                "server_pytest_db_tickets",
-                (
-                    "test_ticket_*.py",
-                    "test_helpdesk_*.py",
-                    "test_form_*.py",
-                    "test_policy_health*.py",
-                    "test_public_queue_privacy.py",
-                    "test_service_catalog_*.py",
-                    "test_reports_service_catalog.py",
-                    "test_requester_timeline_projection.py",
-                    "test_stage8.py",
-                    "test_support_playbook_readiness.py",
-                    "test_registry_*.py",
-                ),
-            ),
-            (
-                "server_pytest_db_observer_diagnostics",
-                (
-                    "test_admin_tech_api.py",
-                    "test_control_plane_api.py",
-                    "test_diagnostic_*.py",
-                    "test_manual_capability_provider.py",
-                    "test_observer_*.py",
-                    "test_trace_overlay_api.py",
-                    "test_workflow_side_effect_observability.py",
-                    "test_zabbix_provider_no_db.py",
-                ),
-            ),
-            (
-                "server_pytest_db_agent_runtime",
-                (
-                    "test_agent_*.py",
-                    "test_cancel_operations.py",
-                    "test_command_result_*.py",
-                    "test_device_*.py",
-                    "test_handshake_module_reconcile.py",
-                    "test_modules_*.py",
-                    "test_operation_*.py",
-                    "test_outbox_*.py",
-                    "test_protocol_*.py",
-                    "test_remote_assist_*.py",
-                    "test_state_manager_agent_registry.py",
-                    "test_subscription_registry.py",
-                    "test_tool_*.py",
-                    "test_tools_*.py",
-                ),
-            ),
-        )
-        for layer_name, patterns in layer_rules:
-            if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
-                return layer_name
-        return "server_pytest_db_web_api"
+def _classify_server_db_api_file(filename: str, *, workspace: Path) -> str:
+    catalog = load_suite_catalog(workspace)
+    return catalog.classify_server_db_api_test_file(
+        filename,
+        migration_schema_name="test_migration_schema_contract.py",
+    )
 
 
 def _classify_suite(path: Path, workspace: Path, markers: frozenset[str], fixtures: set[str]) -> str:
@@ -327,7 +275,7 @@ def _classify_suite(path: Path, workspace: Path, markers: frozenset[str], fixtur
             return "server_pytest_no_db"
         if "agent_ws" in markers or "test_agent" in fixtures:
             return "server_pytest_agent_ws"
-        return _classify_server_db_api_file(path.name)
+        return _classify_server_db_api_file(path.name, workspace=workspace)
     if _is_relative_to(resolved, pc_agent_tests):
         return "pc_agent_pytest"
     if _is_relative_to(resolved, scripts_dir):
