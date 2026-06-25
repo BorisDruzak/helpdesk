@@ -14,6 +14,8 @@ DEFAULT_ARTIFACTS_ROOT = Path(__file__).resolve().parent.parent / "artifacts"
 SURFACES = (
     "admin",
     "requester",
+    "support",
+    "reports",
     "native_agent",
     "protocol_v3",
     "operation_lifecycle",
@@ -25,6 +27,14 @@ SURFACES = (
 class EvidencePack:
     run_id: str
     surface: str
+    scenario_key: str | None
+    release_run_id: str | None
+    commit: str | None
+    deployed_commit: str | None
+    environment: str | None
+    branch: str | None
+    expected_schema_head: str | None
+    actual_schema_head: str | None
     ticket: str | None
     device: str | None
     output_dir: Path
@@ -44,6 +54,8 @@ def _browser_template(pack: EvidencePack) -> str:
     surface_notes = {
         "admin": "- Canonical route: `/admin` or the matching `/app/admin/*` page.\n- Capture URL, DOM-visible result, screenshot, and relevant network/console errors.\n",
         "requester": "- Canonical route: `/app/requester`, `/app/requester/devices`, or compatible `/app/device/*` route.\n- Capture authenticated web account, requester profile/device-link state, and server-resolved target device.\n",
+        "support": "- Canonical route: `/app/support` or `/app/tickets`.\n- Capture support account, queue/detail URL, visible result, screenshot, and relevant network/console errors.\n",
+        "reports": "- Canonical route: `/app/reports`.\n- Capture report URL, visible totals, screenshot or DOM output, and relevant network/console errors.\n",
         "native_agent": "- Browser is supporting evidence only when the native GUI flow opens a web cabinet.\n",
         "protocol_v3": "- Browser evidence may be not applicable; write the reason if skipped.\n",
         "operation_lifecycle": "- If the operation is visible to support/requester/admin, capture the relevant browser page.\n",
@@ -80,6 +92,8 @@ def _api_template(pack: EvidencePack) -> str:
 def _server_db_template(pack: EvidencePack) -> str:
     surface_notes = {
         "requester": "- Verify account_session_id, account mode, requester person, and registry binding fields.\n",
+        "support": "- Verify support actor, ticket queue/detail rows, related ticket events, and Observer trace ids.\n",
+        "reports": "- Verify report totals against the seeded pack or scenario-specific DB rows.\n",
         "protocol_v3": "- Verify persisted event/outbox row or duplicate/no-op proof.\n",
         "operation_lifecycle": "- Verify operations, device_outbox, ticket_events, and target operation state.\n",
     }
@@ -200,6 +214,14 @@ def create_pack(
     run_id: str,
     surface: str,
     artifacts_root: Path = DEFAULT_ARTIFACTS_ROOT,
+    scenario_key: str | None = None,
+    release_run_id: str | None = None,
+    commit: str | None = None,
+    deployed_commit: str | None = None,
+    environment: str | None = None,
+    branch: str | None = None,
+    expected_schema_head: str | None = None,
+    actual_schema_head: str | None = None,
     ticket: str | None = None,
     device: str | None = None,
 ) -> EvidencePack:
@@ -208,6 +230,14 @@ def create_pack(
     pack = EvidencePack(
         run_id=run_id,
         surface=surface,
+        scenario_key=scenario_key,
+        release_run_id=release_run_id,
+        commit=commit,
+        deployed_commit=deployed_commit,
+        environment=environment,
+        branch=branch,
+        expected_schema_head=expected_schema_head,
+        actual_schema_head=actual_schema_head,
         ticket=ticket,
         device=device,
         output_dir=output_dir,
@@ -218,25 +248,29 @@ def create_pack(
     manifest = {
         "schema": "pc_client.live_evidence.v2",
         "run_id": run_id,
-        "scenario": surface,
+        "release_run_id": release_run_id,
+        "scenario": scenario_key or surface,
+        "scenario_key": scenario_key,
+        "surface": surface,
         "status": "blocked",
-        "commit": None,
-        "deployed_commit": None,
-        "environment": None,
+        "commit": commit,
+        "deployed_commit": deployed_commit,
+        "environment": environment,
         "started_at": created_at,
         "finished_at": None,
         "entities": {
             "ticket_id": ticket,
             "device_id": device,
             "operation_id": None,
+            "scenario_key": scenario_key,
             "trace_ids": [],
         },
         "preflight": {
-            "branch": None,
-            "local_commit": None,
-            "deployed_commit": None,
-            "expected_schema_head": None,
-            "actual_schema_head": None,
+            "branch": branch,
+            "local_commit": commit,
+            "deployed_commit": deployed_commit,
+            "expected_schema_head": expected_schema_head,
+            "actual_schema_head": actual_schema_head,
             "schema_status": "blocked",
             "service_health": "blocked",
             "checked_at": None,
@@ -302,6 +336,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--surface", choices=SURFACES, default="generic")
+    parser.add_argument("--scenario-key")
+    parser.add_argument("--release-run-id")
+    parser.add_argument("--commit")
+    parser.add_argument("--deployed-commit")
+    parser.add_argument("--environment")
+    parser.add_argument("--branch")
+    parser.add_argument("--expected-schema-head")
+    parser.add_argument("--actual-schema-head")
     parser.add_argument("--ticket")
     parser.add_argument("--device")
     parser.add_argument("--artifacts-root", type=Path, default=DEFAULT_ARTIFACTS_ROOT)
@@ -314,6 +356,14 @@ def main(argv: list[str] | None = None) -> int:
         run_id=args.run_id,
         surface=args.surface,
         artifacts_root=args.artifacts_root,
+        scenario_key=args.scenario_key,
+        release_run_id=args.release_run_id,
+        commit=args.commit,
+        deployed_commit=args.deployed_commit,
+        environment=args.environment,
+        branch=args.branch,
+        expected_schema_head=args.expected_schema_head,
+        actual_schema_head=args.actual_schema_head,
         ticket=args.ticket,
         device=args.device,
     )

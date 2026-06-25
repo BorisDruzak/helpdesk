@@ -7,11 +7,17 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts import live_evidence_pack  # noqa: E402
+
 DEFAULT_PACK_PATH = ROOT / "test_data_packs" / "critical_behavior_v1.json"
 DEFAULT_BROWSER_SCRIPT = Path("webapp/scripts/live-browser-scenarios.mjs")
 DEFAULT_UIA_PROBE = Path("scripts/live_agent_uia_state_probe.py")
@@ -129,6 +135,13 @@ def _scenario_out_dir(out_dir: Path, scenario: Mapping[str, Any]) -> Path:
     return out_dir / f"{scenario['domain_key']}__{scenario['scenario_key']}"
 
 
+def _evidence_run_id(scenario: Mapping[str, Any], release_run_id: str | None) -> str:
+    scenario_key = str(scenario["scenario_key"])
+    if release_run_id:
+        return f"{release_run_id}__{scenario_key}"
+    return f"{scenario['domain_key']}__{scenario_key}"
+
+
 def build_browser_command(
     scenario: Mapping[str, Any],
     *,
@@ -200,6 +213,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--scenario-key", action="append", dest="scenario_keys")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument("--evidence-root", type=Path)
+    parser.add_argument("--release-run-id")
+    parser.add_argument("--commit")
+    parser.add_argument("--deployed-commit")
+    parser.add_argument("--environment")
+    parser.add_argument("--branch")
+    parser.add_argument("--expected-schema-head")
+    parser.add_argument("--actual-schema-head")
     parser.add_argument("--browser-script", type=Path, default=DEFAULT_BROWSER_SCRIPT)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--json", action="store_true", dest="json_output")
@@ -260,6 +281,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             **scenario,
             "command": command,
         }
+        if args.evidence_root is not None:
+            evidence = live_evidence_pack.create_pack(
+                run_id=_evidence_run_id(scenario, args.release_run_id),
+                surface=str(scenario["surface"]),
+                artifacts_root=args.evidence_root,
+                scenario_key=str(scenario["scenario_key"]),
+                release_run_id=args.release_run_id,
+                commit=args.commit,
+                deployed_commit=args.deployed_commit,
+                environment=args.environment,
+                branch=args.branch,
+                expected_schema_head=args.expected_schema_head,
+                actual_schema_head=args.actual_schema_head,
+            )
+            item["evidence_manifest"] = str(evidence.output_dir / "manifest.json")
         if not args.dry_run:
             completed = subprocess.run(command, cwd=ROOT, check=False)
             item["exit_code"] = completed.returncode

@@ -71,6 +71,14 @@ Requester/support live browser probes can be planned or run from the critical be
 python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --surfaces requester,support --dry-run --json
 ```
 
+To create per-scenario manifest folders with exact release context while planning or running probes, add the evidence root and release identity fields:
+
+```powershell
+python scripts/run_live_behavior_suite.py --pack test_data_packs/critical_behavior_v1.json --scenario-key <scenario_key> --surfaces <surface> --dry-run --json --evidence-root artifacts --release-run-id <release-run-id> --commit <release-commit> --deployed-commit <deployed-commit> --environment <stand|prod-like> --expected-schema-head <schema-head>
+```
+
+These generated manifests are blocked scaffolds until the required preflight, API, DB, Observer delta, Observer canary, cleanup, and browser/agent evidence is filled and validated.
+
 Agent/runtime and operation-lifecycle probes use the same pack with a different runner mode:
 
 ```powershell

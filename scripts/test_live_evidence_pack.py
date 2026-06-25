@@ -52,6 +52,56 @@ def test_live_evidence_pack_creates_expected_markdown_files(tmp_path):
     assert manifest["observer_canary"]["status"] == "blocked"
 
 
+def test_live_evidence_pack_records_scenario_key_and_release_context(tmp_path):
+    pack = importlib.import_module("scripts.live_evidence_pack")
+
+    exit_code = pack.main(
+        [
+            "--run-id",
+            "rel-1__requester_support_chat_roundtrip",
+            "--surface",
+            "support",
+            "--scenario-key",
+            "requester_support_chat_roundtrip",
+            "--release-run-id",
+            "rel-1",
+            "--commit",
+            "abc1234",
+            "--deployed-commit",
+            "abc1234",
+            "--environment",
+            "stand",
+            "--branch",
+            "codex/helpdesk-process-model",
+            "--expected-schema-head",
+            "schema-head",
+            "--actual-schema-head",
+            "schema-head",
+            "--artifacts-root",
+            str(tmp_path),
+        ]
+    )
+
+    manifest = json.loads(
+        (tmp_path / "live" / "rel-1__requester_support_chat_roundtrip" / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert exit_code == 0
+    assert manifest["scenario"] == "requester_support_chat_roundtrip"
+    assert manifest["scenario_key"] == "requester_support_chat_roundtrip"
+    assert manifest["surface"] == "support"
+    assert manifest["release_run_id"] == "rel-1"
+    assert manifest["commit"] == "abc1234"
+    assert manifest["deployed_commit"] == "abc1234"
+    assert manifest["environment"] == "stand"
+    assert manifest["preflight"]["branch"] == "codex/helpdesk-process-model"
+    assert manifest["preflight"]["local_commit"] == "abc1234"
+    assert manifest["preflight"]["deployed_commit"] == "abc1234"
+    assert manifest["preflight"]["expected_schema_head"] == "schema-head"
+    assert manifest["preflight"]["actual_schema_head"] == "schema-head"
+
+
 def test_requester_surface_template_includes_account_session_and_binding_checks(tmp_path):
     pack = importlib.import_module("scripts.live_evidence_pack")
 

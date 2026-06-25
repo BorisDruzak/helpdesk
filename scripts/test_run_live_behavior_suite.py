@@ -57,6 +57,57 @@ def test_dry_run_outputs_live_browser_commands(tmp_path, capsys) -> None:
         assert "https://stand.example.test" in command
 
 
+def test_dry_run_can_scaffold_live_evidence_pack_for_selected_scenario(tmp_path, capsys) -> None:
+    runner = importlib.import_module("scripts.run_live_behavior_suite")
+
+    exit_code = runner.main(
+        [
+            "--pack",
+            str(PACK_PATH),
+            "--surfaces",
+            "support",
+            "--scenario-key",
+            "requester_support_chat_roundtrip",
+            "--out-dir",
+            str(tmp_path / "suite"),
+            "--evidence-root",
+            str(tmp_path / "evidence"),
+            "--release-run-id",
+            "rel-1",
+            "--commit",
+            "abc1234",
+            "--deployed-commit",
+            "abc1234",
+            "--environment",
+            "stand",
+            "--branch",
+            "codex/helpdesk-process-model",
+            "--expected-schema-head",
+            "schema-head",
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    manifest_path = (
+        tmp_path
+        / "evidence"
+        / "live"
+        / "rel-1__requester_support_chat_roundtrip"
+        / "manifest.json"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert payload["scenarios"][0]["evidence_manifest"] == str(manifest_path)
+    assert manifest["scenario_key"] == "requester_support_chat_roundtrip"
+    assert manifest["release_run_id"] == "rel-1"
+    assert manifest["commit"] == "abc1234"
+    assert manifest["deployed_commit"] == "abc1234"
+    assert manifest["environment"] == "stand"
+    assert manifest["preflight"]["expected_schema_head"] == "schema-head"
+
+
 def test_default_browser_dry_run_covers_all_visible_pack_surfaces(tmp_path, capsys) -> None:
     runner = importlib.import_module("scripts.run_live_behavior_suite")
 
