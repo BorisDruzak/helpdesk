@@ -187,6 +187,17 @@ def test_build_live_release_summary_blocks_without_required_manifests(tmp_path):
     assert summary["suite_plan"]["agent_operation_scenarios"] == 1
 
 
+def test_build_live_release_summary_suite_plan_counts_all_browser_pack_surfaces(tmp_path):
+    summary_builder = importlib.import_module("scripts.build_live_release_summary")
+    pack_path = Path("test_data_packs/critical_behavior_v1.json")
+
+    summary = summary_builder.build_summary(pack_path=pack_path, live_root=tmp_path / "live")
+
+    assert summary["coverage"]["scenario_count"] == 17
+    assert summary["suite_plan"]["browser_scenarios"] == 14
+    assert summary["suite_plan"]["agent_operation_scenarios"] == 2
+
+
 def test_build_live_release_summary_accepts_complete_manifest_and_writes_outputs(tmp_path):
     summary_builder = importlib.import_module("scripts.build_live_release_summary")
     pack_path = tmp_path / "critical_behavior.json"

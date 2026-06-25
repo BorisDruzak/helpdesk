@@ -16,6 +16,8 @@ DEFAULT_PACK_PATH = ROOT / "test_data_packs" / "critical_behavior_v1.json"
 DEFAULT_BROWSER_SCRIPT = Path("webapp/scripts/live-browser-scenarios.mjs")
 DEFAULT_UIA_PROBE = Path("scripts/live_agent_uia_state_probe.py")
 DEFAULT_WS_PROBE = Path("scripts/live_ws_v3_probe.py")
+DEFAULT_BROWSER_SURFACES = ("requester", "support", "admin", "reports")
+DEFAULT_BROWSER_SURFACES_CSV = ",".join(DEFAULT_BROWSER_SURFACES)
 DEFAULT_BASE_URL = (
     os.environ.get("PC_CLIENT_BROWSER_BASE_URL")
     or os.environ.get("REMOTE_SMOKE_BASE_URL")
@@ -23,6 +25,7 @@ DEFAULT_BASE_URL = (
 )
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "live_behavior_suite"
 AGENT_OPERATION_SURFACES = {"native_agent", "operation_lifecycle", "protocol_v3"}
+BROWSER_EVIDENCE_SURFACES = set(DEFAULT_BROWSER_SURFACES)
 
 
 def _repo_rel(path: Path) -> str:
@@ -193,7 +196,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pack", type=Path, default=DEFAULT_PACK_PATH)
     parser.add_argument("--mode", choices=["browser", "agent-operation"], default="browser")
-    parser.add_argument("--surfaces", default="requester,support")
+    parser.add_argument("--surfaces", default=DEFAULT_BROWSER_SURFACES_CSV)
     parser.add_argument("--scenario-key", action="append", dest="scenario_keys")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)

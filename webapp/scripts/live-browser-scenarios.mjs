@@ -22,6 +22,10 @@ const ROLE_CONFIGS = {
     login: process.env.PC_CLIENT_SUPPORT_LOGIN ?? process.env.PC_CLIENT_UI_SUPPORT_LOGIN ?? "support",
     password: process.env.PC_CLIENT_SUPPORT_PASSWORD ?? process.env.PC_CLIENT_UI_SUPPORT_PASSWORD ?? "support123",
   },
+  admin: {
+    login: process.env.PC_CLIENT_ADMIN_LOGIN ?? process.env.PC_CLIENT_UI_ADMIN_LOGIN ?? "admin",
+    password: process.env.PC_CLIENT_ADMIN_PASSWORD ?? process.env.PC_CLIENT_UI_ADMIN_PASSWORD ?? "admin123",
+  },
 };
 
 const SURFACE_DEFAULT_PROBES = {
@@ -30,6 +34,12 @@ const SURFACE_DEFAULT_PROBES = {
   ],
   support: [
     { role: "support", path: "/app/support", expectedTextAny: ["Центр действий", "Тикеты"] },
+  ],
+  admin: [
+    { role: "admin", path: "/app/admin", expectedTextAny: ["Рабочее место администрирования", "Администрирование"] },
+  ],
+  reports: [
+    { role: "admin", path: "/app/reports", expectedTextAny: ["Отчёты", "Операционный отчёт"] },
   ],
 };
 
@@ -45,6 +55,9 @@ const SCENARIO_PROBES = {
   admin_publish_requester_create: [
     { role: "requester", path: "/app/requester/new", expectedTextAny: ["Категория и форма", "Сначала заполните профиль", "Нет доступной формы"] },
   ],
+  real_account_device_linking: [
+    { role: "admin", path: "/app/admin/registry", expectedTextAny: ["Центр регистрации и привязок", "Операционный реестр"] },
+  ],
   support_queue_status_after_routing: [
     { role: "support", path: "/app/support", expectedTextAny: ["Центр действий"] },
     { role: "support", path: "/app/tickets", expectedTextAny: ["Тикеты", "Очередь тикетов"] },
@@ -57,11 +70,27 @@ const SCENARIO_PROBES = {
     { role: "requester", path: "/app/requester/tickets", expectedTextAny: ["Мои обращения", "Ожидают вашего решения"] },
     { role: "support", path: "/app/tickets", expectedTextAny: ["Тикеты", "Очередь тикетов"] },
   ],
+  admin_problem_support_link: [
+    { role: "admin", path: "/app/admin/problems", expectedTextAny: ["Problem workspace", "Problem management"] },
+  ],
+  admin_change_approval_workflow: [
+    { role: "admin", path: "/app/admin/changes", expectedTextAny: ["Рабочее место изменений", "Управление изменениями"] },
+  ],
   bounded_provider_canary: [
     { role: "support", path: "/app/support", expectedTextAny: ["Центр действий"] },
   ],
+  module_playbook_canary: [
+    { role: "admin", path: "/app/admin/modules", expectedTextAny: ["Модули"] },
+    { role: "admin", path: "/app/admin/playbooks", expectedTextAny: ["Плейбуки диагностики", "Плейбуки"] },
+  ],
   non_production_remote_assist_session: [
     { role: "support", path: "/app/tickets", expectedTextAny: ["Тикеты", "Очередь тикетов"] },
+  ],
+  admin_support_trace_drilldown: [
+    { role: "admin", path: "/app/admin/observer", expectedTextAny: ["Observer", "Operational Integrity Observer"] },
+  ],
+  browser_totals_against_seeded_pack: [
+    { role: "admin", path: "/app/reports", expectedTextAny: ["Отчёты", "Операционный отчёт"] },
   ],
 };
 

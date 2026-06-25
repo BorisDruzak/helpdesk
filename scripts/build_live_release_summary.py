@@ -170,7 +170,7 @@ def collect_manifest_summaries(
 def _suite_plan(pack: Mapping[str, Any]) -> dict[str, int]:
     browser_scenarios = run_live_behavior_suite.discover_browser_scenarios(
         pack,
-        surfaces={"requester", "support"},
+        surfaces=run_live_behavior_suite.BROWSER_EVIDENCE_SURFACES,
     )
     agent_scenarios = run_live_behavior_suite.discover_agent_operation_scenarios(pack)
     return {

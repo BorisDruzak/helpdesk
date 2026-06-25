@@ -57,6 +57,33 @@ def test_dry_run_outputs_live_browser_commands(tmp_path, capsys) -> None:
         assert "https://stand.example.test" in command
 
 
+def test_default_browser_dry_run_covers_all_visible_pack_surfaces(tmp_path, capsys) -> None:
+    runner = importlib.import_module("scripts.run_live_behavior_suite")
+
+    exit_code = runner.main(
+        [
+            "--pack",
+            str(PACK_PATH),
+            "--out-dir",
+            str(tmp_path),
+            "--dry-run",
+            "--json",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    keys = {item["scenario_key"] for item in payload["scenarios"]}
+    assert payload["scenario_count"] == 14
+    assert "real_account_device_linking" in keys
+    assert "admin_problem_support_link" in keys
+    assert "admin_change_approval_workflow" in keys
+    assert "module_playbook_canary" in keys
+    assert "admin_support_trace_drilldown" in keys
+    assert "browser_totals_against_seeded_pack" in keys
+    assert {item["surface"] for item in payload["scenarios"]} == {"requester", "support", "admin", "reports"}
+
+
 def test_discovers_agent_operation_scenarios_from_pack() -> None:
     runner = importlib.import_module("scripts.run_live_behavior_suite")
     pack = runner.load_pack(PACK_PATH)
@@ -105,7 +132,15 @@ def test_live_browser_script_uses_real_routes_without_network_mocks() -> None:
     assert "page.route(" not in script
     assert "PC_CLIENT_REQUESTER_LOGIN" in script
     assert "PC_CLIENT_SUPPORT_LOGIN" in script
+    assert "PC_CLIENT_ADMIN_LOGIN" in script
     assert '"/app/requester"' in script
     assert '"/app/requester/tickets"' in script
     assert '"/app/support"' in script
     assert '"/app/tickets"' in script
+    assert '"/app/admin/registry"' in script
+    assert '"/app/admin/problems"' in script
+    assert '"/app/admin/changes"' in script
+    assert '"/app/admin/modules"' in script
+    assert '"/app/admin/playbooks"' in script
+    assert '"/app/admin/observer"' in script
+    assert '"/app/reports"' in script
