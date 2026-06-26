@@ -5565,6 +5565,7 @@ class UiUser(Base):
 
     __table_args__ = (
         sa.CheckConstraint("actor_role IN ('admin', 'support', 'auditor', 'user')", name="ck_ui_users_actor_role"),
+        Index("uq_ui_users_user_login_normalized", sa.func.lower(sa.func.trim(user_login)), unique=True),
         Index("ix_ui_users_is_active", "is_active"),
         Index("ix_ui_users_actor_role", "actor_role"),
         Index("ix_ui_users_locked_until", "locked_until"),

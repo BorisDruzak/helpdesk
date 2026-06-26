@@ -302,24 +302,23 @@ class EffectiveIdentityService:
     ) -> tuple[RegistryPerson | None, RegistryPersonIdentity | None]:
         if not actor_id:
             return None, None
-        for provider in ("ui_login", "email", "windows_login", "ad"):
-            normalized = normalize_identifier(provider, actor_id)
-            if not normalized:
-                continue
-            result = await self.session.execute(
-                select(RegistryPerson, RegistryPersonIdentity)
-                .join(RegistryPersonIdentity, RegistryPersonIdentity.person_id == RegistryPerson.person_id)
-                .where(
-                    RegistryPersonIdentity.provider == provider,
-                    RegistryPersonIdentity.normalized_identifier == normalized,
-                    RegistryPersonIdentity.verified.is_(True),
-                    RegistryPerson.status.in_(REQUESTER_IDENTITY_PERSON_STATUSES),
-                )
-                .limit(1)
+        normalized = normalize_identifier("ui_login", actor_id)
+        if not normalized:
+            return None, None
+        result = await self.session.execute(
+            select(RegistryPerson, RegistryPersonIdentity)
+            .join(RegistryPersonIdentity, RegistryPersonIdentity.person_id == RegistryPerson.person_id)
+            .where(
+                RegistryPersonIdentity.provider == "ui_login",
+                RegistryPersonIdentity.normalized_identifier == normalized,
+                RegistryPersonIdentity.verified.is_(True),
+                RegistryPerson.status.in_(REQUESTER_IDENTITY_PERSON_STATUSES),
             )
-            row = result.first()
-            if row:
-                return row[0], row[1]
+            .limit(1)
+        )
+        row = result.first()
+        if row:
+            return row[0], row[1]
         return None, None
 
     async def _actor_group_codes(self, actor_id: str) -> list[str]:

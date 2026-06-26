@@ -182,6 +182,40 @@ async def test_admin_links_ui_user_to_registry_person(test_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_requester_identity_does_not_link_by_unverified_email_alias(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "email-alias-hijack@example.test"
+
+    async with session_maker() as session:
+        person = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Email Alias Owner",
+            email=login,
+            source="hr",
+            status="active",
+        )
+        session.add_all(
+            [
+                UiUser(user_login=login, password_hash="test", actor_role="user", is_active=True),
+                person,
+                RegistryPersonIdentity(
+                    person_id=person.person_id,
+                    provider="email",
+                    identifier=login,
+                    normalized_identifier=login,
+                    verified=True,
+                    source="hr",
+                ),
+            ]
+        )
+        await session.flush()
+
+        resolved = await RequesterIdentityResolver(session).resolve_person_for_web_user(login)
+
+    assert resolved is None
+
+
+@pytest.mark.asyncio
 async def test_admin_ui_user_link_collision_does_not_steal_login(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     user_login = "collision-ui@example.test"

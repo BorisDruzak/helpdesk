@@ -22,6 +22,7 @@ The intended release state is:
 - **Primary rule change:** broad live bug hunt is deferred until static-confirmed known P0/P1 defects are remediated or explicitly dispositioned.
 - **Audit drift note:** the deep audit reviewed an older GitHub `HEAD`; Phase 0 must verify every deep-audit ID on the current local tree before code changes.
 - **Release state:** not assumed green. Treat current release readiness as unknown until Phase 0 records exact commit, deployed commit, schema head, CI state, Observer baseline and live evidence readiness.
+- **Latest remediation checkpoint, 2026-06-26:** Phase 1 Wave A code slice fixed `ID-001`, `ID-002` and adjacent `AUTH-030` locally. Focused automated regression tests are green, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` now records all 41 IDs. P0 release disposition remains blocked until live/stand evidence is collected.
 
 ## Stop Conditions
 
@@ -43,8 +44,8 @@ The deep audit IDs below are the initial known-defect registry. Current `HEAD` s
 
 | Bug ID | Priority | Group | Current HEAD status | Fix status | Regression test | Verification | Release blocker |
 |---|---:|---|---|---|---|---|---|
-| `ID-001` | P0 | identity/account boundary | open, verify in Phase 0 | not-started | required | missing | yes |
-| `ID-002` | P0 | identity/account boundary | open, verify in Phase 0 | not-started | required | missing | yes |
+| `ID-001` | P0 | identity/account boundary | reproduced on current HEAD | fixed-local, live-evidence-pending | `test_requester_identity_does_not_link_by_unverified_email_alias`; `test_effective_identity_does_not_link_by_email_alias_without_ui_login` | focused pytest green; live/API/DB evidence missing | yes, until live evidence |
+| `ID-002` | P0 | identity/account boundary | reproduced on current HEAD | fixed-local, live-evidence-pending | `test_ui_users_repo_rejects_case_variant_login` | focused pytest green; Alembic `130 -> 131` green; live evidence missing | yes, until live evidence |
 | `CLAIM-003` | P1 | public claim/session | open, verify in Phase 0 | not-started | required | missing | yes |
 | `AGENT-AUTH-004` | P1 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | yes |
 | `PAIR-005` | P1 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | yes |
@@ -72,7 +73,7 @@ The deep audit IDs below are the initial known-defect registry. Current `HEAD` s
 | `INSTALL-027` | P1 | installer/update | open, verify in Phase 0 | not-started | required | missing | yes |
 | `INSTALL-028` | P1 | installer/update | open, verify in Phase 0 | not-started | required | missing | yes |
 | `AUTH-029` | P1 | identity/account boundary | open, verify in Phase 0 | not-started | required | missing | yes |
-| `AUTH-030` | P2 | identity/account boundary | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
+| `AUTH-030` | P2 | identity/account boundary | reproduced on current HEAD | fixed-local, focused-tests-green | `test_web_session_register_rejects_login_longer_than_db_limit` | no-DB registration pytest green | no, unless release-impacting |
 | `TOKEN-031` | P2 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `ASSIGN-032` | P2 | ticket create/workflow | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `ACCOUNT-033` | P1 | identity/account boundary | open, verify in Phase 0 | not-started | required | missing | yes |
@@ -98,7 +99,7 @@ These gaps must stay visible so existing scripts are not mistaken for completed 
 
 ## Immediate Guardrails
 
-- Keep `WEB_SELF_REGISTRATION_ENABLED=false` until `ID-001` and `ID-002` are fixed and migration audit is clean.
+- Keep `WEB_SELF_REGISTRATION_ENABLED=false` until `ID-001` and `ID-002` have live evidence and migration audit is clean.
 - Do not run broad live bug hunts until Phase 2 is green.
 - Do not run multi-instance server deployment while process-local DeviceOutbox/session state remains an active risk.
 - Treat release as blocked until all 17 critical scenarios have passing `pc_client.live_evidence.v2` manifests and exact release summary.
@@ -177,10 +178,10 @@ For every bug in this phase:
 
 Minimum order:
 
-1. `ID-001`
-2. `ID-002`
+1. `ID-001` - fixed locally, live evidence pending
+2. `ID-002` - fixed locally, live evidence pending
 3. `AUTH-029`
-4. `AUTH-030`
+4. `AUTH-030` - fixed locally by adjacent login-length alignment
 5. `ACCOUNT-033`
 
 Required direction:

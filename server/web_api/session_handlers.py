@@ -9,7 +9,7 @@ from access_control.service import resolve_effective_access
 from access_control.service import resolve_session_access
 from app.db import get_session
 from app.repos.access_control_repo import AccessControlRepo
-from app.repos.ui_users_repo import VALID_ROLES, UiUsersRepo
+from app.repos.ui_users_repo import VALID_ROLES, UiUsersRepo, normalize_user_login
 from auth.middleware import WEB_SESSION_COOKIE_NAME, ensure_server_request_id, extract_auth_context, require_auth
 from auth.password_service import PasswordPolicyError, hash_password, validate_password_policy
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
@@ -29,7 +29,7 @@ from web_api.dto.session import (
 )
 
 
-_LOGIN_RE = re.compile(r"^[A-Za-z0-9._@-]{3,128}$")
+_LOGIN_RE = re.compile(r"^[A-Za-z0-9._@-]{3,100}$")
 
 
 def _error(message: str, code: str, *, status: int) -> web.Response:
@@ -37,7 +37,7 @@ def _error(message: str, code: str, *, status: int) -> web.Response:
 
 
 def _normalize_login(value: object) -> str:
-    return str(value or "").strip()
+    return normalize_user_login(value)
 
 
 def _password_policy_message(exc: PasswordPolicyError) -> str:
@@ -165,11 +165,12 @@ async def handle_web_session_login(request):
             status=400,
         )
 
+    login = _normalize_login(payload.login)
     auth_service = AuthService(request.app["state"])
-    if not check_rate_limit("web_session_login", f"{client_ip(request)}:{payload.login}", limit=10, window_seconds=60):
+    if not check_rate_limit("web_session_login", f"{client_ip(request)}:{login}", limit=10, window_seconds=60):
         return rate_limited_response()
     try:
-        ok, actor_role = await auth_service.authenticate(payload.login, payload.password)
+        ok, actor_role = await auth_service.authenticate(login, payload.password)
     except Exception:
         return web.json_response(
             {
@@ -200,7 +201,7 @@ async def handle_web_session_login(request):
             event_type="role_mismatch",
             severity="warning",
             result="failed",
-            actor_id=payload.login,
+            actor_id=login,
             actor_role=actor_role,
             error_code="ROLE_MISMATCH",
             payload={
@@ -220,7 +221,7 @@ async def handle_web_session_login(request):
 
     try:
         token = await auth_service.generate_ui_token(
-            user_login=payload.login,
+            user_login=login,
             actor_role=actor_role,
             expires_hours=24,
         )
@@ -234,7 +235,7 @@ async def handle_web_session_login(request):
             status=503,
         )
     session_payload = await _build_effective_session_payload(
-        user_login=payload.login,
+        user_login=login,
         actor_role=actor_role,
         auth_type="ui_token",
     )
@@ -243,7 +244,7 @@ async def handle_web_session_login(request):
         event_type="login_succeeded",
         severity="info",
         result="succeeded",
-        actor_id=payload.login,
+        actor_id=login,
         actor_role=actor_role,
         payload={
             "auth_type": "ui_token",
@@ -313,7 +314,7 @@ async def handle_web_session_register(request):
     login = _normalize_login(payload.login)
     if not _LOGIN_RE.match(login):
         return _error(
-            "Логин должен содержать от 3 до 128 символов: латиницу, цифры, точку, дефис, подчеркивание или @.",
+            "Логин должен содержать от 3 до 100 символов: латиницу, цифры, точку, дефис, подчеркивание или @.",
             "VALIDATION_ERROR",
             status=400,
         )

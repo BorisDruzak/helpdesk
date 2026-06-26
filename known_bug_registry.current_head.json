@@ -1,0 +1,409 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-26",
+  "head": "01dc784e2b2c14ee8487acc44e922327b99967c8",
+  "branch": "codex/helpdesk-process-model",
+  "source": "PLANS.md deep-audit registry, refreshed during Phase 1 Wave A remediation",
+  "status_values": ["open", "reproduced", "not-reproduced", "already-fixed", "blocked"],
+  "verification_note": "ID-001, ID-002 and AUTH-030 were reproduced with red tests and fixed locally with focused automated tests. Stand/live evidence is still pending for P0 release disposition.",
+  "bugs": [
+    {
+      "id": "ID-001",
+      "priority": "P0",
+      "group": "identity/account boundary",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-live-evidence-pending",
+      "release_blocker": true,
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_registry_people_admin.py::test_requester_identity_does_not_link_by_unverified_email_alias -q --tb=short failed before fix: email identity resolved requester web user to RegistryPerson"
+      ],
+      "regression_tests": [
+        "server/tests/test_registry_people_admin.py::test_requester_identity_does_not_link_by_unverified_email_alias",
+        "server/tests/test_registry_effective_identity_service.py::test_effective_identity_does_not_link_by_email_alias_without_ui_login"
+      ],
+      "post_fix_verification": [
+        "DB targeted pytest group: 7 passed in 479.50s"
+      ],
+      "live_evidence": "pending"
+    },
+    {
+      "id": "ID-002",
+      "priority": "P0",
+      "group": "identity/account boundary",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-live-evidence-pending",
+      "release_blocker": true,
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_ui_users_repo.py::test_ui_users_repo_rejects_case_variant_login -q --tb=short failed before fix: case-variant login was accepted"
+      ],
+      "regression_tests": [
+        "server/tests/test_ui_users_repo.py::test_ui_users_repo_rejects_case_variant_login"
+      ],
+      "post_fix_verification": [
+        "DB targeted pytest group: 7 passed in 479.50s",
+        "manual direct Alembic upgrade reached revision 131 in 454.17s"
+      ],
+      "live_evidence": "pending"
+    },
+    {
+      "id": "CLAIM-003",
+      "priority": "P1",
+      "group": "public claim/session",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "AGENT-AUTH-004",
+      "priority": "P1",
+      "group": "pairing/session delivery",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "PAIR-005",
+      "priority": "P1",
+      "group": "pairing/session delivery",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "SESSION-006",
+      "priority": "P1",
+      "group": "pairing/session delivery",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "EVENT-007",
+      "priority": "P1",
+      "group": "chat/timeline",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "EVENT-008",
+      "priority": "P1",
+      "group": "chat/timeline",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CHAT-009",
+      "priority": "P1",
+      "group": "chat/timeline",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CHAT-010",
+      "priority": "P2",
+      "group": "chat/timeline",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CREATE-011",
+      "priority": "P1",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CREATE-012",
+      "priority": "P1",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CREATE-013",
+      "priority": "P1",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CREATE-014",
+      "priority": "P2",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "WORKFLOW-015",
+      "priority": "P1",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "WORKFLOW-016",
+      "priority": "P1",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "WORKFLOW-017",
+      "priority": "P1",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CLOSE-018",
+      "priority": "P1",
+      "group": "public claim/session",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "TOOL-019",
+      "priority": "P1",
+      "group": "tool/operation lifecycle",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "MODULE-020",
+      "priority": "P1",
+      "group": "tool/operation lifecycle",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "CONSENT-021",
+      "priority": "P1",
+      "group": "tool/operation lifecycle",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "PLAYBOOK-022",
+      "priority": "P2",
+      "group": "tool/operation lifecycle",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "HISTORY-023",
+      "priority": "P1",
+      "group": "history/context",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "HISTORY-024",
+      "priority": "P2",
+      "group": "history/context",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "SUPPORT-025",
+      "priority": "P1",
+      "group": "support/admin truthfulness",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "SUPPORT-026",
+      "priority": "P2",
+      "group": "support/admin truthfulness",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "INSTALL-027",
+      "priority": "P1",
+      "group": "installer/update",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "INSTALL-028",
+      "priority": "P1",
+      "group": "installer/update",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "AUTH-029",
+      "priority": "P1",
+      "group": "identity/account boundary",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "AUTH-030",
+      "priority": "P2",
+      "group": "identity/account boundary",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
+      "release_blocker": false,
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_web_session_api.py::test_web_session_register_rejects_login_longer_than_db_limit -q --tb=short failed before fix: 101-character login reached repository and returned 500"
+      ],
+      "regression_tests": [
+        "server/tests/test_web_session_api.py::test_web_session_register_rejects_login_longer_than_db_limit"
+      ],
+      "post_fix_verification": [
+        "No-DB registration pytest group: 3 passed in 0.77s"
+      ],
+      "live_evidence": "not-required-for-p2-code-slice"
+    },
+    {
+      "id": "TOKEN-031",
+      "priority": "P2",
+      "group": "pairing/session delivery",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "ASSIGN-032",
+      "priority": "P2",
+      "group": "ticket create/workflow",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "ACCOUNT-033",
+      "priority": "P1",
+      "group": "identity/account boundary",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "PUBLIC-AUTH-034",
+      "priority": "P1",
+      "group": "public claim/session",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "PAIR-035",
+      "priority": "P2",
+      "group": "pairing/session delivery",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": false,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "SCALE-036",
+      "priority": "P1",
+      "group": "scaling/protocol risk",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "PROTOCOL-037",
+      "priority": "P1",
+      "group": "scaling/protocol risk",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "TOOL-038",
+      "priority": "P1",
+      "group": "tool/operation lifecycle",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "TEST-039",
+      "priority": "P0",
+      "group": "test/release assurance",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "TEST-040",
+      "priority": "P1",
+      "group": "test/release assurance",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    },
+    {
+      "id": "RELEASE-041",
+      "priority": "P0",
+      "group": "test/release assurance",
+      "current_head_status": "open",
+      "fix_status": "not-started",
+      "release_blocker": true,
+      "verification": "pending-current-head-verification"
+    }
+  ]
+}

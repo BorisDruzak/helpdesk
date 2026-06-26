@@ -13,7 +13,7 @@ from app.db import get_session
 from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
-from app.repos.ui_users_repo import DEFAULT_USER_ROLE, VALID_ROLES, UiUsersRepo
+from app.repos.ui_users_repo import DEFAULT_USER_ROLE, VALID_ROLES, UiUsersRepo, normalize_user_login
 from auth.password_service import verify_password
 
 
@@ -128,6 +128,7 @@ class AuthService:
         Returns:
             (success, actor_role) — при success=True роль для выдачи токена
         """
+        login = normalize_user_login(login)
         from config import (
             AUTH_UI_DB_USERS_ENABLED,
             AUTH_UI_CONFIG_FALLBACK_ENABLED,
@@ -280,6 +281,9 @@ class AuthService:
             Raw token string (для передачи клиенту)
         """
         actor_role = str(actor_role or "").strip().lower()
+        user_login = normalize_user_login(user_login)
+        if not user_login:
+            raise ValueError("Invalid user_login")
         if actor_role not in VALID_ROLES:
             raise ValueError("Invalid actor_role")
         raw_token = self._generate_raw_token()

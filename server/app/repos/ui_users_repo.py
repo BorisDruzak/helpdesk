@@ -4,7 +4,7 @@ Stage 10: Репозиторий UI пользователей (ui_users, ui_use
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from loguru import logger
@@ -14,6 +14,11 @@ from shared.redaction import redact_sensitive_payload
 
 VALID_ROLES = ("admin", "support", "auditor", "user")
 DEFAULT_USER_ROLE = "user"
+MAX_USER_LOGIN_LENGTH = 100
+
+
+def normalize_user_login(value: object) -> str:
+    return str(value or "").strip().lower()
 
 
 class UiUsersRepo:
@@ -24,7 +29,15 @@ class UiUsersRepo:
 
     async def get_by_login(self, user_login: str) -> Optional[UiUser]:
         """Получить пользователя по логину."""
-        stmt = select(UiUser).where(UiUser.user_login == user_login)
+        normalized_login = normalize_user_login(user_login)
+        if not normalized_login:
+            return None
+        stmt = (
+            select(UiUser)
+            .where(func.lower(func.trim(UiUser.user_login)) == normalized_login)
+            .order_by(UiUser.user_login)
+            .limit(1)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -50,11 +63,17 @@ class UiUsersRepo:
         actor_id: Optional[str] = None,
     ) -> UiUser:
         """Создать пользователя. Роль нормализуется к admin при невалидной."""
+        login = normalize_user_login(user_login)
+        if not login or len(login) > MAX_USER_LOGIN_LENGTH:
+            raise ValueError("Invalid user_login")
         role = (actor_role or DEFAULT_USER_ROLE).strip().lower()
         if role not in VALID_ROLES:
             raise ValueError("Invalid actor_role")
+        existing = await self.get_by_login(login)
+        if existing is not None:
+            raise ValueError("User already exists")
         user = UiUser(
-            user_login=user_login,
+            user_login=login,
             password_hash=password_hash,
             actor_role=role,
             is_active=True,
@@ -62,7 +81,7 @@ class UiUsersRepo:
             locked_until=None,
         )
         self.session.add(user)
-        await self._audit(user_login, "user_created", actor_id, {"actor_role": role})
+        await self._audit(login, "user_created", actor_id, {"actor_role": role})
         try:
             await self.session.commit()
             await self.session.refresh(user)
@@ -92,7 +111,7 @@ class UiUsersRepo:
         if is_active is not None:
             user.is_active = is_active
         after = {"actor_role": user.actor_role, "is_active": user.is_active}
-        await self._audit(user_login, "user_updated", actor_id, {"before": before, "after": after})
+        await self._audit(user.user_login, "user_updated", actor_id, {"before": before, "after": after})
         await self.session.commit()
         await self.session.refresh(user)
         return user
@@ -110,7 +129,7 @@ class UiUsersRepo:
         user.password_hash = password_hash
         user.failed_attempts = 0
         user.locked_until = None
-        await self._audit(user_login, "password_changed", actor_id, {})
+        await self._audit(user.user_login, "password_changed", actor_id, {})
         await self.session.commit()
         return True
 
@@ -122,7 +141,7 @@ class UiUsersRepo:
         user.last_login_at = datetime.now(timezone.utc)
         user.failed_attempts = 0
         user.locked_until = None
-        await self._audit(user_login, "login_success", user_login, {})
+        await self._audit(user.user_login, "login_success", normalize_user_login(user_login), {})
         await self.session.commit()
 
     async def increment_failed_attempts(
@@ -144,9 +163,9 @@ class UiUsersRepo:
             user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
             locked = True
         await self._audit(
-            user_login,
+            user.user_login,
             "login_failed",
-            user_login,
+            normalize_user_login(user_login),
             {"failed_attempts": user.failed_attempts, "locked": locked},
         )
         await self.session.commit()
@@ -187,7 +206,7 @@ class UiUsersRepo:
         """Список записей аудита (опционально по user_login)."""
         stmt = select(UiUserAudit).order_by(UiUserAudit.created_at.desc())
         if user_login is not None:
-            stmt = stmt.where(UiUserAudit.user_login == user_login)
+            stmt = stmt.where(func.lower(func.trim(UiUserAudit.user_login)) == normalize_user_login(user_login))
         stmt = stmt.offset(offset).limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

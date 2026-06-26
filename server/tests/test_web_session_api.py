@@ -449,6 +449,44 @@ async def test_web_session_register_returns_duplicate_login_conflict(monkeypatch
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_web_session_register_rejects_login_longer_than_db_limit(monkeypatch):
+    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
+    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
+    created = False
+
+    class FakeUiUsersRepo:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_user(self, *args, **kwargs):
+            nonlocal created
+            created = True
+            raise AssertionError("registration must reject long login before DB write")
+
+    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
+
+    app = web.Application()
+    app["state"] = SimpleNamespace(users={})
+    setup_routes(app)
+
+    async with TestClient(TestServer(app)) as client:
+        response = await client.post(
+            "/api/web/session/register",
+            json={
+                "login": "a" * 101,
+                "password": "VeryStrong123!",
+                "password_repeat": "VeryStrong123!",
+            },
+        )
+        payload = await response.json()
+
+    assert response.status == 400
+    assert payload["error_code"] == "VALIDATION_ERROR"
+    assert created is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_session_register_rejects_invalid_device_link_code_before_creating_user(monkeypatch):
     monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
     monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())

@@ -24,7 +24,7 @@ Security update 2026-06-10:
 - Direct browser pairing lookup by `pairing_id` is safe-projected: expired, consumed, superseded, failed, canceled and unknown pairings do not return device facts or raw pairing secrets. The endpoint also rate-limits direct pairing-id probes.
 
 Security update 2026-06-11:
-- Public ticket claim from `/api/web/requester/tickets/claim-public` requires the web user to resolve to a `RegistryPerson`; unlinked web logins receive `REQUESTER_IDENTITY_REQUIRED` and do not create web-login-only ownership.
+- Public ticket claim from `/api/web/requester/tickets/claim-public` requires the web user to resolve to a `RegistryPerson` through a verified `ui_login` identity; email, Windows login and AD identities are not web-account proof. Unlinked web logins receive `REQUESTER_IDENTITY_REQUIRED` and do not create web-login-only ownership.
 - User consent creation is race-safe around the partial unique pending-subject index. Duplicate concurrent creation returns the existing pending `UserConsentRequest` instead of leaking a duplicate-key 500.
 - Consent-required operation retry ticket events use the same sensitive-key redaction helper as `UserConsentRequest.requested_action_payload_redacted`; raw `authorization`, `cookie`, `password`, `secret`, `session_token` and token-like params must not be written into `ticket_events`.
 - Requester-facing Remote Assist consent list/detail/decision responses are consent-only payloads and must not include ICE servers, SDP offers/answers/candidates, signaling tokens, agent/viewer tokens, session tokens, cookies or authorization material.
@@ -33,6 +33,7 @@ Security update 2026-06-15:
 - Web self-registration is fail-closed by default through `WEB_SELF_REGISTRATION_ENABLED=false`.
 - Requester profile completion is blocking by default through `PROFILE_COMPLETION_REQUIRED=true`. Temporary rollout override may set it to `false`; missing fields still return in `profile_completion`, but requester ticket preview/create uses policy-aware `blocks`.
 - `POST /api/web/session/register` creates only a UI account with role `user`, validates the existing password policy and duplicate login constraints, rejects role-escalation fields through strict DTO validation, and does not set `pc_client_web_session`.
+- Web login and self-registration normalize UI logins to trimmed lower-case before auth lookup, account creation and token subject creation. `ui_users` enforces unique `lower(trim(user_login))` through migration `131`, and web registration rejects logins longer than the DB column limit of 100 characters before writing.
 - Optional registration device-link codes are validated only as registration pairings; account creation does not create an active device binding or bypass the later profile/admin approval policy.
 - `PUT /api/web/requester/profile` is web-session protected, writes only the authenticated caller's registry profile and verified `ui_login` identity, rejects foreign `person_id`, and requires active registry department/location ids before normal requester ticket preview/create is allowed.
 
@@ -74,7 +75,7 @@ Security update 2026-06-15:
 
 - Токен валиден только если: запись найдена по hash, не отозван (`revoked_at IS NULL`), не истёк (`expires_at` в будущем или NULL), не заменён (или в пределах grace period после `rotated_at`).
 - При успешной проверке обновляется `last_used_at`.
-- Для UI-токена `AuthService.verify_ui_token()` дополнительно сверяет `ui_users`: отсутствующий или отключенный (`is_active=false`) UI-пользователь делает токен недействительным, а оставшиеся активные UI-токены этого логина отзываются. Для requester-role аккаунтов также проверяется любая `ui_login` связь с `registry_people`: `archived` / `inactive` / `deactivated` / `disabled` карточка деактивирует UI-аккаунт, отзывает активные UI-токены и блокирует новый web-login.
+- Для UI-токена `AuthService.verify_ui_token()` дополнительно сверяет `ui_users`: отсутствующий или отключенный (`is_active=false`) UI-пользователь делает токен недействительным, а оставшиеся активные UI-токены этого логина отзываются. Для requester-role аккаунтов также проверяется любая verified `ui_login` связь с `registry_people`: `archived` / `inactive` / `deactivated` / `disabled` карточка деактивирует UI-аккаунт, отзывает активные UI-токены и блокирует новый web-login.
 
 ### 1.2 Лимиты и сроки
 

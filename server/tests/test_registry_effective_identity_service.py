@@ -353,6 +353,41 @@ async def test_unlinked_ui_user_returns_quality_warning_without_person(test_engi
 
 
 @pytest.mark.asyncio
+async def test_effective_identity_does_not_link_by_email_alias_without_ui_login(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    actor_id = "email-only-identity@example.test"
+
+    async with session_maker() as session:
+        person = RegistryPerson(
+            person_id=str(uuid.uuid4()),
+            display_name="Email Only Identity",
+            email=actor_id,
+            source="hr",
+            status="active",
+        )
+        session.add_all(
+            [
+                UiUser(user_login=actor_id, password_hash="test", actor_role="user", is_active=True),
+                person,
+                RegistryPersonIdentity(
+                    person_id=person.person_id,
+                    provider="email",
+                    identifier=actor_id,
+                    normalized_identifier=actor_id,
+                    verified=True,
+                    source="hr",
+                ),
+            ]
+        )
+
+        payload = (await EffectiveIdentityService(session).resolve_actor_identity(actor_id, "user")).to_dict()
+
+    assert payload["actor_id"] == actor_id
+    assert payload["person"] is None
+    assert "registry_person_not_linked" in _warning_codes(payload)
+
+
+@pytest.mark.asyncio
 async def test_agent_machine_token_does_not_resolve_requester_identity(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

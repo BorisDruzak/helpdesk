@@ -204,11 +204,11 @@ class RequesterIdentityResolver:
         login = str(actor_id or "").strip()
         if not login:
             return None
-        for provider in ("ui_login", "email", "windows_login", "ad"):
-            person = await self.registration_repo.find_person_by_identity(provider, login)
-            if person is not None:
-                return person
-        return None
+        identity = await self.registration_repo.find_identity("ui_login", login)
+        if identity is None or identity.verified is not True:
+            return None
+        person = await self.registry_repo.get_person(identity.person_id)
+        return person if is_person_active(person) else None
 
     async def list_active_bindings(self, person_id: str | None) -> list[DeviceUserBinding]:
         if not person_id:
