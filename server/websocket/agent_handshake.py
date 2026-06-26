@@ -347,11 +347,35 @@ def _is_provision_stub(device: Any) -> bool:
     return not bool(metadata)
 
 
+def _fingerprint_verdict_payload(verdict: Any) -> dict[str, Any]:
+    return {
+        "allowed": verdict.allowed,
+        "status": verdict.status,
+        "matched_count": verdict.matched_count,
+        "mismatched_count": verdict.mismatched_count,
+        "comparable_count": verdict.comparable_count,
+        "missing_count": verdict.missing_count,
+        "details": verdict.details,
+    }
+
+
+def _device_fingerprint_verdict(device: Any, incoming: dict | None) -> dict[str, Any] | None:
+    fingerprint = normalize_device_fingerprint(incoming)
+    if not fingerprint or not device:
+        return None
+    metadata = getattr(device, "device_metadata", None)
+    stored = normalize_device_fingerprint(
+        metadata.get(FINGERPRINT_METADATA_KEY) if isinstance(metadata, dict) else None
+    )
+    return _fingerprint_verdict_payload(compare_device_fingerprints(stored, fingerprint))
+
+
 async def _resolve_handshake_device_id(
     *,
     token_info: dict[str, Any],
     payload_device_id: Optional[str],
     payload_install_id: Optional[str] = None,
+    payload_fingerprint: dict | None = None,
 ) -> str:
     token_device_id = token_info["device_id"]
     if not payload_device_id or payload_device_id == token_device_id:
@@ -369,6 +393,9 @@ async def _resolve_handshake_device_id(
             tokens_repo = AuthTokensRepo(session)
 
             payload_device = await devices_repo.get_by_device_id(payload_device_id)
+            fingerprint_verdict = _device_fingerprint_verdict(payload_device, payload_fingerprint)
+            if fingerprint_verdict is not None and not fingerprint_verdict["allowed"]:
+                return payload_device_id
             if payload_install_id and payload_install_id == token_device_id:
                 if payload_device and getattr(payload_device, "deleted_at", None) is not None:
                     return token_device_id
@@ -377,6 +404,7 @@ async def _resolve_handshake_device_id(
                 rebound = await tokens_repo.rebind_agent_token(
                     token_hash=token_info["token_hash"],
                     new_device_id=payload_device_id,
+                    expected_device_id=token_device_id,
                 )
                 if not rebound:
                     return token_device_id
@@ -408,6 +436,7 @@ async def _resolve_handshake_device_id(
             rebound = await tokens_repo.rebind_agent_token(
                 token_hash=token_info["token_hash"],
                 new_device_id=payload_device_id,
+                expected_device_id=token_device_id,
             )
             if not rebound:
                 return token_device_id
@@ -473,15 +502,7 @@ async def _handshake_fingerprint_allowed(device_id: str, incoming: dict | None) 
                 metadata.get(FINGERPRINT_METADATA_KEY) if isinstance(metadata, dict) else None
             )
             verdict = compare_device_fingerprints(stored, fingerprint)
-            payload = {
-                "allowed": verdict.allowed,
-                "status": verdict.status,
-                "matched_count": verdict.matched_count,
-                "mismatched_count": verdict.mismatched_count,
-                "comparable_count": verdict.comparable_count,
-                "missing_count": verdict.missing_count,
-                "details": verdict.details,
-            }
+            payload = _fingerprint_verdict_payload(verdict)
             if not verdict.allowed:
                 return False, payload
             if device:
@@ -627,6 +648,7 @@ async def handle_handshake(
         token_info=token_info,
         payload_device_id=payload_device_id,
         payload_install_id=payload_install_id,
+        payload_fingerprint=payload.get(FINGERPRINT_METADATA_KEY),
     )
     agent_id = device_id
     fingerprint_allowed, fingerprint_verdict = await _handshake_fingerprint_allowed(

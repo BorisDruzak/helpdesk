@@ -68,10 +68,20 @@
       "id": "AGENT-AUTH-004",
       "priority": "P1",
       "group": "pairing/session delivery",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_device_fingerprint.py::test_handshake_rebind_keeps_token_on_original_device_when_fingerprint_mismatches -q --tb=short failed before fix: rejected fingerprint mismatch path had already rebound the agent token to the payload device"
+      ],
+      "regression_tests": [
+        "server/tests/test_device_fingerprint.py::test_handshake_rebind_keeps_token_on_original_device_when_fingerprint_mismatches",
+        "server/tests/test_device_fingerprint.py::test_handshake_rebind_uses_expected_original_token_binding"
+      ],
+      "post_fix_verification": [
+        "Targeted AGENT-AUTH-004 no-DB handshake tests: 2 passed in 0.14s"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "PAIR-005",

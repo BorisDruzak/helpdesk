@@ -224,7 +224,7 @@ Security update 2026-06-26:
 - Логин/пароль **не** используются. Валидация UUID обязательна.
 - При успехе сервер при необходимости создаёт placeholder-запись в `devices`, затем пишет запись в `agent_tokens` (hash + prefix), а клиенту возвращает сырой токен и `device_id`. Срок действия по умолчанию — 180 дней. Для архивированного устройства выдача нового agent token запрещена до явного восстановления или выбора нового `device_id`.
 - В production identity-модели этот `device_id` должен быть каноническим `machine_id`, а не случайным install-local UUID.
-- Если такой токен потом вводит уже существующий агент, controlled reprovision на handshake должен перевести токен на уже известное устройство вместо создания нового дубля.
+- Если такой токен потом вводит уже существующий агент, controlled reprovision на handshake может перевести токен на уже известное устройство вместо создания нового дубля только после проверки stored device fingerprint этого target device и только если строка токена всё ещё привязана к исходному provisioning/legacy `device_id`. При fingerprint mismatch handshake отклоняется, а `agent_tokens.device_id` остаётся на исходном provisioning/legacy устройстве.
 - При превышении лимита активных токенов (2 на device_id) — **429** и сообщение «Token limit exceeded. Please revoke old tokens first.»
 
 ### 5.1.1 Agent provisioning: `POST /api/connection_request`

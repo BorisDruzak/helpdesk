@@ -335,6 +335,10 @@ TOPICS: tuple[Topic, ...] = (
         aliases=(
             "auth",
             "token",
+            "AGENT-AUTH-004",
+            "agent token rebind fingerprint",
+            "token rebound fingerprint mismatch",
+            "agent_token_rebound_without_verified_fingerprint",
             "token limit",
             "token_limit_exceeded",
             "device_fingerprint",

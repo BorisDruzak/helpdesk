@@ -136,6 +136,8 @@ python ws_agent.py --no-gui
 
 В этом случае сервер во время handshake имеет право один раз перепривязать активный token binding с legacy `install_id` на canonical `machine_id`, записать это в runtime audit и продолжить handshake без ручного перевыпуска токена. Это миграционный сценарий, а не новая постоянная identity-модель.
 
+Перед такой перепривязкой сервер проверяет stored device fingerprint для target `machine_id`, если он уже есть в БД, и обновляет токен только если он всё ещё привязан к исходному provisioning/legacy `device_id`. При fingerprint mismatch сервер закрывает handshake с **4003** и не меняет `agent_tokens.device_id`; агент должен пройти обычный recovery/provisioning flow, а не продолжать с перепривязанным токеном.
+
 ## Обработка ошибок аутентификации
 
 Сервер может закрыть WebSocket с кодом **4003** при невалидном токене:

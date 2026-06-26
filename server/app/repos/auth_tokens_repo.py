@@ -606,7 +606,13 @@ class AuthTokensRepo:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def rebind_agent_token(self, token_hash: str, new_device_id: str) -> bool:
+    async def rebind_agent_token(
+        self,
+        token_hash: str,
+        new_device_id: str,
+        *,
+        expected_device_id: Optional[str] = None,
+    ) -> bool:
         """
         Rebind active token to another device_id.
 
@@ -617,8 +623,10 @@ class AuthTokensRepo:
             update(AgentToken)
             .where(AgentToken.token_hash == token_hash)
             .where(AgentToken.revoked_at.is_(None))
-            .values(device_id=new_device_id)
         )
+        if expected_device_id is not None:
+            stmt = stmt.where(AgentToken.device_id == expected_device_id)
+        stmt = stmt.values(device_id=new_device_id)
         result = await self.session.execute(stmt)
         await self.session.flush()
 
