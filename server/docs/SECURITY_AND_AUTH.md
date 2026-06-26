@@ -243,7 +243,7 @@ Security update 2026-06-15:
 
 - **Тело:** `{"login": "...", "password": "..."}`.
 - Опционально поддерживается `expected_role` (`admin`, `support`, `auditor`, `user`). Если фактическая роль аккаунта не совпадает, сервер возвращает **403** и не выдаёт UI token. Это используется общей страницей `/login` для разведения admin shell и support shell.
-- **Stage 10:** при `AUTH_UI_DB_USERS_ENABLED=true` аутентификация сначала по БД (таблица **ui_users**): проверка пароля через PBKDF2-SHA256, учёт failed_attempts и locked_until. Роль при успехе берётся из **ui_users.actor_role**. Если пользователя нет в БД и `AUTH_UI_CONFIG_FALLBACK_ENABLED=true`, используется fallback на **state.users** (USERS) и роль из **UI_USER_ROLES_JSON** (Stage 9).
+- **Stage 10:** при `AUTH_UI_DB_USERS_ENABLED=true` аутентификация сначала по БД (таблица **ui_users**): проверка пароля через PBKDF2-SHA256, атомарный DB increment для `failed_attempts` и установка `locked_until`. Роль при успехе берётся из **ui_users.actor_role**. Если пользователя нет в БД и `AUTH_UI_CONFIG_FALLBACK_ENABLED=true`, используется fallback на **state.users** (USERS) и роль из **UI_USER_ROLES_JSON** (Stage 9).
 - Без DB-режима: проверка по `state.users` (конфиг логин/пароль), роль из **UI_USER_ROLES_JSON** или **admin**.
 - При неверных данных или блокировке — 401 «Invalid login or password». При успехе создаётся запись в `ui_tokens`, клиенту возвращается сырой токен, `user_login` и `actor_role`. Валидные роли: `admin`, `support`, `auditor`, `user`.
 
@@ -288,7 +288,7 @@ Security update 2026-06-15:
 
 - **USERS** (config): словарь логин → пароль для UI. По умолчанию примеры (`admin`/`user`); в production обязательно сменить и хранить пароли безопасно (например, хеши).
 - **UI_USER_ROLES_JSON** (config, Stage 9): JSON-маппинг логин → роль для UI (`{"login": "role"}`). Используется при fallback-логине (config) или когда пользователь не в БД. **Stage 10:** при аутентификации из ui_users роль берётся из БД, не из этого маппинга.
-- **Stage 10 — UI users из БД:** `AUTH_UI_DB_USERS_ENABLED`, `AUTH_UI_CONFIG_FALLBACK_ENABLED`, `AUTH_UI_MAX_FAILED_ATTEMPTS`, `AUTH_UI_LOCK_MINUTES`. Пароли в ui_users хранятся в виде хеша (pbkdf2_sha256). Admin API: GET/POST/PATCH /api/admin/users, смена пароля, деактивация; self-service: POST /api/users/me/password. См. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-10-usersroles-из-бд).
+- **Stage 10 — UI users из БД:** `AUTH_UI_DB_USERS_ENABLED`, `AUTH_UI_CONFIG_FALLBACK_ENABLED`, `AUTH_UI_MAX_FAILED_ATTEMPTS`, `AUTH_UI_LOCK_MINUTES`. Пароли в ui_users хранятся в виде хеша (pbkdf2_sha256), а неверные попытки логина обновляются одним атомарным SQL update, чтобы параллельные ошибки не теряли increments. Admin API: GET/POST/PATCH /api/admin/users, смена пароля, деактивация; self-service: POST /api/users/me/password. См. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-10-usersroles-из-бд).
 - **ALLOW_REMOTE_CODE** (env): разрешение выполнения удалённого кода (инструменты с уровнем риска code_exec). По умолчанию `false`; включать только при осознанном риске.
 
 ---

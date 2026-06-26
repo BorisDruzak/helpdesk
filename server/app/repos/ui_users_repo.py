@@ -4,7 +4,7 @@ Stage 10: Репозиторий UI пользователей (ui_users, ui_use
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from loguru import logger
@@ -154,19 +154,36 @@ class UiUsersRepo:
         Увеличить счётчик неудачных попыток. При достижении max_attempts установить locked_until.
         Returns: True если пользователь теперь заблокирован.
         """
-        user = await self.get_by_login(user_login)
-        if not user:
+        normalized_login = normalize_user_login(user_login)
+        if not normalized_login:
             return False
-        user.failed_attempts = (user.failed_attempts or 0) + 1
-        locked = False
-        if user.failed_attempts >= max_attempts:
-            user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
-            locked = True
+        next_failed_attempts = func.coalesce(UiUser.failed_attempts, 0) + 1
+        new_locked_until = datetime.now(timezone.utc) + timedelta(minutes=lock_minutes)
+        stmt = (
+            update(UiUser)
+            .where(func.lower(func.trim(UiUser.user_login)) == normalized_login)
+            .values(
+                failed_attempts=next_failed_attempts,
+                locked_until=case(
+                    (next_failed_attempts >= max_attempts, new_locked_until),
+                    else_=UiUser.locked_until,
+                ),
+            )
+            .returning(UiUser.user_login, UiUser.failed_attempts, UiUser.locked_until)
+            .execution_options(synchronize_session=False)
+        )
+        result = await self.session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return False
+        updated_login, failed_attempts, locked_until = row
+        failed_attempts_value = int(failed_attempts or 0)
+        locked = failed_attempts_value >= max_attempts and locked_until is not None
         await self._audit(
-            user.user_login,
+            updated_login,
             "login_failed",
-            normalize_user_login(user_login),
-            {"failed_attempts": user.failed_attempts, "locked": locked},
+            normalized_login,
+            {"failed_attempts": failed_attempts_value, "locked": locked},
         )
         await self.session.commit()
         return locked

@@ -22,7 +22,7 @@ The intended release state is:
 - **Primary rule change:** broad live bug hunt is deferred until static-confirmed known P0/P1 defects are remediated or explicitly dispositioned.
 - **Audit drift note:** the deep audit reviewed an older GitHub `HEAD`; Phase 0 must verify every deep-audit ID on the current local tree before code changes.
 - **Release state:** not assumed green. Treat current release readiness as unknown until Phase 0 records exact commit, deployed commit, schema head, CI state, Observer baseline and live evidence readiness.
-- **Latest remediation checkpoint, 2026-06-26:** Phase 1 Wave A code slice fixed `ID-001`, `ID-002` and adjacent `AUTH-030` locally. Focused automated regression tests are green, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` now records all 41 IDs. P0 release disposition remains blocked until live/stand evidence is collected.
+- **Latest remediation checkpoint, 2026-06-26:** Phase 1 Wave A code slices fixed `ID-001`, `ID-002`, `AUTH-029` and adjacent `AUTH-030` locally. Focused automated regression tests are green, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` now records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
 
 ## Stop Conditions
 
@@ -72,7 +72,7 @@ The deep audit IDs below are the initial known-defect registry. Current `HEAD` s
 | `SUPPORT-026` | P2 | support/admin truthfulness | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `INSTALL-027` | P1 | installer/update | open, verify in Phase 0 | not-started | required | missing | yes |
 | `INSTALL-028` | P1 | installer/update | open, verify in Phase 0 | not-started | required | missing | yes |
-| `AUTH-029` | P1 | identity/account boundary | open, verify in Phase 0 | not-started | required | missing | yes |
+| `AUTH-029` | P1 | identity/account boundary | reproduced on current HEAD | fixed-local, focused-tests-green | `test_ui_users_repo_failed_attempts_are_atomic_across_stale_sessions` | focused pytest green; live/stand evidence missing | yes, until live evidence |
 | `AUTH-030` | P2 | identity/account boundary | reproduced on current HEAD | fixed-local, focused-tests-green | `test_web_session_register_rejects_login_longer_than_db_limit` | no-DB registration pytest green | no, unless release-impacting |
 | `TOKEN-031` | P2 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `ASSIGN-032` | P2 | ticket create/workflow | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
@@ -180,7 +180,7 @@ Minimum order:
 
 1. `ID-001` - fixed locally, live evidence pending
 2. `ID-002` - fixed locally, live evidence pending
-3. `AUTH-029`
+3. `AUTH-029` - fixed locally, live evidence pending
 4. `AUTH-030` - fixed locally by adjacent login-length alignment
 5. `ACCOUNT-033`
 
