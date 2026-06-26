@@ -196,3 +196,13 @@ def test_live_browser_script_uses_real_routes_without_network_mocks() -> None:
     assert '"/app/admin/playbooks"' in script
     assert '"/app/admin/observer"' in script
     assert '"/app/reports"' in script
+
+
+def test_live_browser_login_wait_accepts_spa_session_completion() -> None:
+    script = BROWSER_SCRIPT.read_text(encoding="utf-8")
+
+    assert "async function waitForLoginCompletion" in script
+    assert "page.waitForFunction" in script
+    assert "window.location.pathname" in script
+    assert "document.querySelector" in script
+    assert 'page.waitForURL((url) => !url.pathname.startsWith("/app/login")' not in script

@@ -148,6 +148,22 @@ function probesFor(options) {
 }
 
 
+async function waitForLoginCompletion(page) {
+  try {
+    await page.waitForFunction(
+      () => {
+        const loginInput = document.querySelector('input[name="login"], input[autocomplete="username"]');
+        return !window.location.pathname.startsWith("/app/login") || !loginInput;
+      },
+      null,
+      { timeout: 30_000 },
+    );
+  } catch (error) {
+    throw new Error(`Login did not complete within 30000ms; url=${page.url()}: ${error}`);
+  }
+}
+
+
 async function ensureLoggedIn(page, probe) {
   await page.waitForLoadState("domcontentloaded");
   const loginInput = page.locator('input[name="login"], input[autocomplete="username"]').first();
@@ -167,9 +183,7 @@ async function ensureLoggedIn(page, probe) {
   await passwordInput.waitFor({ state: "visible", timeout: 10_000 });
   await passwordInput.fill(config.password);
   await page.locator('button[type="submit"]').first().click();
-  await page.waitForURL((url) => !url.pathname.startsWith("/app/login"), {
-    timeout: 30_000,
-  });
+  await waitForLoginCompletion(page);
   await page.waitForLoadState("networkidle").catch(() => undefined);
   if (new URL(page.url()).pathname !== probe.path) {
     await page.goto(probe.path, { waitUntil: "domcontentloaded" });
