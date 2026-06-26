@@ -338,10 +338,20 @@
       "id": "ACCOUNT-033",
       "priority": "P1",
       "group": "identity/account boundary",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_ticket_account_access.py::test_unverified_other_account_does_not_resolve_declared_person -q --tb=short failed before fix: unverified other-account email/login resolved to requester_person_id and emitted customer history events"
+      ],
+      "regression_tests": [
+        "server/tests/test_ticket_account_access.py::test_unverified_other_account_does_not_resolve_declared_person"
+      ],
+      "post_fix_verification": [
+        "Targeted ACCOUNT-033 test: 1 passed in 15.11s",
+        "Full ticket account access file: 10 passed in 61.29s"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "PUBLIC-AUTH-034",

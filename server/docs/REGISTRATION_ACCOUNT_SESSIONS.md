@@ -27,7 +27,7 @@ Browser-to-agent account handoff is persisted in `device_browser_pairings` and s
 ## Session modes
 
 - `confirmed_binding`: server-issued, verified by an active `device_user_bindings` row for the same device.
-- `verified_other_account`: server-issued after admin approval of `device_account_login_requests`. It never creates a registration claim and never changes the active device binding.
+- `verified_other_account`: server-issued after admin approval of `device_account_login_requests`. It never creates a registration claim and never changes the active device binding. Only a validated server session may contribute `requester_person_id`; unverified or legacy other-account payloads keep their declared account warning but do not resolve `email`/`login` into a Registry person.
 - `registration_pending`: server-issued from a non-terminal registration claim. It is invalidated by rejected, expired, superseded or approved claim states. Claim approval also revokes the pending server session so admin session lists do not show an active pending registration next to the new confirmed binding session. The Qt agent GUI uses it to show and poll the pending registration gate; it must not open the normal ticket workspace before the device has a confirmed binding or an approved other-account session.
 
 Agent GUI ticket actions must send the server-issued `session_id` and `session_token`. Client-supplied person, binding or account mode fields are not trusted without server validation.
@@ -57,6 +57,8 @@ Tickets created from `verified_other_account` store:
 - `custom_fields.requester_account_context` with declared account, phone, reason, verification method/status, and active registered owner/binding context.
 
 The support ticket detail UI must show a visible warning: "Обращение создано с другого аккаунта на зарегистрированном устройстве."
+
+Unverified or legacy other-account payloads may preserve `custom_fields.requester_account_context.declared_account` and the warning `unverified_other_account_legacy_payload`, but they must leave `requester_person_id` empty and must not emit Customer History context for the declared email/login.
 
 ## Lifecycle and TTL
 

@@ -158,27 +158,6 @@ def _requester_create_marker_payload(
     return payload
 
 
-async def _find_declared_requester_person_id(session: Any, account: dict[str, Any]) -> str | None:
-    try:
-        from app.repos.registration_repo import RegistrationRepo
-
-        repo = RegistrationRepo(session)
-        email = str(account.get("email") or "").strip()
-        if email:
-            person = await repo.find_person_by_identity("email", email)
-            if person:
-                return person.person_id
-        login = str(account.get("login") or "").strip()
-        if login:
-            for provider in ("windows_login", "ui_login", "ad"):
-                person = await repo.find_person_by_identity(provider, login)
-                if person:
-                    return person.person_id
-    except Exception as exc:
-        logger.warning(f"[create] requester account identity lookup failed err={exc}")
-    return None
-
-
 async def _find_registry_asset_id_by_device(session: Any, device_id: str | None) -> str | None:
     if not device_id:
         return None
@@ -482,7 +461,8 @@ async def create_ticket_with_side_effects(
             verified = account_mode == "verified_other_account"
             requester_registration_status = "other_account" if verified else "unverified_other_account"
             requester_binding_id = None
-            requester_person_id = await _find_declared_requester_person_id(session, requester_account or requester_profile or {})
+            if verified and requester_account_session_validation and requester_account_session_validation.get("valid"):
+                requester_person_id = str((requester_account or {}).get("person_id") or "").strip() or None
             if isinstance(active_binding, dict) and active_binding.get("binding_id"):
                 asset_id = active_binding.get("asset_id") or asset_id
                 requester_account_context = {

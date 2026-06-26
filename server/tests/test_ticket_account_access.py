@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, Ticket
+from app.repos.registration_repo import RegistrationRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.context import AuthContext, AuthType
 from registry.account_session_service import AccountSessionService
@@ -111,6 +112,45 @@ async def test_verified_other_account_can_only_view_own_session_ticket(test_engi
     assert can_owner is False
     assert can_other is True
     assert [ticket.ticket_id for ticket in listed] == [other_ticket["ticket_id"]]
+
+
+@pytest.mark.asyncio
+async def test_unverified_other_account_does_not_resolve_declared_person(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        approved = await _approved_binding(session, device_id)
+
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=device_id,
+            requester_id=device_id,
+            title="Unverified other account ticket",
+            description="Unverified account must not contaminate customer history.",
+            user_display_name="Claimed Other User",
+            requester_account={
+                "account_mode": "unverified_other_account",
+                "full_name": "Claimed Other User",
+                "login": "owner@example.test",
+                "email": "owner@example.test",
+                "reason": "legacy unverified payload",
+            },
+        )
+
+        ticket = await session.get(Ticket, created["ticket_id"])
+        await session.commit()
+
+    assert ticket is not None
+    assert ticket.requester_person_id is None
+    assert ticket.requester_binding_id is None
+    assert ticket.requester_registration_status == "unverified_other_account"
+    assert ticket.requester_account_mode == "unverified_other_account"
+    assert ticket.requester_account_warning == "unverified_other_account_legacy_payload"
+    assert ticket.custom_fields["requester_account_context"]["verification_status"] == "unverified"
+    assert ticket.custom_fields["requester_account_context"]["declared_account"]["email"] == "owner@example.test"
+    assert ticket.custom_fields["requester_account_context"]["active_device_person_id"] == approved["person"]["person_id"]
+    assert "ticket_context" not in ticket.custom_fields
 
 
 @pytest.mark.asyncio
@@ -409,6 +449,13 @@ async def test_web_user_upload_access_uses_requester_person_ownership(test_engin
     async with session_maker() as session:
         session.add(_device(device_id))
         approved = await _approved_binding(session, device_id)
+        await RegistrationRepo(session).create_or_update_person_identity(
+            person_id=approved["person"]["person_id"],
+            provider="ui_login",
+            identifier="owner@example.test",
+            verified=True,
+            source="test",
+        )
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
