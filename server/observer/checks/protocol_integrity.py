@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models import AgentRuntimeAudit
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
@@ -15,6 +16,41 @@ SOURCE = "observer.protocol_integrity"
 QUERY_LIMIT = 500
 ACK_AUDIT_EVENTS = {"outbox_ack_emitted", "outbox_ack_persisted", "protocol_ack_persisted"}
 NACK_CODES = {"UNKNOWN_TICKET", "DEVICE_MISMATCH", "VALIDATION_ERROR"}
+
+
+async def _fetch_audit_window(
+    session: AsyncSession,
+    *predicates: ColumnElement[bool],
+    limit: int = QUERY_LIMIT,
+) -> list[AgentRuntimeAudit]:
+    rows: list[AgentRuntimeAudit] = []
+    cursor_created_at: datetime | None = None
+    cursor_id: int | None = None
+
+    while True:
+        stmt = select(AgentRuntimeAudit).where(*predicates)
+        if cursor_created_at is not None and cursor_id is not None:
+            stmt = stmt.where(
+                or_(
+                    AgentRuntimeAudit.created_at < cursor_created_at,
+                    and_(
+                        AgentRuntimeAudit.created_at == cursor_created_at,
+                        AgentRuntimeAudit.id < cursor_id,
+                    ),
+                )
+            )
+        batch = (
+            await session.execute(
+                stmt.order_by(AgentRuntimeAudit.created_at.desc(), AgentRuntimeAudit.id.desc()).limit(limit + 1)
+            )
+        ).scalars().all()
+        batch_rows, complete = limit_plus_one_window(batch, limit=limit)
+        rows.extend(batch_rows)
+        if complete:
+            return rows
+        last = batch_rows[-1]
+        cursor_created_at = last.created_at
+        cursor_id = last.id
 
 
 async def check_protocol_integrity(
@@ -28,15 +64,11 @@ async def check_protocol_integrity(
     cutoff = now - lookback
     events: list[ObserverIntegrityEventInput] = []
 
-    ack_audits = (
-        await session.execute(
-            select(AgentRuntimeAudit)
-            .where(AgentRuntimeAudit.event_type.in_(ACK_AUDIT_EVENTS), AgentRuntimeAudit.created_at >= cutoff)
-            .order_by(AgentRuntimeAudit.created_at.desc())
-            .limit(QUERY_LIMIT + 1)
-        )
-    ).scalars().all()
-    ack_rows, ack_complete = limit_plus_one_window(ack_audits, limit=QUERY_LIMIT)
+    ack_rows = await _fetch_audit_window(
+        session,
+        AgentRuntimeAudit.event_type.in_(ACK_AUDIT_EVENTS),
+        AgentRuntimeAudit.created_at >= cutoff,
+    )
     ack_contract_v2 = [
         row
         for row in ack_rows
@@ -57,7 +89,7 @@ async def check_protocol_integrity(
                 evidence={
                     "lookback_seconds": int(lookback.total_seconds()),
                     "required_audit_events": sorted(ACK_AUDIT_EVENTS),
-                    "legacy_ack_audit_rows": len(ack_audits),
+                    "legacy_ack_audit_rows": len(ack_rows),
                     "required_audit_contract_version": 2,
                     "telemetry_gap": True,
                 },
@@ -104,18 +136,11 @@ async def check_protocol_integrity(
             )
         )
 
-    rows = (
-        await session.execute(
-            select(AgentRuntimeAudit)
-            .where(
-                AgentRuntimeAudit.created_at >= cutoff,
-                AgentRuntimeAudit.severity.in_(("warning", "error", "critical")),
-            )
-            .order_by(AgentRuntimeAudit.created_at.desc())
-            .limit(QUERY_LIMIT + 1)
-        )
-    ).scalars().all()
-    nack_rows, nack_complete = limit_plus_one_window(rows, limit=QUERY_LIMIT)
+    nack_rows = await _fetch_audit_window(
+        session,
+        AgentRuntimeAudit.created_at >= cutoff,
+        AgentRuntimeAudit.severity.in_(("warning", "error", "critical")),
+    )
     nack_by_device: dict[tuple[str, str], int] = {}
     for row in nack_rows:
         details = row.details_json if isinstance(row.details_json, dict) else {}
@@ -144,7 +169,7 @@ async def check_protocol_integrity(
     return ObserverIntegrityCheckResult(
         source=SOURCE,
         events=events,
-        complete=ack_complete and nack_complete,
-        scanned_count=len(ack_audits) + len(rows),
+        complete=True,
+        scanned_count=len(ack_rows) + len(nack_rows),
         limit=QUERY_LIMIT,
     )

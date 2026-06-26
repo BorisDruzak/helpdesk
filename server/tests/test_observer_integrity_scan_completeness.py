@@ -6,13 +6,15 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, ObserverIntegrityCheckRun, Operation, Ticket, TicketEvent
+from app.db.models import AgentRuntimeAudit, Device, ObserverIntegrityCheckRun, Operation, Ticket, TicketEvent
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput, ObserverIntegrityRepo
 from observer import integrity_service as integrity_module
 from observer.checks.operation_lifecycle import QUERY_LIMIT as OPERATION_QUERY_LIMIT
 from observer.checks.operation_lifecycle import SOURCE as OPERATION_SOURCE
 from observer.checks.operation_lifecycle import check_operation_lifecycle
 from observer.checks.protocol_integrity import SOURCE as PROTOCOL_SOURCE
+from observer.checks.protocol_integrity import QUERY_LIMIT as PROTOCOL_QUERY_LIMIT
+from observer.checks.protocol_integrity import check_protocol_integrity
 from observer.checks.runtime_presence import check_runtime_presence
 from observer.checks.types import ObserverIntegrityCheckResult
 from observer.checks.web_cabinet import check_web_cabinet
@@ -147,6 +149,40 @@ async def test_runtime_presence_marks_incomplete_at_device_limit_plus_one(test_e
     assert isinstance(result, ObserverIntegrityCheckResult)
     assert result.complete is False
     assert len(result.events) == 500
+
+
+@pytest.mark.asyncio
+async def test_protocol_integrity_scans_all_ack_pages_before_marking_complete(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    async with session_maker() as session:
+        for index in range(PROTOCOL_QUERY_LIMIT + 1):
+            session.add(
+                AgentRuntimeAudit(
+                    device_id=f"obs-protocol-device-{index:03d}",
+                    event_type="outbox_ack_persisted",
+                    severity="info",
+                    source="observer_test",
+                    details_json={
+                        "audit_contract_version": 2,
+                        "outbox_id": f"obs-protocol-outbox-{index:03d}",
+                        "trace_id": f"obs-protocol-trace-{index:03d}",
+                        "event_type": "tool_call_result",
+                        "persisted_event_id": index + 1,
+                        "duplicate": False,
+                    },
+                    created_at=now - timedelta(milliseconds=index),
+                )
+            )
+        await session.commit()
+
+    async with session_maker() as session:
+        result = await check_protocol_integrity(session, run_id="protocol-paginated-ack")
+
+    assert isinstance(result, ObserverIntegrityCheckResult)
+    assert result.complete is True
+    assert result.events == []
+    assert result.scanned_count == PROTOCOL_QUERY_LIMIT + 1
 
 
 @pytest.mark.asyncio
