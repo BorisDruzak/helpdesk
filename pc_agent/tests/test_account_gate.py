@@ -684,7 +684,7 @@ async def test_main_window_browser_registration_pairing_refreshes_account_state(
 
         async def get_browser_pairing(self, pairing_id: str) -> dict:
             assert pairing_id == "pair-2"
-            return {"status": "consumed", "claim_id": "claim-1"}
+            return {"status": "confirmed", "claim_id": "claim-1"}
 
         async def get_account_state(self) -> dict:
             return {
@@ -778,7 +778,7 @@ async def test_main_window_browser_registration_keeps_pairing_state_when_account
 
         async def get_browser_pairing(self, pairing_id: str) -> dict:
             assert pairing_id == "pair-2"
-            return {"status": "consumed", "claim_id": "claim-1", "registration": {"status": "pending_admin_review"}}
+            return {"status": "confirmed", "claim_id": "claim-1", "registration": {"status": "pending_admin_review"}}
 
         async def get_account_state(self) -> dict:
             return {"status": "error", "error": "temporary account-state failure"}

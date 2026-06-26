@@ -405,6 +405,8 @@ class BrowserPairingService:
                         )
                         row.binding_id = binding.binding_id
                         row.resulting_account_session_id = created_session["session"]["session_id"]
+            if created_session is None:
+                return await self.serialize_pairing(row)
             row.status = "consumed"
             row.consumed_at = _now()
             row.completed_at = row.consumed_at

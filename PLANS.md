@@ -22,7 +22,7 @@ The intended release state is:
 - **Primary rule change:** broad live bug hunt is deferred until static-confirmed known P0/P1 defects are remediated or explicitly dispositioned.
 - **Audit drift note:** the deep audit reviewed an older GitHub `HEAD`; Phase 0 must verify every deep-audit ID on the current local tree before code changes.
 - **Release state:** not assumed green. Treat current release readiness as unknown until Phase 0 records exact commit, deployed commit, schema head, CI state, Observer baseline and live evidence readiness.
-- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `AGENT-AUTH-004`, `CLOSE-018`, `PUBLIC-AUTH-034`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated regression tests are green, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
+- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `AGENT-AUTH-004`, `PAIR-005`, `CLOSE-018`, `PUBLIC-AUTH-034`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated regression tests are green, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
 
 ## Stop Conditions
 
@@ -48,7 +48,7 @@ The deep audit IDs below are the initial known-defect registry. Current `HEAD` s
 | `ID-002` | P0 | identity/account boundary | reproduced on current HEAD | fixed-local, live-evidence-pending | `test_ui_users_repo_rejects_case_variant_login` | focused pytest green; Alembic `130 -> 131` green; live evidence missing | yes, until live evidence |
 | `CLAIM-003` | P1 | public claim/session | reproduced on current HEAD | fixed-local, focused-tests-green | `test_requester_public_ticket_claim_is_single_winner_under_race` | focused pytest green; live/stand evidence missing | yes, until live evidence |
 | `AGENT-AUTH-004` | P1 | pairing/session delivery | reproduced on current HEAD | fixed-local, focused-tests-green | `test_handshake_rebind_keeps_token_on_original_device_when_fingerprint_mismatches`; `test_handshake_rebind_uses_expected_original_token_binding` | no-DB handshake pytest green; live/stand evidence missing | yes, until live evidence |
-| `PAIR-005` | P1 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | yes |
+| `PAIR-005` | P1 | pairing/session delivery | reproduced on current HEAD | fixed-local, focused-tests-green | `test_registration_pairing_pickup_waits_for_deliverable_session_before_consuming`; API contract updated in `test_registration_pairing_approval_surfaces_confirmed_binding_to_agent`; agent gate compatibility tests updated | no-DB pairing FSM pytest green; focused pc_agent pytest green; DB API pytest attempted but fixture hung locally; live/stand evidence missing | yes, until live evidence |
 | `SESSION-006` | P1 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | yes |
 | `EVENT-007` | P1 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | yes |
 | `EVENT-008` | P1 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | yes |
@@ -203,7 +203,7 @@ Minimum order:
 2. `CLOSE-018` - fixed locally; live evidence pending
 3. `PUBLIC-AUTH-034` - fixed locally; live evidence pending
 4. `AGENT-AUTH-004` - fixed locally; live evidence pending
-5. `PAIR-005`
+5. `PAIR-005` - fixed locally; live evidence pending
 6. `SESSION-006`
 7. `TOKEN-031`
 8. `PAIR-035`

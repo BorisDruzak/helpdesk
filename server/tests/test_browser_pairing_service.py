@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -182,6 +183,117 @@ async def test_web_user_registration_confirmation_creates_claim_for_pairing_devi
     assert confirmed["registration"]["status"] in {"pending_admin_review", "user_confirmed", "approved", "conflict"}
     assert row.claim_id == confirmed["claim_id"]
     assert row.device_id == device_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_registration_pairing_pickup_waits_for_deliverable_session_before_consuming(monkeypatch):
+    pairing_id = str(uuid.uuid4())
+    device_id = str(uuid.uuid4())
+    claim_id = str(uuid.uuid4())
+    binding_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    row = SimpleNamespace(
+        pairing_id=pairing_id,
+        device_id=device_id,
+        purpose="registration",
+        status="confirmed",
+        resulting_account_session_id=None,
+        confirmed_person_id=person_id,
+        binding_id=None,
+        claim_id=claim_id,
+        created_at=datetime.now(timezone.utc),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        confirmed_at=datetime.now(timezone.utc),
+        consumed_at=None,
+        completed_at=None,
+    )
+    claim = SimpleNamespace(claim_id=claim_id, status="pending_admin_review", person_id=person_id)
+    events: list[dict] = []
+
+    class FakeSession:
+        async def flush(self):
+            return None
+
+    class FakeRepo:
+        async def get_pairing(self, requested_pairing_id):
+            assert requested_pairing_id == pairing_id
+            return row
+
+    class FakeRegistrationRepo:
+        async def get_claim(self, requested_claim_id):
+            assert requested_claim_id == claim_id
+            return claim
+
+        async def list_active_bindings_for_device(self, requested_device_id):
+            assert requested_device_id == device_id
+            return [
+                SimpleNamespace(
+                    binding_id=binding_id,
+                    person_id=person_id,
+                    relationship_type="primary_user",
+                )
+            ]
+
+    class FakeAccountSessionRepo:
+        async def append_event(self, **payload):
+            events.append(payload)
+
+    class FakeAccountSessionService:
+        def __init__(self, session):
+            self.session = session
+
+        async def create_confirmed_binding_session(self, *, device_id, binding_id):
+            return {
+                "session": {
+                    "session_id": "session-1",
+                    "device_id": device_id,
+                    "binding_id": binding_id,
+                    "account_mode": "confirmed_binding",
+                },
+                "session_token": "session-token-1",
+            }
+
+    monkeypatch.setattr(
+        "registry.browser_pairing_service.AccountSessionService",
+        FakeAccountSessionService,
+    )
+    service = BrowserPairingService.__new__(BrowserPairingService)
+    service.session = FakeSession()
+    service.repo = FakeRepo()
+    service.registration_repo = FakeRegistrationRepo()
+    service.account_session_repo = FakeAccountSessionRepo()
+
+    pending_pickup = await service.pickup_agent_result(device_id=device_id, pairing_id=pairing_id)
+
+    assert pending_pickup["status"] == "confirmed"
+    assert pending_pickup["claim_id"] == claim_id
+    assert "session_token" not in pending_pickup
+    assert row.status == "confirmed"
+    assert row.consumed_at is None
+    assert row.completed_at is None
+    assert events == []
+
+    claim.status = "approved"
+    delivered_pickup = await service.pickup_agent_result(device_id=device_id, pairing_id=pairing_id)
+
+    assert delivered_pickup["status"] == "consumed"
+    assert delivered_pickup["session"]["account_mode"] == "confirmed_binding"
+    assert delivered_pickup["session"]["binding_id"] == binding_id
+    assert delivered_pickup["session_token"]
+    assert row.status == "consumed"
+    assert row.consumed_at is not None
+    assert row.resulting_account_session_id == delivered_pickup["session"]["session_id"]
+    assert events == [
+        {
+            "device_id": device_id,
+            "session_id": delivered_pickup["session"]["session_id"],
+            "event_type": "browser_pairing_consumed",
+            "actor_id": device_id,
+            "actor_role": "agent",
+            "payload": {"pairing_id": pairing_id, "purpose": "registration", "claim_id": claim_id},
+        }
+    ]
 
 
 @pytest.mark.asyncio

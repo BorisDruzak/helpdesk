@@ -745,7 +745,7 @@ async def test_registration_pairing_approval_surfaces_confirmed_binding_to_agent
     )
     assert picked_up.status == 200, await picked_up.text()
     pickup_payload = await picked_up.json()
-    assert pickup_payload["data"]["status"] == "consumed"
+    assert pickup_payload["data"]["status"] == "confirmed"
     assert pickup_payload["data"]["claim_id"] == claim_id
     assert "session_token" not in pickup_payload["data"]
 
@@ -782,6 +782,17 @@ async def test_registration_pairing_approval_surfaces_confirmed_binding_to_agent
     assert account["can_login"] is True
     assert state_payload["data"]["can_login_confirmed_binding"] is True
     assert state_payload["data"]["can_register"] is False
+
+    delivered = await test_client.get(
+        f"/api/registry/agent/browser-pairings/{pairing['pairing_id']}",
+        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
+    )
+    assert delivered.status == 200, await delivered.text()
+    delivered_payload = await delivered.json()
+    assert delivered_payload["data"]["status"] == "consumed"
+    assert delivered_payload["data"]["session"]["account_mode"] == "confirmed_binding"
+    assert delivered_payload["data"]["session"]["binding_id"] == binding_id
+    assert delivered_payload["data"]["session_token"]
 
     session_response = await test_client.post(
         "/api/registry/agent/account-sessions/confirmed-binding",
