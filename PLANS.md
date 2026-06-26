@@ -22,7 +22,7 @@ The intended release state is:
 - **Primary rule change:** broad live bug hunt is deferred until static-confirmed known P0/P1 defects are remediated or explicitly dispositioned.
 - **Audit drift note:** the deep audit reviewed an older GitHub `HEAD`; Phase 0 must verify every deep-audit ID on the current local tree before code changes.
 - **Release state:** not assumed green. Treat current release readiness as unknown until Phase 0 records exact commit, deployed commit, schema head, CI state, Observer baseline and live evidence readiness.
-- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `AGENT-AUTH-004`, `PAIR-005`, `SESSION-006`, `EVENT-007`, `EVENT-008`, `CLOSE-018`, `PUBLIC-AUTH-034`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated/no-DB regression checks and direct helper assertions are green where runnable, migration `132` is the Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
+- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `AGENT-AUTH-004`, `PAIR-005`, `SESSION-006`, `EVENT-007`, `EVENT-008`, `CHAT-009`, `CLOSE-018`, `PUBLIC-AUTH-034`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated/no-DB regression checks and direct helper assertions are green where runnable, migration `132` is the Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
 
 ## Stop Conditions
 
@@ -52,7 +52,7 @@ The deep audit IDs below are the initial known-defect registry. Current `HEAD` s
 | `SESSION-006` | P1 | pairing/session delivery | reproduced on current HEAD | fixed-local, focused-tests-partial | `test_approved_login_request_session_token_survives_worker_restart_until_first_poll`; `test_account_session_delivery_no_db.py` | direct helper assertions green; compile green; local pytest runner hung before result; live/stand evidence missing | yes, until live evidence |
 | `EVENT-007` | P1 | chat/timeline | reproduced on current HEAD | fixed-local, focused-tests-green | `test_ticket_events_repo_no_db.py::test_get_events_orders_timeline_by_created_at_before_agent_seq` | no-DB pytest/direct regression green; compile green; live/stand evidence missing | yes, until live evidence |
 | `EVENT-008` | P1 | chat/timeline | reproduced on current HEAD | fixed-local, focused-tests-green | `test_ticket_events_server_idempotency_unique_indexes_are_migrated`; `test_add_event_treats_server_idempotency_unique_conflicts_as_duplicates` | no-DB pytest green; Alembic head/history green; DB-backed migration contract hung locally | yes, until live evidence |
-| `CHAT-009` | P1 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | yes |
+| `CHAT-009` | P1 | chat/timeline | reproduced on current HEAD | fixed-local, focused-tests-green | `test_web_support_send_message_rejects_unknown_visibility_before_db`; `test_chat_message_unknown_visibility_is_hidden_from_requester_timeline` | no-DB API/projection pytest green; DB-backed endpoint pytest hung locally; live/stand evidence missing | yes, until live evidence |
 | `CHAT-010` | P2 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `CREATE-011` | P1 | ticket create/workflow | open, verify in Phase 0 | not-started | required | missing | yes |
 | `CREATE-012` | P1 | ticket create/workflow | open, verify in Phase 0 | not-started | required | missing | yes |
@@ -103,7 +103,7 @@ These gaps must stay visible so existing scripts are not mistaken for completed 
 - Do not run broad live bug hunts until Phase 2 is green.
 - Do not run multi-instance server deployment while process-local DeviceOutbox/session state remains an active risk.
 - Treat release as blocked until all 17 critical scenarios have passing `pc_client.live_evidence.v2` manifests and exact release summary.
-- Add a temporary fail-closed guard for unknown chat visibility before broader chat refactoring.
+- Maintain the fail-closed guard for unknown chat visibility before broader chat refactoring.
 - Make public-session verification depend on ticket state as defense in depth.
 - Reject high-risk dispatch when `tool_call_started`/outbox transaction is not persisted.
 - Make support UI distinguish DB outage from an actually empty queue.
@@ -228,7 +228,7 @@ Minimum order:
 
 1. `EVENT-007` - fixed locally; live evidence pending
 2. `EVENT-008` - fixed locally; DB-backed migration/live evidence pending
-3. `CHAT-009`
+3. `CHAT-009` - fixed locally; DB-backed endpoint/live evidence pending
 4. `CHAT-010`
 5. `CREATE-011`
 6. `CREATE-012`

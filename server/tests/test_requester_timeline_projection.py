@@ -91,6 +91,15 @@ def test_chat_message_maps_public_roles_and_hides_internal_notes():
     assert internal_projection is None
 
 
+def test_chat_message_unknown_visibility_is_hidden_from_requester_timeline():
+    projection = project(
+        "chat_message",
+        {"sender_role": "support", "visibility": "internall", "text": "internal note typo"},
+    )
+
+    assert projection is None
+
+
 def test_public_access_code_message_is_system_event_not_support_message():
     projection = project("chat_message", build_public_access_message("RZ76RPDR", "ticket-1"))
 

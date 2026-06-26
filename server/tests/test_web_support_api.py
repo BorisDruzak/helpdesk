@@ -552,6 +552,26 @@ async def test_web_support_message_retry_is_idempotent_by_message_id(test_client
 
 
 @pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_support_send_message_rejects_unknown_visibility_before_db(web_support_client, monkeypatch):
+    @asynccontextmanager
+    async def forbidden_session():
+        raise AssertionError("invalid visibility must be rejected before DB access")
+        yield
+
+    monkeypatch.setattr(support_handlers_module, "get_session", forbidden_session)
+
+    response = await web_support_client.post(
+        "/api/web/support/tickets/ticket-visibility/messages",
+        json={"text": "internal note typo", "visibility": "internall"},
+    )
+    payload = await response.json()
+
+    assert response.status == 400, payload
+    assert payload["error_code"] == "INVALID_VISIBILITY"
+
+
+@pytest.mark.asyncio
 async def test_web_support_internal_note_does_not_stop_frt_until_public_reply(test_client, test_engine):
     suffix = uuid.uuid4().hex[:8]
     ticket_id = await _seed_support_ticket(

@@ -176,8 +176,9 @@ def projection_to_fields(projection: RequesterTimelineProjection | None) -> dict
 
 
 def _project_chat_message(event: object | dict[str, Any], payload: Mapping[str, Any]) -> RequesterTimelineProjection | None:
-    visibility = _clean(_field(event, payload, "visibility") or "public").lower()
-    if visibility == "internal":
+    raw_visibility = _field(event, payload, "visibility")
+    visibility = _clean(raw_visibility).lower() if raw_visibility is not None else "public"
+    if visibility != "public":
         return None
 
     if is_public_access_message_payload(payload):

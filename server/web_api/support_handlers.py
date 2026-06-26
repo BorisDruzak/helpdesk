@@ -5945,7 +5945,14 @@ async def handle_web_support_send_message(request: web.Request):
 
     visibility = str(data.get("visibility") or "public").strip().lower() or "public"
     if visibility not in {"public", "internal"}:
-        visibility = "public"
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Invalid message visibility",
+                "error_code": "INVALID_VISIBILITY",
+            },
+            status=400,
+        )
 
     try:
         async with get_session() as session:

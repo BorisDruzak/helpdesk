@@ -185,7 +185,7 @@
 
 ### Visibility комментариев
 
-- **visibility** в payload chat_message: `"public"` | `"internal"`. Requester только public; support/admin могут писать internal. При чтении requester видит только public.
+- **visibility** в payload chat_message: `"public"` | `"internal"`. Requester только public; support/admin могут писать internal. Unknown support/admin values fail with `400 INVALID_VISIBILITY`; requester projection treats every non-public value as hidden.
 - **POST** `/api/tickets/{ticket_id}/read`: requester фиксирует реальное прочтение новых public-сообщений, сервер пишет `ticket_event` с `event_type="message_read"` и отправляет его в UI через обычный `ticket_event_committed`.
 - **POST** `/api/tickets/{ticket_id}/message`: опциональное поле `visibility`.
 

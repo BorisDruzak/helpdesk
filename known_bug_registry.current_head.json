@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generated_at": "2026-06-26",
-  "head": "01dc784e2b2c14ee8487acc44e922327b99967c8",
+  "head": "31911bf9e44bef6c326f7f64a893d08e78f3149e",
   "branch": "codex/helpdesk-process-model",
   "source": "PLANS.md deep-audit registry, refreshed during Phase 1 Wave A remediation",
   "status_values": ["open", "reproduced", "not-reproduced", "already-fixed", "blocked"],
-  "verification_note": "ID-001, ID-002, SESSION-006, EVENT-007 and AUTH-030 were reproduced with red tests or direct current-head proof and fixed locally with focused automated/direct checks where runnable. Stand/live evidence is still pending for P0/P1 release disposition.",
+  "verification_note": "Phase 1 remediations through CHAT-009 were reproduced with red tests or direct current-head proof and fixed locally with focused automated/direct checks where runnable. Stand/live evidence is still pending for P0/P1 release disposition.",
   "bugs": [
     {
       "id": "ID-001",
@@ -173,10 +173,24 @@
       "id": "CHAT-009",
       "priority": "P1",
       "group": "chat/timeline",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "Typed support chat send coerced any unknown visibility value to public, so typoed internal visibility such as internall could create a requester-visible message",
+        "Requester timeline projection only hid visibility=internal and treated unknown stored visibility as requester-visible"
+      ],
+      "regression_tests": [
+        "server/tests/test_web_support_api.py::test_web_support_send_message_rejects_unknown_visibility_before_db",
+        "server/tests/test_requester_timeline_projection.py::test_chat_message_unknown_visibility_is_hidden_from_requester_timeline"
+      ],
+      "post_fix_verification": [
+        "no-DB support endpoint pytest: ok",
+        "requester timeline projection pytest: ok",
+        "python -m py_compile changed server/test modules: ok",
+        "DB-backed support endpoint pytest target hung locally before result"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "CHAT-010",

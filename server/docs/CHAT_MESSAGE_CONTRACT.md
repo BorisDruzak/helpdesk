@@ -52,6 +52,8 @@ payload:
   metadata: dict           # Дополнительные метаданные (опционально)
                            # confirmation_request / confirmation_response для UI-подтверждений
   visibility: str          # Stage 4: "public" | "internal"; по умолчанию public.
+                           # Unknown authenticated support/admin values fail with 400 INVALID_VISIBILITY.
+                           # Requester projection treats every non-public value as hidden.
                            # Requester может писать только public; support/admin — public или internal.
                            # При чтении requester видит только сообщения с visibility=public.
 ```
@@ -694,6 +696,7 @@ Timeline API reads use `TicketEventsRepo.get_events()` in global `(created_at, i
 Правила видимости:
 
 - `visibility="internal"` скрывается из requester timeline;
+- non-public/unknown `visibility` values are hidden from requester timeline;
 - публичный `sender_role=support|admin|operator|staff` становится `support_message`;
 - `sender_role=user|requester|agent|device|client` становится `user_message`;
 - сообщение с вложениями может получить kind `attachment`, payload содержит только безопасные descriptors вложений;
