@@ -138,9 +138,8 @@ payload:
 
 ```sql
 ORDER BY 
-    agent_seq ASC NULLS LAST,  -- Agent events первыми (упорядочены по seq)
-    created_at ASC,             -- Server events затем (в хронологическом порядке)
-    id ASC                      -- Tie-breaker
+    created_at ASC,  -- Global ticket timeline across agent and server events
+    id ASC           -- Tie-breaker
 ```
 
 ### Пример результата
@@ -149,13 +148,13 @@ ORDER BY
 id  | agent_seq | created_at          | sender_role | text
 ----|-----------|---------------------|-------------|----------------------
 1   | 1         | 2026-01-10 10:00:00 | agent       | "First agent message"
+4   | NULL      | 2026-01-10 10:00:03 | support     | "Support reply 1"
 2   | 2         | 2026-01-10 10:00:05 | agent       | "Second agent message"
-3   | 3         | 2026-01-10 10:00:10 | agent       | "Third agent message"
-4   | NULL      | 2026-01-10 10:00:03 | support     | "Support reply 1"    ← идет ПОСЛЕ agent events
 5   | NULL      | 2026-01-10 10:00:08 | support     | "Support reply 2"
+3   | 3         | 2026-01-10 10:00:10 | agent       | "Third agent message"
 ```
 
-**Важно:** Server events могут иметь более ранний `created_at`, но всегда идут **после** agent events при сортировке.
+**Важно:** `agent_seq` не является primary UI timeline sort key. Server-originated events with `agent_seq=NULL` stay in their chronological position.
 
 ---
 
@@ -689,6 +688,8 @@ Intended usage:
 ## Requester timeline projection for chat messages
 
 `chat_message` участвует в общей серверной проекции requester timeline через `server/tickets/requester_timeline.py`. В ответах ticket/detail/timeline рядом с событием могут приходить `requester_timeline_text`, `requester_timeline_kind` и `requester_timeline_payload`; requester UI должен использовать эти поля вместо локального вывода raw `sender_role`, `event_type` или технического payload.
+
+Timeline API reads use `TicketEventsRepo.get_events()` in global `(created_at, id)` order. `agent_seq` is only a replay/idempotency coordinate for agent-originated events and must not group server-originated chat messages after all agent events.
 
 Правила видимости:
 

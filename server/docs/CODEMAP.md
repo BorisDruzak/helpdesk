@@ -556,6 +556,7 @@ Auth security update 2026-05-23/24: `server/auth/handlers.py` keeps `POST /api/l
 ## 2026-05-09 requester timeline projection
 
 - `server/tickets/requester_timeline.py` owns requester-facing projection for `ticket_events`: safe Russian `requester_timeline_text`, typed `requester_timeline_kind`, compact `requester_timeline_payload`, plus optional icon/style.
+- `server/app/repos/ticket_events_repo.py::get_events()` returns UI/API timeline items in global `(created_at, id)` order. `agent_seq` remains an agent replay/idempotency coordinate and must not be the primary requester/support timeline sort key.
 - `server/tickets/handlers.py` attaches those fields to requester/agent ticket event serialization and uses the same projection to filter internal/debug/noise events out of requester history.
 - `server/web_api/support_handlers.py` and `server/web_api/dto/support.py` carry the same projection fields through typed support timeline DTOs so React support/requester surfaces can render the same text without raw event/status/tool payloads.
 - Legacy requester page code in `server/ticket.js` must prefer `requester_timeline_text` and hide events with no requester projection in requester-facing history.

@@ -399,8 +399,8 @@ class TicketEventsRepo:
         Get events for a ticket, optionally filtered by agent_seq and event_types.
         
         КРИТИЧНО: Server-originated события имеют agent_seq = NULL.
-        Сортировка: agent_seq NULLS LAST, затем created_at, затем id.
-        Это гарантирует, что server events идут после agent events в хронологическом порядке.
+        Сортировка: created_at, затем id. agent_seq не используется как UI timeline order,
+        потому что server events иначе группируются после agent events и могут выпасть из-за limit.
         
         Args:
             ticket_id: Ticket identifier
@@ -412,9 +412,8 @@ class TicketEventsRepo:
         
         Returns:
             List of TicketEvent objects ordered by:
-            1. agent_seq ASC NULLS LAST (agent events first, ordered by seq)
-            2. created_at ASC (server events in chronological order)
-            3. id ASC (tie-breaker for same timestamp)
+            1. created_at ASC (global ticket timeline)
+            2. id ASC (tie-breaker for same timestamp)
         
         Example:
             # Get all chat messages
@@ -445,13 +444,12 @@ class TicketEventsRepo:
         if event_types:
             stmt = stmt.where(TicketEvent.event_type.in_(event_types))
         
-        # КРИТИЧНО: Сортировка с учетом NULL agent_seq
-        # Agent events (с agent_seq) первыми в порядке seq
-        # Server events (с NULL) затем в хронологическом порядке
+        # UI/API timeline is global chronology. agent_seq is only a replay/idempotency
+        # coordinate for agent-originated events and must not group server chat/events
+        # behind all agent events.
         stmt = stmt.order_by(
-            TicketEvent.agent_seq.asc().nulls_last(),  # Agent events first (ordered by seq)
-            TicketEvent.created_at.asc(),               # Then by timestamp (server events)
-            TicketEvent.id.asc()                        # Tie-breaker
+            TicketEvent.created_at.asc(),
+            TicketEvent.id.asc(),
         ).limit(limit)
         
         result = await self.session.execute(stmt)

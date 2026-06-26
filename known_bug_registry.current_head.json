@@ -5,7 +5,7 @@
   "branch": "codex/helpdesk-process-model",
   "source": "PLANS.md deep-audit registry, refreshed during Phase 1 Wave A remediation",
   "status_values": ["open", "reproduced", "not-reproduced", "already-fixed", "blocked"],
-  "verification_note": "ID-001, ID-002, SESSION-006 and AUTH-030 were reproduced with red tests or direct current-head proof and fixed locally with focused automated/direct checks where runnable. Stand/live evidence is still pending for P0/P1 release disposition.",
+  "verification_note": "ID-001, ID-002, SESSION-006, EVENT-007 and AUTH-030 were reproduced with red tests or direct current-head proof and fixed locally with focused automated/direct checks where runnable. Stand/live evidence is still pending for P0/P1 release disposition.",
   "bugs": [
     {
       "id": "ID-001",
@@ -131,10 +131,21 @@
       "id": "EVENT-007",
       "priority": "P1",
       "group": "chat/timeline",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "TicketEventsRepo.get_events ordered ticket_events by agent_seq ASC NULLS LAST before created_at/id, grouping all agent-originated events ahead of server-originated chat/timeline events and making limit-based reads non-chronological"
+      ],
+      "regression_tests": [
+        "server/tests/test_ticket_events_repo_no_db.py::test_get_events_orders_timeline_by_created_at_before_agent_seq"
+      ],
+      "post_fix_verification": [
+        "Direct Python no-DB regression: ok",
+        "pytest server/tests/test_ticket_events_repo_no_db.py: ok",
+        "compileall changed Python files: ok"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "EVENT-008",

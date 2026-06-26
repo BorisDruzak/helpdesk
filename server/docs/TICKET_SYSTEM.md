@@ -641,6 +641,8 @@ WHERE custom_fields ? 'priority_class'
 - `requester_timeline_payload` — компактные безопасные данные для UI без raw JSON, токенов, trace id, внутренних заметок, worklog и параметров инструментов;
 - `requester_timeline_icon` / `requester_timeline_style` — опциональные UI-подсказки.
 
+`TicketEventsRepo.get_events()` возвращает события для UI/API timeline в глобальном порядке `(created_at, id)`. `agent_seq` используется только как координата replay/idempotency для agent-originated событий и не должен группировать server-originated chat/timeline события после всех agent events.
+
 Проекция покрывает жизненный цикл заявки (`ticket_created`, `status_changed`, назначение, очередь, routing, priority/classification/profile/device), SLA (`sla_started`, `sla_warning`, `sla_breached`, остановки first response/resolution), диагностику (`tool_call_started`, `tool_call_result`, `diagnostic_result_classified`, `playbook_started`), согласования, паспорт решения и безопасные вложения. `tool_call_result` отдаётся как `diagnostic_result` только с компактными `checks`, без полного результата инструмента.
 
 В requester timeline по умолчанию не попадают `internal_note`, `worklog_added`, `message_read`, `external_notification_delivery`, `policy_action_dispatched`, hide/archive workspace events, внутренние OLA/SLA pause/resume/reminder события, raw observer/tool/internal/debug/protocol/auth/module logs. Passport evidence и retry/consent события видны requester только если payload явно помечен как requester-visible.

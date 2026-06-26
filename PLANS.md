@@ -22,7 +22,7 @@ The intended release state is:
 - **Primary rule change:** broad live bug hunt is deferred until static-confirmed known P0/P1 defects are remediated or explicitly dispositioned.
 - **Audit drift note:** the deep audit reviewed an older GitHub `HEAD`; Phase 0 must verify every deep-audit ID on the current local tree before code changes.
 - **Release state:** not assumed green. Treat current release readiness as unknown until Phase 0 records exact commit, deployed commit, schema head, CI state, Observer baseline and live evidence readiness.
-- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `AGENT-AUTH-004`, `PAIR-005`, `SESSION-006`, `CLOSE-018`, `PUBLIC-AUTH-034`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated/no-DB regression checks and direct helper assertions are green where runnable, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
+- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `AGENT-AUTH-004`, `PAIR-005`, `SESSION-006`, `EVENT-007`, `CLOSE-018`, `PUBLIC-AUTH-034`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated/no-DB regression checks and direct helper assertions are green where runnable, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
 
 ## Stop Conditions
 
@@ -50,7 +50,7 @@ The deep audit IDs below are the initial known-defect registry. Current `HEAD` s
 | `AGENT-AUTH-004` | P1 | pairing/session delivery | reproduced on current HEAD | fixed-local, focused-tests-green | `test_handshake_rebind_keeps_token_on_original_device_when_fingerprint_mismatches`; `test_handshake_rebind_uses_expected_original_token_binding` | no-DB handshake pytest green; live/stand evidence missing | yes, until live evidence |
 | `PAIR-005` | P1 | pairing/session delivery | reproduced on current HEAD | fixed-local, focused-tests-green | `test_registration_pairing_pickup_waits_for_deliverable_session_before_consuming`; API contract updated in `test_registration_pairing_approval_surfaces_confirmed_binding_to_agent`; agent gate compatibility tests updated | no-DB pairing FSM pytest green; focused pc_agent pytest green; DB API pytest attempted but fixture hung locally; live/stand evidence missing | yes, until live evidence |
 | `SESSION-006` | P1 | pairing/session delivery | reproduced on current HEAD | fixed-local, focused-tests-partial | `test_approved_login_request_session_token_survives_worker_restart_until_first_poll`; `test_account_session_delivery_no_db.py` | direct helper assertions green; compile green; local pytest runner hung before result; live/stand evidence missing | yes, until live evidence |
-| `EVENT-007` | P1 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | yes |
+| `EVENT-007` | P1 | chat/timeline | reproduced on current HEAD | fixed-local, focused-tests-green | `test_ticket_events_repo_no_db.py::test_get_events_orders_timeline_by_created_at_before_agent_seq` | no-DB pytest/direct regression green; compile green; live/stand evidence missing | yes, until live evidence |
 | `EVENT-008` | P1 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | yes |
 | `CHAT-009` | P1 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | yes |
 | `CHAT-010` | P2 | chat/timeline | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
@@ -226,7 +226,7 @@ Required direction:
 
 Minimum order:
 
-1. `EVENT-007`
+1. `EVENT-007` - fixed locally; live evidence pending
 2. `EVENT-008`
 3. `CHAT-009`
 4. `CHAT-010`
