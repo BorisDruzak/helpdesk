@@ -5,7 +5,7 @@
   "branch": "codex/helpdesk-process-model",
   "source": "PLANS.md deep-audit registry, refreshed during Phase 1 Wave A remediation",
   "status_values": ["open", "reproduced", "not-reproduced", "already-fixed", "blocked"],
-  "verification_note": "ID-001, ID-002 and AUTH-030 were reproduced with red tests and fixed locally with focused automated tests. Stand/live evidence is still pending for P0 release disposition.",
+  "verification_note": "ID-001, ID-002, SESSION-006 and AUTH-030 were reproduced with red tests or direct current-head proof and fixed locally with focused automated/direct checks where runnable. Stand/live evidence is still pending for P0/P1 release disposition.",
   "bugs": [
     {
       "id": "ID-001",
@@ -110,10 +110,22 @@
       "id": "SESSION-006",
       "priority": "P1",
       "group": "pairing/session delivery",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-partial",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "AccountSessionService used process-local _LOGIN_REQUEST_TOKENS for approved other-account login request delivery; clearing that dict before first agent poll made the approved DB row unable to return the session token"
+      ],
+      "regression_tests": [
+        "server/tests/test_account_session_service.py::test_approved_login_request_session_token_survives_worker_restart_until_first_poll",
+        "server/tests/test_account_session_delivery_no_db.py"
+      ],
+      "post_fix_verification": [
+        "Direct Python account-session delivery helper assertions: ok",
+        "compileall changed Python files: ok",
+        "pytest attempts for the focused DB-backed and no-DB tests hung locally before producing test results"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "EVENT-007",

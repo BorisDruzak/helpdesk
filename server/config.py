@@ -57,6 +57,7 @@ WEB_CSRF_SAME_ORIGIN_ENABLED = os.getenv("WEB_CSRF_SAME_ORIGIN_ENABLED", "true")
 WEB_CSRF_TRUSTED_ORIGINS = os.getenv("WEB_CSRF_TRUSTED_ORIGINS", "").strip()
 LEGACY_UI_TOKEN_LOGIN_ENABLED = os.getenv("LEGACY_UI_TOKEN_LOGIN_ENABLED", "false").lower() == "true"
 ACCOUNT_SESSION_ALLOW_QUERY_TOKEN = os.getenv("ACCOUNT_SESSION_ALLOW_QUERY_TOKEN", "false").lower() == "true"
+ACCOUNT_SESSION_DELIVERY_SECRET = os.getenv("ACCOUNT_SESSION_DELIVERY_SECRET", "").strip()
 AGENT_TOKEN_MAX_ACTIVE_TOKENS = int(os.getenv("AGENT_TOKEN_MAX_ACTIVE_TOKENS", "2"))
 TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "false").lower() == "true"
 TRUSTED_PROXY_CIDRS = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
@@ -523,6 +524,8 @@ def validate_security_config() -> None:
             errors.append("default UI users/passwords are forbidden in pilot/prod mode")
         if LEGACY_UI_TOKEN_LOGIN_ENABLED:
             errors.append("LEGACY_UI_TOKEN_LOGIN_ENABLED must be false in pilot/prod mode")
+        if not ACCOUNT_SESSION_DELIVERY_SECRET:
+            errors.append("ACCOUNT_SESSION_DELIVERY_SECRET must be set in pilot/prod mode")
     if errors:
         raise RuntimeError("Insecure security configuration: " + "; ".join(errors))
 

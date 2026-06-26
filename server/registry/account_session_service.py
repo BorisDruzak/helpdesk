@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import hmac
@@ -11,13 +12,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DeviceAccountLoginRequest, DeviceAccountSession
-from app.repos.account_session_repo import AccountSessionRepo
+from app.repos.account_session_repo import AccountSessionRepo, SESSION_TOKEN_DELIVERY_KEY
 from app.repos.registration_repo import RegistrationRepo, is_person_active
 from app.repos.registry_repo import RegistryRepo
 from registry.policy_service import RegistryPolicyService
 
 
 OTHER_ACCOUNT_WARNING = "ticket_created_from_other_account_on_registered_device"
+SESSION_TOKEN_DELIVERY_VERSION = 1
+SESSION_TOKEN_DELIVERY_ALG = "hmac-sha256-xor"
 CONFIRMED_BINDING_TTL_HOURS: int | None = None
 VERIFIED_OTHER_ACCOUNT_TTL_HOURS = 24
 REGISTRATION_PENDING_TTL_HOURS = 72
@@ -63,6 +66,110 @@ def _token_hash(token: str | None) -> str | None:
     return sha256(str(token).encode("utf-8")).hexdigest()
 
 
+def _b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(value: str) -> bytes:
+    return base64.urlsafe_b64decode(str(value or "") + "=" * (-len(str(value or "")) % 4))
+
+
+def _delivery_secret() -> bytes:
+    import config
+
+    configured = str(getattr(config, "ACCOUNT_SESSION_DELIVERY_SECRET", "") or "").strip()
+    if configured:
+        return configured.encode("utf-8")
+    strict_runtime = getattr(config, "APP_ENV", "dev") in {"pilot", "prod"} or bool(getattr(config, "PILOT_STAND_MODE", False))
+    if strict_runtime and not bool(getattr(config, "ALLOW_INSECURE_DEV_DEFAULTS", False)):
+        raise RuntimeError("ACCOUNT_SESSION_DELIVERY_SECRET is required for account-session delivery in strict runtime")
+    fallback = f"account-session-delivery-dev:{getattr(config, 'DATABASE_URL', '')}"
+    return sha256(fallback.encode("utf-8")).digest()
+
+
+def _delivery_context(*, request_id: str, session_id: str, nonce: bytes) -> bytes:
+    return b"pc-client:account-session-delivery:v1:" + str(request_id).encode("utf-8") + b":" + str(session_id).encode("utf-8") + b":" + nonce
+
+
+def _keystream(secret: bytes, context: bytes, length: int) -> bytes:
+    output = b""
+    counter = 0
+    while len(output) < length:
+        output += hmac.new(secret, context + counter.to_bytes(4, "big"), sha256).digest()
+        counter += 1
+    return output[:length]
+
+
+def _xor_bytes(left: bytes, right: bytes) -> bytes:
+    return bytes(a ^ b for a, b in zip(left, right))
+
+
+def _build_session_token_delivery_envelope(*, request_id: str, session_id: str, session_token: str) -> dict[str, Any]:
+    token_bytes = session_token.encode("utf-8")
+    nonce = secrets.token_bytes(16)
+    secret = _delivery_secret()
+    context = _delivery_context(request_id=request_id, session_id=session_id, nonce=nonce)
+    ciphertext = _xor_bytes(token_bytes, _keystream(secret, context, len(token_bytes)))
+    tag = hmac.new(secret, b"tag:" + context + ciphertext, sha256).digest()
+    return {
+        "version": SESSION_TOKEN_DELIVERY_VERSION,
+        "alg": SESSION_TOKEN_DELIVERY_ALG,
+        "session_id": str(session_id),
+        "nonce": _b64url_encode(nonce),
+        "ciphertext": _b64url_encode(ciphertext),
+        "tag": _b64url_encode(tag),
+        "token_hash": _token_hash(session_token),
+    }
+
+
+def _decrypt_session_token_delivery_envelope(envelope: dict[str, Any] | None, *, request_id: str) -> str | None:
+    if not isinstance(envelope, dict):
+        return None
+    if envelope.get("version") != SESSION_TOKEN_DELIVERY_VERSION or envelope.get("alg") != SESSION_TOKEN_DELIVERY_ALG:
+        return None
+    session_id = str(envelope.get("session_id") or "").strip()
+    if not session_id:
+        return None
+    try:
+        nonce = _b64url_decode(str(envelope.get("nonce") or ""))
+        ciphertext = _b64url_decode(str(envelope.get("ciphertext") or ""))
+        tag = _b64url_decode(str(envelope.get("tag") or ""))
+    except Exception:
+        return None
+    secret = _delivery_secret()
+    context = _delivery_context(request_id=request_id, session_id=session_id, nonce=nonce)
+    expected_tag = hmac.new(secret, b"tag:" + context + ciphertext, sha256).digest()
+    if not hmac.compare_digest(tag, expected_tag):
+        return None
+    try:
+        token = _xor_bytes(ciphertext, _keystream(secret, context, len(ciphertext))).decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    expected_hash = str(envelope.get("token_hash") or "")
+    if expected_hash and not hmac.compare_digest(expected_hash, str(_token_hash(token) or "")):
+        return None
+    return token
+
+
+def _with_session_token_delivery(
+    metadata: dict[str, Any] | None,
+    *,
+    request_id: str,
+    session_id: str,
+    session_token: str,
+) -> dict[str, Any]:
+    updated = dict(metadata or {}) if isinstance(metadata, dict) else {}
+    updated[SESSION_TOKEN_DELIVERY_KEY] = _build_session_token_delivery_envelope(
+        request_id=request_id,
+        session_id=session_id,
+        session_token=session_token,
+    )
+    updated.pop("session_token_delivered_at", None)
+    updated["session_token_delivery_status"] = "pending"
+    updated["session_token_delivery_created_at"] = _now().isoformat()
+    return updated
+
+
 def _safe_declared_account(payload: dict[str, Any] | None) -> dict[str, Any]:
     payload = payload or {}
     result: dict[str, Any] = {}
@@ -74,8 +181,6 @@ def _safe_declared_account(payload: dict[str, Any] | None) -> dict[str, Any]:
 
 
 class AccountSessionService:
-    _LOGIN_REQUEST_TOKENS: dict[str, str] = {}
-
     def __init__(self, session: AsyncSession):
         self.session = session
         self.repo = AccountSessionRepo(session)
@@ -182,10 +287,6 @@ class AccountSessionService:
             "rejection_reason": row.rejection_reason,
             "resulting_session_id": row.resulting_session_id,
         }
-        if include_session_token:
-            token_once = self._LOGIN_REQUEST_TOKENS.pop(row.request_id, None)
-            if token_once:
-                payload["session_token"] = token_once
         return payload
 
     async def create_confirmed_binding_session(self, *, device_id: str, binding_id: str) -> dict[str, Any]:
@@ -411,7 +512,12 @@ class AccountSessionService:
             reviewed_by=reviewed_by,
             resulting_session_id=row.session_id,
         )
-        self._LOGIN_REQUEST_TOKENS[request.request_id] = token
+        request.metadata_json = _with_session_token_delivery(
+            request.metadata_json,
+            request_id=request.request_id,
+            session_id=row.session_id,
+            session_token=token,
+        )
         await self.session.flush()
         await self.repo.append_event(
             device_id=row.device_id,
@@ -779,15 +885,37 @@ class AccountSessionService:
             reason="base binding is no longer active",
             actor_role="system",
         )
-        payload = self.serialize_login_request(row, include_session_token=include_session_token)
+        payload = self.serialize_login_request(row, include_session_token=False)
         if row.resulting_session_id:
             session_row = await self.repo.get_session(row.resulting_session_id)
             if session_row:
                 payload = {**payload, "session": await self.serialize_session(session_row)}
-        token_consumed = bool(payload.get("session_token"))
+        token_consumed = False
+        if include_session_token and row.status == "approved" and row.resulting_session_id:
+            delivery_row = await self.repo.lock_login_request_session_token_delivery(
+                request_id=row.request_id,
+                device_id=str(device_id),
+            )
+            delivery_metadata = delivery_row.metadata_json if delivery_row and isinstance(delivery_row.metadata_json, dict) else {}
+            token_once = _decrypt_session_token_delivery_envelope(
+                delivery_metadata.get(SESSION_TOKEN_DELIVERY_KEY),
+                request_id=row.request_id,
+            )
+            if delivery_row is not None and token_once:
+                await self.repo.mark_login_request_session_token_delivered(delivery_row)
+                await self.repo.append_event(
+                    device_id=delivery_row.device_id,
+                    session_id=delivery_row.resulting_session_id,
+                    request_id=delivery_row.request_id,
+                    event_type="other_account_login_token_delivered",
+                    actor_id=delivery_row.device_id,
+                    actor_role="agent",
+                    payload={"delivery": "one_time"},
+                )
+                payload["session_token"] = token_once
+                token_consumed = True
         if token_consumed:
-            row.metadata_json = {**(row.metadata_json or {})}
-            row.metadata_json.pop("session_token_once", None)
+            payload["resulting_session_id"] = payload.get("resulting_session_id") or row.resulting_session_id
         return payload, canceled or token_consumed
 
     async def list_pending_login_requests_for_device(self, device_id: str) -> list[dict[str, Any]]:

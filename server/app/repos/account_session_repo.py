@@ -10,6 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import DeviceAccountEvent, DeviceAccountLoginRequest, DeviceAccountSession
 
 
+SESSION_TOKEN_DELIVERY_KEY = "session_token_delivery"
+SESSION_TOKEN_DELIVERED_AT_KEY = "session_token_delivered_at"
+SESSION_TOKEN_DELIVERY_STATUS_KEY = "session_token_delivery_status"
+
+
 def new_id() -> str:
     return str(uuid.uuid4())
 
@@ -140,6 +145,39 @@ class AccountSessionRepo:
         row.reviewed_at = datetime.now(timezone.utc)
         row.rejection_reason = rejection_reason
         row.resulting_session_id = resulting_session_id
+        await self.session.flush()
+        return row
+
+    async def lock_login_request_session_token_delivery(
+        self,
+        *,
+        request_id: str,
+        device_id: str,
+    ) -> DeviceAccountLoginRequest | None:
+        result = await self.session.execute(
+            select(DeviceAccountLoginRequest)
+            .where(
+                DeviceAccountLoginRequest.request_id == str(request_id),
+                DeviceAccountLoginRequest.device_id == str(device_id),
+                DeviceAccountLoginRequest.status == "approved",
+            )
+            .with_for_update(skip_locked=True)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        metadata = row.metadata_json if isinstance(row.metadata_json, dict) else {}
+        if metadata.get(SESSION_TOKEN_DELIVERED_AT_KEY) or not isinstance(metadata.get(SESSION_TOKEN_DELIVERY_KEY), dict):
+            return None
+        return row
+
+    async def mark_login_request_session_token_delivered(self, row: DeviceAccountLoginRequest) -> DeviceAccountLoginRequest:
+        metadata = dict(row.metadata_json or {}) if isinstance(row.metadata_json, dict) else {}
+        metadata.pop(SESSION_TOKEN_DELIVERY_KEY, None)
+        metadata.pop("session_token_once", None)
+        metadata[SESSION_TOKEN_DELIVERED_AT_KEY] = datetime.now(timezone.utc).isoformat()
+        metadata[SESSION_TOKEN_DELIVERY_STATUS_KEY] = "delivered"
+        row.metadata_json = metadata
         await self.session.flush()
         return row
 

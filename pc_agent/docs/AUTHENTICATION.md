@@ -4,6 +4,8 @@
 
 PC Agent использует **Bearer-токен аутентификацию** при подключении к серверу. Токен передаётся в handshake при установлении WebSocket соединения. Сервер валидирует токен и может закрыть соединение с кодом `4003` при невалидной аутентификации.
 
+Requester account-session tokens are separate from the machine Bearer token. For admin-approved other-account login, the agent receives the session token once by polling `/api/registry/agent/account-login-requests/{request_id}`; the server stores only a durable encrypted delivery envelope until that poll atomically marks the request delivered.
+
 ## Источники токена
 
 Агент проверяет наличие токена в следующем порядке:

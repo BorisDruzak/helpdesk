@@ -192,6 +192,57 @@ async def test_other_account_login_request_approval_creates_verified_session(tes
 
 
 @pytest.mark.asyncio
+async def test_approved_login_request_session_token_survives_worker_restart_until_first_poll(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        await _approved_binding(session, device_id)
+        service = AccountSessionService(session)
+        request = await service.create_other_account_login_request(
+            device_id=device_id,
+            requested_account={
+                "full_name": "Other User",
+                "login": "other",
+                "reason": "Temporary replacement",
+            },
+        )
+        approved_request = await service.approve_login_request(request["request_id"], reviewed_by="admin")
+        session_id = approved_request["session"]["session_id"]
+        session_token = approved_request["session_token"]
+        if hasattr(AccountSessionService, "_LOGIN_REQUEST_TOKENS"):
+            AccountSessionService._LOGIN_REQUEST_TOKENS.clear()
+        await session.commit()
+
+    async with session_maker() as session:
+        service = AccountSessionService(session)
+        polled, changed = await service.get_login_request_for_device(
+            device_id=device_id,
+            request_id=request["request_id"],
+            include_session_token=True,
+        )
+        await session.commit()
+
+    assert changed is True
+    assert polled is not None
+    assert polled["session"]["session_id"] == session_id
+    assert polled["session_token"] == session_token
+
+    async with session_maker() as session:
+        second_poll, second_changed = await AccountSessionService(session).get_login_request_for_device(
+            device_id=device_id,
+            request_id=request["request_id"],
+            include_session_token=True,
+        )
+        await session.commit()
+
+    assert second_changed is False
+    assert second_poll is not None
+    assert second_poll["session"]["session_id"] == session_id
+    assert "session_token" not in second_poll
+
+
+@pytest.mark.asyncio
 async def test_verified_other_account_session_requires_valid_token(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

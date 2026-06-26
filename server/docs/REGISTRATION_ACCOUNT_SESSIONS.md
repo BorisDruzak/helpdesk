@@ -32,6 +32,8 @@ Browser-to-agent account handoff is persisted in `device_browser_pairings` and s
 
 Agent GUI ticket actions must send the server-issued `session_id` and `session_token`. Client-supplied person, binding or account mode fields are not trusted without server validation.
 
+Other-account admin approval creates the account session and stores its one-time delivery token as an encrypted envelope under `device_account_login_requests.metadata_json.session_token_delivery`. The envelope uses server-side `ACCOUNT_SESSION_DELIVERY_SECRET` in pilot/prod and is removed when the agent poll atomically claims delivery. This keeps approved-request polling restart-safe and worker-safe while preserving single-use token delivery.
+
 ## Ticket visibility policy
 
 - `confirmed_binding` can see tickets for the same device when one of these matches: `requester_account_session_id`, `requester_binding_id`, or `requester_person_id`. This preserves historical owner tickets created before account sessions existed.
@@ -100,7 +102,7 @@ Planned transfer flow:
 1. Owner has ticket A.
 2. Agent requests other-account login with login, phone and reason.
 3. Admin approves request.
-4. Agent polls request and receives session token once.
+4. Agent polls request and receives the durable session token once, including after a server restart or poll on another worker.
 5. Login as verified other account.
 6. Create ticket B.
 7. Other account sees B and cannot see/open A.
