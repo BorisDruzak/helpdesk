@@ -9,6 +9,7 @@ from typing import Any, Dict
 from aiohttp import web
 from loguru import logger
 
+from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from config import PUBLIC_TICKET_SESSION_MINUTES
 from tickets.public_access import (
@@ -51,6 +52,9 @@ from tickets.request_template_submission import resolve_create_form_submission
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 from playbooks.form_triggers import start_ticket_created_playbooks
 from tickets.workflow_service import TicketWorkflowService
+
+PUBLIC_TICKET_AUTHORIZE_ATTEMPT_LIMIT = 5
+PUBLIC_TICKET_AUTHORIZE_WINDOW_SECONDS = 300
 
 
 def _priority_policy_fallback(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -409,6 +413,14 @@ async def handle_public_ticket_authorize(request: web.Request) -> web.Response:
     code = str(data.get("code") or "").strip().upper()
     if not code:
         return _validation_error({"code": "code required"})
+    rate_limit_key = f"{client_ip(request)}:{ticket_id}"
+    if not check_rate_limit(
+        "public_ticket_authorize",
+        rate_limit_key,
+        limit=PUBLIC_TICKET_AUTHORIZE_ATTEMPT_LIMIT,
+        window_seconds=PUBLIC_TICKET_AUTHORIZE_WINDOW_SECONDS,
+    ):
+        return rate_limited_response()
 
     try:
         async with get_session() as db_session:

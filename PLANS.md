@@ -22,7 +22,7 @@ The intended release state is:
 - **Primary rule change:** broad live bug hunt is deferred until static-confirmed known P0/P1 defects are remediated or explicitly dispositioned.
 - **Audit drift note:** the deep audit reviewed an older GitHub `HEAD`; Phase 0 must verify every deep-audit ID on the current local tree before code changes.
 - **Release state:** not assumed green. Treat current release readiness as unknown until Phase 0 records exact commit, deployed commit, schema head, CI state, Observer baseline and live evidence readiness.
-- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `CLOSE-018`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated regression tests are green, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
+- **Latest remediation checkpoint, 2026-06-26:** Phase 1 code slices fixed `ID-001`, `ID-002`, `CLAIM-003`, `CLOSE-018`, `PUBLIC-AUTH-034`, `AUTH-029`, `ACCOUNT-033` and adjacent `AUTH-030` locally. Focused automated regression tests are green, migration `131` reaches Alembic head, and `known_bug_registry.current_head.json` records all 41 IDs. P0/P1 release disposition remains blocked until live/stand evidence is collected where required.
 
 ## Stop Conditions
 
@@ -77,7 +77,7 @@ The deep audit IDs below are the initial known-defect registry. Current `HEAD` s
 | `TOKEN-031` | P2 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `ASSIGN-032` | P2 | ticket create/workflow | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `ACCOUNT-033` | P1 | identity/account boundary | reproduced on current HEAD | fixed-local, focused-tests-green | `test_unverified_other_account_does_not_resolve_declared_person` | focused pytest green; live/stand evidence missing | yes, until live evidence |
-| `PUBLIC-AUTH-034` | P1 | public claim/session | open, verify in Phase 0 | not-started | required | missing | yes |
+| `PUBLIC-AUTH-034` | P1 | public claim/session | reproduced on current HEAD | fixed-local, focused-tests-green | `test_public_ticket_authorize_rate_limits_invalid_code_attempts` | no-DB handler pytest green; live/stand evidence missing | yes, until live evidence |
 | `PAIR-035` | P2 | pairing/session delivery | open, verify in Phase 0 | not-started | required | missing | no, unless release-impacting |
 | `SCALE-036` | P1 | scaling/protocol risk | open, verify in Phase 0 | not-started | required | missing | yes |
 | `PROTOCOL-037` | P1 | scaling/protocol risk | open, verify in Phase 0 | not-started | required | missing | yes |
@@ -201,7 +201,7 @@ Minimum order:
 
 1. `CLAIM-003` - fixed locally; live evidence pending
 2. `CLOSE-018` - fixed locally; live evidence pending
-3. `PUBLIC-AUTH-034`
+3. `PUBLIC-AUTH-034` - fixed locally; live evidence pending
 4. `AGENT-AUTH-004`
 5. `PAIR-005`
 6. `SESSION-006`

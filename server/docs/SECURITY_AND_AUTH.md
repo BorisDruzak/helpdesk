@@ -84,6 +84,7 @@ Security update 2026-06-26:
 
 - **Agent token:** максимум **2 активных токена** на один `device_id`. Срок по умолчанию при выдаче: **180 дней** (4320 часов). При превышении лимита — HTTP 429, сообщение «Token limit exceeded».
 - **UI token:** срок по умолчанию при выдаче: **24 часа** (в `handle_ui_login`).
+- **Public ticket code authorize:** `POST /public_api/tickets/{ticket_id}/authorize` applies the shared auth rate limiter before public access code verification. The key is `client_ip:ticket_id`, the limit is 5 attempts per 300 seconds, and excess attempts return HTTP 429 with `RATE_LIMITED`. This protects the 8-character public access code exchange from online brute-force/cooldown bypass while keeping the public session token scoped to the ticket.
 - **Local no-DB fallback:** если DB-path недоступен, а config-fallback включён, `AuthService.authenticate()` уходит на `state.users`, а `generate_ui_token()` / `verify_ui_token()` / `revoke_ui_token()` используют in-memory fallback store. После первой DB-ошибки web auth включает короткий cooldown на повторные UI token probe, чтобы `/app/*` не подвешивал локальный dev smoke постоянными retry к недоступной PostgreSQL. Это только локальная/degraded схема для dev smoke, не production storage model.
 
 ### 1.3 Отзыв токенов

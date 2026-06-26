@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -7,7 +8,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import Ticket, TicketEvent
 from app.repos import DevicesRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
-from tickets.public_access import is_public_unbound_ticket
+from auth.rate_limit import reset_rate_limits
+from tickets import public_ticket_handlers
+from tickets.public_access import is_public_unbound_ticket, set_public_access_code
 
 
 pytestmark = pytest.mark.db_cleanup("tickets")
@@ -94,6 +97,73 @@ async def test_bind_device_rejects_unknown_device(test_client):
     payload = await bind_response.json()
     assert payload["error"] == "validation_error"
     assert payload["details"]["device_id"] == "unknown device_id"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_public_ticket_authorize_rate_limits_invalid_code_attempts(monkeypatch):
+    ticket_id = str(uuid.uuid4())
+    ticket = SimpleNamespace(
+        ticket_id=ticket_id,
+        requester_id=f"public:{ticket_id}",
+        custom_fields=set_public_access_code({}, "GOODCODE"),
+    )
+
+    class FakeRequest:
+        def __init__(self, code: str):
+            self.match_info = {"ticket_id": ticket_id}
+            self.headers = {}
+            self.remote = "198.51.100.10"
+            self.app = {"state": object()}
+            self._code = code
+
+        async def json(self):
+            return {"code": self._code}
+
+    class FakeSessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeTicketRepo:
+        def __init__(self, _session):
+            pass
+
+        async def get_ticket(self, _ticket_id):
+            return ticket
+
+    class FakeAuthService:
+        def __init__(self, _state):
+            pass
+
+        async def generate_ticket_public_session_token(self, **_kwargs):
+            return "public-token"
+
+    monkeypatch.setattr(public_ticket_handlers, "get_session", lambda: FakeSessionContext())
+    monkeypatch.setattr(public_ticket_handlers, "TicketEventsRepo", FakeTicketRepo)
+    monkeypatch.setattr(public_ticket_handlers, "AuthService", FakeAuthService)
+
+    reset_rate_limits()
+    try:
+        valid_response = await public_ticket_handlers.handle_public_ticket_authorize(
+            FakeRequest("GOODCODE")
+        )
+        assert valid_response.status == 200
+        reset_rate_limits()
+
+        statuses = []
+        for index in range(6):
+            response = await public_ticket_handlers.handle_public_ticket_authorize(
+                FakeRequest(f"BAD{index:05d}")
+            )
+            statuses.append(response.status)
+
+        assert statuses[:5] == [403, 403, 403, 403, 403]
+        assert statuses[5] == 429
+    finally:
+        reset_rate_limits()
 
 
 @pytest.mark.asyncio

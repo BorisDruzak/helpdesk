@@ -377,10 +377,19 @@
       "id": "PUBLIC-AUTH-034",
       "priority": "P1",
       "group": "public claim/session",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_ticket_device_binding.py::test_public_ticket_authorize_rate_limits_invalid_code_attempts -q --tb=short failed before fix: sixth invalid public authorize attempt returned 403 instead of 429"
+      ],
+      "regression_tests": [
+        "server/tests/test_ticket_device_binding.py::test_public_ticket_authorize_rate_limits_invalid_code_attempts"
+      ],
+      "post_fix_verification": [
+        "Targeted PUBLIC-AUTH-034 no-DB handler test: 1 passed in 0.13s"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "PAIR-035",
