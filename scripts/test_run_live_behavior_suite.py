@@ -184,6 +184,7 @@ def test_live_browser_script_uses_real_routes_without_network_mocks() -> None:
     assert "PC_CLIENT_REQUESTER_LOGIN" in script
     assert "PC_CLIENT_SUPPORT_LOGIN" in script
     assert "PC_CLIENT_ADMIN_LOGIN" in script
+    assert 'waitFor({ state: "visible", timeout: 10_000 })' in script
     assert '"/app/requester"' in script
     assert '"/app/requester/tickets"' in script
     assert '"/app/support"' in script

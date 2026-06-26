@@ -152,6 +152,9 @@ async function ensureLoggedIn(page, probe) {
   await page.waitForLoadState("domcontentloaded");
   const loginInput = page.locator('input[name="login"], input[autocomplete="username"]').first();
   if ((await loginInput.count()) === 0) {
+    await loginInput.waitFor({ state: "visible", timeout: 10_000 }).catch(() => undefined);
+  }
+  if ((await loginInput.count()) === 0) {
     return false;
   }
 
@@ -160,7 +163,9 @@ async function ensureLoggedIn(page, probe) {
     throw new Error(`No browser credentials configured for role: ${probe.role}`);
   }
   await loginInput.fill(config.login);
-  await page.locator('input[name="password"], input[type="password"]').first().fill(config.password);
+  const passwordInput = page.locator('input[name="password"], input[type="password"]').first();
+  await passwordInput.waitFor({ state: "visible", timeout: 10_000 });
+  await passwordInput.fill(config.password);
   await page.locator('button[type="submit"]').first().click();
   await page.waitForURL((url) => !url.pathname.startsWith("/app/login"), {
     timeout: 30_000,
