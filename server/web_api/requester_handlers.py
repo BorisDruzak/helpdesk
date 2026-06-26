@@ -6,11 +6,11 @@ from typing import Any
 
 from aiohttp import web
 from loguru import logger
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
-from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson
+from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson, Ticket
 from app.repos import ArtifactsRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
@@ -1063,12 +1063,22 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
             public_access["unbound"] = False
             custom_fields["public_access"] = public_access
 
-        await repo.update_ticket(
-            ticket.ticket_id,
-            requester_id=auth_context.actor_id,
-            requester_person_id=person.person_id,
-            custom_fields=custom_fields,
+        claim_result = await session.execute(
+            update(Ticket)
+            .where(
+                Ticket.ticket_id == ticket.ticket_id,
+                or_(Ticket.requester_person_id.is_(None), Ticket.requester_person_id == person.person_id),
+            )
+            .values(
+                requester_id=auth_context.actor_id,
+                requester_person_id=person.person_id,
+                custom_fields=custom_fields,
+                updated_at=datetime.now(timezone.utc),
+            )
+            .execution_options(synchronize_session=False)
         )
+        if claim_result.rowcount != 1:
+            return _error("ticket is already claimed", status=409, error_code="PUBLIC_TICKET_ALREADY_CLAIMED")
         await repo.add_event(
             ticket_id=ticket.ticket_id,
             device_id=ticket.device_id,
@@ -1085,7 +1095,7 @@ async def handle_web_requester_ticket_claim_public(request: web.Request) -> web.
             event_id=str(uuid.uuid4()),
         )
         await session.commit()
-        ticket = await repo.get_ticket(ticket.ticket_id)
+        await session.refresh(ticket)
 
     return _success(
         {

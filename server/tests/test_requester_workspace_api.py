@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import uuid
@@ -3065,15 +3066,13 @@ async def test_requester_confirm_solution_requires_pending_resolution_confirmati
 @pytest.mark.asyncio
 async def test_requester_can_claim_public_ticket_with_access_code(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    owner_device_id = str(uuid.uuid4())
     public_device_id = str(uuid.uuid4())
     login = "requester-public-claim@example.test"
     async with session_maker() as session:
         session.add_all([
-            _device(owner_device_id, "claim-owned-device"),
             _device(public_device_id, "claim-public-device"),
         ])
-        approved = await _approved_binding(session, device_id=owner_device_id, login=login)
+        person = await _person_for_login(session, login=login)
         created = await create_ticket_with_side_effects(
             session,
             device_id=public_device_id,
@@ -3105,7 +3104,7 @@ async def test_requester_can_claim_public_ticket_with_access_code(test_client, t
     payload = await response.json()
     assert response.status == 200, payload
     assert payload["data"]["ticket_id"] == ticket_id
-    assert payload["data"]["requester_person_id"] == approved["person"]["person_id"]
+    assert payload["data"]["requester_person_id"] == person.person_id
 
     after_claim = await test_client.get(
         "/api/web/requester/tickets",
@@ -3126,11 +3125,96 @@ async def test_requester_can_claim_public_ticket_with_access_code(test_client, t
         ).scalars().all()
     assert ticket is not None
     assert ticket.requester_id == login
-    assert ticket.requester_person_id == approved["person"]["person_id"]
+    assert ticket.requester_person_id == person.person_id
     assert ticket.custom_fields["requester_claim"]["claimed_by_actor_id"] == login
     assert ticket.custom_fields["requester_claim"]["previous_requester_id"] == "public:claim-unbound"
     assert events
     assert events[0].payload["actor_id"] == login
+    assert "code" not in events[0].payload
+
+
+@pytest.mark.asyncio
+async def test_requester_public_ticket_claim_is_single_winner_under_race(test_client, test_engine, monkeypatch):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    public_device_id = str(uuid.uuid4())
+    login_a = "requester-public-claim-race-a@example.test"
+    login_b = "requester-public-claim-race-b@example.test"
+    async with session_maker() as session:
+        session.add_all([
+            _device(public_device_id, "claim-race-public"),
+        ])
+        person_a = await _person_for_login(session, login=login_a)
+        person_b = await _person_for_login(session, login=login_b)
+        created = await create_ticket_with_side_effects(
+            session,
+            device_id=public_device_id,
+            requester_id="public:claim-race-unbound",
+            title="Public ticket race claim",
+            description="Two requesters race to claim this public ticket.",
+            user_display_name="Public Claim Race",
+            requester_profile={"full_name": "Public Claim Race"},
+            normalized_priority=build_default_priority_payload({}),
+            include_public_access=True,
+        )
+        ticket_id = created["ticket_id"]
+        public_access_code = created["public_access_code"]
+        await session.commit()
+
+    from requester.identity_service import RequesterIdentityResolver
+
+    original_resolve_person = RequesterIdentityResolver.resolve_person_for_web_user
+    arrived = 0
+    release = asyncio.Event()
+
+    async def raced_resolve_person(self, actor_id):
+        nonlocal arrived
+        person = await original_resolve_person(self, actor_id)
+        if actor_id in {login_a, login_b}:
+            arrived += 1
+            if arrived == 2:
+                release.set()
+            await asyncio.wait_for(release.wait(), timeout=5)
+        return person
+
+    monkeypatch.setattr(RequesterIdentityResolver, "resolve_person_for_web_user", raced_resolve_person)
+
+    response_a, response_b = await asyncio.gather(
+        test_client.post(
+            "/api/web/requester/tickets/claim-public",
+            headers=_headers(f"{TEST_UI_USER_PREFIX}{login_a}"),
+            json={"ticket_id": ticket_id, "code": public_access_code},
+        ),
+        test_client.post(
+            "/api/web/requester/tickets/claim-public",
+            headers=_headers(f"{TEST_UI_USER_PREFIX}{login_b}"),
+            json={"ticket_id": ticket_id, "code": public_access_code},
+        ),
+    )
+    payload_a = await response_a.json()
+    payload_b = await response_b.json()
+
+    statuses = sorted([response_a.status, response_b.status])
+    assert statuses == [200, 409], (payload_a, payload_b)
+    rejected = payload_a if response_a.status == 409 else payload_b
+    assert rejected["error_code"] == "PUBLIC_TICKET_ALREADY_CLAIMED"
+
+    async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
+        events = (
+            await session.execute(
+                select(TicketEvent)
+                .where(TicketEvent.ticket_id == ticket_id)
+                .where(TicketEvent.event_type == "requester_ticket_claimed")
+            )
+        ).scalars().all()
+
+    assert ticket is not None
+    assert ticket.requester_person_id in {
+        person_a.person_id,
+        person_b.person_id,
+    }
+    assert len(events) == 1
+    assert events[0].payload["requester_person_id"] == ticket.requester_person_id
     assert "code" not in events[0].payload
 
 

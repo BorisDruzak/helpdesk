@@ -49,10 +49,20 @@
       "id": "CLAIM-003",
       "priority": "P1",
       "group": "public claim/session",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_requester_workspace_api.py::test_requester_public_ticket_claim_is_single_winner_under_race -q --tb=short failed before fix: concurrent public ticket claims both returned 200 and wrote duplicate requester_ticket_claimed events"
+      ],
+      "regression_tests": [
+        "server/tests/test_requester_workspace_api.py::test_requester_public_ticket_claim_is_single_winner_under_race"
+      ],
+      "post_fix_verification": [
+        "Targeted CLAIM-003 race test: 1 passed in 14.87s",
+        "Focused public-claim pytest set: 4 passed in 32.22s"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "AGENT-AUTH-004",
