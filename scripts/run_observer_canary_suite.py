@@ -19,6 +19,7 @@ from typing import Any, Optional
 from urllib.parse import urlencode
 
 import aiohttp
+from yarl import URL
 
 WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 if str(WORKSPACE) not in sys.path:
@@ -35,6 +36,7 @@ from scripts.manage_remote_stack import (  # noqa: E402
 DEFAULT_BASE_URL = "https://192.168.100.17:9443"
 DEFAULT_WS_URL = "wss://192.168.100.17:9443/ws"
 DEFAULT_UI_WS_URL = "wss://192.168.100.17:9443/ws_ui"
+WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
 INSTANCE_ROOT = WORKSPACE / ".local-agent" / "instances"
 ARTIFACTS_DIR = WORKSPACE / "artifacts" / "observer_canaries"
 DEFAULT_COVERAGE_ROOT_KINDS = (
@@ -431,7 +433,8 @@ class ApiClient:
 
     async def __aenter__(self) -> "ApiClient":
         timeout = aiohttp.ClientTimeout(total=120)
-        self._session = aiohttp.ClientSession(timeout=timeout)
+        cookie_jar = aiohttp.CookieJar(unsafe=True)
+        self._session = aiohttp.ClientSession(timeout=timeout, cookie_jar=cookie_jar)
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -470,19 +473,28 @@ class ApiClient:
                 raise RuntimeError(f"{method.upper()} {path} returned non-object payload")
             return response.status, payload
 
+    def _web_session_cookie_token(self) -> str:
+        cookies = self.session.cookie_jar.filter_cookies(URL(self.base_url))
+        cookie = cookies.get(WEB_SESSION_COOKIE_NAME)
+        return str(cookie.value if cookie else "").strip()
+
     async def login_ui(self, login: str, password: str, *, expected_role: str | None = None) -> str:
         body: dict[str, Any] = {"login": login, "password": password}
         if expected_role:
             body["expected_role"] = expected_role
         _, payload = await self.request_json(
             "POST",
-            "/api/ui_login",
+            "/api/web/session/login",
             json_body=body,
             expected_statuses=(200,),
         )
-        token = str(payload.get("token") or "").strip()
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        actor_role = str(data.get("actor_role") or "").strip().lower()
+        if expected_role and actor_role and actor_role != expected_role:
+            raise RuntimeError(f"UI login role mismatch for {login}: expected {expected_role}, got {actor_role}")
+        token = self._web_session_cookie_token()
         if not token:
-            raise RuntimeError(f"UI login did not return token for {login}")
+            raise RuntimeError(f"Web session login did not set {WEB_SESSION_COOKIE_NAME} cookie for {login}")
         return token
 
     async def issue_agent_token(self, device_id: str) -> str:

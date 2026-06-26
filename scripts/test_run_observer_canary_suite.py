@@ -5,6 +5,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestServer
 import scripts.run_observer_canary_suite as suite
 
 
@@ -208,6 +210,54 @@ def test_source_coverage_root_kinds_are_subset_of_default_coverage() -> None:
         "manual_evidence",
         "remote_assist",
     )
+
+
+@pytest.mark.asyncio
+async def test_api_client_login_uses_web_session_cookie_not_legacy_ui_login():
+    seen: list[tuple[str, object]] = []
+
+    async def web_login(request: web.Request) -> web.StreamResponse:
+        payload = await request.json()
+        seen.append(("/api/web/session/login", payload))
+        response = web.json_response({"status": "success", "data": {"actor_role": "admin"}})
+        response.set_cookie("pc_client_web_session", "issued-ui-token", path="/", httponly=True)
+        return response
+
+    async def legacy_login(request: web.Request) -> web.StreamResponse:
+        payload = await request.json()
+        seen.append(("/api/ui_login", payload))
+        return web.json_response({"error_code": "LEGACY_AUTH_DISABLED"}, status=410)
+
+    async def protected_trace(request: web.Request) -> web.StreamResponse:
+        seen.append(("protected", request.headers.get("Authorization")))
+        return web.json_response({"status": "success", "data": {"trace_id": "trace-1"}})
+
+    app = web.Application()
+    app.router.add_post("/api/web/session/login", web_login)
+    app.router.add_post("/api/ui_login", legacy_login)
+    app.router.add_get("/api/admin/tech/traces/trace-1", protected_trace)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        async with suite.ApiClient(str(server.make_url("/")).rstrip("/")) as api:
+            token = await api.login_ui("admin", "admin123", expected_role="admin")
+            _, payload = await api.request_json(
+                "GET",
+                "/api/admin/tech/traces/trace-1",
+                token=token,
+            )
+    finally:
+        await server.close()
+
+    assert token == "issued-ui-token"
+    assert payload["data"]["trace_id"] == "trace-1"
+    assert seen == [
+        (
+            "/api/web/session/login",
+            {"login": "admin", "password": "admin123", "expected_role": "admin"},
+        ),
+        ("protected", "Bearer issued-ui-token"),
+    ]
 
 
 def test_resolve_agent_build_expectations_defaults_local_version_to_windows_only() -> None:
