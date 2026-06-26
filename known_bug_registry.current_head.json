@@ -194,10 +194,20 @@
       "id": "CLOSE-018",
       "priority": "P1",
       "group": "public claim/session",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "python -m pytest server/tests/test_ticket_device_binding.py::test_public_ticket_session_rejects_closed_ticket_even_if_not_revoked -q --tb=short failed before fix: closed ticket still authorized an active unrevoked public session"
+      ],
+      "regression_tests": [
+        "server/tests/test_ticket_device_binding.py::test_public_ticket_session_rejects_terminal_ticket_even_if_not_revoked"
+      ],
+      "post_fix_verification": [
+        "Targeted CLOSE-018 terminal public-session test: 2 passed in 18.64s",
+        "Focused ticket device/public-session pytest file: 4 passed in 30.55s"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "TOOL-019",

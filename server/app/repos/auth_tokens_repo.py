@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from loguru import logger
 
-from app.db.models import AgentToken, UiToken, TicketPublicSession
+from app.db.models import AgentToken, UiToken, Ticket, TicketPublicSession
 
 
 class AuthTokensRepo:
@@ -333,7 +333,12 @@ class AuthTokensRepo:
         if not token_clean:
             return None
         token_hash = self.hash_token(token_clean)
-        stmt = select(TicketPublicSession).where(TicketPublicSession.token_hash == token_hash)
+        stmt = (
+            select(TicketPublicSession)
+            .join(Ticket, Ticket.ticket_id == TicketPublicSession.ticket_id)
+            .where(TicketPublicSession.token_hash == token_hash)
+            .where(func.lower(Ticket.status).notin_(("closed", "canceled")))
+        )
         result = await self.session.execute(stmt)
         record = result.scalar_one_or_none()
         if not record:

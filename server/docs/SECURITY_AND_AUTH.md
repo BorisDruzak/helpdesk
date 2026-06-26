@@ -2,7 +2,7 @@
 
 Документация по безопасности, аутентификации и авторизации сервера PC Agent.
 
-**Дата обновления:** 2026-06-15
+**Дата обновления:** 2026-06-26
 
 Security update 2026-05-23:
 - `POST /api/login` is removed from the unauthenticated whitelist and is admin-only. It is retained only as an audited compatibility path for manual agent-token issue.
@@ -36,6 +36,9 @@ Security update 2026-06-15:
 - Web login and self-registration normalize UI logins to trimmed lower-case before auth lookup, account creation and token subject creation. `ui_users` enforces unique `lower(trim(user_login))` through migration `131`, and web registration rejects logins longer than the DB column limit of 100 characters before writing.
 - Optional registration device-link codes are validated only as registration pairings; account creation does not create an active device binding or bypass the later profile/admin approval policy.
 - `PUT /api/web/requester/profile` is web-session protected, writes only the authenticated caller's registry profile and verified `ui_login` identity, rejects foreign `person_id`, and requires active registry department/location ids before normal requester ticket preview/create is allowed.
+
+Security update 2026-06-26:
+- Public ticket session verification for public-token `/api/tickets*`, upload/artifact and quality paths now checks the scoped ticket state in addition to session revocation and expiry. Tokens for `closed` or `canceled` tickets are rejected before `last_used_at` is updated, so a failed or delayed close-side session revoke does not keep terminal ticket access alive.
 
 ---
 

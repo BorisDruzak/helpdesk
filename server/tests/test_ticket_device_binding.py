@@ -1,8 +1,12 @@
+from datetime import datetime, timedelta, timezone
+import uuid
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Ticket, TicketEvent
 from app.repos import DevicesRepo
+from app.repos.auth_tokens_repo import AuthTokensRepo
 from tickets.public_access import is_public_unbound_ticket
 
 
@@ -90,3 +94,47 @@ async def test_bind_device_rejects_unknown_device(test_client):
     payload = await bind_response.json()
     assert payload["error"] == "validation_error"
     assert payload["details"]["device_id"] == "unknown device_id"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal_status", ["closed", "canceled"])
+async def test_public_ticket_session_rejects_terminal_ticket_even_if_not_revoked(test_engine, terminal_status):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    raw_token = f"public-session-{uuid.uuid4().hex}"
+    now = datetime.now(timezone.utc)
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id=None,
+                title="Closed public session",
+                description="Closed ticket token should fail closed.",
+                status="new",
+                requester_id="public:closed-session",
+            )
+        )
+        await session.commit()
+
+        repo = AuthTokensRepo(session)
+        await repo.create_ticket_public_session(
+            token=raw_token,
+            ticket_id=ticket_id,
+            actor_id="public:closed-session",
+            expires_at=now + timedelta(hours=1),
+        )
+        assert await repo.verify_ticket_public_session(raw_token) is not None
+
+        ticket = await session.get(Ticket, ticket_id)
+        assert ticket is not None
+        ticket.status = terminal_status
+        if terminal_status == "closed":
+            ticket.closed_at = now
+        else:
+            ticket.canceled_at = now
+        await session.commit()
+
+    async with session_maker() as session:
+        repo = AuthTokensRepo(session)
+        assert await repo.verify_ticket_public_session(raw_token) is None
