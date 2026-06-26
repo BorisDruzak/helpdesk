@@ -46,6 +46,11 @@ from tickets.request_template_submission import resolve_create_form_submission
 from tickets.service_catalog_preview import ServiceCatalogPreviewError, build_requester_service_catalog_preview
 from tickets.service_catalog_runtime import ServiceCatalogResolutionError, ServiceCatalogRuntimeResolver
 from tickets.statuses import enrich_chat_payload_with_requester_name
+from tickets.chat_idempotency import (
+    ChatMessageIdError,
+    chat_message_retry_payload_matches,
+    normalize_chat_message_id,
+)
 from tickets.ticket_context import TicketContextBuilder, project_requester_ticket_context
 from tickets.workflow_service import TicketWorkflowService
 from tools.service import ToolExecutionService
@@ -1126,7 +1131,10 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
     if not text and not attachment_refs:
         return _validation_error({"text": "text or attachment_refs is required"})
 
-    message_id = _clean(data.get("message_id"), max_length=120) or str(uuid.uuid4())
+    try:
+        message_id = normalize_chat_message_id(data.get("message_id"))
+    except ChatMessageIdError as exc:
+        return _error(str(exc), status=400, error_code="INVALID_MESSAGE_ID")
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
 
     async with get_session() as session:
@@ -1193,6 +1201,12 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
                 return _error("message retry could not be resolved", status=409, error_code="MESSAGE_RETRY_NOT_FOUND")
             event_id = int(existing_message.id)
             existing_payload = existing_message.payload if isinstance(existing_message.payload, dict) else {}
+            if not chat_message_retry_payload_matches(existing_payload, payload):
+                return _error(
+                    "message retry payload does not match the original message",
+                    status=409,
+                    error_code="MESSAGE_RETRY_PAYLOAD_CONFLICT",
+                )
             existing_attachments = existing_payload.get("attachments")
             existing_attachment_refs = existing_payload.get("attachment_refs")
             if isinstance(existing_attachments, list):

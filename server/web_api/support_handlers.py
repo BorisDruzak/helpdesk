@@ -88,6 +88,11 @@ from tickets.statuses import (
     resolve_status,
     status_label_ru,
 )
+from tickets.chat_idempotency import (
+    ChatMessageIdError,
+    chat_message_retry_payload_matches,
+    normalize_chat_message_id,
+)
 from tickets.sla_service import TicketSlaService
 from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
@@ -5955,6 +5960,18 @@ async def handle_web_support_send_message(request: web.Request):
         )
 
     try:
+        message_id = normalize_chat_message_id(data.get("message_id"))
+    except ChatMessageIdError as exc:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": str(exc),
+                "error_code": "INVALID_MESSAGE_ID",
+            },
+            status=400,
+        )
+
+    try:
         async with get_session() as session:
             ticket, error, repo, auth_context = await _get_ticket_or_response(request, session, write=False)
             if error:
@@ -5985,7 +6002,6 @@ async def handle_web_support_send_message(request: web.Request):
                     )
 
             sender_role = _message_role_from_auth(auth_context)
-            message_id = str(data.get("message_id") or "").strip()[:120] or str(uuid.uuid4())
             payload = {
                 "message_id": message_id,
                 "sender_role": sender_role,
@@ -6020,13 +6036,21 @@ async def handle_web_support_send_message(request: web.Request):
                     )
                 result = (existing_message.id, existing_message.created_at)
                 existing_payload = existing_message.payload if isinstance(existing_message.payload, dict) else {}
-                if existing_payload:
-                    payload = existing_payload
-                    sender_role = str(payload.get("sender_role") or sender_role)
-                    visibility = str(payload.get("visibility") or visibility)
-                    text = str(payload.get("text") or "")
-                    existing_attachments = payload.get("attachments")
-                    attachments = existing_attachments if isinstance(existing_attachments, list) else []
+                if not chat_message_retry_payload_matches(existing_payload, payload):
+                    return web.json_response(
+                        {
+                            "status": "error",
+                            "error": "message retry payload does not match the original message",
+                            "error_code": "MESSAGE_RETRY_PAYLOAD_CONFLICT",
+                        },
+                        status=409,
+                    )
+                payload = existing_payload
+                sender_role = str(payload.get("sender_role") or sender_role)
+                visibility = str(payload.get("visibility") or visibility)
+                text = str(payload.get("text") or "")
+                existing_attachments = payload.get("attachments")
+                attachments = existing_attachments if isinstance(existing_attachments, list) else []
             if inserted_message and is_public_support_reply_payload(payload):
                 await TicketSlaService(session, repo).close_frt(ticket.ticket_id)
             if inserted_message:

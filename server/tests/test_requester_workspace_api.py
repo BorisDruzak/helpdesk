@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 import uuid
 
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -32,10 +35,13 @@ from app.db.models import (
 )
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
+from auth.context import AuthContext, AuthType
 from customer_history.projection_service import CustomerHistoryProjectionService
 from registry.registration_service import RegistrationService
+from routes import setup_routes
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+import web_api.requester_handlers as requester_handlers_module
 
 
 pytestmark = pytest.mark.db_cleanup("web_support")
@@ -44,6 +50,24 @@ pytestmark = pytest.mark.db_cleanup("web_support")
 @pytest.fixture
 def test_client(test_client_light):
     return test_client_light
+
+
+@pytest.fixture
+async def web_requester_client():
+    @web.middleware
+    async def auth_context_middleware(request, handler):
+        request["auth_context"] = AuthContext(
+            actor_id=f"{TEST_UI_USER_PREFIX}requester-no-db@example.test",
+            actor_role="user",
+            auth_type=AuthType.UI_TOKEN,
+            token="test-token",
+        )
+        return await handler(request)
+
+    app = web.Application(middlewares=[auth_context_middleware])
+    setup_routes(app)
+    async with TestClient(TestServer(app)) as client:
+        yield client
 
 
 def _headers(token: str) -> dict[str, str]:
@@ -2723,6 +2747,94 @@ async def test_requester_ticket_message_retry_is_idempotent_by_message_id(test_c
             )
         ).scalars().all()
     assert len(matching_messages) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_requester_ticket_message_rejects_long_message_id_before_db(web_requester_client, monkeypatch):
+    @asynccontextmanager
+    async def forbidden_session():
+        raise AssertionError("long message_id must be rejected before DB access")
+        yield
+
+    monkeypatch.setattr(requester_handlers_module, "get_session", forbidden_session)
+
+    response = await web_requester_client.post(
+        "/api/web/requester/tickets/T-LONG/message",
+        json={"message_id": "m" * 121, "text": "long id"},
+    )
+    payload = await response.json()
+
+    assert response.status == 400, payload
+    assert payload["error_code"] == "INVALID_MESSAGE_ID"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_requester_ticket_message_retry_rejects_same_message_id_with_different_payload(web_requester_client, monkeypatch):
+    message_id = f"requester-conflict-{uuid.uuid4().hex}"
+    created_at = datetime.now(timezone.utc)
+    fake_ticket = SimpleNamespace(
+        ticket_id="ticket-requester-conflict",
+        ticket_code="T-CONFLICT",
+        device_id="device-requester-conflict",
+        status="open",
+        requester_person_id="person-1",
+        requester_binding_id="binding-1",
+        requester_account_session_id="session-1",
+        requester_account_mode="confirmed_binding",
+    )
+    existing_payload = {
+        "message_id": message_id,
+        "sender_role": "user",
+        "sender_display_name": f"{TEST_UI_USER_PREFIX}requester-no-db@example.test",
+        "from": "user",
+        "text": "original text",
+        "visibility": "public",
+        "requester_person_id": "person-1",
+        "requester_binding_id": "binding-1",
+        "requester_account_session_id": "session-1",
+        "requester_account_mode": "confirmed_binding",
+    }
+
+    class FakeResolver:
+        def __init__(self, session, state=None):
+            pass
+
+        async def get_ticket(self, *, actor_id, ticket_id):
+            assert ticket_id == fake_ticket.ticket_id
+            return fake_ticket
+
+    class FakeRepo:
+        async def add_event(self, **kwargs):
+            return None
+
+        async def get_chat_message_by_message_id(self, ticket_id, resolved_message_id):
+            assert ticket_id == fake_ticket.ticket_id
+            assert resolved_message_id == message_id
+            return SimpleNamespace(id=43, created_at=created_at, payload=existing_payload)
+
+    class FakeSession:
+        async def commit(self):
+            self.committed = True
+
+    @asynccontextmanager
+    async def fake_session():
+        yield FakeSession()
+
+    monkeypatch.setattr(requester_handlers_module, "get_session", fake_session)
+    monkeypatch.setattr(requester_handlers_module, "RequesterIdentityResolver", FakeResolver)
+    monkeypatch.setattr(requester_handlers_module, "TicketEventsRepo", lambda session: FakeRepo())
+    monkeypatch.setattr(requester_handlers_module, "requester_ticket_actions", lambda ticket: {"can_send_message": True})
+
+    response = await web_requester_client.post(
+        f"/api/web/requester/tickets/{fake_ticket.ticket_id}/message",
+        json={"message_id": message_id, "text": "changed text"},
+    )
+    payload = await response.json()
+
+    assert response.status == 409, payload
+    assert payload["error_code"] == "MESSAGE_RETRY_PAYLOAD_CONFLICT"
 
 
 @pytest.mark.asyncio

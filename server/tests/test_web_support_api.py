@@ -553,6 +553,78 @@ async def test_web_support_message_retry_is_idempotent_by_message_id(test_client
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_web_support_send_message_rejects_long_message_id_before_db(web_support_client, monkeypatch):
+    @asynccontextmanager
+    async def forbidden_session():
+        raise AssertionError("long message_id must be rejected before DB access")
+        yield
+
+    monkeypatch.setattr(support_handlers_module, "get_session", forbidden_session)
+
+    response = await web_support_client.post(
+        "/api/web/support/tickets/ticket-long-message-id/messages",
+        json={"message_id": "m" * 121, "text": "long id", "visibility": "public"},
+    )
+    payload = await response.json()
+
+    assert response.status == 400, payload
+    assert payload["error_code"] == "INVALID_MESSAGE_ID"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_web_support_message_retry_rejects_same_message_id_with_different_payload(web_support_client, monkeypatch):
+    message_id = f"support-conflict-{uuid.uuid4().hex}"
+    created_at = datetime.now(timezone.utc)
+    fake_ticket = SimpleNamespace(ticket_id="ticket-conflict", device_id="device-conflict")
+    existing_payload = {
+        "message_id": message_id,
+        "sender_role": "support",
+        "sender_display_name": "support1",
+        "from": "support",
+        "text": "original text",
+        "visibility": "public",
+    }
+
+    class FakeRepo:
+        async def add_event(self, **kwargs):
+            return None
+
+        async def get_chat_message_by_message_id(self, ticket_id, resolved_message_id):
+            assert ticket_id == fake_ticket.ticket_id
+            assert resolved_message_id == message_id
+            return SimpleNamespace(id=42, created_at=created_at, payload=existing_payload)
+
+    class FakeSession:
+        async def commit(self):
+            self.committed = True
+
+    @asynccontextmanager
+    async def fake_session():
+        yield FakeSession()
+
+    async def fake_get_ticket_or_response(request, session, write=False):
+        return fake_ticket, None, FakeRepo(), request["auth_context"]
+
+    async def allow_permission(session, auth_context, permission):
+        return None
+
+    monkeypatch.setattr(support_handlers_module, "get_session", fake_session)
+    monkeypatch.setattr(support_handlers_module, "_get_ticket_or_response", fake_get_ticket_or_response)
+    monkeypatch.setattr(support_handlers_module, "_require_permission", allow_permission)
+
+    response = await web_support_client.post(
+        f"/api/web/support/tickets/{fake_ticket.ticket_id}/messages",
+        json={"message_id": message_id, "text": "changed text", "visibility": "public"},
+    )
+    payload = await response.json()
+
+    assert response.status == 409, payload
+    assert payload["error_code"] == "MESSAGE_RETRY_PAYLOAD_CONFLICT"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_support_send_message_rejects_unknown_visibility_before_db(web_support_client, monkeypatch):
     @asynccontextmanager
     async def forbidden_session():

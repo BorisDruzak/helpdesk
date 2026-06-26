@@ -240,7 +240,7 @@ CREATE UNIQUE INDEX uq_ticket_events_server_message_id
 
 **ВАЖНО:** `message_id` должен быть уникальным в пределах тикета и `event_type` для server events.
 
-Authenticated web chat endpoints accept a client-provided `message_id` as the retry/idempotency key. `POST /api/web/requester/tickets/{ticket_ref}/message` and `POST /api/web/support/tickets/{ticket_id}/messages` must return the already persisted `chat_message` event id when the same `message_id` is submitted again for the same ticket. A retry must not create another `ticket_events` row and must not repeat side effects such as requester workflow transitions, support first-response SLA closure, Observer web-cabinet writes, or realtime ticket pushes.
+Authenticated web chat endpoints accept a client-provided `message_id` as the retry/idempotency key. `POST /api/web/requester/tickets/{ticket_ref}/message` and `POST /api/web/support/tickets/{ticket_id}/messages` must return the already persisted `chat_message` event id when the same `message_id` and the same stable chat payload are submitted again for the same ticket. Non-empty client `message_id` values longer than 120 characters fail with `400 INVALID_MESSAGE_ID`; they must not be silently truncated. A retry with the same `message_id` but different text, visibility, actor/requester context, metadata or attachment refs fails with `409 MESSAGE_RETRY_PAYLOAD_CONFLICT`. A valid retry must not create another `ticket_events` row and must not repeat side effects such as requester workflow transitions, support first-response SLA closure, Observer web-cabinet writes, or realtime ticket pushes.
 
 ---
 
@@ -493,14 +493,14 @@ def validate_chat_message(event: dict) -> bool:
 
 ### Ограничения
 
-1. **message_id**: Обязателен для дедупликации server events
+1. **message_id**: Обязателен для дедупликации server events; authenticated web chat accepts up to 120 characters and rejects longer non-empty client IDs with `INVALID_MESSAGE_ID`.
 2. **text**: Максимальная длина - ограничена БД (обычно TEXT без лимита)
 3. **agent_seq**: Монотонный счетчик (не может уменьшаться)
 4. **attachments**: Хранятся как ссылки, не inline данные
 
 ### Best practices
 
-1. **Генерация message_id**: Использовать UUID v4 для уникальности
+1. **Генерация message_id**: Использовать UUID v4 для уникальности. Retries must reuse the same `message_id` only with the same chat payload; changed payloads are conflicts, not idempotent retries.
 2. **sender_role**: Всегда указывать явно, не полагаться на defaults
 3. **Timestamps**: Использовать ISO8601 формат (`2026-01-10T10:00:00Z`)
 4. **Attachments**: Валидировать размер и тип перед сохранением

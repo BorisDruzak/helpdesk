@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "generated_at": "2026-06-26",
-  "head": "31911bf9e44bef6c326f7f64a893d08e78f3149e",
+  "head": "fd232bb9b396a491320316903d361601887f829d",
   "branch": "codex/helpdesk-process-model",
   "source": "PLANS.md deep-audit registry, refreshed during Phase 1 Wave A remediation",
   "status_values": ["open", "reproduced", "not-reproduced", "already-fixed", "blocked"],
-  "verification_note": "Phase 1 remediations through CHAT-009 were reproduced with red tests or direct current-head proof and fixed locally with focused automated/direct checks where runnable. Stand/live evidence is still pending for P0/P1 release disposition.",
+  "verification_note": "Phase 1 remediations through CHAT-010 were reproduced with red tests or direct current-head proof and fixed locally with focused automated/direct checks where runnable. Stand/live evidence is still pending for P0/P1 release disposition.",
   "bugs": [
     {
       "id": "ID-001",
@@ -196,10 +196,27 @@
       "id": "CHAT-010",
       "priority": "P2",
       "group": "chat/timeline",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": false,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "Support web chat send truncated non-empty message_id values to 120 characters, so two long IDs with the same prefix could collapse into one retry key",
+        "Requester web chat send used the same max_length=120 cleanup path for message_id",
+        "Both web chat send endpoints resolved an existing message_id as a retry without comparing the incoming payload to the stored chat_message payload"
+      ],
+      "regression_tests": [
+        "server/tests/test_web_support_api.py::test_web_support_send_message_rejects_long_message_id_before_db",
+        "server/tests/test_web_support_api.py::test_web_support_message_retry_rejects_same_message_id_with_different_payload",
+        "server/tests/test_requester_workspace_api.py::test_requester_ticket_message_rejects_long_message_id_before_db",
+        "server/tests/test_requester_workspace_api.py::test_requester_ticket_message_retry_rejects_same_message_id_with_different_payload"
+      ],
+      "post_fix_verification": [
+        "support no-DB endpoint pytest: 2 passed",
+        "requester no-DB endpoint pytest: 2 passed",
+        "python -m py_compile changed server/test modules: ok",
+        "DB-backed support/requester retry happy-path pytest targets hung locally before result"
+      ],
+      "live_evidence": "not-required-for-p2-code-slice"
     },
     {
       "id": "CREATE-011",
