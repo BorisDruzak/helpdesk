@@ -151,10 +151,23 @@
       "id": "EVENT-008",
       "priority": "P1",
       "group": "chat/timeline",
-      "current_head_status": "open",
-      "fix_status": "not-started",
+      "current_head_status": "reproduced",
+      "fix_status": "fixed-local-focused-tests-green",
       "release_blocker": true,
-      "verification": "pending-current-head-verification"
+      "pre_fix_evidence": [
+        "TicketEventsRepo.add_event used pre-insert SELECT checks for server-originated event_id/message_id dedupe, but migrations had no DB unique guard for those keys, so parallel retries could both pass the pre-check and insert duplicate ticket_events rows"
+      ],
+      "regression_tests": [
+        "server/tests/test_ticket_events_repo_no_db.py::test_ticket_events_server_idempotency_unique_indexes_are_migrated",
+        "server/tests/test_ticket_events_repo_no_db.py::test_add_event_treats_server_idempotency_unique_conflicts_as_duplicates"
+      ],
+      "post_fix_verification": [
+        "pytest server/tests/test_ticket_events_repo_no_db.py: ok",
+        "python -m alembic -c alembic.ini heads: 132 (head)",
+        "python -m alembic -c alembic.ini history -r 131:132: ok",
+        "pytest server/tests/test_migration_schema_contract.py: hung locally before result"
+      ],
+      "live_evidence": "pending"
     },
     {
       "id": "CHAT-009",

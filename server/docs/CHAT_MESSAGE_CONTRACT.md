@@ -222,21 +222,21 @@ WHERE agent_seq IS NOT NULL
 
 ### Server events (agent_seq IS NULL)
 
-Дедупликация через **проверку message_id** в логике приложения:
+Server-originated events use a fast repository pre-check plus database unique indexes:
 
-```python
-# В TicketEventsRepo.add_event()
-if agent_seq is None and payload.get("message_id"):
-    existing = await self._check_duplicate_server_event(
-        ticket_id=ticket_id,
-        event_type=event_type,
-        message_id=payload["message_id"]
-    )
-    if existing:
-        return None  # Дубликат
+```sql
+CREATE UNIQUE INDEX uq_ticket_events_server_event_id
+    ON ticket_events (ticket_id, event_id)
+    WHERE agent_seq IS NULL AND event_id IS NOT NULL AND btrim(event_id) <> '';
+
+CREATE UNIQUE INDEX uq_ticket_events_server_message_id
+    ON ticket_events (ticket_id, event_type, (payload ->> 'message_id'))
+    WHERE agent_seq IS NULL AND btrim(COALESCE(payload ->> 'message_id', '')) <> '';
 ```
 
-**ВАЖНО:** `message_id` должен быть уникальным в пределах тикета для server events.
+`TicketEventsRepo.add_event()` treats these unique-index conflicts as idempotent duplicates and returns `None`. This keeps parallel retries from creating duplicate `ticket_events` rows even when both requests pass the application-level pre-check before either insert commits.
+
+**ВАЖНО:** `message_id` должен быть уникальным в пределах тикета и `event_type` для server events.
 
 Authenticated web chat endpoints accept a client-provided `message_id` as the retry/idempotency key. `POST /api/web/requester/tickets/{ticket_ref}/message` and `POST /api/web/support/tickets/{ticket_id}/messages` must return the already persisted `chat_message` event id when the same `message_id` is submitted again for the same ticket. A retry must not create another `ticket_events` row and must not repeat side effects such as requester workflow transitions, support first-response SLA closure, Observer web-cabinet writes, or realtime ticket pushes.
 

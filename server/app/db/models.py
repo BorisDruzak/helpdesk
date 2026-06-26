@@ -471,7 +471,7 @@ class TicketEvent(Base):
         # КРИТИЧНО: Частичный UNIQUE constraint создается в миграции 005 через raw SQL
         # (SQLAlchemy не поддерживает postgresql_where для UniqueConstraint в моделях)
         # Constraint: uq_ticket_events_device_ticket_seq UNIQUE (device_id, ticket_id, agent_seq) WHERE agent_seq IS NOT NULL
-        # Server events (agent_seq = NULL) дедуплицируются через логику по message_id в TicketEventsRepo
+        # Server events (agent_seq = NULL) are guarded by migration indexes on event_id and payload message_id.
         # Composite index для эффективного получения событий с сортировкой
         Index("ix_ticket_events_ticket_id_agent_seq", "ticket_id", "agent_seq"),
         Index("ix_ticket_events_ticket_created_id", "ticket_id", "created_at", "id"),

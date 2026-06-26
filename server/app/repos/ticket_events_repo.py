@@ -31,6 +31,15 @@ from app.db.models import (
 from tickets.statuses import ACTIVE_OPERATOR_STATUSES, TERMINAL_STATUSES
 
 
+IDEMPOTENT_TICKET_EVENT_UNIQUE_CONSTRAINTS = frozenset(
+    {
+        "uq_ticket_events_ticket_operation_type",
+        "uq_ticket_events_server_event_id",
+        "uq_ticket_events_server_message_id",
+    }
+)
+
+
 class TicketEventsRepo:
     """
     Repository for managing ticket events in the database.
@@ -265,10 +274,15 @@ class TicketEventsRepo:
         except IntegrityError as e:
             # КРИТИЧНО: IntegrityError обрабатывается внутри repo; rollback выполняется здесь (Stage 8 контракт).
             # Может возникнуть при нарушении UNIQUE индекса uq_ticket_events_ticket_operation_type.
-            if 'uq_ticket_events_ticket_operation_type' in str(e.orig) or 'operation_id' in str(e.orig):
+            orig_text = str(getattr(e, "orig", e))
+            if (
+                any(name in orig_text for name in IDEMPOTENT_TICKET_EVENT_UNIQUE_CONSTRAINTS)
+                or 'operation_id' in orig_text
+            ):
                 logger.warning(
                     f"[TicketEventsRepo] IntegrityError (idempotent): "
-                    f"ticket_id={ticket_id} operation_id={operation_id} event_type={event_type}. "
+                    f"ticket_id={ticket_id} event_id={event_id} operation_id={operation_id} "
+                    f"event_type={event_type}. "
                     f"Event already exists, treating as duplicate."
                 )
                 await self.session.rollback()
