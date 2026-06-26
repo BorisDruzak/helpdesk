@@ -2066,6 +2066,7 @@ async def handle_tech_diagnostics_bundle(request: web.Request) -> web.Response:
     signatures: list[dict[str, Any]] = []
     degradations: list[dict[str, Any]] = []
     agent_audit: list[dict[str, Any]] = []
+    primary_trace: Optional[dict[str, Any]] = None
 
     async with get_session() as session:
         service = ObserverOverlayService(session)
@@ -2073,21 +2074,19 @@ async def handle_tech_diagnostics_bundle(request: web.Request) -> web.Response:
         primary_trace_id = filters.trace_id or (related_traces[0]["trace_id"] if related_traces else None)
         if primary_trace_id:
             primary_detail = await service.get_trace_detail(primary_trace_id)
-        if primary_detail is None:
-            await session.rollback()
-            return web.json_response({"status": "error", "error": "Trace context not found"}, status=404)
 
-        primary_trace = primary_detail.get("trace") or {}
-        if not related_traces:
+        primary_trace = primary_detail.get("trace") if primary_detail else (related_traces[0] if related_traces else None)
+        primary_trace_context = primary_trace or {}
+        if primary_trace and not related_traces:
             related_traces = [primary_trace]
-        device_id = primary_trace.get("device_id") or filters.device_id
-        ticket_id = primary_trace.get("ticket_id") or filters.ticket_id
-        operation_id = primary_trace.get("operation_id") or filters.operation_id
+        device_id = primary_trace_context.get("device_id") or filters.device_id
+        ticket_id = primary_trace_context.get("ticket_id") or filters.ticket_id
+        operation_id = primary_trace_context.get("operation_id") or filters.operation_id
         device_payload = _serialize_device_context(await session.get(Device, device_id)) if device_id else None
         ticket_payload = _serialize_ticket_context(await session.get(Ticket, ticket_id)) if ticket_id else None
 
         signature_filters = TraceOverlayFilters(
-            trace_id=primary_trace.get("trace_id"),
+            trace_id=primary_trace_context.get("trace_id") or filters.trace_id,
             ticket_id=ticket_id,
             device_id=device_id,
             operation_id=operation_id,
@@ -2099,7 +2098,7 @@ async def handle_tech_diagnostics_bundle(request: web.Request) -> web.Response:
                 ticket_id=ticket_id,
                 device_id=device_id,
                 operation_id=operation_id,
-                tool_name=primary_trace.get("tool_name") or filters.tool_name,
+                tool_name=primary_trace_context.get("tool_name") or filters.tool_name,
                 lookback_hours=filters.lookback_hours or 24,
             ),
             limit=10,
@@ -2143,7 +2142,6 @@ async def handle_tech_diagnostics_bundle(request: web.Request) -> web.Response:
     if not recent_logs:
         recent_logs = [_serialize_problem_log(item) for item in list_log_records(levels=["error", "warning"], limit=15)]
 
-    primary_trace = primary_detail.get("trace") if primary_detail else None
     error_occurrences = primary_detail.get("error_occurrences", []) if primary_detail else []
     trace_id = primary_trace.get("trace_id") if primary_trace else None
     return web.json_response(

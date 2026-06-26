@@ -509,6 +509,29 @@ async def test_web_admin_observer_trace_detail_returns_typed_payload(web_admin_c
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_web_admin_observer_trace_detail_returns_typed_missing_payload(web_admin_client, monkeypatch):
+    async def fake_build_detail(*, request, trace_id: str):
+        assert request.path == f"/api/web/admin/observer/trace-detail/{trace_id}"
+        raise LookupError("TRACE_NOT_FOUND")
+
+    monkeypatch.setattr(admin_handlers, "_build_admin_observer_trace_detail_payload", fake_build_detail)
+
+    response = await web_admin_client.get("/api/web/admin/observer/trace-detail/projected-trace-1")
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "success"
+    assert payload["data"]["trace"]["trace_id"] == "projected-trace-1"
+    assert payload["data"]["trace"]["status_label"] == "Не найдена"
+    assert payload["data"]["trace"]["attrs_json"]["detail_status"] == "missing"
+    assert payload["data"]["summary"] == {"span_count": 0, "error_count": 0, "linked_trace_count": 0}
+    assert payload["data"]["spans"] == []
+    assert payload["data"]["span_links"] == []
+    assert payload["data"]["error_occurrences"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_web_admin_devices_returns_typed_fallback_payload_when_db_is_unavailable(web_admin_client):
     response = await web_admin_client.get("/api/web/admin/devices")
 

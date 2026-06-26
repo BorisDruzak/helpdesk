@@ -2237,6 +2237,32 @@ async def _build_admin_observer_trace_detail_payload(
     )
 
 
+def _build_missing_admin_observer_trace_detail_payload(trace_id: str) -> AdminObserverTraceDetailPayload:
+    return AdminObserverTraceDetailPayload(
+        trace=AdminObserverTraceItem(
+            trace_id=trace_id,
+            root_span_id=None,
+            root_kind=None,
+            root_kind_label="Нет данных",
+            status="missing",
+            status_label="Не найдена",
+            attrs_json={
+                "detail_status": "missing",
+                "reason": "trace detail is not available for this projected trace",
+            },
+        ),
+        summary=AdminObserverTraceDetailSummary(
+            span_count=0,
+            error_count=0,
+            linked_trace_count=0,
+        ),
+        explanation=None,
+        spans=[],
+        span_links=[],
+        error_occurrences=[],
+    )
+
+
 def _build_update_recommendation_summary(
     *,
     online: bool,
@@ -3634,15 +3660,7 @@ async def handle_web_admin_observer_trace_detail(request: web.Request):
     try:
         payload = await _build_admin_observer_trace_detail_payload(request=request, trace_id=trace_id)
     except LookupError:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Трасса не найдена",
-                "error_code": "TRACE_NOT_FOUND",
-                "trace_id": trace_id,
-            },
-            status=404,
-        )
+        payload = _build_missing_admin_observer_trace_detail_payload(trace_id)
     except Exception:
         return web.json_response(
             {

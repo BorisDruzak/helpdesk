@@ -148,6 +148,17 @@ function probesFor(options) {
 }
 
 
+function safeUrlForReport(value) {
+  try {
+    const url = new URL(value);
+    const suffix = url.search ? "?<redacted>" : "";
+    return `${url.origin}${url.pathname}${suffix}`;
+  } catch {
+    return String(value || "");
+  }
+}
+
+
 async function waitForLoginCompletion(page) {
   try {
     await page.waitForFunction(
@@ -206,6 +217,8 @@ async function runProbe(browser, options, probe, index) {
   const page = await context.newPage();
   const consoleErrors = [];
   const pageErrors = [];
+  const failedResponses = [];
+  const requestFailures = [];
   page.on("console", (message) => {
     if (message.type() === "error") {
       consoleErrors.push(message.text());
@@ -213,6 +226,28 @@ async function runProbe(browser, options, probe, index) {
   });
   page.on("pageerror", (error) => {
     pageErrors.push(String(error));
+  });
+  page.on("response", (response) => {
+    const status = response.status();
+    if (status < 400) {
+      return;
+    }
+    const request = response.request();
+    failedResponses.push({
+      url: safeUrlForReport(response.url()),
+      status,
+      statusText: response.statusText(),
+      method: request.method(),
+      resourceType: request.resourceType(),
+    });
+  });
+  page.on("requestfailed", (request) => {
+    requestFailures.push({
+      url: safeUrlForReport(request.url()),
+      method: request.method(),
+      resourceType: request.resourceType(),
+      errorText: request.failure()?.errorText ?? "",
+    });
   });
 
   await page.goto(probe.path, { waitUntil: "domcontentloaded" });
@@ -254,6 +289,12 @@ async function runProbe(browser, options, probe, index) {
   if (pageErrors.length > 0) {
     errors.push(`page errors: ${pageErrors.length}`);
   }
+  if (failedResponses.length > 0) {
+    errors.push(`failed responses: ${failedResponses.length}`);
+  }
+  if (requestFailures.length > 0) {
+    errors.push(`request failures: ${requestFailures.length}`);
+  }
 
   return {
     role: probe.role,
@@ -267,6 +308,8 @@ async function runProbe(browser, options, probe, index) {
     screenshot: path.relative(options.outDir, screenshotPath),
     consoleErrors,
     pageErrors,
+    failedResponses,
+    requestFailures,
     bodySnippet: bodyText.slice(0, 3000),
     status: errors.length === 0 ? "pass" : "fail",
     errors,

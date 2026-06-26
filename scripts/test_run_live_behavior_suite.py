@@ -206,3 +206,18 @@ def test_live_browser_login_wait_accepts_spa_session_completion() -> None:
     assert "window.location.pathname" in script
     assert "document.querySelector" in script
     assert 'page.waitForURL((url) => !url.pathname.startsWith("/app/login")' not in script
+
+
+def test_live_browser_report_records_failed_network_details() -> None:
+    script = BROWSER_SCRIPT.read_text(encoding="utf-8")
+
+    assert "const failedResponses = [];" in script
+    assert "const requestFailures = [];" in script
+    assert 'page.on("response"' in script
+    assert 'page.on("requestfailed"' in script
+    assert "failedResponses.push" in script
+    assert "requestFailures.push" in script
+    assert "failedResponses," in script
+    assert "requestFailures," in script
+    assert "`failed responses: ${failedResponses.length}`" in script
+    assert "`request failures: ${requestFailures.length}`" in script

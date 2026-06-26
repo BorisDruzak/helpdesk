@@ -255,6 +255,30 @@ async def test_tech_diagnostics_bundle_collects_trace_context(test_client):
 
 
 @pytest.mark.asyncio
+async def test_tech_diagnostics_bundle_returns_empty_context_for_missing_trace(test_client):
+    trace_id = "00000000-0000-0000-0000-000000000453"
+
+    response = await test_client.get(
+        f"/api/admin/tech/diagnostics/bundle?trace_id={trace_id}&include_agent_actions=1",
+        headers=_auth(ADMIN_TOKEN),
+    )
+
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["status"] == "ok"
+    assert payload["summary"]["primary_trace_id"] is None
+    assert payload["summary"]["span_count"] == 0
+    assert payload["summary"]["error_count"] == 0
+    assert payload["primary_trace"] is None
+    assert payload["related_traces"] == []
+    assert payload["spans"] == []
+    assert payload["span_links"] == []
+    assert payload["error_occurrences"] == []
+    assert payload["agent_actions"] == []
+    assert payload["links"]["trace_detail"] is None
+
+
+@pytest.mark.asyncio
 async def test_tech_lifecycle_and_agent_audit_feed(test_client):
     now = datetime.now(timezone.utc)
     ticket_id = "00000000-0000-0000-0000-000000000101"
