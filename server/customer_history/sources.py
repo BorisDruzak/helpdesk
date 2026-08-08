@@ -8,7 +8,6 @@ from sqlalchemy import desc, select
 from app.db.models import (
     DeviceAccountSession,
     DeviceUserBinding,
-    KnowledgeFeedbackEvent,
     Operation,
     ObserverTrace,
     Ticket,
@@ -16,6 +15,7 @@ from app.db.models import (
 )
 
 from .models import CustomerHistoryEvent, isoformat_utc
+from tickets.knowledge_provider import project_legacy_knowledge_attempts
 
 
 def _payload_text(payload: dict[str, Any]) -> str | None:
@@ -225,56 +225,31 @@ class KnowledgeHistorySource:
         limit: int = 100,
         person_id: str | None = None,
     ) -> list[CustomerHistoryEvent]:
-        rows = (
-            await self.session.execute(
-                select(KnowledgeFeedbackEvent)
-                .where(KnowledgeFeedbackEvent.ticket_id == ticket.ticket_id)
-                .order_by(KnowledgeFeedbackEvent.created_at, KnowledgeFeedbackEvent.event_id)
-                .limit(max(1, min(int(limit or 100), 300)))
+        del limit
+        custom_fields = getattr(ticket, "custom_fields", None)
+        raw_attempts = custom_fields.get("knowledge_attempts") if isinstance(custom_fields, dict) else None
+        attempts = project_legacy_knowledge_attempts(raw_attempts)
+        if not attempts:
+            return []
+        requester_visible = any(_knowledge_attempt_requester_allowed(item) for item in attempts)
+        return [
+            CustomerHistoryEvent(
+                event_id=f"legacy_knowledge:{ticket.ticket_id}",
+                source="knowledge",
+                group="knowledge",
+                event_type="legacy_knowledge_attempts",
+                title="Legacy Knowledge activity",
+                summary=f"{len(attempts)} historical attempt(s)",
+                occurred_at=getattr(ticket, "created_at", None),
+                ticket_id=ticket.ticket_id,
+                ticket_ref=_ticket_ref(ticket),
+                person_id=person_id or getattr(ticket, "requester_person_id", None),
+                device_id=getattr(ticket, "device_id", None),
+                visibility={"requester": requester_visible, "support": True, "admin": True, "llm": requester_visible},
+                payload={"knowledge_attempts": attempts},
+                safe_refs=_base_refs(ticket),
             )
-        ).scalars().all()
-        events: list[CustomerHistoryEvent] = []
-        for row in rows:
-            payload = dict(row.metadata_json or {})
-            payload.update(
-                {
-                    "event_type": row.event_type,
-                    "result": row.result,
-                    "source_surface": row.source_surface,
-                    "service_code": row.service_code,
-                    "offering_code": row.offering_code,
-                    "item_id": row.item_id,
-                }
-            )
-            attempts = payload.get("knowledge_attempts")
-            requester_visible = False
-            if isinstance(attempts, list):
-                requester_visible = any(
-                    _knowledge_attempt_requester_allowed(item)
-                    for item in attempts
-                    if isinstance(item, dict)
-                )
-            else:
-                requester_visible = True
-            events.append(
-                CustomerHistoryEvent(
-                    event_id=f"knowledge:{row.event_id}",
-                    source="knowledge",
-                    group="knowledge",
-                    event_type=str(row.event_type),
-                    title="Knowledge activity",
-                    summary=str(row.result or row.event_type),
-                    occurred_at=row.created_at,
-                    ticket_id=ticket.ticket_id,
-                    ticket_ref=_ticket_ref(ticket),
-                    person_id=person_id or getattr(ticket, "requester_person_id", None),
-                    device_id=getattr(ticket, "device_id", None),
-                    visibility={"requester": requester_visible, "support": True, "admin": True, "llm": requester_visible},
-                    payload=payload,
-                    safe_refs=_base_refs(ticket),
-                )
-            )
-        return events
+        ]
 
 
 class RegistryHistorySource:

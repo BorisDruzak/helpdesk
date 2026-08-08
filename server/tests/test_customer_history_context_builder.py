@@ -6,7 +6,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import KnowledgeFeedbackEvent, RegistryPerson, Ticket, TicketEvent
+from app.db.models import RegistryPerson, Ticket, TicketEvent
 from customer_history.context_builder import CustomerHistoryContextBuilder
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -85,7 +85,7 @@ async def test_ticket_context_pack_is_bounded_deterministic_and_redacted(test_en
 
 
 @pytest.mark.asyncio
-async def test_ticket_context_pack_does_not_leak_affected_only_kb_to_creator_llm_context(test_engine) -> None:
+async def test_ticket_context_pack_redacts_legacy_knowledge_identifiers_and_content(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     ticket_id = str(uuid.uuid4())
     creator_id = str(uuid.uuid4())
@@ -127,39 +127,22 @@ async def test_ticket_context_pack_does_not_leak_affected_only_kb_to_creator_llm
                         "creator": {"person_id": creator_id, "display_name": "Creator Context Person"},
                         "affected": {"person_id": affected_id, "display_name": "Affected Context Person"},
                         "on_behalf": {"enabled": True, "reason": "Affected employee cannot log in"},
-                    }
-                },
-                created_at=base,
-                updated_at=base,
-            )
-        )
-        await session.flush()
-        session.add(
-            KnowledgeFeedbackEvent(
-                event_id=str(uuid.uuid4()),
-                actor_id="creator-context@example.test",
-                actor_role="requester",
-                ticket_id=ticket_id,
-                source_surface="requester_portal",
-                event_type="ticket_created_after_view",
-                result="viewed",
-                metadata_json={
+                    },
                     "knowledge_attempts": [
                         {
                             "item_id": "kb-creator-safe",
                             "title": "Creator visible article",
+                            "body": "Private article body",
+                            "result": "viewed",
+                            "surface": "requester_portal",
                             "visibility_scope": "creator_visible",
                             "audience_scope": "creator",
-                        },
-                        {
-                            "item_id": "kb-affected-restricted",
-                            "title": "Affected department restricted article",
-                            "visibility_scope": "requester_visible",
-                            "audience_scope": "affected",
-                        },
-                    ]
+                            "occurred_at": base.isoformat(),
+                        }
+                    ],
                 },
                 created_at=base,
+                updated_at=base,
             )
         )
         await session.commit()
@@ -176,9 +159,11 @@ async def test_ticket_context_pack_does_not_leak_affected_only_kb_to_creator_llm
         )
 
     serialized = str(context_pack)
-    assert "Creator visible article" in serialized
-    assert "Affected department restricted article" not in serialized
-    assert "kb-affected-restricted" not in serialized
+    assert "legacy_knowledge_attempts" in serialized
+    assert "viewed" in serialized
+    assert "Creator visible article" not in serialized
+    assert "Private article body" not in serialized
+    assert "kb-creator-safe" not in serialized
 
 
 @pytest.mark.asyncio

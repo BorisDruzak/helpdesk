@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import KnowledgeFeedbackEvent, ServiceQualitySnapshot, Ticket, TicketFeedback, TicketReopenEvent
+from app.db.models import ServiceQualitySnapshot, Ticket, TicketFeedback, TicketReopenEvent
 from quality.analytics_service import ServiceQualityAnalyticsService
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -33,6 +33,19 @@ async def test_service_quality_analytics_aggregates_without_requester_pii(test_e
                 closed_at=now,
                 first_response_breached_at=now,
                 resolution_breached_at=now,
+                custom_fields={
+                    "knowledge_attempts": [
+                        {
+                            "item_id": "legacy-secret-item",
+                            "body": "legacy secret body",
+                            "result": "not_helpful",
+                            "surface": "requester_portal",
+                            "visibility_scope": "creator_visible",
+                            "audience_scope": "creator",
+                            "occurred_at": now.isoformat(),
+                        }
+                    ]
+                },
             )
         )
         await session.flush()
@@ -69,21 +82,6 @@ async def test_service_quality_analytics_aggregates_without_requester_pii(test_e
                 created_at=now,
             )
         )
-        session.add(
-            KnowledgeFeedbackEvent(
-                event_id=str(uuid.uuid4()),
-                item_id=None,
-                version_id=None,
-                ticket_id=ticket_id,
-                event_type="ticket_created_after_view",
-                source_surface="requester_portal",
-                actor_role="requester",
-                service_code="network",
-                offering_code="network.vpn_issue",
-                metadata_json={"knowledge_attempts": [{"result": "not_helpful"}]},
-                created_at=now,
-            )
-        )
         await session.commit()
 
         summary = await ServiceQualityAnalyticsService(session).service_quality(
@@ -100,6 +98,7 @@ async def test_service_quality_analytics_aggregates_without_requester_pii(test_e
     assert summary["rows"][0]["ticket_after_failed_knowledge_count"] == 1
     assert "secret-requester" not in repr(summary)
     assert "contains requester details" not in repr(summary)
+    assert "legacy-secret-item" not in repr(summary)
 
 
 @pytest.mark.asyncio

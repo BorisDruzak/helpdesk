@@ -2059,25 +2059,16 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     assert custom_fields["request_form_data"] == {"summary": "No boot"}
     assert custom_fields["service_catalog"]["service_code"] == service_code
     assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"
-    assert custom_fields["knowledge_attempts"] == [
-        {
-            "item_id": "kb-requester-1",
-            "version_id": "kb-version-1",
-            "result": "not_helpful",
-            "surface": "requester_portal",
-            "visibility_scope": "creator_visible",
-            "audience_scope": "creator",
-            "occurred_at": "2026-06-08T08:00:00Z",
-        }
-    ]
+    assert "knowledge_attempts" not in custom_fields
     async with session_maker() as session:
-        feedback_event = (
+        knowledge_event_count = (
             await session.execute(
-                select(KnowledgeFeedbackEvent).where(KnowledgeFeedbackEvent.ticket_id == payload["data"]["ticket_id"])
+                select(func.count()).select_from(KnowledgeFeedbackEvent).where(
+                    KnowledgeFeedbackEvent.ticket_id == payload["data"]["ticket_id"]
+                )
             )
         ).scalar_one()
-    assert feedback_event.event_type == "ticket_created_after_view"
-    assert feedback_event.metadata_json["knowledge_attempts"][0]["item_id"] == "kb-requester-1"
+    assert knowledge_event_count == 0
 
 
 @pytest.mark.asyncio

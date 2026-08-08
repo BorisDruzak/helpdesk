@@ -9,7 +9,6 @@ from sqlalchemy import func, select
 
 from app.db.models import (
     ContinuousImprovementAction,
-    KnowledgeFeedbackEvent,
     ServiceQualitySnapshot,
     Ticket,
     TicketFeedback,
@@ -17,6 +16,7 @@ from app.db.models import (
     TicketReopenEvent,
 )
 from quality.serializers import primitive
+from tickets.knowledge_provider import project_legacy_knowledge_attempts
 
 
 class ServiceQualityAnalyticsService:
@@ -58,9 +58,12 @@ class ServiceQualityAnalyticsService:
                 row["first_response_breach_count"] += 1
             if ticket.resolution_breached_at:
                 row["resolution_breach_count"] += 1
-            attempts = (ticket.custom_fields or {}).get("knowledge_attempts") if isinstance(ticket.custom_fields, dict) else None
-            if isinstance(attempts, list):
-                row["knowledge_attempt_count"] += len(attempts)
+            raw_attempts = (ticket.custom_fields or {}).get("knowledge_attempts") if isinstance(ticket.custom_fields, dict) else None
+            attempts = project_legacy_knowledge_attempts(raw_attempts)
+            row["knowledge_attempt_count"] += len(attempts)
+            if any(item["result"] in {"not_helpful", "ticket_created_after_view"} for item in attempts):
+                row["ticket_after_failed_knowledge_count"] += 1
+            row["deflection_count"] += sum(1 for item in attempts if item["result"] == "deflected")
 
         feedback_rows = (
             await self.session.execute(
@@ -107,20 +110,6 @@ class ServiceQualityAnalyticsService:
             row = groups[key]
             row["service_code"], row["offering_code"] = key
             row["improvement_action_count"] += 1
-
-        knowledge_events = (
-            await self.session.execute(
-                select(KnowledgeFeedbackEvent).where(KnowledgeFeedbackEvent.created_at >= period_start, KnowledgeFeedbackEvent.created_at <= period_end)
-            )
-        ).scalars().all()
-        for event in knowledge_events:
-            key = self._key(event.service_code, event.offering_code)
-            row = groups[key]
-            row["service_code"], row["offering_code"] = key
-            if event.event_type == "ticket_created_after_view":
-                row["ticket_after_failed_knowledge_count"] += 1
-            if event.event_type == "deflected":
-                row["deflection_count"] = (row["deflection_count"] or 0) + 1
 
         result_rows = []
         for key, row in groups.items():

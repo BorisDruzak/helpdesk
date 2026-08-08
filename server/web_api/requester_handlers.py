@@ -16,8 +16,6 @@ from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import ensure_server_request_id, require_auth
 from consent.service import OPERATION_SUBJECT_TYPES, ConsentAccessError, UserConsentService, serialize_user_consent
-from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
-from knowledge.feedback_service import KnowledgeFeedbackService
 from observer.web_event_writer import write_web_cabinet_observer_event
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
@@ -659,17 +657,6 @@ def _web_form_runtime_create_payload(
         "approval_required": bool(computed.get("approval_required")),
         "diagnostics_suggested": bool(computed.get("suggested_diagnostics")),
         "manual_triage": bool(ticket_custom_fields.get("manual_triage_required")),
-    }
-
-
-def _knowledge_attempt_guard_payload(knowledge_attempts: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "surface": "requester_portal",
-        "attempt_count": len(knowledge_attempts),
-        "results": sorted({str(item.get("result") or "unknown") for item in knowledge_attempts}),
-        "attempt_surfaces": sorted({str(item.get("surface") or "unknown") for item in knowledge_attempts}),
-        "visibility_scopes": sorted({str(item.get("visibility_scope") or "unknown") for item in knowledge_attempts}),
-        "audience_scopes": sorted({str(item.get("audience_scope") or "unknown") for item in knowledge_attempts}),
     }
 
 
@@ -1744,8 +1731,6 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
     pack_key = _clean(data.get("form_pack_key"), max_length=120) or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = _clean(data.get("form_pack_version"), max_length=120) or None
     form_payload = data.get("form_payload") if isinstance(data.get("form_payload"), dict) else {}
-    knowledge_attempts = sanitize_knowledge_attempts(data.get("knowledge_attempts"), surface="requester_portal")
-
     async with get_session() as session:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         profile_schema = await RequesterProfileSchemaService(session).get_schema()
@@ -1971,7 +1956,6 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
                 },
             )
             return _error(str(exc), status=exc.status, error_code=exc.error_code)
-        extra_custom_fields = attach_knowledge_attempts(extra_custom_fields, knowledge_attempts)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -2006,33 +1990,6 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
             ticket_context=on_behalf_context,
             state=request.app.get("state"),
         )
-        if knowledge_attempts:
-            ticket_row = created["ticket"]
-            await KnowledgeFeedbackService(session).record_event(
-                {
-                    "event_type": "ticket_created_after_view",
-                    "ticket_id": created["ticket_id"],
-                    "service_code": service_code or getattr(ticket_row, "service_code", None),
-                    "offering_code": offering_full_code or offering_code or getattr(ticket_row, "offering_code", None),
-                    "surface": "requester_portal",
-                    "metadata": {"knowledge_attempts": knowledge_attempts},
-                },
-                actor_role="requester",
-                actor_id=auth_context.actor_id,
-            )
-            await _write_requester_web_observer_event(
-                session,
-                request=request,
-                auth_context=auth_context,
-                source="requester_knowledge",
-                event_type="knowledge_attempt_guard_succeeded",
-                severity="info",
-                result="succeeded",
-                ticket_id=created["ticket_id"],
-                device_id=getattr(ticket_row, "device_id", None) or device_id,
-                person_id=getattr(person, "person_id", None),
-                payload=_knowledge_attempt_guard_payload(knowledge_attempts),
-            )
         ticket_row = created["ticket"]
         ticket_custom_fields = ticket_row.custom_fields if isinstance(ticket_row.custom_fields, dict) else {}
         await _write_requester_web_observer_event(

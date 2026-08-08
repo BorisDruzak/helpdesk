@@ -7,9 +7,6 @@ from datetime import datetime, timezone
 from typing import Any
 import uuid
 
-from sqlalchemy import distinct, func, select
-
-from app.db.models import KnowledgeBinding, KnowledgeItem
 from app.db.models import Ticket
 from app.repos import TicketEventsRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
@@ -63,7 +60,6 @@ FORBIDDEN_PUBLIC_FIELDS = {
     "operation_id",
 }
 
-REQUESTER_SAFE_KNOWLEDGE_VISIBILITIES = {"public", "requester", "agent_requester_safe"}
 
 SEVERITY_WEIGHT = {"critical": 40, "error": 25, "warning": 10, "info": 2}
 
@@ -192,21 +188,20 @@ class PolicyHealthService:
         publication = ServiceCatalogPublicationService(self.session)
         services = await catalog_repo.list_services(include_retired=True)
         offerings = await catalog_repo.list_offerings()
-        knowledge_counts = await self._knowledge_counts_by_catalog()
         service_items = []
         for service in services:
             try:
                 validation = await publication.validate_service(str(service.get("code") or ""))
             except ValueError:
                 validation = {"status": "error", "issues": [], "blocking": True}
-            service_items.append(self._catalog_health_item("service", service, validation, knowledge_counts))
+            service_items.append(self._catalog_health_item("service", service, validation))
         offering_items = []
         for offering in offerings:
             try:
                 validation = await publication.validate_offering(str(offering.get("full_code") or ""))
             except ValueError:
                 validation = {"status": "error", "issues": [], "blocking": True}
-            offering_items.append(self._catalog_health_item("offering", offering, validation, knowledge_counts))
+            offering_items.append(self._catalog_health_item("offering", offering, validation))
         dashboard["services"] = service_items
         dashboard["offerings"] = offering_items
         dashboard["summary"]["services"] = len(service_items)
@@ -215,44 +210,6 @@ class PolicyHealthService:
             1 for item in [*service_items, *offering_items] if item["health_status"] == "error"
         )
         return dashboard
-
-    async def _knowledge_counts_by_catalog(self) -> dict[tuple[str, str], int]:
-        if self.session is None:
-            return {}
-        counts: dict[tuple[str, str], int] = {}
-        service_rows = await self.session.execute(
-            select(
-                KnowledgeBinding.service_code,
-                func.count(distinct(KnowledgeBinding.item_id)),
-            )
-            .join(KnowledgeItem, KnowledgeItem.item_id == KnowledgeBinding.item_id)
-            .where(
-                KnowledgeItem.status == "published",
-                KnowledgeItem.visibility.in_(REQUESTER_SAFE_KNOWLEDGE_VISIBILITIES),
-                KnowledgeBinding.service_code.is_not(None),
-            )
-            .group_by(KnowledgeBinding.service_code)
-        )
-        for service_code, count in service_rows.all():
-            if service_code:
-                counts[("service", str(service_code))] = int(count or 0)
-        offering_rows = await self.session.execute(
-            select(
-                KnowledgeBinding.offering_code,
-                func.count(distinct(KnowledgeBinding.item_id)),
-            )
-            .join(KnowledgeItem, KnowledgeItem.item_id == KnowledgeBinding.item_id)
-            .where(
-                KnowledgeItem.status == "published",
-                KnowledgeItem.visibility.in_(REQUESTER_SAFE_KNOWLEDGE_VISIBILITIES),
-                KnowledgeBinding.offering_code.is_not(None),
-            )
-            .group_by(KnowledgeBinding.offering_code)
-        )
-        for offering_code, count in offering_rows.all():
-            if offering_code:
-                counts[("offering", str(offering_code))] = int(count or 0)
-        return counts
 
     async def get_health(self, template_code: str) -> dict[str, Any] | None:
         dashboard = await self.list_health()
@@ -518,7 +475,6 @@ class PolicyHealthService:
         object_type: str,
         obj: dict[str, Any],
         validation: dict[str, Any],
-        knowledge_counts: dict[tuple[str, str], int] | None = None,
     ) -> dict[str, Any]:
         issues = [
             {
@@ -534,23 +490,6 @@ class PolicyHealthService:
             if isinstance(issue, dict)
         ]
         code = obj.get("full_code") if object_type == "offering" else obj.get("code")
-        knowledge_count = int((knowledge_counts or {}).get((object_type, str(code or "")), 0))
-        if (
-            obj.get("lifecycle_status") == "published"
-            and obj.get("visibility") == "public"
-            and knowledge_count == 0
-        ):
-            issues.append(
-                _issue(
-                    "warning",
-                    "missing_policy",
-                    "knowledge",
-                    "published public catalog object has no requester-safe knowledge bound for self-service deflection",
-                    path=f"{object_type}.knowledge_bindings",
-                    reference=str(code or ""),
-                    suggested_fix="Publish and bind at least one requester-safe knowledge item or explicitly document no self-service content.",
-                )
-            )
         severity_counts = {severity: 0 for severity in ("critical", "error", "warning", "info")}
         for issue in issues:
             severity_counts[issue["severity"]] += 1
@@ -569,7 +508,8 @@ class PolicyHealthService:
             "health_score": max(0, 100 - sum(SEVERITY_WEIGHT.get(issue["severity"], 0) for issue in issues)),
             "conflict_count": sum(1 for issue in issues if issue["kind"] == "conflict"),
             "issue_count": len(issues),
-            "knowledge_count": knowledge_count,
+            "knowledge_count": None,
+            "knowledge_coverage_status": "not_configured",
             "issues_by_severity": severity_counts,
             "issues": issues,
             "publication_blocking": bool(validation.get("blocking")),

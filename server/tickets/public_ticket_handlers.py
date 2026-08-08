@@ -25,8 +25,6 @@ from utils import new_ticket_id
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
 from app.repos import DevicesRepo, TicketEventsRepo
-from knowledge.attempts import attach_knowledge_attempts, sanitize_knowledge_attempts
-from knowledge.feedback_service import KnowledgeFeedbackService
 from tickets.assignment_service import (
     MAX_ACTIVE_TICKETS_PER_OPERATOR,
     TicketAssignmentError,
@@ -112,7 +110,6 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
     pack_key = str(data.get("form_pack_key") or DEFAULT_TICKET_FORM_PACK_KEY).strip() or DEFAULT_TICKET_FORM_PACK_KEY
     pack_version = str(data.get("form_pack_version") or "").strip() or None
     form_payload = data.get("form_payload")
-    knowledge_attempts = sanitize_knowledge_attempts(data.get("knowledge_attempts"), surface="requester_portal")
 
     validation_errors: Dict[str, Any] = {}
     if not description:
@@ -242,7 +239,6 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
             }
             if extra_custom_fields:
                 custom_fields.update(extra_custom_fields)
-            custom_fields = attach_knowledge_attempts(custom_fields, knowledge_attempts)
             custom_fields = set_public_access_code(custom_fields, public_access_code)
             custom_fields = mark_public_ticket_unbound(custom_fields, True)
             await ticket_repo.update_ticket(
@@ -351,19 +347,6 @@ async def handle_public_ticket_create(request: web.Request) -> web.Response:
                 event_id=initial_message_id,
             )
             await _create_public_access_event(ticket_repo, ticket, public_access_code)
-            if knowledge_attempts:
-                await KnowledgeFeedbackService(db_session).record_event(
-                    {
-                        "event_type": "ticket_created_after_view",
-                        "ticket_id": ticket_id,
-                        "service_code": service_code or getattr(ticket, "service_code", None),
-                        "offering_code": offering_full_code or offering_code or getattr(ticket, "offering_code", None),
-                        "surface": "requester_portal",
-                        "metadata": {"knowledge_attempts": knowledge_attempts},
-                    },
-                    actor_role="requester",
-                    actor_id=requester_id,
-                )
             try:
                 await start_ticket_created_playbooks(
                     session=db_session,

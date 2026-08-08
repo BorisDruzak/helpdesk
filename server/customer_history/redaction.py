@@ -44,6 +44,13 @@ RAW_CONTEXT_KEYS = {
 
 REQUESTER_KB_SCOPES = {"public", "requester", "requester_visible", "creator_visible", "creator"}
 REQUESTER_KB_AUDIENCE_SCOPES = {"public", "requester", "requester_visible", "creator_visible", "creator"}
+LEGACY_KNOWLEDGE_ATTEMPT_KEYS = {
+    "result",
+    "surface",
+    "visibility_scope",
+    "audience_scope",
+    "occurred_at",
+}
 
 
 @dataclass(slots=True)
@@ -126,6 +133,12 @@ def _sanitize(value: Any, *, role: str, key_path: Iterable[str] = ()) -> Redacti
                 if not _knowledge_attempt_allowed(item, role=role):
                     removed += 1
                     continue
+                removed += sum(1 for key in item if str(key) not in LEGACY_KNOWLEDGE_ATTEMPT_KEYS)
+                item = {
+                    str(key): child
+                    for key, child in item.items()
+                    if str(key) in LEGACY_KNOWLEDGE_ATTEMPT_KEYS
+                }
             result = _sanitize(item, role=role, key_path=key_path)
             removed += result.removed_count
             if result.value is not None:
