@@ -253,6 +253,19 @@ def run_module_observer_guard(workspace: Path) -> list[str]:
     return scan_workspace_module_observer_failures(workspace)
 
 
+def run_domain_import_boundary_guard(workspace: Path) -> list[str]:
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT_WORKSPACE / "scripts" / "check_domain_import_boundaries.py"), "--workspace", str(workspace)],
+        cwd=workspace,
+        capture_output=True,
+        text=False,
+    )
+    if result.returncode == 0:
+        return []
+    output = _combined_output(result)
+    return [line for line in output.splitlines() if line.strip()]
+
+
 def main() -> None:
     args = parse_args()
     files = list(iter_files(args.workspace))
@@ -263,6 +276,7 @@ def main() -> None:
     node_results = run_node_syntax(args.workspace, files)
     failures.extend([item for item in node_results if "skipped" not in item])
     failures.extend(run_module_observer_guard(args.workspace))
+    failures.extend(run_domain_import_boundary_guard(args.workspace))
     failures.extend(check_forbidden_tracked_files(args.workspace))
     if not args.skip_docs_drift:
         failures.extend(run_docs_drift(args.workspace))
