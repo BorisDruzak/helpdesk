@@ -43,6 +43,12 @@ unavailable Knowledge is represented by the typed `knowledge_unavailable`
 outcome from `KnowledgePort`; ticket creation, routing, support work and closure
 continue without content or hidden retrieval.
 
+PR-6 rollback is a normal rollback to the preceding verified application
+release, never a local compatibility fallback. Knowledge table deletion is
+deferred to PR-11 and may occur only after the relevant cutover acceptance
+evidence and backup/rollback procedure are accepted; PR-6 first makes those
+tables unreachable from active Helpdesk code.
+
 The future integration contract is
 [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md). Every path in that
 document is a future external Knowledge Platform target, never a Helpdesk route.

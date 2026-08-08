@@ -34,6 +34,11 @@ external target. None of its paths are registered by Helpdesk. During PR-0 the
 existing Knowledge runtime is unchanged; after PR-6 its replacement is an
 explicit unavailable port, with no local fallback.
 
+PR-6 rollback returns the application to the preceding verified application
+release; it never restores a local compatibility fallback. Knowledge table
+deletion is deferred to PR-11 until cutover acceptance evidence and a tested
+backup/rollback procedure permit the forward-only deletion.
+
 ## Consequences
 
 - Ticket workflow and Helpdesk UI remain independently deployable from endpoint
