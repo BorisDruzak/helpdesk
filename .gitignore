@@ -32,6 +32,7 @@ pc_agent/dist/
 .venvs/
 .local-agent/
 .codex/
+.worktrees/
 artifacts/ci/
 artifacts/browser_checks/
 artifacts/context_index/
