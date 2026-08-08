@@ -303,6 +303,9 @@ function workspacePayload(overrides: Partial<SupportTicketWorkspacePayload> = {}
     },
     knowledge: {
       ticket_id: "ticket-1",
+      status: "unavailable",
+      code: "knowledge_unavailable",
+      suggestions: [],
       similar_tickets: [],
       articles: [],
       ai_summary: { text: null, sources: [] },
@@ -2214,38 +2217,29 @@ describe("TicketListPage", () => {
     expect(within(card).getByRole("link", { name: "Открыть" })).toHaveAttribute("href", "/app/admin/observer?trace_id=trace-root-1");
   });
 
-  it("renders knowledge suggestions from the aggregate workspace payload", async () => {
+  it("renders the unavailable Knowledge projection from the aggregate workspace payload", async () => {
     fetchSupportQueueMock.mockResolvedValue(queuePayload());
     fetchSupportTicketWorkspaceMock.mockResolvedValue(
       workspacePayload({
         knowledge: {
           ticket_id: "ticket-1",
-          similar_tickets: [
-            {
-              id: "ticket-1011",
-              number: "T-001011",
-              subject: "Ошибка 502 на портале",
-              resolution_summary: "Перезапуск upstream устранил ошибку.",
-            },
-          ],
-          articles: [{ id: "KB-502", title: "Ошибка 502 Bad Gateway", url: "/app/knowledge/KB-502" }],
-          ai_summary: {
-            text: "AI-рекомендация / Бета: проверьте связанные источники перед применением.",
-            sources: ["KB-502", "T-001011"],
-            confidence: "high",
-            source_count: 2,
-          },
+          status: "unavailable",
+          code: "knowledge_unavailable",
+          suggestions: [],
+          similar_tickets: [],
+          articles: [],
+          requester_attempts: [],
+          ai_summary: { text: null, sources: [] },
           diagnostics: {
-            provider: "support_knowledge_provider",
-            provider_version: "local-v1",
-            source_counts: { manual_kb: 1, catalog: 0, similar_ticket: 1 },
-            query_signals: ["manual_link", "linked_ticket"],
-            article_matches: {
-              "KB-502": { source_type: "manual_kb", score: 100, match_reasons: ["manual_link"] },
-            },
-            similar_ticket_matches: {
-              "ticket-1011": { source_type: "similar_ticket", score: 90, match_reasons: ["linked_ticket"] },
-            },
+            provider: "external_knowledge_port",
+            provider_version: "v1",
+            provider_status: "unavailable",
+            external_provider_status: "not_configured",
+            fallback_reason: "knowledge_unavailable",
+            source_counts: {},
+            query_signals: [],
+            article_matches: {},
+            similar_ticket_matches: {},
           },
         },
       }),
@@ -2258,14 +2252,8 @@ describe("TicketListPage", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Знания" }));
 
-    expect(await screen.findByText("Ошибка 502 Bad Gateway")).toBeInTheDocument();
-    expect(screen.getByText("Ошибка 502 на портале")).toBeInTheDocument();
-    expect(screen.getAllByText(/AI-рекомендация \/ Бета/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Провайдер: готов")).toBeInTheDocument();
-    expect(screen.getByText("ID: support_knowledge_provider")).toBeInTheDocument();
-    expect(screen.getByText("Внешняя БЗ: не подключена")).toBeInTheDocument();
-    expect(screen.getByText("Доверие: high")).toBeInTheDocument();
-    expect(screen.getByText("manual_link")).toBeInTheDocument();
-    expect(screen.queryByText(/Knowledge suggestions/)).not.toBeInTheDocument();
+    expect(await screen.findByText("База знаний пока недоступна")).toBeInTheDocument();
+    expect(screen.getByText("Подключение к внешнему сервису знаний ещё не настроено.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Ошибка 502 Bad Gateway" })).not.toBeInTheDocument();
   });
 });

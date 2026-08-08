@@ -299,6 +299,8 @@ export type SupportWorkspaceObserverDiagnostic = {
 };
 
 export type SupportWorkspaceKnowledge = {
+  status: "unavailable";
+  code: "knowledge_unavailable";
   similarTickets: Array<{ id: string; code: string; subject: string; summary: string }>;
   articles: Array<{ id: string; title: string; url: string }>;
   requesterAttempts: Array<{

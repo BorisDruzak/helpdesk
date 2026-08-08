@@ -973,23 +973,15 @@ export type SupportTicketPassportSectionPatchPayload = {
   internal_result_summary?: string | null;
 };
 
-export type SupportTicketKnowledgeDraftPayload = {
-  title: string;
-  problem: string;
-  resolution: string;
-  repeat_guidance: string;
-  source_passport_id: number;
-  item_id?: string | null;
-  version_id?: string | null;
-  status?: string | null;
-  item_type?: string | null;
-  edit_url?: string | null;
-  warnings?: string[];
-  bindings?: Array<Record<string, unknown>>;
-};
-
 export type SupportTicketKnowledgeSuggestionsPayload = {
   ticket_id: string;
+  status: "unavailable";
+  code: "knowledge_unavailable";
+  suggestions: Array<{
+    id: string;
+    title: string;
+    url: string | null;
+  }>;
   requester_attempts?: Array<{
     item_id: string;
     version_id?: string | null;
@@ -1433,24 +1425,6 @@ export async function fetchSupportTicketWorkspace(ticketId: string): Promise<Sup
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось загрузить рабочее пространство тикета",
-      response.status,
-      errorPayload?.error_code
-    );
-  }
-
-  return payload.data;
-}
-
-export async function fetchSupportTicketKnowledgeSuggestions(ticketId: string): Promise<SupportTicketKnowledgeSuggestionsPayload> {
-  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/knowledge-suggestions`, {
-    credentials: "same-origin"
-  });
-  const payload = await readJson<SuccessResponse<SupportTicketKnowledgeSuggestionsPayload> | ErrorResponse>(response);
-
-  if (!response.ok || !payload || payload.status !== "success") {
-    const errorPayload = payload && payload.status === "error" ? payload : null;
-    throw new SupportBootstrapApiError(
-      errorPayload?.error ?? "Не удалось загрузить подсказки базы знаний",
       response.status,
       errorPayload?.error_code
     );
@@ -1992,25 +1966,6 @@ export async function createSupportTicketPassportEvidence(
     const errorPayload = payload && payload.status === "error" ? payload : null;
     throw new SupportBootstrapApiError(
       errorPayload?.error ?? "Не удалось добавить доказательство",
-      response.status,
-      errorPayload?.error_code
-    );
-  }
-
-  return payload.data;
-}
-
-export async function createSupportTicketKnowledgeDraft(ticketId: string): Promise<SupportTicketKnowledgeDraftPayload> {
-  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/passport/knowledge-draft`, {
-    method: "POST",
-    credentials: "same-origin"
-  });
-  const payload = await readJson<SuccessResponse<SupportTicketKnowledgeDraftPayload> | ErrorResponse>(response);
-
-  if (!response.ok || !payload || payload.status !== "success") {
-    const errorPayload = payload && payload.status === "error" ? payload : null;
-    throw new SupportBootstrapApiError(
-      errorPayload?.error ?? "Не удалось подготовить черновик знания",
       response.status,
       errorPayload?.error_code
     );

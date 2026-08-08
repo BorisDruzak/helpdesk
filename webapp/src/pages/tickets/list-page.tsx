@@ -4348,7 +4348,18 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "knowledge" ? (
               <div className="space-y-3">
-                {viewModel.right.knowledge.aiSummary ? (
+                {viewModel.right.knowledge.status === "unavailable" ? (
+                  <section className="rounded-xl border border-amber-300/20 bg-amber-500/10 p-4">
+                    <div className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-amber-200" />
+                      <p className="font-semibold text-white">База знаний пока недоступна</p>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-amber-50/80">
+                      Подключение к внешнему сервису знаний ещё не настроено.
+                    </p>
+                  </section>
+                ) : null}
+                {viewModel.right.knowledge.status !== "unavailable" && viewModel.right.knowledge.aiSummary ? (
                   <section className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-4">
                     <div className="flex items-center gap-2">
                       <Sparkles className="h-4 w-4 text-violet-300" />
@@ -4410,7 +4421,7 @@ export function TicketListPage() {
                   </section>
                 ) : null}
 
-                {viewModel.right.knowledge.requesterAttempts.length ? (
+                {viewModel.right.knowledge.status !== "unavailable" && viewModel.right.knowledge.requesterAttempts.length ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div className="flex items-center gap-2">
                       <ClipboardList className="h-4 w-4 text-emerald-300" />
@@ -4435,7 +4446,7 @@ export function TicketListPage() {
                   </section>
                 ) : null}
 
-                {(viewModel.right.knowledge.articles.length || viewModel.right.knowledge.similarTickets.length) ? (
+                {viewModel.right.knowledge.status !== "unavailable" && (viewModel.right.knowledge.articles.length || viewModel.right.knowledge.similarTickets.length) ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div className="flex items-center gap-2">
                       <BookOpen className="h-4 w-4 text-blue-300" />
@@ -4467,7 +4478,7 @@ export function TicketListPage() {
                       ))}
                     </div>
                   </section>
-                ) : (
+                ) : viewModel.right.knowledge.status !== "unavailable" ? (
               <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-violet-300" />
@@ -4481,7 +4492,7 @@ export function TicketListPage() {
                   Похожие тикеты и статьи не найдены.
                 </div>
               </section>
-                )}
+                ) : null}
               </div>
             ) : null}
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Bot, ClipboardCheck, FilePlus2, FileText, Link2, ListChecks, Search, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { BookOpen, Bot, ClipboardCheck, FileText, Link2, ListChecks, Search, ShieldCheck, TriangleAlert } from "lucide-react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { Badge } from "../../components/ui/badge";
@@ -11,8 +11,6 @@ import {
   fetchKnowledgeItems,
   fetchKnowledgeItemVersions,
   fetchKnowledgeSpaces,
-  fetchSupportTicketKnowledgeSuggestions,
-  createSupportTicketKnowledgeDraft,
   linkKnowledgeArticleToTicket,
   previewKnowledgeAsk,
   recordKnowledgeSupportFeedback,
@@ -20,6 +18,7 @@ import {
   type KnowledgeItem,
   type KnowledgeSpace,
 } from "./api";
+import { fetchSupportTicketWorkspace } from "../queues/api";
 
 const requesterSafeVisibilities = new Set(["public", "requester", "agent_requester_safe"]);
 const supportVisibilities = new Set(["public", "requester", "agent_requester_safe", "support_internal"]);
@@ -110,7 +109,6 @@ function shortDateTimeLabel(value?: string | null) {
 
 export function KnowledgeSupportWorkspacePage() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const [query, setQuery] = useState(searchParams.get("query") ?? "");
@@ -124,9 +122,9 @@ export function KnowledgeSupportWorkspacePage() {
 
   const itemsQuery = useQuery({ queryKey: ["knowledge-items"], queryFn: fetchKnowledgeItems });
   const spacesQuery = useQuery({ queryKey: ["knowledge-spaces"], queryFn: fetchKnowledgeSpaces });
-  const ticketKnowledgeQuery = useQuery({
-    queryKey: ["support-ticket-knowledge", ticketId],
-    queryFn: () => fetchSupportTicketKnowledgeSuggestions(ticketId),
+  const ticketWorkspaceQuery = useQuery({
+    queryKey: ["support-ticket-workspace", ticketId],
+    queryFn: () => fetchSupportTicketWorkspace(ticketId),
     enabled: Boolean(ticketId),
   });
   const supportSpaceIds = useMemo(
@@ -176,8 +174,9 @@ export function KnowledgeSupportWorkspacePage() {
   const supportInternalCount = items.filter((item) => item.visibility === "support_internal").length;
   const runbookCount = items.filter((item) => item.item_type === "runbook").length;
   const knownErrorCount = items.filter((item) => item.item_type === "known_error").length;
-  const requesterAttempts = ticketKnowledgeQuery.data?.requester_attempts ?? [];
-  const ticketArticles = ticketKnowledgeQuery.data?.articles ?? [];
+  const ticketKnowledge = ticketWorkspaceQuery.data?.knowledge;
+  const requesterAttempts = ticketKnowledge?.requester_attempts ?? [];
+  const ticketArticles = ticketKnowledge?.articles ?? [];
   const askDebugMutation = useMutation<KnowledgeAskResult>({
     mutationFn: () =>
       previewKnowledgeAsk({
@@ -235,20 +234,6 @@ export function KnowledgeSupportWorkspacePage() {
     onSuccess: () => setActionMessage("Слабая статья отмечена для улучшения."),
     onError: () => setActionMessage("Не удалось отметить слабую статью."),
   });
-  const passportDraftMutation = useMutation({
-    mutationFn: () => {
-      if (!ticketId) {
-        throw new Error("ticket context is required");
-      }
-      return createSupportTicketKnowledgeDraft(ticketId);
-    },
-    onSuccess: async (draft) => {
-      setActionMessage(`Черновик знания подготовлен: ${draft.title}`);
-      await queryClient.invalidateQueries({ queryKey: ["knowledge-items"] });
-    },
-    onError: () => setActionMessage("Не удалось подготовить черновик знания из паспорта."),
-  });
-
   async function copySafeAnswer() {
     if (!selectedItem || !requesterSafeVisibilities.has(selectedItem.visibility)) {
       setCopyMessage("Только requester-safe материалы можно копировать как ответ пользователю.");
@@ -532,25 +517,21 @@ export function KnowledgeSupportWorkspacePage() {
             <CardContent className="space-y-4 text-sm text-slate-600">
               {ticketId ? (
                 <>
-                  <p>Ticket context подключается через параметр ticket_id, чтобы связать статью с тикетом, записать support_used и собрать черновик знания из паспорта решения.</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button disabled={passportDraftMutation.isPending} onClick={() => passportDraftMutation.mutate()} size="sm" variant="outline">
-                      <FilePlus2 className="mr-2 h-4 w-4" />
-                      Создать черновик из паспорта
-                    </Button>
-                    {passportDraftMutation.data?.edit_url ? (
-                      <Link className="inline-flex items-center text-sm font-medium text-brand-700 hover:underline" to={passportDraftMutation.data.edit_url}>
-                        Открыть черновик
-                      </Link>
-                    ) : null}
-                  </div>
+                  <p>Ticket context подключается через параметр ticket_id, чтобы связать статью с тикетом и записать support_used.</p>
+
+                  {ticketKnowledge?.status === "unavailable" ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                      <p className="font-semibold">База знаний по тикету пока недоступна</p>
+                      <p className="mt-1">Подключение к внешнему сервису знаний ещё не настроено.</p>
+                    </div>
+                  ) : null}
 
                   <div className="rounded-md border border-slate-200 p-3">
                     <div className="flex items-center gap-2">
                       <ListChecks className="h-4 w-4 text-slate-500" />
                       <p className="font-semibold text-slate-900">Self-service попытки</p>
                     </div>
-                    {ticketKnowledgeQuery.isLoading ? (
+                    {ticketWorkspaceQuery.isLoading ? (
                       <p className="mt-2 text-slate-500">Загружаем попытки requester...</p>
                     ) : requesterAttempts.length ? (
                       <div className="mt-3 space-y-2">
@@ -588,11 +569,11 @@ export function KnowledgeSupportWorkspacePage() {
                     )}
                   </div>
 
-                  {ticketKnowledgeQuery.isError ? <p className="text-sm text-rose-700">Не удалось загрузить знания по тикету.</p> : null}
+                  {ticketWorkspaceQuery.isError ? <p className="text-sm text-rose-700">Не удалось загрузить рабочее пространство тикета.</p> : null}
                 </>
               ) : (
                 <>
-                  <p>Добавьте ticket_id в URL, чтобы связать статью с тикетом, увидеть requester attempts и создать черновик из паспорта решения.</p>
+                  <p>Добавьте ticket_id в URL, чтобы связать статью с тикетом и увидеть доступный внешний Knowledge-контекст.</p>
                   <p>Пример: /app/knowledge?ticket_id=TICKET_ID</p>
                 </>
               )}

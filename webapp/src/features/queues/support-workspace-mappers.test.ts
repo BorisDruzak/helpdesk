@@ -322,48 +322,23 @@ function passportReadinessPayload(): SupportTicketPassportReadinessPayload {
 function knowledgePayload(): SupportTicketKnowledgeSuggestionsPayload {
   return {
     ticket_id: "ticket-1",
-    similar_tickets: [
-      {
-        id: "ticket-1011",
-        number: "T-001011",
-        subject: "РћС€РёР±РєР° 502",
-        resolution_summary: "РџРµСЂРµР·Р°РїСѓСЃРє upstream.",
-      },
-    ],
-    articles: [{ id: "KB-502", title: "РћС€РёР±РєР° 502 Bad Gateway", url: "/app/knowledge/KB-502" }],
-    requester_attempts: [
-      {
-        item_id: "KB-502",
-        version_id: "version-502",
-        result: "viewed",
-        surface: "requester_portal",
-        visibility_scope: "creator_visible",
-        audience_scope: "creator",
-        occurred_at: "2026-06-12T08:15:00+05:00",
-      },
-    ],
-    ai_summary: {
-      text: "AI-рекомендация / Бета: проверьте источники перед применением.",
-      sources: ["KB-502", "T-001011"],
-      confidence: "high",
-      source_count: 2,
-    },
+    status: "unavailable",
+    code: "knowledge_unavailable",
+    suggestions: [],
+    similar_tickets: [],
+    articles: [],
+    requester_attempts: [],
+    ai_summary: { text: null, sources: [] },
     diagnostics: {
-      provider: "support_knowledge_provider",
-      provider_version: "local-v1",
-      provider_status: "ok",
+      provider: "external_knowledge_port",
+      provider_version: "v1",
+      provider_status: "unavailable",
       external_provider_status: "not_configured",
-      fallback_reason: null,
-      catalog_entry_count: 5,
-      query_tokens: ["502", "gateway"],
-      source_counts: { manual_kb: 1, catalog: 0, similar_ticket: 1 },
-      query_signals: ["manual_link", "linked_ticket"],
-      article_matches: {
-        "KB-502": { source_type: "manual_kb", score: 100, match_reasons: ["manual_link"] },
-      },
-      similar_ticket_matches: {
-        "ticket-1011": { source_type: "similar_ticket", score: 90, match_reasons: ["linked_ticket"] },
-      },
+      fallback_reason: "knowledge_unavailable",
+      source_counts: {},
+      query_signals: [],
+      article_matches: {},
+      similar_ticket_matches: {},
     },
   };
 }
@@ -1082,7 +1057,7 @@ describe("support workspace mappers", () => {
     });
   });
 
-  it("maps typed knowledge suggestions into the right sidebar model", () => {
+  it("maps the aggregate unavailable Knowledge projection into the right sidebar model", () => {
     const viewModel = mapSupportWorkspaceViewModel({
       activeQueueId: null,
       activeSmartView: "all",
@@ -1093,44 +1068,22 @@ describe("support workspace mappers", () => {
       now: NOW,
     });
 
-    expect(viewModel.right.knowledge.articles).toEqual([
-      { id: "KB-502", title: "РћС€РёР±РєР° 502 Bad Gateway", url: "/app/knowledge/KB-502" },
-    ]);
-    expect(viewModel.right.knowledge.requesterAttempts).toEqual([
-      {
-        itemId: "KB-502",
-        versionId: "version-502",
-        result: "viewed",
-        resultLabel: "Просмотрена",
-        surface: "requester_portal",
-        visibilityScope: "creator_visible",
-        audienceScope: "creator",
-        occurredAt: "2026-06-12T08:15:00+05:00",
-        occurredAtLabel: "12.06.2026, 08:15",
-      },
-    ]);
-    expect(viewModel.right.knowledge.similarTickets[0]).toEqual({
-      id: "ticket-1011",
-      code: "T-001011",
-      subject: "РћС€РёР±РєР° 502",
-      summary: "РџРµСЂРµР·Р°РїСѓСЃРє upstream.",
-    });
-    expect(viewModel.right.knowledge.aiSummary?.sources).toEqual(["KB-502", "T-001011"]);
-    expect(viewModel.right.knowledge.aiSummary?.confidence).toBe("high");
-    expect(viewModel.right.knowledge.diagnostics.sourceCounts).toEqual({ manual_kb: 1, catalog: 0, similar_ticket: 1 });
-    expect(viewModel.right.knowledge.diagnostics.providerStatus).toBe("ok");
-    expect(viewModel.right.knowledge.diagnostics.providerStatusLabel).toBe("готов");
+    expect(viewModel.right.knowledge.status).toBe("unavailable");
+    expect(viewModel.right.knowledge.code).toBe("knowledge_unavailable");
+    expect(viewModel.right.knowledge.articles).toEqual([]);
+    expect(viewModel.right.knowledge.requesterAttempts).toEqual([]);
+    expect(viewModel.right.knowledge.similarTickets).toEqual([]);
+    expect(viewModel.right.knowledge.aiSummary).toBeNull();
+    expect(viewModel.right.knowledge.diagnostics.sourceCounts).toEqual({});
+    expect(viewModel.right.knowledge.diagnostics.providerStatus).toBe("unavailable");
+    expect(viewModel.right.knowledge.diagnostics.providerStatusLabel).toBe("недоступен");
     expect(viewModel.right.knowledge.diagnostics.externalProviderStatus).toBe("not_configured");
     expect(viewModel.right.knowledge.diagnostics.externalProviderStatusLabel).toBe("не подключена");
-    expect(viewModel.right.knowledge.diagnostics.fallbackReasonLabel).toBeNull();
-    expect(viewModel.right.knowledge.diagnostics.catalogEntryCount).toBe(5);
-    expect(viewModel.right.knowledge.diagnostics.queryTokens).toEqual(["502", "gateway"]);
-    expect(viewModel.right.knowledge.diagnostics.querySignals).toEqual(["manual_link", "linked_ticket"]);
-    expect(viewModel.right.knowledge.diagnostics.articleMatches["KB-502"]).toEqual({
-      sourceType: "manual_kb",
-      score: 100,
-      matchReasons: ["manual_link"],
-    });
+    expect(viewModel.right.knowledge.diagnostics.fallbackReason).toBe("knowledge_unavailable");
+    expect(viewModel.right.knowledge.diagnostics.catalogEntryCount).toBe(0);
+    expect(viewModel.right.knowledge.diagnostics.queryTokens).toEqual([]);
+    expect(viewModel.right.knowledge.diagnostics.querySignals).toEqual([]);
+    expect(viewModel.right.knowledge.diagnostics.articleMatches).toEqual({});
   });
 
   it("moves next action away from the first response timer after support reply", () => {

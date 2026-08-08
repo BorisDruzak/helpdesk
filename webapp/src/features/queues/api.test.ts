@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
-  fetchSupportTicketKnowledgeSuggestions,
   fetchSupportTicketTimeline,
+  fetchSupportTicketWorkspace,
   fetchSupportWorkspaceSummary,
   postSupportTicketRead,
 } from "./api";
@@ -48,23 +48,29 @@ describe("support queue API", () => {
     });
   });
 
-  it("loads ticket knowledge suggestions from the typed support endpoint", async () => {
+  it("loads the unavailable Knowledge projection from the aggregate ticket workspace", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
           status: "success",
           data: {
-            ticket_id: "ticket-1",
-            similar_tickets: [
-              {
-                id: "ticket-1011",
-                number: "T-001011",
-                subject: "Ошибка 502",
-                resolution_summary: "Перезапуск upstream.",
+            knowledge: {
+              ticket_id: "ticket-1",
+              status: "unavailable",
+              code: "knowledge_unavailable",
+              suggestions: [],
+              similar_tickets: [],
+              articles: [],
+              requester_attempts: [],
+              ai_summary: { text: null, sources: [] },
+              diagnostics: {
+                provider: "external_knowledge_port",
+                provider_version: "v1",
+                provider_status: "unavailable",
+                external_provider_status: "not_configured",
+                fallback_reason: "knowledge_unavailable",
               },
-            ],
-            articles: [{ id: "KB-502", title: "Ошибка 502 Bad Gateway", url: "/app/knowledge/KB-502" }],
-            ai_summary: { text: "AI-рекомендация / Бета: проверьте источники.", sources: ["KB-502", "T-001011"] },
+            },
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -72,13 +78,16 @@ describe("support queue API", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const knowledge = await fetchSupportTicketKnowledgeSuggestions("ticket-1");
+    const workspace = await fetchSupportTicketWorkspace("ticket-1");
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/web/support/tickets/ticket-1/knowledge-suggestions", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/web/support/tickets/ticket-1/workspace", {
       credentials: "same-origin",
     });
-    expect(knowledge.articles[0].id).toBe("KB-502");
-    expect(knowledge.ai_summary.sources).toContain("T-001011");
+    expect(workspace.knowledge).toMatchObject({
+      status: "unavailable",
+      code: "knowledge_unavailable",
+      suggestions: [],
+    });
   });
 
   it("loads filtered ticket timeline from the typed support endpoint", async () => {

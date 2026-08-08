@@ -148,7 +148,6 @@ describe("TicketPassportPanel", () => {
       <TicketPassportPanel
         isGenerating={false}
         onGenerate={() => undefined}
-        onKnowledgeDraft={() => undefined}
         onPrint={() => undefined}
         onRefresh={() => undefined}
         payload={{ ticket_id: "ticket-1", status: "missing", passport: null, evidence: [], actions: [], approvals: [], related_objects: [] }}
@@ -163,7 +162,6 @@ describe("TicketPassportPanel", () => {
       <TicketPassportPanel
         isGenerating={false}
         onGenerate={() => undefined}
-        onKnowledgeDraft={() => undefined}
         onPrint={() => undefined}
         onRefresh={() => undefined}
         payload={passportPayload}
@@ -178,14 +176,13 @@ describe("TicketPassportPanel", () => {
     expect(screen.getByText("Чем подтверждено решение")).toBeInTheDocument();
     expect(screen.getByText("Обновить по последним действиям")).toBeInTheDocument();
     expect(screen.getByText("Печать / PDF")).toBeInTheDocument();
-    expect(screen.getByText("Сохранить как черновик знания")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Сохранить как черновик знания" })).not.toBeInTheDocument();
   });
   it("renders passport missing facts and export preview", () => {
     render(
       <TicketPassportPanel
         isGenerating={false}
         onGenerate={() => undefined}
-        onKnowledgeDraft={() => undefined}
         onPrint={() => undefined}
         onRefresh={() => undefined}
         payload={{
@@ -247,7 +244,6 @@ describe("TicketPassportPanel", () => {
       <TicketPassportPanel
         isGenerating={false}
         onGenerate={() => undefined}
-        onKnowledgeDraft={() => undefined}
         onPrint={() => undefined}
         onRefresh={() => undefined}
         payload={{
@@ -298,7 +294,6 @@ describe("TicketPassportPanel", () => {
         isGenerating={false}
         onCreateEvidence={onCreateEvidence}
         onGenerate={() => undefined}
-        onKnowledgeDraft={() => undefined}
         onLinkCandidate={onLinkCandidate}
         onPrint={() => undefined}
         onRefresh={() => undefined}
@@ -338,7 +333,6 @@ describe("TicketPassportPanel", () => {
       <TicketPassportPanel
         isGenerating={false}
         onGenerate={() => undefined}
-        onKnowledgeDraft={() => undefined}
         onPatchSections={onPatchSections}
         onPrint={() => undefined}
         onRefresh={() => undefined}

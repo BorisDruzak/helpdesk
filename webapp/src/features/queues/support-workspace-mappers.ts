@@ -1002,6 +1002,8 @@ export function mapWorkspaceKnowledge(knowledge: SupportTicketKnowledgeSuggestio
     ]),
   );
   return {
+    status: knowledge?.status ?? "unavailable",
+    code: knowledge?.code ?? "knowledge_unavailable",
     similarTickets: (knowledge?.similar_tickets ?? []).map((ticket) => ({
       id: ticket.id,
       code: ticket.number ?? ticket.id,

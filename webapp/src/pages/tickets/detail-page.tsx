@@ -31,7 +31,6 @@ import {
   fetchSupportTicketPlaybooks,
   fetchSupportTicketTools,
   generateSupportTicketPassport,
-  createSupportTicketKnowledgeDraft,
   createSupportTicketPassportEvidence,
   linkSupportTicketPassportEvidence,
   patchSupportTicketPassport,
@@ -1494,14 +1493,11 @@ export function TicketPassportPanel({
   candidates,
   disabledReason = null,
   isCreatingEvidence = false,
-  isCreatingKnowledgeDraft = false,
   isGenerating,
   isLinkingCandidate = false,
   isPatchingSections = false,
-  knowledgeDraftMessage = null,
   onCreateEvidence,
   onGenerate,
-  onKnowledgeDraft,
   onLinkCandidate,
   onPatchSections,
   onPrint,
@@ -1511,14 +1507,11 @@ export function TicketPassportPanel({
   candidates?: SupportTicketEvidenceCandidatesPayload;
   disabledReason?: string | null;
   isCreatingEvidence?: boolean;
-  isCreatingKnowledgeDraft?: boolean;
   isGenerating: boolean;
   isLinkingCandidate?: boolean;
   isPatchingSections?: boolean;
-  knowledgeDraftMessage?: string | null;
   onCreateEvidence?: (evidence: SupportTicketPassportEvidenceCreatePayload) => void;
   onGenerate: () => void;
-  onKnowledgeDraft: () => void;
   onLinkCandidate?: (link: { source_kind: string; source_id: string; required_fact?: string | null; visibility?: string }) => void;
   onPatchSections?: (patch: SupportTicketPassportSectionPatchPayload) => void;
   onPrint: () => void;
@@ -1604,9 +1597,6 @@ export function TicketPassportPanel({
           <Button onClick={onPrint} size="sm" variant="outline">
             Печать / PDF
           </Button>
-          <Button disabled={Boolean(disabledReason) || isCreatingKnowledgeDraft} onClick={onKnowledgeDraft} size="sm" variant="outline">
-            {isCreatingKnowledgeDraft ? "Готовим черновик..." : "Сохранить как черновик знания"}
-          </Button>
         </div>
       </div>
 
@@ -1614,12 +1604,6 @@ export function TicketPassportPanel({
         <p className="rounded-[0.8rem] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           {disabledReason}
         </p>
-      ) : null}
-
-      {knowledgeDraftMessage ? (
-        <div className="rounded-[1rem] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
-          {knowledgeDraftMessage}
-        </div>
       ) : null}
 
       {passport.stale ? (
@@ -1981,7 +1965,6 @@ export function TicketDetailPage() {
   const [toolParams, setToolParams] = useState<Record<string, unknown>>({});
   const [toolSearch, setToolSearch] = useState("");
   const [selectedPlaybookVersionId, setSelectedPlaybookVersionId] = useState<number | null>(null);
-  const [knowledgeDraftMessage, setKnowledgeDraftMessage] = useState<string | null>(null);
   const deferredQueueSearch = useDeferredValue(queueSearch);
   const deferredToolSearch = useDeferredValue(toolSearch);
 
@@ -2035,7 +2018,6 @@ export function TicketDetailPage() {
   useEffect(() => {
     setStatusAction("");
     setMessageDraft("");
-    setKnowledgeDraftMessage(null);
     setSelectedPlaybookVersionId(null);
   }, [ticketId]);
 
@@ -2198,28 +2180,11 @@ export function TicketDetailPage() {
       return generateSupportTicketPassport(ticketId, mode);
     },
     onSuccess: async () => {
-      setKnowledgeDraftMessage(null);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["ticket-passport", ticketId] }),
         queryClient.invalidateQueries({ queryKey: ["ticket-passport-candidates", ticketId] }),
         queryClient.invalidateQueries({ queryKey: ["ticket-detail", ticketId] }),
       ]);
-    },
-  });
-
-  const knowledgeDraftMutation = useMutation({
-    mutationFn: async () => {
-      if (!ticketId) {
-        throw new Error("Карточка тикета не выбрана.");
-      }
-      const access = requirePermission(session, "ticket.passport.manage");
-      if (!access.allowed) {
-        throw new Error(access.reason);
-      }
-      return createSupportTicketKnowledgeDraft(ticketId);
-    },
-    onSuccess: (draft) => {
-      setKnowledgeDraftMessage(`Черновик знания подготовлен: ${draft.title}`);
     },
   });
 
@@ -3009,14 +2974,11 @@ export function TicketDetailPage() {
                     candidates={passportCandidatesQuery.data}
                     disabledReason={passportAccess.allowed ? null : passportAccess.reason}
                     isCreatingEvidence={passportCreateEvidenceMutation.isPending}
-                    isCreatingKnowledgeDraft={knowledgeDraftMutation.isPending}
                     isGenerating={passportGenerateMutation.isPending}
                     isLinkingCandidate={passportLinkCandidateMutation.isPending}
                     isPatchingSections={passportPatchSectionsMutation.isPending}
-                    knowledgeDraftMessage={knowledgeDraftMessage}
                     onCreateEvidence={(evidence) => passportCreateEvidenceMutation.mutate(evidence)}
                     onGenerate={() => passportGenerateMutation.mutate("create")}
-                    onKnowledgeDraft={() => knowledgeDraftMutation.mutate()}
                     onLinkCandidate={(link) => passportLinkCandidateMutation.mutate(link)}
                     onPatchSections={(patch) => passportPatchSectionsMutation.mutate(patch)}
                     onPrint={() => navigate(`/app/tickets/${ticketId}/passport/print`)}
