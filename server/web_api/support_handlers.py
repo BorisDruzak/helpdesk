@@ -5166,31 +5166,6 @@ async def handle_web_support_ticket_workspace(request: web.Request):
 
 
 @require_auth("admin", "support")
-async def handle_web_support_ticket_knowledge_suggestions(request: web.Request):
-    try:
-        async with get_session() as session:
-            ticket, error, _repo, _auth_context = await _get_ticket_or_response(request, session, write=False)
-            if error:
-                return error
-            payload = await _build_support_knowledge_suggestions_payload(session, ticket)
-    except Exception as exc:
-        logger.warning(
-            f"[web_support_ticket_knowledge_suggestions] failed: "
-            f"ticket_id={request.match_info.get('ticket_id')}, error={exc}"
-        )
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Knowledge suggestions временно недоступны",
-                "error_code": "SUPPORT_KNOWLEDGE_UNAVAILABLE",
-            },
-            status=503,
-        )
-
-    return json_model_response(SuccessResponse[SupportTicketKnowledgeSuggestionsPayload](data=payload))
-
-
-@require_auth("admin", "support")
 async def handle_web_support_ticket_tools(request: web.Request):
     try:
         async with get_session() as session:
@@ -5660,14 +5635,6 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
 
     return json_model_response(SuccessResponse[SupportTicketPassportDetailPayload](data=_passport_payload_model(payload)))
 
-
-@require_auth("admin", "support", "auditor")
-async def handle_web_support_ticket_passport_knowledge_draft(request: web.Request):
-    del request
-    return web.json_response(
-        {"status": "unavailable", "code": "knowledge_unavailable", "items": []},
-        status=503,
-    )
 
 @require_auth("admin", "support")
 async def handle_web_support_ticket_worklog(request: web.Request):

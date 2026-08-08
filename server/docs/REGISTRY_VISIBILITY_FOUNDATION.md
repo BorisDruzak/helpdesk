@@ -1,8 +1,8 @@
 # Registry Visibility Foundation
 
-Status: active foundation contract. Phase 0 recorded the architecture, Phase 1 added the effective identity/audience read model, Phase 2 added Registry audience-group backend APIs, Phase 3 added prompt-free Registry dialogs plus an audience-group editor, Phase 4 hardened registration/account-session flows, Phase 5 closed the backend Knowledge audience-rule enforcement slice, Phase 6 added the Knowledge Studio visibility selector, Phase 7 recorded live browser/UIA signoff evidence, and Phase 8 has the first backend operability slice for Registry quality plus safe audience import/export.
+Status: active Registry identity/audience foundation. Historical Phase 5-8 Knowledge integrations are no longer active inside Helpdesk; the external Knowledge boundary supersedes Registry-side Knowledge quality and export behavior.
 
-The foundation connects Registry identity, account sessions, audience groups and Knowledge visibility. It extends the current Registry Management Center and Knowledge Platform; it does not replace either one.
+The foundation connects Registry identity, account sessions and audience groups. Future Knowledge visibility consumers must use a versioned external boundary; Registry must not inspect local Knowledge items or rules.
 
 ## Goals
 
@@ -230,13 +230,11 @@ Later phases should surface these as observer events, metrics or Registry qualit
 
 These signals must be redacted and should use ids/counts/reason codes, not article bodies, tokens, cookies or personal data dumps.
 
-Phase 8 backend operability currently surfaces these as generated Registry quality issues in `/api/web/admin/registry`:
+Registry quality currently surfaces Registry-owned issues in `/api/web/admin/registry`:
 
 - `audience_group_empty` for active audience groups whose member preview resolves to zero people;
-- `knowledge_audience_rule_invalid_target` for active Knowledge audience rules that reference missing or archived Registry people, departments, locations or audience groups;
-- `knowledge_audience_zero_users` for requester-visible published Knowledge items whose active item/space audience rules resolve to zero known Registry users.
 
-`GET /api/web/admin/registry/export?format=csv` now supports `audience_groups`, `audience_group_members` and `knowledge_audience_rules`. Registry CSV import preview/apply supports `audience_groups` and `audience_group_members` with row errors, duplicate detection, required `preview_id` on apply and the existing `registry_import_applied` audit event. Direct `device_user_bindings`, account-session and token imports remain unsupported.
+`GET /api/web/admin/registry/export?format=csv` supports Registry-owned `audience_groups` and `audience_group_members`; `knowledge_audience_rules` is rejected as unsupported without querying local Knowledge tables. Registry CSV import preview/apply supports `audience_groups` and `audience_group_members` with row errors, duplicate detection, required `preview_id` on apply and the existing `registry_import_applied` audit event. Direct `device_user_bindings`, account-session and token imports remain unsupported.
 
 ## Verification Matrix
 

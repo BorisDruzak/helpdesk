@@ -53,9 +53,7 @@ PROBLEM_DETECTION_SIGNAL_TYPES = {
     "low_csat_pattern",
     "reopen_pattern",
     "sla_breach_pattern",
-    "failed_kb_pattern",
     "qa_failed_pattern",
-    "knowledge_gap_pattern",
     "manual",
 }
 

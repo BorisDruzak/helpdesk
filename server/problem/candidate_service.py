@@ -463,9 +463,7 @@ class ProblemCandidateService:
             "min_reopen_count": 2,
             "min_low_csat_count": 2,
             "min_sla_breach_count": 3,
-            "min_failed_kb_count": 2,
             "min_failed_qa_count": 2,
-            "min_knowledge_gap_count": 1,
         }
         disabled: set[str] = set()
         rows = (await self.session.execute(select(ProblemDetectionRule))).scalars().all()
@@ -527,9 +525,7 @@ class ProblemCandidateService:
             "low_csat": "low_csat_pattern",
             "reopen": "reopen_pattern",
             "sla_breach": "sla_breach_pattern",
-            "failed_kb": "failed_kb_pattern",
             "qa_failed": "qa_failed_pattern",
-            "knowledge_gap": "knowledge_gap_pattern",
             "repeated_incident": "repeated_incident_pattern",
         }
         return mapping.get(code or "", code or "")

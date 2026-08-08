@@ -1,6 +1,6 @@
 # P4 Problem Management / RCA
 
-P4 turns repeated quality, ticket, knowledge and SLA signals into first-class Problem Management. A problem is not a ticket type: it has its own lifecycle, ticket links, RCA records, known-error/workaround knowledge links, affected objects and audit timeline.
+P4 turns repeated quality, ticket, SLA and operational signals into first-class Problem Management. A problem is not a ticket type: it has its own lifecycle, ticket links, RCA records, affected objects and audit timeline.
 
 ## Problem Model
 
@@ -20,8 +20,6 @@ P4 turns repeated quality, ticket, knowledge and SLA signals into first-class Pr
 - reopen patterns from `ticket_reopen_events`;
 - SLA breach patterns from ticket first-response/resolution breach timestamps;
 - failed QA review patterns from failed/action-required `ticket_quality_reviews`;
-- failed KB and ticket-after-knowledge patterns from `knowledge_feedback_events`;
-- knowledge gap plus repeated-ticket patterns from `knowledge_gap_findings` and ticket volume;
 - repeated tickets by service/offering/request type.
 
 Scans are idempotent by fingerprint. Existing open candidates are updated instead of duplicated, `duplicate_count`/`first_seen_at`/`last_seen_at` are maintained, dismissed candidates respect `dismissed_until`, and converted/accepted/merged candidates are not recreated for the same pattern.
@@ -56,18 +54,13 @@ Supported methodologies include `five_whys`, `fishbone`, `timeline`, `fault_tree
 
 ## Known Errors And Workarounds
 
-Known errors and workarounds are Knowledge Platform items, not duplicated article bodies inside the problem record.
+Helpdesk keeps the problem lifecycle and its local root-cause/workaround/permanent-fix summaries, but it no longer creates, queries or links local Knowledge items. `ProblemKnownErrorService.create_known_error_draft()` and `create_workaround_draft()` currently return the explicit unavailable result with nullable `external_reference=None`; they do not change problem status or insert `problem_known_error_links` rows.
 
-- `ProblemKnownErrorService.create_known_error_draft()` creates a `knowledge_items.item_type=known_error` draft.
-- `ProblemKnownErrorService.create_workaround_draft()` creates a `knowledge_items.item_type=workaround` draft.
-- Draft visibility defaults to `support_internal`.
-- Requester-safe publication must go through Knowledge Platform review/lint/publish flow.
-
-`problem_known_error_links` ties problems to known error, workaround, permanent-fix article, support runbook or requester article items.
+The existing `problem_known_error_links` table is retained only for migration/history safety and is not an active source of truth. A future external Knowledge integration may store an opaque external reference through the versioned boundary; Helpdesk must not infer its format or restore a local draft fallback.
 
 ## Affected Objects
 
-`problem_affected_objects` links a problem to catalog services, offerings, registry services, assets, devices, queues, vendors, locations, departments or knowledge items. Service/offering fields are copied to the problem for analytics and can be used even when a richer registry object does not exist.
+`problem_affected_objects` links a problem to catalog services, offerings, registry services, assets, devices, queues, vendors, locations or departments. Service/offering fields are copied to the problem for analytics and can be used even when a richer registry object does not exist. Historical rows may retain opaque legacy object references, but active Problem Management does not resolve local Knowledge items.
 
 ## APIs
 

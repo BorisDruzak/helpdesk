@@ -117,11 +117,9 @@ P2.2.1 rollout decisions are returned with suggestion responses and control whet
 
 ## Support Workspace
 
-The support workspace knowledge panel keeps the existing `/api/web/support/tickets/{ticket_id}/knowledge-suggestions` shape while merging P2 platform suggestions. Ticket-specific P2 suggestions are split by boundary: requester-safe articles are selected with `KnowledgeSuggestionService(..., actor_role="requester", effective_audience=<ticket requester audience>)`, while `support_internal` runbooks are selected with the support context. This prevents a requester-safe article scoped to another department from appearing in ticket suggestions or payload text, without removing operator-only runbooks. The payload also exposes safe `requester_attempts` from ticket `knowledge_attempts` for original `surface=requester_portal`; only item/version/result/surface/visibility-scope/audience-scope/time fields are returned, and arbitrary attempt metadata is not serialized. Existing `ticket_kb_links` endpoints and `kb_linked` / `kb_unlinked` ticket events remain compatible. The dedicated `/app/knowledge` workspace can also accept `ticket_id` query context, show requester self-service attempts and ticket-scoped suggestions, and use web-session alias `POST /api/web/support/tickets/{ticket_id}/kb_links`, backed by the existing compatibility KB link handler, with `source=knowledge_support_workspace` to emit the redacted Observer event `knowledge.support.ticket_linked`.
+The Helpdesk support workspace no longer reads or writes the local Knowledge runtime. Aggregate `GET /api/web/support/tickets/{ticket_id}/workspace` keeps a typed `knowledge` projection only so the ticket workspace can degrade explicitly: `status=unavailable`, `code=knowledge_unavailable`, and all suggestion/article/attempt/source fields are empty. It never falls back to local Knowledge tables, ticket KB links, the local catalog, requester attempts or audience rules.
 
-Support feedback from `/app/knowledge` reuses `POST /api/knowledge/feedback`: `event_type=support_used` and `surface=support_workspace` emits `knowledge.support.article_used`, while `event_type=not_helpful` plus `result=weak_article_reported` emits `knowledge.support.weak_article_reported`. Runtime audit details carry only safe item/version/ticket/link ids and action metadata, not article bodies or user-entered secret-bearing metadata.
-
-`POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft` now creates a persisted `knowledge_item` draft and first version from the ticket resolution passport. `/app/knowledge` exposes this as a ticket-context action next to the requester attempts panel. The draft inherits service/offering/request-template bindings from the ticket, stores source ticket/passport ids, marks stale-passport warnings and never publishes automatically.
+The former standalone support suggestion endpoint `/api/web/support/tickets/{ticket_id}/knowledge-suggestions` and passport-draft endpoint `/api/web/support/tickets/{ticket_id}/passport/knowledge-draft` are not registered and return the normal 404 response. Helpdesk cannot create a local Knowledge draft from a resolution passport. A future external Knowledge integration must use the versioned `KnowledgePort`; until then the aggregate projection remains unavailable.
 
 ## Ingestion
 
@@ -238,8 +236,6 @@ Ticket compatibility:
 
 - `GET|POST|DELETE /api/tickets/{ticket_id}/kb_links`
 - `POST /api/web/support/tickets/{ticket_id}/kb_links`
-- `GET /api/web/support/tickets/{ticket_id}/knowledge-suggestions`
-- `POST /api/web/support/tickets/{ticket_id}/passport/knowledge-draft`
 
 ## UI
 

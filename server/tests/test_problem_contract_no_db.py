@@ -30,7 +30,9 @@ def test_problem_contract_defines_p4_lifecycle_and_signals() -> None:
     }.issubset(PROBLEM_STATUSES)
     assert {"open", "accepted", "dismissed", "merged", "converted"}.issubset(PROBLEM_CANDIDATE_STATUSES)
     assert {"draft", "in_review", "approved", "rejected", "archived"}.issubset(PROBLEM_RCA_STATUSES)
-    assert {"low_csat_pattern", "reopen_pattern", "sla_breach_pattern", "failed_kb_pattern", "qa_failed_pattern"}.issubset(PROBLEM_DETECTION_SIGNAL_TYPES)
+    assert {"low_csat_pattern", "reopen_pattern", "sla_breach_pattern", "qa_failed_pattern"}.issubset(PROBLEM_DETECTION_SIGNAL_TYPES)
+    assert "failed_kb_pattern" not in PROBLEM_DETECTION_SIGNAL_TYPES
+    assert "knowledge_gap_pattern" not in PROBLEM_DETECTION_SIGNAL_TYPES
     assert {"perform_rca", "implement_permanent_fix", "validate_workaround", "update_known_error"}.issubset(PROBLEM_ACTION_TYPES)
 
 

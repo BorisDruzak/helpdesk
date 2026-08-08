@@ -4,7 +4,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import TestClient, TestServer
 
+from routes import setup_routes
 from scripts.check_domain_import_boundaries import find_forbidden_imports
 from web_api.support_handlers import _build_support_knowledge_suggestions_payload
 
@@ -12,6 +15,10 @@ from web_api.support_handlers import _build_support_knowledge_suggestions_payloa
 pytestmark = pytest.mark.no_db
 
 WORKSPACE = Path(__file__).resolve().parents[2]
+REMOVED_SUPPORT_KNOWLEDGE_ROUTES = {
+    ("GET", "/api/web/support/tickets/{ticket_id}/knowledge-suggestions"),
+    ("POST", "/api/web/support/tickets/{ticket_id}/passport/knowledge-draft"),
+}
 
 
 class _ExplodingSession:
@@ -64,3 +71,34 @@ def test_support_handler_has_no_local_knowledge_dependency() -> None:
         for violation in violations
         if violation.path == WORKSPACE / "server" / "web_api" / "support_handlers.py"
     ] == []
+
+
+def test_support_route_table_excludes_local_knowledge_endpoints() -> None:
+    app = web.Application()
+    setup_routes(app)
+    registered = {
+        (route.method, route.resource.canonical)
+        for route in app.router.routes()
+    }
+
+    assert REMOVED_SUPPORT_KNOWLEDGE_ROUTES.isdisjoint(registered)
+
+
+@pytest.mark.asyncio
+async def test_removed_support_knowledge_endpoints_return_not_found() -> None:
+    app = web.Application()
+    setup_routes(app)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        suggestions = await client.get(
+            "/api/web/support/tickets/ticket-boundary/knowledge-suggestions"
+        )
+        passport_draft = await client.post(
+            "/api/web/support/tickets/ticket-boundary/passport/knowledge-draft"
+        )
+
+        assert suggestions.status == 404
+        assert passport_draft.status == 404
+    finally:
+        await client.close()

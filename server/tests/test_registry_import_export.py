@@ -10,10 +10,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import (
     Device,
     DeviceInventoryBinding,
-    KnowledgeAudienceRule,
-    KnowledgeItem,
-    KnowledgeItemVersion,
-    KnowledgeSpace,
     RegistryAdminEvent,
     RegistryAsset,
     RegistryAudienceGroup,
@@ -114,52 +110,6 @@ async def test_registry_export_audience_groups_and_members_csv(test_engine):
     assert "phase8_export" in groups_csv
     assert "group_code,member_type,member_id,include_children,source" in members_csv
     assert member_id in members_csv
-
-
-@pytest.mark.asyncio
-async def test_registry_export_knowledge_audience_rules_csv(test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    space_id = str(uuid.uuid4())
-    item_id = str(uuid.uuid4())
-    version_id = str(uuid.uuid4())
-    rule_id = str(uuid.uuid4())
-    async with session_maker() as session:
-        session.add(KnowledgeSpace(space_id=space_id, code=f"p8_{uuid.uuid4().hex[:8]}", title="Phase 8", visibility="requester", lifecycle_status="active"))
-        await session.flush()
-        session.add(
-            KnowledgeItem(
-                item_id=item_id,
-                space_id=space_id,
-                slug=f"phase8-export-rule-{uuid.uuid4().hex[:8]}",
-                item_type="article",
-                title="Phase 8 Export Rule",
-                status="published",
-                visibility="requester",
-                current_version_id=version_id,
-            )
-        )
-        session.add(KnowledgeItemVersion(version_id=version_id, item_id=item_id, version_number=1, title="Phase 8 Export Rule", body="body"))
-        session.add(
-            KnowledgeAudienceRule(
-                rule_id=rule_id,
-                subject_type="item",
-                subject_id=item_id,
-                target_type="department_tree",
-                target_id="finance",
-                include_children=True,
-                priority=20,
-                status="active",
-                reason="phase8 export",
-            )
-        )
-        await session.flush()
-
-        rules_csv = await RegistryAdminOperationsService(session).export_csv("knowledge_audience_rules")
-        await session.commit()
-
-    assert "rule_id,subject_type,subject_id,subject_slug,subject_title,target_type,target_id,include_children,priority,status,reason,created_at,updated_at" in rules_csv
-    assert rule_id in rules_csv
-    assert "phase8 export" in rules_csv
 
 
 @pytest.mark.asyncio
