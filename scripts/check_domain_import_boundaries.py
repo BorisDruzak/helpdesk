@@ -17,6 +17,47 @@ MIGRATION_VERSIONS = Path("server/app/db/migrations/versions")
 KNOWLEDGE_MODULE = "knowledge"
 KNOWLEDGE_REPOSITORY = "app.repos.knowledge_repo"
 KNOWLEDGE_MODELS_MODULE = "app.db.models"
+FORBIDDEN_KNOWLEDGE_MODELS = frozenset(
+    {
+        "KnowledgeSpace",
+        "KnowledgeItem",
+        "KnowledgeItemVersion",
+        "KnowledgeChunk",
+        "KnowledgeBinding",
+        "KnowledgeAudienceRule",
+        "KnowledgeTaxonomyTerm",
+        "KnowledgePropertyDefinition",
+        "KnowledgeItemPropertyValue",
+        "KnowledgeItemTaxonomyTerm",
+        "KnowledgeApplicabilityRule",
+        "KnowledgeQualityModel",
+        "KnowledgeNode",
+        "KnowledgeEdge",
+        "KnowledgeGraphLayout",
+        "KnowledgeAiProposal",
+        "KnowledgeEntityMention",
+        "KnowledgeFeedbackEvent",
+        "KnowledgeArticleView",
+        "KnowledgeUserBookmark",
+        "KnowledgeCorrectionRequest",
+        "KnowledgeArticleSubscription",
+        "KnowledgeArticleEditorEvent",
+        "KnowledgeVersionDiffCache",
+        "KnowledgeIngestionJob",
+        "TicketKnowledgeLink",
+        "KnowledgeContentPack",
+        "KnowledgeContentPackItem",
+        "KnowledgeRolloutPolicy",
+        "KnowledgeReviewTask",
+        "KnowledgeReviewComment",
+        "KnowledgeQualitySnapshot",
+        "KnowledgeGapFinding",
+        "KnowledgeSearchEvent",
+        "KnowledgeSearchSettings",
+        "KnowledgeChunkEmbedding",
+        "KnowledgeIndexJob",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -55,6 +96,35 @@ def _format_import_from(module: str, names: list[ast.alias]) -> str:
     return f"from {module} import {imported}"
 
 
+def _importing_package(path: Path, workspace: Path) -> tuple[str, ...]:
+    relative = path.relative_to(workspace / SERVER_ROOT).with_suffix("")
+    return tuple(relative.parts[:-1])
+
+
+def _resolved_import_module(node: ast.ImportFrom, path: Path, workspace: Path) -> str | None:
+    if node.level == 0:
+        return node.module
+
+    package = _importing_package(path, workspace)
+    parent_levels = node.level - 1
+    if parent_levels > len(package):
+        return None
+    base = package[: len(package) - parent_levels]
+    suffix = tuple(node.module.split(".")) if node.module else ()
+    return ".".join((*base, *suffix))
+
+
+def _forbidden_from_import_names(module: str, names: list[ast.alias]) -> list[ast.alias]:
+    if _is_knowledge_module(module) or _is_knowledge_repository(module):
+        return names
+    return [
+        alias
+        for alias in names
+        if _is_knowledge_module(f"{module}.{alias.name}")
+        or _is_knowledge_repository(f"{module}.{alias.name}")
+    ]
+
+
 def _find_file_violations(path: Path, workspace: Path) -> list[ImportViolation]:
     if _is_historical_migration(path, workspace):
         return []
@@ -69,18 +139,22 @@ def _find_file_violations(path: Path, workspace: Path) -> list[ImportViolation]:
                     violations.append(ImportViolation(path, node.lineno, f"import {imported}"))
             continue
 
-        if not isinstance(node, ast.ImportFrom) or node.level != 0 or node.module is None:
+        if not isinstance(node, ast.ImportFrom):
             continue
-        if _is_knowledge_module(node.module) or _is_knowledge_repository(node.module):
-            violations.append(ImportViolation(path, node.lineno, _format_import_from(node.module, node.names)))
+        module = _resolved_import_module(node, path, workspace)
+        if module is None:
             continue
-        if node.module != KNOWLEDGE_MODELS_MODULE:
+        forbidden_names = _forbidden_from_import_names(module, node.names)
+        if forbidden_names:
+            violations.append(ImportViolation(path, node.lineno, _format_import_from(module, forbidden_names)))
+            continue
+        if module != KNOWLEDGE_MODELS_MODULE:
             continue
 
-        knowledge_models = [alias for alias in node.names if alias.name == "*" or alias.name.startswith("Knowledge")]
+        knowledge_models = [alias for alias in node.names if alias.name == "*" or alias.name in FORBIDDEN_KNOWLEDGE_MODELS]
         if knowledge_models:
             violations.append(
-                ImportViolation(path, node.lineno, _format_import_from(node.module, knowledge_models))
+                ImportViolation(path, node.lineno, _format_import_from(module, knowledge_models))
             )
     return violations
 

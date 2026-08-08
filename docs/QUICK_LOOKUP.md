@@ -1,10 +1,11 @@
 ## 2026-08-09 Helpdesk external domain ports (PR-1)
 
-- Start with `server/domain_ports/knowledge.py`, `server/domain_ports/registry.py`, `server/domain_ports/endpoint.py`, `server/domain_ports/unavailable.py`, `server/domain_ports/container.py`, `server/config.py`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` and `server/tests/test_domain_ports.py`.
+- Start with `server/domain_ports/knowledge.py`, `server/domain_ports/registry.py`, `server/domain_ports/endpoint.py`, `server/domain_ports/unavailable.py`, `server/domain_ports/container.py`, `server/config.py`, `scripts/check_domain_import_boundaries.py`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `server/docs/KNOWLEDGE_PLATFORM_API_V1.md`, `server/tests/test_domain_ports.py` and `server/tests/test_domain_import_boundaries.py`.
 - `DomainPortContainer.from_config()` is the explicit composition seam. `KNOWLEDGE_PORT_MODE` defaults to and currently accepts only `unavailable`; other modes fail closed. Each composition creates fresh adapters, with no module-level singleton.
 - `UnavailableKnowledgePort` returns the typed `knowledge_unavailable` result for availability, search, suggestions, feedback and resolution drafts. It performs no local Knowledge, database or HTTP access and is not a Helpdesk route or feature activation.
 - External item/version/correlation identifiers are opaque: DTOs preserve accepted values exactly without trimming, case-folding or parsing and reject values longer than 512 characters rather than truncating them.
-- Focused checks: `python -m pytest server/tests/test_domain_ports.py -q --tb=short`, `python -m compileall -q server/domain_ports`, and `python scripts/docs_drift_check.py --base <base-commit> --json`.
+- `check_domain_import_boundaries.py` resolves absolute and relative imports before rejecting local `knowledge`, `app.repos.knowledge_repo`, and canonical Knowledge ORM dependencies (including `TicketKnowledgeLink`); only historical Alembic versions are exempt. Run it with `python scripts/check_domain_import_boundaries.py`.
+- Focused checks: `python -m pytest server/tests/test_domain_ports.py -q --tb=short`, `python -m pytest server/tests/test_domain_import_boundaries.py -q --tb=short`, `python -m compileall -q server/domain_ports`, `python scripts/check_domain_import_boundaries.py`, and `python scripts/docs_drift_check.py --base <base-commit> --json`.
 
 ## 2026-04-19 agent runtime and launcher flow
 

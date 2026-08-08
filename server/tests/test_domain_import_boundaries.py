@@ -47,6 +47,28 @@ def test_check_rejects_knowledge_repository_import(tmp_path: Path) -> None:
     assert "app.repos.knowledge_repo" in result.stdout
 
 
+def test_check_rejects_relative_knowledge_repository_import(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "app" / "repos" / "consumer.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("from .knowledge_repo import KnowledgeRepo\n", encoding="utf-8")
+
+    result = run_check(tmp_path)
+
+    assert result.returncode == 1
+    assert "app.repos.knowledge_repo" in result.stdout
+
+
+def test_check_rejects_parent_relative_knowledge_repository_import(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "app" / "services" / "consumer.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("from ..repos import knowledge_repo\n", encoding="utf-8")
+
+    result = run_check(tmp_path)
+
+    assert result.returncode == 1
+    assert "from app.repos import knowledge_repo" in result.stdout
+
+
 def test_check_rejects_knowledge_orm_model_import(tmp_path: Path) -> None:
     source = tmp_path / "server" / "tickets" / "bad.py"
     source.parent.mkdir(parents=True)
@@ -56,6 +78,28 @@ def test_check_rejects_knowledge_orm_model_import(tmp_path: Path) -> None:
 
     assert result.returncode == 1
     assert "KnowledgeItem" in result.stdout
+
+
+def test_check_rejects_ticket_knowledge_link_orm_model_import(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "tickets" / "bad.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("from app.db.models import TicketKnowledgeLink\n", encoding="utf-8")
+
+    result = run_check(tmp_path)
+
+    assert result.returncode == 1
+    assert "TicketKnowledgeLink" in result.stdout
+
+
+def test_check_rejects_relative_ticket_knowledge_link_orm_model_import(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "app" / "repos" / "consumer.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("from ..db.models import TicketKnowledgeLink\n", encoding="utf-8")
+
+    result = run_check(tmp_path)
+
+    assert result.returncode == 1
+    assert "app.db.models" in result.stdout
 
 
 def test_check_allows_knowledge_imports_in_historical_migrations(tmp_path: Path) -> None:

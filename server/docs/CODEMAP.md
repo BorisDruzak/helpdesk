@@ -23,8 +23,15 @@
   fresh adapters from the fail-closed `server/config.py::KNOWLEDGE_PORT_MODE`
   setting; PR-1 supports only `unavailable` and defines no singleton or feature
   activation.
-- Focused coverage is `server/tests/test_domain_ports.py`; navigation and drift
-  routing live in `scripts/navigation_catalog.py` and `docs/QUICK_LOOKUP.md`.
+- `scripts/check_domain_import_boundaries.py` is the AST guard for active
+  runtime imports of local `knowledge`, `app.repos.knowledge_repo`, and the
+  canonical local Knowledge ORM set (including `TicketKnowledgeLink`); only
+  historical Alembic version files are exempt. Run
+  `python scripts/check_domain_import_boundaries.py`; focused coverage is in
+  `server/tests/test_domain_import_boundaries.py`.
+- Navigation and drift routing live in `scripts/navigation_catalog.py` and
+  `docs/QUICK_LOOKUP.md`; port-contract coverage remains in
+  `server/tests/test_domain_ports.py`.
 
 Карта кода `pc_client/server`. Используется для быстрой навигации и поиска (в т.ч. скрипт `scripts/agent_find.py` и контекст агента). Пути указаны относительно корня репозитория (например `server/routes.py`).
 
