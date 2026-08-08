@@ -98,6 +98,13 @@ def test_opaque_item_and_correlation_refs_round_trip_without_normalization() -> 
             correlation_id="opaque-correlation",
         )
 
+    with pytest.raises(ValueError):
+        KnowledgeFeedbackRequest(
+            item_ref="opaque-item",
+            feedback_code="helpful",
+            correlation_id="x" * 513,
+        )
+
 
 def test_container_defaults_to_fresh_unavailable_ports(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("config.KNOWLEDGE_PORT_MODE", "unavailable")
