@@ -7,7 +7,9 @@ from typing import Annotated, Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
-OpaqueRef = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=512)]
+# Opaque identifiers are length-bounded for request safety but never trimmed,
+# case-folded, parsed, or otherwise normalized by Helpdesk.
+OpaqueRef = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=512)]
 SafeText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2_000)]
 SafeCode = Annotated[
     str,

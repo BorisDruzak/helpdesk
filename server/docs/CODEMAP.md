@@ -1,6 +1,6 @@
 # CODEMAP (server)
 
-## 2026-08-09 Helpdesk segmentation boundary (PR-0)
+## 2026-08-09 Helpdesk segmentation boundary and ports (PR-0/PR-1)
 
 - `server/docs/SEGMENTATION_BOUNDARIES.md` is the normative ownership map:
   Helpdesk owns tickets/ITSM processes; Endpoint Platform owns the endpoint-agent
@@ -13,6 +13,18 @@
   Knowledge API integration target. Its paths are not registered Helpdesk
   routes. Current local Knowledge runtime remains through PR-0; after PR-6
   `KnowledgePort` has no local fallback and reports `knowledge_unavailable`.
+- `server/domain_ports/knowledge.py`, `registry.py` and `endpoint.py` define the
+  neutral, runtime-checkable dependency-injection protocols. Knowledge request
+  and result DTOs are frozen, forbid extra content fields and preserve opaque
+  refs exactly, subject to the documented 512-character limit.
+- `server/domain_ports/unavailable.py` contains side-effect-free unavailable
+  adapters with no DB, HTTP or legacy Knowledge access.
+  `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
+  fresh adapters from the fail-closed `server/config.py::KNOWLEDGE_PORT_MODE`
+  setting; PR-1 supports only `unavailable` and defines no singleton or feature
+  activation.
+- Focused coverage is `server/tests/test_domain_ports.py`; navigation and drift
+  routing live in `scripts/navigation_catalog.py` and `docs/QUICK_LOOKUP.md`.
 
 Карта кода `pc_client/server`. Используется для быстрой навигации и поиска (в т.ч. скрипт `scripts/agent_find.py` и контекст агента). Пути указаны относительно корня репозитория (например `server/routes.py`).
 

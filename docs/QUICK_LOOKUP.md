@@ -1,3 +1,11 @@
+## 2026-08-09 Helpdesk external domain ports (PR-1)
+
+- Start with `server/domain_ports/knowledge.py`, `server/domain_ports/registry.py`, `server/domain_ports/endpoint.py`, `server/domain_ports/unavailable.py`, `server/domain_ports/container.py`, `server/config.py`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` and `server/tests/test_domain_ports.py`.
+- `DomainPortContainer.from_config()` is the explicit composition seam. `KNOWLEDGE_PORT_MODE` defaults to and currently accepts only `unavailable`; other modes fail closed. Each composition creates fresh adapters, with no module-level singleton.
+- `UnavailableKnowledgePort` returns the typed `knowledge_unavailable` result for availability, search, suggestions, feedback and resolution drafts. It performs no local Knowledge, database or HTTP access and is not a Helpdesk route or feature activation.
+- External item/version/correlation identifiers are opaque: DTOs preserve accepted values exactly without trimming, case-folding or parsing and reject values longer than 512 characters rather than truncating them.
+- Focused checks: `python -m pytest server/tests/test_domain_ports.py -q --tb=short`, `python -m compileall -q server/domain_ports`, and `python scripts/docs_drift_check.py --base <base-commit> --json`.
+
 ## 2026-04-19 agent runtime and launcher flow
 
 - 2026-06-25 Observer integrity recurrence counters: start with `server/app/repos/observer_integrity_repo.py`, `server/app/db/models.py::ObserverIntegrityEvent`, migration `20260625_130_observer_integrity_recurrence_counters.py`, `server/web_api/observer_integrity_handlers.py`, `server/web_api/support_handlers.py`, `server/tests/test_observer_integrity_scan_scope.py`, `server/tests/test_observer_integrity.py`, `server/tests/test_migration_schema_contract.py`, `server/docs/OBSERVER_LAYER.md`, `server/docs/OBSERVER_AUTHORING_RULES.md` and `PLANS.md`. `scan_observation_count` increments for every repeated scan observation, `recurrence_count` increments only when a previously resolved condition returns, `last_reopened_at` records that transition, and legacy `occurrence_count` is kept as a recurrence alias so scanner loops do not look like repeated real incidents.

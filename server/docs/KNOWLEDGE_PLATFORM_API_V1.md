@@ -12,8 +12,10 @@ from Helpdesk route registration.
 - Service callers authenticate with mTLS and an OAuth 2.0 client-credential
   access token. Knowledge validates both caller identity and the required scope.
 - External IDs (`item_ref`, `version_ref`, `feedback_ref`, `draft_ref`) and
-  `correlation_id` are opaque strings. Helpdesk passes them through without
-  parsing or exposing them to untrusted clients.
+  `correlation_id` are opaque strings. Helpdesk preserves them exactly without
+  trimming, case-folding or parsing, and does not expose them to untrusted
+  clients. The initial client-side DTOs reject values longer than 512
+  characters rather than truncating or rewriting them.
 - `correlation_id` is supplied by Helpdesk per operation and is safe for
   redacted tracing. It must not contain tokens, cookies, raw search text,
   personal data or article content.

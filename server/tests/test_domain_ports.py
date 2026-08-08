@@ -74,6 +74,31 @@ def test_knowledge_projection_rejects_content_fields() -> None:
         )
 
 
+def test_opaque_item_and_correlation_refs_round_trip_without_normalization() -> None:
+    item_ref = "  opaque:item/ref  "
+    correlation_id = "\tcorrelation:case-sensitive \n"
+
+    request = KnowledgeFeedbackRequest(
+        item_ref=item_ref,
+        feedback_code="helpful",
+        correlation_id=correlation_id,
+    )
+    payload = request.model_dump()
+    restored = KnowledgeFeedbackRequest.model_validate(payload)
+
+    assert payload["item_ref"] == item_ref
+    assert payload["correlation_id"] == correlation_id
+    assert restored.item_ref == item_ref
+    assert restored.correlation_id == correlation_id
+
+    with pytest.raises(ValueError):
+        KnowledgeFeedbackRequest(
+            item_ref="x" * 513,
+            feedback_code="helpful",
+            correlation_id="opaque-correlation",
+        )
+
+
 def test_container_defaults_to_fresh_unavailable_ports(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("config.KNOWLEDGE_PORT_MODE", "unavailable")
 

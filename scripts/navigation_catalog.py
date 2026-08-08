@@ -79,6 +79,57 @@ class ChangedPath:
 
 TOPICS: tuple[Topic, ...] = (
     Topic(
+        key="helpdesk_external_domain_ports",
+        title="Helpdesk external domain ports",
+        summary="PR-0/PR-1 ownership boundary and dependency-injection contracts for external Endpoint, Knowledge and Registry domains. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists.",
+        aliases=(
+            "helpdesk segmentation",
+            "external domain ports",
+            "domain_ports",
+            "KnowledgePort",
+            "RegistryPort",
+            "EndpointPort",
+            "KNOWLEDGE_PORT_MODE",
+            "knowledge_unavailable",
+        ),
+        first_files=(
+            "server/domain_ports/knowledge.py",
+            "server/domain_ports/registry.py",
+            "server/domain_ports/endpoint.py",
+            "server/domain_ports/unavailable.py",
+            "server/domain_ports/container.py",
+            "server/config.py",
+        ),
+        related_docs=(
+            "server/docs/SEGMENTATION_BOUNDARIES.md",
+            "server/docs/KNOWLEDGE_PLATFORM_API_V1.md",
+            "server/docs/adr/0001-helpdesk-external-domain-ports.md",
+            "server/docs/CODEMAP.md",
+            "docs/QUICK_LOOKUP.md",
+            "docs/ARCHITECTURE_BOUNDARIES.md",
+        ),
+        suggested_commands=(
+            'python scripts/agent_find.py "domain_ports" --dir server',
+            "python -m pytest server/tests/test_domain_ports.py -q --tb=short",
+            "python scripts/docs_drift_check.py --base <base-commit> --json",
+        ),
+        mode="Server / architecture boundary",
+        skills=(DOCS_SYNC_SKILL, TESTS_SKILL),
+        checks=(
+            "python scripts/verify_workspace.py",
+            "python -m pytest server/tests/test_domain_ports.py -q --tb=short",
+            "python scripts/docs_drift_check.py --base <base-commit> --json",
+        ),
+        docs_to_update=(
+            "server/docs/SEGMENTATION_BOUNDARIES.md",
+            "server/docs/KNOWLEDGE_PLATFORM_API_V1.md",
+            "server/docs/CODEMAP.md",
+            "docs/QUICK_LOOKUP.md",
+            "docs/ARCHITECTURE_BOUNDARIES.md",
+        ),
+        path_prefixes=("server/domain_ports/",),
+    ),
+    Topic(
         key="protocol_v3",
         title="Protocol V3 / handshake",
         summary="WS handshake, reconnect-safe runtime ownership, transient WSS/proxy handshake failures staying in reconnect/backoff while explicit 4003 auth rejects trigger reprovision, state-level command waiters registered before dispatch wakeup, envelope V3, terminal-only outbox dedupe for retryable NACK safety, ACK/NACK with durable v2 ACK persistence audit rows for Observer proof (`persisted_event_id`, duplicate proof, or documented no-op), optional outbox batching, device-event envelopes sourced from device_seq without leaking SQLite compatibility ticket_id, command_result semantics including module install inventory sync, partial ToolResponse preservation as failed lifecycle rather than success, command_result_ack durable replay including cached terminal duplicate-send failures, late-result reconciliation after watchdog timeout with current error-field cleanup, handshake toolset refresh based on pre-upsert hash/snapshot state with pending/running `list_tools` debounce that skips duplicate enqueue and leaves refresh time unchanged, AGENT_RESTARTED startup and duplicate-redelivery recovery, command lifecycle DB import isolation and graceful sender/teardown behavior in server and agent runtimes.",
@@ -4407,6 +4458,20 @@ TOPICS: tuple[Topic, ...] = (
 
 
 DRIFT_RULES: tuple[DriftRule, ...] = (
+    DriftRule(
+        key="helpdesk_external_domain_ports",
+        title="External domain port contracts changed",
+        reason="Helpdesk segmentation ports, fail-closed composition and external API contracts must stay discoverable in navigation and boundary docs.",
+        path_prefixes=("server/domain_ports/",),
+        required_artifacts_all=("docs/QUICK_LOOKUP.md", "scripts/navigation_catalog.py"),
+        required_docs=(
+            "server/docs/SEGMENTATION_BOUNDARIES.md",
+            "server/docs/KNOWLEDGE_PLATFORM_API_V1.md",
+            "server/docs/CODEMAP.md",
+            "docs/QUICK_LOOKUP.md",
+            "docs/ARCHITECTURE_BOUNDARIES.md",
+        ),
+    ),
     DriftRule(
         key="live_testing_debug_rules",
         title="Live testing/debug rules changed",
