@@ -236,15 +236,13 @@ Operational rollback for deflection is to disable rollout globally, disable it p
 
 ## Support Workflow
 
-Support-facing knowledge operations use the same backend data as admin:
+Ticket-integrated Knowledge is unavailable until an external service is configured through the versioned `KnowledgePort`:
 
-- read requester-safe and support-internal suggestions;
-- see quality/freshness context;
-- link/use knowledge through existing KB compatibility and feedback events;
-- generate review tasks when knowledge is outdated;
-- create article/runbook/known-error/workaround drafts from ticket or gap context.
+- aggregate support workspace responses expose `knowledge.status=unavailable`, `code=knowledge_unavailable` and empty suggestions;
+- standalone ticket suggestion and passport-to-Knowledge draft routes are removed;
+- Helpdesk does not query local Knowledge for ticket suggestions or create local article/runbook/known-error/workaround drafts from ticket, passport or gap context.
 
-Support must not receive `admin_internal` or `security_restricted` items through support endpoints.
+Separately authorized browsing, search and feedback on generic Knowledge-owned surfaces remain Knowledge operations. They are not populated from Helpdesk ticket context and do not make local Knowledge a Helpdesk dependency.
 
 ## Agent And Requester Behavior
 
