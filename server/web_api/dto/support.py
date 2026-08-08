@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -1295,6 +1295,9 @@ class SupportTicketKnowledgeSuggestionsPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     ticket_id: str
+    status: Literal["unavailable"] = "unavailable"
+    code: Literal["knowledge_unavailable"] = "knowledge_unavailable"
+    suggestions: list[SupportKnowledgeArticle] = Field(default_factory=list)
     similar_tickets: list[SupportKnowledgeSimilarTicket] = Field(default_factory=list)
     articles: list[SupportKnowledgeArticle] = Field(default_factory=list)
     requester_attempts: list[SupportKnowledgeRequesterAttempt] = Field(default_factory=list)

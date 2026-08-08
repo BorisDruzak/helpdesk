@@ -10,8 +10,6 @@ from typing import Any
 from sqlalchemy import select
 
 from app.db.models import (
-    KnowledgeFeedbackEvent,
-    KnowledgeGapFinding,
     ProblemActivityEvent,
     ProblemCandidate,
     ProblemDetectionRule,
@@ -51,8 +49,6 @@ class ProblemCandidateService:
             self._reopen_candidates,
             self._sla_breach_candidates,
             self._failed_qa_candidates,
-            self._failed_kb_candidates,
-            self._knowledge_gap_candidates,
             self._repeated_incident_candidates,
         ):
             payloads.extend(await builder(window_start, now, rules))
@@ -333,102 +329,6 @@ class ProblemCandidateService:
                         "window_end": end.isoformat(),
                     },
                     "confidence_score": min(1.0, 0.5 + len(items) / 10),
-                }
-            )
-        return result
-
-    async def _failed_kb_candidates(self, start: datetime, end: datetime, rules: dict[str, Any]) -> list[dict[str, Any]]:
-        if self._disabled("failed_kb_pattern", rules):
-            return []
-        rows = (
-            await self.session.execute(
-                select(KnowledgeFeedbackEvent).where(
-                    KnowledgeFeedbackEvent.created_at >= start,
-                    KnowledgeFeedbackEvent.created_at <= end,
-                    KnowledgeFeedbackEvent.event_type.in_(["not_helpful", "ticket_created_after_view"]),
-                )
-            )
-        ).scalars().all()
-        groups: dict[tuple[str, str, str], list[KnowledgeFeedbackEvent]] = defaultdict(list)
-        for row in rows:
-            groups[(row.service_code or "legacy", row.offering_code or "uncategorized", row.item_id or "unknown")].append(row)
-        result = []
-        for (service, offering, item_id), items in groups.items():
-            if len(items) < int(rules["thresholds"].get("min_failed_kb_count", 2)):
-                continue
-            ticket_ids = [item.ticket_id for item in items if item.ticket_id]
-            result.append(
-                {
-                    "fingerprint": self._fingerprint("failed_kb_pattern", "failed_kb", service, offering, item_id, start),
-                    "rule_code": "failed_kb",
-                    "signal_type": "failed_kb_pattern",
-                    "title": f"Failed KB pattern: {service} / {offering}",
-                    "summary": f"{len(items)} failed knowledge signals in the scan window.",
-                    "service_code": service,
-                    "offering_code": offering,
-                    "ticket_count": len(set(ticket_ids)),
-                    "failed_kb_count": len(items),
-                    "evidence_json": {
-                        "ticket_ids": list(set(ticket_ids))[:20],
-                        "failed_kb_count": len(items),
-                        "knowledge_item_ids": [item_id] if item_id != "unknown" else [],
-                        "event_type_counts": dict(Counter(item.event_type for item in items)),
-                        "window_start": start.isoformat(),
-                        "window_end": end.isoformat(),
-                    },
-                    "confidence_score": min(1.0, 0.45 + len(items) / 10),
-                }
-            )
-        return result
-
-    async def _knowledge_gap_candidates(self, start: datetime, end: datetime, rules: dict[str, Any]) -> list[dict[str, Any]]:
-        if self._disabled("knowledge_gap_pattern", rules):
-            return []
-        findings = (
-            await self.session.execute(
-                select(KnowledgeGapFinding).where(
-                    KnowledgeGapFinding.status.in_(["open", "accepted"]),
-                    KnowledgeGapFinding.created_at <= end,
-                )
-            )
-        ).scalars().all()
-        result = []
-        for finding in findings:
-            service = finding.service_code or "legacy"
-            offering = finding.offering_code or "uncategorized"
-            tickets = (
-                await self.session.execute(
-                    select(Ticket).where(
-                        Ticket.created_at >= start,
-                        Ticket.created_at <= end,
-                        Ticket.service_code == finding.service_code,
-                        Ticket.offering_code == finding.offering_code,
-                    )
-                )
-            ).scalars().all()
-            if len(tickets) < int(rules["thresholds"].get("min_ticket_count", 5)) and len(tickets) < 3:
-                continue
-            result.append(
-                {
-                    "fingerprint": self._fingerprint("knowledge_gap_pattern", "knowledge_gap", service, offering, finding.gap_type, start),
-                    "rule_code": "knowledge_gap",
-                    "signal_type": "knowledge_gap_pattern",
-                    "title": f"Knowledge gap pattern: {service} / {offering}",
-                    "summary": f"Open knowledge gap {finding.gap_type} with repeated tickets.",
-                    "service_code": service,
-                    "offering_code": offering,
-                    "ticket_count": len(tickets),
-                    "failed_kb_count": 1,
-                    "evidence_json": {
-                        "ticket_ids": [item.ticket_id for item in tickets[:20]],
-                        "ticket_count": len(tickets),
-                        "failed_kb_count": 1,
-                        "gap_finding_ids": [finding.finding_id],
-                        "gap_type_counts": {finding.gap_type: 1},
-                        "window_start": start.isoformat(),
-                        "window_end": end.isoformat(),
-                    },
-                    "confidence_score": min(1.0, 0.4 + len(tickets) / 10),
                 }
             )
         return result

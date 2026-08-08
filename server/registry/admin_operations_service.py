@@ -21,8 +21,6 @@ from app.db.models import (
     DeviceRegistrationClaim,
     DeviceRegistrationEvent,
     DeviceUserBinding,
-    KnowledgeAudienceRule,
-    KnowledgeItem,
     RegistryAdminEvent,
     RegistryAsset,
     RegistryAudienceGroup,
@@ -2425,6 +2423,8 @@ class RegistryAdminOperationsService:
 
     async def _build_export_rows(self, export_type: str) -> dict[str, Any]:
         export_type = str(export_type or "").strip().lower()
+        if export_type == "knowledge_audience_rules":
+            raise ValueError("unsupported export type")
         if export_type == "locations":
             rows = await self.list_locations()
             columns = ["location_id", "display_name", "building", "floor", "room", "users_count", "devices_count", "status", "updated_at"]
@@ -2493,62 +2493,6 @@ class RegistryAdminOperationsService:
                 "membership_id",
                 "valid_from",
                 "valid_to",
-                "created_at",
-                "updated_at",
-            ]
-        elif export_type == "knowledge_audience_rules":
-            items = (
-                await self.session.execute(
-                    select(KnowledgeItem.item_id, KnowledgeItem.slug, KnowledgeItem.title)
-                )
-            ).all()
-            item_meta = {
-                item_id: {"subject_slug": slug, "subject_title": title}
-                for item_id, slug, title in items
-            }
-            rules = (
-                await self.session.execute(
-                    select(KnowledgeAudienceRule).order_by(
-                        KnowledgeAudienceRule.subject_type.asc(),
-                        KnowledgeAudienceRule.subject_id.asc(),
-                        KnowledgeAudienceRule.priority.asc(),
-                        KnowledgeAudienceRule.created_at.asc(),
-                        KnowledgeAudienceRule.rule_id.asc(),
-                    )
-                )
-            ).scalars().all()
-            rows = []
-            for rule in rules:
-                subject_meta = item_meta.get(rule.subject_id, {}) if rule.subject_type == "item" else {}
-                rows.append(
-                    {
-                        "rule_id": rule.rule_id,
-                        "subject_type": rule.subject_type,
-                        "subject_id": rule.subject_id,
-                        "subject_slug": subject_meta.get("subject_slug"),
-                        "subject_title": subject_meta.get("subject_title"),
-                        "target_type": rule.target_type,
-                        "target_id": rule.target_id,
-                        "include_children": bool(rule.include_children),
-                        "priority": rule.priority,
-                        "status": rule.status,
-                        "reason": rule.reason,
-                        "created_at": rule.created_at,
-                        "updated_at": rule.updated_at,
-                    }
-                )
-            columns = [
-                "rule_id",
-                "subject_type",
-                "subject_id",
-                "subject_slug",
-                "subject_title",
-                "target_type",
-                "target_id",
-                "include_children",
-                "priority",
-                "status",
-                "reason",
                 "created_at",
                 "updated_at",
             ]

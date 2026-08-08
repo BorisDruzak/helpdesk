@@ -98,11 +98,6 @@ from tickets.approval_policy import build_approval_summary
 from tickets.closure_policy import build_closure_requirements
 from tickets.evidence_service import TicketEvidenceService
 from tickets.diagnostic_target import resolve_ticket_diagnostic_target
-from tickets.knowledge_provider import build_knowledge_suggestions
-from knowledge.suggestion_service import KnowledgeSuggestionService
-from knowledge.passport_draft_service import KnowledgePassportDraftService
-from knowledge.attempts import sanitize_knowledge_attempts
-from registry.effective_identity_service import EffectiveIdentityService
 from inventory.service import DeviceInventoryService, binding_to_dict
 from tickets.notification_service import notify_ticket_event
 from tickets.passport_service import TicketPassportService
@@ -152,11 +147,7 @@ from web_api.dto.support import (
     SupportTicketQualityPayload,
     SupportTicketQualityReopenEvent,
     SupportTicketQualityReview,
-    SupportKnowledgeAiSummary,
-    SupportKnowledgeArticle,
     SupportKnowledgeDiagnostics,
-    SupportKnowledgeRequesterAttempt,
-    SupportKnowledgeSimilarTicket,
     SupportTicketMessage,
     SupportTicketMutationActionResult,
     SupportTicketEvidenceCandidatesPayload,
@@ -195,7 +186,6 @@ from web_api.dto.support import (
     SupportWorkspaceSummaryPayload,
     SupportWorkspaceSummaryQueueItem,
     SupportWorkspaceCleanupResult,
-    SupportTicketKnowledgeDraftPayload,
     SupportPlaybookItem,
     SupportPlaybookRunActionResult,
     SupportToolActionResult,
@@ -206,7 +196,6 @@ from web_api.dto.support import (
 from config import AGENT_BUILTIN_MODULES, ALLOW_REMOTE_CODE
 
 
-REQUESTER_SAFE_KNOWLEDGE_VISIBILITIES = {"public", "requester", "agent_requester_safe"}
 
 
 SCOPE_OPTIONS = [
@@ -3687,141 +3676,17 @@ async def _safe_support_observer_summary(session, ticket_id: str) -> dict[str, A
         }
 
 
-async def _resolve_ticket_requester_knowledge_audience(session, ticket: Ticket):
-    person_id = str(getattr(ticket, "requester_person_id", "") or "").strip() or None
-    actor_id = str(getattr(ticket, "requester_id", "") or "").strip() or None
-    return await EffectiveIdentityService(session).resolve_person_audience(
-        person_id=person_id,
-        actor_id=actor_id,
-        actor_role="requester",
-    )
-
-
-def _knowledge_suggestion_key(item: dict[str, Any]) -> str:
-    return str(item.get("slug") or item.get("item_id") or "").strip()
-
-
-def _is_requester_safe_knowledge_suggestion(item: dict[str, Any]) -> bool:
-    return str(item.get("visibility") or "").strip() in REQUESTER_SAFE_KNOWLEDGE_VISIBILITIES
-
-
-def _merge_ticket_knowledge_suggestions(
-    *,
-    requester_suggestions: list[Any],
-    support_suggestions: list[Any],
-) -> list[dict[str, Any]]:
-    merged: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    def add(item: Any) -> None:
-        if not isinstance(item, dict):
-            return
-        key = _knowledge_suggestion_key(item)
-        if not key or key in seen or not item.get("title"):
-            return
-        seen.add(key)
-        merged.append(item)
-
-    for item in requester_suggestions:
-        if isinstance(item, dict) and _is_requester_safe_knowledge_suggestion(item):
-            add(item)
-    for item in support_suggestions:
-        if isinstance(item, dict) and not _is_requester_safe_knowledge_suggestion(item):
-            add(item)
-    return merged
-
-
 async def _build_support_knowledge_suggestions_payload(session, ticket: Ticket) -> SupportTicketKnowledgeSuggestionsPayload:
+    del session
     ticket_id = str(getattr(ticket, "ticket_id", "") or "")
-    kb_links = await TicketEventsRepo(session).list_kb_links(ticket_id)
-    suggestions = await build_knowledge_suggestions(session, ticket, kb_links)
-    custom_fields = getattr(ticket, "custom_fields", None) if isinstance(getattr(ticket, "custom_fields", None), dict) else {}
-    raw_attempts = custom_fields.get("knowledge_attempts")
-    requester_raw_attempts = [
-        attempt
-        for attempt in (raw_attempts if isinstance(raw_attempts, list) else [])
-        if isinstance(attempt, dict)
-        and str(attempt.get("surface") or "requester_portal").strip() == "requester_portal"
-    ]
-    requester_attempts = [
-        SupportKnowledgeRequesterAttempt(
-            item_id=str(attempt.get("item_id") or ""),
-            version_id=str(attempt.get("version_id") or "").strip() or None,
-            result=str(attempt.get("result") or "viewed"),
-            surface=str(attempt.get("surface") or "requester_portal"),
-            visibility_scope=str(attempt.get("visibility_scope") or "creator_visible"),
-            audience_scope=str(attempt.get("audience_scope") or "creator"),
-            occurred_at=str(attempt.get("occurred_at") or ""),
-        )
-        for attempt in sanitize_knowledge_attempts(requester_raw_attempts, surface="requester_portal")
-        if attempt.get("surface") == "requester_portal"
-    ]
-    request_template = custom_fields.get("request_template") if isinstance(custom_fields.get("request_template"), dict) else {}
-    suggestion_context = {
-        "service_code": getattr(ticket, "service_code", None),
-        "offering_code": getattr(ticket, "offering_code", None),
-        "request_template_key": request_template.get("key") or request_template.get("template_code"),
-        "ticket_type": getattr(ticket, "ticket_type", None),
-        "query": f"{getattr(ticket, 'title', '')} {getattr(ticket, 'description', '')}".strip(),
-        "surface": "support_workspace",
-    }
-    suggestion_service = KnowledgeSuggestionService(session)
-    requester_audience = await _resolve_ticket_requester_knowledge_audience(session, ticket)
-    support_p2_suggestions = await suggestion_service.suggest(
-        suggestion_context,
-        actor_role="support",
-    )
-    requester_p2_suggestions = await suggestion_service.suggest(
-        suggestion_context,
-        actor_role="requester",
-        effective_audience=requester_audience,
-    )
-    p2_items = _merge_ticket_knowledge_suggestions(
-        requester_suggestions=requester_p2_suggestions.get("suggestions", []),
-        support_suggestions=support_p2_suggestions.get("suggestions", []),
-    )
-    p2_articles = [
-        SupportKnowledgeArticle(
-            id=str(item.get("slug") or item.get("item_id") or ""),
-            title=str(item.get("title") or item.get("slug") or ""),
-            url=f"/app/knowledge?item={item.get('slug') or item.get('item_id')}",
-        )
-        for item in p2_items
-    ]
     return SupportTicketKnowledgeSuggestionsPayload(
         ticket_id=ticket_id,
-        similar_tickets=[
-            SupportKnowledgeSimilarTicket(
-                id=item.id,
-                number=item.number,
-                subject=item.subject,
-                resolution_summary=item.resolution_summary,
-            )
-            for item in suggestions.similar_tickets
-        ],
-        articles=[
-            SupportKnowledgeArticle(id=item.id, title=item.title, url=item.url)
-            for item in suggestions.articles
-        ] + p2_articles,
-        requester_attempts=requester_attempts,
-        ai_summary=SupportKnowledgeAiSummary(
-            text=suggestions.ai_summary.text,
-            sources=suggestions.ai_summary.sources,
-            confidence=suggestions.ai_summary.confidence,
-            source_count=suggestions.ai_summary.source_count,
-        ),
         diagnostics=SupportKnowledgeDiagnostics(
-            provider=suggestions.diagnostics.provider,
-            provider_version=suggestions.diagnostics.provider_version,
-            provider_status=suggestions.diagnostics.provider_status,
-            external_provider_status=suggestions.diagnostics.external_provider_status,
-            fallback_reason=suggestions.diagnostics.fallback_reason,
-            catalog_entry_count=suggestions.diagnostics.catalog_entry_count,
-            query_tokens=suggestions.diagnostics.query_tokens,
-            source_counts=suggestions.diagnostics.source_counts,
-            query_signals=suggestions.diagnostics.query_signals,
-            article_matches=suggestions.diagnostics.article_matches,
-            similar_ticket_matches=suggestions.diagnostics.similar_ticket_matches,
+            provider="external_knowledge_port",
+            provider_version="v1",
+            provider_status="unavailable",
+            external_provider_status="not_configured",
+            fallback_reason="knowledge_unavailable",
         ),
     )
 
@@ -5798,64 +5663,11 @@ async def handle_web_support_ticket_passport_evidence(request: web.Request):
 
 @require_auth("admin", "support", "auditor")
 async def handle_web_support_ticket_passport_knowledge_draft(request: web.Request):
-    request_payload: dict[str, Any] = {}
-    if request.can_read_body:
-        try:
-            raw_payload = await _read_support_json(request)
-            request_payload = raw_payload if isinstance(raw_payload, dict) else {}
-        except Exception:
-            request_payload = {}
-    try:
-        async with get_session() as session:
-            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
-            if error:
-                return error
-            denied = await _require_permission(session, auth_context, "ticket.passport.manage")
-            if denied:
-                return denied
-            payload = await TicketPassportService(session).get_payload(ticket.ticket_id)
-            passport = payload.get("passport")
-            if not passport:
-                payload = await TicketPassportService(session).generate(ticket.ticket_id, actor_id=None, mode="create")
-                passport = payload["passport"]
-            draft_result = await KnowledgePassportDraftService(session).create_draft_from_ticket(
-                ticket.ticket_id,
-                item_type=str(request_payload.get("item_type") or "article"),
-                actor_id=auth_context.actor_id,
-            )
-            await session.commit()
-    except Exception as exc:
-        logger.warning(
-            f"[web_support_ticket_passport_knowledge_draft] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
-        )
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Не удалось подготовить черновик знания",
-                "error_code": "PASSPORT_KB_DRAFT_FAILED",
-            },
-            status=503,
-        )
-    sections = passport.get("sections") or {}
-    draft = SupportTicketKnowledgeDraftPayload(
-        title=f"Решение по тикету {request.match_info.get('ticket_id')}",
-        problem=sections.get("problem") or "Проблема не описана",
-        resolution=sections.get("user_result") or sections.get("changes_made") or "Решение не описано",
-        repeat_guidance=sections.get("repeat_guidance") or "При повторе создать заявку с деталями ошибки.",
-        source_passport_id=int(passport["passport_id"]),
+    del request
+    return web.json_response(
+        {"status": "unavailable", "code": "knowledge_unavailable", "items": []},
+        status=503,
     )
-    item = draft_result["item"]
-    version = draft_result["version"]
-    draft.title = item["title"]
-    draft.item_id = item["item_id"]
-    draft.version_id = version["version_id"]
-    draft.status = item["status"]
-    draft.item_type = item["item_type"]
-    draft.edit_url = f"/app/admin/knowledge?item={item['item_id']}"
-    draft.warnings = draft_result.get("warnings") or []
-    draft.bindings = draft_result.get("bindings") or []
-    return json_model_response(SuccessResponse[SupportTicketKnowledgeDraftPayload](data=draft))
-
 
 @require_auth("admin", "support")
 async def handle_web_support_ticket_worklog(request: web.Request):
