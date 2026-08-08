@@ -24,6 +24,10 @@ except ImportError:
 SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 8666
 
+# External-domain composition is fail-closed. PR-1 intentionally provides no
+# HTTP client or feature activation mode; only the unavailable adapter exists.
+KNOWLEDGE_PORT_MODE = (os.getenv("KNOWLEDGE_PORT_MODE", "unavailable") or "unavailable").strip().lower()
+
 # ============================================================================
 # Database Configuration
 # ============================================================================
