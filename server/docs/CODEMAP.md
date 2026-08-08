@@ -1,5 +1,19 @@
 # CODEMAP (server)
 
+## 2026-08-09 Helpdesk segmentation boundary (PR-0)
+
+- `server/docs/SEGMENTATION_BOUNDARIES.md` is the normative ownership map:
+  Helpdesk owns tickets/ITSM processes; Endpoint Platform owns the endpoint-agent
+  control plane; future Knowledge and Registry Platforms are separate domains.
+- `server/docs/adr/0001-helpdesk-external-domain-ports.md` records the decision
+  to consume Endpoint, Knowledge and Registry only through explicitly composed,
+  versioned ports. Direct foreign-domain imports and cross-domain database FKs
+  are forbidden.
+- `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines only a future external
+  Knowledge API integration target. Its paths are not registered Helpdesk
+  routes. Current local Knowledge runtime remains through PR-0; after PR-6
+  `KnowledgePort` has no local fallback and reports `knowledge_unavailable`.
+
 Карта кода `pc_client/server`. Используется для быстрой навигации и поиска (в т.ч. скрипт `scripts/agent_find.py` и контекст агента). Пути указаны относительно корня репозитория (например `server/routes.py`).
 
 ---

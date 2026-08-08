@@ -134,6 +134,32 @@ Treat these as shared contracts. A change here is not local even if only one fil
 | Agent update contract | `server/docs/AGENT_UPDATES_API.md`, `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, `pc_agent/docs/SELF_UPDATE.md`, `server/agents/*`, `pc_agent/launcher/*` | Rollout UI, server recommendation, launcher, GUI | Update all update docs, run update contract tests, verify artifact/launcher path |
 | Release/control contract | `docs/LOCAL_WORKFLOW.md`, `scripts/manage_remote_stack.py`, `scripts/release_server_to_remote.py`, `server/control_plane.py`, `server/runtime_control.py` | Deploy, smoke, browser verification, rollback | Keep lifecycle through scripts only; update workflow docs and control-plane tests |
 
+## Helpdesk Segmentation Target Boundary (PR-0)
+
+PR-0 records a future domain boundary and makes no runtime, route or deployment
+change. Helpdesk is the canonical owner of tickets and ITSM processes. Endpoint
+Platform exclusively owns endpoint-agent control-plane identity, WebSocket,
+commands, operations, consent and Remote Assist runtime; Helpdesk consumes it
+through a versioned port and ticket facade. Future Knowledge and Registry
+Platforms own their respective content/access-control and
+person/organisation/audience/responsibility domains.
+
+Cross-domain access must use versioned, explicitly composed ports; direct
+imports of foreign persistence/services and cross-domain database foreign keys
+are forbidden. IDs remain opaque, and Helpdesk keeps only minimal immutable,
+redacted snapshots where ticket history needs them.
+
+The existing local Knowledge Platform remains a current runtime concern until
+the PR-6 removal work. Its future external replacement is documented in
+`server/docs/KNOWLEDGE_PLATFORM_API_V1.md`; those paths are integration targets,
+not Helpdesk routes. After removal, `KnowledgePort` returns the typed
+`knowledge_unavailable` result and there is no local fallback. Core ticket
+creation, routing, support work and closure must remain available.
+
+See `server/docs/SEGMENTATION_BOUNDARIES.md` and
+`server/docs/adr/0001-helpdesk-external-domain-ports.md` for the normative
+ownership and decision record.
+
 ## Knowledge VNext Target Boundaries
 
 Knowledge vNext is a staged expansion of the existing Knowledge Platform contract, not a rewrite. Phase 0 documents target route boundaries without forcing unfinished runtime routes into `server/routes.py` or the React router.
