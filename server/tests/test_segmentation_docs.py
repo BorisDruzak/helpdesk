@@ -12,6 +12,7 @@ def test_segmentation_docs_define_external_knowledge_contract_without_fallback()
     api = (DOCS_ROOT / "KNOWLEDGE_PLATFORM_API_V1.md").read_text(encoding="utf-8")
     normalized_boundaries = " ".join(boundaries.split())
     normalized_adr = " ".join(adr.split())
+    normalized_api = " ".join(api.split())
 
     assert "KnowledgePort" in boundaries
     assert "no local fallback" in boundaries
@@ -19,7 +20,7 @@ def test_segmentation_docs_define_external_knowledge_contract_without_fallback()
     assert "PR-11" in boundaries
     assert "not a Helpdesk route" in api
     assert "knowledge_unavailable" in api
-    assert "never authorises a local Knowledge lookup or a local fallback" in api
+    assert "never authorises a local Knowledge lookup or a local fallback" in normalized_api
     assert "opaque" in api
     assert "correlation_id" in api
     assert "cursor pagination" in api
