@@ -532,13 +532,11 @@ class RegistryVisibilityLiveSmoke:
             expected_slug=self.ids["it_slug"],
             hidden_slug=self.ids["finance_slug"],
         )
-        support_check = self._check_support_suggestions(self.ids["owner_ticket_id"], expected_slug=self.ids["it_slug"], hidden_slug=self.ids["finance_slug"])
         self.report["scenarios"]["registered_owner"] = {
             "status": "passed",
             "account_mode": account["session"]["account_mode"],
             "ticket_id": self.ids["owner_ticket_id"],
             "service_knowledge": service_check,
-            "support_suggestions": support_check,
         }
         return {"session_id": session_id, "session_token": session_token, "binding_id": binding["binding_id"]}
 
@@ -604,7 +602,6 @@ class RegistryVisibilityLiveSmoke:
             expected_slug=self.ids["finance_slug"],
             hidden_slug=self.ids["it_slug"],
         )
-        support_check = self._check_support_suggestions(self.ids["other_ticket_id"], expected_slug=self.ids["finance_slug"], hidden_slug=self.ids["it_slug"])
         self.report["scenarios"]["verified_other_account"] = {
             "status": "passed",
             "account_mode": session.get("account_mode"),
@@ -612,7 +609,6 @@ class RegistryVisibilityLiveSmoke:
             "owner_ticket_hidden": True,
             "warning_stored": True,
             "service_knowledge": service_check,
-            "support_suggestions": support_check,
         }
         return {"session_id": session_id, "session_token": session_token}
 
@@ -759,19 +755,6 @@ class RegistryVisibilityLiveSmoke:
             "suggest_slugs": sorted(suggest_slugs),
             "ask_slugs": sorted(ask_slugs),
         }
-
-    def _check_support_suggestions(self, ticket_id: str, *, expected_slug: str, hidden_slug: str) -> dict[str, Any]:
-        response = self.api.get(
-            f"/api/web/support/tickets/{ticket_id}/knowledge-suggestions",
-            token=self.tokens["support"],
-        )
-        article_ids = {str(item.get("id") or "") for item in response.get("articles") or [] if isinstance(item, dict)}
-        _require(expected_slug in article_ids, f"support suggestions missing expected requester article {expected_slug}")
-        _require(hidden_slug not in article_ids, f"support suggestions leaked hidden article {hidden_slug}")
-        rendered = json.dumps(response, ensure_ascii=False, sort_keys=True)
-        _require(hidden_slug not in rendered, "hidden slug leaked into support suggestions payload")
-        return {"status": "passed", "article_ids": sorted(article_ids)}
-
 
 def write_report(report: dict[str, Any], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)

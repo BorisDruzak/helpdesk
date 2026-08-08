@@ -414,7 +414,6 @@ class KnowledgeAudienceLiveSmoke:
         self.report["checks"]["service_requester_it_hidden_suggest"] = await self._check_hidden_service_suggest("it", finance_payload)
         self.report["checks"]["service_requester_it_ask"] = await self._check_service_ask("it", it_payload)
         self.report["checks"]["service_requester_it_hidden_ask"] = await self._check_hidden_service_ask("it", finance_payload)
-        self.report["checks"]["support_ticket_suggestions"] = self._check_support_ticket_suggestions()
         self.report["checks"]["admin_explain_denied"] = self._check_admin_explain_denied()
         self.report["status"] = "passed"
         return self.report
@@ -574,19 +573,6 @@ class KnowledgeAudienceLiveSmoke:
         _require(self.ids["finance_slug"] not in slugs, "hidden ask returned finance article")
         self._assert_payload_excludes_finance(response)
         return {"status": "passed", "slugs": sorted(slugs)}
-
-    def _check_support_ticket_suggestions(self) -> dict[str, Any]:
-        path = f"/api/web/support/tickets/{self.ids['ticket_id']}/knowledge-suggestions"
-        response = self.api.get(path, token=self.tokens["support"])
-        _require(response.get("status") == "success", f"support suggestions returned status={response.get('status')}")
-        data = response.get("data") or {}
-        article_ids = {str(item.get("id") or "") for item in data.get("articles") or [] if isinstance(item, dict)}
-        _require(self.ids["public_slug"] in article_ids, "support ticket suggestions missing public article")
-        _require(self.ids["it_slug"] in article_ids, "support ticket suggestions missing IT article")
-        _require(self.ids["internal_slug"] in article_ids, "support ticket suggestions missing support internal runbook")
-        _require(self.ids["finance_slug"] not in article_ids, "support ticket suggestions sees finance article")
-        self._assert_payload_excludes_finance(response)
-        return {"status": "passed", "article_ids": sorted(article_ids)}
 
     def _check_admin_explain_denied(self) -> dict[str, Any]:
         path = (

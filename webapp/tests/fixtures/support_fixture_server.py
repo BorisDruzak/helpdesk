@@ -1703,43 +1703,30 @@ def build_ticket_knowledge(ticket_state: dict) -> dict:
     ticket = ticket_state["ticket"]
     return {
         "ticket_id": ticket["ticket_id"],
-        "similar_tickets": [
-            {
-                "id": "ticket-kb-1",
-                "number": "T-199991",
-                "subject": "Профиль не синхронизируется после обновления",
-                "resolution_summary": "Проверить доступность policy-сервера и перезапустить sync job.",
-            }
-        ],
-        "articles": [
-            {
-                "id": "KB-PROFILE-SYNC",
-                "title": "Проверка синхронизации рабочего профиля",
-                "url": "/app/knowledge/KB-PROFILE-SYNC",
-            }
-        ],
+        "status": "unavailable",
+        "code": "knowledge_unavailable",
+        "suggestions": [],
+        "similar_tickets": [],
+        "articles": [],
+        "requester_attempts": [],
         "ai_summary": {
-            "text": "AI-рекомендация / Бета: проверьте канал до policy-сервера и последний sync job перед изменениями.",
-            "sources": ["KB-PROFILE-SYNC", "T-199991"],
-            "confidence": "medium",
-            "source_count": 2,
+            "text": None,
+            "sources": [],
+            "confidence": "none",
+            "source_count": 0,
         },
         "diagnostics": {
-            "provider": "fixture_knowledge_provider",
-            "provider_version": "local-v1",
-            "provider_status": "ok",
+            "provider": "external_knowledge_port",
+            "provider_version": "v1",
+            "provider_status": "unavailable",
             "external_provider_status": "not_configured",
-            "fallback_reason": None,
-            "catalog_entry_count": 1,
-            "query_tokens": ["profile", "sync"],
-            "source_counts": {"manual_kb": 1, "catalog": 0, "similar_ticket": 1},
-            "query_signals": ["fixture_kb", "similar_ticket"],
-            "article_matches": {
-                "KB-PROFILE-SYNC": {"source_type": "manual_kb", "score": 90, "match_reasons": ["fixture_kb"]}
-            },
-            "similar_ticket_matches": {
-                "ticket-kb-1": {"source_type": "similar_ticket", "score": 80, "match_reasons": ["similar_ticket"]}
-            },
+            "fallback_reason": "knowledge_unavailable",
+            "catalog_entry_count": 0,
+            "query_tokens": [],
+            "source_counts": {},
+            "query_signals": [],
+            "article_matches": {},
+            "similar_ticket_matches": {},
         },
     }
 
@@ -2324,17 +2311,6 @@ async def handle_support_ticket_playbooks(request: web.Request) -> web.Response:
     if ticket_id not in state["tickets"]:
         raise web.HTTPNotFound()
     return json_success(build_ticket_playbooks(state["tickets"][ticket_id]))
-
-
-async def handle_support_ticket_knowledge(request: web.Request) -> web.Response:
-    unauthorized = require_session(request)
-    if unauthorized:
-        return unauthorized
-    ticket_id = request.match_info["ticket_id"]
-    state = request.app["fixture_state"]
-    if ticket_id not in state["tickets"]:
-        raise web.HTTPNotFound()
-    return json_success(build_ticket_knowledge(state["tickets"][ticket_id]))
 
 
 async def handle_support_ticket_passport(request: web.Request) -> web.Response:
@@ -3007,7 +2983,6 @@ def build_app() -> web.Application:
             web.put("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_update),
             web.delete("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_delete),
             web.get("/api/web/support/tickets/{ticket_id}/workspace", handle_support_ticket_workspace),
-            web.get("/api/web/support/tickets/{ticket_id}/knowledge-suggestions", handle_support_ticket_knowledge),
             web.get("/api/web/support/tickets/{ticket_id}/playbooks", handle_support_ticket_playbooks),
             web.get("/api/web/support/tickets/{ticket_id}/passport", handle_support_ticket_passport),
             web.get("/api/web/support/tickets/{ticket_id}", handle_support_ticket_detail),
