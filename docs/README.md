@@ -23,8 +23,7 @@
 - Protocol V3: `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md`.
 - Auth/security: `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md`.
 - Tickets/chat/forms: `server/docs/TICKET_SYSTEM.md`, `server/docs/CHAT_MESSAGE_CONTRACT.md`, `server/docs/REQUEST_FORM_BUILDER.md`.
-- Knowledge Platform: `server/docs/KNOWLEDGE_PLATFORM.md` — spaces/items/versions/chunks, ACL-filtered search/suggestions, helpdesk deflection, support knowledge panel and passport-to-draft.
-- Knowledge admin UI refactor spec: `docs/superpowers/specs/2026-06-13-knowledge-admin-ui-refactor-design.md` — Operations Center, TipTap/ProseMirror Studio and React Flow Graph design target.
+- External Knowledge boundary: `server/docs/SEGMENTATION_BOUNDARIES.md` and `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` — Helpdesk consumes a versioned `KnowledgePort`; local Knowledge runtime is removed and unavailable by default.
 - Modules/tools: `server/docs/MODULES_API.md`, `server/docs/MODULE_AUTHORING_RULES.md`, `server/docs/RUNTIME_EXECUTION_CONTRACT.md`, `pc_agent/docs/MODULES.md`, `pc_agent/docs/TOOLS_CONTRACT.md`.
 - Observer/traces: `server/docs/OBSERVER_LAYER.md`, `server/docs/OBSERVER_AUTHORING_RULES.md`.
 - Agent runtime/update: `pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md`, `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, `pc_agent/docs/SELF_UPDATE.md`, `server/docs/AGENT_UPDATES_API.md`.

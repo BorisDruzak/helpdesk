@@ -36,17 +36,15 @@ Requester-safe preview is `POST /api/service-catalog/preview`. It wraps the real
 
 ## Knowledge Integration
 
-P2 Knowledge Platform binds published knowledge to `service_code`, `offering_code` and `request_template_key`. Requester `/app/help` and the local agent wizard call `POST /api/knowledge/suggest` after service/offering selection, show only requester-safe published suggestions, record helpful/not-helpful/deflected feedback, and include safe `knowledge_attempts` when ticket creation continues after failed self-service.
+Service Catalog stays a Helpdesk-owned process layer. It no longer calls a local Knowledge service, publishes Knowledge bindings or exposes local Knowledge gap/deflection endpoints. Requester and agent catalog flows continue with the form and `other.unknown` fallback while Knowledge is unavailable.
 
-Policy Health includes a knowledge gap warning when a published public service/offering has no requester-safe published knowledge binding. Service Catalog remains the process layer; Knowledge Platform owns content lifecycle, versions, chunks/search, graph relations and deflection metrics. See [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md).
-
-P2.2 Knowledge Operations uses the same published public catalog as the gap source of truth. `GET /api/web/knowledge/gap-findings` and `POST /api/web/knowledge/gaps/recompute` combine missing requester-safe bindings, missing support runbooks, ticket counts and knowledge feedback (`ticket_created_after_view`, `not_helpful`) so admins can prioritize which service/offering needs content next. This does not change catalog runtime resolution or the `other.unknown` fallback.
+PR-7 may let an external Knowledge Platform consume opaque `service_code`, `offering_code` and `request_template_key` values through [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md). That integration must remain versioned and fail closed; it must not restore local content packs, routes or a database fallback.
 
 P3 Quality Loop stores `service_code`, `offering_code`, `request_type` and `reporting_category` snapshots on feedback, reopen events, QA reviews, improvement actions and service-quality snapshots. `/app/admin/quality` uses those catalog dimensions for CSAT, reopen rate, SLA/quality review and improvement-action analytics without exposing queue ids, requester identifiers or raw catalog policy JSON to requester surfaces. Legacy tickets without catalog fields are bucketed as uncategorized/legacy rather than mutating the ticket contract.
 
-P4/P4.1 Problem Management stores `service_code`, `offering_code`, `request_type` and `reporting_category` on problem candidates, problem records, affected objects and problem analytics. Candidate detection groups repeated incidents, low CSAT, reopens, SLA breaches, failed QA, failed knowledge and knowledge gaps by service/offering where available. Problem SLO policies can also scope by service/offering, and `/app/admin/problems` shows service/offering candidate volume plus overdue problem milestones. Invalid service/offering codes are rejected when the catalog is present; legacy tickets remain bucketed as legacy/uncategorized. See [PROBLEM_MANAGEMENT.md](PROBLEM_MANAGEMENT.md).
+P4/P4.1 Problem Management stores `service_code`, `offering_code`, `request_type` and `reporting_category` on problem candidates, problem records, affected objects and problem analytics. Candidate detection groups repeated incidents, low CSAT, reopens, SLA breaches and failed QA by service/offering where available. Problem SLO policies can also scope by service/offering, and `/app/admin/problems` shows service/offering candidate volume plus overdue problem milestones. Invalid service/offering codes are rejected when the catalog is present; legacy tickets remain bucketed as legacy/uncategorized. See [PROBLEM_MANAGEMENT.md](PROBLEM_MANAGEMENT.md).
 
-Baseline Knowledge content packs must match `server/tickets/service_catalog_defaults.py` exactly. The current canonical matrix is:
+The Helpdesk-owned catalog matrix is:
 
 | Scenario | service_code | offering_code | request_template_key |
 |---|---|---|---|
@@ -60,7 +58,7 @@ Baseline Knowledge content packs must match `server/tickets/service_catalog_defa
 | Software | `workplace` | `workplace.software_install` | `software_install` |
 | Other | `other` | `other.unknown` | `general_request` |
 
-Run `python scripts/validate_knowledge_pack_bindings.py --strict` before changing baseline packs. If old pack-managed bindings are already installed, use `python scripts/repair_knowledge_pack_bindings.py --dry-run --all` and then the non-dry-run command to align `knowledge_bindings` without overwriting article content.
+Do not restore retired local Knowledge pack validation or repair commands. External Knowledge owns any future content-to-catalog binding lifecycle.
 
 ## Publication Gates
 
@@ -116,8 +114,8 @@ The seed is idempotent, creates baseline services (`workplace`, `access`, `netwo
 
 - `/app/admin/request-template-studio`: primary no-code request setup UX. It edits the basic draft inside Studio and uses Request Studio safe publish endpoints to validate, preview, confirm and publish the form schema, request template and catalog offering without opening expert pages for the normal path.
 - `/app/admin/service-catalog`: expert service/offering dashboard, filters, structured service editor, structured offering editor, publication gates for service and selected offering, policy inheritance summary, Advanced JSON loader, publish/retire actions and runtime simulation.
-- `/app/help`: requester chooses service, offering, sees requester-safe knowledge suggestions/deflection actions, fills the linked form, runs runtime-backed safe preview before catalog submit, and submits `service_code`, `offering_code`, `offering_full_code`, `request_template_key` and safe `knowledge_attempts` when applicable. Legacy form-only submit remains available when the catalog is unavailable.
-- Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard explicitly shows `Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit`; it fetches requester-safe knowledge suggestions after offering selection, records feedback, keeps the legacy form path as fallback and sends `service_code`, `offering_code`, `offering_full_code` and safe `knowledge_attempts` without changing Protocol V3.
+- `/app/help`: requester chooses service and offering, fills the linked form, runs runtime-backed safe preview and submits `service_code`, `offering_code`, `offering_full_code` and `request_template_key`. It has no local Knowledge suggestions or deflection actions.
+- Agent Qt GUI: `TicketApiClient.get_service_catalog_current()` caches the safe catalog. The create wizard explicitly shows `Раздел обращения -> Тип обращения -> dynamic form/details -> Preview -> Submit` and sends only the catalog references without changing Protocol V3.
 
 ## Reporting
 

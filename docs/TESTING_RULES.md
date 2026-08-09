@@ -89,7 +89,7 @@ python scripts/run_ci_suite.py --layer pc_agent_pytest
 For a fast affected-suite PR gate, provide explicit changed paths or a git base ref:
 
 ```powershell
-python scripts/run_ci_suite.py --changed-path server/knowledge/search_service.py
+python scripts/run_ci_suite.py --changed-path server/domain_ports/knowledge.py
 python scripts/run_ci_suite.py --affected-from origin/main
 ```
 

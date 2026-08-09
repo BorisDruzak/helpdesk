@@ -143,7 +143,7 @@ Account-session validation note: `pc_agent/ui_gui/server_api.py::validate_accoun
 
 ### 2.6 Конфигурация
 
-P2 Knowledge Platform agent integration is HTTP-only and does not change Protocol V3. `pc_agent/ui_gui/server_api.py` exposes `get_knowledge_suggestions()` and `record_knowledge_feedback()` for `/api/knowledge/suggest|feedback`, and `create_ticket()` accepts safe `knowledge_attempts`. `pc_agent/ui_gui/chat_panel.py` requests requester-safe suggestions after Service Catalog offering selection, records viewed/not-helpful/deflected feedback, includes attempts when ticket creation continues, and falls back to the existing catalog/form flow if the knowledge API is unavailable. P2.2/P2.2.1 rollout policies are enforced server-side for the same `agent_gui` suggestion surface; the agent sends urgency/impact context, reads returned rollout, respects safe projection plus min/max suggestion gates, treats rollout-disabled/no-policy/API-unavailable states as non-blocking by default, honors explicit blocking no-suggestion/API-unavailable policies, and needs no new wire protocol or local policy cache.
+The local Knowledge agent integration is removed and Protocol V3 is unchanged. The Qt client no longer calls local Knowledge suggestion, feedback or Ask endpoints and does not submit new `knowledge_attempts`; it continues the Service Catalog/form ticket flow. A future external Knowledge integration must be added behind the Helpdesk `KnowledgePort` contract, not as a direct agent-to-Helpdesk Knowledge API.
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/config/config_loader.py` | Загрузка настроек |

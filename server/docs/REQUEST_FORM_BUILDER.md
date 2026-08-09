@@ -4,7 +4,7 @@
 
 P1/P1.1 Service Catalog sits above this builder: a catalog offering points to a `request_template_key` / form schema, and create/preview accepts `service_code`, `offering_code` or `offering_full_code` before resolving the linked form. Legacy `/help`, public form-pack and agent form-only flows remain compatible; if a template maps to exactly one published offering, the runtime attaches a catalog snapshot, otherwise it preserves legacy behavior. The requester portal and agent GUI use the safe `other.unknown` fallback and call runtime-backed safe preview before catalog submit. See [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
 
-P2 Knowledge Platform uses the same `request_template_key` and Service Catalog context for self-service suggestions. Published requester-safe knowledge can bind to a template, service or offering; requester `/app/help` and the agent wizard request suggestions after service/offering selection and include safe `knowledge_attempts` when the user creates a ticket after failed self-service. See [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md).
+The local Knowledge suggestion integration is removed. A future external Knowledge Platform may consume opaque `request_template_key`, service and offering references through [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md); Helpdesk form create stays independent while the port is unavailable.
 
 ## Канонические поверхности
 

@@ -2,6 +2,14 @@
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
+## 2026-08-09 Helpdesk segmentation milestone (PR-0 / PR-1 / PR-6)
+
+- **Completed locally:** ownership ADR/API target, neutral domain ports, AST import guard, ticket/support/problem/Registry detachment, and removal of the in-process Knowledge runtime, routes, UI, agent client, local AI runtime, content packs and active ORM mappings.
+- **Current behavior:** `KnowledgePort` is explicitly unavailable (`knowledge_unavailable`) with no local DB/HTTP fallback; removed local Knowledge paths return normal `404`; ticket creation, routing, support work and closure remain available.
+- **Retained history:** all old Alembic migrations and physical Knowledge/AI tables, `ticket_kb_links` rows and sanitized legacy `knowledge_attempts` remain untouched and read-only. No schema migration, data deletion, deploy or remote mutation was run for this milestone.
+- **Evidence:** focused port/import-boundary/ticket/support/problem/Registry/removed-route tests, Python compilation, default collection and webapp build are recorded in the task reports under `.superpowers/sdd/2026-08-09-helpdesk-segmentation-pr0-pr1-pr6/`. DB-backed subsets have a documented local timeout and are not claimed green.
+- **Next gates:** PR-7 may add a versioned external Knowledge API adapter only after service/auth/scope/redaction acceptance. PR-11 may delete retained schema only after acceptance, with a separately reviewed forward-only migration, backup/rollback plan and no local fallback restoration.
+
 ## Goal
 
 Build a reliable bug remediation and live detection loop for the helpdesk system. Already-known P0/P1 defects from the deep audit must be verified against current `HEAD`, fixed with regression coverage and real evidence, then the stabilized system can be used for broader live bug hunting.

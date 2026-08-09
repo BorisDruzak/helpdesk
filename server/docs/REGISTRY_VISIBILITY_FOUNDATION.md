@@ -38,7 +38,7 @@ Use the existing sources below before adding new state:
 - `registry_assets.assigned_person_id` and `device_inventory_bindings.person_id/source_binding_id/registration_status` are derived and must be synchronized through registry services.
 - `device_account_sessions` carries the requester account-session boundary for the agent GUI.
 - `access_groups` and related membership/permission tables remain the RBAC source.
-- Knowledge currently enforces coarse role visibility through `knowledge.contracts.actor_visible_visibilities()` and services such as `KnowledgeSearchService`, `KnowledgeVisibilityService`, `KnowledgePortalService` and `KnowledgeRetrievalService`.
+- Helpdesk exposes Registry identity and audience facts only. It has no local Knowledge visibility service, table access or audience-rule administration.
 
 ## Why Department Is Not Group
 
@@ -106,20 +106,12 @@ Phase 2 implemented tables:
 - `registry_audience_group_members`
 - `registry_person_department_memberships` (compatibility-safe optional multi-department membership; backfilled from `registry_people.department_id`)
 
-Phase 5 implemented first backend table:
-
-- `knowledge_audience_rules`
-
-Optional audit table if existing audit is insufficient:
-
-- `knowledge_access_decisions`
-
 Compatibility constraints:
 
 - Keep `registry_people.department_id` as the primary/default department even if multi-department membership is introduced.
 - Do not repurpose `access_groups` for audiences.
 - Do not import direct device bindings or account sessions.
-- Audience groups and visibility rules should use `status`/archive semantics instead of hard deletes.
+- Audience groups use `status`/archive semantics instead of hard deletes.
 
 ## APIs
 
@@ -141,35 +133,14 @@ Phase 2 implemented audience group APIs:
 - `PUT /api/web/admin/registry/audience-groups/{audience_group_id}/members`
 - `POST /api/web/admin/registry/audience-groups/{audience_group_id}/preview-members`
 
-Phase 5 Knowledge visibility admin APIs:
+## External Knowledge audience hand-off
 
-- `GET /api/web/admin/knowledge/audience-rules?subject_type=&subject_id=`
-- `PUT /api/web/admin/knowledge/audience-rules`
-- `POST /api/web/admin/knowledge/audience-rules/preview`
-- `GET /api/web/admin/knowledge/access/explain?actor_id=&item_id=`
-
-The first admin API slice is implemented in `server/knowledge/audience_rules_service.py` and `server/web_api/knowledge_handlers.py`. These routes are admin-only, replace/list item or space rule rows through `knowledge_audience_rules`, preview item access or space-level access with transient or persisted rules, and expose admin explain decisions through `KnowledgeAccessService` plus Registry effective audience resolution. `POST /api/web/admin/knowledge/audience-rules/preview` supports `subject_type=item` and `subject_type=space`; space preview returns `item: null` and evaluates only the space-level audience rules through the same coarse visibility/status guard. Phase 6 consumes these APIs from `/app/admin/knowledge/studio` through a Russian-first `Область видимости` selector instead of raw JSON; this UI must remain an authoring/debug client and cannot become the access-control boundary.
-
-Current Knowledge audience rules are allow-only by contract. Migration `121` constrains `knowledge_audience_rules.effect` to `allow`, `KnowledgeAudienceRulesService` writes only `effect=allow`, and `KnowledgeAccessService` ignores any non-allow rule shape. This means the active model is "no rules = coarse visibility applies; one or more active rules = requester/agent/public access requires at least one matching allow rule". Exclusion rules such as "everyone except department X" are not implemented and require an explicit future schema, precedence and anti-leak test pass before use.
-
-## Knowledge Access Decision Order
-
-Every Knowledge read/search/suggestion/RAG path must apply the same order:
-
-1. Authenticated actor role and session context.
-2. Space lifecycle/status.
-3. Item status/current version.
-4. Coarse Knowledge visibility.
-5. Space audience rules.
-6. Item audience rules.
-7. Explicit support/admin override only when documented and audited.
-8. Safe final projection.
-
-Candidate selection and final projection both matter. Search, portal, suggestions, support knowledge, graph, vector search, RAG candidate selection and diagnostics must not rely on frontend filtering or post-search masking only.
-
-Requester/agent/public responses must not reveal hidden titles, summaries, snippets, chunks, result counts, diagnostics or metadata for denied content. Admin explain endpoints may show rule ids and reasons, but must stay admin-only.
-
-`support`, `admin`, `security` and `auditor` are privileged roles for audience rules only after lifecycle/status and coarse Knowledge visibility pass. They receive `reason_code=privileged_actor_override` instead of matching each audience rule. This is the intended admin/support workspace behavior. Future AI-chat or assistant surfaces that run under privileged roles must choose an explicit policy, for example `ai_respects_audience_for_privileged_roles`, before reusing privileged support/admin access for generated answers.
+The former local audience-rule routes and their `knowledge_audience_rules` table
+are retained only as historical schema. Registry owns effective identity and
+audience facts; a future Knowledge Platform receives those facts through a
+versioned external contract and owns its own lifecycle, rule storage, decision
+order and anti-leak tests. Helpdesk must not recreate `/api/web/admin/knowledge/*`
+or directly query historical Knowledge tables.
 
 ## Registration Policy Boundary
 
@@ -246,20 +217,19 @@ Phase-level implementation must include focused tests for:
 - audience group expansion;
 - access-group-as-audience not granting RBAC;
 - required existing department/location registration policy;
-- Knowledge requester allowed/denied decisions;
 - no hidden article title/summary/chunk leakage in search, suggestions, portal, graph, vector/RAG and diagnostics;
 - admin explain route authorization and redaction.
 
-`scripts/registry_visibility_live_smoke.py` is the Phase 7 repeatable HTTP/DB smoke for confirmed binding, verified other-account, registration-pending, revoked-session, support suggestions and account-session Knowledge audience checks. Its sanitized report is useful evidence, but it explicitly does not replace the final real-agent UIA/browser requirement.
+`scripts/registry_visibility_live_smoke.py` is the repeatable Registry HTTP/DB smoke for confirmed binding, verified other-account, registration-pending and revoked-session checks. It does not query local Knowledge state and does not replace final real-agent UIA/browser evidence.
 
-Live evidence must cover a real agent account gate, registration pending, confirmed binding, verified other account, revoked session/binding and requester/support/admin Knowledge visibility.
+Live evidence must cover a real agent account gate, registration pending, confirmed binding, verified other account and revoked session/binding. External Knowledge visibility acceptance belongs to PR-7.
 
 ## Related Documents
 
 - [REGISTRY_MANAGEMENT_CENTER.md](REGISTRY_MANAGEMENT_CENTER.md)
 - [REGISTRATION_ACCOUNT_SESSIONS.md](REGISTRATION_ACCOUNT_SESSIONS.md)
-- [KNOWLEDGE_PLATFORM.md](KNOWLEDGE_PLATFORM.md)
-- [KNOWLEDGE_OPERATIONS.md](KNOWLEDGE_OPERATIONS.md)
+- [SEGMENTATION_BOUNDARIES.md](SEGMENTATION_BOUNDARIES.md)
+- [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md)
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md)
 - [CODEMAP.md](CODEMAP.md)
 - [Architecture boundaries](../../docs/ARCHITECTURE_BOUNDARIES.md)

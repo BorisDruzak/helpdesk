@@ -43,3 +43,16 @@ def test_segmentation_docs_define_external_knowledge_contract_without_fallback()
         assert scope in api
     assert "preceding verified application release" in normalized_adr
     assert "PR-11" in adr
+
+
+def test_docs_reference_external_knowledge_contract_not_removed_runtime() -> None:
+    architecture = Path("docs/ARCHITECTURE_BOUNDARIES.md").read_text(encoding="utf-8")
+    ticket_system = (DOCS_ROOT / "TICKET_SYSTEM.md").read_text(encoding="utf-8")
+    database = (DOCS_ROOT / "DATABASE.md").read_text(encoding="utf-8")
+
+    assert "external Knowledge Platform" in architecture
+    assert "server/knowledge/" not in architecture
+    assert "KnowledgePort" in ticket_system
+    assert "knowledge_unavailable" in ticket_system
+    assert "PR-11" in database
+    assert "Retained historical Knowledge tables" in database

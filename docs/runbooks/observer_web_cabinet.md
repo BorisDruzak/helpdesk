@@ -22,7 +22,7 @@ These events cover the web-first requester cabinet Observer overlay. They are di
 2. Open the support ticket detail and check `observer.web_flow` plus `observer.integrity_events`.
 3. Check `server/web_api/requester_handlers.py` for the profile gate, preview and create paths.
 4. Check `server/tickets/ticket_context.py`, `server/tickets/diagnostic_target.py` and `server/tickets/create_flow.py` when target resolution, forged target rejection or `ticket_context_v1` is wrong.
-5. Check `server/knowledge/attempts.py`, `server/knowledge/suggestion_service.py` and `server/customer_history/sources.py` when on-behalf Knowledge audience/visibility evidence looks wrong.
+5. Check `server/customer_history/sources.py` for redacted legacy Knowledge-attempt history only. Local Knowledge suggestion and audience runtime is removed; external Knowledge evidence belongs to its future service.
 6. Check `server/customer_history/projection_service.py` and `server/customer_history/sources.py` when Customer History projection evidence is missing.
 7. Check `server/observer/web_event_writer.py` when traces are missing or payload redaction looks wrong.
 

@@ -81,7 +81,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="helpdesk_external_domain_ports",
         title="Helpdesk external domain ports",
-        summary="PR-0/PR-1 ownership boundary, dependency-injection contracts and AST import guard for external Endpoint, Knowledge and Registry domains. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists. Retired local Knowledge RBAC and remote-import settings are absent from the active Helpdesk catalog/config.",
+        summary="PR-0/PR-1/PR-6 ownership boundary, dependency-injection contracts, local-runtime removal and AST import guard for external Endpoint, Knowledge and Registry domains. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists. Local Knowledge routes, UI, AI runtime and configuration are removed; retained tables are history-only until PR-11 and PR-7 is the external adapter acceptance gate.",
         aliases=(
             "helpdesk segmentation",
             "external domain ports",
@@ -106,6 +106,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/tests/test_access_control.py",
             "server/tests/test_config_feature_flags.py",
             "server/tests/test_domain_import_boundaries.py",
+            "server/tests/test_knowledge_routes_removed.py",
+            "server/tests/test_segmentation_docs.py",
         ),
         related_docs=(
             "server/docs/SEGMENTATION_BOUNDARIES.md",
@@ -114,12 +116,15 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/CODEMAP.md",
             "docs/QUICK_LOOKUP.md",
             "docs/ARCHITECTURE_BOUNDARIES.md",
+            "server/docs/DATABASE.md",
+            "server/docs/TICKET_SYSTEM.md",
         ),
         suggested_commands=(
             'python scripts/agent_find.py "domain_ports" --dir server',
             "python -m pytest server/tests/test_domain_ports.py -q --tb=short",
             "python -m pytest server/tests/test_domain_import_boundaries.py -q --tb=short",
             "python scripts/check_domain_import_boundaries.py",
+            "python -m pytest server/tests/test_knowledge_routes_removed.py server/tests/test_segmentation_docs.py -q --tb=short",
             "python scripts/docs_drift_check.py --base <base-commit> --json",
         ),
         mode="Server / architecture boundary",
@@ -129,6 +134,7 @@ TOPICS: tuple[Topic, ...] = (
             "python -m pytest server/tests/test_domain_ports.py -q --tb=short",
             "python -m pytest server/tests/test_domain_import_boundaries.py -q --tb=short",
             "python scripts/check_domain_import_boundaries.py",
+            "python -m pytest server/tests/test_knowledge_routes_removed.py server/tests/test_segmentation_docs.py -q --tb=short",
             "python scripts/docs_drift_check.py --base <base-commit> --json",
         ),
         docs_to_update=(
@@ -137,6 +143,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/CODEMAP.md",
             "docs/QUICK_LOOKUP.md",
             "docs/ARCHITECTURE_BOUNDARIES.md",
+            "server/docs/DATABASE.md",
+            "server/docs/TICKET_SYSTEM.md",
         ),
         path_prefixes=(
             "server/domain_ports/",
@@ -1227,8 +1235,6 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/QUALITY_LOOP.md",
             "server/docs/TICKET_SYSTEM.md",
             "server/docs/SERVICE_CATALOG.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
-            "server/docs/KNOWLEDGE_OPERATIONS.md",
             "server/docs/DATABASE.md",
             "server/docs/SECURITY_AND_AUTH.md",
             "server/docs/CODEMAP.md",
@@ -1248,7 +1254,7 @@ TOPICS: tuple[Topic, ...] = (
         checks=(
             "python scripts/verify_workspace.py",
             "python scripts/run_ci_suite.py --layer server_pytest_db_tickets",
-            "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
+            "python -m pytest server/tests/test_domain_ports.py server/tests/test_domain_import_boundaries.py -q --tb=short",
             "python scripts/run_ci_suite.py --layer server_pytest_db_web_api",
             "python scripts/run_ci_suite.py --layer pc_agent_pytest",
             "pnpm --dir webapp build",
@@ -1259,8 +1265,6 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/QUALITY_LOOP.md",
             "server/docs/TICKET_SYSTEM.md",
             "server/docs/SERVICE_CATALOG.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
-            "server/docs/KNOWLEDGE_OPERATIONS.md",
             "server/docs/DATABASE.md",
             "server/docs/SECURITY_AND_AUTH.md",
             repo_path(SERVER_CODEMAP_PATH),
@@ -1332,8 +1336,6 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/QUALITY_LOOP.md",
             "server/docs/TICKET_SYSTEM.md",
             "server/docs/SERVICE_CATALOG.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
-            "server/docs/KNOWLEDGE_OPERATIONS.md",
             "server/docs/DATABASE.md",
             "server/docs/SECURITY_AND_AUTH.md",
             "server/docs/CODEMAP.md",
@@ -1354,7 +1356,7 @@ TOPICS: tuple[Topic, ...] = (
         checks=(
             "python scripts/verify_workspace.py",
             "python scripts/run_ci_suite.py --layer server_pytest_db_tickets",
-            "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
+            "python -m pytest server/tests/test_domain_ports.py server/tests/test_domain_import_boundaries.py -q --tb=short",
             "python scripts/run_ci_suite.py --layer server_pytest_db_web_api",
             "python scripts/run_ci_suite.py --layer pc_agent_pytest",
             "pnpm --dir webapp build",
@@ -1366,8 +1368,6 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/QUALITY_LOOP.md",
             "server/docs/TICKET_SYSTEM.md",
             "server/docs/SERVICE_CATALOG.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
-            "server/docs/KNOWLEDGE_OPERATIONS.md",
             "server/docs/DATABASE.md",
             "server/docs/SECURITY_AND_AUTH.md",
             repo_path(SERVER_CODEMAP_PATH),
@@ -1437,7 +1437,6 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/PROBLEM_MANAGEMENT.md",
             "server/docs/QUALITY_LOOP.md",
             "server/docs/SERVICE_CATALOG.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
             "server/docs/DATABASE.md",
             "server/docs/SECURITY_AND_AUTH.md",
             "server/docs/CODEMAP.md",
@@ -1469,7 +1468,6 @@ TOPICS: tuple[Topic, ...] = (
             "server/docs/PROBLEM_MANAGEMENT.md",
             "server/docs/QUALITY_LOOP.md",
             "server/docs/SERVICE_CATALOG.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
             "server/docs/DATABASE.md",
             "server/docs/SECURITY_AND_AUTH.md",
             repo_path(SERVER_CODEMAP_PATH),
@@ -2196,10 +2194,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/app/db/migrations/versions/20260614_121_knowledge_audience_rules.py",
             "server/app/db/migrations/versions/20260616_122_gui_password_account_session_method.py",
             "server/app/db/migrations/versions/20260619_124_ui_password_reset_requests.py",
-            "server/knowledge/access_service.py",
-            "server/knowledge/audience_rules_service.py",
             "scripts/registry_visibility_phase8_live_signoff.py",
-            "server/tests/test_knowledge_audience_rules.py",
             "server/tests/test_registry_quality_remediation.py",
             "server/tests/test_primary_agent_resolver.py",
             "server/tests/test_registry_import_export.py",
@@ -2739,13 +2734,6 @@ TOPICS: tuple[Topic, ...] = (
             "server/tickets/routing_service.py",
             "server/tickets/diagnostic_policy.py",
             "server/tests/test_ticket_form_packs.py",
-            "content_packs/knowledge/primary-agent-requester-guides.yaml",
-            "server/tests/test_knowledge_content_packs.py",
-            "server/knowledge/suggestion_service.py",
-            "server/tests/test_knowledge_suggestions.py",
-            "server/tests/test_knowledge_api.py",
-            "server/tests/test_knowledge_ask.py",
-            "server/tests/test_knowledge_hybrid_retrieval.py",
             "webapp/src/features/admin/registry/registry-profile-schema-tab.tsx",
             "webapp/src/features/admin/api.ts",
             "webapp/src/features/admin/registry/registry-people-tab.tsx",
@@ -2780,7 +2768,6 @@ TOPICS: tuple[Topic, ...] = (
             repo_path(QUICK_LOOKUP_PATH),
             "server/docs/REGISTRATION_ACCOUNT_SESSIONS.md",
             "server/docs/REGISTRY_MANAGEMENT_CENTER.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
             "pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md",
             repo_path(PLANS_PATH),
         ),
@@ -2828,7 +2815,6 @@ TOPICS: tuple[Topic, ...] = (
         plan_required=True,
         docs_to_update=(
             "docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md",
-            "server/docs/KNOWLEDGE_PLATFORM.md",
             "server/docs/REGISTRY_MANAGEMENT_CENTER.md",
             repo_path(QUICK_LOOKUP_PATH),
             repo_path(SERVER_CODEMAP_PATH),
@@ -4411,8 +4397,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/manage_remote_stack.py status control",
             "python -m pytest server/tests/test_property_state_contracts_no_db.py -q --tb=short",
             "python scripts/run_ci_suite.py --layer webapp_fixture_e2e",
-            "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
-            "python scripts/run_ci_suite.py --changed-path server/knowledge/search_service.py",
+            "python -m pytest server/tests/test_domain_ports.py server/tests/test_domain_import_boundaries.py server/tests/test_knowledge_routes_removed.py -q --tb=short",
             "python scripts/run_ci_suite.py --affected-from origin/main",
             "python scripts/run_ci_suite.py --parallel --parallel-measurements artifacts/ci/<sha>/fixture-timings-summary.json",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
@@ -4442,8 +4427,7 @@ TOPICS: tuple[Topic, ...] = (
             "python scripts/manage_remote_stack.py status control",
             "python -m pytest server/tests/test_property_state_contracts_no_db.py -q --tb=short",
             "python scripts/run_ci_suite.py --layer webapp_fixture_e2e",
-            "python scripts/run_ci_suite.py --layer server_pytest_db_knowledge",
-            "python scripts/run_ci_suite.py --changed-path server/knowledge/search_service.py",
+            "python -m pytest server/tests/test_domain_ports.py server/tests/test_domain_import_boundaries.py server/tests/test_knowledge_routes_removed.py -q --tb=short",
             "python scripts/run_ci_suite.py --affected-from origin/main",
             "python scripts/run_ci_suite.py --parallel --parallel-measurements artifacts/ci/<sha>/fixture-timings-summary.json",
             "python scripts/run_ci_suite.py  # explicit final full-check request only",
@@ -4470,6 +4454,10 @@ TOPICS: tuple[Topic, ...] = (
         ),
     ),
 )
+
+# Historical entries can remain as provenance in this large catalog, but must
+# never send task intake to files or routes removed from the active workspace.
+RETIRED_TOPIC_KEYS = frozenset({"knowledge_platform"})
 
 
 DRIFT_RULES: tuple[DriftRule, ...] = (
@@ -4888,6 +4876,8 @@ def score_topic_for_query(topic: Topic, query: str) -> int:
 def find_topics_for_query(query: str, *, limit: int = 5) -> list[Topic]:
     ranked: list[tuple[int, Topic]] = []
     for topic in TOPICS:
+        if topic.key in RETIRED_TOPIC_KEYS:
+            continue
         score = score_topic_for_query(topic, query)
         if score:
             ranked.append((score, topic))
@@ -4898,6 +4888,8 @@ def find_topics_for_query(query: str, *, limit: int = 5) -> list[Topic]:
 def find_topics_for_paths(paths: Sequence[str], *, limit: int = 6) -> list[Topic]:
     scores: dict[str, int] = {}
     for topic in TOPICS:
+        if topic.key in RETIRED_TOPIC_KEYS:
+            continue
         matched = 0
         for path in paths:
             if path_matches(path, exact_paths=topic.exact_paths, path_prefixes=topic.path_prefixes):
@@ -5025,6 +5017,9 @@ def is_plan_required(topics: Sequence[Topic], *, paths: Sequence[str] = ()) -> b
 
 
 def iter_topic_artifacts(topic: Topic) -> list[str]:
+    if topic.key in RETIRED_TOPIC_KEYS:
+        return []
+
     ordered: list[str] = []
     seen: set[str] = set()
     for value in (*topic.first_files, *topic.related_docs, *topic.docs_to_update):

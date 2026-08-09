@@ -274,8 +274,7 @@ Recommendation rules:
 
 - Pre-submit suggestions may use safe request text plus R8 `form_payload`, `requester_context` and selected `device_metadata` as search signals.
 - Suggestion query extraction must skip raw ids, token/secret/session/cookie/password fields, email, phone and other sensitive identifiers. These values may be present in server-owned context snapshots but must not become search analytics text.
-- Ticket create stores sanitized `knowledge_attempts` so support can see which requester-safe articles were viewed, marked not helpful or followed by ticket creation.
-- Ask-to-request transfer may carry only sanitized item/version refs and the user query into `knowledge_attempts`; denied titles, internal denial reasons and raw audit ids stay out of requester UI.
+- Helpdesk does not create Knowledge attempts. Existing sanitized `knowledge_attempts` are historical metadata only and may be redacted for support history; local Ask-to-request transfer is removed.
 
 Explainability rules:
 
@@ -415,9 +414,8 @@ R8 request-form-context slice:
 
 R9 knowledge-context slice:
 
-- `server/knowledge/suggestion_service.py` uses safe requester form/profile/device context as pre-submit suggestion search signals while preserving effective-audience filtering.
-- `webapp/src/pages/requester/new-request-page.tsx` starts requester create from a single category/form surface, not a built-in description or separate review step. Pre-submit `/api/knowledge/suggest` is deferred for requester create; Ask/context handoff still pre-fills constructor-authored fields where possible and persists requester `knowledge_attempts` on ticket create.
-- Existing Knowledge audience/search/suggestion/Ask/RAG tests cover Registry audience enforcement before projection.
+- `webapp/src/pages/requester/new-request-page.tsx` starts requester create from a single category/form surface, not a built-in description or separate review step. It does not make local Knowledge suggestion or Ask calls and does not persist new `knowledge_attempts`.
+- Future external Knowledge audience/search acceptance is a PR-7 concern; Helpdesk Registry enforcement remains scoped to its own requester/session flows.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r9-20260615/`.
 
 R10 admin-moderation slice:

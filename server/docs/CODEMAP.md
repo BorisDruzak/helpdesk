@@ -2,6 +2,12 @@
 
 ## 2026-08-09 Helpdesk segmentation boundary and ports (PR-0/PR-1)
 
+- PR-6 is complete: the local Knowledge runtime, routes, UI, AI runtime,
+  configuration and content packs are removed. Physical legacy tables,
+  migrations, `ticket_kb_links` and sanitized `knowledge_attempts` remain
+  history-only until the accepted PR-11 forward-only deletion gate. PR-7 is a
+  future external API/adapter acceptance gate. The dated Knowledge entries
+  below are historical records, not active routes or implementation guidance.
 - Task 5 removes the local Knowledge cross-domain seams from support, Problem
   Management and Registry. Aggregate support workspace payloads retain only a
   typed `knowledge_unavailable` projection with empty suggestions; standalone
@@ -20,8 +26,8 @@
   are forbidden.
 - `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines only a future external
   Knowledge API integration target. Its paths are not registered Helpdesk
-  routes. Current local Knowledge runtime remains through PR-0; after PR-6
-  `KnowledgePort` has no local fallback and reports `knowledge_unavailable`.
+  routes. The local runtime is removed; `KnowledgePort` has no local fallback
+  and reports `knowledge_unavailable`.
 - `server/domain_ports/knowledge.py`, `registry.py` and `endpoint.py` define the
   neutral, runtime-checkable dependency-injection protocols. Knowledge request
   and result DTOs are frozen, forbid extra content fields and preserve opaque

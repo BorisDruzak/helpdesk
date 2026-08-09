@@ -8,6 +8,13 @@ def test_find_topics_for_query_includes_planning_topic() -> None:
     assert any(topic.key == "planning" for topic in topics)
 
 
+def test_knowledge_queries_do_not_route_to_retired_local_platform() -> None:
+    topics = nav.find_topics_for_query("KnowledgePort external integration")
+
+    assert topics[0].key == "helpdesk_external_domain_ports"
+    assert all(topic.key != "knowledge_platform" for topic in topics)
+
+
 def test_release_topic_related_docs_include_handoff_artifacts() -> None:
     release_topic = next(topic for topic in nav.TOPICS if topic.key == "release")
 

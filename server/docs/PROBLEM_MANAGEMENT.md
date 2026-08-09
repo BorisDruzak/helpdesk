@@ -110,7 +110,7 @@ P5 owns first-class change requests in `server/change/*`. Problem Management onl
 - Admin/support can manage problem records, candidates, scanner runs and candidate merge; auditor is read-only.
 - Aggregate analytics never returns requester IDs, requester comments, public tokens or raw feedback comments.
 - RCA, internal evidence, queue IDs and internal activity payloads stay support/admin/auditor-only.
-- Requester-safe known error/workaround visibility is controlled only by Knowledge Platform ACL, review and publish state.
+- Helpdesk stores no local known-error/workaround content. Any future requester-safe reference belongs to the external Knowledge Platform and must arrive as an opaque, versioned reference.
 
 ## Rollback
 
