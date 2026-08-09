@@ -102,7 +102,6 @@ function createAdminSession() {
       "module.tool.run.high_risk",
       "ticket.passport.manage",
       "admin.inventory.view",
-      "knowledge.metadata.manage",
       "admin.registry.view",
       "admin.modules.view",
       "admin.forms.view",

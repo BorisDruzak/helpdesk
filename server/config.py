@@ -408,17 +408,6 @@ LOG_FORMAT = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</le
 # WARNING: Enabling this allows execution of arbitrary code on agent devices
 ALLOW_REMOTE_CODE = os.getenv("ALLOW_REMOTE_CODE", "false").lower() == "true"# ============================================================================
 
-# Knowledge import remote fetch policy. Remote URL/Git import is fail-closed unless
-# explicitly enabled and scoped to exact or wildcard host allowlist entries.
-KNOWLEDGE_REMOTE_IMPORT_ENABLED = os.getenv("KNOWLEDGE_REMOTE_IMPORT_ENABLED", "false").lower() == "true"
-KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS = tuple(
-    host.strip().lower()
-    for host in os.getenv("KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS", "").split(",")
-    if host.strip()
-)
-KNOWLEDGE_REMOTE_IMPORT_MAX_BYTES = int(os.getenv("KNOWLEDGE_REMOTE_IMPORT_MAX_BYTES", str(1024 * 1024)))
-KNOWLEDGE_REMOTE_IMPORT_TIMEOUT_SECONDS = int(os.getenv("KNOWLEDGE_REMOTE_IMPORT_TIMEOUT_SECONDS", "10"))
-KNOWLEDGE_REMOTE_IMPORT_MAX_GIT_FILES = int(os.getenv("KNOWLEDGE_REMOTE_IMPORT_MAX_GIT_FILES", "50"))
 # Ticket System (Stage 3)
 # ============================================================================
 # FSM mode: "soft" — нормализация входящих статусов

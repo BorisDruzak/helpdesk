@@ -81,7 +81,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="helpdesk_external_domain_ports",
         title="Helpdesk external domain ports",
-        summary="PR-0/PR-1 ownership boundary, dependency-injection contracts and AST import guard for external Endpoint, Knowledge and Registry domains. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists.",
+        summary="PR-0/PR-1 ownership boundary, dependency-injection contracts and AST import guard for external Endpoint, Knowledge and Registry domains. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists. Retired local Knowledge RBAC and remote-import settings are absent from the active Helpdesk catalog/config.",
         aliases=(
             "helpdesk segmentation",
             "external domain ports",
@@ -101,7 +101,10 @@ TOPICS: tuple[Topic, ...] = (
             "server/domain_ports/unavailable.py",
             "server/domain_ports/container.py",
             "server/config.py",
+            "server/access_control/catalog.py",
             "scripts/check_domain_import_boundaries.py",
+            "server/tests/test_access_control.py",
+            "server/tests/test_config_feature_flags.py",
             "server/tests/test_domain_import_boundaries.py",
         ),
         related_docs=(

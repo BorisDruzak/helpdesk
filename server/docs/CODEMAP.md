@@ -32,6 +32,10 @@
   fresh adapters from the fail-closed `server/config.py::KNOWLEDGE_PORT_MODE`
   setting; PR-1 supports only `unavailable` and defines no singleton or feature
   activation.
+- PR-6 removes the retired local `knowledge.metadata.manage` RBAC permission
+  and the `KNOWLEDGE_REMOTE_IMPORT_*` settings with their deleted runtime.
+  `KNOWLEDGE_PORT_MODE` remains the only Knowledge composition setting and
+  continues to select only the fail-closed external-domain boundary.
 - `scripts/check_domain_import_boundaries.py` is the AST guard for active
   runtime imports of local `knowledge`, `app.repos.knowledge_repo`, and the
   canonical local Knowledge ORM set (including `TicketKnowledgeLink`); only

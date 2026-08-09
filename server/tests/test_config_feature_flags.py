@@ -35,6 +35,35 @@ def _read_flags(env_overrides: dict[str, str] | None = None) -> dict[str, bool]:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
+def _read_knowledge_config_surface() -> dict[str, object]:
+    env = os.environ.copy()
+    env.pop("KNOWLEDGE_PORT_MODE", None)
+    retired_settings = (
+        "KNOWLEDGE_REMOTE_IMPORT_ENABLED",
+        "KNOWLEDGE_REMOTE_IMPORT_ALLOWED_HOSTS",
+        "KNOWLEDGE_REMOTE_IMPORT_MAX_BYTES",
+        "KNOWLEDGE_REMOTE_IMPORT_TIMEOUT_SECONDS",
+        "KNOWLEDGE_REMOTE_IMPORT_MAX_GIT_FILES",
+    )
+    script = (
+        "import json, config; "
+        f"retired_settings = {retired_settings!r}; "
+        "print(json.dumps({"
+        "'knowledge_port_mode': config.KNOWLEDGE_PORT_MODE, "
+        "'retired_settings': [name for name in retired_settings if hasattr(config, name)]"
+        "}, sort_keys=True))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=SERVER_DIR,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
 @pytest.mark.no_db
 def test_web_self_registration_is_disabled_by_default():
     assert _read_flags()["web_self_registration_enabled"] is False
@@ -53,3 +82,11 @@ def test_profile_completion_is_required_by_default():
 @pytest.mark.no_db
 def test_profile_completion_can_be_made_advisory_by_env():
     assert _read_flags({"PROFILE_COMPLETION_REQUIRED": "false"})["profile_completion_required"] is False
+
+
+@pytest.mark.no_db
+def test_config_keeps_external_knowledge_port_mode_without_local_import_settings():
+    assert _read_knowledge_config_surface() == {
+        "knowledge_port_mode": "unavailable",
+        "retired_settings": [],
+    }

@@ -11,7 +11,6 @@ const fullPermissions = [
   "admin.access.view",
   "admin.forms.view",
   "admin.inventory.view",
-  "knowledge.metadata.manage",
   "admin.modules.view",
   "admin.observer.view",
   "admin.playbooks.view",
