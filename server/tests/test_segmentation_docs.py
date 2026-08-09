@@ -180,8 +180,25 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
         "- `085_knowledge_operations.py`",
         "- `086_knowledge_ops_models.py`",
         "- `087_knowledge_rollout_policy_hardening.py`",
+        "- `110_ai_provider_settings.py`",
+        "- `111_knowledge_search_settings.py`",
+        "- `112_knowledge_article_segments.py`",
+        "- `113_knowledge_embeddings_indexing.py`",
+        "- `114_knowledge_portal_persistence.py`",
+        "- `115_knowledge_editor_history.py`",
+        "- `116_knowledge_graph_layouts.py`",
+        "- `117_knowledge_ai_proposals.py`",
+        "- `118_knowledge_metadata_model.py`",
+        "- `119_knowledge_quality_model_uniqueness.py`",
+        "- `121_knowledge_audience_rules.py`",
+        "- `123_knowledge_correction_reviewing_status.py`",
     )
     retained_migration_marker = "retained historical physical schema; non-runtime"
+
+    for migration_name in retained_local_knowledge_migrations:
+        matching_lines = [line for line in database_lines if line.startswith(migration_name)]
+        assert len(matching_lines) == 1, migration_name
+        assert retained_migration_marker in matching_lines[0], matching_lines[0]
 
     for line in database_lines:
         if "knowledge" in line.casefold():

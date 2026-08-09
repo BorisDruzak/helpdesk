@@ -259,6 +259,18 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 - `085_knowledge_operations.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
 - `086_knowledge_ops_models.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
 - `087_knowledge_rollout_policy_hardening.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `110_ai_provider_settings.py` — retained historical physical schema; non-runtime. Its local platform settings tables are preserved only for PR-11 history.
+- `111_knowledge_search_settings.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `112_knowledge_article_segments.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `113_knowledge_embeddings_indexing.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `114_knowledge_portal_persistence.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `115_knowledge_editor_history.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `116_knowledge_graph_layouts.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `117_knowledge_ai_proposals.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `118_knowledge_metadata_model.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `119_knowledge_quality_model_uniqueness.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `121_knowledge_audience_rules.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `123_knowledge_correction_reviewing_status.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
 - `088_quality_loop.py` — structured ticket feedback, reopen events, QA reviews, improvement actions, service quality snapshots and quality policies.
 - `089_quality_loop_production_hardening.py` — latest feedback partial unique index and quality snapshot scheduler metadata.
 - `090_problem_management_rca.py` — problem candidates, problem records, ticket links, versioned RCA, known-error/workaround links, affected objects, detection rules and problem activity events.
