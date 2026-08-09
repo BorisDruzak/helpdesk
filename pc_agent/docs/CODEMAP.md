@@ -143,7 +143,7 @@ Account-session validation note: `pc_agent/ui_gui/server_api.py::validate_accoun
 
 ### 2.6 Конфигурация
 
-The local Knowledge agent integration is removed and Protocol V3 is unchanged. The Qt client no longer calls local Knowledge suggestion, feedback or Ask endpoints and does not submit new `knowledge_attempts`; it continues the Service Catalog/form ticket flow. A future external Knowledge integration must be added behind the Helpdesk `KnowledgePort` contract, not as a direct agent-to-Helpdesk Knowledge API.
+Protocol V3 is unchanged. The Qt client continues the Service Catalog/form ticket flow; any future external content integration must be composed behind the Helpdesk `KnowledgePort` contract, not as a direct agent-to-Helpdesk API.
 | Файл | Назначение |
 |------|------------|
 | `pc_agent/config/config_loader.py` | Загрузка настроек |

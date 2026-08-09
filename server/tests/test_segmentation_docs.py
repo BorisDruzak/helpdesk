@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -106,9 +107,9 @@ def test_server_codemap_does_not_preserve_deleted_knowledge_platform_claims() ->
 
 
 def test_server_codemap_limits_knowledge_to_external_boundary_and_history() -> None:
-    lines = (DOCS_ROOT / "CODEMAP.md").read_text(encoding="utf-8").splitlines()
+    server_lines = (DOCS_ROOT / "CODEMAP.md").read_text(encoding="utf-8").splitlines()
+    agent_lines = Path("pc_agent/docs/CODEMAP.md").read_text(encoding="utf-8").splitlines()
     allowed_boundary_markers = (
-        "local Knowledge runtime",
         "KnowledgePort",
         "knowledge_unavailable",
         "knowledge_attempts",
@@ -120,10 +121,16 @@ def test_server_codemap_limits_knowledge_to_external_boundary_and_history() -> N
         "Knowledge request",
         "legacy Knowledge access",
         "KNOWLEDGE_PORT_MODE",
-        "no local Knowledge RBAC",
     )
 
-    for line_number, line in enumerate(lines, start=1):
+    for line_number, line in enumerate(server_lines, start=1):
         if "knowledge" in line.casefold():
             assert line_number <= 50, line
             assert any(marker in line for marker in allowed_boundary_markers), line
+
+    for line in agent_lines:
+        if "knowledge" in line.casefold():
+            assert "KnowledgePort" in line, line
+
+    for line in (*server_lines, *agent_lines):
+        assert re.search(r"\bkb\b", line, flags=re.IGNORECASE) is None, line
