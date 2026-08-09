@@ -13,7 +13,7 @@ This is the Phase R1 contract for `PLANS.md`: web account registration, profile 
    - Default production behavior is blocking.
    - Rollout override may set `PROFILE_COMPLETION_REQUIRED=false`; the server still returns `missing_fields`, but `profile_completion.blocks.*` and requester feature flags become non-blocking.
    - Allowed while incomplete: `/app/requester/profile/setup`, profile view/edit, device-link status and confirmation, consents that are already pending, logout, and an explicit emergency ticket path when policy allows it.
-   - Blocked while incomplete: normal ticket creation, requester knowledge actions that depend on audience context, ownership changes outside the device-link confirmation flow, feedback/reopen actions, and saved profile-dependent preferences.
+   - Blocked while incomplete: normal ticket creation, external-content actions that depend on verified context, ownership changes outside the device-link confirmation flow, feedback/reopen actions, and saved profile-dependent preferences.
 
 3. Device-link confirmation is separate from profile completion.
    - The default registry policy auto-approves the first non-conflicting binding.
@@ -77,18 +77,6 @@ Admin/debug surfaces may display technical identifiers when needed for operation
 - Missing, offline or ambiguous primary device context is evidence for support and manual triage, not permission to run checks on the creator's current browser computer.
 - Device ownership changes are admin-controlled preview/apply actions with reason and audit. A requester can ask for a change, but cannot self-rebind ownership by creating a ticket or logging in from the agent.
 
-## Requester Help Articles
-
-The requester-safe Knowledge seed must include these PA11 articles:
-
-- `Как создать обращение за другого сотрудника`;
-- `Что делать, если мой ПК не включается`;
-- `Как запросить смену владельца устройства`;
-- `Как привязать устройство к аккаунту`;
-- `Как заполнить профиль пользователя`.
-
-These articles live in `content_packs/knowledge/primary-agent-requester-guides.yaml`. They must use product terms such as `аккаунт`, `профиль`, `устройство`, `привязка устройства`, `кабинет пользователя`, `обращение` and must not expose raw internal ids such as `affected_person_id`, `target_device_id`, `binding_id` or `claim_id`.
-
 ## Route Contract
 
 Target routes:
@@ -97,7 +85,7 @@ Target routes:
 | --- | --- | --- | --- | --- | --- | --- |
 | `/app/register` | Account self-registration with login/password/repeat password and optional device-link code. | anonymous when `WEB_SELF_REGISTRATION_ENABLED=true`; authenticated users may switch account only through safe `next`. | Browser screenshot/DOM of account-only form and post-register login redirect. | `POST /api/web/session/register`. | UI user/account audit for registration; no device binding event. | Passwords, cookies, session tokens, raw device-link secrets, registry person ids. |
 | `/app/login` | Web account login and safe continuation to requester/admin/support workspaces, plus a password-reset request entrypoint. | anonymous. | Browser screenshot/DOM of login success, password-reset request submission or safe Russian error. | `POST /api/web/session/login`, `POST /api/web/session/password-reset-requests`, `GET /api/web/session/me`. | Web session login/logout audit; password-reset request queue row. | Passwords, cookies, auth headers, session ids in visible UI. |
-| `/app/requester` | Canonical requester workspace for profile-aware forms, ticket list/create and post-create Knowledge/chat context. | authenticated requester/user. | Browser evidence from `/app/requester` with account/profile state and server-resolved context; API/DB supports but does not replace browser proof. | `GET /api/web/requester/bootstrap`, `POST /api/web/requester/tickets/preview`, `POST /api/web/requester/tickets`. | Ticket create, requester knowledge attempts from Ask/context handoff when present, redacted web-cabinet Observer events for preview/create, diagnostic target missing/offline/ambiguous, Knowledge, chat, closure, feedback and reopen. | Raw person/device/binding ids, ticket context snapshot, policy JSON, trace ids, cookies, auth headers. |
+| `/app/requester` | Canonical requester workspace for profile-aware forms, ticket list/create and post-create chat context. | authenticated requester/user. | Browser evidence from `/app/requester` with account/profile state and server-resolved context; API/DB supports but does not replace browser proof. | `GET /api/web/requester/bootstrap`, `POST /api/web/requester/tickets/preview`, `POST /api/web/requester/tickets`. | Ticket create, retained history metadata when present, redacted web-cabinet Observer events for preview/create, diagnostic target missing/offline/ambiguous, chat, closure, feedback and reopen. | Raw person/device/binding ids, ticket context snapshot, policy JSON, trace ids, cookies, auth headers. |
 | `/app/requester/profile/setup` | Required profile completion gate for Registry-backed requester details. | authenticated requester/user. | Browser evidence of required fields, registry pickers and return to `/app/requester`. | `GET /api/web/requester/bootstrap`, `PUT /api/web/requester/profile`. | Registry person/profile update audit. | Raw registry storage paths, metadata JSON, person ids, session tokens. |
 | `/app/requester/profile` | Profile view/edit after setup. | authenticated requester/user. | Browser evidence of requester-safe profile projection. | `GET /api/web/requester/profile`, `PUT /api/web/requester/profile`. | Registry person/profile update audit when saved. | Raw metadata JSON, profile schema storage targets, person ids, session tokens. |
 | `/app/requester/devices` | Device list and device-link entrypoint from the web cabinet. | authenticated requester/user. | Browser evidence of manual code lookup/direct link preview and pending/admin-approved state. | `GET /api/web/requester/devices`, `POST /api/web/registry/browser-pairings/lookup`, `GET /api/web/registry/browser-pairings/{pairing_id}`, `POST /api/web/registry/browser-pairings/{pairing_id}/registration/confirm`. | Device-link claim/request audit; later admin approval/rejection audit. | Pairing secrets, pairing hashes, binding ids, claim ids, registry person ids, agent tokens. |
@@ -105,7 +93,7 @@ Target routes:
 | `/app/device/register` | Compatibility confirmation route for an existing device-link id. | authenticated requester/user. | Browser evidence of profile gate, safe preview, department/location pickers, confirm payload and return to `/app/requester/devices`. | `GET /api/web/registry/browser-pairings/{pairing_id}`, `POST /api/web/registry/browser-pairings/{pairing_id}/registration/confirm`. | Device registration claim audit. | Pairing secrets, session tokens, raw person/binding/claim ids in visible UI. |
 | `/app/device/login` | Existing authenticated login confirmation for a paired agent/device. | authenticated requester/user. | Browser evidence of device-scoped login confirmation/mismatch state. | `GET /api/web/registry/browser-pairings/{pairing_id}`, account-session confirmation endpoints used by the compatibility flow. | Account-session or login-confirmation audit. | Passwords, account-session tokens, binding ids, claim ids, pairing secrets. |
 | `/app/admin/registry` | Admin moderation center for people, devices, bindings, claims, sessions, ownership transfer and password-reset requests. | admin/support with registry permissions. | Browser evidence of registry queues/actions and preview/apply dialogs. | `/api/web/admin/registry*`, `/api/web/admin/registry/profile-schema*`, `/api/web/admin/registry/password-reset-requests*`, account-session and registration admin routes. | Registry admin events for bind/transfer/revoke/merge/import/profile-schema/account-session actions; password-reset queue completion. | Raw tokens, cookies, auth headers, password material, unredacted secrets. |
-| `/app/tickets` | Support ticket list/detail workspace, including creator/affected/diagnostic target context. | support/admin/auditor according to ticket permissions. | Browser evidence of support-visible ticket context without requester-only leakage. | `/api/web/support/queue`, `/api/web/support/tickets/{ticket_id}*`, support mutation routes. | Ticket events, workflow/audit events, diagnostic and knowledge attempt events, redacted support chat/status web-cabinet Observer events. | Raw requester-public access codes, cookies, auth headers, hidden Knowledge titles for unauthorized actors, unrestricted raw policy payloads, raw support message/status comment text in Observer payloads. |
+| `/app/tickets` | Support ticket list/detail workspace, including creator/affected/diagnostic target context. | support/admin/auditor according to ticket permissions. | Browser evidence of support-visible ticket context without requester-only leakage. | `/api/web/support/queue`, `/api/web/support/tickets/{ticket_id}*`, support mutation routes. | Ticket events, workflow/audit events, diagnostic and retained-history events, redacted support chat/status web-cabinet Observer events. | Raw requester-public access codes, cookies, auth headers, hidden external-content titles for unauthorized actors, unrestricted raw policy payloads, raw support message/status comment text in Observer payloads. |
 | `/app/admin/observer` | Technical Observer workbench for traces, integrity and runtime diagnostics. | admin/auditor or explicit observer permissions. | Browser evidence of observer search/filter/detail state when Observer UI changes. | `/api/web/admin/observer/*`. | Observer trace/runtime/integrity rows and access audit. | Tokens, cookies, auth headers, raw secrets, unredacted operation parameters. |
 
 `/app/device/register` without a device-link id must not show `pairing_id`; it must show: `Откройте эту страницу из агента или введите код подключения.`
@@ -151,7 +139,7 @@ Response on success is `201` with `user_login`, `actor_role=user`, `next_path=/a
 - `required`: current rollout policy from `PROFILE_COMPLETION_REQUIRED`.
 - `setup_path`: `/app/requester/profile/setup`.
 - `required_fields` and `missing_fields` with requester-facing Russian labels.
-- `blocks`: booleans for normal ticket create/preview and requester knowledge actions while the profile is incomplete and the policy requires completion. Device-link confirmation is a separate lifecycle step and is not blocked by requester profile completion by default.
+- `blocks`: booleans for normal ticket create/preview and external-content actions while the profile is incomplete and the policy requires completion. Device-link confirmation is a separate lifecycle step and is not blocked by requester profile completion by default.
 - `next_actions`: the server-owned ordered action list. Order is profile setup, requester answer, pending consent, solution confirmation, device linking, then new request. React must not rebuild this priority locally except for backward-compatible fallback when the field is absent.
 
 `GET /api/web/requester/profile` returns requester-safe profile data plus `account_summary` (`login`, display name, email and linked-profile flag). It must not expose identity provider names, raw identifiers, `verified`, identity ids, source fields or identity metadata; those remain admin Registry API data.
@@ -211,7 +199,7 @@ The React admin registry page exposes `Схема профиля · P1` for sche
 
 ## R7 Registry Production Context Contract
 
-R7 extends the existing registry model with focused production context that is useful for request forms, routing, support diagnostics, reporting and Knowledge targeting. It does not introduce a generic database builder and it does not require a schema migration.
+R7 extends the existing registry model with focused production context that is useful for request forms, routing, support diagnostics, reporting and service targeting. It does not introduce a generic database builder and it does not require a schema migration.
 
 Projection rules:
 
@@ -258,31 +246,6 @@ Policy rules:
 - Routing, priority, SLA and diagnostic policies may use the flat aliases or the stable snapshot, but they must use server-resolved values from preview/create.
 - Incomplete profiles remain governed by the R3 profile-completion gate unless a specific no-device/emergency policy allows the flow.
 
-## R9 Knowledge Context Contract
-
-Knowledge access and recommendations consume Registry context; they do not own identity or profile lifecycle.
-
-Access rules:
-
-- Requester knowledge search, suggestions, portal actions and Ask/RAG resolve the authenticated web actor to a `RegistryPerson` and `EffectiveAudience` before filtering.
-- Department, department tree, location, access group, audience group, role, service and person audience rules use the same `KnowledgeAccessService` decision before result projection.
-- `requester_portal` remains a compatibility surface alias for canonical `requester_pre_submit`; explicit binding surfaces must include the canonical consumer surface or the article is removed before title/snippet projection.
-- Ask/RAG/vector retrieval applies the same audience and binding-surface gates before ordering, rerank, citations and answer prompt construction.
-- On-behalf requester flows do not expand the creator's Knowledge audience; requester-side attempts stay scoped to `creator_visible` / `creator`.
-
-Recommendation rules:
-
-- Pre-submit suggestions may use safe request text plus R8 `form_payload`, `requester_context` and selected `device_metadata` as search signals.
-- Suggestion query extraction must skip raw ids, token/secret/session/cookie/password fields, email, phone and other sensitive identifiers. These values may be present in server-owned context snapshots but must not become search analytics text.
-- Helpdesk does not create Knowledge attempts. Existing sanitized `knowledge_attempts` are historical metadata only and may be redacted for support history; local Ask-to-request transfer is removed.
-
-Explainability rules:
-
-- Admin Knowledge audience explain remains the source of truth for why an article is visible or hidden.
-- Normal requester UI must not reveal denied article titles, hidden section names, raw audience-rule ids, trace ids or internal diagnostics.
-- Web requester create stores server-owned `profile_schema.version` and dynamic `form_schema_version` evidence, and `observer.web_cabinet` flags missing profile/form schema versions, unsafe diagnostic-target evidence, on-behalf Knowledge audience leakage and missing Customer History projection.
-- Requester Knowledge, form runtime and chat Observer traces use redacted flags, counts and version markers only; they must not include raw query text, chat message text, submitted form values, emails, tokens or item/version ids.
-
 ## R10 Admin Moderation Contract
 
 The admin registry is the moderation surface for web-first registration. It can see enough context to approve, reject, merge, transfer and audit safely, but normal rows must still avoid raw JSON-first workflows.
@@ -308,7 +271,7 @@ User-facing rules:
 
 - Normal UI and accessible labels must use product terms: `аккаунт`, `профиль`, `устройство`, `привязка устройства`, `кабинет заявителя`, `обращение`, `заявка на привязку`.
 - Requester device facts render as `Агент <version>`, `Версия агента не указана`, `Привязка активна`, `Статус привязки уточняется`, `В сети`, `Не в сети` or `Статус сети не указан`; Latin `agent unknown`, `status unknown`, `online` and `offline` are not normal-user labels.
-- Knowledge Ask draft context is localized as `Запрос из базы знаний`, `Вопрос в базе знаний`, `Статус ответа` and `Режим поиска`; raw audit ids/slugs are not inserted into requester draft text.
+- external-content draft context is localized as `Запрос из базы знаний`, `Вопрос в базе знаний`, `Статус ответа` and `Режим поиска`; raw audit ids/slugs are not inserted into requester draft text.
 - Admin registration blockers must map backend reason codes to Russian explanations. For example, `active_primary_user_exists` renders as `уже есть активный основной пользователь`.
 - Touched files must remain valid UTF-8. Common mojibake and replacement-character markers are defects and are guarded by the localization test.
 - Split requester pages and shared runtimes must keep accessible names free of field keys such as `department_id`, `device_id` and `affected_person_id`. Dynamic request/profile controls use the visible Russian field label as the accessible label, while technical keys stay only in internal payloads.
@@ -412,12 +375,6 @@ R8 request-form-context slice:
 - `webapp/src/pages/requester/new-request-page.tsx` pre-fills request forms from safe context, renders registry-backed picker options and runs local plus server preview validation inline during create.
 - Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r8-20260615/`.
 
-R9 knowledge-context slice:
-
-- `webapp/src/pages/requester/new-request-page.tsx` starts requester create from a single category/form surface, not a built-in description or separate review step. It does not make local Knowledge suggestion or Ask calls and does not persist new `knowledge_attempts`.
-- Future external Knowledge audience/search acceptance is a PR-7 concern; Helpdesk Registry enforcement remains scoped to its own requester/session flows.
-- Browser evidence is stored in `artifacts/browser_live_validation/web-first-registration-r9-20260615/`.
-
 R10 admin-moderation slice:
 
 - `server/registry/service.py` projects schema-aware `people[].profile_completion` into the admin registry snapshot.
@@ -427,7 +384,7 @@ R10 admin-moderation slice:
 
 R11 localization slice:
 
-- Split requester pages (`new-request-page.tsx`, `devices-page.tsx`, `tickets-page.tsx`) use shared labels from `webapp/src/features/requester/labels.ts` for Knowledge Ask draft context, requester device version/status/activity labels and requester accessible labels.
+- Split requester pages (`new-request-page.tsx`, `devices-page.tsx`, `tickets-page.tsx`) use shared labels from `webapp/src/features/requester/labels.ts` for external-content draft context, requester device version/status/activity labels and requester accessible labels.
 - `webapp/src/features/admin/registry/registry-requests-tab.tsx` maps conflict blocker reason codes to Russian explanations.
 - `pc_agent/ui_gui/main_window.py` has the repaired invalid-account-session Russian error text.
 - `scripts/test_web_first_registration_localization.py` guards touched files against mojibake and known raw normal-UI snippets.

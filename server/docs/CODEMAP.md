@@ -16,16 +16,15 @@
   to consume Endpoint, Knowledge and Registry only through explicitly composed,
   versioned ports. Direct foreign-domain imports and cross-domain database FKs
   are forbidden.
-- `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines only a future external
-  Knowledge API integration target. Its paths are not registered Helpdesk
-  routes. The local runtime is removed; `KnowledgePort` has no local fallback
-  and reports `knowledge_unavailable`.
+- `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines a future external
+  Knowledge API contract. `KnowledgePort` remains unavailable until explicit
+  composition and reports `knowledge_unavailable`.
 - `server/domain_ports/knowledge.py`, `registry.py` and `endpoint.py` define the
   neutral, runtime-checkable dependency-injection protocols. Knowledge request
   and result DTOs are frozen, forbid extra content fields and preserve opaque
   refs exactly, subject to the documented 512-character limit.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
-  adapters with no DB, HTTP or legacy Knowledge access.
+  adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
   fresh adapters from the fail-closed `server/config.py::KNOWLEDGE_PORT_MODE`
   setting; PR-1 supports only `unavailable` and defines no singleton or feature

@@ -109,28 +109,85 @@ def test_server_codemap_does_not_preserve_deleted_knowledge_platform_claims() ->
 def test_server_codemap_limits_knowledge_to_external_boundary_and_history() -> None:
     server_lines = (DOCS_ROOT / "CODEMAP.md").read_text(encoding="utf-8").splitlines()
     agent_lines = Path("pc_agent/docs/CODEMAP.md").read_text(encoding="utf-8").splitlines()
-    allowed_boundary_markers = (
-        "KnowledgePort",
-        "knowledge_unavailable",
-        "knowledge_attempts",
-        "future Knowledge and Registry Platforms",
-        "Endpoint, Knowledge and Registry",
-        "KNOWLEDGE_PLATFORM_API_V1.md",
-        "Knowledge API integration target",
-        "server/domain_ports/knowledge.py",
-        "Knowledge request",
-        "legacy Knowledge access",
-        "KNOWLEDGE_PORT_MODE",
+    approved_server_lines = {
+        "  configuration and content packs are removed. `KnowledgePort` is external-only",
+        "  and remains fail-closed as `knowledge_unavailable` until PR-7 accepts a",
+        "  and sanitized `knowledge_attempts`, are retained until the PR-11 forward-only",
+        "  control plane; future Knowledge and Registry Platforms are separate domains.",
+        "  to consume Endpoint, Knowledge and Registry only through explicitly composed,",
+        "- `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines a future external",
+        "  Knowledge API contract. `KnowledgePort` remains unavailable until explicit",
+        "  composition and reports `knowledge_unavailable`.",
+        "- `server/domain_ports/knowledge.py`, `registry.py` and `endpoint.py` define the",
+        "  neutral, runtime-checkable dependency-injection protocols. Knowledge request",
+        "  adapters with no DB or HTTP work.",
+        "  fresh adapters from the fail-closed `server/config.py::KNOWLEDGE_PORT_MODE`",
+    }
+    approved_agent_line = (
+        "Protocol V3 is unchanged. The Qt client continues the Service Catalog/form ticket flow; "
+        "any future external content integration must be composed behind the Helpdesk "
+        "`KnowledgePort` contract, not as a direct agent-to-Helpdesk API."
     )
 
     for line_number, line in enumerate(server_lines, start=1):
         if "knowledge" in line.casefold():
             assert line_number <= 50, line
-            assert any(marker in line for marker in allowed_boundary_markers), line
+            assert line in approved_server_lines, line
+            assert not re.search(r"\b(local|fallback|search|ask|service|route)\b", line, re.I), line
 
     for line in agent_lines:
         if "knowledge" in line.casefold():
-            assert "KnowledgePort" in line, line
+            assert line == approved_agent_line, line
 
     for line in (*server_lines, *agent_lines):
         assert re.search(r"\bkb\b", line, flags=re.IGNORECASE) is None, line
+
+
+def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
+    database_lines = (DOCS_ROOT / "DATABASE.md").read_text(encoding="utf-8").splitlines()
+    quick_lookup_lines = Path("docs/QUICK_LOOKUP.md").read_text(encoding="utf-8").splitlines()
+    web_first_lines = Path("docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md").read_text(
+        encoding="utf-8"
+    ).splitlines()
+
+    for line_number, line in enumerate(quick_lookup_lines, start=1):
+        if "knowledge" in line.casefold():
+            assert line_number <= 11, line
+
+    assert not any("knowledge" in line.casefold() for line in web_first_lines)
+
+    for line in database_lines:
+        if "knowledge" in line.casefold():
+            assert "Retained historical Knowledge tables" in line or line.lstrip().startswith(
+                "- `0"
+            ), line
+
+    canonical_text = "\n".join((*database_lines, *quick_lookup_lines, *web_first_lines))
+    for forbidden_surface in (
+        "knowledge_repo.py",
+        "knowledge.access_service",
+        "knowledge.metadata_service",
+        "knowledge.content_pack_service",
+        "knowledge.review_task_service",
+        "knowledge.search_analytics_service",
+        "knowledge.search_settings_service",
+        "knowledge.operations_service",
+        "server/knowledge/",
+        "server/ai/",
+        "/api/knowledge/",
+        "/api/web/knowledge/",
+        "/app/knowledge",
+        "webapp/src/features/knowledge/",
+        "content_packs/knowledge/",
+        "KnowledgeSpace",
+        "KnowledgeAccessService",
+        "KnowledgeRepo",
+        "KnowledgeRetrievalService",
+        "KnowledgeVectorSearchService",
+        "requester_knowledge",
+        "knowledge_attempt_guard",
+        "knowledge_draft_hints",
+        "Knowledge Ask",
+        "Knowledge RAG",
+    ):
+        assert forbidden_surface not in canonical_text
