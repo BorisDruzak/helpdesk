@@ -254,15 +254,15 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 - `081_ticket_contract_hardening.py` — canonical ticket status check, legacy `triaged` backfill, `requester_id` NOT NULL/non-empty check, SLA priority check, deterministic ticket event ordering indexes.
 - `082_service_catalog_process_layer.py` — `helpdesk_services`, `helpdesk_service_offerings`, `helpdesk_service_catalog_audit`, explicit ticket catalog/reporting fields and service/offering reporting indexes.
 - `106_request_studio_publish_tokens.py` — `request_studio_publish_tokens` one-time hashed confirmation-token state for Request Studio safe publish.
-- `083_knowledge_platform.py` — retained historical tables from the deleted local platform, including the `TicketKbLink` read-only historical projection; no active runtime behavior is described by this migration record.
-- `084_knowledge_acceptance_constraints.py` — P2.1 acceptance constraints for knowledge graph, feedback, ingestion and ticket-knowledge enum-like fields.
-- `085_knowledge_operations.py` — P2.2 knowledge operations: idempotent content pack audit tables and self-service deflection rollout policies.
-- `086_knowledge_ops_models.py` — knowledge review tasks, quality snapshots, persisted gap findings and privacy-preserving search analytics.
-- `087_knowledge_rollout_policy_hardening.py` — rollout policy scope, suggestion gating, known-error hiding, safe labels, bypass and API-unavailable behavior.
+- `083_knowledge_platform.py` — retained historical physical schema; non-runtime. Includes the `TicketKbLink` read-only historical projection.
+- `084_knowledge_acceptance_constraints.py` — retained historical physical schema; non-runtime. No local feature behavior is active from this migration record.
+- `085_knowledge_operations.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `086_knowledge_ops_models.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
+- `087_knowledge_rollout_policy_hardening.py` — retained historical physical schema; non-runtime. Its local platform tables are preserved only for PR-11 history.
 - `088_quality_loop.py` — structured ticket feedback, reopen events, QA reviews, improvement actions, service quality snapshots and quality policies.
 - `089_quality_loop_production_hardening.py` — latest feedback partial unique index and quality snapshot scheduler metadata.
 - `090_problem_management_rca.py` — problem candidates, problem records, ticket links, versioned RCA, known-error/workaround links, affected objects, detection rules and problem activity events.
-- `091_problem_management_production_hardening.py` — scanner run records, candidate fingerprint/dedup/cooldown/merge metadata, detection thresholds for failed QA/knowledge gaps and problem SLO policies/due milestones.
+- `091_problem_management_production_hardening.py` — scanner run records, candidate fingerprint/dedup/cooldown/merge metadata, detection thresholds for failed QA/content gaps and problem SLO policies/due milestones.
 - `039_add_servicedesk_test_queue.py` — upsert очереди `servicedesk_test` (active) для публичной ссылки `/queue/test`
 - `062_access_control_groups.py` — access groups, group permissions, group queue grants and access_audit для `/app/admin/access`
 - `072_support_queue_saved_views.py` — `support_queue_saved_views` for DB-backed support Queue Mode saved views and column presets.

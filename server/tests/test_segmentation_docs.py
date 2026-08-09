@@ -174,10 +174,20 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
         if "knowledge_attempts" in line:
             assert "read-only" in line.casefold(), line
 
+    retained_local_knowledge_migrations = (
+        "- `083_knowledge_platform.py`",
+        "- `084_knowledge_acceptance_constraints.py`",
+        "- `085_knowledge_operations.py`",
+        "- `086_knowledge_ops_models.py`",
+        "- `087_knowledge_rollout_policy_hardening.py`",
+    )
+    retained_migration_marker = "retained historical physical schema; non-runtime"
+
     for line in database_lines:
         if "knowledge" in line.casefold():
-            assert "Retained historical Knowledge tables" in line or line.lstrip().startswith(
-                "- `0"
+            assert "Retained historical Knowledge tables" in line or (
+                line.startswith(retained_local_knowledge_migrations)
+                and retained_migration_marker in line
             ), line
 
     for forbidden_surface in (
