@@ -8,6 +8,7 @@
 - `check_domain_import_boundaries.py` resolves absolute and relative imports before rejecting local `knowledge`, `app.repos.knowledge_repo`, and canonical Knowledge ORM dependencies (including `TicketKnowledgeLink`); only historical Alembic versions are exempt. Run it with `python scripts/check_domain_import_boundaries.py`.
 - Focused checks: `python -m pytest server/tests/test_domain_ports.py -q --tb=short`, `python -m pytest server/tests/test_domain_import_boundaries.py -q --tb=short`, `python -m compileall -q server/domain_ports`, `python scripts/check_domain_import_boundaries.py`, and `python scripts/docs_drift_check.py --base <base-commit> --json`.
 - PR-6 cutover is complete: local Knowledge routes, UI, AI runtime, configuration and content packs are removed. Historical tables/migrations plus `ticket_kb_links` and sanitized `knowledge_attempts` remain read-only until PR-11. PR-7 is an external API adapter/acceptance gate; no deploy or schema deletion is part of this milestone.
+- For task intake, use the active `external_knowledge_platform` catalog topic; it points only to the `KnowledgePort` boundary, retained read-only history and the PR-7/PR-11 evidence gates.
 
 ## 2026-04-19 agent runtime and launcher flow
 

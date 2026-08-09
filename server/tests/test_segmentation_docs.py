@@ -56,3 +56,24 @@ def test_docs_reference_external_knowledge_contract_not_removed_runtime() -> Non
     assert "knowledge_unavailable" in ticket_system
     assert "PR-11" in database
     assert "Retained historical Knowledge tables" in database
+
+
+def test_codemaps_do_not_advertise_removed_local_knowledge_runtime() -> None:
+    server_codemap = (DOCS_ROOT / "CODEMAP.md").read_text(encoding="utf-8")
+    agent_runtime = Path("pc_agent/docs/AGENT_RUNTIME_ALWAYS_ON.md").read_text(
+        encoding="utf-8"
+    )
+
+    for text in (server_codemap, agent_runtime):
+        for removed_surface in (
+            "server/knowledge/",
+            "server/ai/",
+            "/api/knowledge/",
+            "/api/web/knowledge/",
+            "/app/knowledge",
+            "KNOWLEDGE_PLATFORM.md",
+        ):
+            assert removed_surface not in text
+    assert "KnowledgePort" in server_codemap
+    assert "PR-7" in server_codemap
+    assert "PR-11" in server_codemap

@@ -8,11 +8,32 @@ def test_find_topics_for_query_includes_planning_topic() -> None:
     assert any(topic.key == "planning" for topic in topics)
 
 
-def test_knowledge_queries_do_not_route_to_retired_local_platform() -> None:
+def test_knowledge_queries_route_to_external_platform_topic() -> None:
     topics = nav.find_topics_for_query("KnowledgePort external integration")
 
-    assert topics[0].key == "helpdesk_external_domain_ports"
+    assert any(topic.key == "external_knowledge_platform" for topic in topics)
     assert all(topic.key != "knowledge_platform" for topic in topics)
+
+
+def test_external_knowledge_topic_contains_no_removed_local_artifacts() -> None:
+    topics = [topic for topic in nav.TOPICS if topic.key == "external_knowledge_platform"]
+    assert len(topics) == 1
+    topic = topics[0]
+    artifacts = "\n".join(nav.iter_topic_artifacts(topic))
+    metadata = "\n".join((*topic.aliases, topic.summary, *topic.checks))
+
+    assert "KnowledgePort" in metadata
+    for removed_surface in (
+        "server/knowledge/",
+        "server/ai/",
+        "knowledge_repo.py",
+        "/api/knowledge/",
+        "/api/web/knowledge/",
+        "/app/knowledge",
+        "KNOWLEDGE_PLATFORM.md",
+    ):
+        assert removed_surface not in artifacts
+        assert removed_surface not in metadata
 
 
 def test_release_topic_related_docs_include_handoff_artifacts() -> None:

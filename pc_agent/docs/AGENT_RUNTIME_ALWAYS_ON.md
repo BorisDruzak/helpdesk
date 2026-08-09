@@ -60,31 +60,14 @@ descriptions, deadlines and approval/diagnostic hints; queue ids, raw policy
 JSON, approver internals and registry ids are not exposed in the agent UI. This
 does not change Protocol V3.
 
-## Knowledge suggestions in create-ticket flow
+## External Knowledge boundary in create-ticket flow
 
-P2 adds requester-safe knowledge suggestions to the same local GUI flow. After a
-Service Catalog offering is selected, `TicketApiClient.get_knowledge_suggestions()`
-calls `POST /api/knowledge/suggest` with service/offering/template context and
-surface `agent_gui`. The wizard displays safe titles/snippets, can record
-viewed/not-helpful/deflected feedback through `POST /api/knowledge/feedback`,
-and includes sanitized `knowledge_attempts` in ticket creation when the requester
-continues after failed self-service. If the knowledge endpoint is unavailable,
-the GUI continues with the existing form/preview/submit flow. This is HTTP-only
-and does not change Protocol V3.
-
-P2.2/P2.2.1 Knowledge Operations adds server-side rollout controls for
-requester/agent deflection. The agent still calls the same `agent_gui`
-suggestion endpoint and includes urgency/impact context so the server can apply
-urgent/high-impact bypass policy. The server may return no suggestions when
-rollout is paused for a service/offering/surface or when deterministic rollout
-bucketing excludes the current context. The GUI must treat rollout-disabled,
-no-suggestion and API-unavailable states as non-blocking by default, continue
-ticket creation, respect the server's `min_suggestions`/`max_suggestions`
-projection, honor `require_suggestions_before_submit`/`allow_skip` at wizard
-state level, keep urgent/high-impact bypass non-blocking, and avoid exposing
-rollout policy internals or internal/support knowledge metadata. If suggestion
-API availability is unknown or no rollout was returned, the safe local default
-is `allow_submit`.
+The local agent has no Knowledge client, routes or UI flow. Ticket creation continues
+without enrichment while `KnowledgePort` is unavailable and Helpdesk projects only
+`knowledge_unavailable`; this does not change Protocol V3. A future external adapter
+is accepted at PR-7 only with its documented API contract and shadow-read evidence.
+Legacy TicketKbLink/ticket_kb_links and sanitized knowledge_attempts records remain
+read-only ticket history until the PR-11 forward-only deletion and rollback gate.
 
 ## Runtime logs
 
