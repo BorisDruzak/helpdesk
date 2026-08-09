@@ -149,6 +149,7 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
     web_first_lines = Path("docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md").read_text(
         encoding="utf-8"
     ).splitlines()
+    canonical_text = "\n".join((*database_lines, *quick_lookup_lines, *web_first_lines))
 
     for line_number, line in enumerate(quick_lookup_lines, start=1):
         if "knowledge" in line.casefold():
@@ -156,13 +157,29 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
 
     assert not any("knowledge" in line.casefold() for line in web_first_lines)
 
+    # The removed requester content flow must not be renamed and retained under
+    # a neutral label. Ordinary request-form drafts remain documented elsewhere;
+    # only the former external-content draft context is prohibited here.
+    assert "external-content" not in canonical_text
+    assert "draft context" not in canonical_text.casefold()
+
+    for line in (*quick_lookup_lines, *database_lines):
+        assert re.search(r"\bKB\b", line) is None, line
+        assert "kb_linked" not in line and "kb_unlinked" not in line, line
+        if "kb_links" in line:
+            assert "TicketKbLink" in line, line
+            assert "read-only historical projection" in line, line
+        if "TicketKbLink" in line:
+            assert "read-only historical projection" in line, line
+        if "knowledge_attempts" in line:
+            assert "read-only" in line.casefold(), line
+
     for line in database_lines:
         if "knowledge" in line.casefold():
             assert "Retained historical Knowledge tables" in line or line.lstrip().startswith(
                 "- `0"
             ), line
 
-    canonical_text = "\n".join((*database_lines, *quick_lookup_lines, *web_first_lines))
     for forbidden_surface in (
         "knowledge_repo.py",
         "knowledge.access_service",

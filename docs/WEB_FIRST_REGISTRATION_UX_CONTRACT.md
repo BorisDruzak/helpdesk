@@ -13,7 +13,7 @@ This is the Phase R1 contract for `PLANS.md`: web account registration, profile 
    - Default production behavior is blocking.
    - Rollout override may set `PROFILE_COMPLETION_REQUIRED=false`; the server still returns `missing_fields`, but `profile_completion.blocks.*` and requester feature flags become non-blocking.
    - Allowed while incomplete: `/app/requester/profile/setup`, profile view/edit, device-link status and confirmation, consents that are already pending, logout, and an explicit emergency ticket path when policy allows it.
-   - Blocked while incomplete: normal ticket creation, external-content actions that depend on verified context, ownership changes outside the device-link confirmation flow, feedback/reopen actions, and saved profile-dependent preferences.
+   - Blocked while incomplete: normal ticket creation, ownership changes outside the device-link confirmation flow, feedback/reopen actions, and saved profile-dependent preferences.
 
 3. Device-link confirmation is separate from profile completion.
    - The default registry policy auto-approves the first non-conflicting binding.
@@ -93,7 +93,7 @@ Target routes:
 | `/app/device/register` | Compatibility confirmation route for an existing device-link id. | authenticated requester/user. | Browser evidence of profile gate, safe preview, department/location pickers, confirm payload and return to `/app/requester/devices`. | `GET /api/web/registry/browser-pairings/{pairing_id}`, `POST /api/web/registry/browser-pairings/{pairing_id}/registration/confirm`. | Device registration claim audit. | Pairing secrets, session tokens, raw person/binding/claim ids in visible UI. |
 | `/app/device/login` | Existing authenticated login confirmation for a paired agent/device. | authenticated requester/user. | Browser evidence of device-scoped login confirmation/mismatch state. | `GET /api/web/registry/browser-pairings/{pairing_id}`, account-session confirmation endpoints used by the compatibility flow. | Account-session or login-confirmation audit. | Passwords, account-session tokens, binding ids, claim ids, pairing secrets. |
 | `/app/admin/registry` | Admin moderation center for people, devices, bindings, claims, sessions, ownership transfer and password-reset requests. | admin/support with registry permissions. | Browser evidence of registry queues/actions and preview/apply dialogs. | `/api/web/admin/registry*`, `/api/web/admin/registry/profile-schema*`, `/api/web/admin/registry/password-reset-requests*`, account-session and registration admin routes. | Registry admin events for bind/transfer/revoke/merge/import/profile-schema/account-session actions; password-reset queue completion. | Raw tokens, cookies, auth headers, password material, unredacted secrets. |
-| `/app/tickets` | Support ticket list/detail workspace, including creator/affected/diagnostic target context. | support/admin/auditor according to ticket permissions. | Browser evidence of support-visible ticket context without requester-only leakage. | `/api/web/support/queue`, `/api/web/support/tickets/{ticket_id}*`, support mutation routes. | Ticket events, workflow/audit events, diagnostic and retained-history events, redacted support chat/status web-cabinet Observer events. | Raw requester-public access codes, cookies, auth headers, hidden external-content titles for unauthorized actors, unrestricted raw policy payloads, raw support message/status comment text in Observer payloads. |
+| `/app/tickets` | Support ticket list/detail workspace, including creator/affected/diagnostic target context. | support/admin/auditor according to ticket permissions. | Browser evidence of support-visible ticket context without requester-only leakage. | `/api/web/support/queue`, `/api/web/support/tickets/{ticket_id}*`, support mutation routes. | Ticket events, workflow/audit events, diagnostic and retained-history events, redacted support chat/status web-cabinet Observer events. | Raw requester-public access codes, cookies, auth headers, unrestricted raw policy payloads, raw support message/status comment text in Observer payloads. |
 | `/app/admin/observer` | Technical Observer workbench for traces, integrity and runtime diagnostics. | admin/auditor or explicit observer permissions. | Browser evidence of observer search/filter/detail state when Observer UI changes. | `/api/web/admin/observer/*`. | Observer trace/runtime/integrity rows and access audit. | Tokens, cookies, auth headers, raw secrets, unredacted operation parameters. |
 
 `/app/device/register` without a device-link id must not show `pairing_id`; it must show: `Откройте эту страницу из агента или введите код подключения.`
@@ -139,7 +139,7 @@ Response on success is `201` with `user_login`, `actor_role=user`, `next_path=/a
 - `required`: current rollout policy from `PROFILE_COMPLETION_REQUIRED`.
 - `setup_path`: `/app/requester/profile/setup`.
 - `required_fields` and `missing_fields` with requester-facing Russian labels.
-- `blocks`: booleans for normal ticket create/preview and external-content actions while the profile is incomplete and the policy requires completion. Device-link confirmation is a separate lifecycle step and is not blocked by requester profile completion by default.
+- `blocks`: booleans for normal ticket create/preview while the profile is incomplete and the policy requires completion. Device-link confirmation is a separate lifecycle step and is not blocked by requester profile completion by default.
 - `next_actions`: the server-owned ordered action list. Order is profile setup, requester answer, pending consent, solution confirmation, device linking, then new request. React must not rebuild this priority locally except for backward-compatible fallback when the field is absent.
 
 `GET /api/web/requester/profile` returns requester-safe profile data plus `account_summary` (`login`, display name, email and linked-profile flag). It must not expose identity provider names, raw identifiers, `verified`, identity ids, source fields or identity metadata; those remain admin Registry API data.
@@ -271,7 +271,6 @@ User-facing rules:
 
 - Normal UI and accessible labels must use product terms: `аккаунт`, `профиль`, `устройство`, `привязка устройства`, `кабинет заявителя`, `обращение`, `заявка на привязку`.
 - Requester device facts render as `Агент <version>`, `Версия агента не указана`, `Привязка активна`, `Статус привязки уточняется`, `В сети`, `Не в сети` or `Статус сети не указан`; Latin `agent unknown`, `status unknown`, `online` and `offline` are not normal-user labels.
-- external-content draft context is localized as `Запрос из базы знаний`, `Вопрос в базе знаний`, `Статус ответа` and `Режим поиска`; raw audit ids/slugs are not inserted into requester draft text.
 - Admin registration blockers must map backend reason codes to Russian explanations. For example, `active_primary_user_exists` renders as `уже есть активный основной пользователь`.
 - Touched files must remain valid UTF-8. Common mojibake and replacement-character markers are defects and are guarded by the localization test.
 - Split requester pages and shared runtimes must keep accessible names free of field keys such as `department_id`, `device_id` and `affected_person_id`. Dynamic request/profile controls use the visible Russian field label as the accessible label, while technical keys stay only in internal payloads.
@@ -384,7 +383,7 @@ R10 admin-moderation slice:
 
 R11 localization slice:
 
-- Split requester pages (`new-request-page.tsx`, `devices-page.tsx`, `tickets-page.tsx`) use shared labels from `webapp/src/features/requester/labels.ts` for external-content draft context, requester device version/status/activity labels and requester accessible labels.
+- Split requester pages (`new-request-page.tsx`, `devices-page.tsx`, `tickets-page.tsx`) use shared labels from `webapp/src/features/requester/labels.ts` for requester device version/status/activity and accessible labels.
 - `webapp/src/features/admin/registry/registry-requests-tab.tsx` maps conflict blocker reason codes to Russian explanations.
 - `pc_agent/ui_gui/main_window.py` has the repaired invalid-account-session Russian error text.
 - `scripts/test_web_first_registration_localization.py` guards touched files against mojibake and known raw normal-UI snippets.
