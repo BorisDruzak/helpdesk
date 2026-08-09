@@ -77,3 +77,29 @@ def test_codemaps_do_not_advertise_removed_local_knowledge_runtime() -> None:
     assert "KnowledgePort" in server_codemap
     assert "PR-7" in server_codemap
     assert "PR-11" in server_codemap
+
+
+def test_server_codemap_does_not_preserve_deleted_knowledge_platform_claims() -> None:
+    server_codemap = (DOCS_ROOT / "CODEMAP.md").read_text(encoding="utf-8")
+
+    for deleted_artifact in (
+        "test_knowledge_ask.py",
+        "test_knowledge_access_service.py",
+        "webapp/src/features/knowledge/",
+        "knowledge.metadata.manage",
+        "seed_knowledge_metadata.py",
+        "content_packs/knowledge/",
+        "server/web_api/knowledge_handlers.py",
+        "knowledge_audience_live_smoke.py",
+        "/app/admin/knowledge/",
+        "test_knowledge_portal.py",
+        "knowledge_feedback_events",
+        "knowledge_correction_requests",
+        "knowledge_user_bookmarks",
+        "KNOWLEDGE_REMOTE_IMPORT_",
+        "knowledge_audience_rule",
+        "knowledge_provider.py",
+        "app.repos.knowledge_repo",
+        "TicketKnowledgeLink",
+    ):
+        assert deleted_artifact not in server_codemap
