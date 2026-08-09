@@ -45,7 +45,7 @@ def test_phase8_secret_audit_rejects_raw_authorization_markers() -> None:
 def test_phase8_secret_audit_accepts_sanitized_report() -> None:
     report = signoff.sanitize_for_report({
         "checks": {"quality_before": {"status": "passed"}},
-        "created": {"knowledge_rule_id": "rule-1"},
+        "created": {"audience_group_id": "group-1"},
     })
     rendered = json.dumps(report, ensure_ascii=False, sort_keys=True)
 

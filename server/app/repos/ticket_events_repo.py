@@ -1800,40 +1800,11 @@ class TicketEventsRepo:
 
     # ---------- Stage 5: KB links ----------
 
-    async def add_kb_link(
-        self,
-        ticket_id: str,
-        article_ref: str,
-        title: Optional[str] = None,
-        source: Optional[str] = None,
-        created_by: Optional[str] = None,
-    ) -> TicketKbLink:
-        """Add KB link. Returns created record."""
-        kb = TicketKbLink(
-            ticket_id=ticket_id,
-            article_ref=article_ref.strip(),
-            title=(title or "").strip() or None,
-            source=(source or "").strip() or None,
-            created_by=created_by,
-        )
-        self.session.add(kb)
-        await self.session.flush()
-        return kb
-
     async def list_kb_links(self, ticket_id: str) -> List[TicketKbLink]:
         """List KB links for ticket."""
         stmt = select(TicketKbLink).where(TicketKbLink.ticket_id == ticket_id).order_by(TicketKbLink.created_at.desc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
-
-    async def delete_kb_link(self, kb_link_id: int, ticket_id: str) -> bool:
-        """Delete KB link by id if it belongs to ticket_id. Returns True if deleted."""
-        stmt = delete(TicketKbLink).where(
-            TicketKbLink.id == kb_link_id,
-            TicketKbLink.ticket_id == ticket_id,
-        )
-        result = await self.session.execute(stmt)
-        return result.rowcount > 0
 
     # ---------- Stage 5: Resolution codes ----------
 

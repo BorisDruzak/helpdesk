@@ -26,7 +26,6 @@ from app.db.models import (
     Device,
     DeviceAccountSession,
     DeviceUserBinding,
-    KnowledgeAudienceRule,
     RegistryDepartment,
     RegistryPerson,
     RegistryPersonIdentity,
@@ -35,14 +34,9 @@ from app.db.models import (
     TicketQueueMember,
     UiUser,
 )
-from app.repos.knowledge_repo import KnowledgeRepo
 from auth.service import AuthService
 from config import DATABASE_URL
-from knowledge.ask_service import KnowledgeAskService
-from knowledge.search_service import KnowledgeSearchService
-from knowledge.suggestion_service import KnowledgeSuggestionService
 from registry.account_session_service import AccountSessionService
-from registry.effective_identity_service import EffectiveIdentityService
 from registry.registration_service import RegistrationService
 
 
@@ -120,24 +114,13 @@ def default_output_path(*, run_id: str, today: str | None = None) -> Path:
     return REPO_ROOT / "artifacts" / f"registry-visibility-foundation-{day}" / f"registry-visibility-live-smoke-{run_id}.json"
 
 
-def support_ticket_search_payload(marker: str) -> dict[str, str]:
-    # Support suggestions search title+description as one substring.
-    return {"title": str(marker), "description": "support suggestions"}
+def ticket_marker_payload(marker: str) -> dict[str, str]:
+    return {"title": str(marker), "description": "registry visibility smoke"}
 
 
-def support_ticket_search_text(marker: str) -> str:
-    payload = support_ticket_search_payload(marker)
+def ticket_marker_text(marker: str) -> str:
+    payload = ticket_marker_payload(marker)
     return f"{payload['title']} {payload['description']}".strip()
-
-
-def knowledge_space_payload(space_code: str, run_id: str) -> dict[str, Any]:
-    return {
-        "code": space_code,
-        "title": f"Phase 7 Visibility {run_id}",
-        "visibility": "requester",
-        "lifecycle_status": "active",
-        "allow_rag": True,
-    }
 
 
 def build_initial_report(*, run_id: str, base_url: str, commit: str | None) -> dict[str, Any]:
@@ -169,20 +152,6 @@ def build_initial_report(*, run_id: str, base_url: str, commit: str | None) -> d
         "created": {},
         "checks": {},
     }
-
-
-def person_id_from_effective_identity(identity: Any) -> str | None:
-    person = getattr(identity, "person", None)
-    if isinstance(person, dict):
-        value = str(person.get("person_id") or "").strip()
-        return value or None
-    if isinstance(identity, dict):
-        person = identity.get("person")
-        if isinstance(person, dict):
-            value = str(person.get("person_id") or "").strip()
-            return value or None
-    value = str(getattr(identity, "person_id", "") or "").strip()
-    return value or None
 
 
 class ApiClient:
@@ -288,7 +257,7 @@ class RegistryVisibilityLiveSmoke:
         self.ids.update(device_ids)
         await self._seed_devices()
         self.admin_api = ApiClient(base_url=self.base_url, token=self.tokens["admin"], insecure_tls=self.insecure_tls)
-        await self._seed_identity_and_knowledge()
+        await self._seed_identity()
 
     async def close(self) -> None:
         await shutdown_db()
@@ -309,7 +278,7 @@ class RegistryVisibilityLiveSmoke:
                 device.last_handshake_at = now
             await session.commit()
 
-    async def _seed_identity_and_knowledge(self) -> None:
+    async def _seed_identity(self) -> None:
         async with get_session() as session:
             for key, role in (("admin", "admin"), ("support", "support"), ("owner", "user"), ("other", "user"), ("pending", "user")):
                 session.add(UiUser(user_login=self.ids[f"{key}_login"], password_hash="live-smoke", actor_role=role, is_active=True))
@@ -377,38 +346,6 @@ class RegistryVisibilityLiveSmoke:
             session.add(queue)
             await session.flush()
             session.add(TicketQueueMember(queue_id=queue.id, actor_id=self.ids["support_login"], role_in_queue="operator"))
-            repo = KnowledgeRepo(session)
-            space_code = f"phase7-visibility-{self.run_id}"
-            await repo.upsert_space(
-                knowledge_space_payload(space_code, self.run_id),
-                actor_id=self.ids["admin_login"],
-            )
-            public_item = await self._published_item(repo, space_code, "public", "public visible", "public body", "requester")
-            it_item = await self._published_item(repo, space_code, "it", "IT scoped", "IT body", "requester")
-            finance_item = await self._published_item(repo, space_code, "finance", "Finance scoped", "finance hidden body", "requester")
-            internal_item = await self._published_item(repo, space_code, "internal", "support internal runbook", "internal body", "support_internal", item_type="runbook")
-            session.add_all(
-                [
-                    KnowledgeAudienceRule(
-                        rule_id=str(uuid.uuid4()),
-                        subject_type="item",
-                        subject_id=it_item["item_id"],
-                        target_type="department",
-                        target_id=it_department.department_id,
-                        effect="allow",
-                        status="active",
-                    ),
-                    KnowledgeAudienceRule(
-                        rule_id=str(uuid.uuid4()),
-                        subject_type="item",
-                        subject_id=finance_item["item_id"],
-                        target_type="department",
-                        target_id=finance_department.department_id,
-                        effect="allow",
-                        status="active",
-                    ),
-                ]
-            )
             await session.commit()
             self.ids.update(
                 {
@@ -418,48 +355,8 @@ class RegistryVisibilityLiveSmoke:
                     "other_person_id": other.person_id,
                     "pending_person_id": pending.person_id,
                     "queue_id": str(queue.id),
-                    "public_slug": public_item["slug"],
-                    "it_slug": it_item["slug"],
-                    "finance_slug": finance_item["slug"],
-                    "internal_slug": internal_item["slug"],
-                    "finance_item_id": finance_item["item_id"],
                 }
             )
-
-    async def _published_item(
-        self,
-        repo: KnowledgeRepo,
-        space_code: str,
-        label: str,
-        title_label: str,
-        body_label: str,
-        visibility: str,
-        *,
-        item_type: str = "article",
-    ) -> dict[str, Any]:
-        support_search_text = support_ticket_search_text(str(self.report["marker"]))
-        title = f"{self.report['marker']} {title_label}"
-        item = await repo.create_item_draft(
-            {
-                "space_code": space_code,
-                "slug": f"phase7-{label}-{self.run_id}",
-                "item_type": item_type,
-                "title": title,
-                "summary": f"{support_search_text} {title_label}",
-                "visibility": visibility,
-                "owner_actor_id": self.ids["admin_login"],
-                "reviewer_actor_id": self.ids["admin_login"],
-            },
-            actor_id=self.ids["admin_login"],
-            actor_role="admin",
-        )
-        version = await repo.create_version(
-            item["item_id"],
-            {"title": title, "body_format": "markdown", "body": f"{support_search_text} {body_label}"},
-            actor_id=self.ids["admin_login"],
-            actor_role="admin",
-        )
-        return await repo.publish_item(item["item_id"], version["version_id"], actor_id=self.ids["admin_login"], actor_role="admin")
 
     def _agent_token(self, key: str = "owner_device_id") -> str:
         return self.agent_tokens[key]
@@ -509,7 +406,7 @@ class RegistryVisibilityLiveSmoke:
             token=self._agent_token(),
         )
         _require(validation.get("valid") is True, "confirmed owner account session did not validate")
-        ticket_payload = support_ticket_search_payload(str(self.report["marker"]))
+        ticket_payload = ticket_marker_payload(str(self.report["marker"]))
         ticket = self._create_agent_ticket(
             title=ticket_payload["title"],
             description=ticket_payload["description"],
@@ -526,17 +423,10 @@ class RegistryVisibilityLiveSmoke:
         )
         listed_ids = {str(item.get("ticket", {}).get("ticket_id") or "") for item in agent_list.get("tickets") or []}
         _require(self.ids["owner_ticket_id"] in listed_ids, "confirmed owner agent ticket list missing own ticket")
-        service_check = await self._check_service_knowledge_for_session(
-            session_id=session_id,
-            session_token=session_token,
-            expected_slug=self.ids["it_slug"],
-            hidden_slug=self.ids["finance_slug"],
-        )
         self.report["scenarios"]["registered_owner"] = {
             "status": "passed",
             "account_mode": account["session"]["account_mode"],
             "ticket_id": self.ids["owner_ticket_id"],
-            "service_knowledge": service_check,
         }
         return {"session_id": session_id, "session_token": session_token, "binding_id": binding["binding_id"]}
 
@@ -561,7 +451,7 @@ class RegistryVisibilityLiveSmoke:
         session_token = pickup.get("session_token")
         _require(session.get("account_mode") == "verified_other_account", "approved request did not create verified_other_account session")
         _require(bool(session_token), "approved other-account session token was not returned on pickup")
-        ticket_payload = support_ticket_search_payload(str(self.report["marker"]))
+        ticket_payload = ticket_marker_payload(str(self.report["marker"]))
         other_ticket = self._create_agent_ticket(
             title=ticket_payload["title"],
             description=ticket_payload["description"],
@@ -596,19 +486,12 @@ class RegistryVisibilityLiveSmoke:
             _require(row.requester_account_warning == "ticket_created_from_other_account_on_registered_device", "other-account warning not stored")
             binding = await db_session.get(DeviceUserBinding, owner_session["binding_id"])
             _require(binding is not None and binding.person_id == self.ids["owner_person_id"] and binding.status == "active", "other-account mutated owner binding")
-        service_check = await self._check_service_knowledge_for_session(
-            session_id=session_id,
-            session_token=session_token,
-            expected_slug=self.ids["finance_slug"],
-            hidden_slug=self.ids["it_slug"],
-        )
         self.report["scenarios"]["verified_other_account"] = {
             "status": "passed",
             "account_mode": session.get("account_mode"),
             "ticket_id": self.ids["other_ticket_id"],
             "owner_ticket_hidden": True,
             "warning_stored": True,
-            "service_knowledge": service_check,
         }
         return {"session_id": session_id, "session_token": session_token}
 
@@ -704,57 +587,6 @@ class RegistryVisibilityLiveSmoke:
             ticket.queue_id = int(self.ids["queue_id"])
             ticket.assignee_id = self.ids["support_login"]
             await session.commit()
-
-    async def _check_service_knowledge_for_session(self, *, session_id: str, session_token: str, expected_slug: str, hidden_slug: str) -> dict[str, Any]:
-        async with get_session() as session:
-            identity = await EffectiveIdentityService(session).resolve_account_session_identity(
-                device_id=self.ids["owner_device_id"],
-                session_id=session_id,
-                session_token=session_token,
-            )
-            person_id = person_id_from_effective_identity(identity)
-            _require(person_id is not None, "account session did not resolve to requester person")
-            audience = await EffectiveIdentityService(session).resolve_person_audience(
-                person_id=person_id,
-                actor_id=identity.actor_id,
-                actor_role="requester",
-            )
-            search_results = await KnowledgeSearchService(session).search(
-                query=str(self.report["marker"]),
-                actor_role="requester",
-                limit=10,
-                surface="phase7_live_smoke",
-                effective_audience=audience,
-            )
-            suggest = await KnowledgeSuggestionService(session).suggest(
-                {"query": str(self.report["marker"]), "limit": 10, "surface": "phase7_live_smoke"},
-                actor_role="requester",
-                effective_audience=audience,
-            )
-            ask = await KnowledgeAskService(session).ask(
-                query=str(self.report["marker"]),
-                actor_role="requester",
-                effective_audience=audience,
-            )
-        search_slugs = {str(item.get("slug") or "") for item in search_results if isinstance(item, dict)}
-        suggest_slugs = {str(item.get("slug") or "") for item in suggest.get("suggestions") or [] if isinstance(item, dict)}
-        ask_slugs = {
-            str(((item.get("item") or {}) if isinstance(item, dict) else {}).get("slug") or "")
-            for item in ask.get("retrieval_results") or []
-            if isinstance(item, dict)
-        }
-        for label, slugs in (("search", search_slugs), ("suggest", suggest_slugs), ("ask", ask_slugs)):
-            _require(expected_slug in slugs, f"{label} missing expected scoped article {expected_slug}")
-            _require(hidden_slug not in slugs, f"{label} leaked hidden article {hidden_slug}")
-        rendered = json.dumps({"search": search_results, "suggest": suggest, "ask": ask}, ensure_ascii=False, sort_keys=True)
-        _require(hidden_slug not in rendered, "hidden slug leaked into service knowledge payload")
-        return {
-            "status": "passed",
-            "person_id": audience.person_id,
-            "search_slugs": sorted(search_slugs),
-            "suggest_slugs": sorted(suggest_slugs),
-            "ask_slugs": sorted(ask_slugs),
-        }
 
 def write_report(report: dict[str, Any], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)

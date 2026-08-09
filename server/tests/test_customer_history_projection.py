@@ -7,7 +7,6 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
-    KnowledgeFeedbackEvent,
     Operation,
     ObserverTrace,
     RegistryPerson,
@@ -83,6 +82,24 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
                 "ticket_context": ticket_context,
                 "secret_token": "must-not-leak",
                 "request_form": {"key": "history_form", "title": "History form"},
+                "knowledge_attempts": [
+                    {
+                        "item_id": "kb-visible",
+                        "title": "Visible article",
+                        "visibility_scope": "creator_visible",
+                        "audience_scope": "creator",
+                        "result": "not_helpful",
+                        "surface": "requester_portal",
+                    },
+                    {
+                        "item_id": "kb-restricted",
+                        "title": "Restricted article",
+                        "visibility_scope": "support_only",
+                        "audience_scope": "support",
+                        "result": "viewed",
+                        "surface": "requester_portal",
+                    },
+                ],
             },
         )
         session.add(ticket)
@@ -121,36 +138,6 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
             ]
         )
         await session.flush()
-        session.add(
-            KnowledgeFeedbackEvent(
-                event_id=str(uuid.uuid4()),
-                actor_id=login,
-                actor_role="requester",
-                ticket_id=ticket_id,
-                source_surface="requester_portal",
-                event_type="ticket_created_after_view",
-                result="not_helpful",
-                service_code="svc-history",
-                metadata_json={
-                    "knowledge_attempts": [
-                        {
-                            "item_id": "kb-visible",
-                            "title": "Visible article",
-                            "visibility_scope": "creator_visible",
-                            "audience_scope": "creator",
-                        },
-                        {
-                            "item_id": "kb-restricted",
-                            "title": "Restricted article",
-                            "visibility_scope": "support_only",
-                            "audience_scope": "support",
-                        },
-                    ],
-                    "session_id": "must-not-leak",
-                },
-                created_at=now,
-            )
-        )
         await session.commit()
     return ticket_id, person_id
 

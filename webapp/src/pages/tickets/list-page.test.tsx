@@ -720,7 +720,7 @@ describe("TicketListPage", () => {
     const nav = await screen.findByRole("navigation", { name: "Разделы поддержки" });
     expect(within(nav).getByRole("link", { name: /Тикеты/ })).toHaveAttribute("href", "/app/tickets");
     expect(within(nav).getByRole("link", { name: /Отчёты/ })).toHaveAttribute("href", "/app/reports");
-    expect(within(nav).getByRole("link", { name: /Знания/ })).toHaveAttribute("href", "/app/knowledge");
+    expect(within(nav).queryByRole("link", { name: /Знания/ })).not.toBeInTheDocument();
     expect(within(nav).getByRole("link", { name: /Настройки/ })).toHaveAttribute("href", "/app/settings");
 
     fireEvent.click(screen.getByRole("button", { name: /Выйти/ }));

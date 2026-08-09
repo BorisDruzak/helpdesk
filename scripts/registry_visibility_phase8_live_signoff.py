@@ -23,10 +23,6 @@ from app.db import get_session, init_db, shutdown_db
 from app.db.models import (
     Device,
     DeviceUserBinding,
-    KnowledgeAudienceRule,
-    KnowledgeItem,
-    KnowledgeItemVersion,
-    KnowledgeSpace,
     RegistryAsset,
     RegistryAudienceGroup,
     RegistryAudienceGroupMember,
@@ -214,54 +210,6 @@ class Phase8LiveSignoff:
                 created_by=self.ids["admin_login"],
                 updated_by=self.ids["admin_login"],
             )
-            space = KnowledgeSpace(
-                space_id=str(uuid.uuid4()),
-                code=f"phase8_operability_{self.run_id}",
-                title=f"Phase 8 Operability {self.run_id}",
-                visibility="requester",
-                lifecycle_status="active",
-                owner_actor_id=self.ids["admin_login"],
-                created_by=self.ids["admin_login"],
-                updated_by=self.ids["admin_login"],
-            )
-            item_id = str(uuid.uuid4())
-            version_id = str(uuid.uuid4())
-            item = KnowledgeItem(
-                item_id=item_id,
-                space_id=space.space_id,
-                slug=f"phase8-zero-users-{self.run_id}",
-                item_type="article",
-                title=f"Phase 8 Zero Users {self.run_id}",
-                status="published",
-                visibility="requester",
-                current_version_id=version_id,
-                owner_actor_id=self.ids["admin_login"],
-                reviewer_actor_id=self.ids["admin_login"],
-                created_by=self.ids["admin_login"],
-                updated_by=self.ids["admin_login"],
-            )
-            version = KnowledgeItemVersion(
-                version_id=version_id,
-                item_id=item_id,
-                version_number=1,
-                title=item.title,
-                body="phase8 zero-user body must not appear in exported audience-rule CSV",
-                body_format="markdown",
-                created_by=self.ids["admin_login"],
-                published_by=self.ids["admin_login"],
-            )
-            rule = KnowledgeAudienceRule(
-                rule_id=str(uuid.uuid4()),
-                subject_type="item",
-                subject_id=item_id,
-                target_type="department",
-                target_id=archived_department.department_id,
-                effect="allow",
-                status="active",
-                reason=self.reason,
-                created_by=self.ids["admin_login"],
-                updated_by=self.ids["admin_login"],
-            )
             session.add_all(
                 [
                     archived_department,
@@ -272,7 +220,6 @@ class Phase8LiveSignoff:
                     device,
                     asset,
                     audience_group,
-                    space,
                 ]
             )
             await session.flush()
@@ -288,11 +235,8 @@ class Phase8LiveSignoff:
                     ),
                     binding,
                     audience_member,
-                    item,
                 ]
             )
-            await session.flush()
-            session.add_all([version, rule])
             await session.commit()
             self.ids.update(
                 {
@@ -308,10 +252,6 @@ class Phase8LiveSignoff:
                     "audience_group_code": audience_group.code,
                     "audience_member_id": audience_member.membership_id,
                     "missing_department_id": missing_department_id,
-                    "knowledge_space_id": space.space_id,
-                    "knowledge_item_id": item.item_id,
-                    "knowledge_rule_id": rule.rule_id,
-                    "knowledge_slug": item.slug,
                 }
             )
             self.report["created"] = {
@@ -321,8 +261,6 @@ class Phase8LiveSignoff:
                     "person_id",
                     "binding_id",
                     "audience_group_id",
-                    "knowledge_item_id",
-                    "knowledge_rule_id",
                 )
             }
 
@@ -368,8 +306,6 @@ class Phase8LiveSignoff:
                 "person_archived_location": self.ids["person_id"],
                 "binding_inactive_person": self.ids["binding_id"],
                 "audience_group_empty": self.ids["audience_group_id"],
-                "knowledge_audience_rule_invalid_target": self.ids["knowledge_rule_id"],
-                "knowledge_audience_zero_users": self.ids["knowledge_item_id"],
             }
             issues = {
                 kind: self._find_issue(registry_before, kind=kind, object_id=object_id)
@@ -384,18 +320,14 @@ class Phase8LiveSignoff:
 
             groups_csv = self._export_csv("audience_groups")
             members_csv = self._export_csv("audience_group_members")
-            rules_csv = self._export_csv("knowledge_audience_rules")
             _require(self.ids["audience_group_code"] in groups_csv, "audience group export missing seeded group")
             _require("'=Phase 8 Formula Group" in groups_csv, "audience group export did not escape formula-leading name")
             _require("'+Phase 8 Formula Description" in groups_csv, "audience group export did not escape formula-leading description")
             _require(self.ids["missing_department_id"] in members_csv, "audience member export missing seeded missing department member")
-            _require(self.ids["knowledge_rule_id"] in rules_csv, "knowledge rule export missing seeded rule")
-            _require("phase8 zero-user body" not in rules_csv, "knowledge rule export leaked article body")
             self.report["checks"]["export"] = {
                 "status": "passed",
                 "audience_groups_sample": _csv_sample(groups_csv, marker=self.ids["audience_group_code"]),
                 "audience_group_members_sample": _csv_sample(members_csv, marker=self.ids["missing_department_id"]),
-                "knowledge_audience_rules_sample": _csv_sample(rules_csv, marker=self.ids["knowledge_rule_id"]),
             }
 
             duplicate_csv = (

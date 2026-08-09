@@ -35,7 +35,6 @@ from pc_agent.ui_gui.chat_panel import (  # noqa: E402
     diagnostic_consent_required,
     merge_ticket_stream,
     build_ticket_create_error_message,
-    knowledge_submit_gate_state,
     message_visual_role,
     catalog_offering_for_request_template,
     enrich_form_with_catalog_selection,
@@ -330,62 +329,12 @@ def test_ticket_create_wizard_uses_server_backed_preview():
     assert "server_preview=self._server_creation_preview" in source
 
 
-def test_ticket_create_wizard_uses_knowledge_suggestions_and_attempts():
+def test_ticket_create_wizard_does_not_use_local_knowledge_runtime():
     source = inspect.getsource(chat_panel_module.TicketCreateWizardWidget)
 
-    assert "get_knowledge_suggestions" in source
-    assert "record_knowledge_feedback" in source
-    assert "knowledge_attempts" in source
-
-
-def test_agent_knowledge_gate_requires_suggestions_when_skip_is_disabled():
-    state = knowledge_submit_gate_state(
-        rollout={
-            "require_suggestions_before_submit": True,
-            "allow_skip": False,
-            "min_suggestions": 1,
-            "no_suggestions_behavior": "block_submit",
-        },
-        suggestion_count=0,
-        request_finished=True,
-        api_unavailable=False,
-        skipped=False,
-    )
-
-    assert state["can_submit"] is False
-    assert state["reason"] == "no_suggestions_block"
-
-
-def test_agent_knowledge_gate_allows_api_unavailable_warning_and_urgent_bypass():
-    unavailable = knowledge_submit_gate_state(
-        rollout={
-            "require_suggestions_before_submit": True,
-            "allow_skip": False,
-            "api_unavailable_behavior": "show_warning",
-        },
-        suggestion_count=0,
-        request_finished=True,
-        api_unavailable=True,
-        skipped=False,
-    )
-    bypassed = knowledge_submit_gate_state(
-        rollout={
-            "require_suggestions_before_submit": True,
-            "allow_skip": False,
-            "min_suggestions": 1,
-            "no_suggestions_behavior": "block_submit",
-            "bypass_applied": True,
-        },
-        suggestion_count=0,
-        request_finished=True,
-        api_unavailable=False,
-        skipped=False,
-    )
-
-    assert unavailable["can_submit"] is True
-    assert unavailable["reason"] == "api_unavailable_warning"
-    assert bypassed["can_submit"] is True
-    assert bypassed["reason"] == "bypass"
+    assert "get_knowledge_suggestions" not in source
+    assert "record_knowledge_feedback" not in source
+    assert "knowledge_submit_gate_state" not in source
 
 
 def test_ticket_create_wizard_has_structured_process_preview_panel():

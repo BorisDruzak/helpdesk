@@ -28,30 +28,6 @@ export const ReportsPage = lazy(() =>
   import("../../pages/reports").then((module) => ({ default: module.ReportsPage })),
 );
 
-export const KnowledgeBasePage = lazy(() =>
-  import("../../pages/knowledge").then((module) => ({ default: module.KnowledgeBasePage })),
-);
-
-export const KnowledgePortalSearchPage = lazy(() =>
-  import("../../pages/kb/search-page").then((module) => ({ default: module.KnowledgePortalSearchPage })),
-);
-
-export const KnowledgePortalHomePage = lazy(() =>
-  import("../../pages/kb/home-page").then((module) => ({ default: module.KnowledgePortalHomePage })),
-);
-
-export const KnowledgePortalArticlePage = lazy(() =>
-  import("../../pages/kb/article-page").then((module) => ({ default: module.KnowledgePortalArticlePage })),
-);
-
-export const KnowledgePortalCollectionPage = lazy(() =>
-  import("../../pages/kb/collection-page").then((module) => ({ default: module.KnowledgePortalCollectionPage })),
-);
-
-export const KnowledgePortalAskPage = lazy(() =>
-  import("../../pages/kb/ask-page").then((module) => ({ default: module.KnowledgePortalAskPage })),
-);
-
 export const HelpPage = lazy(() =>
   import("../../pages/help").then((module) => ({ default: module.HelpPage })),
 );
@@ -158,44 +134,6 @@ export const AdminPolicyHealthPage = lazy(() =>
 
 export const AdminServiceCatalogPage = lazy(() =>
   import("../../pages/admin/service-catalog-page").then((module) => ({ default: module.AdminServiceCatalogPage })),
-);
-
-export const AdminKnowledgePage = lazy(() =>
-  import("../../pages/admin/knowledge-page").then((module) => ({ default: module.AdminKnowledgePage })),
-);
-
-export const AdminKnowledgeStudioPage = lazy(() =>
-  import("../../pages/admin/knowledge-studio-page").then((module) => ({ default: module.AdminKnowledgeStudioPage })),
-);
-
-export const AdminKnowledgeSectionsPage = lazy(() =>
-  import("../../pages/admin/knowledge-sections-page").then((module) => ({ default: module.AdminKnowledgeSectionsPage })),
-);
-
-export const AdminKnowledgeMetadataPage = lazy(() =>
-  import("../../pages/admin/knowledge-metadata-page").then((module) => ({ default: module.AdminKnowledgeMetadataPage })),
-);
-
-export const AdminKnowledgeGraphPage = lazy(() =>
-  import("../../pages/admin/knowledge-graph-page").then((module) => ({ default: module.AdminKnowledgeGraphPage })),
-);
-
-export const AdminKnowledgeImportPage = lazy(() =>
-  import("../../pages/admin/knowledge-import-page").then((module) => ({ default: module.AdminKnowledgeImportPage })),
-);
-
-export const AdminKnowledgeAiPage = lazy(() =>
-  import("../../pages/admin/knowledge-ai-page").then((module) => ({ default: module.AdminKnowledgeAiPage })),
-);
-
-export const AdminKnowledgeSearchSettingsPage = lazy(() =>
-  import("../../pages/admin/knowledge-search-settings-page").then((module) => ({
-    default: module.AdminKnowledgeSearchSettingsPage,
-  })),
-);
-
-export const AdminKnowledgeIndexingPage = lazy(() =>
-  import("../../pages/admin/knowledge-indexing-page").then((module) => ({ default: module.AdminKnowledgeIndexingPage })),
 );
 
 export const AdminQualityPage = lazy(() =>

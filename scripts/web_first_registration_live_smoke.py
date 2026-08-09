@@ -21,8 +21,7 @@ for path in (str(REPO_ROOT), str(SERVER_ROOT)):
         sys.path.insert(0, path)
 
 from app.db import get_session, init_db, shutdown_db
-from app.db.models import Device, KnowledgeAudienceRule, RegistryDepartment, RegistryLocation, UiUser
-from app.repos.knowledge_repo import KnowledgeRepo
+from app.db.models import Device, RegistryDepartment, RegistryLocation, UiUser
 from auth.service import AuthService
 from config import DATABASE_URL
 
@@ -162,10 +161,7 @@ async def _seed_reference_data(run_id: str) -> dict[str, str]:
     )
     suffix = run_id[-12:]
     user_department_id = str(uuid.uuid4())
-    hidden_department_id = str(uuid.uuid4())
     location_id = str(uuid.uuid4())
-    visible_slug = f"webfirst-visible-{suffix}"
-    hidden_slug = f"webfirst-hidden-{suffix}"
 
     async with get_session() as session:
         session.add_all(
@@ -176,14 +172,6 @@ async def _seed_reference_data(run_id: str) -> dict[str, str]:
                     department_id=user_department_id,
                     code=f"webfirst-user-{suffix}",
                     name=f"Web First User Department {suffix}",
-                    status="active",
-                    source="live_smoke",
-                    metadata_json={},
-                ),
-                RegistryDepartment(
-                    department_id=hidden_department_id,
-                    code=f"webfirst-hidden-{suffix}",
-                    name=f"Web First Hidden Department {suffix}",
                     status="active",
                     source="live_smoke",
                     metadata_json={},
@@ -211,36 +199,6 @@ async def _seed_reference_data(run_id: str) -> dict[str, str]:
         device.last_seen_at = datetime.now(timezone.utc)
         device.last_handshake_at = device.last_seen_at
 
-        repo = KnowledgeRepo(session)
-        space_code = f"webfirst-{suffix}"
-        await repo.upsert_space(
-            {"code": space_code, "title": f"Web First Smoke {suffix}", "visibility": "requester", "lifecycle_status": "active"},
-            actor_id=admin_login,
-        )
-        visible_item = await _seed_article(repo, space_code, visible_slug, f"webfirst marker {run_id} visible")
-        hidden_item = await _seed_article(repo, space_code, hidden_slug, f"webfirst marker {run_id} hidden")
-        session.add_all(
-            [
-                KnowledgeAudienceRule(
-                    rule_id=str(uuid.uuid4()),
-                    subject_type="item",
-                    subject_id=visible_item["item_id"],
-                    target_type="department",
-                    target_id=user_department_id,
-                    effect="allow",
-                    status="active",
-                ),
-                KnowledgeAudienceRule(
-                    rule_id=str(uuid.uuid4()),
-                    subject_type="item",
-                    subject_id=hidden_item["item_id"],
-                    target_type="department",
-                    target_id=hidden_department_id,
-                    effect="allow",
-                    status="active",
-                ),
-            ]
-        )
         await session.commit()
 
     return {
@@ -251,34 +209,8 @@ async def _seed_reference_data(run_id: str) -> dict[str, str]:
         "device_id": device_id,
         "agent_token": agent_token,
         "department_id": user_department_id,
-        "hidden_department_id": hidden_department_id,
         "location_id": location_id,
-        "visible_slug": visible_slug,
-        "hidden_slug": hidden_slug,
     }
-
-
-async def _seed_article(repo: KnowledgeRepo, space_code: str, slug: str, title: str) -> dict[str, str]:
-    item = await repo.create_item_draft(
-        {
-            "space_code": space_code,
-            "slug": slug,
-            "item_type": "article",
-            "title": title,
-            "summary": title,
-            "visibility": "requester",
-            "owner_actor_id": "live-smoke",
-            "reviewer_actor_id": "live-smoke",
-        },
-        actor_id="live-smoke",
-    )
-    version = await repo.create_version(
-        item["item_id"],
-        {"title": title, "body_format": "markdown", "body": f"Body for {title}"},
-        actor_id="live-smoke",
-    )
-    await repo.publish_item(item["item_id"], version["version_id"], actor_id="live-smoke")
-    return {"item_id": item["item_id"], "slug": slug}
 
 
 class WebFirstRegistrationLiveSmoke:
@@ -403,15 +335,6 @@ class WebFirstRegistrationLiveSmoke:
         ticket_id = str(ticket.get("ticket_id") or "")
         _require(ticket_id, "requester ticket was not created")
 
-        search = user.data(
-            "POST",
-            "/api/knowledge/search",
-            payload={"query": f"webfirst marker {self.run_id}", "limit": 10, "surface": "requester_portal"},
-        )
-        slugs = {str(item.get("slug") or "") for item in search.get("results") or []}
-        _require(self.seed["visible_slug"] in slugs, "requester KB search did not include allowed audience article")
-        _require(self.seed["hidden_slug"] not in slugs, "requester KB search leaked hidden department article")
-
         self.report["created"].update(
             {
                 "user_login": user_login,
@@ -429,8 +352,6 @@ class WebFirstRegistrationLiveSmoke:
                 "admin_approval_created_binding": True,
                 "agent_linked_state_seen": True,
                 "ticket_created": True,
-                "kb_allowed_visible": True,
-                "kb_hidden_not_leaked": True,
             }
         )
 

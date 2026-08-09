@@ -2,7 +2,6 @@ import { Button, FieldShell, Input, Select, Textarea } from "../../features/requ
 import { requesterDeviceLabel } from "../../features/requester/labels";
 import type { DynamicFormValues } from "../../features/requester/dynamic-form";
 import type {
-  KnowledgeAttempt,
   RequestFormDefinition,
   RequesterContextPreview,
   RequesterDevice,
@@ -10,17 +9,8 @@ import type {
   ServiceCatalogCurrent,
 } from "../../features/requester/types";
 
-export const ASK_TICKET_CONTEXT_STORAGE_KEY = "pc_client.knowledge_ask.ticket_context";
-const ASK_TICKET_CONTEXT_MAX_AGE_MS = 30 * 60 * 1000;
 export const OWNER_CHANGE_INTENT = "device_owner_change";
 export const OWNER_CHANGE_PROBLEM = "Нужно проверить владельца устройства";
-
-export type AskTicketContext = {
-  query?: string | null;
-  created_at?: string | null;
-  primary_item?: { item_id?: string | null; version_id?: string | null } | null;
-  retrieval_results?: Array<{ item_id?: string | null; version_id?: string | null }>;
-};
 
 export type FormAvailability = {
   availableForSelf: boolean;
@@ -411,35 +401,4 @@ export function primaryDeviceResolutionText(resolution: RequesterContextPreview 
     return "Основное устройство не найдено.";
   }
   return "Устройство не выбрано.";
-}
-
-export function readAskContext(): AskTicketContext | null {
-  try {
-    const raw = window.sessionStorage.getItem(ASK_TICKET_CONTEXT_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AskTicketContext;
-    const createdAt = parsed.created_at ? Date.parse(parsed.created_at) : 0;
-    if (createdAt && Date.now() - createdAt > ASK_TICKET_CONTEXT_MAX_AGE_MS) {
-      window.sessionStorage.removeItem(ASK_TICKET_CONTEXT_STORAGE_KEY);
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-export function askContextAttempts(context: AskTicketContext): KnowledgeAttempt[] {
-  const now = new Date().toISOString();
-  const items = context.primary_item?.item_id ? [context.primary_item, ...(context.retrieval_results ?? [])] : context.retrieval_results ?? [];
-  const seen = new Set<string>();
-  return items
-    .map((item) => ({ item_id: item?.item_id ?? "", version_id: item?.version_id ?? null }))
-    .filter((item) => {
-      if (!item.item_id || seen.has(item.item_id)) return false;
-      seen.add(item.item_id);
-      return true;
-    })
-    .slice(0, 5)
-    .map((item) => ({ ...item, result: "ticket_created_after_view" as const, surface: "requester_portal" as const, timestamp: now }));
 }

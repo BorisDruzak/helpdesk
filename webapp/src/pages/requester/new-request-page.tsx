@@ -29,19 +29,15 @@ import {
   RequestWizardShell,
 } from "./new-request-panels";
 import {
-  ASK_TICKET_CONTEXT_STORAGE_KEY,
   OWNER_CHANGE_INTENT,
   OWNER_CHANGE_PROBLEM,
-  askContextAttempts,
   buildCategoryOptions,
   isResolvedPrimaryDeviceStatus,
-  readAskContext,
   recommendOffering,
   requesterFormPrefillFromContext,
   resolveRecommendedCategoryKey,
 } from "./new-request-workflow";
 import type {
-  KnowledgeAttempt,
   RequestFormDefinition,
   RequestFormField,
   RequesterOnBehalfPerson,
@@ -343,7 +339,6 @@ export function RequesterNewRequestPage() {
   const [fieldValues, setFieldValues] = useState<DynamicFormValues>({});
   const [fieldServerErrors, setFieldServerErrors] = useState<Record<string, string>>({});
   const [previousPrefill, setPreviousPrefill] = useState<DynamicFormValues>({});
-  const [knowledgeAttempts, setKnowledgeAttempts] = useState<KnowledgeAttempt[]>([]);
   const [previewResult, setPreviewResult] = useState<ServiceCatalogSafePreview | null>(null);
   const [previewSubmitting, setPreviewSubmitting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -354,7 +349,6 @@ export function RequesterNewRequestPage() {
   const [selectedOnBehalfPerson, setSelectedOnBehalfPerson] = useState<RequesterOnBehalfPerson | null>(null);
   const [onBehalfReason, setOnBehalfReason] = useState("");
   const categorySelectRef = useRef<HTMLSelectElement | null>(null);
-  const loadedAskContextRef = useRef(false);
   const fieldRefs = useRef<Record<string, HTMLElement | null>>({});
   const [validationAttempted, setValidationAttempted] = useState(false);
   const [categoryError, setCategoryError] = useState<string | null>(null);
@@ -460,21 +454,6 @@ export function RequesterNewRequestPage() {
     validationAttempted && onBehalfActive && onBehalfPolicy?.reason_required && !onBehalfReason.trim()
       ? "Укажите причину обращения за другого сотрудника."
       : null;
-
-  useEffect(() => {
-    if (loadedAskContextRef.current) {
-      return;
-    }
-    loadedAskContextRef.current = true;
-    const context = readAskContext();
-    if (!context) {
-      return;
-    }
-    if (context.query) {
-      setRequestSeed(context.query);
-    }
-    setKnowledgeAttempts((current) => [...current, ...askContextAttempts(context)]);
-  }, []);
 
   useEffect(() => {
     setSelectedCategoryKey((current) => {
@@ -725,7 +704,6 @@ export function RequesterNewRequestPage() {
     setError(null);
     try {
       const result = await createRequesterTicket(buildCreatePayload());
-      window.sessionStorage.removeItem(ASK_TICKET_CONTEXT_STORAGE_KEY);
       removeNewRequestDraft(requestDraftStorageKey);
       const ticketRouteParam = requesterTicketRouteParam({
         ticket_id: result.ticket?.ticket_id ?? result.ticket_id,
@@ -767,7 +745,6 @@ export function RequesterNewRequestPage() {
       offering_full_code: selectedOffering?.full_code,
       request_template_key: selectedOffering?.request_template_key ?? selectedForm?.key,
       ticket_context: ticketContext,
-      knowledge_attempts: knowledgeAttempts,
     };
   }
 

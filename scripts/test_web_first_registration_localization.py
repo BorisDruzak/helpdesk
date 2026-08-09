@@ -51,8 +51,6 @@ TOUCHED_TEXT_FILES = [
     "server/tickets/statuses.py",
     "server/tickets/requester_timeline.py",
     "server/web_api/requester_handlers.py",
-    "content_packs/knowledge/it-self-service-baseline.yaml",
-    "content_packs/knowledge/primary-agent-requester-guides.yaml",
 ]
 
 NORMAL_UI_RAW_ID_SCAN_ROOTS = (
@@ -138,10 +136,6 @@ REVIEW_FORBIDDEN_REQUESTER_VISIBLE_SNIPPETS = {
         "Новая заявка",
         "После отправки заявка",
     ),
-    "content_packs/knowledge/it-self-service-baseline.yaml": (
-        "заявк",
-        "Заявк",
-    ),
 }
 
 FORBIDDEN_NORMAL_UI_RAW_ID_TERMS = (
@@ -192,15 +186,6 @@ PHASE_A_ROUTE_CONTRACT_ROUTES = {
     "/app/tickets",
     "/app/admin/observer",
 }
-
-PA11_HELP_ARTICLES = {
-    "Как создать обращение за другого сотрудника",
-    "Что делать, если мой ПК не включается",
-    "Как запросить смену владельца устройства",
-    "Как привязать устройство к аккаунту",
-    "Как заполнить профиль пользователя",
-}
-
 
 def _normal_ui_raw_id_files() -> tuple[str, ...]:
     files: list[str] = []
@@ -276,14 +261,6 @@ def test_web_first_registration_normal_ui_does_not_render_raw_ids() -> None:
                 if term in literal:
                     offenders.append(f"{relative_path}:{line_number}: user-visible string contains {term!r}")
     assert offenders == []
-
-
-def test_web_first_registration_pa11_help_articles_are_present() -> None:
-    text = (ROOT / "content_packs/knowledge/primary-agent-requester-guides.yaml").read_text(encoding="utf-8")
-    missing = [title for title in sorted(PA11_HELP_ARTICLES) if title not in text]
-    forbidden = [term for term in FORBIDDEN_NORMAL_UI_RAW_ID_TERMS if term in text]
-    assert missing == []
-    assert forbidden == []
 
 
 def test_phase_a_static_raw_id_guard_scope_is_complete() -> None:

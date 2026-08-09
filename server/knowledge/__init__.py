@@ -1,2 +1,0 @@
-"""Universal knowledge platform package."""
-

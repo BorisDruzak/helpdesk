@@ -37,9 +37,6 @@ export const REQUESTER_PROFILE_PATH = "/app/requester/profile";
 export const REQUESTER_PROFILE_SETUP_PATH = "/app/requester/profile/setup";
 export const REQUESTER_DEVICES_PATH = "/app/requester/devices";
 export const REQUESTER_DEVICES_LINK_PATH = "/app/requester/devices/link";
-export const REQUESTER_KB_HOME_PATH = "/app/kb";
-export const REQUESTER_KB_SEARCH_PATH = "/app/kb/search";
-export const REQUESTER_KB_ASK_PATH = "/app/kb/ask";
 
 export type AppWorkspaceId = "support" | "admin" | "requester";
 export type AppDomainId =
@@ -47,7 +44,6 @@ export type AppDomainId =
   | "requester-primary"
   | "devices-agents"
   | "catalog-intake"
-  | "knowledge"
   | "automation"
   | "service-management"
   | "ai-integration"
@@ -88,7 +84,7 @@ export const appNavigationDomains: AppNavigationDomain[] = [
     id: "requester-primary",
     workspace: "requester",
     label: "Кабинет пользователя",
-    description: "Обращения, устройства, профиль и база знаний",
+    description: "Обращения, устройства и профиль",
     icon: UserRound,
     order: 5,
   },
@@ -115,14 +111,6 @@ export const appNavigationDomains: AppNavigationDomain[] = [
     description: "Студия обращений и экспертные разделы каталога, форм и политик",
     icon: FolderKanban,
     order: 20,
-  },
-  {
-    id: "knowledge",
-    workspace: "admin",
-    label: "База знаний",
-    description: "Статьи, версии, ACL и deflection",
-    icon: BookOpen,
-    order: 30,
   },
   {
     id: "automation",
@@ -220,29 +208,6 @@ export const appNavigation: AppNavItem[] = [
     order: 50,
   },
   {
-    label: "База знаний",
-    description: "Инструкции и решения",
-    icon: BookOpen,
-    section: "requester",
-    workspace: "requester",
-    domainId: "requester-primary",
-    to: REQUESTER_KB_HOME_PATH,
-    activePatterns: ["/app/kb/*"],
-    permission: "workspace.requester.view",
-    order: 60,
-  },
-  {
-    label: "AI-помощник",
-    description: "Ответы с источниками",
-    icon: Bot,
-    section: "requester",
-    workspace: "requester",
-    domainId: "requester-primary",
-    to: REQUESTER_KB_ASK_PATH,
-    permission: "workspace.requester.view",
-    order: 70,
-  },
-  {
     label: "Центр действий",
     description: "Что сделать дальше",
     icon: ClipboardCheck,
@@ -277,17 +242,6 @@ export const appNavigation: AppNavItem[] = [
     to: "/app/support/approvals",
     permission: "ticket.queue.view",
     activePatterns: ["/app/support/approvals/*"],
-    order: 30,
-  },
-  {
-    label: "База знаний",
-    description: "Статьи и категории",
-    icon: BookOpen,
-    section: "support",
-    workspace: "support",
-    domainId: "support-primary",
-    to: "/app/knowledge",
-    permission: "workspace.support.view",
     order: 30,
   },
   {
@@ -449,105 +403,6 @@ export const appNavigation: AppNavItem[] = [
     to: "/app/admin/policy-health",
     permission: "admin.forms.view",
     order: 40,
-  },
-  {
-    label: "База знаний",
-    description: "Разделы, статьи, версии, ACL и deflection",
-    icon: BookOpen,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge",
-    permission: "admin.forms.view",
-    order: 10,
-  },
-  {
-    label: "Разделы базы знаний",
-    description: "Политика разделов, видимость, импорт, публикация и RAG",
-    icon: FolderKanban,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/sections",
-    permission: "admin.forms.view",
-    order: 11,
-  },
-  {
-    label: "Метаданные знаний",
-    description: "Таксономия, свойства, применимость и качество",
-    icon: Layers3,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/metadata",
-    permission: "knowledge.metadata.manage",
-    order: 12,
-  },
-  {
-    label: "Студия знаний",
-    description: "Авторинг статей, версии и retrieval-разметка",
-    icon: ClipboardCheck,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/studio",
-    permission: "admin.forms.view",
-    order: 15,
-  },
-  {
-    label: "Граф знаний",
-    description: "Узлы, связи и отношения статей",
-    icon: GitBranch,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/graph",
-    permission: "admin.forms.view",
-    order: 18,
-  },
-  {
-    label: "Импорт знаний",
-    description: "Preview источника и создание draft без AI по умолчанию",
-    icon: UploadCloud,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/import",
-    permission: "admin.forms.view",
-    order: 19,
-  },
-  {
-    label: "Настройки поиска",
-    description: "Режимы retrieval, AI-off baseline, веса и лимиты",
-    icon: SlidersHorizontal,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/search-settings",
-    permission: "admin.forms.view",
-    order: 20,
-  },
-  {
-    label: "AI настройки",
-    description: "Провайдеры, профили моделей, политики и журнал AI",
-    icon: Bot,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/ai",
-    permission: "admin.forms.view",
-    order: 30,
-  },
-  {
-    label: "Индексация",
-    description: "Embeddings, vector state, задания и ошибки",
-    icon: Layers3,
-    section: "admin",
-    workspace: "admin",
-    domainId: "knowledge",
-    to: "/app/admin/knowledge/indexing",
-    permission: "admin.forms.view",
-    order: 35,
   },
   {
     label: "Модули",
@@ -719,14 +574,12 @@ export function getActiveWorkspace(path: string): AppWorkspaceId | null {
 
   if (
     pathname === REQUESTER_HOME_PATH ||
-    pathname.startsWith("/app/requester/") ||
-    pathname === "/app/kb" ||
-    pathname.startsWith("/app/kb/")
+    pathname.startsWith("/app/requester/")
   ) {
     return "requester";
   }
 
-  if (pathname === SUPPORT_HOME_PATH || pathname.startsWith("/app/tickets") || pathname === "/app/reports" || pathname === "/app/knowledge" || pathname === "/app/settings") {
+  if (pathname === SUPPORT_HOME_PATH || pathname.startsWith("/app/tickets") || pathname === "/app/reports" || pathname === "/app/settings") {
     return "support";
   }
 
@@ -865,16 +718,12 @@ export function getSearchPlaceholder(pathname: string) {
     return "Поиск по услугам, формам и политикам";
   }
 
-  if (activeItem?.domainId === "knowledge" || normalizePath(pathname) === "/app/knowledge") {
-    return "Поиск по статьям и категориям";
-  }
-
   if (isAdminRoute(pathname)) {
     return "Поиск по разделам администрирования";
   }
 
   if (getActiveWorkspace(pathname) === "requester") {
-    return "Поиск по обращениям и базе знаний";
+    return "Поиск по обращениям";
   }
 
   return "Поиск по тикетам, клиентам и тегам";

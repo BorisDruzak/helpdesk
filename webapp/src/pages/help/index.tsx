@@ -12,15 +12,10 @@ import {
   fetchPublicFormPack,
   fetchServiceCatalogCurrent,
   previewServiceCatalogRequest,
-  recordKnowledgeFeedback,
-  suggestKnowledge,
 } from "../../features/requester/api";
 import type {
   PublicTicketCreatePayload,
   PublicTicketCreateResult,
-  KnowledgeAttempt,
-  KnowledgeSuggestResult,
-  KnowledgeSuggestionItem,
   RequestFormDefinition,
   RequestFormField,
   ServiceCatalogPreviewPayload,
@@ -63,69 +58,6 @@ function collectVisiblePayload(form: RequestFormDefinition | null, values: Field
     }
   }
   return payload;
-}
-
-type KnowledgeRollout = NonNullable<KnowledgeSuggestResult["rollout"]>;
-
-export function visibleKnowledgeSuggestions(
-  suggestions: KnowledgeSuggestionItem[],
-  rollout?: KnowledgeRollout | null,
-): KnowledgeSuggestionItem[] {
-  return suggestions
-    .filter((item) => rollout?.show_known_errors !== false || item.type !== "known_error")
-    .map((item) => {
-      const next = { ...item };
-      if (rollout?.show_quality_badge === false) {
-        delete next.quality_label;
-      }
-      if (rollout?.show_review_freshness === false) {
-        delete next.freshness_label;
-      }
-      return next;
-    });
-}
-
-export function evaluateKnowledgeSubmitGate({
-  rollout,
-  suggestionCount,
-  suggestionsLoaded,
-  apiUnavailable = false,
-  skipped = false,
-}: {
-  rollout?: KnowledgeRollout | null;
-  suggestionCount: number;
-  suggestionsLoaded: boolean;
-  apiUnavailable?: boolean;
-  skipped?: boolean;
-}): { canSubmit: boolean; warning: boolean; reason: string } {
-  if (rollout?.bypass_applied) {
-    return { canSubmit: true, warning: false, reason: "bypass" };
-  }
-  if (apiUnavailable) {
-    const behavior = rollout?.api_unavailable_behavior ?? "allow_submit";
-    if (behavior === "block_submit") {
-      return { canSubmit: false, warning: false, reason: "api_unavailable_block" };
-    }
-    return { canSubmit: true, warning: behavior === "show_warning", reason: behavior === "show_warning" ? "api_unavailable_warning" : "api_unavailable_allow" };
-  }
-  const minSuggestions = Math.max(0, Number(rollout?.min_suggestions ?? 0));
-  const required = Boolean(rollout?.require_suggestions_before_submit);
-  if (skipped && rollout?.allow_skip !== false) {
-    return { canSubmit: true, warning: false, reason: "skipped" };
-  }
-  if (suggestionsLoaded) {
-    if (suggestionCount === 0 && rollout?.no_suggestions_behavior === "block_submit") {
-      return { canSubmit: false, warning: false, reason: "no_suggestions_block" };
-    }
-    if (suggestionCount < minSuggestions) {
-      return { canSubmit: false, warning: false, reason: "min_suggestions_block" };
-    }
-    return { canSubmit: true, warning: false, reason: "loaded" };
-  }
-  if (required) {
-    return { canSubmit: false, warning: false, reason: "suggestions_required" };
-  }
-  return { canSubmit: true, warning: false, reason: "not_required" };
 }
 
 function missingRequiredFields(form: RequestFormDefinition | null, values: FieldValues): string[] {
@@ -217,9 +149,6 @@ export function HelpPage() {
   const [feedback, setFeedback] = useState<{ tone: "error" | "success"; text: string } | null>(null);
   const [createdTicket, setCreatedTicket] = useState<PublicTicketCreateResult | null>(null);
   const [previewKey, setPreviewKey] = useState("");
-  const [knowledgeAttempts, setKnowledgeAttempts] = useState<KnowledgeAttempt[]>([]);
-  const [openedKnowledge, setOpenedKnowledge] = useState<KnowledgeSuggestionItem | null>(null);
-  const [knowledgeSkipped, setKnowledgeSkipped] = useState(false);
 
   const formsQuery = useQuery({
     queryKey: ["requester-form-pack"],
@@ -287,76 +216,6 @@ export function HelpPage() {
     ],
   );
 
-  const knowledgeQuery = useQuery({
-    queryKey: [
-      "knowledge-suggest",
-      selectedService?.service_code,
-      selectedOffering?.full_code,
-      selectedForm?.key,
-      description.slice(0, 240),
-      visiblePayload,
-    ],
-    queryFn: () =>
-      suggestKnowledge({
-        service_code: selectedService?.service_code,
-        offering_code: selectedOffering?.full_code,
-        request_template_key: selectedOffering?.request_template_key ?? selectedForm?.key,
-        query: description || selectedOffering?.title || selectedService?.title || "",
-        form_payload: visiblePayload,
-        surface: "requester_portal",
-        urgency: urgency ? "high" : "normal",
-        impact: importance ? "high" : "normal",
-      }),
-    enabled: Boolean(selectedOffering),
-    retry: false,
-  });
-  const rollout = knowledgeQuery.data?.rollout;
-  const rolloutEnabled = rollout?.enabled !== false;
-  const knowledgeVisible = Boolean(selectedOffering && rolloutEnabled && rollout?.show_before_form !== false);
-  const urgentBypass = Boolean(rollout?.bypass_applied);
-  const suggestionsLoaded = !knowledgeQuery.isFetching && Boolean(knowledgeQuery.data || knowledgeQuery.isError);
-  const visibleSuggestions = useMemo(
-    () => visibleKnowledgeSuggestions(knowledgeQuery.data?.suggestions ?? [], rollout),
-    [knowledgeQuery.data?.suggestions, rollout],
-  );
-  const knowledgeGate = evaluateKnowledgeSubmitGate({
-    rollout,
-    suggestionCount: visibleSuggestions.length,
-    suggestionsLoaded,
-    apiUnavailable: knowledgeQuery.isError,
-    skipped: knowledgeSkipped,
-  });
-  const suggestionsRequired = Boolean(knowledgeVisible && rollout?.require_suggestions_before_submit && !urgentBypass);
-  const suggestionsGateOpen = !knowledgeVisible || knowledgeGate.canSubmit;
-  const knowledgeSkipAvailable = Boolean(
-    knowledgeVisible && !knowledgeGate.canSubmit && rollout?.allow_skip && !knowledgeQuery.isError && !urgentBypass,
-  );
-
-  function appendKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
-    const attempt: KnowledgeAttempt = {
-      item_id: item.item_id,
-      version_id: item.version_id ?? null,
-      result,
-      surface: "requester_portal",
-      timestamp: new Date().toISOString(),
-    };
-    setKnowledgeAttempts((current) => [...current.filter((entry) => entry.item_id !== item.item_id || entry.result !== result), attempt]);
-    return attempt;
-  }
-
-  function recordKnowledgeAttempt(item: KnowledgeSuggestionItem, result: KnowledgeAttempt["result"]) {
-    appendKnowledgeAttempt(item, result);
-    void recordKnowledgeFeedback({
-      item_id: item.item_id,
-      version_id: item.version_id,
-      event_type: result === "deflected" ? "deflected" : result === "not_helpful" ? "not_helpful" : result === "helpful" ? "helpful" : "viewed",
-      service_code: selectedService?.service_code,
-      offering_code: selectedOffering?.full_code,
-      request_template_key: selectedOffering?.request_template_key ?? selectedForm?.key,
-      surface: "requester_portal",
-    });
-  }
-
   function buildCreatePayload(): PublicTicketCreatePayload {
     if (!displayName.trim()) {
       throw new Error("Укажите, как к вам обращаться.");
@@ -394,7 +253,6 @@ export function HelpPage() {
             service_code: selectedService?.service_code,
             offering_code: selectedOffering?.offering_code,
             offering_full_code: selectedOffering?.full_code,
-            knowledge_attempts: knowledgeAttempts,
           }
         : {}),
     };
@@ -480,9 +338,6 @@ export function HelpPage() {
     mutationFn: () => {
       if (selectedOffering && !previewIsFresh) {
         throw new Error("Сначала выполните безопасный preview заявки.");
-      }
-      if (!suggestionsGateOpen) {
-        throw new Error("Перед созданием заявки посмотрите инструкции.");
       }
       return createPublicTicket(buildCreatePayload());
     },
@@ -620,89 +475,6 @@ export function HelpPage() {
                       </p>
                     </div>
                   ) : null}
-                  {knowledgeVisible ? (
-                    <div className="rounded-[1rem] border border-border bg-white px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-950">Возможно, поможет</p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {suggestionsRequired ? "Перед созданием заявки посмотрите инструкции." : "Инструкции подобраны по выбранной услуге и типу обращения. Можно продолжить создание заявки в любой момент."}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {urgentBypass ? "Срочная заявка — инструкции не блокируют отправку." : rollout?.allow_skip ? "Можно пропустить." : "Пропуск отключен политикой."}
-                          </p>
-                        </div>
-                        {knowledgeQuery.isFetching ? <span className="text-xs text-slate-500">Ищем...</span> : null}
-                      </div>
-                      {knowledgeQuery.isError && knowledgeGate.warning ? (
-                        <p className="mt-3 text-xs text-amber-700">Инструкции временно недоступны, заявка создается обычным способом.</p>
-                      ) : null}
-                      {visibleSuggestions.length ? (
-                        <div className="mt-3 grid gap-2">
-                          {visibleSuggestions.map((item) => (
-                            <div className="rounded-xl border border-slate-200 bg-surface-subtle px-3 py-2" key={item.item_id}>
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="text-sm font-semibold text-slate-950">{item.title}</p>
-                                  {item.summary ? <p className="mt-1 text-xs text-slate-600">{item.summary}</p> : null}
-                                  {item.quality_label || item.freshness_label ? (
-                                    <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                                      {[item.quality_label, item.freshness_label].filter(Boolean).join(" · ")}
-                                    </p>
-                                  ) : null}
-                                  {openedKnowledge?.item_id === item.item_id && item.snippet ? (
-                                    <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">{item.snippet}</p>
-                                  ) : null}
-                                </div>
-                                <Button
-                                  onClick={() => {
-                                    setOpenedKnowledge((current) => (current?.item_id === item.item_id ? null : item));
-                                    recordKnowledgeAttempt(item, "viewed");
-                                  }}
-                                  size="sm"
-                                  type="button"
-                                  variant="secondary"
-                                >
-                                  {openedKnowledge?.item_id === item.item_id ? "Скрыть" : "Открыть"}
-                                </Button>
-                              </div>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                <Button
-                                  onClick={() => {
-                                    recordKnowledgeAttempt(item, "deflected");
-                                    setFeedback({ tone: "success", text: "Отмечено: инструкция помогла, заявка не создавалась." });
-                                  }}
-                                  size="sm"
-                                  type="button"
-                                  variant="secondary"
-                                >
-                                  Помогло
-                                </Button>
-                                <Button
-                                  onClick={() => recordKnowledgeAttempt(item, "not_helpful")}
-                                  size="sm"
-                                  type="button"
-                                  variant="secondary"
-                                >
-                                  Не помогло
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : !knowledgeQuery.isFetching ? (
-                        <p className="mt-3 text-xs text-slate-500">Подходящих опубликованных инструкций пока нет.</p>
-                      ) : null}
-                      {!knowledgeQuery.isFetching && !knowledgeQuery.isError && !visibleSuggestions.length ? (
-                        <p className="mt-3 text-xs text-slate-500">Инструкций для выбранного типа обращения пока нет.</p>
-                      ) : null}
-                      {knowledgeSkipAvailable ? (
-                        <Button className="mt-3" onClick={() => setKnowledgeSkipped(true)} size="sm" type="button" variant="secondary">
-                          Пропустить
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -774,7 +546,7 @@ export function HelpPage() {
                   {previewMutation.isPending ? "Проверяем..." : "Проверить заявку"}
                 </Button>
                 <Button
-                  disabled={createMutation.isPending || Boolean(selectedOffering && (!previewIsFresh || !suggestionsGateOpen))}
+                  disabled={createMutation.isPending || Boolean(selectedOffering && !previewIsFresh)}
                   leadingIcon={<Send className="h-4 w-4" />}
                   type="submit"
                 >

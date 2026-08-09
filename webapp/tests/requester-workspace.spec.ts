@@ -219,10 +219,6 @@ async function installRequesterMocks(page: Page) {
     fulfillJson(route, { status: "ok", catalog_version: "e2e", services: [], offerings: [], categories: [] }),
   );
 
-  await page.route("**/api/knowledge/suggest", (route) =>
-    fulfillJson(route, { status: "ok", suggestions: [], known_errors: [], workarounds: [] }),
-  );
-
   await page.route("**/api/web/requester/tickets/preview", (route) =>
     fulfillJson(route, { status: "success", data: { ok: true, blockers: [], warnings: [], resolved_context: {} } }),
   );
@@ -243,26 +239,6 @@ async function installRequesterMocks(page: Page) {
     fulfillJson(route, { status: "success", data: { ticket_id: ticketId, status: "in_progress" } }),
   );
 
-  await page.route("**/api/knowledge/portal/home", (route) =>
-    fulfillJson(route, {
-      status: "ok",
-      display_message: "Portal loaded",
-      spaces: [{ space_id: "space-it", code: "it", title: "IT", description: "IT help", visibility: "requester", lifecycle_status: "active" }],
-      featured_articles: [{ item_id: "article-vpn", slug: "vpn-guide", title: "VPN guide", summary: "How to restore VPN access", visibility: "requester", tags: ["vpn"] }],
-      popular_articles: [],
-      recent_articles: [],
-    }),
-  );
-
-  await page.route("**/api/knowledge/ask", (route) =>
-    fulfillJson(route, {
-      status: "ok",
-      answer_status: "ai_disabled",
-      display_message: "Search fallback",
-      retrieval_results: [{ slug: "vpn-guide", title: "VPN guide", snippet: "Check VPN settings" }],
-      citations: [],
-    }),
-  );
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -304,12 +280,6 @@ test("requester split routes render without legacy workspace leakage", async ({ 
   await expect(page.getByText("WORKSTATION-1").first()).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
-  await page.goto("/app/kb");
-  await expect(page.getByText("VPN guide").first()).toBeVisible();
-
-  await page.goto("/app/kb/ask");
-  await expect(page.locator("textarea, input").first()).toBeVisible();
-  await expectNoForbiddenRequesterTerms(page);
 });
 
 const routeMatrix: Array<{ name: string; path: string; text: string | RegExp; viewport?: { width: number; height: number } }> = [
@@ -319,8 +289,6 @@ const routeMatrix: Array<{ name: string; path: string; text: string | RegExp; vi
   { name: "ticket detail", path: `/app/requester/tickets/${ticketCode}`, text: "Please confirm VPN error code." },
   { name: "profile", path: "/app/requester/profile", text: "Alex Requester" },
   { name: "devices", path: "/app/requester/devices", text: "WORKSTATION-1" },
-  { name: "knowledge home", path: "/app/kb", text: "VPN guide" },
-  { name: "ask fallback", path: "/app/kb/ask", text: /AI|Search|Поиск|помощник/i },
   { name: "requester not found", path: "/app/requester/unknown-section", text: "Раздел не найден" },
 ];
 

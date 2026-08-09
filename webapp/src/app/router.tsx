@@ -13,15 +13,6 @@ import {
   AdminAccessPage,
   AdminFormsPage,
   AdminInventoryPage,
-  AdminKnowledgeAiPage,
-  AdminKnowledgeGraphPage,
-  AdminKnowledgeImportPage,
-  AdminKnowledgeIndexingPage,
-  AdminKnowledgeMetadataPage,
-  AdminKnowledgePage,
-  AdminKnowledgeSearchSettingsPage,
-  AdminKnowledgeSectionsPage,
-  AdminKnowledgeStudioPage,
   AdminModulesPage,
   AdminObserverPage,
   AdminOperationDetailPage,
@@ -35,12 +26,6 @@ import {
   AdminServiceCatalogPage,
   AdminTechPage,
   HelpPage,
-  KnowledgeBasePage,
-  KnowledgePortalArticlePage,
-  KnowledgePortalAskPage,
-  KnowledgePortalCollectionPage,
-  KnowledgePortalHomePage,
-  KnowledgePortalSearchPage,
   ReportsPage,
   RequesterDeviceLinkPage,
   RequesterDevicesPage,
@@ -413,54 +398,6 @@ export const appRoutes: RouteObject[] = [
             )
           },
           {
-            path: "kb",
-            element: (
-              <WorkspaceAccessGate workspace="requester">
-                <KnowledgePortalHomePage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "kb/articles/:slug",
-            element: (
-              <WorkspaceAccessGate workspace="requester">
-                <KnowledgePortalArticlePage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "kb/spaces/:spaceCode",
-            element: (
-              <WorkspaceAccessGate workspace="requester">
-                <KnowledgePortalCollectionPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "kb/tags/:tag",
-            element: (
-              <WorkspaceAccessGate workspace="requester">
-                <KnowledgePortalCollectionPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "kb/search",
-            element: (
-              <WorkspaceAccessGate workspace="requester">
-                <KnowledgePortalSearchPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "kb/ask",
-            element: (
-              <WorkspaceAccessGate workspace="requester">
-                <KnowledgePortalAskPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
             path: "support",
             element: (
               <WorkspaceAccessGate workspace="support">
@@ -505,22 +442,6 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="support">
                 <ReportsPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "knowledge/articles/:itemId",
-            element: (
-              <WorkspaceAccessGate workspace="support">
-                <KnowledgeBasePage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "knowledge",
-            element: (
-              <WorkspaceAccessGate workspace="support">
-                <KnowledgeBasePage />
               </WorkspaceAccessGate>
             )
           },
@@ -649,78 +570,6 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminPolicyHealthPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/search-settings",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgeSearchSettingsPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/ai",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgeAiPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/indexing",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgeIndexingPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/studio",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgeStudioPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/sections",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgeSectionsPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/metadata",
-            element: (
-              <WorkspaceAccessGate workspace="admin" permission="knowledge.metadata.manage">
-                <AdminKnowledgeMetadataPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/graph",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgeGraphPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge/import",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgeImportPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/knowledge",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminKnowledgePage />
               </WorkspaceAccessGate>
             )
           },

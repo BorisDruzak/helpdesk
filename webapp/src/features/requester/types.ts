@@ -186,50 +186,6 @@ export type ServiceCatalogSafePreview = {
   ticket_context?: RequesterTicketContextPreview;
 };
 
-export type KnowledgeSuggestionItem = {
-  item_id: string;
-  slug: string;
-  type: string;
-  title: string;
-  summary?: string | null;
-  snippet?: string | null;
-  quality_label?: string | null;
-  freshness_label?: string | null;
-  version_id?: string | null;
-  reason?: string | null;
-  visibility?: string | null;
-  actions?: string[];
-};
-
-export type KnowledgeSuggestResult = {
-  suggestions: KnowledgeSuggestionItem[];
-  known_errors?: KnowledgeSuggestionItem[];
-  workarounds?: KnowledgeSuggestionItem[];
-  rollout?: {
-    enabled?: boolean;
-    show_before_form?: boolean;
-    require_suggestions_before_submit?: boolean;
-    allow_skip?: boolean;
-    min_suggestions?: number;
-    max_suggestions?: number;
-    show_known_errors?: boolean;
-    show_quality_badge?: boolean;
-    show_review_freshness?: boolean;
-    api_unavailable_behavior?: string;
-    no_suggestions_behavior?: string;
-    bypass_applied?: boolean;
-    bypass_reason?: string | null;
-  };
-};
-
-export type KnowledgeAttempt = {
-  item_id: string;
-  version_id?: string | null;
-  result: "viewed" | "helpful" | "not_helpful" | "deflected" | "skipped" | "ticket_created_after_view";
-  surface: "requester_portal" | "agent_gui" | "support_workspace";
-  timestamp: string;
-};
-
 export type PublicTicket = {
   ticket_id: string;
   ticket_code?: string | null;
@@ -356,7 +312,6 @@ export type PublicTicketCreatePayload = {
   offering_code?: string;
   offering_full_code?: string;
   request_template_key?: string;
-  knowledge_attempts?: KnowledgeAttempt[];
 };
 
 export type PublicTicketCreateResult = {
@@ -632,7 +587,6 @@ export type RequesterTicketCreatePayload = {
   request_template_key?: string;
   diagnostic_consent?: Record<string, unknown>;
   ticket_context?: RequesterOnBehalfTicketContext;
-  knowledge_attempts?: KnowledgeAttempt[];
 };
 
 export type RequesterTicketCreateResult = {

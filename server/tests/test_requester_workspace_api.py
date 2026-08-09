@@ -9,14 +9,13 @@ import uuid
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     Artifact,
     Device,
     DeviceUserBinding,
-    KnowledgeFeedbackEvent,
     ObserverTrace,
     RegistryAdminEvent,
     RegistryAdminPolicy,
@@ -2061,13 +2060,10 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"
     assert "knowledge_attempts" not in custom_fields
     async with session_maker() as session:
-        knowledge_event_count = (
-            await session.execute(
-                select(func.count()).select_from(KnowledgeFeedbackEvent).where(
-                    KnowledgeFeedbackEvent.ticket_id == payload["data"]["ticket_id"]
-                )
-            )
-        ).scalar_one()
+        knowledge_event_count = await session.scalar(
+            text("SELECT COUNT(*) FROM knowledge_feedback_events WHERE ticket_id = :ticket_id"),
+            {"ticket_id": payload["data"]["ticket_id"]},
+        )
     assert knowledge_event_count == 0
 
 

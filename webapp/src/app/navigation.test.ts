@@ -3,9 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   ADMIN_HOME_PATH,
   REQUESTER_HOME_PATH,
-  REQUESTER_KB_ASK_PATH,
-  REQUESTER_KB_HOME_PATH,
-  REQUESTER_KB_SEARCH_PATH,
   REQUESTER_NEW_PATH,
   REQUESTER_TICKETS_PATH,
   SUPPORT_HOME_PATH,
@@ -27,7 +24,6 @@ const fullAdminPermissions = [
   "admin.access.view",
   "admin.forms.view",
   "admin.inventory.view",
-  "knowledge.metadata.manage",
   "admin.modules.view",
   "admin.observer.view",
   "admin.playbooks.view",
@@ -48,15 +44,12 @@ describe("navigation helpers", () => {
   it("detects workspace and active nav item for nested routes without query/hash noise", () => {
     expect(getActiveWorkspace("/app/tickets/T-1/passport/print?mode=full#top")).toBe("support");
     expect(getActiveWorkspace("/app/admin/inventory?panel=requests")).toBe("admin");
-    expect(getActiveWorkspace("/app/kb")).toBe("requester");
-    expect(getActiveWorkspace("/app/kb/search?query=vpn")).toBe("requester");
+    expect(getActiveWorkspace("/app/kb")).toBeNull();
     expect(getActiveWorkspace("/app/help")).toBeNull();
 
     expect(getActiveNavItem("/app/tickets/T-1/passport/print")?.label).toBe("Тикеты");
     expect(getActiveNavItem("/app/admin/inventory?panel=requests")?.label).toBe("Инвентарь устройств");
     expect(getActiveNavItem("/app/admin/policy-health?service=mail")?.label).toBe("Проверка политик");
-    expect(getActiveNavItem("/app/kb/search?query=vpn", ["workspace.requester.view"])?.label).toBe("База знаний");
-    expect(getActiveNavItem("/app/kb/ask", ["workspace.requester.view"])?.label).toBe("AI-помощник");
   });
 
   it("filters admin domain groups by permissions and hides empty groups", () => {
@@ -70,24 +63,7 @@ describe("navigation helpers", () => {
     expect(findFirstVisibleDomainItem("catalog-intake", fullAdminPermissions)?.to).toBe(
       "/app/admin/request-template-studio",
     );
-    expect(findFirstVisibleDomainItem("knowledge", fullAdminPermissions)?.to).toBe("/app/admin/knowledge");
     expect(findFirstVisibleDomainItem("catalog-intake", [])).toBeNull();
-  });
-
-  it("shows the Knowledge metadata editor only to knowledge managers", () => {
-    const knowledgeWithoutManager = getVisibleNavigationDomains("admin", [
-      "admin.forms.view",
-      "workspace.admin.view",
-    ]).find((domain) => domain.id === "knowledge");
-    const knowledgeManager = getVisibleNavigationDomains("admin", [
-      "knowledge.metadata.manage",
-      "workspace.admin.view",
-    ]).find((domain) => domain.id === "knowledge");
-
-    expect(knowledgeWithoutManager?.items.map((item) => item.to)).not.toContain(
-      "/app/admin/knowledge/metadata",
-    );
-    expect(knowledgeManager?.items.map((item) => item.to)).toEqual(["/app/admin/knowledge/metadata"]);
   });
 
   it("keeps device operations last in the devices domain", () => {
@@ -117,72 +93,14 @@ describe("navigation helpers", () => {
     expect(activeItem?.label).toBe("MCP сервер");
   });
 
-  it("exposes Knowledge metadata editor, studio, indexing, AI and search settings inside the Knowledge domain", () => {
-    const knowledgeDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
-      (domain) => domain.id === "knowledge",
-    );
-    const sectionsItem = getActiveNavItem("/app/admin/knowledge/sections", fullAdminPermissions);
-    const metadataItem = getActiveNavItem("/app/admin/knowledge/metadata", fullAdminPermissions);
-    const studioItem = getActiveNavItem("/app/admin/knowledge/studio", fullAdminPermissions);
-    const graphItem = getActiveNavItem("/app/admin/knowledge/graph", fullAdminPermissions);
-    const importItem = getActiveNavItem("/app/admin/knowledge/import", fullAdminPermissions);
-    const indexingItem = getActiveNavItem("/app/admin/knowledge/indexing", fullAdminPermissions);
-    const aiItem = getActiveNavItem("/app/admin/knowledge/ai", fullAdminPermissions);
-    const searchItem = getActiveNavItem("/app/admin/knowledge/search-settings", fullAdminPermissions);
-
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/sections");
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/metadata");
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/studio");
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/graph");
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/import");
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/indexing");
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/ai");
-    expect(knowledgeDomain?.items.map((item) => item.to)).toContain("/app/admin/knowledge/search-settings");
-    expect(knowledgeDomain?.items.find((item) => item.to === "/app/admin/knowledge")?.description).toBe(
-      "Разделы, статьи, версии, ACL и deflection",
-    );
-    expect(sectionsItem?.to).toBe("/app/admin/knowledge/sections");
-    expect(sectionsItem?.label).toBe("Разделы базы знаний");
-    expect(metadataItem?.to).toBe("/app/admin/knowledge/metadata");
-    expect(metadataItem?.label).toBe("Метаданные знаний");
-    expect(studioItem?.to).toBe("/app/admin/knowledge/studio");
-    expect(studioItem?.label).toBe("Студия знаний");
-    expect(graphItem?.to).toBe("/app/admin/knowledge/graph");
-    expect(graphItem?.label).toBe("Граф знаний");
-    expect(importItem?.to).toBe("/app/admin/knowledge/import");
-    expect(importItem?.label).toBe("Импорт знаний");
-    expect(indexingItem?.to).toBe("/app/admin/knowledge/indexing");
-    expect(indexingItem?.label).toBe("Индексация");
-    expect(aiItem?.to).toBe("/app/admin/knowledge/ai");
-    expect(aiItem?.label).toBe("AI настройки");
-    expect(searchItem?.to).toBe("/app/admin/knowledge/search-settings");
-    expect(searchItem?.label).toBe("Настройки поиска");
-
-    const requesterDomains = getVisibleNavigationDomains("requester", ["workspace.requester.view"]);
-    expect(requesterDomains.flatMap((domain) => domain.items).map((item) => item.to)).not.toContain(
-      "/app/admin/knowledge/metadata",
-    );
-    expect(requesterDomains.flatMap((domain) => domain.items).map((item) => item.to)).not.toContain(
-      "/app/admin/knowledge/sections",
-    );
-  });
-
   it("recognizes workspace-owned paths without including public requester routes", () => {
     expect(SUPPORT_HOME_PATH).toBe("/app/support");
     expect(ADMIN_HOME_PATH).toBe("/app/admin");
     expect(REQUESTER_HOME_PATH).toBe("/app/requester");
     expect(REQUESTER_NEW_PATH).toBe("/app/requester/new");
     expect(REQUESTER_TICKETS_PATH).toBe("/app/requester/tickets");
-    expect(REQUESTER_KB_HOME_PATH).toBe("/app/kb");
-    expect(REQUESTER_KB_SEARCH_PATH).toBe("/app/kb/search");
-    expect(REQUESTER_KB_ASK_PATH).toBe("/app/kb/ask");
-    expect(isWorkspacePath("/app/knowledge?query=printer", "support")).toBe(true);
-    expect(isWorkspacePath("/app/kb", "requester")).toBe(true);
-    expect(isWorkspacePath("/app/kb/articles/vpn", "requester")).toBe(true);
-    expect(isWorkspacePath("/app/kb/spaces/it", "requester")).toBe(true);
-    expect(isWorkspacePath("/app/kb/tags/vpn", "requester")).toBe(true);
-    expect(isWorkspacePath("/app/kb/search?q=vpn", "requester")).toBe(true);
-    expect(isWorkspacePath("/app/kb/ask", "requester")).toBe(true);
+    expect(isWorkspacePath("/app/knowledge?query=printer", "support")).toBe(false);
+    expect(isWorkspacePath("/app/kb", "requester")).toBe(false);
     expect(isWorkspacePath("/app/admin/forms#policy", "admin")).toBe(true);
     expect(isWorkspacePath("/app/help", "support")).toBe(false);
     expect(isWorkspacePath("/app/ticket/T-1", "support")).toBe(false);
@@ -198,14 +116,11 @@ describe("navigation helpers", () => {
       "Мои обращения",
       "Устройства",
       "Профиль",
-      "База знаний",
-      "AI-помощник",
     ]);
     expect(items.find((item) => item.to === REQUESTER_NEW_PATH)?.isPrimary).toBe(true);
     expect(getActiveNavItem("/app/requester/new", requesterPermissions)?.label).toBe("Создать обращение");
     expect(getActiveNavItem("/app/requester/tickets/T-42", requesterPermissions)?.label).toBe("Мои обращения");
     expect(getActiveNavItem("/app/requester/devices/link", requesterPermissions)?.label).toBe("Устройства");
-    expect(getActiveNavItem("/app/kb/ask", requesterPermissions)?.label).toBe("AI-помощник");
   });
 
   it("stores and resolves workspace switch targets with safe fallbacks", () => {
@@ -219,11 +134,11 @@ describe("navigation helpers", () => {
     writeWorkspaceHistoryPath("support", "/app/help", localStorageLike);
     expect(readWorkspaceHistoryPath("support", localStorageLike)).toBeNull();
 
-    writeWorkspaceHistoryPath("support", "/app/knowledge?query=printer", localStorageLike);
+    writeWorkspaceHistoryPath("support", "/app/reports?view=summary", localStorageLike);
     writeWorkspaceHistoryPath("admin", "/app/admin/forms#routing", localStorageLike);
 
     expect(resolveWorkspaceSwitchPath("support", fullSession, localStorageLike)).toBe(
-      "/app/knowledge?query=printer",
+      "/app/reports?view=summary",
     );
     expect(resolveWorkspaceSwitchPath("admin", fullSession, localStorageLike)).toBe(
       "/app/admin/forms#routing",

@@ -26,7 +26,6 @@ WEB_AUTH_AUDIT_WINDOW_SEC = 60
 _WEB_AUTH_AUDIT_LAST_SEEN: dict[tuple[str, str, str, str], datetime] = {}
 WEB_SESSION_AUTH_PATH_PREFIXES = (
     "/api/web/",
-    "/api/knowledge/",
     "/api/upload",
     "/api/artifacts/",
     "/api/modules/",
@@ -52,13 +51,6 @@ AUTH_WHITELIST = {
     "/api/connection_request",
     "/api/connection_request/status",
 }
-PUBLIC_OPTIONAL_AUTH_POSTS = {
-    "/api/knowledge/search",
-    "/api/knowledge/suggest",
-    "/api/knowledge/feedback",
-}
-
-
 def _record_query_token_attempt(request: web.Request, *, rejected: bool) -> None:
     _QUERY_TOKEN_AUTH_ATTEMPTS.append(
         {
@@ -431,23 +423,6 @@ async def _web_session_same_origin_response(
     )
 
 
-async def _handle_public_optional_auth(request: web.Request, handler):
-    web_session_auth = bool(extract_token_from_web_cookie(request))
-    if web_session_auth or _request_has_header_or_query_token(request):
-        auth_context = await extract_auth_context(request)
-        if auth_context:
-            request["auth_context"] = auth_context
-            request["web_session_auth"] = web_session_auth
-            if web_session_auth:
-                same_origin_response = await _web_session_same_origin_response(request, auth_context)
-                if same_origin_response is not None:
-                    return same_origin_response
-        else:
-            request["web_session_auth"] = False
-
-    return await handler(request)
-
-
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
     """
@@ -470,6 +445,12 @@ async def auth_middleware(request: web.Request, handler):
     """
     ensure_server_request_id(request)
 
+    # aiohttp resolves the route before middleware runs. Preserve its normal 404
+    # for paths with no registered handler instead of turning them into 401.
+    route_exception = request.match_info.http_exception
+    if route_exception is not None and route_exception.status == 404:
+        return await handler(request)
+
     # Skip authentication for non-API endpoints
     if not request.path.startswith("/api/"):
         return await handler(request)
@@ -481,8 +462,6 @@ async def auth_middleware(request: web.Request, handler):
         return await handler(request)
     if request.method == "POST" and request.path == "/api/service-catalog/preview":
         return await handler(request)
-    if request.method == "POST" and request.path in PUBLIC_OPTIONAL_AUTH_POSTS:
-        return await _handle_public_optional_auth(request, handler)
     if request.path.startswith("/api/connection_request"):
         return await handler(request)
 

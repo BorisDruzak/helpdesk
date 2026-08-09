@@ -61,7 +61,6 @@ def test_required_scenarios_match_release_checklist() -> None:
         "normal_ticket_targets_creator_primary_agent",
         "on_behalf_ticket_targets_affected_primary_agent",
         "affected_primary_agent_offline_skips_module_enqueue",
-        "creator_cannot_see_affected_only_knowledge",
         "gui_login_bound_user_success",
         "gui_login_wrong_user_mismatch_no_rebind",
         "admin_transfer_device_b_to_c_future_targets",

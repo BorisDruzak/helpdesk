@@ -200,67 +200,6 @@ def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-@pytest.mark.no_db
-def test_web_session_cookie_is_accepted_for_knowledge_api_prefix():
-    request = SimpleNamespace(
-        path="/api/knowledge/portal/home",
-        cookies={WEB_SESSION_COOKIE_NAME: " requester-session-token "},
-    )
-
-    assert extract_token_from_web_cookie(request) == "requester-session-token"
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-@pytest.mark.parametrize(
-    "path",
-    [
-        "/api/knowledge/search",
-        "/api/knowledge/suggest",
-        "/api/knowledge/feedback",
-    ],
-)
-async def test_public_knowledge_routes_preserve_optional_bearer_auth(monkeypatch, path):
-    async def fake_extract_auth_context(_request):
-        return AuthContext(
-            actor_id="requester-knowledge",
-            actor_role="user",
-            auth_type=AuthType.UI_TOKEN,
-            token="test-ui-user:requester-knowledge",
-        )
-
-    monkeypatch.setattr(auth_middleware_module, "extract_auth_context", fake_extract_auth_context)
-
-    class KnowledgeRequest(dict):
-        def __init__(self, request_path: str):
-            super().__init__()
-            self.path = request_path
-            self.method = "POST"
-            self.headers = {"Authorization": "Bearer test-ui-user:requester-knowledge"}
-            self.cookies = {}
-            self.query = {}
-            self.app = {"state": SimpleNamespace(users={})}
-            self.remote = "127.0.0.1"
-            self.secure = True
-            self.host = "192.168.100.17:9443"
-
-    fake_request = KnowledgeRequest(path)
-
-    observed: dict[str, AuthContext | None] = {}
-
-    async def knowledge_handler(handler_request):
-        observed["auth_context"] = handler_request.get("auth_context")
-        return web.Response(text="ok")
-
-    response = await auth_middleware(fake_request, knowledge_handler)
-
-    assert response.status == 200
-    auth = observed.get("auth_context")
-    assert auth is not None
-    assert auth.actor_id == "requester-knowledge"
-    assert auth.actor_role == "user"
-
-
 class _FakeSessionContext:
     async def __aenter__(self):
         return object()

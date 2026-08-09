@@ -27,7 +27,6 @@ from app.db.models import (
     DeviceAccountSession,
     DeviceOutbox,
     DeviceUserBinding,
-    KnowledgeAudienceRule,
     Operation,
     Playbook,
     PlaybookRun,
@@ -40,16 +39,11 @@ from app.db.models import (
     TicketEvent,
     UiUser,
 )
-from app.repos.knowledge_repo import KnowledgeRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from auth.password_service import hash_password
 from auth.service import AuthService
 from config import DATABASE_URL
-from knowledge.ask_service import KnowledgeAskService
-from knowledge.search_service import KnowledgeSearchService
-from knowledge.suggestion_service import KnowledgeSuggestionService
 from registry.account_session_service import AccountSessionService
-from registry.effective_identity_service import EffectiveIdentityService
 from registry.registration_service import RegistrationService
 from tickets.create_flow import create_ticket_with_side_effects
 
@@ -58,7 +52,6 @@ REQUIRED_SCENARIOS = (
     "normal_ticket_targets_creator_primary_agent",
     "on_behalf_ticket_targets_affected_primary_agent",
     "affected_primary_agent_offline_skips_module_enqueue",
-    "creator_cannot_see_affected_only_knowledge",
     "gui_login_bound_user_success",
     "gui_login_wrong_user_mismatch_no_rebind",
     "admin_transfer_device_b_to_c_future_targets",
@@ -325,7 +318,7 @@ class PrimaryAgentOnBehalfLiveGate:
         self.report["created"] = {
             key: value
             for key, value in self.ids.items()
-            if key.startswith(("person_", "device_", "binding_", "ticket_", "playbook_", "knowledge_"))
+            if key.startswith(("person_", "device_", "binding_", "ticket_", "playbook_"))
         }
 
     async def close(self) -> None:
@@ -342,14 +335,6 @@ class PrimaryAgentOnBehalfLiveGate:
                 source="pa_release_live_gate",
                 metadata_json={},
             )
-            hidden_department = RegistryDepartment(
-                department_id=str(uuid.uuid4()),
-                code=f"pa-hidden-{self.run_id}"[:64],
-                name=f"PA hidden department {self.run_id}",
-                status="active",
-                source="pa_release_live_gate",
-                metadata_json={},
-            )
             location = RegistryLocation(
                 location_id=str(uuid.uuid4()),
                 building=f"PA release {self.run_id}",
@@ -360,12 +345,11 @@ class PrimaryAgentOnBehalfLiveGate:
                 source="pa_release_live_gate",
                 metadata_json={},
             )
-            session.add_all([department, hidden_department, location])
+            session.add_all([department, location])
             await session.flush()
             self.ids.update(
                 {
                     "department_shared": department.department_id,
-                    "department_hidden": hidden_department.department_id,
                     "location": location.location_id,
                 }
             )
@@ -479,67 +463,7 @@ class PrimaryAgentOnBehalfLiveGate:
             self.ids["playbook_key"] = self.playbook_key
             self.ids["playbook_version_id"] = str(version.id)
 
-            await self._seed_knowledge(session, admin_login=admin_login)
             await session.commit()
-
-    async def _seed_knowledge(self, session: Any, *, admin_login: str) -> None:
-        repo = KnowledgeRepo(session)
-        space_code = f"pa-release-{self.run_id}"[:64]
-        await repo.upsert_space(
-            {
-                "code": space_code,
-                "title": f"PA release Knowledge {self.run_id}",
-                "visibility": "requester",
-                "lifecycle_status": "active",
-                "allow_rag": True,
-            },
-            actor_id=admin_login,
-        )
-        hidden_title = f"PA release affected-only marker {self.run_id}"
-        item = await repo.create_item_draft(
-            {
-                "space_code": space_code,
-                "slug": f"pa-release-affected-{self.run_id}"[:96],
-                "item_type": "article",
-                "title": hidden_title,
-                "summary": hidden_title,
-                "visibility": "requester",
-                "owner_actor_id": admin_login,
-                "reviewer_actor_id": admin_login,
-            },
-            actor_id=admin_login,
-            actor_role="admin",
-        )
-        version = await repo.create_version(
-            item["item_id"],
-            {
-                "title": hidden_title,
-                "body_format": "markdown",
-                "body": f"{hidden_title}\n\nThis article is scoped only to affected user B.",
-            },
-            actor_id=admin_login,
-            actor_role="admin",
-        )
-        published = await repo.publish_item(
-            item["item_id"],
-            version["version_id"],
-            actor_id=admin_login,
-            actor_role="admin",
-        )
-        session.add(
-            KnowledgeAudienceRule(
-                rule_id=str(uuid.uuid4()),
-                subject_type="item",
-                subject_id=published["item_id"],
-                target_type="person",
-                target_id=self.ids["person_b"],
-                effect="allow",
-                status="active",
-            )
-        )
-        self.ids["knowledge_affected_slug"] = published["slug"]
-        self.ids["knowledge_affected_item_id"] = published["item_id"]
-        self.ids["knowledge_affected_title"] = hidden_title
 
     async def _create_ticket(
         self,
@@ -703,63 +627,6 @@ class PrimaryAgentOnBehalfLiveGate:
         _require(facts["diagnostic_skip_events"][0]["reason"] == "target_agent_offline", "offline skip reason mismatch")
         self.report["scenarios"][REQUIRED_SCENARIOS[2]] = {"status": "passed", **facts}
 
-    async def scenario_knowledge_no_leak(self) -> None:
-        query = self.ids["knowledge_affected_title"]
-        async with get_session() as session:
-            service = EffectiveIdentityService(session)
-            audience_a = await service.resolve_person_audience(
-                person_id=None,
-                actor_id=self.ids["login_a"],
-                actor_role="requester",
-            )
-            audience_b = await service.resolve_person_audience(
-                person_id=None,
-                actor_id=self.ids["login_b"],
-                actor_role="requester",
-            )
-            search_a = await KnowledgeSearchService(session).search(
-                query=query,
-                actor_role="requester",
-                limit=10,
-                surface="pa_release_live_gate",
-                effective_audience=audience_a,
-            )
-            search_b = await KnowledgeSearchService(session).search(
-                query=query,
-                actor_role="requester",
-                limit=10,
-                surface="pa_release_live_gate",
-                effective_audience=audience_b,
-            )
-            suggest_a = await KnowledgeSuggestionService(session).suggest(
-                {"query": query, "limit": 10, "surface": "pa_release_live_gate"},
-                actor_role="requester",
-                effective_audience=audience_a,
-            )
-            ask_a = await KnowledgeAskService(session).ask(
-                query=query,
-                actor_role="requester",
-                effective_audience=audience_a,
-            )
-            await session.commit()
-        hidden_slug = self.ids["knowledge_affected_slug"]
-        search_a_slugs = {str(item.get("slug") or "") for item in search_a if isinstance(item, dict)}
-        search_b_slugs = {str(item.get("slug") or "") for item in search_b if isinstance(item, dict)}
-        suggest_a_blob = json.dumps(suggest_a, ensure_ascii=False)
-        ask_a_blob = json.dumps(ask_a, ensure_ascii=False)
-        _require(hidden_slug not in search_a_slugs, "creator A search leaked affected-only Knowledge")
-        _require(hidden_slug in search_b_slugs, "affected user B cannot see affected-only Knowledge")
-        _require(hidden_slug not in suggest_a_blob, "creator A suggestions leaked affected-only Knowledge")
-        _require(hidden_slug not in ask_a_blob, "creator A Ask/RAG leaked affected-only Knowledge")
-        self.report["scenarios"][REQUIRED_SCENARIOS[3]] = {
-            "status": "passed",
-            "hidden_slug": hidden_slug,
-            "creator_search_slugs": sorted(search_a_slugs),
-            "affected_search_slugs": sorted(search_b_slugs),
-            "creator_suggest_leaked": False,
-            "creator_ask_leaked": False,
-        }
-
     async def scenario_gui_login(self) -> None:
         success = self.admin.post(
             "/api/registry/agent/account-sessions/login",
@@ -774,7 +641,7 @@ class PrimaryAgentOnBehalfLiveGate:
         _require(session_payload.get("person_id") == self.ids["person_b"], "bound GUI session person mismatch")
         _require(session_payload.get("verification_method") == "gui_password", "bound GUI session method mismatch")
         self.ids["gui_bound_session_id"] = session_id
-        self.report["scenarios"][REQUIRED_SCENARIOS[4]] = {
+        self.report["scenarios"][REQUIRED_SCENARIOS[3]] = {
             "status": "passed",
             "http_status": success["http_status"],
             "session": sanitize_for_report(session_payload),
@@ -809,7 +676,7 @@ class PrimaryAgentOnBehalfLiveGate:
             )
         _require(int(session_count or 0) == 0, "wrong-user GUI login created a session")
         _require(int(binding_count or 0) == 0, "wrong-user GUI login rebound device B to A")
-        self.report["scenarios"][REQUIRED_SCENARIOS[5]] = {
+        self.report["scenarios"][REQUIRED_SCENARIOS[4]] = {
             "status": "passed",
             "http_status": mismatch["http_status"],
             "error_code": mismatch_body.get("error_code"),
@@ -853,7 +720,7 @@ class PrimaryAgentOnBehalfLiveGate:
                 row = await session.get(DeviceAccountSession, self.ids["gui_bound_session_id"])
                 revoked_status = getattr(row, "verification_status", None)
         _require(revoked_status == "revoked", "transfer did not revoke previous B GUI session")
-        self.report["scenarios"][REQUIRED_SCENARIOS[6]] = {
+        self.report["scenarios"][REQUIRED_SCENARIOS[5]] = {
             "status": "passed",
             "transfer": sanitize_for_report(transfer_data),
             "b_future_ticket": b_facts,
@@ -867,7 +734,6 @@ class PrimaryAgentOnBehalfLiveGate:
             await self.scenario_normal_ticket()
             await self.scenario_on_behalf_ticket()
             await self.scenario_offline_ticket()
-            await self.scenario_knowledge_no_leak()
             await self.scenario_gui_login()
             await self.scenario_admin_transfer()
             missing = [name for name in REQUIRED_SCENARIOS if self.report["scenarios"].get(name, {}).get("status") != "passed"]

@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { QueryProvider } from "../../app/providers/query-provider";
-import { evaluateKnowledgeSubmitGate, HelpPage, visibleKnowledgeSuggestions } from "./index";
+import { HelpPage } from "./index";
 
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -29,75 +29,49 @@ afterEach(() => {
 });
 
 describe("HelpPage", () => {
-  it("applies no-suggestions, API-unavailable, min-suggestions and urgent bypass policy", () => {
-    expect(
-      evaluateKnowledgeSubmitGate({
-        rollout: {
-          require_suggestions_before_submit: true,
-          allow_skip: false,
-          min_suggestions: 1,
-          no_suggestions_behavior: "block_submit",
-        },
-        suggestionsLoaded: true,
-        suggestionCount: 0,
-      }),
-    ).toMatchObject({ canSubmit: false, reason: "no_suggestions_block" });
+  it("does not request local Knowledge suggestions", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/public_api/ticket_forms/current?pack_key=request_forms") {
+        return jsonResponse({
+          status: "ok",
+          pack: {
+            pack_key: "request_forms",
+            version: "1.0.0",
+            forms: [{ key: "vpn", title: "VPN", fields: [] }],
+          },
+        });
+      }
+      if (url === "/api/service-catalog/current") {
+        return jsonResponse({
+          status: "ok",
+          catalog_version: "1.0.0",
+          services: [{
+            service_code: "remote-access",
+            title: "Удаленный доступ",
+            offerings: [{
+              offering_code: "vpn",
+              full_code: "remote-access.vpn",
+              title: "VPN",
+              request_template_key: "vpn",
+            }],
+          }],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock as typeof fetch);
 
-    expect(
-      evaluateKnowledgeSubmitGate({
-        rollout: {
-          require_suggestions_before_submit: true,
-          allow_skip: false,
-          min_suggestions: 2,
-          no_suggestions_behavior: "block_submit",
-        },
-        suggestionsLoaded: true,
-        suggestionCount: 1,
-      }),
-    ).toMatchObject({ canSubmit: false, reason: "min_suggestions_block" });
+    renderHelpPage();
 
-    expect(
-      evaluateKnowledgeSubmitGate({
-        rollout: {
-          require_suggestions_before_submit: true,
-          allow_skip: false,
-          api_unavailable_behavior: "show_warning",
-        },
-        apiUnavailable: true,
-        suggestionsLoaded: true,
-        suggestionCount: 0,
-      }),
-    ).toMatchObject({ canSubmit: true, warning: true, reason: "api_unavailable_warning" });
-
-    expect(
-      evaluateKnowledgeSubmitGate({
-        rollout: {
-          require_suggestions_before_submit: true,
-          allow_skip: false,
-          min_suggestions: 2,
-          no_suggestions_behavior: "block_submit",
-          bypass_applied: true,
-        },
-        suggestionsLoaded: true,
-        suggestionCount: 0,
-      }),
-    ).toMatchObject({ canSubmit: true, reason: "bypass" });
-  });
-
-  it("hides known-error suggestions and safe labels according to rollout", () => {
-    const items = visibleKnowledgeSuggestions(
-      [
-        { item_id: "known", slug: "known", type: "known_error", title: "Known", quality_label: "Verified" },
-        { item_id: "article", slug: "article", type: "article", title: "Article", freshness_label: "Fresh" },
-      ],
-      {
-        show_known_errors: false,
-        show_quality_badge: false,
-        show_review_freshness: false,
-      },
-    );
-
-    expect(items).toEqual([{ item_id: "article", slug: "article", type: "article", title: "Article" }]);
+    expect(await screen.findByText("Удаленный доступ")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+        "/public_api/ticket_forms/current?pack_key=request_forms",
+        "/api/service-catalog/current",
+      ]);
+    });
+    expect(screen.queryByText("Возможно, поможет")).not.toBeInTheDocument();
   });
 
   it("creates a public ticket from the selected request form", async () => {

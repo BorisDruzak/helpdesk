@@ -134,7 +134,7 @@ describe("AppSidebar", () => {
     const handleCollapsedChange = vi.fn();
     const handleNavigate = vi.fn();
     const { rerender } = render(
-      <MemoryRouter initialEntries={["/app/admin/knowledge/studio"]}>
+      <MemoryRouter initialEntries={["/app/admin/modules"]}>
         <AppSidebar
           hasAdminAccess
           hasSupportAccess={false}
@@ -146,7 +146,7 @@ describe("AppSidebar", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("link", { name: /Граф знаний/ }));
+    fireEvent.click(screen.getByRole("link", { name: /Возможности/ }));
     expect(handleNavigate).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Свернуть меню" }));
     expect(handleCollapsedChange).toHaveBeenCalledWith(true);
@@ -154,7 +154,7 @@ describe("AppSidebar", () => {
     handleCollapsedChange.mockClear();
     handleNavigate.mockClear();
     rerender(
-      <MemoryRouter initialEntries={["/app/admin/knowledge/studio"]}>
+      <MemoryRouter initialEntries={["/app/admin/modules"]}>
         <AppSidebar
           collapsed
           hasAdminAccess
@@ -167,7 +167,7 @@ describe("AppSidebar", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("link", { name: /Граф знаний/ }));
+    fireEvent.click(screen.getByRole("link", { name: /Возможности/ }));
     expect(handleCollapsedChange).toHaveBeenCalledWith(false);
     expect(handleNavigate).not.toHaveBeenCalled();
   });

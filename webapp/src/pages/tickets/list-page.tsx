@@ -1240,7 +1240,6 @@ function SupportWorkspaceTopbar({
   const navItems = [
     { label: "Тикеты", to: "/app/tickets", icon: ClipboardList, active: true },
     { label: "Отчёты", to: "/app/reports", icon: BarChart3, active: false },
-    { label: "Знания", to: "/app/knowledge", icon: BookOpen, active: false },
     { label: "Настройки", to: "/app/settings", icon: Settings2, active: false },
   ];
 

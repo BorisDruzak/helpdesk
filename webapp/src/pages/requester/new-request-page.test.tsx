@@ -106,8 +106,8 @@ describe("RequesterNewRequestPage", () => {
         summary: "Ноутбук не включается",
         device_id: "device-1",
       },
-      knowledge_attempts: [],
     });
+    expect(JSON.parse(String(createCall?.[1]?.body))).not.toHaveProperty("knowledge_attempts");
     expect(fetchMock.mock.calls.some(([input]) => String(input) === "/api/knowledge/suggest")).toBe(false);
     expect(draftEntries()).toHaveLength(0);
   });
@@ -511,23 +511,6 @@ function installNewRequestMock(
     }
     if (url === "/api/registry/options") {
       return jsonResponse({ status: "success", data: { departments: [], locations: [] } });
-    }
-    if (url === "/api/knowledge/suggest") {
-      return jsonResponse({
-        status: "ok",
-        suggestions: [
-          {
-            item_id: "kb-1",
-            version_id: "ver-1",
-            title: "Проверьте питание ноутбука",
-            summary: "Отключите зарядку на 10 секунд.",
-          },
-        ],
-        rollout: { enabled: true, show_before_form: true },
-      });
-    }
-    if (url === "/api/knowledge/feedback") {
-      return jsonResponse({ status: "ok" });
     }
     if (url === "/api/web/requester/tickets/preview") {
       return jsonResponse({
