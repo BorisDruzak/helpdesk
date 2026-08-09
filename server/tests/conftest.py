@@ -58,6 +58,9 @@ WINDOWS_TEST_DB_SSH_KEY = os.getenv(
     "PC_CLIENT_TEST_DB_SSH_KEY",
     r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519",
 )
+TEST_DB_ADMIN_LOCK_TIMEOUT_SECONDS = 5
+TEST_DB_ADMIN_STATEMENT_TIMEOUT_SECONDS = 30
+TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS = 35
 
 TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
@@ -673,12 +676,44 @@ async def _run_admin_sql(admin_database_url: str, sql: str, **params) -> None:
         echo=False,
         isolation_level="AUTOCOMMIT",
         pool_pre_ping=True,
+        connect_args={
+            "timeout": TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS,
+            "command_timeout": TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS,
+        },
     )
+    operation_error: BaseException | None = None
     try:
-        async with engine.connect() as conn:
-            await conn.execute(text(sql), params)
+        try:
+            async with asyncio.timeout(TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS):
+                async with engine.connect() as conn:
+                    await conn.execute(text(f"SET lock_timeout = '{TEST_DB_ADMIN_LOCK_TIMEOUT_SECONDS}s'"))
+                    await conn.execute(
+                        text(f"SET statement_timeout = '{TEST_DB_ADMIN_STATEMENT_TIMEOUT_SECONDS}s'")
+                    )
+                    await conn.execute(text(sql), params)
+        except TimeoutError as exc:
+            raise TimeoutError(
+                "test DB admin operation timed out after "
+                f"{TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS}s"
+            ) from exc
+    except BaseException as exc:
+        operation_error = exc
+        raise
     finally:
-        await engine.dispose()
+        try:
+            async with asyncio.timeout(TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS):
+                await engine.dispose()
+        except TimeoutError as exc:
+            if operation_error is not None:
+                sys.stderr.write(
+                    "[test-db] engine disposal timed out while preserving the prior admin-operation error\n"
+                )
+                sys.stderr.flush()
+            else:
+                raise TimeoutError(
+                    "test DB engine disposal timed out after "
+                    f"{TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS}s"
+                ) from exc
 
 
 async def _run_admin_scalar(admin_database_url: str, sql: str, **params):
@@ -730,8 +765,14 @@ async def _set_database_allow_connections_on_connection(
     )
 
 
+def _report_test_database_admin_phase(phase: str, db_name: str) -> None:
+    sys.stderr.write(f"[test-db] {phase}: {db_name}\n")
+    sys.stderr.flush()
+
+
 async def _drop_test_database(admin_database_url: str, db_name: str) -> None:
     _validate_test_database_name(db_name)
+    _report_test_database_admin_phase("terminate stale connections", db_name)
     await _run_admin_sql(
         admin_database_url,
         """
@@ -743,6 +784,7 @@ async def _drop_test_database(admin_database_url: str, db_name: str) -> None:
         """,
         db_name=db_name,
     )
+    _report_test_database_admin_phase("drop database", db_name)
     await _run_admin_sql(admin_database_url, f'DROP DATABASE IF EXISTS "{db_name}"')
 
 
@@ -793,7 +835,7 @@ def _run_alembic_upgrade(test_database_url: str, server_root: Path | None = None
     alembic_cfg = _alembic_config_for_database_url(test_database_url, server_root)
     alembic_ini = server_root / "alembic.ini"
 
-    if os.name == "nt" and make_url(test_database_url).database == SHARED_TEST_DATABASE_NAME:
+    if os.name == "nt":
         env = os.environ.copy()
         env["DATABASE_URL"] = test_database_url
         subprocess.run(

@@ -54,6 +54,7 @@ def test_pytest_watchdog_seconds_ignores_disabled_or_invalid_env(monkeypatch):
         "server/tests/test_runtime_control.py",
         "server/tests/test_remote_assist_no_db.py",
         "server/tests/test_support_knowledge_provider.py",
+        "server/tests/test_segmentation_docs.py",
     ],
 )
 def test_pure_server_test_modules_are_marked_no_db(path: str) -> None:

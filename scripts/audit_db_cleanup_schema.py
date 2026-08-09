@@ -30,6 +30,51 @@ ALLOWED_CLASSIFICATIONS = {
 }
 CLEANUP_REQUIRED_CLASSIFICATIONS = {"ephemeral_test_data"}
 CASCADE_SAFE_ACTIONS = {"CASCADE", "SET NULL", "SET DEFAULT"}
+RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES = {
+    "ai_model_profiles",
+    "ai_policy_profiles",
+    "ai_providers",
+    "ai_request_audit",
+    "knowledge_ai_proposals",
+    "knowledge_applicability_rules",
+    "knowledge_article_editor_events",
+    "knowledge_article_subscriptions",
+    "knowledge_article_views",
+    "knowledge_audience_rules",
+    "knowledge_bindings",
+    "knowledge_chunk_embeddings",
+    "knowledge_chunks",
+    "knowledge_content_pack_items",
+    "knowledge_content_packs",
+    "knowledge_correction_requests",
+    "knowledge_edges",
+    "knowledge_entity_mentions",
+    "knowledge_feedback_events",
+    "knowledge_gap_findings",
+    "knowledge_graph_layouts",
+    "knowledge_index_jobs",
+    "knowledge_ingestion_jobs",
+    "knowledge_item_properties",
+    "knowledge_item_taxonomy_terms",
+    "knowledge_item_versions",
+    "knowledge_items",
+    "knowledge_nodes",
+    "knowledge_property_definitions",
+    "knowledge_quality_models",
+    "knowledge_quality_snapshots",
+    "knowledge_review_comments",
+    "knowledge_review_tasks",
+    "knowledge_rollout_policies",
+    "knowledge_search_events",
+    "knowledge_search_settings",
+    "knowledge_spaces",
+    "knowledge_taxonomy_terms",
+    "knowledge_user_bookmarks",
+    "knowledge_version_diff_cache",
+    "problem_known_error_links",
+    "ticket_knowledge_links",
+}
+
 MIGRATION_ONLY_TABLES = {
     "knowledge_article_segments",
     "knowledge_segmentation_jobs",
@@ -37,7 +82,7 @@ MIGRATION_ONLY_TABLES = {
     "ticket_admin_audit_archive",
     "ticket_events_archive",
     "ticket_retention_runs",
-}
+} | RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES
 
 
 @dataclass(frozen=True)

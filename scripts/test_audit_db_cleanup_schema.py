@@ -3,6 +3,23 @@ import json
 from pathlib import Path
 
 
+def test_retired_local_knowledge_tables_remain_migration_only_until_pr11():
+    audit = importlib.import_module("scripts.audit_db_cleanup_schema")
+
+    expected = {
+        "ai_providers",
+        "knowledge_items",
+        "knowledge_article_views",
+        "knowledge_graph_layouts",
+        "knowledge_audience_rules",
+        "problem_known_error_links",
+        "ticket_knowledge_links",
+    }
+
+    assert expected <= audit.RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES
+    assert audit.RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES <= audit.MIGRATION_ONLY_TABLES
+
+
 def _catalog(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "db_table_classification.toml"
     path.write_text(content, encoding="utf-8")

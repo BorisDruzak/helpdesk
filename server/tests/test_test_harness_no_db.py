@@ -24,6 +24,137 @@ test_harness = _load_test_harness()
 pytestmark = pytest.mark.no_db
 
 
+@pytest.mark.asyncio
+async def test_admin_sql_sets_bounded_timeouts_before_running_statement(monkeypatch):
+    statements = []
+
+    class FakeConnection:
+        async def execute(self, statement, params=None):
+            statements.append((str(statement), params))
+
+    class FakeConnectionContext:
+        async def __aenter__(self):
+            return FakeConnection()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class FakeEngine:
+        def connect(self):
+            return FakeConnectionContext()
+
+        async def dispose(self):
+            return None
+
+    monkeypatch.setattr(test_harness, "create_async_engine", lambda *_args, **_kwargs: FakeEngine())
+
+    await test_harness._run_admin_sql("postgresql+asyncpg://example/postgres", "DROP DATABASE test_db")
+
+    assert statements == [
+        ("SET lock_timeout = '5s'", None),
+        ("SET statement_timeout = '30s'", None),
+        ("DROP DATABASE test_db", {}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_drop_test_database_reports_each_blocking_admin_phase(monkeypatch, capsys):
+    run_admin_sql = AsyncMock()
+    monkeypatch.setattr(test_harness, "_run_admin_sql", run_admin_sql)
+
+    await test_harness._drop_test_database(
+        "postgresql+asyncpg://example/postgres",
+        "pc_support_test_unit",
+    )
+
+    stderr = capsys.readouterr().err
+    assert "terminate stale connections" in stderr
+    assert "drop database" in stderr
+
+
+@pytest.mark.asyncio
+async def test_admin_sql_times_out_while_opening_a_stalled_connection(monkeypatch):
+    class SlowConnectionContext:
+        async def __aenter__(self):
+            await asyncio.sleep(0.01)
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, *_args, **_kwargs):
+            return None
+
+    class FakeEngine:
+        def connect(self):
+            return SlowConnectionContext()
+
+        async def dispose(self):
+            return None
+
+    monkeypatch.setattr(test_harness, "create_async_engine", lambda *_args, **_kwargs: FakeEngine())
+    monkeypatch.setattr(test_harness, "TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS", 0.001, raising=False)
+
+    with pytest.raises(TimeoutError, match="test DB admin operation"):
+        await test_harness._run_admin_sql("postgresql+asyncpg://example/postgres", "DROP DATABASE test_db")
+
+
+@pytest.mark.asyncio
+async def test_admin_sql_times_out_while_disposing_a_stalled_engine(monkeypatch):
+    class FakeConnection:
+        async def execute(self, *_args, **_kwargs):
+            return None
+
+    class FakeConnectionContext:
+        async def __aenter__(self):
+            return FakeConnection()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class SlowDisposeEngine:
+        def connect(self):
+            return FakeConnectionContext()
+
+        async def dispose(self):
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(test_harness, "create_async_engine", lambda *_args, **_kwargs: SlowDisposeEngine())
+    monkeypatch.setattr(test_harness, "TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS", 0.001, raising=False)
+
+    with pytest.raises(TimeoutError, match="test DB engine disposal"):
+        await test_harness._run_admin_sql("postgresql+asyncpg://example/postgres", "DROP DATABASE test_db")
+
+
+@pytest.mark.asyncio
+async def test_admin_sql_preserves_operation_error_when_disposal_times_out(monkeypatch, capsys):
+    class SlowConnectionContext:
+        async def __aenter__(self):
+            await asyncio.sleep(0.01)
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def execute(self, *_args, **_kwargs):
+            return None
+
+    class SlowDisposeEngine:
+        def connect(self):
+            return SlowConnectionContext()
+
+        async def dispose(self):
+            await asyncio.sleep(0.01)
+
+    monkeypatch.setattr(test_harness, "create_async_engine", lambda *_args, **_kwargs: SlowDisposeEngine())
+    monkeypatch.setattr(test_harness, "TEST_DB_ADMIN_OPERATION_TIMEOUT_SECONDS", 0.001, raising=False)
+
+    with pytest.raises(TimeoutError, match="test DB admin operation"):
+        await test_harness._run_admin_sql("postgresql+asyncpg://example/postgres", "DROP DATABASE test_db")
+
+    assert "preserving the prior admin-operation error" in capsys.readouterr().err
+
+
 class _FakeNode:
     def __init__(self, *markers):
         self._markers = list(markers)
@@ -303,6 +434,31 @@ def test_test_database_url_teardown_drops_database_before_closing_tunnel(monkeyp
         ("_drop_test_database", (admin_db_url, "pc_support_test_unit")),
         ("close_tunnel", ()),
     ]
+
+
+def test_windows_isolated_alembic_upgrade_uses_subprocess(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(test_harness.os, "name", "nt", raising=False)
+    monkeypatch.setattr(
+        test_harness.subprocess,
+        "run",
+        lambda command, **kwargs: calls.append((command, kwargs)),
+    )
+    monkeypatch.setattr(
+        "alembic.command.upgrade",
+        lambda *_args, **_kwargs: pytest.fail("Windows must not run isolated async Alembic in-process"),
+    )
+
+    test_harness._run_alembic_upgrade(
+        "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/pc_support_test_unit"
+    )
+
+    assert calls
+    command, kwargs = calls[0]
+    assert command[-2:] == ["upgrade", "head"]
+    assert kwargs["check"] is True
+    assert kwargs["env"]["DATABASE_URL"].endswith("/pc_support_test_unit")
 
 
 def test_cleanup_profile_defaults_to_full_without_marker():

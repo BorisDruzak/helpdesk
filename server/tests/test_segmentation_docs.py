@@ -1,6 +1,11 @@
 import re
 from pathlib import Path
 
+import pytest
+
+
+pytestmark = pytest.mark.no_db
+
 
 DOCS_ROOT = Path("server/docs")
 
