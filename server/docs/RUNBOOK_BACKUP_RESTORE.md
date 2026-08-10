@@ -64,12 +64,30 @@ approved window, stopped writers and PostgreSQL advisory-lock key.
 
 Record only redacted evidence in
 `artifacts/registry-retirement-evidence.json`; never commit credentials,
-connection URLs, cookies or backup contents. The read-only preflight validates
-the shape of that evidence together with the absence of local Registry runtime:
+connection URLs, cookies or backup contents. The attested v1 bundle binds one
+environment and revision to immutable backup, restore-drill and clone/catalog
+IDs, UTC timestamps, a non-negative count for every retirement target, and
+the exact current target-FK graph SHA-256. The restore drill must name the
+same backup artifact ID and hash as the backup; the catalog must name that
+backup and the same clone ID as the restore drill.
+
+The whole canonical bundle (except its detached `attestation` envelope) must
+be validated by an organisation-controlled public-key or KMS verifier. Trust
+material and verifier code are configured outside the evidence file; an
+unsigned bundle, unknown key ID, unsupported algorithm or failed signature is
+never accepted. The read-only preflight validates those gates together with the
+absence of local Registry runtime:
 
 ```text
-python scripts/rehearse_registry_retirement.py --workspace . --require-ready
+python scripts/rehearse_registry_retirement.py --workspace . --require-ready \
+  --attestation-verifier organisation_release_verifiers.registry_retirement:verify
 ```
+
+`MODULE:FUNCTION` is a release-operator supplied trusted verifier that receives
+canonical bytes, algorithm, key ID and signature. It must select its public
+key/KMS trust root independently of the evidence bundle. The command is
+fail-closed when this option is omitted; the in-repository fixture verifier is
+test-only and must never be used for a release.
 
 If a forward migration has started or the application is unhealthy, rollback
 the application release and restore the verified backup/clone procedure. Do

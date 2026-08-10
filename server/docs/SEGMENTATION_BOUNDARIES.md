@@ -125,15 +125,23 @@ local Knowledge/AI tables. It also records the required detachment of legacy
 Registry columns from tickets, consent and Helpdesk services before any table
 drop.
 
-The manifest explicitly excludes and protects `ui_users`, Helpdesk web
-sessions/tokens/RBAC, `tickets`, `user_consent_requests` and `TicketKbLink` /
-`ticket_kb_links` read-only history.
+The manifest explicitly excludes and protects actual Helpdesk identity/session
+tables `ui_users`, `auth_sessions`, `ui_tokens`, `ui_user_audit`,
+`ui_password_reset_requests`, `ticket_public_sessions`; RBAC/queue tables
+`access_groups`, `access_group_members`, `access_group_permissions`,
+`access_group_queue_members`, `access_audit`, `ticket_queues`,
+`ticket_queue_members`, `ticket_queue_ola_targets`; plus `tickets`,
+`user_consent_requests` and `TicketKbLink` / `ticket_kb_links` read-only
+history.
 The no-write `rehearse_registry_retirement.py` gate remains fail-closed while
 any local Registry runtime/route/writer/consumer exists, or while external
 command acceptance, clone counts, backup hash, restore drill, approved
-maintenance and advisory-lock evidence are absent. PR-11 is forward-only;
-rollback is an application rollback plus tested PostgreSQL restore, never an
-Alembic downgrade.
+maintenance, advisory-lock evidence or a trusted public-key/KMS attestation is
+absent. The evidence binds a single environment/revision to immutable backup,
+clone and catalog IDs and the reviewed FK-graph signature; the backup and
+restore/catalog links must match exactly. PR-11 is forward-only; rollback is
+an application rollback plus tested PostgreSQL restore, never an Alembic
+downgrade.
 
 ## Non-goals
 

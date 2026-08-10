@@ -315,11 +315,16 @@ as a prerequisite for creating/applying the later forward-only migration.
 The later migration must first detach the approved legacy Registry columns
 from `tickets`, `user_consent_requests` and `helpdesk_services`; it may then
 drop the declared Registry/registration/session/pairing and retired local
-content/AI targets in their reviewed reverse-FK order. It must retain
-`ui_users`, Helpdesk web sessions/tokens/RBAC, `tickets`,
-`user_consent_requests` and the `TicketKbLink` / `ticket_kb_links` read-only historical projection. Do not use `alembic downgrade`
-for this programme: rollback is application rollback plus a tested database
-restore.
+content/AI targets in the manifest's deterministic reverse-FK order, validated
+against `server/app/db/models.py` without a database connection. It must retain
+actual Helpdesk session/identity tables `ui_users`, `auth_sessions`, `ui_tokens`,
+`ui_user_audit`, `ui_password_reset_requests` and `ticket_public_sessions`; RBAC
+tables `access_groups`, `access_group_members`, `access_group_permissions`,
+`access_group_queue_members`, `access_audit`, `ticket_queues`,
+`ticket_queue_members`, `ticket_queue_ola_targets`; plus `tickets`,
+`user_consent_requests` and the `TicketKbLink` / `ticket_kb_links` read-only
+historical projection. Do not use `alembic downgrade` for this programme:
+rollback is application rollback plus a tested database restore.
 
 ## Связанные документы
 

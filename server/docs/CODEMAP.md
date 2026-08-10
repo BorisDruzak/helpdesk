@@ -125,6 +125,24 @@
   API/shadow contract and links to the command prerequisite. Focused contract
   coverage is `server/tests/test_registry_commands_api_docs.py`.
 
+## 2026-08-10 Registry/Knowledge retirement preflight (PR-11 prerequisite)
+
+- `scripts/registry_retirement_manifest.py` is the reviewed no-DB declaration
+  of retire/retain tables, retained-column detachments and a deterministic
+  reverse-FK order derived from `server/app/db/models.py`. It rejects missing,
+  duplicate or child-after-parent targets. `scripts/audit_db_cleanup_schema.py`
+  incorporates that manifest validation in its strict schema audit.
+- `scripts/rehearse_registry_retirement.py` is a no-write readiness gate. It
+  blocks local Registry runtime, `LocalRegistryAdapter`, local config mode and
+  direct Registry/Registration repository imports. Its v1 evidence bundle
+  requires a trusted external public-key/KMS verifier for canonical redacted
+  acceptance/backup/restore/catalog/maintenance proof; evidence cannot provide
+  its own verifier or trust material.
+- `server/tests/test_registry_retirement_preflight.py` covers protected actual
+  UI/session/RBAC table names, FK ordering and fail-closed local/evidence gates.
+  PR-11 remains future-only: no migration, DDL or database connection exists in
+  this task, and rollback remains application rollback plus verified restore.
+
 ## 2026-08-10 Helpdesk requester reference persistence (PR-2)
 
 - `server/tickets/ticket_context.py` creates immutable `RequesterRef` /
