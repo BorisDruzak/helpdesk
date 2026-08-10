@@ -15,12 +15,18 @@ from .knowledge import (
 from .registry import RegistryAvailability
 from .registry_contracts import (
     BindingRevocationRequest,
+    DeviceContextOutcome,
     DeviceRef,
+    DirectorySearchOutcome,
+    DirectorySearchText,
     PersonRef,
     RegistrationApprovalRequest,
     RegistrationRequest,
     RegistryCommandResult,
+    RegistryReadActor,
     RegistryUnavailable,
+    RequesterHistoryOutcome,
+    RequesterProfileOutcome,
 )
 
 
@@ -67,8 +73,46 @@ class UnavailableRegistryPort:
         del device
         return self._unavailable
 
-    async def audience_projection(self, person: PersonRef) -> RegistryUnavailable:
-        del person
+    async def audience_projection(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+    ) -> RegistryUnavailable:
+        del person, actor
+        return self._unavailable
+
+    async def requester_profile(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+    ) -> RequesterProfileOutcome:
+        del person, actor
+        return self._unavailable
+
+    async def search_people(
+        self,
+        query: DirectorySearchText,
+        *,
+        actor: RegistryReadActor,
+        limit: int = 20,
+    ) -> DirectorySearchOutcome:
+        del query, actor, limit
+        return self._unavailable
+
+    async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:
+        del device
+        return self._unavailable
+
+    async def requester_history(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+        limit: int = 50,
+    ) -> RequesterHistoryOutcome:
+        del person, actor, limit
         return self._unavailable
 
     def _command_result(self, operation_id: str) -> RegistryCommandResult:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
@@ -14,6 +15,14 @@ RequesterDisplayName = Annotated[
     str,
     StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=256),
 ]
+RegistryDisplayLabel = Annotated[
+    str,
+    StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=256),
+]
+DirectorySearchText = Annotated[
+    str,
+    StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=120),
+]
 SafeRegistryCode = Annotated[
     str,
     StringConstraints(
@@ -24,6 +33,9 @@ SafeRegistryCode = Annotated[
         pattern=r"^[a-z0-9][a-z0-9_.-]*$",
     ),
 ]
+MAX_REGISTRY_AUDIENCES = 100
+MAX_DIRECTORY_RESULTS = 50
+MAX_REQUESTER_HISTORY_EVENTS = 100
 
 
 class _ImmutableRegistryDTO(BaseModel):
@@ -58,6 +70,21 @@ class RequesterRef(_ImmutableRegistryDTO):
     """Canonical opaque requester identity retained by Helpdesk history."""
 
     external_id: OpaqueRegistryRef
+
+
+class RegistryReadActor(_ImmutableRegistryDTO):
+    """Verified Helpdesk actor context for Registry visibility decisions.
+
+    Composition code may build this only from trusted authentication context,
+    never from an HTTP body or a client supplied role. ``requester`` scopes a
+    requester actor to their own Registry person; support and admin actors are
+    authorized by their verified role and the Registry's own access-group
+    resolver.
+    """
+
+    actor: ActorRef
+    role: Literal["admin", "support", "user"]
+    requester: RequesterRef | None = None
 
 
 class RequesterSnapshot(_ImmutableRegistryDTO):
@@ -115,6 +142,13 @@ class RegistryNotFound(_ImmutableRegistryDTO):
     code: SafeRegistryCode
 
 
+class RegistryInvalidProjection(_ImmutableRegistryDTO):
+    """The authoritative Registry returned an unusable redacted projection."""
+
+    status: Literal["invalid"] = "invalid"
+    code: SafeRegistryCode = "registry_projection_invalid"
+
+
 class ActiveBindingProjection(_ImmutableRegistryDTO):
     device: DeviceRef
     binding: BindingRef
@@ -140,6 +174,94 @@ class AudienceProjection(_ImmutableRegistryDTO):
     audiences: tuple[AudienceRef, ...] = ()
     warning_codes: tuple[SafeRegistryCode, ...] = ()
     source: Literal["local_authoritative", "external_authoritative"]
+
+    @model_validator(mode="after")
+    def validate_bounded_collections(self) -> "AudienceProjection":
+        if len(self.audiences) > MAX_REGISTRY_AUDIENCES:
+            raise ValueError("audience projection exceeds maximum item count")
+        if len(self.warning_codes) > MAX_REGISTRY_AUDIENCES:
+            raise ValueError("audience projection exceeds maximum warning count")
+        return self
+
+
+class DirectoryPersonProjection(_ImmutableRegistryDTO):
+    """Search-safe person result: no contacts, identities or local metadata."""
+
+    requester: RequesterRef
+    display_name: RequesterDisplayName
+    department_label: RegistryDisplayLabel | None = None
+    location_label: RegistryDisplayLabel | None = None
+    status: SafeRegistryCode
+    source: Literal["local_authoritative", "external_authoritative"]
+
+
+class DirectorySearchProjection(_ImmutableRegistryDTO):
+    items: tuple[DirectoryPersonProjection, ...] = ()
+    source: Literal["local_authoritative", "external_authoritative"]
+
+    @model_validator(mode="after")
+    def validate_bounded_items(self) -> "DirectorySearchProjection":
+        if len(self.items) > MAX_DIRECTORY_RESULTS:
+            raise ValueError("directory projection exceeds maximum item count")
+        return self
+
+
+class RequesterProfileProjection(_ImmutableRegistryDTO):
+    """Requester profile bounded to labels safe for Helpdesk display."""
+
+    requester: RequesterRef
+    display_name: RequesterDisplayName
+    department_label: RegistryDisplayLabel | None = None
+    location_label: RegistryDisplayLabel | None = None
+    status: SafeRegistryCode
+    source: Literal["local_authoritative", "external_authoritative"]
+
+
+class DeviceContextProjection(_ImmutableRegistryDTO):
+    """Inventory-safe device context without asset, serial or owner identifiers."""
+
+    device: DeviceRef
+    display_name: RegistryDisplayLabel
+    asset_type: SafeRegistryCode
+    asset_status: SafeRegistryCode
+    requester: RequesterRef | None = None
+    requester_snapshot: RequesterSnapshot | None = None
+    department_label: RegistryDisplayLabel | None = None
+    location_label: RegistryDisplayLabel | None = None
+    source: Literal["local_authoritative", "external_authoritative"]
+
+    @model_validator(mode="after")
+    def validate_requester_pair(self) -> "DeviceContextProjection":
+        if (self.requester is None) != (self.requester_snapshot is None):
+            raise ValueError("requester and requester_snapshot must both be set or both be omitted")
+        if (
+            self.requester is not None
+            and self.requester_snapshot is not None
+            and self.requester.external_id != self.requester_snapshot.person.external_id
+        ):
+            raise ValueError("requester snapshot person does not match requester ref")
+        return self
+
+
+class RegistryHistoryEventProjection(_ImmutableRegistryDTO):
+    event_type: SafeRegistryCode
+    occurred_at: datetime
+    device: DeviceRef | None = None
+    relationship_type: SafeRegistryCode | None = None
+    status: SafeRegistryCode | None = None
+    source: Literal["local_authoritative", "external_authoritative"]
+
+
+class RequesterHistoryProjection(_ImmutableRegistryDTO):
+    requester: RequesterRef
+    items: tuple[RegistryHistoryEventProjection, ...] = ()
+    source: Literal["local_authoritative", "external_authoritative"]
+
+    @model_validator(mode="after")
+    def validate_bounded_items(self) -> "RequesterHistoryProjection":
+        if len(self.items) > MAX_REQUESTER_HISTORY_EVENTS:
+            raise ValueError("requester history projection exceeds maximum item count")
+        return self
 
 
 class RegistrationRequest(_ImmutableRegistryDTO):
@@ -185,7 +307,11 @@ class RegistryCommandResult(_ImmutableRegistryDTO):
     idempotency_status: Literal["new", "replayed", "not_evaluated"]
 
 
-RequesterSnapshotOutcome = RequesterSnapshot | RegistryNotFound | RegistryUnavailable
-ActiveBindingOutcome = ActiveBindingProjection | RegistryNotFound | RegistryUnavailable
-AccountStatusOutcome = AccountStatusProjection | RegistryUnavailable
-AudienceProjectionOutcome = AudienceProjection | RegistryNotFound | RegistryUnavailable
+RequesterSnapshotOutcome = RequesterSnapshot | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+ActiveBindingOutcome = ActiveBindingProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+AccountStatusOutcome = AccountStatusProjection | RegistryUnavailable | RegistryInvalidProjection
+AudienceProjectionOutcome = AudienceProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+RequesterProfileOutcome = RequesterProfileProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+DirectorySearchOutcome = DirectorySearchProjection | RegistryUnavailable | RegistryInvalidProjection
+DeviceContextOutcome = DeviceContextProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+RequesterHistoryOutcome = RequesterHistoryProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection

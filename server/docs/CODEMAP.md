@@ -82,6 +82,29 @@
 - Focused gate:
   `python -m pytest server/tests/test_domain_import_boundaries.py server/tests/test_registry_boundary.py server/tests/test_requester_workspace_api.py server/tests/test_web_support_api.py -q --tb=short`.
 
+## 2026-08-10 RegistryPort rich read contracts (PR-8)
+
+- `server/domain_ports/registry_contracts.py` adds frozen, redacted requester
+  profile, directory person/search, device context and requester history DTOs.
+  They contain opaque references and bounded display/status labels only; local
+  contacts, identity aliases, account-session IDs, asset IDs, serial numbers and
+  ORM metadata are deliberately not serializable through the port.
+- `RegistryReadActor` carries only trusted composition-time actor context.
+  `LocalRegistryAdapter.audience_projection()`, requester profile and history
+  require it; directory search is support/admin-only and audience resolution
+  passes actor id/role to `EffectiveIdentityService` for authoritative
+  access-group evaluation. Requester actors may read only their matching opaque
+  requester reference.
+- `RegistryInvalidProjection` separates malformed authoritative data from
+  `RegistryNotFound` and `RegistryUnavailable`. All local reads use a nested
+  transaction when the supplied session supports it, preserving a caller-owned
+  session after a failed Registry query while logging only an operation-level
+  safe diagnostic. Contract maxima are directory 50 and audience/history 100.
+- `server/tests/test_registry_port_rich_projections.py` covers redaction,
+  trusted directory visibility, invalid outcomes, collection bounds, unavailable
+  behavior and savepoint isolation. These are contract/local-adapter additions;
+  consumer migration remains a separate task.
+
 ## 2026-08-10 Helpdesk requester reference persistence (PR-2)
 
 - `server/tickets/ticket_context.py` creates immutable `RequesterRef` /

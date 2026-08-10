@@ -89,6 +89,29 @@ resolution, rich ticket diagnostic context, customer-history binding/session
 events, exact binding/session authorization and Registry commands remain
 explicitly deferred.
 
+### Rich Registry read contract (Task 5)
+
+`RegistryPort` also defines frozen redacted requester-profile, directory,
+device-context and requester-history projections. They carry opaque refs,
+display/location/department labels and safe state codes only — never contacts,
+identity aliases, account-session IDs, asset IDs, serials or ORM metadata.
+Directory results are capped at 50; audience and history collections are capped
+at 100 by their DTOs, including future external adapters.
+
+Audience, directory, requester-profile and requester-history visibility takes a
+`RegistryReadActor` produced only from verified Helpdesk auth context. A
+requester actor is limited to its matching opaque requester ref; directory
+enumeration accepts only support/admin actors. The local compatibility adapter
+passes actor id and role to the Registry effective-identity resolver, so
+access-group and role targeting remains authoritative. A malformed authoritative
+projection is typed as `invalid`, separately from `not_found` and
+`unavailable`; local reads use a nested transaction when available, preventing
+a failed query from aborting the caller-owned session.
+
+The contract itself does not migrate any additional Helpdesk consumer. Such
+consumers must be cut over in a later task and may not bypass the port with a
+local Registry fallback.
+
 ## Non-goals
 
 This programme does not create a new Knowledge or Registry service in this

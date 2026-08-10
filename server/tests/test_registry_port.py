@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from domain_ports import (
+    ActorRef,
     BindingRef,
     BindingRevocationRequest,
     DeviceRef,
@@ -19,6 +20,7 @@ from domain_ports import (
     RegistrationRequest,
     RegistryNotFound,
     RegistryPort,
+    RegistryReadActor,
     RegistryUnavailable,
     UnavailableRegistryPort,
 )
@@ -85,6 +87,13 @@ def _binding() -> SimpleNamespace:
         status="active",
         confirmed_at=None,
         confirmed_by_admin=None,
+    )
+
+
+def _support_actor() -> RegistryReadActor:
+    return RegistryReadActor(
+        actor=ActorRef(external_id="registry-ref-opaque-support-1"),
+        role="support",
     )
 
 
@@ -172,12 +181,14 @@ async def test_local_adapter_audience_projection_exposes_only_opaque_audience_re
         include_children=False,
     )
     session = _SequencedSession(
+        _Result(rows=[]),
         _Result(rows=[(group, membership)]),
         get_rows={"registry-ref-opaque-person-1": _person()},
     )
 
     result = await LocalRegistryAdapter(session).audience_projection(
-        PersonRef(external_id="registry-ref-opaque-person-1")
+        PersonRef(external_id="registry-ref-opaque-person-1"),
+        actor=_support_actor(),
     )
     payload = result.model_dump(mode="json")
 
@@ -284,7 +295,10 @@ async def test_unavailable_registry_port_fails_closed_for_every_read() -> None:
         await port.requester_snapshot(PersonRef(external_id="registry-ref-opaque-person-1")),
         await port.active_binding(DeviceRef(external_id="registry-ref-opaque-device-1")),
         await port.account_status(DeviceRef(external_id="registry-ref-opaque-device-1")),
-        await port.audience_projection(PersonRef(external_id="registry-ref-opaque-person-1")),
+        await port.audience_projection(
+            PersonRef(external_id="registry-ref-opaque-person-1"),
+            actor=_support_actor(),
+        ),
     )
 
     assert isinstance(port, RegistryPort)

@@ -12,15 +12,21 @@ from .registry_contracts import (
     BindingRef,
     BindingRevocationRequest,
     DeviceRef,
+    DeviceContextOutcome,
+    DirectorySearchOutcome,
+    DirectorySearchText,
     OpaqueRegistryRef,
     PersonRef,
     RegistrationApprovalRequest,
     RegistrationRequest,
     RegistryCommandResult,
+    RegistryReadActor,
     RequesterRef,
     RequesterDisplayName,
     RequesterSnapshot,
     RequesterSnapshotOutcome,
+    RequesterProfileOutcome,
+    RequesterHistoryOutcome,
     AudienceProjectionOutcome,
     requester_persistence_values,
 )
@@ -43,7 +49,37 @@ class RegistryPort(Protocol):
 
     async def account_status(self, device: DeviceRef) -> AccountStatusOutcome: ...
 
-    async def audience_projection(self, person: PersonRef) -> AudienceProjectionOutcome: ...
+    async def audience_projection(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+    ) -> AudienceProjectionOutcome: ...
+
+    async def requester_profile(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+    ) -> RequesterProfileOutcome: ...
+
+    async def search_people(
+        self,
+        query: DirectorySearchText,
+        *,
+        actor: RegistryReadActor,
+        limit: int = 20,
+    ) -> DirectorySearchOutcome: ...
+
+    async def device_context(self, device: DeviceRef) -> DeviceContextOutcome: ...
+
+    async def requester_history(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+        limit: int = 50,
+    ) -> RequesterHistoryOutcome: ...
 
     async def request_registration(self, request: RegistrationRequest) -> RegistryCommandResult: ...
 

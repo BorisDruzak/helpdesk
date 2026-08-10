@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime
+import logging
 import re
 from types import SimpleNamespace
 from typing import Any, AsyncIterator
@@ -19,14 +21,27 @@ try:
         AudienceRef,
         BindingRef,
         BindingRevocationRequest,
+        DeviceContextOutcome,
+        DeviceContextProjection,
         DeviceRef,
+        DirectoryPersonProjection,
+        DirectorySearchOutcome,
+        DirectorySearchProjection,
+        DirectorySearchText,
         PersonRef,
         RegistrationApprovalRequest,
         RegistrationRequest,
         RegistryCommandResult,
+        RegistryHistoryEventProjection,
+        RegistryInvalidProjection,
         RegistryNotFound,
+        RegistryReadActor,
         RegistryUnavailable,
         RequesterRef,
+        RequesterHistoryOutcome,
+        RequesterHistoryProjection,
+        RequesterProfileOutcome,
+        RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
     )
@@ -44,20 +59,37 @@ except ModuleNotFoundError as exc:
         AudienceRef,
         BindingRef,
         BindingRevocationRequest,
+        DeviceContextOutcome,
+        DeviceContextProjection,
         DeviceRef,
+        DirectoryPersonProjection,
+        DirectorySearchOutcome,
+        DirectorySearchProjection,
+        DirectorySearchText,
         PersonRef,
         RegistrationApprovalRequest,
         RegistrationRequest,
         RegistryCommandResult,
+        RegistryHistoryEventProjection,
+        RegistryInvalidProjection,
         RegistryNotFound,
+        RegistryReadActor,
         RegistryUnavailable,
         RequesterRef,
+        RequesterHistoryOutcome,
+        RequesterHistoryProjection,
+        RequesterProfileOutcome,
+        RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
     )
 
 
 _SAFE_CODE_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,119}$")
+_MAX_RICH_PROJECTION_ITEMS = 100
+_MAX_DIRECTORY_ITEMS = 50
+logger = logging.getLogger(__name__)
+_READ_FAILED = object()
 
 
 def _safe_code(value: object) -> str | None:
@@ -90,6 +122,66 @@ class LocalRegistryAdapter:
         async with get_session() as session:
             yield session
 
+    @asynccontextmanager
+    async def _isolated_read_scope(self) -> AsyncIterator[Any]:
+        """Contain a local read failure inside a savepoint when one is available."""
+
+        async with self._session_scope() as session:
+            begin_nested = getattr(session, "begin_nested", None)
+            if not callable(begin_nested):
+                yield session
+                return
+            async with begin_nested():
+                yield session
+
+    async def _read(self, operation: str, reader: Any) -> object:
+        try:
+            async with self._isolated_read_scope() as session:
+                return await reader(session)
+        except Exception:
+            # The caller-owned session remains usable after the savepoint rolls
+            # back. Do not include an exception, identifier or SQL statement in
+            # this boundary diagnostic.
+            logger.warning("registry_port_local_read_failed operation=%s", operation)
+            return _READ_FAILED
+
+    @staticmethod
+    def _is_inactive_person(person: object | None) -> bool:
+        return str(getattr(person, "status", "active") or "active").strip().lower() in {
+            "archived",
+            "disabled",
+            "inactive",
+            "merged",
+        }
+
+    @staticmethod
+    def _actor_may_read_person(actor: RegistryReadActor, person: PersonRef) -> bool:
+        if actor.role in {"admin", "support"}:
+            return True
+        return actor.requester is not None and actor.requester.external_id == person.external_id
+
+    @staticmethod
+    def _bounded_limit(limit: int, *, maximum: int) -> int | None:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            return None
+        return min(limit, maximum)
+
+    @staticmethod
+    def _safe_label(value: object) -> str | None:
+        text = str(value or "").strip()
+        return text if 0 < len(text) <= 256 else None
+
+    async def _person_labels(self, session: Any, person: object) -> tuple[str | None, str | None]:
+        from app.repos.registry_repo import RegistryRepo
+
+        repo = RegistryRepo(session)
+        department = await repo.get_department(getattr(person, "department_id", None))
+        location = await repo.get_location(getattr(person, "location_id", None))
+        return (
+            self._safe_label(getattr(department, "name", None)),
+            self._safe_label(getattr(location, "display_name", None)),
+        )
+
     @staticmethod
     def _requester_snapshot_from_person(person: object | None) -> RequesterSnapshot | None:
         if person is None:
@@ -103,6 +195,29 @@ class LocalRegistryAdapter:
             return RequesterSnapshot(
                 person=PersonRef(external_id=person_ref),
                 display_name=display_name,
+            )
+        except ValueError:
+            return None
+
+    @classmethod
+    def _requester_profile_from_person(
+        cls,
+        *,
+        person: object | None,
+        department_label: str | None,
+        location_label: str | None,
+    ) -> RequesterProfileProjection | None:
+        snapshot = cls._requester_snapshot_from_person(person)
+        if snapshot is None:
+            return None
+        try:
+            return RequesterProfileProjection(
+                requester=RequesterRef(external_id=snapshot.person.external_id),
+                display_name=snapshot.display_name,
+                department_label=department_label,
+                location_label=location_label,
+                status=_safe_code(getattr(person, "status", "active")) or "active",
+                source="local_authoritative",
             )
         except ValueError:
             return None
@@ -133,57 +248,68 @@ class LocalRegistryAdapter:
         return RegistryAvailability(status="available", code="registry_local")
 
     async def requester_snapshot(self, person: PersonRef) -> RequesterSnapshotOutcome:
-        try:
-            async with self._session_scope() as session:
-                from app.repos.registry_repo import RegistryRepo
+        async def reader(session: Any) -> object | None:
+            from app.repos.registry_repo import RegistryRepo
 
-                row = await RegistryRepo(session).get_person(person.external_id)
-        except Exception:
+            return await RegistryRepo(session).get_person(person.external_id)
+
+        row = await self._read("requester_snapshot", reader)
+        if row is _READ_FAILED:
             return RegistryUnavailable(code="registry_read_unavailable")
+        if row is None or self._is_inactive_person(row):
+            return RegistryNotFound(code="registry_requester_not_found")
         snapshot = self._requester_snapshot_from_person(row)
         if snapshot is None:
-            return RegistryNotFound(code="registry_requester_not_found")
+            return RegistryInvalidProjection()
         return snapshot
 
     async def active_binding(self, device: DeviceRef) -> ActiveBindingOutcome:
-        try:
-            async with self._session_scope() as session:
-                from app.repos.registration_repo import RegistrationRepo
-                from app.repos.registry_repo import RegistryRepo
+        async def reader(session: Any) -> object:
+            from app.repos.registration_repo import RegistrationRepo
+            from app.repos.registry_repo import RegistryRepo
 
-                registration_repo = RegistrationRepo(session)
-                binding = await registration_repo.get_active_primary_binding(device.external_id)
-                if binding is None:
-                    active = await registration_repo.list_active_bindings_for_device(device.external_id)
-                    binding = next(
-                        (
-                            row
-                            for row in active
-                            if str(getattr(row, "relationship_type", "") or "")
-                            in {"shared_user", "responsible"}
-                        ),
-                        None,
-                    )
-                if binding is None:
-                    return RegistryNotFound(code="registry_active_binding_not_found")
-                person = await RegistryRepo(session).get_person(getattr(binding, "person_id", None))
-        except Exception:
+            registration_repo = RegistrationRepo(session)
+            binding = await registration_repo.get_active_primary_binding(device.external_id)
+            if binding is None:
+                active = await registration_repo.list_active_bindings_for_device(device.external_id)
+                binding = next(
+                    (
+                        row
+                        for row in active
+                        if str(getattr(row, "relationship_type", "") or "")
+                        in {"shared_user", "responsible"}
+                    ),
+                    None,
+                )
+            if binding is None:
+                return RegistryNotFound(code="registry_active_binding_not_found")
+            person = await RegistryRepo(session).get_person(getattr(binding, "person_id", None))
+            return binding, person
+
+        loaded = await self._read("active_binding", reader)
+        if loaded is _READ_FAILED:
             return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(loaded, RegistryNotFound):
+            return loaded
+        binding, person = loaded
         projection = self._active_binding_projection(binding=binding, person=person)
         if projection is None:
-            return RegistryUnavailable(code="registry_projection_invalid")
+            return RegistryInvalidProjection()
+        if projection.device.external_id != device.external_id:
+            return RegistryInvalidProjection()
         return projection
 
     async def account_status(self, device: DeviceRef) -> AccountStatusOutcome:
-        try:
-            async with self._session_scope() as session:
-                from registry.registration_service import RegistrationService
+        async def reader(session: Any) -> object:
+            from registry.registration_service import RegistrationService
 
-                payload = await RegistrationService(session).get_device_registration_status(
-                    device.external_id
-                )
-        except Exception:
+            return await RegistrationService(session).get_device_registration_status(device.external_id)
+
+        payload = await self._read("account_status", reader)
+        if payload is _READ_FAILED:
             return RegistryUnavailable(code="registry_read_unavailable")
+        if not isinstance(payload, dict):
+            return RegistryInvalidProjection()
 
         active_binding = None
         binding_payload = payload.get("active_binding")
@@ -194,11 +320,13 @@ class LocalRegistryAdapter:
                 person=SimpleNamespace(**person_payload),
             )
             if active_binding is None:
-                return RegistryUnavailable(code="registry_projection_invalid")
+                return RegistryInvalidProjection()
+            if active_binding.device.external_id != device.external_id:
+                return RegistryInvalidProjection()
 
         status = _safe_code(payload.get("status"))
         if status is None:
-            return RegistryUnavailable(code="registry_projection_invalid")
+            return RegistryInvalidProjection()
         return AccountStatusProjection(
             device=device,
             status=status,
@@ -209,24 +337,39 @@ class LocalRegistryAdapter:
             source="local_authoritative",
         )
 
-    async def audience_projection(self, person: PersonRef) -> AudienceProjectionOutcome:
-        try:
-            async with self._session_scope() as session:
-                from app.db.models import RegistryPerson
-                from registry.effective_identity_service import EffectiveIdentityService
+    async def audience_projection(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+    ) -> AudienceProjectionOutcome:
+        if not self._actor_may_read_person(actor, person):
+            return RegistryUnavailable(code="registry_actor_forbidden")
 
-                person_row = await session.get(RegistryPerson, person.external_id)
-                if self._requester_snapshot_from_person(person_row) is None:
-                    return RegistryNotFound(code="registry_requester_not_found")
-                payload = (
-                    await EffectiveIdentityService(session).resolve_person_audience(
-                        person.external_id,
-                        actor_id=None,
-                        actor_role="user",
-                    )
-                ).to_dict()
-        except Exception:
+        async def reader(session: Any) -> object:
+            from app.db.models import RegistryPerson
+            from registry.effective_identity_service import EffectiveIdentityService
+
+            person_row = await session.get(RegistryPerson, person.external_id)
+            if person_row is None or self._is_inactive_person(person_row):
+                return RegistryNotFound(code="registry_requester_not_found")
+            if self._requester_snapshot_from_person(person_row) is None:
+                return RegistryInvalidProjection()
+            return (
+                await EffectiveIdentityService(session).resolve_person_audience(
+                    person.external_id,
+                    actor_id=actor.actor.external_id,
+                    actor_role=actor.role,
+                )
+            ).to_dict()
+
+        payload = await self._read("audience_projection", reader)
+        if payload is _READ_FAILED:
             return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(payload, (RegistryNotFound, RegistryInvalidProjection)):
+            return payload
+        if not isinstance(payload, dict):
+            return RegistryInvalidProjection()
 
         audiences: list[AudienceRef] = []
         for item in payload.get("audience_groups") or []:
@@ -238,7 +381,7 @@ class LocalRegistryAdapter:
             try:
                 audiences.append(AudienceRef(external_id=external_id))
             except ValueError:
-                return RegistryUnavailable(code="registry_projection_invalid")
+                return RegistryInvalidProjection()
         warning_codes = tuple(
             code
             for item in payload.get("warnings") or []
@@ -248,6 +391,215 @@ class LocalRegistryAdapter:
             requester=RequesterRef(external_id=person.external_id),
             audiences=tuple(audiences),
             warning_codes=warning_codes,
+            source="local_authoritative",
+        )
+
+    async def requester_profile(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+    ) -> RequesterProfileOutcome:
+        if not self._actor_may_read_person(actor, person):
+            return RegistryUnavailable(code="registry_actor_forbidden")
+
+        async def reader(session: Any) -> object:
+            from app.repos.registry_repo import RegistryRepo
+
+            row = await RegistryRepo(session).get_person(person.external_id)
+            if row is None or self._is_inactive_person(row):
+                return RegistryNotFound(code="registry_requester_not_found")
+            labels = await self._person_labels(session, row)
+            return row, labels
+
+        loaded = await self._read("requester_profile", reader)
+        if loaded is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(loaded, RegistryNotFound):
+            return loaded
+        row, (department_label, location_label) = loaded
+        projection = self._requester_profile_from_person(
+            person=row,
+            department_label=department_label,
+            location_label=location_label,
+        )
+        if projection is None or projection.requester.external_id != person.external_id:
+            return RegistryInvalidProjection()
+        return projection
+
+    async def search_people(
+        self,
+        query: DirectorySearchText,
+        *,
+        actor: RegistryReadActor,
+        limit: int = 20,
+    ) -> DirectorySearchOutcome:
+        if actor.role not in {"admin", "support"}:
+            return RegistryUnavailable(code="registry_actor_forbidden")
+        clean_query = str(query or "").strip()
+        bounded_limit = self._bounded_limit(limit, maximum=_MAX_DIRECTORY_ITEMS)
+        if not clean_query or len(clean_query) > 120 or bounded_limit is None:
+            return RegistryInvalidProjection(code="registry_projection_invalid")
+
+        async def reader(session: Any) -> object:
+            from app.repos.registry_repo import RegistryRepo
+
+            return await RegistryRepo(session).list_people(limit=_MAX_DIRECTORY_ITEMS)
+
+        rows = await self._read("search_people", reader)
+        if rows is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if not isinstance(rows, list):
+            return RegistryInvalidProjection()
+
+        items: list[DirectoryPersonProjection] = []
+        query_folded = clean_query.casefold()
+        for row in rows:
+            if self._is_inactive_person(row):
+                continue
+            display_name = self._safe_label(getattr(row, "display_name", None))
+            if display_name is None or query_folded not in display_name.casefold():
+                continue
+            try:
+                items.append(
+                    DirectoryPersonProjection(
+                        requester=RequesterRef(external_id=str(getattr(row, "person_id", "") or "")),
+                        display_name=display_name,
+                        status=_safe_code(getattr(row, "status", "active")) or "active",
+                        source="local_authoritative",
+                    )
+                )
+            except ValueError:
+                return RegistryInvalidProjection()
+            if len(items) >= bounded_limit:
+                break
+        return DirectorySearchProjection(items=tuple(items), source="local_authoritative")
+
+    async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:
+        async def reader(session: Any) -> object:
+            from app.repos.registry_repo import RegistryRepo
+
+            repo = RegistryRepo(session)
+            asset = await repo.get_asset_by_device_id(device.external_id)
+            if asset is None:
+                return RegistryNotFound(code="registry_device_not_found")
+            assigned_person = await repo.get_person(getattr(asset, "assigned_person_id", None))
+            department = await repo.get_department(getattr(asset, "department_id", None))
+            location = await repo.get_location(getattr(asset, "location_id", None))
+            return asset, assigned_person, department, location
+
+        loaded = await self._read("device_context", reader)
+        if loaded is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(loaded, RegistryNotFound):
+            return loaded
+        asset, assigned_person, department, location = loaded
+        if str(getattr(asset, "device_id", "") or "") != device.external_id:
+            return RegistryInvalidProjection()
+        snapshot = self._requester_snapshot_from_person(assigned_person)
+        if getattr(asset, "assigned_person_id", None) and snapshot is None:
+            return RegistryInvalidProjection()
+        asset_type = _safe_code(getattr(asset, "asset_type", None))
+        asset_status = _safe_code(getattr(asset, "status", None))
+        if asset_type is None or asset_status is None:
+            return RegistryInvalidProjection()
+        try:
+            return DeviceContextProjection(
+                device=device,
+                display_name=self._safe_label(getattr(asset, "name", None)) or "Unnamed device",
+                asset_type=asset_type,
+                asset_status=asset_status,
+                requester=(RequesterRef(external_id=snapshot.person.external_id) if snapshot else None),
+                requester_snapshot=snapshot,
+                department_label=self._safe_label(getattr(department, "name", None)),
+                location_label=self._safe_label(getattr(location, "display_name", None)),
+                source="local_authoritative",
+            )
+        except ValueError:
+            return RegistryInvalidProjection()
+
+    async def requester_history(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+        limit: int = 50,
+    ) -> RequesterHistoryOutcome:
+        if not self._actor_may_read_person(actor, person):
+            return RegistryUnavailable(code="registry_actor_forbidden")
+        bounded_limit = self._bounded_limit(limit, maximum=_MAX_RICH_PROJECTION_ITEMS)
+        if bounded_limit is None:
+            return RegistryInvalidProjection()
+
+        async def reader(session: Any) -> object:
+            from sqlalchemy import desc, select
+
+            from app.db.models import DeviceAccountSession, DeviceUserBinding, RegistryPerson
+
+            person_row = await session.get(RegistryPerson, person.external_id)
+            if person_row is None or self._is_inactive_person(person_row):
+                return RegistryNotFound(code="registry_requester_not_found")
+            bindings = (
+                await session.execute(
+                    select(DeviceUserBinding)
+                    .where(DeviceUserBinding.person_id == person.external_id)
+                    .order_by(desc(DeviceUserBinding.created_at))
+                    .limit(bounded_limit)
+                )
+            ).scalars().all()
+            sessions: list[object] = []
+            if actor.role in {"admin", "support"}:
+                sessions = (
+                    await session.execute(
+                        select(DeviceAccountSession)
+                        .where(DeviceAccountSession.person_id == person.external_id)
+                        .order_by(desc(DeviceAccountSession.created_at))
+                        .limit(bounded_limit)
+                    )
+                ).scalars().all()
+            return bindings, sessions
+
+        loaded = await self._read("requester_history", reader)
+        if loaded is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(loaded, RegistryNotFound):
+            return loaded
+        bindings, sessions = loaded
+        items: list[RegistryHistoryEventProjection] = []
+        try:
+            for binding in bindings:
+                occurred_at = getattr(binding, "created_at", None)
+                if not isinstance(occurred_at, datetime):
+                    return RegistryInvalidProjection()
+                items.append(
+                    RegistryHistoryEventProjection(
+                        event_type="device_binding",
+                        occurred_at=occurred_at,
+                        device=DeviceRef(external_id=str(getattr(binding, "device_id", "") or "")),
+                        relationship_type=_safe_code(getattr(binding, "relationship_type", None)),
+                        status=_safe_code(getattr(binding, "status", None)),
+                        source="local_authoritative",
+                    )
+                )
+            for session in sessions:
+                occurred_at = getattr(session, "created_at", None)
+                if not isinstance(occurred_at, datetime):
+                    return RegistryInvalidProjection()
+                items.append(
+                    RegistryHistoryEventProjection(
+                        event_type="account_session",
+                        occurred_at=occurred_at,
+                        device=DeviceRef(external_id=str(getattr(session, "device_id", "") or "")),
+                        status=_safe_code(getattr(session, "verification_status", None)),
+                        source="local_authoritative",
+                    )
+                )
+        except ValueError:
+            return RegistryInvalidProjection()
+        items.sort(key=lambda item: item.occurred_at, reverse=True)
+        return RequesterHistoryProjection(
+            requester=RequesterRef(external_id=person.external_id),
+            items=tuple(items[:bounded_limit]),
             source="local_authoritative",
         )
 
