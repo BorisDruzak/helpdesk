@@ -336,4 +336,3 @@ git commit -m "server: retire local Registry and Knowledge schema"
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
-
