@@ -7,9 +7,36 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import RegistryPerson, Ticket, TicketEvent
+from domain_ports import (
+    ActorRef,
+    DeviceRef,
+    RegistryHistoryEventProjection,
+    RegistryReadActor,
+    RequesterHistoryProjection,
+    RequesterRef,
+)
 from customer_history.context_builder import CustomerHistoryContextBuilder
 
 pytestmark = pytest.mark.db_cleanup("full")
+
+
+class _ContextRegistryPort:
+    def __init__(self, items: tuple[RegistryHistoryEventProjection, ...]) -> None:
+        self.items = items
+
+    async def requester_history(
+        self,
+        person,
+        *,
+        actor,
+        limit: int = 50,
+    ) -> RequesterHistoryProjection:
+        del actor, limit
+        return RequesterHistoryProjection(
+            requester=RequesterRef(external_id=person.external_id),
+            source="external_authoritative",
+            items=self.items,
+        )
 
 
 @pytest.mark.asyncio
@@ -280,3 +307,73 @@ async def test_ticket_context_pack_appends_related_recent_history_after_current_
 
     assert context_pack["events"][0]["ticket_ref"] == "T-CTX-CURRENT"
     assert any(event.get("ticket_ref") == "T-CTX-RELATED" for event in context_pack["events"][1:])
+
+
+@pytest.mark.asyncio
+async def test_ticket_context_pack_keeps_registry_events_with_colliding_device_ref_prefixes(test_engine) -> None:
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    occurred_at = datetime.now(timezone.utc).replace(microsecond=0)
+    async with session_maker() as session:
+        session.add(
+            RegistryPerson(
+                person_id=person_id,
+                display_name="Collision Context Person",
+                full_name="Collision Context Person",
+                source="manual",
+                status="active",
+            )
+        )
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                ticket_code="T-CTX-REG-COLLIDE",
+                title="Registry context collision",
+                description="Two Registry bindings must remain distinct",
+                status="new",
+                requester_id=person_id,
+                requester_person_id=person_id,
+            )
+        )
+        await session.commit()
+
+        port = _ContextRegistryPort(
+            (
+                RegistryHistoryEventProjection(
+                    event_type="device_binding",
+                    occurred_at=occurred_at,
+                    device=DeviceRef(external_id="device-prefix-collision-a"),
+                    relationship_type="primary_user",
+                    status="active",
+                    source="external_authoritative",
+                ),
+                RegistryHistoryEventProjection(
+                    event_type="device_binding",
+                    occurred_at=occurred_at,
+                    device=DeviceRef(external_id="device-prefix-collision-b"),
+                    relationship_type="primary_user",
+                    status="active",
+                    source="external_authoritative",
+                ),
+            )
+        )
+        context_pack = await CustomerHistoryContextBuilder(
+            session,
+            registry_port=port,  # type: ignore[arg-type]
+        ).build_ticket_context_pack(
+            ticket_id,
+            actor_context={"actor_id": "support-test", "actor_role": "support"},
+            registry_actor=RegistryReadActor(
+                actor=ActorRef(external_id="support-test"),
+                role="support",
+            ),
+            limit=10,
+        )
+
+    registry_events = [event for event in context_pack["events"] if event["source"] == "registry"]
+    assert len(registry_events) == 2
+    assert {event["refs"]["device_ref"] for event in registry_events} == {"device:device-p"}
+    assert len({event["refs"]["event_ref"] for event in registry_events}) == 2
+    assert "device-prefix-collision-a" not in str(context_pack)
+    assert "device-prefix-collision-b" not in str(context_pack)

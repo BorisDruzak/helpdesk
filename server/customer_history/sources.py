@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from hashlib import sha256
+import json
 from typing import Any
 
 from sqlalchemy import desc, select
@@ -51,6 +53,39 @@ def _base_refs(ticket: Ticket, **extra: Any) -> dict[str, Any]:
         if value:
             refs[key] = value
     return refs
+
+
+def _registry_history_event_ref(
+    *,
+    person: PersonRef,
+    event_type: str,
+    occurred_at: Any,
+    device_id: str | None,
+    relationship_type: str | None,
+    status: str | None,
+    source: str,
+) -> str:
+    """Return an opaque, order-independent identity for a redacted Registry event.
+
+    Registry history deliberately exposes no local event primary key.  The
+    canonical tuple contains only the fields already projected to Helpdesk;
+    opaque person/device references are hashed rather than returned.  This
+    keeps the resulting ref stable when a Registry response is reordered or
+    extended with unrelated events.
+    """
+
+    canonical_tuple = (
+        "registry_history_v1",
+        person.external_id,
+        str(event_type),
+        isoformat_utc(occurred_at) or "",
+        device_id or "",
+        relationship_type or "",
+        status or "",
+        str(source),
+    )
+    canonical = json.dumps(canonical_tuple, ensure_ascii=True, separators=(",", ":"))
+    return f"registry:{sha256(canonical.encode('utf-8')).hexdigest()[:32]}"
 
 
 def _ticket_context(ticket: Ticket) -> dict[str, Any]:
@@ -315,7 +350,7 @@ class RegistryHistorySource:
             )
 
         events: list[CustomerHistoryEvent] = []
-        for ordinal, item in enumerate(outcome.items, start=1):
+        for item in outcome.items:
             if item.event_type not in {"device_binding", "account_session"}:
                 return RegistryHistorySourceResult(
                     events=[],
@@ -334,12 +369,18 @@ class RegistryHistorySource:
             is_binding = item.event_type == "device_binding"
             summary_parts = [item.relationship_type, item.status] if is_binding else [item.status]
             summary = ":".join(str(value) for value in summary_parts if value) or item.event_type
+            event_ref = _registry_history_event_ref(
+                person=person,
+                event_type=item.event_type,
+                occurred_at=item.occurred_at,
+                device_id=device_id,
+                relationship_type=item.relationship_type,
+                status=item.status,
+                source=item.source,
+            )
             events.append(
                 CustomerHistoryEvent(
-                    event_id=(
-                        f"registry:{item.event_type}:{isoformat_utc(item.occurred_at) or ''}:"
-                        f"{device_id or 'none'}:{ordinal}"
-                    ),
+                    event_id=event_ref,
                     source="registry",
                     group="registry",
                     event_type=item.event_type,
@@ -357,7 +398,10 @@ class RegistryHistorySource:
                     payload=payload,
                     safe_refs={
                         key: value
-                        for key, value in {"device_ref": _short_ref("device", device_id)}.items()
+                        for key, value in {
+                            "device_ref": _short_ref("device", device_id),
+                            "event_ref": event_ref,
+                        }.items()
                         if value
                     },
                 )

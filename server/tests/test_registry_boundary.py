@@ -187,11 +187,19 @@ async def test_customer_history_registry_source_keeps_same_time_port_events_dist
         status="active",
         source="external_authoritative",
     )
+    other_event = RegistryHistoryEventProjection(
+        event_type="device_binding",
+        occurred_at=occurred_at,
+        device=DeviceRef(external_id="registry-ref-device-2"),
+        relationship_type="primary_user",
+        status="active",
+        source="external_authoritative",
+    )
     port = _RequesterHistoryPort(
         RequesterHistoryProjection(
             requester=RequesterRef(external_id="registry-ref-person-1"),
             source="external_authoritative",
-            items=(event, event),
+            items=(event, other_event),
         )
     )
 
@@ -203,6 +211,63 @@ async def test_customer_history_registry_source_keeps_same_time_port_events_dist
 
     assert len(result.events) == 2
     assert result.events[0].event_id != result.events[1].event_id
+    assert all(event.event_id.startswith("registry:") for event in result.events)
+    assert [event.safe_refs["event_ref"] for event in result.events] == [
+        event.event_id for event in result.events
+    ]
+
+
+@pytest.mark.asyncio
+async def test_customer_history_registry_event_refs_are_stable_across_response_order_and_extra_events() -> None:
+    occurred_at = datetime(2026, 8, 10, 12, tzinfo=timezone.utc)
+    first = RegistryHistoryEventProjection(
+        event_type="device_binding",
+        occurred_at=occurred_at,
+        device=DeviceRef(external_id="device-prefix-collision-a"),
+        relationship_type="primary_user",
+        status="active",
+        source="external_authoritative",
+    )
+    second = RegistryHistoryEventProjection(
+        event_type="device_binding",
+        occurred_at=occurred_at,
+        device=DeviceRef(external_id="device-prefix-collision-b"),
+        relationship_type="primary_user",
+        status="active",
+        source="external_authoritative",
+    )
+    extra = RegistryHistoryEventProjection(
+        event_type="account_session",
+        occurred_at=occurred_at,
+        device=DeviceRef(external_id="registry-ref-device-extra"),
+        status="verified",
+        source="external_authoritative",
+    )
+
+    async def project(items: tuple[RegistryHistoryEventProjection, ...]) -> list[object]:
+        result = await RegistryHistorySource(
+            registry_port=_RequesterHistoryPort(
+                RequesterHistoryProjection(
+                    requester=RequesterRef(external_id="registry-ref-person-1"),
+                    source="external_authoritative",
+                    items=items,
+                )
+            )
+        ).events_for_person(
+            PersonRef(external_id="registry-ref-person-1"),
+            actor=_history_actor(),
+            limit=20,
+        )
+        return result.events
+
+    forward = await project((first, second))
+    reversed_with_extra = await project((extra, second, first))
+
+    forward_ids = {event.device_id: event.event_id for event in forward}
+    reordered_ids = {event.device_id: event.event_id for event in reversed_with_extra}
+    assert forward_ids["device-prefix-collision-a"] == reordered_ids["device-prefix-collision-a"]
+    assert forward_ids["device-prefix-collision-b"] == reordered_ids["device-prefix-collision-b"]
+    assert forward_ids["device-prefix-collision-a"] != forward_ids["device-prefix-collision-b"]
 
 
 @pytest.mark.asyncio

@@ -8,6 +8,28 @@ from domain_ports.registry_contracts import RegistryReadActor
 from .projection_service import CustomerHistoryProjectionService, ticket_history_person_ids
 
 
+def _context_event_dedup_key(event: dict[str, Any]) -> tuple[str | None, str, str, str, str, str, str]:
+    """Keep opaque Registry event identity through the LLM-safe context dedup.
+
+    ``device_ref`` is intentionally short and can collide; ``event_ref`` is
+    the stable opaque Registry digest.  Including both preserves the safe
+    device hint while ensuring that two same-time events are not collapsed
+    merely because their display-safe device prefixes match.
+    """
+
+    refs = event.get("refs")
+    safe_refs = refs if isinstance(refs, dict) else {}
+    return (
+        event.get("ticket_ref"),
+        str(event.get("source") or ""),
+        str(event.get("event_type") or ""),
+        str(event.get("occurred_at") or ""),
+        str(event.get("summary") or ""),
+        str(safe_refs.get("device_ref") or ""),
+        str(safe_refs.get("event_ref") or ""),
+    )
+
+
 class CustomerHistoryContextBuilder:
     def __init__(self, session, *, registry_port: RegistryPort | None = None):
         self.session = session
@@ -36,17 +58,7 @@ class CustomerHistoryContextBuilder:
         ticket = await service._ticket(ticket_id)
         if ticket is not None and len(events) < bounded_limit:
             current_ref = history.get("ticket_ref")
-            seen = {
-                (
-                    event.get("ticket_ref"),
-                    event.get("source"),
-                    event.get("event_type"),
-                    event.get("occurred_at"),
-                    str(event.get("summary")),
-                )
-                for event in events
-                if isinstance(event, dict)
-            }
+            seen = {_context_event_dedup_key(event) for event in events if isinstance(event, dict)}
             for person_id in ticket_history_person_ids(ticket):
                 related = await service.history_for_person(
                     person_id,
@@ -60,13 +72,7 @@ class CustomerHistoryContextBuilder:
                 for event in related.get("events", []):
                     if event.get("ticket_ref") == current_ref:
                         continue
-                    key = (
-                        event.get("ticket_ref"),
-                        event.get("source"),
-                        event.get("event_type"),
-                        event.get("occurred_at"),
-                        str(event.get("summary")),
-                    )
+                    key = _context_event_dedup_key(event)
                     if key in seen:
                         continue
                     seen.add(key)
