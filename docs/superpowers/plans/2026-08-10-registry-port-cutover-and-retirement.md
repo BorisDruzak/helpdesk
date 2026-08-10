@@ -167,10 +167,11 @@ git commit -m "server: compose local RegistryPort adapter"
 - Modify: server/requester/identity_service.py, server/tickets/create_flow.py
 - Modify: server/tickets/ticket_context.py, server/customer_history/sources.py, server/inventory/service.py
 - Modify: server/web_api/requester_handlers.py, server/web_api/support_handlers.py
+- Modify: server/web_api/dto/support.py
 - Modify: scripts/check_domain_import_boundaries.py, server/tests/test_domain_import_boundaries.py
 - Test: server/tests/test_registry_boundary.py
 
-**Interfaces:** Migrated Helpdesk reads call Task 3 port operations. During this incremental Task 4 slice, the Registry import guard enforces only the listed migrated paths; repository-wide enforcement starts only after every remaining consumer has been cut over.
+**Interfaces:** This first read slice calls only Task 3 operations that exist: requester snapshot, active binding and account status. It emits typed Registry availability/source data in the support DTO. Rich requester profile, on-behalf directory search, customer-history and inventory projections are deferred to Task 5, which expands the port contract. During this incremental Task 4 slice, the Registry import guard enforces only the precise migrated modules; repository-wide enforcement starts only after every remaining consumer has been cut over.
 
 - [ ] **Step 1: Write failing boundary tests**
 
@@ -194,7 +195,7 @@ Expected: FAIL while Helpdesk imports Registry ORM/services.
 
 - [ ] **Step 3: Inject and consume the port**
 
-Use DomainPortContainer.registry at composition boundaries. When unavailable, render immutable ticket history and a typed degraded current-state result; never add a direct local fallback outside the adapter.
+Use DomainPortContainer.registry at composition boundaries for only the available Task 3 operations. When unavailable, render immutable ticket history and a typed degraded current-state result; never add a direct local fallback outside the adapter. Leave rich Registry consumers unchanged but enumerate them in the report rather than claiming they were migrated.
 
 - [ ] **Step 4: Run GREEN and commit**
 
@@ -205,7 +206,49 @@ git add server/requester server/tickets server/customer_history server/inventory
 git commit -m "server: route Helpdesk reads through RegistryPort"
 ~~~
 
-### Task 5: Add a versioned external HTTP adapter and shadow reads (PR-9)
+### Task 5: Expand RegistryPort for rich read projections (PR-8)
+
+**Files:**
+
+- Modify: server/domain_ports/registry_contracts.py, server/domain_ports/registry.py
+- Modify: server/registry_adapter/local.py, server/registry_adapter/__init__.py
+- Test: server/tests/test_registry_port_rich_projections.py
+
+**Interfaces:** produces redacted, immutable requester profile, directory-person, device context and requester-history projections with typed unavailable/not-found/invalid outcomes. These contracts replace the local data needed by requester profile, on-behalf search, customer history and inventory without exposing ORM metadata or raw identities.
+
+- [ ] **Step 1: Write failing rich-projection tests**
+
+~~~python
+async def test_local_port_directory_search_returns_only_safe_person_projection(session):
+    result = await LocalRegistryAdapter(session).search_people("Иван")
+    assert result.items[0].display_name == "Иван"
+    assert "email" not in result.items[0].model_dump(mode="json")
+
+async def test_device_context_is_typed_unavailable_without_local_fallback():
+    result = await UnavailableRegistryPort().device_context(DeviceRef(external_id="registry-ref-opaque-device-1"))
+    assert result.code == "registry_unavailable"
+~~~
+
+- [ ] **Step 2: Run RED**
+
+Run: python -m pytest server/tests/test_registry_port_rich_projections.py -q --noconftest
+
+Expected: FAIL because the rich projection operations do not exist.
+
+- [ ] **Step 3: Add bounded redacted read contracts**
+
+Require trusted actor context for audience or directory visibility, cap every collection, distinguish missing from invalid projections, and isolate local adapter read errors so a failed statement cannot leave a caller session aborted. Resolve the three Task 3 deferred review items here: actor-aware audience projection, savepoint/diagnostic handling, and invalid-versus-not-found outcomes.
+
+- [ ] **Step 4: Run GREEN and commit**
+
+Run: python -m pytest server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py -q --tb=short; python -m compileall -q server/domain_ports server/registry_adapter
+
+~~~powershell
+git add server/domain_ports server/registry_adapter server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py
+git commit -m "server: expand RegistryPort read projections"
+~~~
+
+### Task 6: Add a versioned external HTTP adapter and shadow reads (PR-9)
 
 **Files:**
 
@@ -247,7 +290,7 @@ git add server/registry_adapter server/docs/REGISTRY_PLATFORM_API_V1.md server/c
 git commit -m "server: add RegistryPort shadow reads"
 ~~~
 
-### Task 6: Cut over Registry commands and authentication eligibility (PR-9 acceptance)
+### Task 7: Cut over Registry commands and authentication eligibility (PR-9 acceptance)
 
 **Files:**
 
@@ -290,7 +333,7 @@ git add server/auth server/registry server/consent server/web_api server/tests
 git commit -m "server: cut over Registry commands"
 ~~~
 
-### Task 7: Rehearse forward-only Knowledge/Registry schema retirement (PR-11)
+### Task 8: Rehearse forward-only Knowledge/Registry schema retirement (PR-11)
 
 **Files:**
 
@@ -334,7 +377,7 @@ git commit -m "server: retire local Registry and Knowledge schema"
 
 ## Plan self-review
 
-- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–4, PR-9 is Tasks 5–6, PR-11 is Task 7.
+- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5, PR-9 is Tasks 6–7, PR-11 is Task 8.
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
