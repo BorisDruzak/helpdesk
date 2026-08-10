@@ -408,11 +408,22 @@ git add scripts/rehearse_registry_retirement.py scripts/registry_retirement_mani
 git commit -m "scripts: add Registry retirement preflight"
 ~~~
 
-### Task 10: Apply forward-only Knowledge/Registry retirement (PR-11)
+### Task 10: Retire the already-dead local Knowledge/AI physical schema (PR-11a)
 
-**Prerequisites:** Task 8 has external command/auth/session/pairing acceptance evidence for every local writer; Task 9 returns ready against the release candidate; a fresh encrypted backup and restore drill have passed on an isolated clone; maintenance window and advisory lock are approved.
+**Prerequisites:** Knowledge runtime/routes/ORM are absent; clone tests prove the migration removes only the static historical Knowledge/AI target graph. This task does not depend on the external Registry command gate.
 
-**Interfaces:** produces a new Alembic head without approved local Registry/registration and retired Knowledge/AI tables/FKs. The migration never drops `ui_users`, web sessions/RBAC, tickets, `user_consent_requests` or `ticket_kb_links`.
+**Interfaces:** produces Alembic revision 134 that drops only retired Knowledge/AI tables, `ticket_knowledge_links` and `problem_known_error_links`, in static historical reverse-FK order. It preserves `ticket_kb_links`, tickets, problems, ticket resolution passports, UI users/sessions/RBAC and every Registry table.
+
+- [ ] **Step 1: Write clone migration tests from revision 133**
+- [ ] **Step 2: Encode the historical Knowledge FK graph; do not derive it from deleted ORM models**
+- [ ] **Step 3: Implement an upgrade-only migration; downgrade instructs verified backup restore**
+- [ ] **Step 4: Prove fresh clone 133→134 and head idempotency; update audit/docs**
+
+### Task 11: Apply forward-only Registry retirement (PR-11b)
+
+**Prerequisites:** Task 8 has external command/auth/session/pairing acceptance evidence for every local writer; Task 9 returns ready against the release candidate; Task 10 has already removed Knowledge/AI targets; a fresh encrypted backup and restore drill have passed on an isolated clone; maintenance window and advisory lock are approved.
+
+**Interfaces:** produces a new Alembic head without approved local Registry/registration tables/FKs. The migration never drops `ui_users`, web sessions/RBAC, tickets, `user_consent_requests` or `ticket_kb_links`.
 
 - [ ] **Step 1: Write failing clone-migration contract tests**
 - [ ] **Step 2: Implement a forward-only idempotent migration and rehearsal**
@@ -421,7 +432,7 @@ git commit -m "scripts: add Registry retirement preflight"
 
 ## Plan self-review
 
-- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5, PR-9 is Tasks 6–8, PR-11 is Tasks 9–10.
+- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
