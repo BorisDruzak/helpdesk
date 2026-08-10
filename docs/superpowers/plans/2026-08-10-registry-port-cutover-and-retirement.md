@@ -69,6 +69,8 @@ git commit -m "server: add neutral requester snapshots"
 - Modify: server/tickets/create_flow.py, server/tickets/ticket_context.py
 - Modify: server/tickets/account_access_service.py, server/consent/service.py
 - Modify: server/consent/operation_consent.py, server/requester/identity_service.py
+- Modify: server/web_api/requester_handlers.py
+- Modify: docs/QUICK_LOOKUP.md, server/docs/CODEMAP.md
 - Test: server/tests/test_ticket_registration_enrichment.py
 - Test: server/tests/test_ticket_account_access.py, server/tests/test_user_consent_api.py
 
@@ -104,10 +106,10 @@ Build snapshots only from verified server account/binding state, never from HTTP
 
 - [ ] **Step 4: Run GREEN and commit**
 
-Run: python -m pytest server/tests/test_ticket_registration_enrichment.py server/tests/test_ticket_account_access.py server/tests/test_user_consent_api.py server/tests/test_requester_workspace_api.py -q --tb=short
+Run: python -m pytest server/tests/test_ticket_registration_enrichment.py server/tests/test_ticket_account_access.py server/tests/test_user_consent_api.py server/tests/test_requester_workspace_api.py -q --tb=short; python scripts/docs_drift_check.py --base <task-base> --json
 
 ~~~powershell
-git add server/tickets server/consent server/requester/identity_service.py server/tests/test_ticket_registration_enrichment.py server/tests/test_ticket_account_access.py server/tests/test_user_consent_api.py server/tests/test_requester_workspace_api.py
+git add server/tickets server/consent server/requester/identity_service.py server/tests/test_ticket_registration_enrichment.py server/tests/test_ticket_account_access.py server/tests/test_user_consent_api.py server/tests/test_requester_workspace_api.py docs/QUICK_LOOKUP.md server/docs/CODEMAP.md
 git commit -m "server: persist requester references independently"
 ~~~
 
