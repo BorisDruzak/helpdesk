@@ -170,7 +170,7 @@ git commit -m "server: compose local RegistryPort adapter"
 - Modify: scripts/check_domain_import_boundaries.py, server/tests/test_domain_import_boundaries.py
 - Test: server/tests/test_registry_boundary.py
 
-**Interfaces:** Helpdesk reads call Task 3 port operations. server/registry_adapter, migrations and adapter tests are the only permitted local Registry imports.
+**Interfaces:** Migrated Helpdesk reads call Task 3 port operations. During this incremental Task 4 slice, the Registry import guard enforces only the listed migrated paths; repository-wide enforcement starts only after every remaining consumer has been cut over.
 
 - [ ] **Step 1: Write failing boundary tests**
 
@@ -198,7 +198,7 @@ Use DomainPortContainer.registry at composition boundaries. When unavailable, re
 
 - [ ] **Step 4: Run GREEN and commit**
 
-Run: python -m pytest server/tests/test_domain_import_boundaries.py server/tests/test_registry_boundary.py server/tests/test_requester_workspace_api.py server/tests/test_web_support_api.py -q --tb=short; python scripts/check_domain_import_boundaries.py --workspace .
+Run: python -m pytest server/tests/test_domain_import_boundaries.py server/tests/test_registry_boundary.py server/tests/test_requester_workspace_api.py server/tests/test_web_support_api.py -q --tb=short; python scripts/check_domain_import_boundaries.py --workspace . --registry-scope requester,tickets,customer_history,inventory,web_api
 
 ~~~powershell
 git add server/requester server/tickets server/customer_history server/inventory server/web_api scripts/check_domain_import_boundaries.py server/tests
