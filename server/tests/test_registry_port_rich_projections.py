@@ -22,9 +22,6 @@ from registry_adapter import LocalRegistryAdapter
 from app.db.models import RegistryPerson
 
 
-pytestmark = pytest.mark.no_db
-
-
 class _Result:
     def __init__(self, *, scalar: object | None = None, rows: list[object] | None = None) -> None:
         self._scalar = scalar
@@ -102,6 +99,7 @@ def _person(*, person_id: str = "registry-ref-opaque-person-1") -> SimpleNamespa
     )
 
 
+@pytest.mark.no_db
 def test_directory_contract_rejects_an_unbounded_collection() -> None:
     item = DirectoryPersonProjection(
         requester={"external_id": "registry-ref-opaque-person-1"},
@@ -114,6 +112,7 @@ def test_directory_contract_rejects_an_unbounded_collection() -> None:
         DirectorySearchProjection(items=tuple(item for _ in range(51)), source="external_authoritative")
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_local_port_directory_search_returns_only_safe_person_projection() -> None:
     result = await LocalRegistryAdapter(_Session(_Result(rows=[_person()]))).search_people(
@@ -126,6 +125,7 @@ async def test_local_port_directory_search_returns_only_safe_person_projection()
     assert "phone" not in result.items[0].model_dump(mode="json")
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_directory_search_requires_trusted_support_or_admin_actor() -> None:
     result = await LocalRegistryAdapter(_Session()).search_people(
@@ -137,6 +137,7 @@ async def test_directory_search_requires_trusted_support_or_admin_actor() -> Non
     assert result.code == "registry_actor_forbidden"
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_invalid_requester_profile_is_distinct_from_not_found() -> None:
     invalid_person = _person()
@@ -151,6 +152,7 @@ async def test_invalid_requester_profile_is_distinct_from_not_found() -> None:
     assert result.code == "registry_projection_invalid"
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_invalid_device_context_code_is_not_coerced_to_unknown() -> None:
     asset = SimpleNamespace(
@@ -171,6 +173,7 @@ async def test_invalid_device_context_code_is_not_coerced_to_unknown() -> None:
     assert isinstance(result, RegistryInvalidProjection)
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_local_read_failure_returns_safe_unavailable_without_a_savepoint() -> None:
     session = _FailThenRecoverSession()
@@ -224,6 +227,7 @@ async def test_local_read_uses_an_independent_session_without_flushing_caller_pe
         assert caller_session.is_active is True
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_audience_projection_overflow_returns_typed_invalid_projection(
     monkeypatch: pytest.MonkeyPatch,
@@ -254,6 +258,7 @@ async def test_audience_projection_overflow_returns_typed_invalid_projection(
     assert isinstance(result, RegistryInvalidProjection)
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_directory_search_filters_case_insensitively_in_sql_before_limit() -> None:
     session = _CaptureSession(_Result(rows=[_person()]))
@@ -270,6 +275,7 @@ async def test_directory_search_filters_case_insensitively_in_sql_before_limit()
     assert statement.index("where") < statement.index("limit")
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_missing_account_status_is_typed_invalid_projection(
     monkeypatch: pytest.MonkeyPatch,
@@ -288,6 +294,7 @@ async def test_missing_account_status_is_typed_invalid_projection(
     assert isinstance(result, RegistryInvalidProjection)
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_missing_person_status_is_typed_invalid_projection() -> None:
     person = _person()
@@ -301,6 +308,7 @@ async def test_missing_person_status_is_typed_invalid_projection() -> None:
     assert isinstance(result, RegistryInvalidProjection)
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_directory_person_without_status_is_typed_invalid_projection() -> None:
     person = _person()
@@ -314,6 +322,7 @@ async def test_directory_person_without_status_is_typed_invalid_projection() -> 
     assert isinstance(result, RegistryInvalidProjection)
 
 
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_device_context_is_typed_unavailable_without_local_fallback() -> None:
     result = await UnavailableRegistryPort().device_context(
