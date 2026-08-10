@@ -6,6 +6,7 @@ from aiohttp import web
 
 from app.db import get_session
 from auth.middleware import require_auth
+from domain_ports.registry_contracts import ActorRef, RegistryReadActor, RequesterRef
 from requester.identity_service import RequesterIdentityResolver
 from tickets.handlers import _get_ticket_or_response
 
@@ -43,6 +44,27 @@ def _window_filters(request: web.Request) -> dict[str, Any]:
     return filters
 
 
+def _registry_actor_from_verified_auth(
+    auth_context: Any,
+    *,
+    requester_ref: str | None = None,
+) -> RegistryReadActor | None:
+    """Translate middleware-authenticated values; never read actor data from HTTP input."""
+
+    raw_role = str(getattr(auth_context, "actor_role", "") or "").strip().lower()
+    role = "user" if raw_role in {"user", "requester"} else raw_role
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    if role not in {"admin", "support", "user"} or not actor_id:
+        return None
+    try:
+        requester = RequesterRef(external_id=requester_ref) if requester_ref else None
+        if role == "user" and requester is None:
+            return None
+        return RegistryReadActor(actor=ActorRef(external_id=actor_id), role=role, requester=requester)
+    except ValueError:
+        return None
+
+
 @require_auth("admin", "support")
 async def handle_web_support_person_history(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
@@ -53,6 +75,7 @@ async def handle_web_support_person_history(request: web.Request) -> web.Respons
         payload = await CustomerHistoryProjectionService(session).history_for_person(
             person_id,
             actor_context={"actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role},
+            registry_actor=_registry_actor_from_verified_auth(auth_context),
             limit=_limit(request, default=DEFAULT_HISTORY_LIMIT, maximum=MAX_HISTORY_LIMIT),
             **_window_filters(request),
         )
@@ -85,6 +108,7 @@ async def handle_web_support_ticket_context_pack(request: web.Request) -> web.Re
             actor_context={"actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role},
             mode=str(request.query.get("mode") or "support_context_pack"),
             limit=_limit(request, default=DEFAULT_CONTEXT_PACK_LIMIT, maximum=MAX_CONTEXT_PACK_LIMIT),
+            registry_actor=_registry_actor_from_verified_auth(auth_context),
         )
     return _success(payload)
 
@@ -100,6 +124,7 @@ async def handle_web_support_ticket_llm_context_preview(request: web.Request) ->
             actor_context={"actor_id": auth_context.actor_id, "actor_role": auth_context.actor_role},
             mode="llm_preview",
             limit=_limit(request, default=DEFAULT_CONTEXT_PACK_LIMIT, maximum=MAX_CONTEXT_PACK_LIMIT),
+            registry_actor=_registry_actor_from_verified_auth(auth_context),
         )
     return _success(payload)
 
@@ -114,6 +139,10 @@ async def handle_web_requester_history(request: web.Request) -> web.Response:
         payload = await CustomerHistoryProjectionService(session).history_for_person(
             person.person_id,
             actor_context={"actor_id": auth_context.actor_id, "actor_role": "requester"},
+            registry_actor=_registry_actor_from_verified_auth(
+                auth_context,
+                requester_ref=person.person_id,
+            ),
             limit=_limit(request, default=DEFAULT_HISTORY_LIMIT, maximum=MAX_HISTORY_LIMIT),
             **_window_filters(request),
         )

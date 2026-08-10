@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
+from domain_ports.registry import RegistryPort
+from domain_ports.registry_contracts import RegistryReadActor
+
 from .projection_service import CustomerHistoryProjectionService, ticket_history_person_ids
 
 
 class CustomerHistoryContextBuilder:
-    def __init__(self, session):
+    def __init__(self, session, *, registry_port: RegistryPort | None = None):
         self.session = session
+        self.registry_port = registry_port
 
     async def build_ticket_context_pack(
         self,
@@ -16,8 +20,9 @@ class CustomerHistoryContextBuilder:
         actor_context: dict[str, Any] | None = None,
         mode: str = "llm_preview",
         limit: int = 20,
+        registry_actor: RegistryReadActor | None = None,
     ) -> dict[str, Any]:
-        service = CustomerHistoryProjectionService(self.session)
+        service = CustomerHistoryProjectionService(self.session, registry_port=self.registry_port)
         bounded_limit = max(1, min(int(limit or 20), 100))
         history = await service.history_for_ticket(
             ticket_id,
@@ -46,6 +51,7 @@ class CustomerHistoryContextBuilder:
                 related = await service.history_for_person(
                     person_id,
                     actor_context=actor_context,
+                    registry_actor=registry_actor,
                     limit=bounded_limit,
                     role="llm",
                 )
@@ -85,19 +91,33 @@ class CustomerHistoryContextBuilder:
         *,
         actor_context: dict[str, Any] | None = None,
         filters: dict[str, Any] | None = None,
+        registry_actor: RegistryReadActor | None = None,
     ) -> dict[str, Any]:
         filter_map = filters or {}
         limit = int(filter_map.get("limit") or 50)
-        return await CustomerHistoryProjectionService(self.session).history_for_person(
+        return await CustomerHistoryProjectionService(
+            self.session,
+            registry_port=self.registry_port,
+        ).history_for_person(
             person_id,
             actor_context=actor_context,
+            registry_actor=registry_actor,
             limit=limit,
             since=filter_map.get("since"),
             window_days=filter_map.get("window_days"),
         )
 
-    async def build_requester_history(self, actor_context: dict[str, Any]) -> dict[str, Any]:
+    async def build_requester_history(
+        self,
+        actor_context: dict[str, Any],
+        *,
+        registry_actor: RegistryReadActor | None = None,
+    ) -> dict[str, Any]:
         person_id = str(actor_context.get("person_id") or "").strip()
         if not person_id:
             return {"events": [], "count": 0, "redaction_report": {"removed_count": 0, "role": "requester"}}
-        return await self.build_person_history(person_id, actor_context=actor_context)
+        return await self.build_person_history(
+            person_id,
+            actor_context=actor_context,
+            registry_actor=registry_actor,
+        )

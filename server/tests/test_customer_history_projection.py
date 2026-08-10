@@ -7,6 +7,8 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
+    Device,
+    DeviceUserBinding,
     Operation,
     ObserverTrace,
     RegistryPerson,
@@ -90,6 +92,7 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
                         "audience_scope": "creator",
                         "result": "not_helpful",
                         "surface": "requester_portal",
+                        "occurred_at": now.isoformat(),
                     },
                     {
                         "item_id": "kb-restricted",
@@ -98,11 +101,33 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
                         "audience_scope": "support",
                         "result": "viewed",
                         "surface": "requester_portal",
+                        "occurred_at": now.isoformat(),
                     },
                 ],
             },
         )
         session.add(ticket)
+        session.add(
+            Device(
+                device_id="history-device",
+                protocol_version="ws_ticket_v3",
+                agent_version="test",
+                hostname="HISTORY-PC",
+                os="Windows",
+                capabilities={},
+            )
+        )
+        await session.flush()
+        session.add(
+            DeviceUserBinding(
+                device_id="history-device",
+                person_id=person_id,
+                relationship_type="primary_user",
+                status="active",
+                source="test",
+                created_at=now,
+            )
+        )
         session.add_all(
             [
                 TicketEvent(
@@ -144,7 +169,7 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
 
 @pytest.mark.asyncio
 async def test_support_and_requester_history_use_role_specific_projection(test_client, test_engine):
-    ticket_id, _person_id = await _seed_history_ticket(test_engine)
+    ticket_id, person_id = await _seed_history_ticket(test_engine)
 
     support = await test_client.get(
         f"/api/web/support/tickets/{ticket_id}/history",
@@ -157,6 +182,21 @@ async def test_support_and_requester_history_use_role_specific_projection(test_c
     assert any(event["source"] == "knowledge" for event in support_events)
     assert "Internal support note" in str(support_payload)
     assert "must-not-leak" not in str(support_payload)
+
+    support_person = await test_client.get(
+        f"/api/web/support/people/{person_id}/history",
+        headers=_headers(TEST_UI_SUPPORT_TOKEN),
+    )
+    support_person_payload = await support_person.json()
+    assert support_person.status == 200, support_person_payload
+    assert support_person_payload["data"]["source_states"]["registry"] == {
+        "status": "available",
+        "source": "local_authoritative",
+    }
+    assert any(
+        event["source"] == "registry" and event["event_type"] == "device_binding"
+        for event in support_person_payload["data"]["events"]
+    )
 
     requester = await test_client.get(
         f"/api/web/requester/tickets/{ticket_id}/history",

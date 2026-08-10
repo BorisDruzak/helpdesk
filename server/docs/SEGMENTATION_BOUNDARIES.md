@@ -76,11 +76,11 @@ their separate acceptance cutover; local commands are not invoked until they
 can honor caller-provided operation
 IDs with deterministic idempotency outcomes.
 
-The PR-8 Helpdesk read cutover is deliberately limited to operations represented
-by the frozen port: requester display snapshots, active device bindings and
-redacted account status. Ticket creation, immutable requester history,
-inventory requester projection and the support current-requester projection use
-those operations without a local ORM/service fallback. The support DTO keeps a
+The PR-8 Helpdesk read cutover uses the represented port operations for requester
+display snapshots, active device bindings, redacted account status and requester
+history. Ticket creation, immutable requester history, inventory requester
+projection and the support current-requester projection use those operations
+without a local ORM/service fallback. The support DTO keeps a
 typed unavailable or not-found current-state result visible as
 `status`/`source`/`code` and may display only a previously validated immutable
 ticket requester snapshot as history. It must not reconstruct current contact,
@@ -92,8 +92,8 @@ Registry boundary. The scoped guard covers every new ticket module and rejects
 new Registry ORM/repository/service imports in selected migration paths, while
 an exact symbol ledger records operations still waiting for a richer external
 contract. This is not yet a repository-wide claim: requester profile/on-behalf
-resolution, rich ticket diagnostic context, customer-history binding/session
-events, exact binding/session authorization and Registry commands remain
+resolution, rich ticket diagnostic context, exact binding/session authorization
+and Registry commands remain
 explicitly deferred.
 
 ### Rich Registry read contract (Task 5)
@@ -115,9 +115,13 @@ projection is typed as `invalid`, separately from `not_found` and
 `unavailable`; local reads use a nested transaction when available, preventing
 a failed query from aborting the caller-owned session.
 
-The contract itself does not migrate any additional Helpdesk consumer. Such
-consumers must be cut over in a later task and may not bypass the port with a
-local Registry fallback.
+Customer History is the first rich consumer cut over: it accepts only a typed
+`RegistryReadActor` assembled from verified Helpdesk middleware context and
+passes it to `RegistryPort.requester_history()`. Requester actors are checked
+against the server-resolved opaque ref before the call. Its `source_states`
+expose typed `available`, `unavailable`, `not_found` or `invalid` Registry
+state; it never reads local binding/session ORM rows as a fallback. Remaining
+rich consumers must be cut over separately and may not bypass the port.
 
 ## PR-11 retirement boundary
 

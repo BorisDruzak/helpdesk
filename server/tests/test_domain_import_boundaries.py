@@ -237,6 +237,20 @@ def test_registry_scope_does_not_claim_unselected_paths(tmp_path: Path) -> None:
     assert result.returncode == 0
 
 
+def test_registry_scope_rejects_customer_history_local_binding_imports(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "customer_history" / "sources.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "from app.db.models import DeviceAccountSession, DeviceUserBinding\n",
+        encoding="utf-8",
+    )
+
+    result = run_check(tmp_path, registry_scope="customer_history")
+
+    assert result.returncode == 1
+    assert "DeviceAccountSession, DeviceUserBinding" in result.stdout
+
+
 def test_registry_scope_allows_only_declared_create_flow_command_debt(tmp_path: Path) -> None:
     source = tmp_path / "server" / "tickets" / "create_flow.py"
     source.parent.mkdir(parents=True)

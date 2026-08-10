@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -7,13 +8,21 @@ import pytest
 from domain_ports import (
     AccountStatusProjection,
     ActiveBindingProjection,
+    ActorRef,
     BindingRef,
     DeviceRef,
     PersonRef,
+    RegistryHistoryEventProjection,
+    RegistryInvalidProjection,
+    RegistryNotFound,
+    RegistryReadActor,
     RegistryUnavailable,
     RequesterRef,
+    RequesterHistoryProjection,
     RequesterSnapshot,
 )
+from customer_history.sources import RegistryHistorySource
+from customer_history.projection_service import CustomerHistoryProjectionService
 from inventory.service import DeviceInventoryService
 from tickets.create_flow import _read_registry_account_status
 from tickets.ticket_context import TicketContextBuilder
@@ -75,6 +84,170 @@ class _NoRegistrySession:
 
     async def execute(self, *_args: object, **_kwargs: object) -> object:
         raise AssertionError("migrated Registry read must not use the caller session")
+
+
+class _RequesterHistoryPort:
+    def __init__(self, result: object) -> None:
+        self.result = result
+        self.calls: list[tuple[str, RegistryReadActor, int]] = []
+
+    async def requester_history(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor,
+        limit: int = 50,
+    ) -> object:
+        self.calls.append((person.external_id, actor, limit))
+        return self.result
+
+
+def _history_actor(*, requester: str | None = None) -> RegistryReadActor:
+    return RegistryReadActor(
+        actor=ActorRef(external_id="verified-support-actor"),
+        role="user" if requester else "support",
+        requester=RequesterRef(external_id=requester) if requester else None,
+    )
+
+
+class _HistoryProjectionService(CustomerHistoryProjectionService):
+    async def _tickets_for_person(self, _person_id: str, *, limit: int = 100) -> list[object]:
+        del limit
+        return []
+
+
+@pytest.mark.asyncio
+async def test_customer_history_registry_source_projects_only_port_history() -> None:
+    person = PersonRef(external_id="registry-ref-person-1")
+    occurred_at = datetime(2026, 8, 10, 12, tzinfo=timezone.utc)
+    port = _RequesterHistoryPort(
+        RequesterHistoryProjection(
+            requester=RequesterRef(external_id=person.external_id),
+            source="external_authoritative",
+            items=(
+                RegistryHistoryEventProjection(
+                    event_type="device_binding",
+                    occurred_at=occurred_at,
+                    device=DeviceRef(external_id="registry-ref-device-1"),
+                    relationship_type="primary_user",
+                    status="active",
+                    source="external_authoritative",
+                ),
+                RegistryHistoryEventProjection(
+                    event_type="account_session",
+                    occurred_at=occurred_at,
+                    device=DeviceRef(external_id="registry-ref-device-1"),
+                    status="verified",
+                    source="external_authoritative",
+                ),
+            ),
+        )
+    )
+
+    result = await RegistryHistorySource(registry_port=port).events_for_person(
+        person,
+        actor=_history_actor(),
+        limit=20,
+    )
+
+    assert [event.event_type for event in result.events] == ["device_binding", "account_session"]
+    assert result.source_state == {"status": "available", "source": "external_authoritative"}
+    assert result.events[0].payload == {
+        "relationship_type": "primary_user",
+        "status": "active",
+        "source": "external_authoritative",
+    }
+    assert "registry-ref-binding" not in result.events[0].event_id
+    assert port.calls == [("registry-ref-person-1", _history_actor(), 20)]
+
+
+@pytest.mark.asyncio
+async def test_customer_history_registry_source_rejects_spoofed_requester_actor() -> None:
+    port = _RequesterHistoryPort(AssertionError("port must not be called"))
+
+    result = await RegistryHistorySource(registry_port=port).events_for_person(
+        PersonRef(external_id="registry-ref-person-1"),
+        actor=_history_actor(requester="registry-ref-person-2"),
+        limit=20,
+    )
+
+    assert result.events == []
+    assert result.source_state == {"status": "unavailable", "code": "registry_actor_forbidden"}
+    assert port.calls == []
+
+
+@pytest.mark.asyncio
+async def test_customer_history_registry_source_keeps_same_time_port_events_distinct() -> None:
+    occurred_at = datetime(2026, 8, 10, 12, tzinfo=timezone.utc)
+    event = RegistryHistoryEventProjection(
+        event_type="device_binding",
+        occurred_at=occurred_at,
+        device=DeviceRef(external_id="registry-ref-device-1"),
+        relationship_type="primary_user",
+        status="active",
+        source="external_authoritative",
+    )
+    port = _RequesterHistoryPort(
+        RequesterHistoryProjection(
+            requester=RequesterRef(external_id="registry-ref-person-1"),
+            source="external_authoritative",
+            items=(event, event),
+        )
+    )
+
+    result = await RegistryHistorySource(registry_port=port).events_for_person(
+        PersonRef(external_id="registry-ref-person-1"),
+        actor=_history_actor(),
+        limit=20,
+    )
+
+    assert len(result.events) == 2
+    assert result.events[0].event_id != result.events[1].event_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "expected"),
+    [
+        (RegistryUnavailable(code="registry_external_timeout"), {"status": "unavailable", "code": "registry_external_timeout"}),
+        (RegistryNotFound(code="registry_requester_not_found"), {"status": "not_found", "code": "registry_requester_not_found"}),
+        (RegistryInvalidProjection(), {"status": "invalid", "code": "registry_projection_invalid"}),
+    ],
+)
+async def test_customer_history_registry_source_exposes_typed_degraded_state(
+    outcome: object,
+    expected: dict[str, str],
+) -> None:
+    port = _RequesterHistoryPort(outcome)
+
+    result = await RegistryHistorySource(registry_port=port).events_for_person(
+        PersonRef(external_id="registry-ref-person-1"),
+        actor=_history_actor(),
+        limit=20,
+    )
+
+    assert result.events == []
+    assert result.source_state == expected
+
+
+@pytest.mark.asyncio
+async def test_customer_history_projection_preserves_registry_degraded_source_state() -> None:
+    port = _RequesterHistoryPort(RegistryUnavailable(code="registry_external_timeout"))
+
+    history = await _HistoryProjectionService(
+        _NoRegistrySession(),  # type: ignore[arg-type]
+        registry_port=port,  # type: ignore[arg-type]
+    ).history_for_person(
+        "registry-ref-person-1",
+        registry_actor=_history_actor(),
+        limit=20,
+    )
+
+    assert history["events"] == []
+    assert history["sources"] == []
+    assert history["source_states"] == {
+        "registry": {"status": "unavailable", "code": "registry_external_timeout"}
+    }
 
 
 @pytest.mark.asyncio

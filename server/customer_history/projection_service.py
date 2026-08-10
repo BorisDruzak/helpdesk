@@ -6,6 +6,9 @@ from typing import Any
 from sqlalchemy import desc, or_, select
 
 from app.db.models import Ticket
+from domain_ports.container import DomainPortContainer
+from domain_ports.registry import RegistryPort
+from domain_ports.registry_contracts import PersonRef, RegistryReadActor
 
 from .models import CustomerHistoryEvent
 from .redaction import redact_event_for_role
@@ -120,8 +123,11 @@ def _filter_events_by_window(events: list[CustomerHistoryEvent], since: datetime
 
 
 class CustomerHistoryProjectionService:
-    def __init__(self, session):
+    def __init__(self, session, *, registry_port: RegistryPort | None = None):
         self.session = session
+        self.registry_port = registry_port or DomainPortContainer.from_config(
+            registry_session=session
+        ).registry
 
     async def _ticket(self, ticket_id: str) -> Ticket | None:
         return (
@@ -236,6 +242,7 @@ class CustomerHistoryProjectionService:
         person_id: str,
         *,
         actor_context: dict[str, Any] | None = None,
+        registry_actor: RegistryReadActor | None = None,
         limit: int = 50,
         role: str | None = None,
         since: Any = None,
@@ -248,7 +255,12 @@ class CustomerHistoryProjectionService:
         events: list[CustomerHistoryEvent] = []
         for ticket in rows:
             events.extend(await self._events_for_ticket(ticket, limit=20, person_id=str(person_id)))
-        events.extend(await RegistryHistorySource(self.session).events_for_person(str(person_id), limit=20))
+        registry_result = await RegistryHistorySource(registry_port=self.registry_port).events_for_person(
+            PersonRef(external_id=str(person_id)),
+            actor=registry_actor,
+            limit=20,
+        )
+        events.extend(registry_result.events)
         events = sorted({event.event_id: event for event in events}.values(), key=_sort_key)
         events = _filter_events_by_window(events, since_at)
         projected, report = self._project(events, role=role, limit=bounded_limit)
@@ -257,6 +269,7 @@ class CustomerHistoryProjectionService:
             "count": len(projected),
             "redaction_report": report,
             "sources": sorted({event.source for event in events}),
+            "source_states": {"registry": registry_result.source_state},
         }
         if role in {"support", "admin"}:
             payload["person_id"] = str(person_id)

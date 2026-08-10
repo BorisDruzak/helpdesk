@@ -61,6 +61,13 @@
   only requester ref/display plus typed source/status. Registry contact,
   organisation and asset fields are intentionally `null` until a future
   contract explicitly represents them.
+- `server/customer_history/sources.py` projects only
+  `RegistryPort.requester_history()` events. `projection_service.py` carries
+  the typed Registry source state in `source_states.registry`, and
+  `handlers.py` builds `RegistryReadActor` only from verified middleware auth;
+  requester history is scoped to the server-resolved requester ref. There is no
+  direct `DeviceUserBinding` or `DeviceAccountSession` read/fallback in this
+  Helpdesk consumer.
 - `server/web_api/support_handlers.py` and
   `server/web_api/dto/support.py::SupportTicketRegistrySnapshot` no longer
   query/represent uncontracted current Registry repositories.
@@ -76,8 +83,8 @@
   Repository-wide Registry enforcement is deferred while richer operations are
   absent from the frozen Task-3 contract.
 - Deferred consumers are requester profile/schema/on-behalf/identity reads,
-  rich ticket context and primary diagnostic-target resolution, customer-history
-  binding/session events, and richer inventory/contact/organisation/asset/service
+  rich ticket context and primary diagnostic-target resolution, and richer
+  inventory/contact/organisation/asset/service
   projections. Exact shared-binding and account-session revalidation plus
   Registry ingestion/commands remain in `create_flow.py` to preserve requester
   isolation and command behavior until binding-specific/idempotent port
@@ -105,8 +112,8 @@
   safe diagnostic. Contract maxima are directory 50 and audience/history 100.
 - `server/tests/test_registry_port_rich_projections.py` covers redaction,
   trusted directory visibility, invalid outcomes, collection bounds, unavailable
-  behavior and savepoint isolation. These are contract/local-adapter additions;
-  consumer migration remains a separate task.
+  behavior and savepoint isolation. Customer History consumes the requester-
+  history projection; other rich consumer migrations remain separate tasks.
 
 ## 2026-08-10 Registry command/eligibility acceptance contract (PR-9 prerequisite)
 

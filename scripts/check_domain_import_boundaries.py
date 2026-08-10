@@ -157,12 +157,6 @@ REGISTRY_IMPORT_ALLOWANCES = {
             ("registry.primary_agent_resolver", "PrimaryAgentResolver"),
         }
     ),
-    "server/customer_history/sources.py": frozenset(
-        {
-            ("app.db.models", "DeviceAccountSession"),
-            ("app.db.models", "DeviceUserBinding"),
-        }
-    ),
     "server/web_api/requester_handlers.py": frozenset(
         {
             ("app.db.models", "RegistryDepartment"),

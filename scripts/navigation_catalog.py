@@ -81,7 +81,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="helpdesk_external_domain_ports",
         title="Helpdesk external domain ports",
-        summary="PR-0/PR-1/PR-6 ownership boundary, dependency-injection contracts, local Knowledge-runtime removal and AST import guards for Knowledge plus incrementally scoped Registry consumers. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists. Local Knowledge routes, UI, AI runtime and configuration are removed; retained tables are history-only until PR-11 and PR-7 is the external adapter acceptance gate. PR-8 adds frozen/redacted RegistryPort contracts, local compatibility composition and an incremental requester/ticket/inventory/support read cutover. Rich Registry reads use actor-scoped, bounded requester-profile, directory, device-context and history DTOs; malformed data is typed separately from not-found/unavailable and local failures are savepoint-isolated. Typed unavailable support state may display only immutable ticket history; consumer cutover and Registry commands remain explicit debt until their acceptance tasks.",
+        summary="PR-0/PR-1/PR-6 ownership boundary, dependency-injection contracts, local Knowledge-runtime removal and AST import guards for Knowledge plus incrementally scoped Registry consumers. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists. Local Knowledge routes, UI, AI runtime and configuration are removed; retained tables are history-only until PR-11 and PR-7 is the external adapter acceptance gate. PR-8 adds frozen/redacted RegistryPort contracts, local compatibility composition and incremental requester/ticket/inventory/support/customer-history reads. Customer History projects only actor-scoped requester-history DTOs and returns typed Registry source states, never local binding/session ORM fallback. Rich Registry reads use actor-scoped, bounded requester-profile, directory, device-context and history DTOs; malformed data is typed separately from not-found/unavailable and local failures are savepoint-isolated. Typed unavailable support state may display only immutable ticket history; remaining consumer cutovers and Registry commands stay explicit debt until their acceptance tasks.",
         aliases=(
             "helpdesk segmentation",
             "external domain ports",
@@ -111,6 +111,10 @@ TOPICS: tuple[Topic, ...] = (
             "server/tickets/ticket_context.py",
             "server/tickets/create_flow.py",
             "server/inventory/service.py",
+            "server/customer_history/sources.py",
+            "server/customer_history/projection_service.py",
+            "server/customer_history/context_builder.py",
+            "server/customer_history/handlers.py",
             "server/web_api/support_handlers.py",
             "server/web_api/dto/support.py",
             "server/config.py",
@@ -122,6 +126,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/tests/test_registry_boundary.py",
             "server/tests/test_registry_port.py",
             "server/tests/test_registry_port_rich_projections.py",
+            "server/tests/test_customer_history_projection.py",
             "server/tests/test_knowledge_routes_removed.py",
             "server/tests/test_segmentation_docs.py",
         ),

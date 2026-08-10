@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import desc, select
 
-from app.db.models import (
-    DeviceAccountSession,
-    DeviceUserBinding,
-    Operation,
-    ObserverTrace,
-    Ticket,
-    TicketEvent,
+from app.db.models import Operation, ObserverTrace, Ticket, TicketEvent
+
+from domain_ports.registry import RegistryPort
+from domain_ports.registry_contracts import (
+    PersonRef,
+    RegistryInvalidProjection,
+    RegistryNotFound,
+    RegistryReadActor,
+    RegistryUnavailable,
+    RequesterHistoryProjection,
 )
 
 from .models import CustomerHistoryEvent, isoformat_utc
@@ -252,75 +256,116 @@ class KnowledgeHistorySource:
         ]
 
 
-class RegistryHistorySource:
-    def __init__(self, session):
-        self.session = session
+@dataclass(frozen=True, slots=True)
+class RegistryHistorySourceResult:
+    """Redacted Registry events and the typed state of their source."""
 
-    async def events_for_person(self, person_id: str, *, limit: int = 100) -> list[CustomerHistoryEvent]:
-        events: list[CustomerHistoryEvent] = []
-        bindings = (
-            await self.session.execute(
-                select(DeviceUserBinding)
-                .where(DeviceUserBinding.person_id == person_id)
-                .order_by(desc(DeviceUserBinding.created_at))
-                .limit(max(1, min(int(limit or 100), 300)))
+    events: list[CustomerHistoryEvent]
+    source_state: dict[str, str]
+
+
+class RegistryHistorySource:
+    """Project RegistryPort history without importing local Registry persistence."""
+
+    def __init__(self, *, registry_port: RegistryPort):
+        self.registry_port = registry_port
+
+    @staticmethod
+    def _degraded_state(outcome: object) -> dict[str, str]:
+        if isinstance(outcome, RegistryUnavailable):
+            return {"status": "unavailable", "code": outcome.code}
+        if isinstance(outcome, RegistryNotFound):
+            return {"status": "not_found", "code": outcome.code}
+        return {
+            "status": "invalid",
+            "code": (
+                outcome.code
+                if isinstance(outcome, RegistryInvalidProjection)
+                else "registry_projection_invalid"
+            ),
+        }
+
+    async def events_for_person(
+        self,
+        person: PersonRef,
+        *,
+        actor: RegistryReadActor | None,
+        limit: int = 100,
+    ) -> RegistryHistorySourceResult:
+        if actor is None:
+            return RegistryHistorySourceResult(
+                events=[],
+                source_state={"status": "unavailable", "code": "registry_actor_unavailable"},
             )
-        ).scalars().all()
-        for row in bindings:
+        if actor.role == "user" and (
+            actor.requester is None or actor.requester.external_id != person.external_id
+        ):
+            return RegistryHistorySourceResult(
+                events=[],
+                source_state={"status": "unavailable", "code": "registry_actor_forbidden"},
+            )
+
+        outcome = await self.registry_port.requester_history(person, actor=actor, limit=limit)
+        if not isinstance(outcome, RequesterHistoryProjection):
+            return RegistryHistorySourceResult(events=[], source_state=self._degraded_state(outcome))
+        if outcome.requester.external_id != person.external_id:
+            return RegistryHistorySourceResult(
+                events=[],
+                source_state={"status": "invalid", "code": "registry_projection_invalid"},
+            )
+
+        events: list[CustomerHistoryEvent] = []
+        for ordinal, item in enumerate(outcome.items, start=1):
+            if item.event_type not in {"device_binding", "account_session"}:
+                return RegistryHistorySourceResult(
+                    events=[],
+                    source_state={"status": "invalid", "code": "registry_projection_invalid"},
+                )
+            device_id = item.device.external_id if item.device is not None else None
+            payload = {
+                key: value
+                for key, value in {
+                    "relationship_type": item.relationship_type,
+                    "status": item.status,
+                    "source": item.source,
+                }.items()
+                if value is not None
+            }
+            is_binding = item.event_type == "device_binding"
+            summary_parts = [item.relationship_type, item.status] if is_binding else [item.status]
+            summary = ":".join(str(value) for value in summary_parts if value) or item.event_type
             events.append(
                 CustomerHistoryEvent(
-                    event_id=f"registry:binding:{row.binding_id}",
+                    event_id=(
+                        f"registry:{item.event_type}:{isoformat_utc(item.occurred_at) or ''}:"
+                        f"{device_id or 'none'}:{ordinal}"
+                    ),
                     source="registry",
                     group="registry",
-                    event_type="device_binding",
-                    title="Device binding",
-                    summary=f"{row.relationship_type}:{row.status}",
-                    occurred_at=row.created_at,
-                    person_id=person_id,
-                    device_id=row.device_id,
-                    visibility={"requester": True, "support": True, "admin": True, "llm": True},
-                    payload={
-                        "relationship_type": row.relationship_type,
-                        "status": row.status,
-                        "source": row.source,
-                        "confirmed_at": isoformat_utc(row.confirmed_at),
+                    event_type=item.event_type,
+                    title="Device binding" if is_binding else "Account session",
+                    summary=summary,
+                    occurred_at=item.occurred_at,
+                    person_id=person.external_id,
+                    device_id=device_id,
+                    visibility={
+                        "requester": is_binding,
+                        "support": True,
+                        "admin": True,
+                        "llm": is_binding,
                     },
+                    payload=payload,
                     safe_refs={
                         key: value
-                        for key, value in {"device_ref": _short_ref("device", row.device_id)}.items()
+                        for key, value in {"device_ref": _short_ref("device", device_id)}.items()
                         if value
                     },
                 )
             )
-        sessions = (
-            await self.session.execute(
-                select(DeviceAccountSession)
-                .where(DeviceAccountSession.person_id == person_id)
-                .order_by(desc(DeviceAccountSession.created_at))
-                .limit(max(1, min(int(limit or 100), 300)))
-            )
-        ).scalars().all()
-        for row in sessions:
-            events.append(
-                CustomerHistoryEvent(
-                    event_id=f"registry:session:{row.session_id}",
-                    source="registry",
-                    group="registry",
-                    event_type="account_session",
-                    title="Account session",
-                    summary=f"{row.account_mode}:{row.verification_status}",
-                    occurred_at=row.created_at,
-                    person_id=person_id,
-                    device_id=row.device_id,
-                    visibility={"requester": False, "support": True, "admin": True, "llm": False},
-                    payload={
-                        "account_mode": row.account_mode,
-                        "verification_status": row.verification_status,
-                        "warning_code": row.warning_code,
-                    },
-                )
-            )
-        return events
+        return RegistryHistorySourceResult(
+            events=events,
+            source_state={"status": "available", "source": outcome.source},
+        )
 
 
 class DiagnosticHistorySource:
