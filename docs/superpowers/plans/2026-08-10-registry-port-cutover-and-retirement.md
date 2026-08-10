@@ -430,9 +430,25 @@ git commit -m "scripts: add Registry retirement preflight"
 - [ ] **Step 3: Prove clone upgrade, catalog/FK/count audit and backup restore**
 - [ ] **Step 4: Apply only after release acceptance; rollback by verified restore, never downgrade**
 
+### Task 12: Route customer-history reads through RegistryPort (PR-8 completion)
+
+**Files:**
+
+- Modify: server/customer_history/sources.py, server/customer_history/projection_service.py
+- Modify: scripts/check_domain_import_boundaries.py, server/tests/test_domain_import_boundaries.py
+- Test: server/tests/test_customer_history_projection.py, server/tests/test_customer_history_context_builder.py, server/tests/test_registry_boundary.py
+- Modify: docs/QUICK_LOOKUP.md, server/docs/CODEMAP.md, server/docs/SEGMENTATION_BOUNDARIES.md
+
+**Interfaces:** consumes `RegistryPort.requester_history()` with a trusted server-side `RegistryReadActor`, then projects its redacted events to the existing customer-history API shape. `unavailable`, `not_found` and `invalid` become typed degraded source states; no direct Registry ORM/session fallback is allowed. This task does not change ticket history queries, auth/session/registration commands, or external authority.
+
+- [ ] **Step 1: Write failing boundary and actor-spoofing tests**
+- [ ] **Step 2: Replace `DeviceUserBinding`/`DeviceAccountSession` source reads with the port**
+- [ ] **Step 3: Remove exact customer-history import allowances and prove the scoped guard**
+- [ ] **Step 4: Run API regression, docs drift and commit**
+
 ## Plan self-review
 
-- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
+- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5 and 12, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
