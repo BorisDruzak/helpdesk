@@ -12,6 +12,7 @@ from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_AGENT_PREFIX
 from tickets.create_flow import create_ticket_with_side_effects
+from tickets.ticket_context import TicketContextBuilder
 
 
 pytestmark = pytest.mark.db_cleanup("tickets")
@@ -122,6 +123,56 @@ async def test_verified_requester_with_invalid_snapshot_does_not_create_legacy_o
                 requester_id="ticket-invalid-snapshot",
                 title=title,
                 description="Must fail instead of writing legacy-only requester scope",
+                user_display_name="Payload display must not be used",
+            )
+
+        stored = await session.scalar(select(Ticket).where(Ticket.title == title))
+        assert stored is None
+
+
+@pytest.mark.asyncio
+async def test_stale_verified_requester_does_not_create_legacy_only_ticket(
+    test_engine,
+    monkeypatch,
+):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    title = "Stale verified requester"
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        result = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="ticket-stale-verified-person",
+            display_name="Stale Verified Person",
+            profile={
+                "full_name": "Stale Verified Person",
+                "email": "ticket-stale-verified-person@example.test",
+                "user_confirmed": True,
+            },
+        )
+        await service.approve_claim(
+            result["registration"]["claim_id"],
+            reviewed_by="admin",
+        )
+
+        async def _missing_verified_person(_builder, _person_id):
+            return None, None
+
+        monkeypatch.setattr(
+            TicketContextBuilder,
+            "requester_reference_snapshot",
+            _missing_verified_person,
+        )
+
+        with pytest.raises(ValueError, match="complete requester reference snapshot"):
+            await create_ticket_with_side_effects(
+                session,
+                device_id=device_id,
+                requester_id="ticket-stale-verified-person",
+                title=title,
+                description="Must fail when the verified person disappears",
                 user_display_name="Payload display must not be used",
             )
 

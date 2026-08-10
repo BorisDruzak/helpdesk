@@ -16,7 +16,10 @@ from domain_ports.registry import (
     RequesterSnapshot,
     requester_persistence_values,
 )
-from tickets.ticket_context import requester_reference_snapshot_from_record
+from tickets.ticket_context import (
+    TicketContextBuilder,
+    requester_reference_snapshot_from_record,
+)
 
 
 pytestmark = pytest.mark.no_db
@@ -33,6 +36,11 @@ class RecordingSession:
         return None
 
     async def refresh(self, row: object) -> None:
+        return None
+
+
+class MissingPersonSession:
+    async def get(self, _model: object, _person_id: str) -> None:
         return None
 
 
@@ -109,6 +117,21 @@ def test_requester_persistence_requires_complete_matching_pair() -> None:
             requester_ref=requester_ref,
             requester_snapshot=mismatched_snapshot,
         )
+
+
+@pytest.mark.asyncio
+async def test_requester_snapshot_builder_rejects_missing_verified_person() -> None:
+    builder = TicketContextBuilder(MissingPersonSession())  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="verified requester person not found"):
+        await builder.requester_reference_snapshot("stale-person-id")
+
+
+@pytest.mark.asyncio
+async def test_requester_snapshot_builder_preserves_no_person_legacy_path() -> None:
+    builder = TicketContextBuilder(MissingPersonSession())  # type: ignore[arg-type]
+
+    assert await builder.requester_reference_snapshot(None) == (None, None)
 
 
 @pytest.mark.parametrize(

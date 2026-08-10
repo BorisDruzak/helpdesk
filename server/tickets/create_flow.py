@@ -635,6 +635,8 @@ async def create_ticket_with_side_effects(
             session,
             state=state,
         ).requester_reference_snapshot(verified_requester_person_id)
+        if requester_ref is None or requester_snapshot is None:
+            raise ValueError("verified requester requires a complete requester reference snapshot")
 
     ticket_context_snapshot: dict[str, Any] | None = None
     if requester_person_id:

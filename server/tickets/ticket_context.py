@@ -413,6 +413,8 @@ class TicketContextBuilder:
         if verified_person_id is None:
             return None, None
         person = await self.session.get(RegistryPerson, verified_person_id)
+        if person is None:
+            raise ValueError("verified requester person not found")
         return requester_reference_snapshot_from_person(person)
 
     async def build(
