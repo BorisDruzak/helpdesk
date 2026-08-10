@@ -125,7 +125,7 @@
   API/shadow contract and links to the command prerequisite. Focused contract
   coverage is `server/tests/test_registry_commands_api_docs.py`.
 
-## 2026-08-10 Registry/Knowledge retirement preflight (PR-11 prerequisite)
+## 2026-08-10 Registry retirement preflight (PR-11 prerequisite)
 
 - `scripts/registry_retirement_manifest.py` is the reviewed no-DB declaration
   of retire/retain tables, retained-column detachments and a deterministic
@@ -137,7 +137,10 @@
   direct Registry/Registration repository imports. Its v1 evidence bundle
   requires a trusted external public-key/KMS verifier for canonical redacted
   acceptance/backup/restore/catalog/maintenance proof; evidence cannot provide
-  its own verifier or trust material.
+  its own verifier or trust material. `--require-ready` derives immutable Git
+  `HEAD`, requires an explicit expected environment, enforces a 24-hour
+  attestation lifetime/five-minute future skew and strict backup → restore →
+  catalog → maintenance → attestation chronology.
 - `server/tests/test_registry_retirement_preflight.py` covers protected actual
   UI/session/RBAC table names, FK ordering and fail-closed local/evidence gates.
   PR-11 remains future-only: no migration, DDL or database connection exists in

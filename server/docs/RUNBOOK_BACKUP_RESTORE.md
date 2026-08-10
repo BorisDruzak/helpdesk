@@ -80,6 +80,7 @@ absence of local Registry runtime:
 
 ```text
 python scripts/rehearse_registry_retirement.py --workspace . --require-ready \
+  --expected-environment production-retirement \
   --attestation-verifier organisation_release_verifiers.registry_retirement:verify
 ```
 
@@ -88,6 +89,18 @@ canonical bytes, algorithm, key ID and signature. It must select its public
 key/KMS trust root independently of the evidence bundle. The command is
 fail-closed when this option is omitted; the in-repository fixture verifier is
 test-only and must never be used for a release.
+
+`--require-ready` also derives the exact immutable Git `HEAD` commit from the
+workspace and requires a release-operator supplied `--expected-environment`.
+Both must exactly match the signed evidence envelope and every evidence
+component; a copied bundle for another revision or environment is rejected.
+Evidence is valid for at most 24 hours from `attested_at`, allows at most five
+minutes of future clock skew, and is rejected as replayed/stale thereafter.
+The signed timestamps must be strictly ordered: backup, restore drill, clone
+catalog, approved maintenance/writers-stop plan, then attestation. The command
+never writes a replay marker, so the bounded attestation lifetime is the
+enforced replay window; an operator must create and sign a fresh bundle for
+each release window.
 
 If a forward migration has started or the application is unhealthy, rollback
 the application release and restore the verified backup/clone procedure. Do

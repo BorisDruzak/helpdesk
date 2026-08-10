@@ -13,12 +13,13 @@ from __future__ import annotations
 import argparse
 import ast
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from importlib import import_module
 import json
 import os
 import re
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -50,6 +51,8 @@ EVIDENCE_SCHEMA = "pc_client.registry_retirement_evidence.v1"
 IMMUTABLE_ID_PATTERN = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.IGNORECASE)
 REVISION_PATTERN = re.compile(r"^[0-9a-f]{7,64}$", re.IGNORECASE)
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
+MAX_EVIDENCE_AGE = timedelta(hours=24)
+MAX_FUTURE_EVIDENCE_SKEW = timedelta(minutes=5)
 AttestationVerifier = Callable[[bytes, str, str, str], bool]
 EVIDENCE_OPERATIONS = frozenset(
     {
@@ -167,13 +170,19 @@ def _is_immutable_id(value: object) -> bool:
 
 
 def _is_timestamp(value: object) -> bool:
+    return _parse_timestamp(value) is not None
+
+
+def _parse_timestamp(value: object) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
-        return False
+        return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        return False
-    return parsed.tzinfo is not None and parsed.utcoffset() is not None
+        return None
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def _matches_evidence_context(component: object, *, environment: object, revision: object) -> bool:
@@ -293,6 +302,89 @@ def _valid_row_count_evidence(evidence: dict[str, Any]) -> bool:
     )
 
 
+def _evidence_timestamps(evidence: dict[str, Any]) -> dict[str, datetime] | None:
+    backup = evidence.get("backup")
+    restore = evidence.get("restore_drill")
+    catalog = evidence.get("catalog")
+    maintenance = evidence.get("maintenance")
+    acceptance = evidence.get("external_command_acceptance")
+    components = (
+        ("external_acceptance", acceptance, "accepted_at"),
+        ("backup", backup, "created_at"),
+        ("restore", restore, "completed_at"),
+        ("catalog", catalog, "captured_at"),
+        ("maintenance", maintenance, "approved_at"),
+        ("attestation", evidence, "attested_at"),
+    )
+    timestamps: dict[str, datetime] = {}
+    for name, component, field in components:
+        if not isinstance(component, dict):
+            return None
+        timestamp = _parse_timestamp(component.get(field))
+        if timestamp is None:
+            return None
+        timestamps[name] = timestamp
+    return timestamps
+
+
+def _evidence_time_blocker(evidence: dict[str, Any], *, now: datetime) -> PreflightBlocker | None:
+    timestamps = _evidence_timestamps(evidence)
+    if timestamps is None:
+        return PreflightBlocker(
+            "retirement_evidence_timeline_invalid",
+            "every signed evidence stage requires an offset-aware UTC timestamp",
+        )
+    attested_at = timestamps["attestation"]
+    if any(timestamp > now + MAX_FUTURE_EVIDENCE_SKEW for timestamp in timestamps.values()):
+        return PreflightBlocker(
+            "retirement_evidence_timestamp_in_future",
+            "signed evidence timestamps may not exceed the bounded future clock-skew allowance",
+        )
+    if now - attested_at > MAX_EVIDENCE_AGE:
+        return PreflightBlocker(
+            "retirement_evidence_replayed_or_stale",
+            "signed evidence attestation exceeds the bounded freshness window",
+        )
+    if not (
+        timestamps["backup"]
+        < timestamps["restore"]
+        < timestamps["catalog"]
+        < timestamps["maintenance"]
+        < timestamps["attestation"]
+    ) or timestamps["external_acceptance"] > attested_at:
+        return PreflightBlocker(
+            "retirement_evidence_timeline_invalid",
+            "backup, restore, catalog, maintenance and attestation must be strictly chronological",
+        )
+    return None
+
+
+def workspace_git_revision(workspace: Path) -> str | None:
+    """Return the checked-out commit only when the workspace is immutable/clean."""
+
+    try:
+        status = subprocess.run(
+            ("git", "-C", str(workspace), "status", "--porcelain=v1", "--untracked-files=all"),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        completed = subprocess.run(
+            ("git", "-C", str(workspace), "rev-parse", "--verify", "HEAD^{commit}"),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if status.returncode != 0 or status.stdout.strip():
+        return None
+    revision = completed.stdout.strip().lower() if completed.returncode == 0 else ""
+    return revision if len(revision) == 40 and bool(REVISION_PATTERN.fullmatch(revision)) else None
+
+
 def _trusted_attestation(
     evidence: dict[str, Any],
     attestation_verifier: AttestationVerifier | None,
@@ -360,10 +452,14 @@ def run_preflight(
     workspace: Path,
     *,
     attestation_verifier: AttestationVerifier | None = None,
+    expected_environment: str | None = None,
+    expected_revision: str | None = None,
+    now: datetime | None = None,
 ) -> PreflightResult:
     """Inspect local code/evidence only and fail closed for every missing gate."""
 
     workspace = workspace.resolve()
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     blockers: list[PreflightBlocker] = []
     for error in manifest_validation_errors():
         blockers.append(PreflightBlocker("invalid_retirement_manifest", error))
@@ -414,6 +510,23 @@ def run_preflight(
                     "a configured trusted public-key/KMS verifier must validate the canonical evidence signature",
                 )
             )
+        time_blocker = _evidence_time_blocker(evidence, now=now)
+        if time_blocker is not None:
+            blockers.append(time_blocker)
+        if expected_environment is not None and evidence.get("environment") != expected_environment:
+            blockers.append(
+                PreflightBlocker(
+                    "retirement_evidence_environment_mismatch",
+                    "signed evidence environment does not match the required release environment",
+                )
+            )
+        if expected_revision is not None and evidence.get("revision") != expected_revision:
+            blockers.append(
+                PreflightBlocker(
+                    "retirement_evidence_revision_mismatch",
+                    "signed evidence revision does not match the immutable checked-out workspace revision",
+                )
+            )
     return PreflightResult(ready=not blockers, blockers=tuple(blockers))
 
 
@@ -423,6 +536,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Print the read-only status; never changes exit code for pending gates.")
     parser.add_argument("--require-ready", action="store_true", help="Return non-zero unless all non-destructive gates are proven.")
     parser.add_argument(
+        "--expected-environment",
+        help="Required with --require-ready; immutable release environment identifier that must exactly match signed evidence.",
+    )
+    parser.add_argument(
         "--attestation-verifier",
         metavar="MODULE:FUNCTION",
         help="Trusted public-key/KMS signature verifier; evidence never supplies executable verifier code or trust material.",
@@ -430,11 +547,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.dry_run and args.require_ready:
         parser.error("--dry-run and --require-ready are mutually exclusive")
+    if args.require_ready and not (args.expected_environment or "").strip():
+        parser.error("--expected-environment is required with --require-ready")
     try:
         verifier = load_attestation_verifier(args.attestation_verifier) if args.attestation_verifier else None
     except (ImportError, AttributeError, ValueError) as exc:
         parser.error(f"invalid --attestation-verifier: {exc}")
-    result = run_preflight(args.workspace, attestation_verifier=verifier)
+    expected_revision = None
+    if args.require_ready:
+        expected_revision = workspace_git_revision(args.workspace)
+        if expected_revision is None:
+            parser.error("cannot derive immutable Git workspace revision for --require-ready")
+    result = run_preflight(
+        args.workspace,
+        attestation_verifier=verifier,
+        expected_environment=args.expected_environment.strip() if args.require_ready else None,
+        expected_revision=expected_revision,
+    )
     print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2, sort_keys=True))
     return 1 if args.require_ready and not result.ready else 0
 

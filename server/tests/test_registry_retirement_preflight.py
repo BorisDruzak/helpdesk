@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from pathlib import Path
+import subprocess
 from uuid import NAMESPACE_URL, uuid5
+
+import pytest
 
 from scripts.audit_db_cleanup_schema import RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES
 from scripts.registry_retirement_manifest import (
@@ -16,20 +19,28 @@ from scripts.registry_retirement_manifest import (
     manifest_validation_errors,
 )
 from scripts.rehearse_registry_retirement import (
+    MAX_EVIDENCE_AGE,
     attestable_evidence_payload,
     current_foreign_key_graph_signature,
+    main,
     run_preflight,
+    workspace_git_revision,
 )
+from scripts import rehearse_registry_retirement as retirement_preflight
 
 
 def _immutable_id(number: int) -> str:
     return str(uuid5(NAMESPACE_URL, f"registry-retirement-evidence-{number}"))
 
 
-def _attested_evidence() -> dict[str, object]:
+def _attested_evidence(*, attested_at: datetime | None = None) -> dict[str, object]:
     """Build a complete, redacted evidence bundle for preflight tests only."""
 
-    occurred_at = datetime(2026, 8, 10, 12, 0, tzinfo=timezone.utc).isoformat()
+    attested_at = attested_at or datetime.now(timezone.utc)
+    backup_at = attested_at - timedelta(minutes=4)
+    restore_at = attested_at - timedelta(minutes=3)
+    catalog_at = attested_at - timedelta(minutes=2)
+    maintenance_at = attested_at - timedelta(minutes=1)
     environment = "retirement-clone"
     revision = "a" * 40
     backup_id = _immutable_id(1)
@@ -38,13 +49,13 @@ def _attested_evidence() -> dict[str, object]:
         "schema": "pc_client.registry_retirement_evidence.v1",
         "environment": environment,
         "revision": revision,
-        "attested_at": occurred_at,
+        "attested_at": attested_at.isoformat(),
         "external_command_acceptance": {
             "acceptance_id": _immutable_id(3),
             "accepted": True,
             "environment": environment,
             "revision": revision,
-            "accepted_at": occurred_at,
+            "accepted_at": backup_at.isoformat(),
             "operations": sorted(
                 {
                     "login_eligibility",
@@ -68,7 +79,7 @@ def _attested_evidence() -> dict[str, object]:
             "sha256": "b" * 64,
             "environment": environment,
             "revision": revision,
-            "created_at": occurred_at,
+            "created_at": backup_at.isoformat(),
         },
         "restore_drill": {
             "drill_id": _immutable_id(4),
@@ -77,7 +88,7 @@ def _attested_evidence() -> dict[str, object]:
             "backup_sha256": "b" * 64,
             "environment": environment,
             "revision": revision,
-            "completed_at": occurred_at,
+            "completed_at": restore_at.isoformat(),
             "passed": True,
         },
         "catalog": {
@@ -86,7 +97,7 @@ def _attested_evidence() -> dict[str, object]:
             "backup_artifact_id": backup_id,
             "environment": environment,
             "revision": revision,
-            "captured_at": occurred_at,
+            "captured_at": catalog_at.isoformat(),
             "table_counts": {table: 0 for table in sorted(RETIREMENT_MANIFEST.target_tables)},
             "foreign_key_signature": current_foreign_key_graph_signature(),
         },
@@ -97,7 +108,7 @@ def _attested_evidence() -> dict[str, object]:
             "advisory_lock_key": "registry-retirement-v1",
             "environment": environment,
             "revision": revision,
-            "approved_at": occurred_at,
+            "approved_at": maintenance_at.isoformat(),
         },
         "attestation": {
             "algorithm": "fixture-sha256",
@@ -120,6 +131,14 @@ def _fixture_attestation_verifier(payload: bytes, algorithm: str, key_id: str, s
         and key_id == "fixture-public-key-1"
         and signature == sha256(payload).hexdigest()
     )
+
+
+def _resign(evidence: dict[str, object]) -> None:
+    evidence["attestation"] = {
+        "algorithm": "fixture-sha256",
+        "key_id": "fixture-public-key-1",
+        "signature": sha256(attestable_evidence_payload(evidence)).hexdigest(),
+    }
 
 
 def _write_evidence(workspace: Path, evidence: dict[str, object]) -> None:
@@ -259,6 +278,143 @@ def test_preflight_requires_a_trusted_attestation_for_complete_evidence(tmp_path
     assert "retirement_evidence_attestation_missing_or_untrusted" in result.blocker_codes
     trusted_result = run_preflight(tmp_path, attestation_verifier=_fixture_attestation_verifier)
     assert trusted_result.ready is True
+
+
+def test_preflight_rejects_signed_evidence_for_a_different_expected_revision(tmp_path: Path) -> None:
+    _write_evidence(tmp_path, _attested_evidence())
+    (tmp_path / "server").mkdir(parents=True)
+    (tmp_path / "server" / "config.py").write_text("REGISTRY_PORT_MODE = 'external'\n", encoding="utf-8")
+
+    result = run_preflight(
+        tmp_path,
+        attestation_verifier=_fixture_attestation_verifier,
+        expected_environment="retirement-clone",
+        expected_revision="b" * 40,
+    )
+
+    assert result.ready is False
+    assert "retirement_evidence_revision_mismatch" in result.blocker_codes
+
+
+def test_preflight_rejects_signed_evidence_for_a_different_expected_environment(tmp_path: Path) -> None:
+    _write_evidence(tmp_path, _attested_evidence())
+    (tmp_path / "server").mkdir(parents=True)
+    (tmp_path / "server" / "config.py").write_text("REGISTRY_PORT_MODE = 'external'\n", encoding="utf-8")
+
+    result = run_preflight(
+        tmp_path,
+        attestation_verifier=_fixture_attestation_verifier,
+        expected_environment="production-retirement",
+        expected_revision="a" * 40,
+    )
+
+    assert result.ready is False
+    assert "retirement_evidence_environment_mismatch" in result.blocker_codes
+
+
+def test_preflight_rejects_replayed_or_stale_signed_evidence(tmp_path: Path) -> None:
+    stale_attestation = datetime.now(timezone.utc) - MAX_EVIDENCE_AGE - timedelta(seconds=1)
+    _write_evidence(tmp_path, _attested_evidence(attested_at=stale_attestation))
+    (tmp_path / "server").mkdir(parents=True)
+    (tmp_path / "server" / "config.py").write_text("REGISTRY_PORT_MODE = 'external'\n", encoding="utf-8")
+
+    result = run_preflight(tmp_path, attestation_verifier=_fixture_attestation_verifier)
+
+    assert result.ready is False
+    assert "retirement_evidence_replayed_or_stale" in result.blocker_codes
+
+
+def test_preflight_rejects_future_signed_evidence(tmp_path: Path) -> None:
+    future_attestation = datetime.now(timezone.utc) + timedelta(minutes=6)
+    _write_evidence(tmp_path, _attested_evidence(attested_at=future_attestation))
+    (tmp_path / "server").mkdir(parents=True)
+    (tmp_path / "server" / "config.py").write_text("REGISTRY_PORT_MODE = 'external'\n", encoding="utf-8")
+
+    result = run_preflight(tmp_path, attestation_verifier=_fixture_attestation_verifier)
+
+    assert result.ready is False
+    assert "retirement_evidence_timestamp_in_future" in result.blocker_codes
+
+
+def test_preflight_rejects_signed_evidence_with_invalid_backup_restore_maintenance_order(tmp_path: Path) -> None:
+    evidence = _attested_evidence()
+    restore = evidence["restore_drill"]
+    catalog = evidence["catalog"]
+    assert isinstance(restore, dict)
+    assert isinstance(catalog, dict)
+    catalog["captured_at"] = restore["completed_at"]
+    _resign(evidence)
+    _write_evidence(tmp_path, evidence)
+    (tmp_path / "server").mkdir(parents=True)
+    (tmp_path / "server" / "config.py").write_text("REGISTRY_PORT_MODE = 'external'\n", encoding="utf-8")
+
+    result = run_preflight(tmp_path, attestation_verifier=_fixture_attestation_verifier)
+
+    assert result.ready is False
+    assert "retirement_evidence_timeline_invalid" in result.blocker_codes
+
+
+def test_require_ready_derives_workspace_revision_and_requires_matching_environment(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _write_evidence(tmp_path, _attested_evidence())
+    (tmp_path / "server").mkdir(parents=True)
+    (tmp_path / "server" / "config.py").write_text("REGISTRY_PORT_MODE = 'external'\n", encoding="utf-8")
+    monkeypatch.setattr(retirement_preflight, "workspace_git_revision", lambda _: "a" * 40)
+    monkeypatch.setattr(retirement_preflight, "load_attestation_verifier", lambda _: _fixture_attestation_verifier)
+
+    assert main(
+        [
+            "--workspace",
+            str(tmp_path),
+            "--require-ready",
+            "--expected-environment",
+            "retirement-clone",
+            "--attestation-verifier",
+            "test:fixture",
+        ]
+    ) == 0
+    assert main(
+        [
+            "--workspace",
+            str(tmp_path),
+            "--require-ready",
+            "--expected-environment",
+            "different-environment",
+            "--attestation-verifier",
+            "test:fixture",
+        ]
+    ) == 1
+
+
+def test_require_ready_rejects_missing_expected_environment(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--workspace", str(tmp_path), "--require-ready"])
+
+    assert exc_info.value.code == 2
+
+
+def test_dry_run_stays_informational_and_does_not_write_evidence(tmp_path: Path) -> None:
+    assert main(["--workspace", str(tmp_path), "--dry-run"]) == 0
+    assert not (tmp_path / "artifacts" / "registry-retirement-evidence.json").exists()
+
+
+def test_workspace_revision_rejects_a_dirty_checkout(tmp_path: Path) -> None:
+    def git(*arguments: str) -> None:
+        subprocess.run(("git", "-C", str(tmp_path), *arguments), check=True, capture_output=True, text=True)
+
+    git("init")
+    git("config", "user.email", "preflight@example.test")
+    git("config", "user.name", "Preflight Test")
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("clean\n", encoding="utf-8")
+    git("add", "tracked.txt")
+    git("commit", "-m", "test: establish immutable revision")
+
+    assert workspace_git_revision(tmp_path) is not None
+    tracked.write_text("dirty\n", encoding="utf-8")
+    assert workspace_git_revision(tmp_path) is None
 
 
 def test_preflight_rejects_tampered_or_unlinked_complete_evidence(tmp_path: Path) -> None:

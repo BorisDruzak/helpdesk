@@ -310,7 +310,13 @@ python scripts/rehearse_registry_retirement.py --workspace . --dry-run
 The command neither connects to PostgreSQL nor executes Alembic or DDL. A
 non-ready result is expected until every local Registry route, writer and
 consumer has been cut over. Only a release operator may use `--require-ready`
-as a prerequisite for creating/applying the later forward-only migration.
+as a prerequisite for creating/applying the later forward-only migration. That
+mode requires `--expected-environment <immutable-release-environment>` and
+derives the exact Git `HEAD` revision from the workspace; signed evidence must
+match both. Evidence expires 24 hours after attestation, permits at most five
+minutes of future clock skew, and must be strictly ordered backup → restore →
+clone catalog → maintenance/writers stop → attestation. A stale, future,
+misordered, cross-environment or cross-revision bundle is not release-ready.
 
 The later migration must first detach the approved legacy Registry columns
 from `tickets`, `user_consent_requests` and `helpdesk_services`; it may then
@@ -322,8 +328,8 @@ actual Helpdesk session/identity tables `ui_users`, `auth_sessions`, `ui_tokens`
 tables `access_groups`, `access_group_members`, `access_group_permissions`,
 `access_group_queue_members`, `access_audit`, `ticket_queues`,
 `ticket_queue_members`, `ticket_queue_ola_targets`; plus `tickets`,
-`user_consent_requests` and the `TicketKbLink` / `ticket_kb_links` read-only
-historical projection. Do not use `alembic downgrade` for this programme:
+`user_consent_requests` and the `TicketKbLink` / `ticket_kb_links` read-only historical projection.
+Do not use `alembic downgrade` for this programme:
 rollback is application rollback plus a tested database restore.
 
 ## Связанные документы

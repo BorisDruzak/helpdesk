@@ -139,9 +139,12 @@ command acceptance, clone counts, backup hash, restore drill, approved
 maintenance, advisory-lock evidence or a trusted public-key/KMS attestation is
 absent. The evidence binds a single environment/revision to immutable backup,
 clone and catalog IDs and the reviewed FK-graph signature; the backup and
-restore/catalog links must match exactly. PR-11 is forward-only; rollback is
-an application rollback plus tested PostgreSQL restore, never an Alembic
-downgrade.
+restore/catalog links must match exactly. `--require-ready` derives the
+workspace Git `HEAD`, requires the expected immutable environment identifier,
+and rejects stale (over 24 hours), materially future (over five minutes),
+cross-context or out-of-order backup → restore → catalog → maintenance →
+attestation proof. PR-11 is forward-only; rollback is an application rollback
+plus tested PostgreSQL restore, never an Alembic downgrade.
 
 ## Non-goals
 
