@@ -116,6 +116,25 @@ The contract itself does not migrate any additional Helpdesk consumer. Such
 consumers must be cut over in a later task and may not bypass the port with a
 local Registry fallback.
 
+## PR-11 retirement boundary
+
+`scripts/registry_retirement_manifest.py` is the sole reviewed declaration of
+the future local-table retirement. It includes local `registry_*`, device
+registration, account-session and browser-pairing tables plus the approved
+local Knowledge/AI tables. It also records the required detachment of legacy
+Registry columns from tickets, consent and Helpdesk services before any table
+drop.
+
+The manifest explicitly excludes and protects `ui_users`, Helpdesk web
+sessions/tokens/RBAC, `tickets`, `user_consent_requests` and `TicketKbLink` /
+`ticket_kb_links` read-only history.
+The no-write `rehearse_registry_retirement.py` gate remains fail-closed while
+any local Registry runtime/route/writer/consumer exists, or while external
+command acceptance, clone counts, backup hash, restore drill, approved
+maintenance and advisory-lock evidence are absent. PR-11 is forward-only;
+rollback is an application rollback plus tested PostgreSQL restore, never an
+Alembic downgrade.
+
 ## Non-goals
 
 This programme does not create a new Knowledge or Registry service in this

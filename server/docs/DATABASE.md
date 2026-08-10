@@ -297,6 +297,30 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 ---
 
+## Registry retirement: PR-11 preflight only
+
+This repository does not yet contain the destructive PR-11 migration. The
+reviewed scope is declared in `scripts/registry_retirement_manifest.py`; its
+read-only gate is run with:
+
+```text
+python scripts/rehearse_registry_retirement.py --workspace . --dry-run
+```
+
+The command neither connects to PostgreSQL nor executes Alembic or DDL. A
+non-ready result is expected until every local Registry route, writer and
+consumer has been cut over. Only a release operator may use `--require-ready`
+as a prerequisite for creating/applying the later forward-only migration.
+
+The later migration must first detach the approved legacy Registry columns
+from `tickets`, `user_consent_requests` and `helpdesk_services`; it may then
+drop the declared Registry/registration/session/pairing and retired local
+content/AI targets in their reviewed reverse-FK order. It must retain
+`ui_users`, Helpdesk web sessions/tokens/RBAC, `tickets`,
+`user_consent_requests` and the `TicketKbLink` / `ticket_kb_links` read-only historical projection. Do not use `alembic downgrade`
+for this programme: rollback is application rollback plus a tested database
+restore.
+
 ## Связанные документы
 
 - [README.md](README.md) — раздел «База данных», конфигурация DATABASE_URL.

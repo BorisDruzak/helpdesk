@@ -16,6 +16,11 @@ from typing import Any, Iterable, Mapping, Sequence
 
 import tomllib
 
+try:  # Supports both ``python scripts/...`` and package imports in pytest.
+    from scripts.registry_retirement_manifest import RETIRED_KNOWLEDGE_AI_TABLES, manifest_validation_errors
+except ModuleNotFoundError:  # pragma: no cover - depends on Python's script path setup.
+    from registry_retirement_manifest import RETIRED_KNOWLEDGE_AI_TABLES, manifest_validation_errors
+
 
 WORKSPACE = Path(os.environ.get("PC_CLIENT_WORKSPACE") or Path(__file__).resolve().parent.parent)
 DEFAULT_CLASSIFICATION = WORKSPACE / "quality" / "db_table_classification.toml"
@@ -30,50 +35,7 @@ ALLOWED_CLASSIFICATIONS = {
 }
 CLEANUP_REQUIRED_CLASSIFICATIONS = {"ephemeral_test_data"}
 CASCADE_SAFE_ACTIONS = {"CASCADE", "SET NULL", "SET DEFAULT"}
-RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES = {
-    "ai_model_profiles",
-    "ai_policy_profiles",
-    "ai_providers",
-    "ai_request_audit",
-    "knowledge_ai_proposals",
-    "knowledge_applicability_rules",
-    "knowledge_article_editor_events",
-    "knowledge_article_subscriptions",
-    "knowledge_article_views",
-    "knowledge_audience_rules",
-    "knowledge_bindings",
-    "knowledge_chunk_embeddings",
-    "knowledge_chunks",
-    "knowledge_content_pack_items",
-    "knowledge_content_packs",
-    "knowledge_correction_requests",
-    "knowledge_edges",
-    "knowledge_entity_mentions",
-    "knowledge_feedback_events",
-    "knowledge_gap_findings",
-    "knowledge_graph_layouts",
-    "knowledge_index_jobs",
-    "knowledge_ingestion_jobs",
-    "knowledge_item_properties",
-    "knowledge_item_taxonomy_terms",
-    "knowledge_item_versions",
-    "knowledge_items",
-    "knowledge_nodes",
-    "knowledge_property_definitions",
-    "knowledge_quality_models",
-    "knowledge_quality_snapshots",
-    "knowledge_review_comments",
-    "knowledge_review_tasks",
-    "knowledge_rollout_policies",
-    "knowledge_search_events",
-    "knowledge_search_settings",
-    "knowledge_spaces",
-    "knowledge_taxonomy_terms",
-    "knowledge_user_bookmarks",
-    "knowledge_version_diff_cache",
-    "problem_known_error_links",
-    "ticket_knowledge_links",
-}
+RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES = RETIRED_KNOWLEDGE_AI_TABLES
 
 MIGRATION_ONLY_TABLES = {
     "knowledge_article_segments",
@@ -135,6 +97,7 @@ class SchemaAuditReport:
     ephemeral_missing_from_static_cleanup: tuple[str, ...] = ()
     dynamic_cleanup_missing_from_static: tuple[str, ...] = ()
     fk_cleanup_risks: tuple[str, ...] = ()
+    retirement_manifest_risks: tuple[str, ...] = ()
 
     @property
     def has_failures(self) -> bool:
@@ -148,6 +111,7 @@ class SchemaAuditReport:
                 self.ephemeral_missing_from_static_cleanup,
                 self.dynamic_cleanup_missing_from_static,
                 self.fk_cleanup_risks,
+                self.retirement_manifest_risks,
             )
         )
 
@@ -161,6 +125,7 @@ class SchemaAuditReport:
             "ephemeral_missing_from_static_cleanup": len(self.ephemeral_missing_from_static_cleanup),
             "dynamic_cleanup_missing_from_static": len(self.dynamic_cleanup_missing_from_static),
             "fk_cleanup_risks": len(self.fk_cleanup_risks),
+            "retirement_manifest_risks": len(self.retirement_manifest_risks),
         }
 
 
@@ -349,6 +314,7 @@ def audit_schema(
         ephemeral_missing_from_static_cleanup=tuple(sorted(ephemeral - cleanup_covered)),
         dynamic_cleanup_missing_from_static=tuple(sorted((dynamic_cleanup & actual_tables) - cleanup_covered - special)),
         fk_cleanup_risks=tuple(sorted(fk_risks)),
+        retirement_manifest_risks=manifest_validation_errors(),
     )
 
 

@@ -54,6 +54,28 @@ pg_basebackup -D "$BACKUP_DIR" -F tar -z -P -U replica_user
 2. Замерить RTO (время восстановления) и RPO (потеря данных по времени).
 3. Зафиксировать результаты и при необходимости скорректировать частоту бэкапов или WAL.
 
+## PR-11 retirement rollback gate
+
+Before a future destructive Registry/Knowledge retirement migration, create a
+fresh encrypted backup and record its SHA-256. Restore it to an isolated clone,
+run the target-table row-count/catalog/FK audit there, and record the passed
+restore drill identifier. The production maintenance plan must name its
+approved window, stopped writers and PostgreSQL advisory-lock key.
+
+Record only redacted evidence in
+`artifacts/registry-retirement-evidence.json`; never commit credentials,
+connection URLs, cookies or backup contents. The read-only preflight validates
+the shape of that evidence together with the absence of local Registry runtime:
+
+```text
+python scripts/rehearse_registry_retirement.py --workspace . --require-ready
+```
+
+If a forward migration has started or the application is unhealthy, rollback
+the application release and restore the verified backup/clone procedure. Do
+not run `alembic downgrade`: the Alembic history is linear and a downgrade can
+reverse unrelated accepted application changes.
+
 ## Связанные документы
 
 - [RUNBOOK_INCIDENT_DB_RECOVERY.md](RUNBOOK_INCIDENT_DB_RECOVERY.md) — действия при инциденте.
