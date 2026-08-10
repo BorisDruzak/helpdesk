@@ -103,6 +103,13 @@ include all of the following, stored as a redacted release artifact:
 7. A rollback decision that disables only the new operation flag; it does not
    delete Registry records or restore a potentially uncertain command locally.
 
+Disabling a per-operation external flag must not restore local command authority
+after a remote success or `registry_operation_uncertain`. The operation remains
+unavailable and fail-closed until explicit reconciliation or state-sync evidence
+approves an authority. Reconciliation must establish one authoritative terminal
+state for the saved `operation_id`; before that evidence exists, Helpdesk must
+not issue a related local command or infer that the remote command did not run.
+
 The acceptance record must name the exact operation, contract version, service
 build, test environment, timestamps, redacted evidence locations and rollback
 owner. It is a prerequisite for Task 8; this document alone grants no runtime

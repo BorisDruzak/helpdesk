@@ -46,3 +46,13 @@ def test_registry_command_contract_blocks_authority_cutover_without_security_and
         "other-account approval",
     ):
         assert command.casefold() in normalized.casefold()
+
+
+def test_disabling_an_external_operation_flag_never_restores_local_authority_after_remote_execution() -> None:
+    """Rollback leaves a remotely executed or uncertain operation fail-closed."""
+    contract = " ".join(COMMANDS_API.read_text(encoding="utf-8").split()).casefold()
+
+    assert "disabling a per-operation external flag must not restore local command authority" in contract
+    assert "after a remote success or `registry_operation_uncertain`" in contract
+    assert "operation remains unavailable and fail-closed" in contract
+    assert "explicit reconciliation or state-sync evidence approves an authority" in contract
