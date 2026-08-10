@@ -31,9 +31,12 @@
 - `server/domain_ports/registry_contracts.py` defines the frozen/redacted
   Registry read and command DTOs. `server/registry_adapter/local.py` is the
   PR-8 compatibility adapter and the only new Registry ORM/repository import
-  site; `REGISTRY_PORT_MODE=local|unavailable|external` defaults to `local`.
-  The unimplemented external mode and all unavailable operations fail closed.
-  Local commands return `registry_command_not_composed` without side effects
+  site; `server/registry_adapter/http.py` is the versioned external read client
+  and optional local-authoritative shadow wrapper. `REGISTRY_PORT_MODE=local|
+  unavailable|external` defaults to `local`; external mode requires configured
+  URL/token and otherwise fails closed. Commands remain local until PR-9
+  command/auth acceptance; uncomposed local commands return
+  `registry_command_not_composed` without side effects.
   until caller-owned idempotency is supported and accepted.
 - PR-6 retains no in-process RBAC or runtime configuration.
 - `scripts/check_domain_import_boundaries.py` is the AST guard for prohibited

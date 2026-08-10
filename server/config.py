@@ -3,6 +3,7 @@
 """
 
 import json
+import math
 import os
 import shutil
 from pathlib import Path
@@ -28,6 +29,27 @@ SERVER_PORT = 8666
 # Registry remains on its local compatibility adapter until external acceptance.
 KNOWLEDGE_PORT_MODE = (os.getenv("KNOWLEDGE_PORT_MODE", "unavailable") or "unavailable").strip().lower()
 REGISTRY_PORT_MODE = (os.getenv("REGISTRY_PORT_MODE", "local") or "local").strip().lower()
+# PR-9 read-only Registry Platform integration. The token is never emitted by
+# configuration diagnostics or RegistryPort logs. Commands remain local until
+# their separate acceptance cutover.
+REGISTRY_EXTERNAL_BASE_URL = (os.getenv("REGISTRY_EXTERNAL_BASE_URL", "") or "").strip().rstrip("/")
+REGISTRY_EXTERNAL_SERVICE_TOKEN = os.getenv("REGISTRY_EXTERNAL_SERVICE_TOKEN", "") or ""
+
+
+def _bounded_registry_external_timeout() -> float:
+    try:
+        timeout = float(os.getenv("REGISTRY_EXTERNAL_TIMEOUT_SECONDS", "2.0") or "2.0")
+    except (TypeError, ValueError):
+        return 2.0
+    if not math.isfinite(timeout):
+        return 2.0
+    return max(0.05, min(timeout, 10.0))
+
+
+REGISTRY_EXTERNAL_TIMEOUT_SECONDS = _bounded_registry_external_timeout()
+REGISTRY_EXTERNAL_SHADOW_READS_ENABLED = (
+    os.getenv("REGISTRY_EXTERNAL_SHADOW_READS_ENABLED", "false").lower() == "true"
+)
 
 # ============================================================================
 # Database Configuration

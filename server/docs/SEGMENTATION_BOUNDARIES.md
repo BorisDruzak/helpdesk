@@ -1,7 +1,7 @@
 # Helpdesk Segmentation Boundaries
 
-Status: normative segmentation boundary record, updated through the PR-8
-RegistryPort read cutover.
+Status: normative segmentation boundary record, updated through the PR-9
+Registry Platform read adapter and shadow-read gate.
 
 ## Ownership
 
@@ -64,9 +64,13 @@ Registry is a separate external domain. Until its external API is introduced,
 Helpdesk must keep Registry access behind `RegistryPort`; it must not turn
 temporary local implementation details into a cross-domain contract.
 PR-8 composes the existing Registry through `server/registry_adapter/local.py`
-by default. Its DTOs expose only opaque refs and redacted projections. The
-`external` mode remains explicitly unavailable until PR-9 acceptance, and
-local commands are not invoked until they can honor caller-provided operation
+by default. Its DTOs expose only opaque refs and redacted projections. PR-9
+adds `server/registry_adapter/http.py` as a versioned authenticated read client;
+`external` fails closed unless its URL and service token are configured, and
+`REGISTRY_EXTERNAL_SHADOW_READS_ENABLED=true` keeps local results authoritative
+while observing redacted external parity. Commands and auth remain local until
+their separate acceptance cutover; local commands are not invoked until they
+can honor caller-provided operation
 IDs with deterministic idempotency outcomes.
 
 The PR-8 Helpdesk read cutover is deliberately limited to operations represented

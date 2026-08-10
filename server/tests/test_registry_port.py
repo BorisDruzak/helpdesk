@@ -319,7 +319,7 @@ async def test_registry_container_composes_all_modes_without_external_side_effec
     assert isinstance(unavailable, UnavailableRegistryPort)
     external_status = await external.availability()
     assert external_status.status == "unavailable"
-    assert external_status.code == "registry_external_not_composed"
+    assert external_status.code == "registry_external_unconfigured"
 
 
 def test_registry_container_composes_from_repository_package_import() -> None:

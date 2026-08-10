@@ -64,6 +64,20 @@ def _read_knowledge_config_surface() -> dict[str, object]:
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
+def _read_registry_timeout(env_overrides: dict[str, str]) -> float:
+    env = os.environ.copy()
+    env.update(env_overrides)
+    result = subprocess.run(
+        [sys.executable, "-c", "import config; print(config.REGISTRY_EXTERNAL_TIMEOUT_SECONDS)"],
+        cwd=SERVER_DIR,
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return float(result.stdout.strip().splitlines()[-1])
+
+
 @pytest.mark.no_db
 def test_web_self_registration_is_disabled_by_default():
     assert _read_flags()["web_self_registration_enabled"] is False
@@ -90,3 +104,8 @@ def test_config_keeps_external_knowledge_port_mode_without_local_import_settings
         "knowledge_port_mode": "unavailable",
         "retired_settings": [],
     }
+
+
+@pytest.mark.no_db
+def test_registry_external_timeout_rejects_non_finite_values() -> None:
+    assert _read_registry_timeout({"REGISTRY_EXTERNAL_TIMEOUT_SECONDS": "NaN"}) == 2.0

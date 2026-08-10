@@ -28,6 +28,20 @@ def _configured_registry_port_mode() -> str:
     return str(config.REGISTRY_PORT_MODE or "").strip().lower()
 
 
+def _configured_registry_http_settings() -> tuple[str, str, float, bool]:
+    try:
+        import config
+    except ModuleNotFoundError:  # Package import from the repository root.
+        from server import config  # type: ignore[no-redef]
+
+    return (
+        str(config.REGISTRY_EXTERNAL_BASE_URL or ""),
+        str(config.REGISTRY_EXTERNAL_SERVICE_TOKEN or ""),
+        float(config.REGISTRY_EXTERNAL_TIMEOUT_SECONDS),
+        bool(config.REGISTRY_EXTERNAL_SHADOW_READS_ENABLED),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class DomainPortContainer:
     knowledge: KnowledgePort
@@ -73,7 +87,31 @@ class DomainPortContainer:
             elif mode == "unavailable":
                 registry = UnavailableRegistryPort()
             elif mode == "external":
-                registry = UnavailableRegistryPort(code="registry_external_not_composed")
+                try:
+                    from registry_adapter import ExternalRegistryHttpAdapter, LocalRegistryAdapter, ShadowReadRegistryPort
+                except ModuleNotFoundError as exc:
+                    if exc.name != "registry_adapter":
+                        raise
+                    from server.registry_adapter import (
+                        ExternalRegistryHttpAdapter,
+                        LocalRegistryAdapter,
+                        ShadowReadRegistryPort,
+                    )
+
+                base_url, service_token, timeout_seconds, shadow_enabled = _configured_registry_http_settings()
+                local_commands = LocalRegistryAdapter(registry_session)
+                external = ExternalRegistryHttpAdapter(
+                    base_url=base_url,
+                    service_token=service_token,
+                    timeout_seconds=timeout_seconds,
+                    command_port=local_commands,
+                )
+                if not external.configured:
+                    registry = UnavailableRegistryPort(code="registry_external_unconfigured")
+                elif shadow_enabled:
+                    registry = ShadowReadRegistryPort(authoritative=local_commands, shadow=external)
+                else:
+                    registry = external
             else:
                 raise ValueError(f"unsupported REGISTRY_PORT_MODE: {mode!r}")
 
