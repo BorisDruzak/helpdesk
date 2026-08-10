@@ -136,12 +136,15 @@ async def handle_web_requester_history(request: web.Request) -> web.Response:
         person = await RequesterIdentityResolver(session).resolve_person_for_web_user(auth_context.actor_id)
         if person is None:
             return _error("requester profile not found", status=403, error_code="REQUESTER_IDENTITY_REQUIRED")
+        requester_ref = RequesterIdentityResolver.requester_external_ref(person)
+        if requester_ref is None:
+            return _error("requester profile not found", status=403, error_code="REQUESTER_IDENTITY_REQUIRED")
         payload = await CustomerHistoryProjectionService(session).history_for_person(
-            person.person_id,
+            requester_ref,
             actor_context={"actor_id": auth_context.actor_id, "actor_role": "requester"},
             registry_actor=_registry_actor_from_verified_auth(
                 auth_context,
-                requester_ref=person.person_id,
+                requester_ref=requester_ref,
             ),
             limit=_limit(request, default=DEFAULT_HISTORY_LIMIT, maximum=MAX_HISTORY_LIMIT),
             **_window_filters(request),

@@ -19,6 +19,7 @@ from domain_ports.registry_contracts import (
     RegistryUnavailable,
     RequesterHistoryProjection,
 )
+from tickets.ticket_context import requester_reference_snapshot_from_record
 
 from .models import CustomerHistoryEvent, isoformat_utc
 from tickets.knowledge_provider import project_legacy_knowledge_attempts
@@ -115,6 +116,12 @@ def _context_display_name(context: dict[str, Any], name: str) -> str | None:
 
 def _relationship_for_person(ticket: Ticket, person_id: str | None) -> str | None:
     if not person_id:
+        return None
+    try:
+        requester_ref, _snapshot = requester_reference_snapshot_from_record(ticket)
+    except (TypeError, ValueError):
+        return None
+    if requester_ref is not None:
         return None
     context = _ticket_context(ticket)
     creator_id = _context_person_id(context, "creator") or getattr(ticket, "requester_person_id", None)

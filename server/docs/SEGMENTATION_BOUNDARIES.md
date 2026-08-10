@@ -120,8 +120,14 @@ Customer History is the first rich consumer cut over: it accepts only a typed
 passes it to `RegistryPort.requester_history()`. Requester actors are checked
 against the server-resolved opaque ref before the call. Its `source_states`
 expose typed `available`, `unavailable`, `not_found` or `invalid` Registry
-state; it never reads local binding/session ORM rows as a fallback. Remaining
-rich consumers must be cut over separately and may not bypass the port.
+state; it never reads local binding/session ORM rows as a fallback.
+Helpdesk ticket-history correlation is neutral-reference-first: a valid
+requester snapshot pair matches only its exact opaque `requester_external_ref`.
+Malformed or partial neutral data matches neither that path nor legacy data.
+Only fully legacy rows may use their retained `requester_person_id`, creator or
+affected aliases; `Ticket.requester_id` is never a Registry/history alias.
+Remaining rich consumers must be cut over separately and may not bypass the
+port.
 
 ## PR-11 retirement boundary
 

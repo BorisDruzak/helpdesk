@@ -5,7 +5,7 @@ from typing import Any
 from domain_ports.registry import RegistryPort
 from domain_ports.registry_contracts import RegistryReadActor
 
-from .projection_service import CustomerHistoryProjectionService, ticket_history_person_ids
+from .projection_service import CustomerHistoryProjectionService, ticket_history_requester_refs
 
 
 def _context_event_dedup_key(event: dict[str, Any]) -> tuple[str | None, str, str, str, str, str, str]:
@@ -59,9 +59,9 @@ class CustomerHistoryContextBuilder:
         if ticket is not None and len(events) < bounded_limit:
             current_ref = history.get("ticket_ref")
             seen = {_context_event_dedup_key(event) for event in events if isinstance(event, dict)}
-            for person_id in ticket_history_person_ids(ticket):
+            for requester_ref in ticket_history_requester_refs(ticket):
                 related = await service.history_for_person(
-                    person_id,
+                    requester_ref,
                     actor_context=actor_context,
                     registry_actor=registry_actor,
                     limit=bounded_limit,

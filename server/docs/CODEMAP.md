@@ -68,6 +68,12 @@
   requester history is scoped to the server-resolved requester ref. There is no
   direct `DeviceUserBinding` or `DeviceAccountSession` read/fallback in this
   Helpdesk consumer.
+- Customer History correlation is neutral-reference-first: valid snapshot pairs
+  match exactly on `tickets.requester_external_ref`; malformed neutral fields
+  fail closed, and legacy `requester_person_id`/creator/affected aliases are
+  read-only only for rows without neutral fields. `tickets.requester_id` is not
+  a person-history alias. Requester handlers compose the subject exclusively
+  from verified middleware identity.
 - `server/web_api/support_handlers.py` and
   `server/web_api/dto/support.py::SupportTicketRegistrySnapshot` no longer
   query/represent uncontracted current Registry repositories.

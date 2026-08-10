@@ -26,7 +26,13 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _seed_history_ticket(test_engine, *, login: str = "history-requester@example.test") -> tuple[str, str]:
+async def _seed_history_ticket(
+    test_engine,
+    *,
+    login: str = "history-requester@example.test",
+    device_id: str = "history-device",
+    ticket_code: str = "T-HIST-001",
+) -> tuple[str, str]:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     person_id = str(uuid.uuid4())
     ticket_id = str(uuid.uuid4())
@@ -51,6 +57,16 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
                 source="test",
             )
         )
+        session.add(
+            RegistryPersonIdentity(
+                person_id=person_id,
+                provider="ui_login",
+                identifier=login,
+                normalized_identifier=login,
+                verified=True,
+                source="test",
+            )
+        )
         ticket_context = {
             "schema": "ticket_context_v1",
             "created_at": now.isoformat(),
@@ -59,9 +75,9 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
             "affected": {"person_id": person_id, "display_name": "History Requester"},
             "on_behalf": {"enabled": False, "reason": None},
             "requester_context": {"profile": {"display_name": "History Requester"}},
-            "target_device": {"device_id": "history-device", "agent_status": "offline", "hostname": "HISTORY-PC"},
+            "target_device": {"device_id": device_id, "agent_status": "offline", "hostname": "HISTORY-PC"},
             "diagnostic_target": {
-                "device_id": "history-device",
+                "device_id": device_id,
                 "source": "creator_primary_agent",
                 "agent_status": "offline",
                 "hostname": "HISTORY-PC",
@@ -73,8 +89,8 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
         }
         ticket = Ticket(
             ticket_id=ticket_id,
-            ticket_code="T-HIST-001",
-            device_id="history-device",
+            ticket_code=ticket_code,
+            device_id=device_id,
             title="History ticket",
             description="History description",
             status="in_progress",
@@ -109,7 +125,7 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
         session.add(ticket)
         session.add(
             Device(
-                device_id="history-device",
+                device_id=device_id,
                 protocol_version="ws_ticket_v3",
                 agent_version="test",
                 hostname="HISTORY-PC",
@@ -120,7 +136,7 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
         await session.flush()
         session.add(
             DeviceUserBinding(
-                device_id="history-device",
+                device_id=device_id,
                 person_id=person_id,
                 relationship_type="primary_user",
                 status="active",
@@ -132,7 +148,7 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
             [
                 TicketEvent(
                     ticket_id=ticket_id,
-                    device_id="history-device",
+                    device_id=device_id,
                     agent_seq=None,
                     event_type="ticket_context_resolved",
                     payload={
@@ -146,7 +162,7 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
                 ),
                 TicketEvent(
                     ticket_id=ticket_id,
-                    device_id="history-device",
+                    device_id=device_id,
                     agent_seq=None,
                     event_type="chat_message",
                     payload={"sender_role": "support", "visibility": "internal", "text": "Internal support note"},
@@ -154,7 +170,7 @@ async def _seed_history_ticket(test_engine, *, login: str = "history-requester@e
                 ),
                 TicketEvent(
                     ticket_id=ticket_id,
-                    device_id="history-device",
+                    device_id=device_id,
                     agent_seq=None,
                     event_type="chat_message",
                     payload={"sender_role": "user", "visibility": "public", "text": "Requester public message"},
@@ -208,6 +224,48 @@ async def test_support_and_requester_history_use_role_specific_projection(test_c
     assert "Internal support note" not in str(requester_payload)
     assert "kb-restricted" not in str(requester_payload)
     assert "person_id" not in str(requester_payload["data"]["events"])
+
+
+@pytest.mark.asyncio
+async def test_requester_history_ignores_user_supplied_history_subject(test_client, test_engine):
+    own_ticket_id, _own_person_id = await _seed_history_ticket(
+        test_engine,
+        login="history-owned@example.test",
+    )
+    other_ticket_id, other_person_id = await _seed_history_ticket(
+        test_engine,
+        login="history-other@example.test",
+        device_id=str(uuid.uuid4()),
+        ticket_code="T-HIST-002",
+    )
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        own_ticket = await session.get(Ticket, own_ticket_id)
+        other_ticket = await session.get(Ticket, other_ticket_id)
+        assert own_ticket is not None and other_ticket is not None
+        own_ticket.requester_external_ref = str(_own_person_id)
+        own_ticket.requester_snapshot_json = _neutral_requester_snapshot(str(_own_person_id))
+        other_ticket.requester_external_ref = str(other_person_id)
+        other_ticket.requester_snapshot_json = _neutral_requester_snapshot(str(other_person_id))
+        await session.commit()
+
+    response = await test_client.get(
+        (
+            "/api/web/requester/history"
+            f"?person_id={other_person_id}&requester_external_ref={other_person_id}"
+        ),
+        headers=_headers(f"{TEST_UI_USER_PREFIX}history-owned@example.test"),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    ticket_refs = {
+        event.get("ticket_ref")
+        for event in payload["data"]["events"]
+        if event.get("source") == "ticket" and event.get("event_type") == "ticket_created"
+    }
+    assert own_ticket.ticket_code in ticket_refs
+    assert other_ticket.ticket_code not in ticket_refs
 
 
 @pytest.mark.asyncio
@@ -285,6 +343,170 @@ async def test_on_behalf_ticket_appears_for_creator_and_affected_with_relationsh
     assert affected_ticket["payload"]["person_history_relationship"] == "affected"
     assert creator_ticket["payload"]["created_on_behalf"] is True
     assert affected_ticket["payload"]["created_on_behalf"] is True
+
+
+def _neutral_requester_snapshot(external_ref: str) -> dict[str, object]:
+    return {
+        "person": {"external_id": external_ref},
+        "display_name": "Neutral requester",
+    }
+
+
+@pytest.mark.asyncio
+async def test_person_history_matches_only_exact_valid_neutral_ref_or_legacy_person_scope(test_engine):
+    """Opaque refs are exact; requester_id is never a person-history alias."""
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    subject_ref = "Requester/Exact-Case"
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    async with session_maker() as session:
+        session.add_all(
+            [
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-N-EXACT",
+                    title="exact neutral",
+                    description="exact neutral",
+                    status="new",
+                    requester_id="unrelated-login",
+                    requester_external_ref=subject_ref,
+                    requester_snapshot_json=_neutral_requester_snapshot(subject_ref),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-N-CASE",
+                    title="case collision",
+                    description="case collision",
+                    status="new",
+                    requester_id="unrelated-login",
+                    requester_external_ref=subject_ref.lower(),
+                    requester_snapshot_json=_neutral_requester_snapshot(subject_ref.lower()),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-N-TRIM",
+                    title="trim collision",
+                    description="trim collision",
+                    status="new",
+                    requester_id="unrelated-login",
+                    requester_external_ref=f" {subject_ref}",
+                    requester_snapshot_json=_neutral_requester_snapshot(f" {subject_ref}"),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-RID-COLL",
+                    title="requester id collision",
+                    description="requester id collision",
+                    status="new",
+                    requester_id=subject_ref,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-N-BAD",
+                    title="malformed neutral",
+                    description="malformed neutral",
+                    status="new",
+                    requester_id="unrelated-login",
+                    requester_external_ref=subject_ref,
+                    requester_snapshot_json=_neutral_requester_snapshot("different-requester"),
+                    requester_person_id=subject_ref,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-L-PERSON",
+                    title="legacy person",
+                    description="legacy person",
+                    status="new",
+                    requester_id="unrelated-login",
+                    requester_person_id=subject_ref,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ]
+        )
+        await session.commit()
+
+        history = await CustomerHistoryProjectionService(session).history_for_person(
+            subject_ref,
+            actor_context={"actor_id": "support-test", "actor_role": "support"},
+            limit=50,
+        )
+
+    ticket_refs = {
+        event["ticket_ref"]
+        for event in history["events"]
+        if event["source"] == "ticket" and event["event_type"] == "ticket_created"
+    }
+    assert ticket_refs == {"T-HIST-N-EXACT", "T-HIST-L-PERSON"}
+
+
+@pytest.mark.asyncio
+async def test_person_history_uses_creator_and_affected_aliases_only_for_legacy_rows(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    alias_ref = "legacy-history-alias"
+    neutral_ref = "neutral-history-ref"
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    alias_context = {
+        "ticket_context": {
+            "created_on_behalf": True,
+            "creator": {"person_id": alias_ref, "display_name": "Legacy creator"},
+            "affected": {"person_id": alias_ref, "display_name": "Legacy affected"},
+        }
+    }
+    async with session_maker() as session:
+        session.add_all(
+            [
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-L-ALIAS",
+                    title="legacy aliases",
+                    description="legacy aliases",
+                    status="new",
+                    requester_id="legacy-login",
+                    requester_person_id="other-legacy-person",
+                    custom_fields=alias_context,
+                    created_at=now,
+                    updated_at=now,
+                ),
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-N-ALIAS",
+                    title="neutral aliases must not match",
+                    description="neutral aliases must not match",
+                    status="new",
+                    requester_id="neutral-login",
+                    requester_external_ref=neutral_ref,
+                    requester_snapshot_json=_neutral_requester_snapshot(neutral_ref),
+                    custom_fields=alias_context,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ]
+        )
+        await session.commit()
+        history = await CustomerHistoryProjectionService(session).history_for_person(
+            alias_ref,
+            actor_context={"actor_id": "support-test", "actor_role": "support"},
+            limit=50,
+        )
+
+    created = [
+        event
+        for event in history["events"]
+        if event["source"] == "ticket" and event["event_type"] == "ticket_created"
+    ]
+    assert [event["ticket_ref"] for event in created] == ["T-HIST-L-ALIAS"]
+    assert created[0]["payload"]["person_history_relationship"] == "creator_and_affected"
 
 
 @pytest.mark.asyncio

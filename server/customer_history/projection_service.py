@@ -3,12 +3,17 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import and_, desc, or_, select
 
 from app.db.models import Ticket
 from domain_ports.container import DomainPortContainer
 from domain_ports.registry import RegistryPort
 from domain_ports.registry_contracts import PersonRef, RegistryReadActor
+from tickets.ticket_context import (
+    requester_legacy_scope_clause,
+    requester_neutral_scope_clause,
+    requester_reference_snapshot_from_record,
+)
 
 from .models import CustomerHistoryEvent
 from .redaction import redact_event_for_role
@@ -57,11 +62,12 @@ def _context_person_id(context: dict[str, Any], key: str) -> str | None:
     return str(value) if value else None
 
 
-def ticket_history_person_ids(ticket: Ticket) -> list[str]:
+def _legacy_ticket_history_person_ids(ticket: Ticket) -> list[str]:
+    """Return historical Registry aliases only from an unambiguously legacy row."""
+
     context = _ticket_context(ticket)
     ids = [
         getattr(ticket, "requester_person_id", None),
-        getattr(ticket, "requester_id", None),
         _context_person_id(context, "creator"),
         _context_person_id(context, "affected"),
     ]
@@ -73,8 +79,26 @@ def ticket_history_person_ids(ticket: Ticket) -> list[str]:
     return result
 
 
-def _ticket_mentions_person(ticket: Ticket, person_id: str) -> bool:
-    return str(person_id) in ticket_history_person_ids(ticket)
+def ticket_history_requester_refs(ticket: Ticket) -> list[str]:
+    """Return the opaque history subject(s) valid for a ticket.
+
+    A neutral requester pair owns the row completely.  It is correlated only
+    by its exact external reference; malformed neutral data intentionally
+    matches neither it nor legacy aliases.  Creator/affected aliases are
+    retained solely for rows that contain no neutral fields at all.
+    """
+
+    try:
+        requester_ref, _snapshot = requester_reference_snapshot_from_record(ticket)
+    except (TypeError, ValueError):
+        return []
+    if requester_ref is not None:
+        return [requester_ref.external_id]
+    return _legacy_ticket_history_person_ids(ticket)
+
+
+def _ticket_mentions_requester_ref(ticket: Ticket, requester_ref: str) -> bool:
+    return str(requester_ref) in ticket_history_requester_refs(ticket)
 
 
 def _parse_datetime(value: Any) -> datetime | None:
@@ -156,12 +180,31 @@ class CustomerHistoryProjectionService:
             deduped.setdefault(event.event_id, event)
         return sorted(deduped.values(), key=_sort_key)
 
-    async def _tickets_for_person(self, person_id: str, *, limit: int = 100) -> list[Ticket]:
-        person_text = str(person_id)
+    async def _tickets_for_person(self, requester_ref: str, *, limit: int = 100) -> list[Ticket]:
+        """Find tickets by exact neutral reference, then legacy person history.
+
+        ``Ticket.requester_id`` deliberately never appears here: it is a
+        Helpdesk login/creator field, not a Registry person reference.
+        """
+
+        requester_text = str(requester_ref)
+        neutral_scope = requester_neutral_scope_clause(Ticket)
+        legacy_scope = requester_legacy_scope_clause(Ticket)
         direct_rows = (
             await self.session.execute(
                 select(Ticket)
-                .where(or_(Ticket.requester_person_id == person_text, Ticket.requester_id == person_text))
+                .where(
+                    or_(
+                        and_(
+                            neutral_scope,
+                            Ticket.requester_external_ref == requester_text,
+                        ),
+                        and_(
+                            legacy_scope,
+                            Ticket.requester_person_id == requester_text,
+                        ),
+                    )
+                )
                 .order_by(desc(Ticket.created_at))
                 .limit(max(1, min(int(limit or 100), 300)))
             )
@@ -177,7 +220,10 @@ class CustomerHistoryProjectionService:
             )
         ).scalars().all()
         for ticket in scanned:
-            if ticket.ticket_id not in by_id and _ticket_mentions_person(ticket, person_text):
+            if (
+                ticket.ticket_id not in by_id
+                and _ticket_mentions_requester_ref(ticket, requester_text)
+            ):
                 by_id[ticket.ticket_id] = ticket
             if len(by_id) >= limit:
                 break
@@ -251,12 +297,13 @@ class CustomerHistoryProjectionService:
         role = role or _actor_role(actor_context)
         bounded_limit = max(1, min(int(limit or 50), 200))
         since_at = _window_start(since=since, window_days=window_days)
-        rows = await self._tickets_for_person(str(person_id), limit=100)
+        requester_ref = str(person_id)
+        rows = await self._tickets_for_person(requester_ref, limit=100)
         events: list[CustomerHistoryEvent] = []
         for ticket in rows:
-            events.extend(await self._events_for_ticket(ticket, limit=20, person_id=str(person_id)))
+            events.extend(await self._events_for_ticket(ticket, limit=20, person_id=requester_ref))
         registry_result = await RegistryHistorySource(registry_port=self.registry_port).events_for_person(
-            PersonRef(external_id=str(person_id)),
+            PersonRef(external_id=requester_ref),
             actor=registry_actor,
             limit=20,
         )
@@ -272,7 +319,7 @@ class CustomerHistoryProjectionService:
             "source_states": {"registry": registry_result.source_state},
         }
         if role in {"support", "admin"}:
-            payload["person_id"] = str(person_id)
+            payload["person_id"] = requester_ref
         return payload
 
     async def search_history(
