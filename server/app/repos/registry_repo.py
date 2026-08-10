@@ -27,6 +27,12 @@ def _clean(value: Any) -> str | None:
     return text or None
 
 
+def _escape_like_literal(value: str, *, escape: str = "\\") -> str:
+    """Quote SQL LIKE metacharacters in user-provided directory input."""
+
+    return value.replace(escape, escape * 2).replace("%", f"{escape}%").replace("_", f"{escape}_")
+
+
 def _display_location(building: str, floor: str | None, room: str | None) -> str:
     parts = [building]
     if floor:
@@ -278,9 +284,15 @@ class RegistryRepo:
         clean_query = _clean(query)
         if clean_query is None or limit < 1:
             return []
+        escaped_query = _escape_like_literal(clean_query.lower())
         result = await self.session.execute(
             select(RegistryPerson)
-            .where(func.lower(RegistryPerson.display_name).like(f"%{clean_query.lower()}%"))
+            .where(
+                func.lower(RegistryPerson.display_name).like(
+                    f"%{escaped_query}%",
+                    escape="\\",
+                )
+            )
             .order_by(RegistryPerson.updated_at.desc())
             .limit(limit)
         )

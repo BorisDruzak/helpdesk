@@ -9,7 +9,7 @@ import re
 from types import SimpleNamespace
 from typing import Any, AsyncIterator
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 try:
     from domain_ports.registry import RegistryAvailability
@@ -132,8 +132,10 @@ class LocalRegistryAdapter:
 
         if isinstance(self._session, AsyncSession):
             bind = self._session.bind
-            if bind is None:
-                raise RuntimeError("caller-owned registry session has no async bind")
+            if isinstance(bind, AsyncConnection):
+                bind = bind.engine
+            if not isinstance(bind, AsyncEngine):
+                raise RuntimeError("caller-owned registry session has no independent async engine")
             async with AsyncSession(bind=bind, expire_on_commit=False, autoflush=False) as session:
                 yield session
             return
