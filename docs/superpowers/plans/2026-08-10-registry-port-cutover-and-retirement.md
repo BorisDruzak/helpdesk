@@ -25,7 +25,7 @@
 
 - Create: server/app/db/migrations/versions/<next>_requester_external_refs.py
 - Modify: server/domain_ports/registry.py, server/app/db/models.py
-- Modify: server/app/repos/tickets_repo.py, server/app/repos/user_consent_repo.py
+- Modify: server/app/repos/ticket_events_repo.py, server/app/repos/user_consent_repo.py
 - Test: server/tests/test_requester_reference_snapshot.py
 - Test: server/tests/test_migration_schema_contract.py
 
@@ -35,9 +35,9 @@
 
 ~~~python
 def test_snapshot_contains_only_safe_opaque_data() -> None:
-    snapshot = RequesterSnapshot(person=PersonRef(external_id="person:p-1"), display_name="Иван")
+    snapshot = RequesterSnapshot(person=PersonRef(external_id="registry-ref-opaque-1"), display_name="Иван")
     assert snapshot.model_dump(mode="json") == {
-        "person": {"external_id": "person:p-1"},
+        "person": {"external_id": "registry-ref-opaque-1"},
         "display_name": "Иван",
     }
     assert "email" not in snapshot.model_dump(mode="json")
@@ -58,7 +58,7 @@ Use frozen Pydantic models; reject local ORM payloads, secrets and mutable profi
 Run: python -m pytest server/tests/test_requester_reference_snapshot.py server/tests/test_migration_schema_contract.py -q --tb=short
 
 ~~~powershell
-git add server/domain_ports/registry.py server/app/db/models.py server/app/db/migrations/versions server/app/repos/tickets_repo.py server/app/repos/user_consent_repo.py server/tests/test_requester_reference_snapshot.py server/tests/test_migration_schema_contract.py
+git add server/domain_ports/registry.py server/app/db/models.py server/app/db/migrations/versions server/app/repos/ticket_events_repo.py server/app/repos/user_consent_repo.py server/tests/test_requester_reference_snapshot.py server/tests/test_migration_schema_contract.py
 git commit -m "server: add neutral requester snapshots"
 ~~~
 
@@ -79,16 +79,16 @@ git commit -m "server: add neutral requester snapshots"
 ~~~python
 async def test_ticket_create_persists_server_verified_snapshot(test_engine):
     ticket = await create_ticket_with_confirmed_binding(test_engine)
-    assert ticket.requester_external_ref == "person:p-1"
+    assert ticket.requester_external_ref == "registry-ref-opaque-1"
     assert ticket.requester_snapshot_json == {
-        "person": {"external_id": "person:p-1"},
+        "person": {"external_id": "registry-ref-opaque-1"},
         "display_name": "Иван",
     }
 
 async def test_consent_authorizes_matching_external_ref(test_engine):
-    consent = await create_consent_for_external_ref(test_engine, "person:p-1")
+    consent = await create_consent_for_external_ref(test_engine, "registry-ref-opaque-1")
     assert await consent_service.get_for_requester(
-        consent.consent_id, requester_external_ref="person:p-1"
+        consent.consent_id, requester_external_ref="registry-ref-opaque-1"
     )
 ~~~
 
@@ -127,14 +127,14 @@ git commit -m "server: persist requester references independently"
 ~~~python
 async def test_local_adapter_returns_opaque_binding(session):
     result = await LocalRegistryAdapter(session).active_binding(
-        DeviceRef(external_id="device:d-1")
+        DeviceRef(external_id="registry-ref-opaque-device-1")
     )
-    assert result.binding.external_id.startswith("binding:")
+    assert result.binding.external_id == "registry-ref-opaque-binding-1"
     assert "person_id" not in result.model_dump(mode="json")
 
 async def test_unavailable_command_fails_closed():
     result = await UnavailableRegistryPort().request_registration(
-        RegistrationRequest(device=DeviceRef(external_id="device:d-1"))
+        RegistrationRequest(device=DeviceRef(external_id="registry-ref-opaque-device-1"))
     )
     assert result.code == "registry_unavailable"
 ~~~
@@ -217,12 +217,12 @@ git commit -m "server: route Helpdesk reads through RegistryPort"
 
 ~~~python
 async def test_http_adapter_returns_redacted_snapshot(mock_server):
-    result = await adapter.requester_snapshot(PersonRef(external_id="person:p-1"))
+    result = await adapter.requester_snapshot(PersonRef(external_id="registry-ref-opaque-1"))
     assert result.display_name == "Иван"
     assert "email" not in result.model_dump(mode="json")
 
 async def test_shadow_mismatch_never_changes_authorization():
-    result = await shadow_port.active_binding(DeviceRef(external_id="device:d-1"))
+    result = await shadow_port.active_binding(DeviceRef(external_id="registry-ref-opaque-device-1"))
     assert result.source == "local_authoritative"
 ~~~
 
