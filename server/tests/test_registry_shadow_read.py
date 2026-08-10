@@ -66,7 +66,6 @@ async def test_shadow_mismatch_never_changes_authorization() -> None:
         authoritative=_LocalPort(),
         shadow=_ExternalPort(),
         mismatch_reporter=evidence.append,
-        correlation_id_factory=lambda: "registry-correlation-2",
     )
 
     result = await shadow_port.active_binding(DeviceRef(external_id="registry-ref-opaque-device-1"))
@@ -78,7 +77,6 @@ async def test_shadow_mismatch_never_changes_authorization() -> None:
             "operation": "active_binding",
             "outcome": "mismatch",
             "fields": ("relationship_type",),
-            "correlation_id": "registry-correlation-2",
         }
     ]
 

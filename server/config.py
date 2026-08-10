@@ -47,9 +47,6 @@ def _bounded_registry_external_timeout() -> float:
 
 
 REGISTRY_EXTERNAL_TIMEOUT_SECONDS = _bounded_registry_external_timeout()
-REGISTRY_EXTERNAL_SHADOW_READS_ENABLED = (
-    os.getenv("REGISTRY_EXTERNAL_SHADOW_READS_ENABLED", "false").lower() == "true"
-)
 
 # ============================================================================
 # Database Configuration

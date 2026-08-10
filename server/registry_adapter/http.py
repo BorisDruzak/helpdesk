@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 import logging
 from typing import Any, TypeVar
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 from uuid import uuid4
 
 import aiohttp
@@ -28,6 +28,8 @@ try:
         DirectorySearchOutcome,
         DirectorySearchProjection,
         DirectorySearchText,
+        MAX_DIRECTORY_RESULTS,
+        MAX_REQUESTER_HISTORY_EVENTS,
         PersonRef,
         RegistrationApprovalRequest,
         RegistrationRequest,
@@ -61,6 +63,8 @@ except ModuleNotFoundError as exc:
         DirectorySearchOutcome,
         DirectorySearchProjection,
         DirectorySearchText,
+        MAX_DIRECTORY_RESULTS,
+        MAX_REQUESTER_HISTORY_EVENTS,
         PersonRef,
         RegistrationApprovalRequest,
         RegistrationRequest,
@@ -125,16 +129,34 @@ class ExternalRegistryHttpAdapter:
         timeout_seconds: float,
         command_port: RegistryPort | None = None,
         correlation_id_factory: Callable[[], str] = _new_correlation_id,
+        allow_insecure_test_url: bool = False,
     ) -> None:
         self._base_url = str(base_url or "").rstrip("/")
         self._service_token = str(service_token or "")
         self._timeout_seconds = max(0.05, min(float(timeout_seconds), 10.0))
         self._command_port = command_port
         self._correlation_id_factory = correlation_id_factory
+        self._allow_insecure_test_url = bool(allow_insecure_test_url)
 
     @property
     def configured(self) -> bool:
-        return bool(self._base_url and self._service_token)
+        return bool(self._service_token and self._is_allowed_base_url())
+
+    def _is_allowed_base_url(self) -> bool:
+        parsed = urlsplit(self._base_url)
+        if not parsed.netloc:
+            return False
+        if parsed.scheme == "https":
+            return True
+        # aiohttp's in-process TestServer is HTTP-only.  This escape hatch is
+        # constructor-only, deliberately absent from environment configuration.
+        return self._allow_insecure_test_url and parsed.scheme == "http"
+
+    @staticmethod
+    def _bounded_limit(limit: int, *, maximum: int) -> int | None:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            return None
+        return min(limit, maximum)
 
     def _headers(self, correlation_id: str) -> dict[str, str]:
         return {
@@ -169,7 +191,12 @@ class ExternalRegistryHttpAdapter:
                     envelope = await response.json(content_type=None)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
             return _UNAVAILABLE
-        if not isinstance(envelope, Mapping) or set(envelope) - {"data", "correlation_id"}:
+        if (
+            not isinstance(envelope, Mapping)
+            or set(envelope) != {"data", "correlation_id"}
+            or not isinstance(envelope.get("correlation_id"), str)
+            or envelope["correlation_id"] != correlation_id
+        ):
             return RegistryInvalidProjection()
         data = envelope.get("data")
         return dict(data) if isinstance(data, Mapping) else RegistryInvalidProjection()
@@ -262,7 +289,10 @@ class ExternalRegistryHttpAdapter:
     async def search_people(
         self, query: DirectorySearchText, *, actor: RegistryReadActor, limit: int = 20
     ) -> DirectorySearchOutcome:
-        params: dict[str, str | int] = {"q": query, "limit": limit}
+        bounded_limit = self._bounded_limit(limit, maximum=MAX_DIRECTORY_RESULTS)
+        if bounded_limit is None:
+            return RegistryInvalidProjection()
+        params: dict[str, str | int] = {"q": query, "limit": bounded_limit}
         params.update(self._actor_params(actor))
         return self._parse(
             await self._get("/v1/helpdesk/directory/people", params=params),
@@ -282,7 +312,10 @@ class ExternalRegistryHttpAdapter:
     async def requester_history(
         self, person: PersonRef, *, actor: RegistryReadActor, limit: int = 50
     ) -> RequesterHistoryOutcome:
-        params: dict[str, str | int] = {"limit": limit}
+        bounded_limit = self._bounded_limit(limit, maximum=MAX_REQUESTER_HISTORY_EVENTS)
+        if bounded_limit is None:
+            return RegistryInvalidProjection()
+        params: dict[str, str | int] = {"limit": bounded_limit}
         params.update(self._actor_params(actor))
         return self._parse(
             await self._get(
@@ -323,22 +356,19 @@ class ShadowReadRegistryPort:
         authoritative: RegistryPort,
         shadow: RegistryPort,
         mismatch_reporter: Callable[[dict[str, object]], None] | None = None,
-        correlation_id_factory: Callable[[], str] = _new_correlation_id,
     ) -> None:
         self._authoritative = authoritative
         self._shadow = shadow
         self._mismatch_reporter = mismatch_reporter or self._log_mismatch
-        self._correlation_id_factory = correlation_id_factory
         self._tasks: set[asyncio.Task[None]] = set()
 
     @staticmethod
     def _log_mismatch(evidence: dict[str, object]) -> None:
         logger.warning(
-            "registry_port_shadow_mismatch operation=%s outcome=%s fields=%s correlation_id=%s",
+            "registry_port_shadow_mismatch operation=%s outcome=%s fields=%s",
             evidence["operation"],
             evidence["outcome"],
             evidence["fields"],
-            evidence["correlation_id"],
         )
 
     @staticmethod
@@ -370,8 +400,6 @@ class ShadowReadRegistryPort:
         )
 
     def _schedule(self, operation: str, local: object, external: Awaitable[object]) -> None:
-        correlation_id = self._correlation_id_factory()
-
         async def compare() -> None:
             try:
                 external_result = await external
@@ -382,14 +410,12 @@ class ShadowReadRegistryPort:
                             "operation": operation,
                             "outcome": "mismatch",
                             "fields": fields,
-                            "correlation_id": correlation_id,
                         }
                     )
             except Exception:
                 logger.warning(
-                    "registry_port_shadow_compare_failed operation=%s correlation_id=%s",
+                    "registry_port_shadow_compare_failed operation=%s",
                     operation,
-                    correlation_id,
                 )
 
         task = asyncio.create_task(compare())

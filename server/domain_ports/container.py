@@ -28,7 +28,7 @@ def _configured_registry_port_mode() -> str:
     return str(config.REGISTRY_PORT_MODE or "").strip().lower()
 
 
-def _configured_registry_http_settings() -> tuple[str, str, float, bool]:
+def _configured_registry_http_settings() -> tuple[str, str, float]:
     try:
         import config
     except ModuleNotFoundError:  # Package import from the repository root.
@@ -38,7 +38,6 @@ def _configured_registry_http_settings() -> tuple[str, str, float, bool]:
         str(config.REGISTRY_EXTERNAL_BASE_URL or ""),
         str(config.REGISTRY_EXTERNAL_SERVICE_TOKEN or ""),
         float(config.REGISTRY_EXTERNAL_TIMEOUT_SECONDS),
-        bool(config.REGISTRY_EXTERNAL_SHADOW_READS_ENABLED),
     )
 
 
@@ -98,7 +97,7 @@ class DomainPortContainer:
                         ShadowReadRegistryPort,
                     )
 
-                base_url, service_token, timeout_seconds, shadow_enabled = _configured_registry_http_settings()
+                base_url, service_token, timeout_seconds = _configured_registry_http_settings()
                 local_commands = LocalRegistryAdapter(registry_session)
                 external = ExternalRegistryHttpAdapter(
                     base_url=base_url,
@@ -108,10 +107,8 @@ class DomainPortContainer:
                 )
                 if not external.configured:
                     registry = UnavailableRegistryPort(code="registry_external_unconfigured")
-                elif shadow_enabled:
-                    registry = ShadowReadRegistryPort(authoritative=local_commands, shadow=external)
                 else:
-                    registry = external
+                    registry = ShadowReadRegistryPort(authoritative=local_commands, shadow=external)
             else:
                 raise ValueError(f"unsupported REGISTRY_PORT_MODE: {mode!r}")
 

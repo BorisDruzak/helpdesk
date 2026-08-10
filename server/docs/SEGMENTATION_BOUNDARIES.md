@@ -66,9 +66,9 @@ temporary local implementation details into a cross-domain contract.
 PR-8 composes the existing Registry through `server/registry_adapter/local.py`
 by default. Its DTOs expose only opaque refs and redacted projections. PR-9
 adds `server/registry_adapter/http.py` as a versioned authenticated read client;
-`external` fails closed unless its URL and service token are configured, and
-`REGISTRY_EXTERNAL_SHADOW_READS_ENABLED=true` keeps local results authoritative
-while observing redacted external parity. Commands and auth remain local until
+`external` fails closed unless its HTTPS URL and service token are configured,
+while local reads remain authoritative and Helpdesk observes redacted external
+parity. Commands and auth remain local until
 their separate acceptance cutover; local commands are not invoked until they
 can honor caller-provided operation
 IDs with deterministic idempotency outcomes.

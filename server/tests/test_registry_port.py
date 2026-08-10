@@ -24,7 +24,7 @@ from domain_ports import (
     RegistryUnavailable,
     UnavailableRegistryPort,
 )
-from registry_adapter import LocalRegistryAdapter
+from registry_adapter import LocalRegistryAdapter, ShadowReadRegistryPort
 
 
 pytestmark = pytest.mark.no_db
@@ -320,6 +320,20 @@ async def test_registry_container_composes_all_modes_without_external_side_effec
     external_status = await external.availability()
     assert external_status.status == "unavailable"
     assert external_status.code == "registry_external_unconfigured"
+
+
+def test_registry_container_external_mode_always_keeps_local_reads_authoritative(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("config.REGISTRY_EXTERNAL_BASE_URL", "https://registry.example.test")
+    monkeypatch.setattr("config.REGISTRY_EXTERNAL_SERVICE_TOKEN", "test-service-token")
+    registry = DomainPortContainer.from_config(
+        registry_mode="external",
+        registry_session=_SequencedSession(),
+    ).registry
+
+    assert isinstance(registry, ShadowReadRegistryPort)
+    assert isinstance(registry._authoritative, LocalRegistryAdapter)
 
 
 def test_registry_container_composes_from_repository_package_import() -> None:

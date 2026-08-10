@@ -6,8 +6,9 @@ the command/auth acceptance cutover.
 
 ## Transport and security
 
-- Base URL is `REGISTRY_EXTERNAL_BASE_URL`; all paths below are rooted at
-  `https://<registry-platform>/v1/helpdesk`.
+- Base URL is `REGISTRY_EXTERNAL_BASE_URL` and must use `https`; all paths
+  below are rooted at `https://<registry-platform>/v1/helpdesk`. Helpdesk
+  refuses a non-HTTPS URL before constructing a Bearer request.
 - Helpdesk sends `Authorization: Bearer <service-token>`, the fixed
   `X-Registry-Service-Scope: registry.helpdesk.read.v1`, and one fresh opaque
   `X-Correlation-ID` per request. The service validates both caller identity
@@ -16,7 +17,8 @@ the command/auth acceptance cutover.
 - `REGISTRY_EXTERNAL_TIMEOUT_SECONDS` is bounded to 0.05–10 seconds (default
   2). Transport failure, non-200 response, disabled integration or timeout map
   to `registry_unavailable`; they never trigger a direct ORM fallback.
-- Every success is `{ "data": { ... }, "correlation_id": "opaque" }`.
+- Every success is exactly `{ "data": { ... }, "correlation_id": "opaque" }`;
+  the returned opaque ID must exactly match the one sent by Helpdesk.
   Helpdesk accepts only the redacted DTO fields documented below; unexpected,
   malformed or over-limit data maps to `registry_projection_invalid`.
 - References and correlation IDs are opaque. Do not parse, normalize, expose
@@ -52,13 +54,14 @@ source marker.
 
 `REGISTRY_PORT_MODE=local` remains the default. `external` requires both
 `REGISTRY_EXTERNAL_BASE_URL` and `REGISTRY_EXTERNAL_SERVICE_TOKEN`; without
-them it fails closed as `registry_external_unconfigured`. Set
-`REGISTRY_EXTERNAL_SHADOW_READS_ENABLED=true` to keep local reads authoritative
-while making non-blocking external comparisons.
+them, or with a non-HTTPS URL, it fails closed as
+`registry_external_unconfigured`. In this PR `external` always keeps local
+reads authoritative and performs non-blocking external comparisons. Direct
+external authority requires a later explicit acceptance change.
 
-Shadow evidence contains only operation name, `mismatch`, changed redacted DTO
-field names and correlation ID. It never includes values, references, payloads,
-tokens or authorization decisions. Shadow calls are limited to reads. Commands,
+Shadow evidence contains only operation name, `mismatch` and changed redacted
+DTO field names. It never includes correlation IDs, values, references,
+payloads, tokens or authorization decisions. Shadow calls are limited to reads. Commands,
 registration, pairing, account sessions and login eligibility remain local in
 this PR and do not issue shadow calls.
 
