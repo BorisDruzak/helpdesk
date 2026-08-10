@@ -62,6 +62,8 @@ def requester_persistence_values(
         raise TypeError("requester_ref must be a RequesterRef")
     if requester_snapshot is not None and not isinstance(requester_snapshot, RequesterSnapshot):
         raise TypeError("requester_snapshot must be a RequesterSnapshot")
+    if (requester_ref is None) != (requester_snapshot is None):
+        raise ValueError("requester_ref and requester_snapshot must both be set or both be omitted")
 
     validated_ref = (
         RequesterRef.model_validate(requester_ref.model_dump(mode="python"))
@@ -73,6 +75,12 @@ def requester_persistence_values(
         if requester_snapshot is not None
         else None
     )
+    if (
+        validated_ref is not None
+        and validated_snapshot is not None
+        and validated_snapshot.person.external_id != validated_ref.external_id
+    ):
+        raise ValueError("requester snapshot person does not match requester ref")
     return {
         "requester_external_ref": validated_ref.external_id if validated_ref is not None else None,
         "requester_snapshot_json": (

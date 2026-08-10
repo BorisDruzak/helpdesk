@@ -2,11 +2,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, and_, false, or_
+from sqlalchemy import and_, false, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Ticket
 from registry.account_session_service import AccountSessionService
+from tickets.ticket_context import (
+    requester_legacy_scope_clause,
+    requester_neutral_scope_clause,
+    requester_reference_snapshot_from_record,
+)
 
 
 PENDING_REGISTRATION_STATUSES = {
@@ -96,6 +101,10 @@ class TicketAccountAccessService:
         session_id = str(account_session.get("session_id") or "")
         if str(getattr(ticket, "device_id", "") or "") != str(account_session.get("device_id") or ""):
             return False
+        try:
+            requester_ref, _requester_snapshot = requester_reference_snapshot_from_record(ticket)
+        except (TypeError, ValueError):
+            return False
         if mode == "confirmed_binding":
             if session_id and getattr(ticket, "requester_account_session_id", None) == session_id:
                 return True
@@ -104,14 +113,11 @@ class TicketAccountAccessService:
                 or account_session.get("person_id")
                 or ""
             )
-            ticket_external_ref = str(getattr(ticket, "requester_external_ref", None) or "")
-            if ticket_external_ref:
+            if requester_ref is not None:
                 return bool(
                     requester_external_ref
-                    and requester_external_ref == ticket_external_ref
+                    and requester_external_ref == requester_ref.external_id
                 )
-            if getattr(ticket, "requester_snapshot_json", None) is not None:
-                return False
             binding_id = str(account_session.get("binding_id") or "")
             person_id = str(account_session.get("person_id") or "")
             return bool(
@@ -134,6 +140,9 @@ class TicketAccountAccessService:
     def apply_ticket_list_filter(self, stmt, *, account_session: dict[str, Any]):
         mode = str(account_session.get("account_mode") or "")
         session_id = str(account_session.get("session_id") or "")
+        neutral_scope = requester_neutral_scope_clause(Ticket)
+        legacy_scope = requester_legacy_scope_clause(Ticket)
+        valid_requester_scope = or_(neutral_scope, legacy_scope)
         if mode == "confirmed_binding":
             binding_id = str(account_session.get("binding_id") or "")
             person_id = str(account_session.get("person_id") or "")
@@ -142,16 +151,19 @@ class TicketAccountAccessService:
             )
             clauses = []
             if session_id:
-                clauses.append(Ticket.requester_account_session_id == session_id)
+                clauses.append(
+                    and_(
+                        valid_requester_scope,
+                        Ticket.requester_account_session_id == session_id,
+                    )
+                )
             if requester_external_ref:
-                clauses.append(Ticket.requester_external_ref == requester_external_ref)
-            legacy_scope = and_(
-                Ticket.requester_external_ref.is_(None),
-                or_(
-                    Ticket.requester_snapshot_json.is_(None),
-                    Ticket.requester_snapshot_json == JSON.NULL,
-                ),
-            )
+                clauses.append(
+                    and_(
+                        neutral_scope,
+                        Ticket.requester_external_ref == requester_external_ref,
+                    )
+                )
             if binding_id:
                 clauses.append(
                     and_(legacy_scope, Ticket.requester_binding_id == binding_id)
@@ -162,13 +174,24 @@ class TicketAccountAccessService:
                 )
             return stmt.where(or_(*clauses)) if clauses else stmt.where(false())
         if mode == "verified_other_account":
-            return stmt.where(Ticket.requester_account_session_id == session_id)
+            if not session_id:
+                return stmt.where(false())
+            return stmt.where(
+                valid_requester_scope,
+                Ticket.requester_account_session_id == session_id,
+            )
         if mode == "registration_pending":
             person_id = str(account_session.get("person_id") or "")
-            clauses = [Ticket.requester_account_session_id == session_id] if session_id else []
+            clauses = [
+                and_(
+                    valid_requester_scope,
+                    Ticket.requester_account_session_id == session_id,
+                )
+            ] if session_id else []
             if person_id:
                 clauses.append(
                     and_(
+                        valid_requester_scope,
                         Ticket.requester_person_id == person_id,
                         Ticket.requester_registration_status.in_(list(PENDING_REGISTRATION_STATUSES)),
                     )

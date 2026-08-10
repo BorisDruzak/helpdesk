@@ -161,6 +161,10 @@ def test_confirmed_binding_access_prefers_neutral_ref_and_falls_back_for_histori
     neutral_ticket = SimpleNamespace(
         device_id="device-1",
         requester_external_ref="person-neutral",
+        requester_snapshot_json={
+            "person": {"external_id": "person-neutral"},
+            "display_name": "Neutral owner",
+        },
         requester_person_id="person-legacy",
         requester_binding_id=None,
         requester_account_session_id=None,
@@ -200,6 +204,97 @@ def test_confirmed_binding_access_prefers_neutral_ref_and_falls_back_for_histori
     assert access._ticket_allowed(neutral_ticket, neutral_owner_session) is True
     assert access._ticket_allowed(historical_ticket, conflicting_legacy_session) is True
     assert access._ticket_allowed(malformed_neutral_ticket, conflicting_legacy_session) is False
+
+    invalid_neutral_tickets = [
+        SimpleNamespace(
+            device_id="device-1",
+            requester_external_ref="person-neutral",
+            requester_snapshot_json=None,
+            requester_person_id="person-neutral",
+            requester_binding_id=None,
+            requester_account_session_id=None,
+        ),
+        SimpleNamespace(
+            device_id="device-1",
+            requester_external_ref="person-neutral",
+            requester_snapshot_json={
+                "person": {"external_id": "person-neutral"},
+                "display_name": 123,
+            },
+            requester_person_id="person-neutral",
+            requester_binding_id=None,
+            requester_account_session_id=None,
+        ),
+        SimpleNamespace(
+            device_id="device-1",
+            requester_external_ref="person-neutral",
+            requester_snapshot_json={
+                "person": {
+                    "external_id": "person-neutral",
+                    "unexpected": "value",
+                },
+                "display_name": "Neutral owner",
+                "unexpected": "value",
+            },
+            requester_person_id="person-neutral",
+            requester_binding_id=None,
+            requester_account_session_id=None,
+        ),
+        SimpleNamespace(
+            device_id="device-1",
+            requester_external_ref="person-neutral",
+            requester_snapshot_json={
+                "person": {"external_id": "person-other"},
+                "display_name": "Other owner",
+            },
+            requester_person_id="person-neutral",
+            requester_binding_id=None,
+            requester_account_session_id=None,
+        ),
+        SimpleNamespace(
+            device_id="device-1",
+            requester_external_ref="person-neutral",
+            requester_snapshot_json={
+                "person": {"external_id": "person-neutral"},
+                "display_name": "   ",
+            },
+            requester_person_id="person-neutral",
+            requester_binding_id=None,
+            requester_account_session_id=None,
+        ),
+        SimpleNamespace(
+            device_id="device-1",
+            requester_external_ref="person-neutral",
+            requester_snapshot_json={
+                "person": {"external_id": "person-neutral"},
+                "display_name": "X" * 257,
+            },
+            requester_person_id="person-neutral",
+            requester_binding_id=None,
+            requester_account_session_id=None,
+        ),
+    ]
+    assert all(
+        access._ticket_allowed(ticket, neutral_owner_session) is False
+        for ticket in invalid_neutral_tickets
+    )
+    strict_session = {
+        "device_id": "device-1",
+        "account_mode": "verified_other_account",
+        "person_id": "person-neutral",
+        "session_id": "strict-session",
+    }
+    for ticket in invalid_neutral_tickets:
+        ticket.requester_account_session_id = "strict-session"
+    assert all(
+        access._ticket_allowed(ticket, strict_session) is False
+        for ticket in invalid_neutral_tickets
+    )
+    strict_session["account_mode"] = "registration_pending"
+    assert all(
+        access._ticket_allowed(ticket, strict_session) is False
+        for ticket in invalid_neutral_tickets
+    )
 
     verified_other_ticket = SimpleNamespace(
         device_id="device-1",
@@ -259,6 +354,7 @@ async def test_confirmed_binding_list_filter_uses_neutral_first_and_sql_null_fal
                 requester_external_ref=None,
                 requester_snapshot_json=null(),
                 requester_person_id="person-owner",
+                requester_account_session_id="session-owner",
             ),
             Ticket(
                 ticket_id=str(uuid.uuid4()),
@@ -272,6 +368,92 @@ async def test_confirmed_binding_list_filter_uses_neutral_first_and_sql_null_fal
                     "display_name": "Other owner",
                 },
                 requester_person_id="person-owner",
+                requester_account_session_id="session-owner",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Ref only neutral",
+                description="must not authorize neutral ref without snapshot",
+                status="new",
+                requester_id="requester",
+                requester_external_ref="person-owner",
+                requester_snapshot_json=None,
+                requester_person_id="legacy-other",
+                requester_account_session_id="session-owner",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Mismatched neutral",
+                description="must not authorize mismatched snapshot",
+                status="new",
+                requester_id="requester",
+                requester_external_ref="person-owner",
+                requester_snapshot_json={
+                    "person": {"external_id": "other-owner"},
+                    "display_name": "Other owner",
+                },
+                requester_person_id="legacy-other",
+                requester_account_session_id="session-owner",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Blank neutral display",
+                description="must not authorize blank display snapshot",
+                status="new",
+                requester_id="requester",
+                requester_external_ref="person-owner",
+                requester_snapshot_json={
+                    "person": {"external_id": "person-owner"},
+                    "display_name": "   ",
+                },
+                requester_person_id="legacy-other",
+                requester_account_session_id="session-owner",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Overlong neutral display",
+                description="must not authorize overlong display snapshot",
+                status="new",
+                requester_id="requester",
+                requester_external_ref="person-owner",
+                requester_snapshot_json={
+                    "person": {"external_id": "person-owner"},
+                    "display_name": "X" * 257,
+                },
+                requester_person_id="legacy-other",
+                requester_account_session_id="session-owner",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Non-string neutral display",
+                description="must not authorize numeric display snapshot",
+                status="new",
+                requester_id="requester",
+                requester_external_ref="person-owner",
+                requester_snapshot_json={
+                    "person": {"external_id": "person-owner"},
+                    "display_name": 123,
+                },
+                requester_person_id="legacy-other",
+                requester_account_session_id="session-owner",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Extra-key neutral snapshot",
+                description="must not authorize an unvalidated snapshot shape",
+                status="new",
+                requester_id="requester",
+                requester_external_ref="person-owner",
+                requester_snapshot_json={
+                    "person": {
+                        "external_id": "person-owner",
+                        "unexpected": "value",
+                    },
+                    "display_name": "Owner",
+                    "unexpected": "value",
+                },
+                requester_person_id="legacy-other",
+                requester_account_session_id="session-owner",
             ),
         ]
         session.add_all(rows)
@@ -282,13 +464,31 @@ async def test_confirmed_binding_list_filter_uses_neutral_first_and_sql_null_fal
             account_session={
                 "account_mode": "confirmed_binding",
                 "person_id": "person-owner",
+                "session_id": "session-owner",
             },
         )
         visible_ids = set((await session.execute(stmt)).scalars().all())
+        strict_visible_by_mode = {}
+        for account_mode in ("verified_other_account", "registration_pending"):
+            stmt = TicketAccountAccessService(session).apply_ticket_list_filter(
+                select(Ticket),
+                account_session={
+                    "account_mode": account_mode,
+                    "person_id": "person-owner",
+                    "session_id": "session-owner",
+                },
+            )
+            strict_visible_by_mode[account_mode] = {
+                row.ticket_id for row in (await session.execute(stmt)).scalars().all()
+            }
 
     assert rows[0] in visible_ids
     assert rows[1] in visible_ids
-    assert rows[2] not in visible_ids
+    assert all(row not in visible_ids for row in rows[2:])
+
+    for strict_visible_ids in strict_visible_by_mode.values():
+        assert rows[1].ticket_id in strict_visible_ids
+        assert all(row.ticket_id not in strict_visible_ids for row in rows[2:])
 
 
 @pytest.mark.asyncio

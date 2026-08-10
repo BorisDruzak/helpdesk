@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,7 +14,9 @@ from domain_ports.registry import (
     PersonRef,
     RequesterRef,
     RequesterSnapshot,
+    requester_persistence_values,
 )
+from tickets.ticket_context import requester_reference_snapshot_from_record
 
 
 pytestmark = pytest.mark.no_db
@@ -78,6 +81,116 @@ def test_snapshot_rejects_local_profile_and_secret_fields() -> None:
 
     with pytest.raises(ValueError):
         PersonRef(external_id="registry-ref-opaque-1", access_token="secret")  # type: ignore[call-arg]
+
+
+def test_requester_persistence_requires_complete_matching_pair() -> None:
+    requester_ref = RequesterRef(external_id="registry-ref-opaque-1")
+    matching_snapshot = RequesterSnapshot(
+        person=PersonRef(external_id="registry-ref-opaque-1"),
+        display_name="Иван",
+    )
+    mismatched_snapshot = RequesterSnapshot(
+        person=PersonRef(external_id="registry-ref-opaque-2"),
+        display_name="Другой пользователь",
+    )
+
+    with pytest.raises(ValueError, match="both be set"):
+        requester_persistence_values(
+            requester_ref=requester_ref,
+            requester_snapshot=None,
+        )
+    with pytest.raises(ValueError, match="both be set"):
+        requester_persistence_values(
+            requester_ref=None,
+            requester_snapshot=matching_snapshot,
+        )
+    with pytest.raises(ValueError, match="does not match"):
+        requester_persistence_values(
+            requester_ref=requester_ref,
+            requester_snapshot=mismatched_snapshot,
+        )
+
+
+@pytest.mark.parametrize(
+    "display_name",
+    ["   ", "X" * 257],
+    ids=["blank", "overlong"],
+)
+def test_requester_snapshot_rejects_invalid_display_name(display_name: str) -> None:
+    with pytest.raises(ValueError):
+        RequesterSnapshot(
+            person=PersonRef(external_id="registry-ref-opaque-1"),
+            display_name=display_name,
+        )
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        SimpleNamespace(
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json=None,
+        ),
+        SimpleNamespace(
+            requester_external_ref=None,
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-1"},
+                "display_name": "Иван",
+            },
+        ),
+        SimpleNamespace(
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-2"},
+                "display_name": "Другой пользователь",
+            },
+        ),
+        SimpleNamespace(
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-1"},
+                "display_name": "   ",
+            },
+        ),
+        SimpleNamespace(
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-1"},
+                "display_name": "X" * 257,
+            },
+        ),
+        SimpleNamespace(
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-1"},
+                "display_name": 123,
+            },
+        ),
+        SimpleNamespace(
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {
+                    "external_id": "registry-ref-opaque-1",
+                    "unexpected": "value",
+                },
+                "display_name": "Requester",
+                "unexpected": "value",
+            },
+        ),
+    ],
+    ids=[
+        "ref-only",
+        "snapshot-only",
+        "mismatch",
+        "blank-name",
+        "overlong-name",
+        "non-string-name",
+        "extra-keys",
+    ],
+)
+def test_stored_requester_scope_rejects_incomplete_or_invalid_pair(row: object) -> None:
+    with pytest.raises(ValueError):
+        requester_reference_snapshot_from_record(row)
 
 
 def test_models_define_nullable_neutral_requester_columns_without_registry_foreign_keys() -> None:

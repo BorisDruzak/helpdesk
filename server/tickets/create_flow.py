@@ -631,15 +631,10 @@ async def create_ticket_with_side_effects(
     requester_ref = None
     requester_snapshot = None
     if verified_requester_person_id:
-        try:
-            requester_ref, requester_snapshot = await TicketContextBuilder(
-                session,
-                state=state,
-            ).requester_reference_snapshot(verified_requester_person_id)
-        except Exception as exc:
-            logger.warning(
-                f"[create] requester reference snapshot failed ticket_id={ticket_id} err={exc}"
-            )
+        requester_ref, requester_snapshot = await TicketContextBuilder(
+            session,
+            state=state,
+        ).requester_reference_snapshot(verified_requester_person_id)
 
     ticket_context_snapshot: dict[str, Any] | None = None
     if requester_person_id:

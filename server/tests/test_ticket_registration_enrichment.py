@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceRegistrationClaim, Ticket
+from app.db.models import Device, DeviceRegistrationClaim, RegistryPerson, Ticket
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_AGENT_PREFIX
@@ -76,6 +76,57 @@ async def test_ticket_with_active_binding_gets_requester_context_and_asset(test_
     assert ticket.custom_fields["ticket_context"]["requester_context"]["account_mode"] == "agent_legacy_or_device_only"
     assert ticket.custom_fields["ticket_context"]["requester_context"]["context_scope"] == "limited"
     assert "profile_completion" not in ticket.custom_fields["ticket_context"]["requester_context"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_display_name",
+    ["   ", "X" * 257],
+    ids=["blank", "overlong"],
+)
+async def test_verified_requester_with_invalid_snapshot_does_not_create_legacy_only_ticket(
+    test_engine,
+    invalid_display_name: str,
+):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    title = f"Invalid requester snapshot {len(invalid_display_name)}"
+
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        service = RegistrationService(session)
+        result = await service.submit_agent_profile_claim(
+            device_id=device_id,
+            requester_id="ticket-invalid-snapshot",
+            display_name="Valid Before Approval",
+            profile={
+                "full_name": "Valid Before Approval",
+                "email": "ticket-invalid-snapshot@example.test",
+                "user_confirmed": True,
+            },
+        )
+        approved = await service.approve_claim(
+            result["registration"]["claim_id"],
+            reviewed_by="admin",
+        )
+        person = await session.get(RegistryPerson, approved["person"]["person_id"])
+        assert person is not None
+        person.display_name = invalid_display_name
+        person.full_name = invalid_display_name
+        await session.flush()
+
+        with pytest.raises(ValueError):
+            await create_ticket_with_side_effects(
+                session,
+                device_id=device_id,
+                requester_id="ticket-invalid-snapshot",
+                title=title,
+                description="Must fail instead of writing legacy-only requester scope",
+                user_display_name="Payload display must not be used",
+            )
+
+        stored = await session.scalar(select(Ticket).where(Ticket.title == title))
+        assert stored is None
 
 
 @pytest.mark.asyncio

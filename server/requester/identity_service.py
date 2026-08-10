@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 import uuid
 
-from sqlalchemy import JSON, and_, desc, or_, select
+from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config as config_module
@@ -25,6 +25,7 @@ from consent.service import UserConsentService
 from registry.primary_agent_resolver import PrimaryAgentResolver
 from registry.profile_schema_service import RequesterProfileSchemaService
 from tickets.requester_policy import annotate_requester_ticket_policy_state, requester_ticket_actions
+from tickets.ticket_context import requester_legacy_scope_clause, requester_neutral_scope_clause
 
 
 REQUESTER_PROFILE_REQUIRED_FIELDS: tuple[tuple[str, str], ...] = (
@@ -878,19 +879,16 @@ class RequesterIdentityResolver:
         binding_ids = [binding.binding_id for binding in bindings]
         sessions = await self.list_owned_sessions(person.person_id if person else None, binding_ids)
         session_ids = [session.session_id for session in sessions]
-        legacy_scope = and_(
-            Ticket.requester_external_ref.is_(None),
-            or_(
-                Ticket.requester_snapshot_json.is_(None),
-                Ticket.requester_snapshot_json == JSON.NULL,
-            ),
-        )
+        legacy_scope = requester_legacy_scope_clause(Ticket)
         clauses = [and_(legacy_scope, Ticket.requester_id == str(actor_id))]
         if person is not None:
             requester_external_ref = self.requester_external_ref(person)
             if requester_external_ref:
                 clauses.append(
-                    Ticket.requester_external_ref == requester_external_ref
+                    and_(
+                        requester_neutral_scope_clause(Ticket),
+                        Ticket.requester_external_ref == requester_external_ref,
+                    )
                 )
             clauses.append(
                 and_(legacy_scope, Ticket.requester_person_id == person.person_id)

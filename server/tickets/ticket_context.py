@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import JSON, and_, cast, func, or_
+from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import RegistryPerson
@@ -57,13 +59,11 @@ def requester_reference_snapshot_from_person(
     display_name = _clean(getattr(person, "display_name", None)) or _clean(
         getattr(person, "full_name", None)
     )
-    snapshot = (
-        RequesterSnapshot(
-            person=PersonRef(external_id=external_ref),
-            display_name=display_name,
-        )
-        if display_name is not None
-        else None
+    if display_name is None:
+        raise ValueError("verified requester requires a non-empty display name snapshot")
+    snapshot = RequesterSnapshot(
+        person=PersonRef(external_id=external_ref),
+        display_name=display_name,
     )
     return requester_ref, snapshot
 
@@ -75,15 +75,44 @@ def requester_reference_snapshot_from_record(
 
     external_ref = getattr(row, "requester_external_ref", None)
     raw_snapshot = getattr(row, "requester_snapshot_json", None)
-    if external_ref is None:
-        if raw_snapshot is not None:
-            raise ValueError("requester snapshot requires requester external ref")
+    if external_ref is None and raw_snapshot is None:
         return None, None
+    if external_ref is None or raw_snapshot is None:
+        raise ValueError("requester external ref and snapshot must both be set")
     requester_ref = RequesterRef(external_id=external_ref)
     snapshot = RequesterSnapshot.model_validate(raw_snapshot) if raw_snapshot is not None else None
     if snapshot is not None and snapshot.person.external_id != requester_ref.external_id:
         raise ValueError("requester snapshot person does not match requester external ref")
     return requester_ref, snapshot
+
+
+def requester_neutral_scope_clause(model: Any):
+    snapshot = model.requester_snapshot_json
+    person = snapshot["person"]
+    return and_(
+        model.requester_external_ref.is_not(None),
+        func.length(model.requester_external_ref).between(1, 512),
+        snapshot.is_not(None),
+        snapshot != JSON.NULL,
+        func.jsonb_typeof(snapshot) == "object",
+        snapshot.op("-")(array(["person", "display_name"])) == cast({}, JSONB),
+        func.jsonb_typeof(person) == "object",
+        person.op("-")(array(["external_id"])) == cast({}, JSONB),
+        func.jsonb_typeof(person["external_id"]) == "string",
+        person["external_id"].astext == model.requester_external_ref,
+        func.jsonb_typeof(snapshot["display_name"]) == "string",
+        func.length(func.btrim(snapshot["display_name"].astext)).between(1, 256),
+    )
+
+
+def requester_legacy_scope_clause(model: Any):
+    return and_(
+        model.requester_external_ref.is_(None),
+        or_(
+            model.requester_snapshot_json.is_(None),
+            model.requester_snapshot_json == JSON.NULL,
+        ),
+    )
 
 
 def _target_source(*, resolved: bool, created_on_behalf: bool, reason_code: str | None) -> str:

@@ -155,7 +155,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="helpdesk_requester_references",
         title="Helpdesk requester references and snapshots",
-        summary="PR-2 additive requester persistence for tickets and user consents. New neutral RequesterRef/RequesterSnapshot values are derived only from server-verified account, binding or web-identity state and dual-written during migration. Reads prefer the neutral external reference and use legacy person/binding/session columns only for rows without neutral state. Snapshots are display history and never authorize a requester or replace active-binding, verified-identity or exact-session checks.",
+        summary="PR-2 additive requester persistence for tickets and user consents. New neutral RequesterRef/RequesterSnapshot values are derived only from server-verified account, binding or web-identity state and dual-written as a complete matching pair; verified writes fail rather than downgrade when the pair is invalid. Reads prefer the neutral external reference, fail closed for partial, mismatched or invalid snapshots, and use legacy person/binding/session columns only for rows without neutral state. Snapshots are display history and never authorize a requester. Registration-pending and verified-other-account agent consent access requires an exact non-empty session plus requester identity; confirmed bindings retain exact-session precedence and neutral/legacy identity paths.",
         aliases=(
             "requester_external_ref",
             "requester_snapshot_json",

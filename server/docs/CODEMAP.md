@@ -54,10 +54,15 @@
 - `server/tickets/account_access_service.py`,
   `server/requester/identity_service.py` and `server/consent/service.py` read
   neutral requester references first. Legacy person/binding/session fields are
-  compatibility fallbacks only for rows without neutral state; malformed
-  snapshot-without-reference rows cannot fall back through legacy identity
-  fields. Exact confirmed-session and
-  `verified_other_account` session scoping are unchanged.
+  compatibility fallbacks only for rows without neutral state. The neutral ref
+  and snapshot must both exist, identify the same opaque requester and contain a
+  valid display name; partial, mismatched or invalid neutral rows fail closed.
+  New verified writes fail instead of silently downgrading to legacy-only state.
+  Agent consent access explicitly branches by validated account mode:
+  `registration_pending` and `verified_other_account` require an exact non-empty
+  session id plus requester identity, while `confirmed_binding` keeps exact-
+  session precedence and neutral/legacy identity paths. Identity-less sessions
+  fail closed.
 - `server/consent/operation_consent.py` inherits the validated neutral requester
   state from the ticket. The snapshot is historical display data only:
   authorization still uses verified identity, active binding and account-session

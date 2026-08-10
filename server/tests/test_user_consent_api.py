@@ -8,10 +8,10 @@ from sqlalchemy import func, null, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import ConsentDecision, Device, DeviceOutbox, Operation, RegistryPerson, RegistryPersonIdentity, Ticket, TicketEvent, UserConsentRequest
+from app.db.models import ConsentDecision, Device, DeviceAccountSession, DeviceOutbox, Operation, RegistryPerson, RegistryPersonIdentity, Ticket, TicketEvent, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
 from app.repos.user_consent_repo import UserConsentRepo
-from consent.service import UserConsentService
+from consent.service import ConsentAccessError, UserConsentService
 from consent.operation_consent import create_operation_user_consent
 from domain_ports.registry import PersonRef, RequesterRef, RequesterSnapshot
 from registry.account_session_service import AccountSessionService
@@ -236,6 +236,55 @@ async def test_consent_authorization_prefers_neutral_ref_with_legacy_fallback(te
             title="Malformed requester consent",
             status="pending",
         )
+        ref_only = UserConsentRequest(
+            consent_id=str(uuid.uuid4()),
+            subject_type="diagnostic",
+            subject_id="ref-only-requester-consent",
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json=None,
+            requester_person_id="legacy-person",
+            title="Ref-only requester consent",
+            status="pending",
+        )
+        mismatched = UserConsentRequest(
+            consent_id=str(uuid.uuid4()),
+            subject_type="diagnostic",
+            subject_id="mismatched-requester-consent",
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-2"},
+                "display_name": "Другой пользователь",
+            },
+            requester_person_id="legacy-person",
+            title="Mismatched requester consent",
+            status="pending",
+        )
+        blank_display = UserConsentRequest(
+            consent_id=str(uuid.uuid4()),
+            subject_type="diagnostic",
+            subject_id="blank-display-requester-consent",
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-1"},
+                "display_name": "   ",
+            },
+            requester_person_id="legacy-person",
+            title="Blank-display requester consent",
+            status="pending",
+        )
+        overlong_display = UserConsentRequest(
+            consent_id=str(uuid.uuid4()),
+            subject_type="diagnostic",
+            subject_id="overlong-display-requester-consent",
+            requester_external_ref="registry-ref-opaque-1",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-1"},
+                "display_name": "X" * 257,
+            },
+            requester_person_id="legacy-person",
+            title="Overlong-display requester consent",
+            status="pending",
+        )
         pre_migration = UserConsentRequest(
             consent_id=str(uuid.uuid4()),
             subject_type="diagnostic",
@@ -245,7 +294,14 @@ async def test_consent_authorization_prefers_neutral_ref_with_legacy_fallback(te
             title="Pre-migration requester consent",
             status="pending",
         )
-        session.add_all([malformed, pre_migration])
+        invalid_neutral_rows = [
+            malformed,
+            ref_only,
+            mismatched,
+            blank_display,
+            overlong_display,
+        ]
+        session.add_all([*invalid_neutral_rows, pre_migration])
         await session.flush()
 
         assert neutral.requester_external_ref == "registry-ref-opaque-1"
@@ -273,6 +329,12 @@ async def test_consent_authorization_prefers_neutral_ref_with_legacy_fallback(te
             requester_external_ref=None,
             requester_person_id="legacy-person",
         ) is None
+        for row in invalid_neutral_rows:
+            assert await service.get_for_requester(
+                consent_id=row.consent_id,
+                requester_external_ref="registry-ref-opaque-1",
+                requester_person_id="legacy-person",
+            ) is None
         visible_ids = {
             item["consent_id"]
             for item in await service.list_for_requester(
@@ -284,6 +346,16 @@ async def test_consent_authorization_prefers_neutral_ref_with_legacy_fallback(te
         assert historical.consent_id in visible_ids
         assert pre_migration.consent_id in visible_ids
         assert malformed.consent_id not in visible_ids
+        neutral_visible_ids = {
+            item["consent_id"]
+            for item in await service.list_for_requester(
+                requester_external_ref="registry-ref-opaque-1",
+                requester_person_id="legacy-person",
+                statuses=["pending"],
+            )
+        }
+        assert neutral.consent_id in neutral_visible_ids
+        assert all(row.consent_id not in neutral_visible_ids for row in invalid_neutral_rows)
 
 
 @pytest.mark.asyncio
@@ -742,6 +814,154 @@ async def test_agent_consent_decision_requires_valid_requester_account_session(t
     browser_payload = await browser_detail.json()
     assert browser_detail.status == 200, browser_payload
     assert browser_payload["data"]["consent"]["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_registration_pending_session_without_identity_cannot_access_device_consent(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = str(uuid.uuid4())
+    person_id = str(uuid.uuid4())
+    pending_session_id = str(uuid.uuid4())
+    async with session_maker() as session:
+        session.add(_device(device_id))
+        session.add(
+            RegistryPerson(
+                person_id=person_id,
+                display_name="Pending Consent Owner",
+                full_name="Pending Consent Owner",
+                source="test",
+                status="active",
+            )
+        )
+        session.add(
+            DeviceAccountSession(
+                session_id=pending_session_id,
+                device_id=device_id,
+                account_mode="registration_pending",
+                verification_status="pending_verification",
+                verification_method="registration_claim",
+                person_id=None,
+            )
+        )
+        await session.flush()
+        consent = await UserConsentService(session).create_request(
+            subject_type="file_transfer",
+            subject_id="pending-session-without-identity",
+            device_id=device_id,
+            requester_person_id=person_id,
+            requester_account_session_id=pending_session_id,
+            title="Pending session consent",
+        )
+        account_session = {
+            "account_mode": "registration_pending",
+            "session_id": pending_session_id,
+            "device_id": device_id,
+            "person_id": None,
+            "requester_external_ref": None,
+        }
+        service = UserConsentService(session)
+
+        assert await service.list_for_agent(
+            device_id=device_id,
+            account_session=account_session,
+            statuses=["pending"],
+        ) == []
+        assert await service.get_for_agent(
+            consent_id=consent.consent_id,
+            device_id=device_id,
+            account_session=account_session,
+        ) is None
+        with pytest.raises(ConsentAccessError) as exc_info:
+            await service.decide_from_agent(
+                consent_id=consent.consent_id,
+                decision="approved",
+                device_id=device_id,
+                account_session=account_session,
+                actor_id="agent-test",
+            )
+        assert exc_info.value.error_code == "NOT_FOUND"
+        assert consent.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_verified_other_session_cannot_access_other_session_consent_http(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "consent-verified-other-owner@example.test"
+    async with session_maker() as session:
+        seeded = await _seed_operation_consent(session, login=login)
+        account_service = AccountSessionService(session)
+        sessions = []
+        for marker in ("first", "second"):
+            request = await account_service.create_other_account_login_request(
+                device_id=seeded["device_id"],
+                requested_account={
+                    "full_name": f"Verified Other {marker}",
+                    "login": login,
+                    "email": login,
+                    "reason": f"{marker} verified other session",
+                },
+            )
+            sessions.append(
+                await account_service.approve_login_request(
+                    request["request_id"],
+                    reviewed_by="admin",
+                )
+            )
+        person = await session.get(RegistryPerson, seeded["person_id"])
+        assert person is not None
+        first_session = sessions[0]
+        consent = await UserConsentService(session).create_request(
+            subject_type="file_transfer",
+            subject_id="verified-other-first-session-consent",
+            device_id=seeded["device_id"],
+            requester_person_id=seeded["person_id"],
+            requester_account_session_id=first_session["session"]["session_id"],
+            requester_ref=RequesterRef(external_id=seeded["person_id"]),
+            requester_snapshot=RequesterSnapshot(
+                person=PersonRef(external_id=seeded["person_id"]),
+                display_name=person.display_name,
+            ),
+            title="First verified-other session consent",
+        )
+        await session.commit()
+
+    second_session = sessions[1]
+    second_headers = {
+        **_headers(f"{TEST_AGENT_PREFIX}{seeded['device_id']}"),
+        "X-Account-Session-Id": second_session["session"]["session_id"],
+        "X-Account-Session-Token": second_session["session_token"],
+    }
+    listing = await test_client.get(
+        "/api/registry/agent/consents",
+        headers=second_headers,
+    )
+    listing_payload = await listing.json()
+    assert listing.status == 200, listing_payload
+    assert consent.consent_id not in {
+        item["consent_id"] for item in listing_payload["data"]["consents"]
+    }
+
+    detail = await test_client.get(
+        f"/api/registry/agent/consents/{consent.consent_id}",
+        headers=second_headers,
+    )
+    detail_payload = await detail.json()
+    assert detail.status == 404, detail_payload
+    assert detail_payload["error_code"] == "NOT_FOUND"
+
+    decision = await test_client.post(
+        f"/api/registry/agent/consents/{consent.consent_id}/approve",
+        headers=second_headers,
+        json={"reason": "must not cross sessions"},
+    )
+    decision_payload = await decision.json()
+    assert decision.status == 404, decision_payload
+    assert decision_payload["error_code"] == "NOT_FOUND"
+
+    async with session_maker() as session:
+        stored = await session.get(UserConsentRequest, consent.consent_id)
+        assert stored is not None
+        assert stored.status == "pending"
 
 
 @pytest.mark.asyncio
