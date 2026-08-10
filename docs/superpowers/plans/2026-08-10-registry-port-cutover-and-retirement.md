@@ -446,9 +446,29 @@ git commit -m "scripts: add Registry retirement preflight"
 - [ ] **Step 3: Remove exact customer-history import allowances and prove the scoped guard**
 - [ ] **Step 4: Run API regression, docs drift and commit**
 
+### Task 13: Make ticket customer-history neutral-reference-first (PR-2/PR-11 prerequisite)
+
+**Files:**
+
+- Modify: server/customer_history/projection_service.py, server/customer_history/context_builder.py, server/customer_history/sources.py, server/customer_history/handlers.py
+- Modify: server/tickets/ticket_context.py only if existing neutral/legacy scope helpers need reuse
+- Test: server/tests/test_customer_history_projection.py, server/tests/test_customer_history_context_builder.py, server/tests/test_registry_boundary.py
+- Modify: server/docs/TICKET_SYSTEM.md, server/docs/CODEMAP.md, server/docs/SEGMENTATION_BOUNDARIES.md, docs/QUICK_LOOKUP.md
+
+**Interfaces:** treats a history subject as an opaque `RequesterRef.external_id`, not a local Registry primary key. Canonical tickets match only a valid neutral pair and exact `requester_external_ref`; legacy fallback matches only legacy-scoped `requester_person_id`. `Ticket.requester_id` is never a person-history alias. Requester-derived ref remains server verified; malformed neutral data matches neither path.
+
+- [ ] **Step 1: Write failing canonical/legacy/anti-collision tests**
+- [ ] **Step 2: Convert projection, handlers and context pack to opaque requester refs**
+- [ ] **Step 3: Preserve legacy creator/affected aliases only for legacy rows; add typed absence/degradation where needed**
+- [ ] **Step 4: Run DB/API regression, docs drift and commit**
+
+### Task 14: Route tech inventory-quality aggregate through RegistryPort (PR-8 completion)
+
+**Interfaces:** adds a redacted bounded `InventoryQualityProjection(active_pc_without_location_count)` to local/HTTP/shadow adapters, then replaces the one direct `RegistryAsset` aggregate in tech handlers. It must not approximate the aggregate with per-device lookups or expose asset/person identifiers.
+
 ## Plan self-review
 
-- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5 and 12, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
+- Coverage: PR-2 is Tasks 1–2 and 13, PR-8 is Tasks 3–5, 12 and 14, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
