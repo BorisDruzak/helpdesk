@@ -651,6 +651,9 @@ class SupportTicketDeviceSnapshot(BaseModel):
 class SupportTicketRegistrySnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    status: Literal["available", "not_found", "unavailable"] = "available"
+    source: Literal["registry_port", "ticket_snapshot"] = "registry_port"
+    code: str | None = None
     person_id: str | None = None
     person_display_name: str | None = None
     person_phone: str | None = None

@@ -69,7 +69,7 @@ async def test_ticket_with_active_binding_gets_requester_context_and_asset(test_
         "display_name": "Ticket Active",
     }
     assert ticket.requester_registration_status == "admin_confirmed"
-    assert ticket.asset_id == approved["binding"]["asset_id"]
+    assert ticket.asset_id is None
     assert ticket.requester_account_mode == "agent_legacy_or_device_only"
     assert ticket.custom_fields["requester_account_context"]["account_mode"] == "agent_legacy_or_device_only"
     assert ticket.custom_fields["requester_account_context"]["context_scope"] == "limited"
@@ -220,7 +220,7 @@ async def test_ticket_with_active_binding_ignores_conflicting_requester_profile(
         "display_name": "Ticket Active Profile",
     }
     assert ticket.requester_registration_status == "admin_confirmed"
-    assert ticket.asset_id == approved["binding"]["asset_id"]
+    assert ticket.asset_id is None
     assert len(claims) == 1
     assert claims[0].status == "approved"
 
@@ -252,13 +252,14 @@ async def test_ticket_with_requester_profile_creates_claim_and_pending_status(te
     assert claim.status == "pending_user_confirmation"
     assert ticket.requester_person_id is None
     assert ticket.requester_binding_id is None
-    assert ticket.requester_registration_status == "pending_user_confirmation"
+    assert ticket.requester_registration_status == "self_reported"
     assert ticket.requester_account_mode == "agent_legacy_or_device_only"
     assert ticket.custom_fields["requester_account_context"]["account_mode"] == "agent_legacy_or_device_only"
     assert ticket.custom_fields["requester_account_context"]["context_scope"] == "limited"
     assert ticket.custom_fields["requester_account_context"]["profile_completion_evidence"] is False
     assert "ticket_context" not in ticket.custom_fields
-    assert ticket.custom_fields["requester_registration"]["pending_claim"]["claim_id"] == claim.claim_id
+    assert "pending_claim" not in ticket.custom_fields["requester_registration"]
+    assert ticket.custom_fields["requester_registration"]["requires_user_action"] is True
 
 
 @pytest.mark.asyncio
@@ -300,7 +301,8 @@ async def test_ticket_with_conflict_claim_does_not_assign_requester_person(test_
     assert ticket.requester_binding_id is None
     assert ticket.requester_registration_status == "conflict"
     assert ticket.custom_fields["requester_registration"]["status"] == "conflict"
-    assert ticket.custom_fields["requester_registration"]["pending_claim"]["claim_id"] == conflict["registration"]["claim_id"]
+    assert "pending_claim" not in ticket.custom_fields["requester_registration"]
+    assert ticket.custom_fields["requester_registration"]["requires_admin_action"] is True
 
 
 @pytest.mark.asyncio
@@ -416,7 +418,7 @@ async def test_verified_other_account_session_marks_ticket_without_registration_
     assert ticket.requester_person_id is None
     assert ticket.requester_external_ref is None
     assert ticket.requester_snapshot_json is None
-    assert ticket.asset_id == approved["binding"]["asset_id"]
+    assert ticket.asset_id is None
     assert ticket.custom_fields["requester_account_context"]["created_from_other_account"] is True
     assert ticket.custom_fields["requester_account_context"]["verification_status"] == "verified"
     assert ticket.custom_fields["requester_account_context"]["verification_method"] == "admin_approval"
@@ -508,7 +510,7 @@ async def test_registration_pending_account_after_revoke_marks_pending_without_b
         ticket = await session.get(Ticket, created["ticket_id"])
 
     assert ticket.requester_binding_id is None
-    assert ticket.asset_id == pending["asset"]["asset_id"]
+    assert ticket.asset_id is None
     assert ticket.requester_registration_status in {"pending_user_confirmation", "registration_pending"}
     assert ticket.custom_fields["requester_account_context"]["account_mode"] == "registration_pending"
 

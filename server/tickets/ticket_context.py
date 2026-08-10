@@ -10,7 +10,15 @@ from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import RegistryPerson
-from domain_ports.registry import PersonRef, RequesterRef, RequesterSnapshot
+from domain_ports import (
+    DomainPortContainer,
+    PersonRef,
+    RegistryNotFound,
+    RegistryPort,
+    RegistryUnavailable,
+    RequesterRef,
+    RequesterSnapshot,
+)
 from registry.primary_agent_resolver import PrimaryAgentResolver
 
 TICKET_CONTEXT_SCHEMA = "ticket_context_v1"
@@ -401,9 +409,18 @@ def _evidence_codes(target: dict[str, Any]) -> list[str]:
 class TicketContextBuilder:
     """Build the stable server-owned ticket context snapshot stored on ticket create."""
 
-    def __init__(self, session: AsyncSession, *, state: Any | None = None):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        state: Any | None = None,
+        registry_port: RegistryPort | None = None,
+    ):
         self.session = session
         self.state = state
+        self.registry_port = registry_port or DomainPortContainer.from_config(
+            registry_session=session
+        ).registry
 
     async def requester_reference_snapshot(
         self,
@@ -412,10 +429,18 @@ class TicketContextBuilder:
         verified_person_id = _clean(person_id)
         if verified_person_id is None:
             return None, None
-        person = await self.session.get(RegistryPerson, verified_person_id)
-        if person is None:
-            raise ValueError("verified requester person not found")
-        return requester_reference_snapshot_from_person(person)
+        outcome = await self.registry_port.requester_snapshot(
+            PersonRef(external_id=verified_person_id)
+        )
+        if isinstance(outcome, RequesterSnapshot):
+            if outcome.person.external_id != verified_person_id:
+                raise ValueError("verified requester Registry projection is invalid")
+            return RequesterRef(external_id=outcome.person.external_id), outcome
+        if isinstance(outcome, RegistryNotFound):
+            raise ValueError(f"verified requester person not found: {outcome.code}")
+        if isinstance(outcome, RegistryUnavailable):
+            raise ValueError(f"verified requester Registry read unavailable: {outcome.code}")
+        raise ValueError("verified requester Registry projection is invalid")
 
     async def build(
         self,

@@ -39,7 +39,6 @@ from app.db.models import (
 )
 from app.repos import ArtifactsRepo, DevicesRepo, NotificationRepo
 from app.repos.helpdesk_policy_repo import HelpdeskPolicyRepo
-from app.repos.registry_repo import RegistryRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.ticket_passport_repo import TicketPassportRepo
@@ -52,6 +51,16 @@ from core.policy_engine import PolicyDecision, PolicyEngine
 from core.tool_metadata import ToolMetadata
 from customer_history.context_builder import CustomerHistoryContextBuilder
 from customer_history.projection_service import CustomerHistoryProjectionService
+from domain_ports import (
+    ActiveBindingProjection,
+    DeviceRef,
+    DomainPortContainer,
+    PersonRef,
+    RegistryNotFound,
+    RegistryPort,
+    RegistryUnavailable,
+    RequesterSnapshot,
+)
 from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService
 from observer.web_event_writer import write_web_cabinet_observer_event
@@ -78,6 +87,7 @@ from tickets.assignment_service import MAX_ACTIVE_TICKETS_PER_OPERATOR, TicketAs
 from tickets.ola_service import close_ola_processing, start_ola_for_ticket
 from tickets.public_access import is_public_support_reply_payload
 from tickets.requester_timeline import build_requester_timeline_projection, projection_to_fields
+from tickets.ticket_context import requester_reference_snapshot_from_record
 from tickets.routing_service import TicketRoutingService, set_routing_lock
 from tickets.statuses import (
     CANONICAL_STATUSES,
@@ -3206,48 +3216,119 @@ async def _recent_ticket_operations(session, ticket: object, *, limit: int = 5) 
     return scoped
 
 
+async def _build_support_registry_snapshot(
+    ticket: object,
+    *,
+    registry_port: RegistryPort,
+) -> SupportTicketRegistrySnapshot | None:
+    """Project current Registry state without using it as ticket history."""
+
+    requester_ref = None
+    ticket_snapshot = None
+    try:
+        requester_ref, ticket_snapshot = requester_reference_snapshot_from_record(ticket)
+    except (TypeError, ValueError):
+        if getattr(ticket, "requester_external_ref", None) is not None or getattr(
+            ticket, "requester_snapshot_json", None
+        ) is not None:
+            return SupportTicketRegistrySnapshot(
+                status="unavailable",
+                source="registry_port",
+                code="registry_ticket_snapshot_invalid",
+            )
+
+    current_ref = (
+        requester_ref.external_id
+        if requester_ref is not None
+        else str(getattr(ticket, "requester_person_id", "") or "").strip() or None
+    )
+    if current_ref is None:
+        device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
+        if device_id is None:
+            return None
+        binding_outcome = await registry_port.active_binding(
+            DeviceRef(external_id=device_id)
+        )
+        if isinstance(binding_outcome, ActiveBindingProjection):
+            if (
+                binding_outcome.device.external_id != device_id
+                or binding_outcome.requester.external_id
+                != binding_outcome.requester_snapshot.person.external_id
+            ):
+                return SupportTicketRegistrySnapshot(
+                    status="unavailable",
+                    source="registry_port",
+                    code="registry_projection_invalid",
+                )
+            return SupportTicketRegistrySnapshot(
+                status="available",
+                source="registry_port",
+                person_id=binding_outcome.requester.external_id,
+                person_display_name=binding_outcome.requester_snapshot.display_name,
+            )
+        if isinstance(binding_outcome, RegistryNotFound):
+            return SupportTicketRegistrySnapshot(
+                status="not_found",
+                source="registry_port",
+                code=binding_outcome.code,
+            )
+        if isinstance(binding_outcome, RegistryUnavailable):
+            return SupportTicketRegistrySnapshot(
+                status="unavailable",
+                source="registry_port",
+                code=binding_outcome.code,
+            )
+        return SupportTicketRegistrySnapshot(
+            status="unavailable",
+            source="registry_port",
+            code="registry_projection_invalid",
+        )
+
+    outcome = await registry_port.requester_snapshot(PersonRef(external_id=current_ref))
+    if isinstance(outcome, RequesterSnapshot):
+        if outcome.person.external_id == current_ref:
+            return SupportTicketRegistrySnapshot(
+                status="available",
+                source="registry_port",
+                person_id=outcome.person.external_id,
+                person_display_name=outcome.display_name,
+            )
+        outcome = RegistryUnavailable(code="registry_projection_invalid")
+
+    status = "unavailable"
+    code = "registry_projection_invalid"
+    if isinstance(outcome, RegistryNotFound):
+        status = "not_found"
+        code = outcome.code
+    elif isinstance(outcome, RegistryUnavailable):
+        code = outcome.code
+    if ticket_snapshot is not None:
+        return SupportTicketRegistrySnapshot(
+            status=status,
+            source="ticket_snapshot",
+            code=code,
+            person_id=ticket_snapshot.person.external_id,
+            person_display_name=ticket_snapshot.display_name,
+        )
+    return SupportTicketRegistrySnapshot(
+        status=status,
+        source="registry_port",
+        code=code,
+    )
+
+
 async def _build_support_snapshot(request: web.Request, session, ticket, auth_context) -> SupportTicketSnapshot:
     presence = SupportTicketPresence.model_validate(_ticket_presence_payload(request, ticket))
     notification_unread = await NotificationRepo(session).unread_count(auth_context.actor_id)
 
     device = None
-    registry_snapshot = None
+    registry_port = DomainPortContainer.from_config(registry_session=session).registry
+    registry_snapshot = await _build_support_registry_snapshot(
+        ticket,
+        registry_port=registry_port,
+    )
     if getattr(ticket, "device_id", None):
         device = await DevicesRepo(session).get_by_device_id(ticket.device_id)
-        registry_repo = RegistryRepo(session)
-        asset = await registry_repo.get_asset_by_device_id(ticket.device_id)
-        person = await registry_repo.get_person(getattr(asset, "assigned_person_id", None)) if asset else None
-        service = await registry_repo.get_service(getattr(asset, "service_id", None)) if asset else None
-        service_owner_queue = None
-        if getattr(service, "owner_queue_id", None):
-            service_owner_queue = await session.get(TicketQueue, service.owner_queue_id)
-        location_id = getattr(asset, "location_id", None) or getattr(person, "location_id", None)
-        department_id = getattr(asset, "department_id", None) or getattr(person, "department_id", None)
-        location = await registry_repo.get_location(location_id) if location_id else None
-        department = await registry_repo.get_department(department_id) if department_id else None
-        if asset or person or location or department:
-            registry_snapshot = SupportTicketRegistrySnapshot(
-                person_id=getattr(person, "person_id", None),
-                person_display_name=getattr(person, "display_name", None),
-                person_phone=getattr(person, "phone", None),
-                person_email=getattr(person, "email", None),
-                person_source=getattr(person, "source", None),
-                department_id=getattr(department, "department_id", None),
-                department_name=getattr(department, "name", None),
-                location_id=getattr(location, "location_id", None),
-                location_display_name=getattr(location, "display_name", None),
-                building=getattr(location, "building", None),
-                floor=getattr(location, "floor", None),
-                room=getattr(location, "room", None),
-                asset_id=getattr(asset, "asset_id", None),
-                asset_name=getattr(asset, "name", None),
-                asset_type=getattr(asset, "asset_type", None),
-                service_id=getattr(service, "service_id", None) or getattr(asset, "service_id", None),
-                service_name=getattr(service, "name", None),
-                service_owner_queue_id=getattr(service, "owner_queue_id", None),
-                service_owner_queue_name=getattr(service_owner_queue, "name", None),
-                service_source=getattr(service, "source", None),
-            )
 
     device_snapshot = SupportTicketDeviceSnapshot(
         device_id=getattr(ticket, "device_id", None),

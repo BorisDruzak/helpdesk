@@ -868,7 +868,7 @@ SERVER_CAPABILITIES = [
 
 - [DATABASE.md](DATABASE.md) — PostgreSQL: таблицы, назначение, где используются, репозитории, миграции
 - [TICKET_SYSTEM.md](TICKET_SYSTEM.md) — тикетная система: маршрутизация, SLA, workflow, RBAC, уведомления, очереди, UI, календари, retention (этапы 2–12)
-- [SEGMENTATION_BOUNDARIES.md](SEGMENTATION_BOUNDARIES.md) and [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md) — external Knowledge boundary, unavailable default and future versioned API target
+- [SEGMENTATION_BOUNDARIES.md](SEGMENTATION_BOUNDARIES.md) and [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md) — external Knowledge and Registry ownership, unavailable/default composition rules and future versioned integration targets
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — безопасность, аутентификация (токены, handshake, middleware)
 - [PROTOCOL_V3.md](PROTOCOL_V3.md) — требования сервера к Protocol V3 и ссылка на полную спецификацию
 - [Документация агента](../../pc_agent/docs/README.md) — общая документация агента

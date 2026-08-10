@@ -38,20 +38,56 @@
 - PR-6 retains no in-process RBAC or runtime configuration.
 - `scripts/check_domain_import_boundaries.py` is the AST guard for prohibited
   legacy-domain imports and local ORM dependencies; only historical Alembic
-  version files are exempt. Run
-  `python scripts/check_domain_import_boundaries.py`; focused coverage is in
-  `server/tests/test_domain_import_boundaries.py`.
+  version files are exempt. The default invocation preserves the existing
+  removed-domain enforcement. Registry enforcement is incremental and requires
+  `--registry-scope`; focused coverage
+  is in `server/tests/test_domain_import_boundaries.py` and
+  `server/tests/test_registry_boundary.py`.
 - Navigation and drift routing live in `scripts/navigation_catalog.py` and
   `docs/QUICK_LOOKUP.md`; port-contract coverage remains in
   `server/tests/test_domain_ports.py`.
 
+## 2026-08-10 RegistryPort Helpdesk read cutover (PR-8)
+
+- `server/tickets/ticket_context.py` builds verified immutable requester
+  reference/snapshot pairs through `RegistryPort.requester_snapshot()`.
+  `server/tickets/create_flow.py` reads redacted current registration state
+  through `RegistryPort.account_status()`; an invalid projection fails closed
+  instead of creating a verified requester ticket with legacy-only identity.
+- `server/inventory/service.py` uses `RegistryPort.active_binding()` and exposes
+  only requester ref/display plus typed source/status. Registry contact,
+  organisation and asset fields are intentionally `null` until a future
+  contract explicitly represents them.
+- `server/web_api/support_handlers.py` and
+  `server/web_api/dto/support.py::SupportTicketRegistrySnapshot` no longer
+  query/represent uncontracted current Registry repositories.
+  The current requester projection exposes `status`, `source` and `code`; when
+  Registry is unavailable/not-found it may show only a valid immutable ticket
+  requester snapshot with `source=ticket_snapshot`. Partial, mismatched or
+  malformed neutral ticket identity fails closed and never authorizes a legacy
+  Registry fallback.
+- `scripts/check_domain_import_boundaries.py --registry-scope
+  requester,tickets,customer_history,inventory,web_api` is the incremental AST
+  boundary. It guards all new ticket modules and the named migration paths, and
+  permits only the exact known symbol debt recorded in its allowance ledger.
+  Repository-wide Registry enforcement is deferred while richer operations are
+  absent from the frozen Task-3 contract.
+- Deferred consumers are requester profile/schema/on-behalf/identity reads,
+  rich ticket context and primary diagnostic-target resolution, customer-history
+  binding/session events, and richer inventory/contact/organisation/asset/service
+  projections. Exact shared-binding and account-session revalidation plus
+  Registry ingestion/commands remain in `create_flow.py` to preserve requester
+  isolation and command behavior until binding-specific/idempotent port
+  operations exist.
+- Focused gate:
+  `python -m pytest server/tests/test_domain_import_boundaries.py server/tests/test_registry_boundary.py server/tests/test_requester_workspace_api.py server/tests/test_web_support_api.py -q --tb=short`.
+
 ## 2026-08-10 Helpdesk requester reference persistence (PR-2)
 
-- `server/tickets/ticket_context.py` is the local Registry-adapter seam that
-  creates immutable `RequesterRef` / `RequesterSnapshot` values from a
-  server-loaded `RegistryPerson` and validates neutral values read from stored
-  ticket/consent rows. Snapshots contain only the opaque person reference and a
-  display name.
+- `server/tickets/ticket_context.py` creates immutable `RequesterRef` /
+  `RequesterSnapshot` values from `RegistryPort.requester_snapshot()` and
+  validates neutral values read from stored ticket/consent rows. Snapshots
+  contain only the opaque person reference and a display name.
 - `server/tickets/create_flow.py` dual-writes neutral requester values with the
   temporary legacy columns only after validated account-session, active or
   confirmed binding, or verified web-identity resolution. Request payload

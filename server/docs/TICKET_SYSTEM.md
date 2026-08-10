@@ -35,6 +35,21 @@
 - P3 Quality Loop adds structured CSAT, reopen reason events, internal QA reviews, continuous improvement actions and service/offering quality analytics without changing canonical ticket statuses. Requester/public users can submit feedback and reopen through scoped ticket/public-token endpoints; support/admin/auditor use `/api/web/quality/*`. Full contract: [QUALITY_LOOP.md](QUALITY_LOOP.md).
 - P4 Problem Management adds first-class problem records, problem candidates, RCA, known-error/workaround linkage and many-to-many problem-to-ticket links without changing canonical ticket statuses. Support/admin users can link a ticket to a problem and see linked problems in the support Quality panel; requester/public ticket views do not expose problem/RCA internals. Full contract: [PROBLEM_MANAGEMENT.md](PROBLEM_MANAGEMENT.md).
 
+## PR-8 RegistryPort requester projection (2026-08-10)
+
+- Verified requester snapshots, active device bindings and redacted account
+  status are read through `RegistryPort`; returned requester/device refs must
+  match the requested opaque refs exactly or the projection fails closed.
+- `SupportTicketRegistrySnapshot` exposes `status`, `source` and `code` for
+  current Registry availability. When current state is unavailable/not-found,
+  support may display only the validated immutable requester snapshot already
+  stored on the ticket with `source=ticket_snapshot`; it is historical display,
+  not authorization or current Registry truth.
+- Contact, organisation, asset, service and pending-claim identifiers are not
+  represented by the current port. Their richer external contract and the
+  frontend degraded-state presentation/browser acceptance are deferred; no
+  local Registry query is used as a hidden fallback in migrated consumers.
+
 ## Источники создания тикета и инварианты
 
 **Канонические источники создания тикета (DB-first):**

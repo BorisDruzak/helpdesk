@@ -2351,10 +2351,13 @@ async def test_web_support_ticket_detail_includes_observer_summary(test_client, 
     assert payload["data"]["timeline"][1]["text"] == "Спасибо, жду результат."
     assert payload["data"]["snapshot"]["device"]["hostname"] == "ws-detail-host"
     assert payload["data"]["snapshot"]["device"]["agent_version"] == "1.2.3"
-    assert payload["data"]["snapshot"]["registry"]["person_display_name"] == "Иванов Иван"
-    assert payload["data"]["snapshot"]["registry"]["department_name"] == "Бухгалтерия"
-    assert payload["data"]["snapshot"]["registry"]["room"] == "214"
-    assert payload["data"]["snapshot"]["registry"]["asset_name"] == "ws-detail-host"
+    registry_snapshot = payload["data"]["snapshot"]["registry"]
+    assert registry_snapshot["status"] == "available"
+    assert registry_snapshot["source"] == "registry_port"
+    assert registry_snapshot["person_display_name"] == "Иванов Иван"
+    assert registry_snapshot["department_name"] is None
+    assert registry_snapshot["room"] is None
+    assert registry_snapshot["asset_name"] is None
     operation_payload = payload["data"]["snapshot"]["latest_operations"][0]
     assert operation_payload["tool_name"] == "network.diagnostics"
     assert operation_payload["duration_ms"] == 2000
@@ -3155,7 +3158,7 @@ async def test_web_support_timeline_extracts_nested_diagnostic_steps(test_client
 
 
 @pytest.mark.asyncio
-async def test_web_support_workspace_enriches_requester_contact_from_registry(test_client, test_engine):
+async def test_web_support_workspace_does_not_fallback_to_local_registry_asset(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
         queue = await _seed_queue(session, code="contact_registry", name="Contact registry", members=["support-test"])
@@ -3231,15 +3234,18 @@ async def test_web_support_workspace_enriches_requester_contact_from_registry(te
     )
     assert response.status == 200, await response.text()
     registry = (await response.json())["data"]["detail"]["snapshot"]["registry"]
-    assert registry["person_display_name"] == "Александр Смирнов"
-    assert registry["person_phone"] == "+7 (495) 123-45-67"
-    assert registry["person_email"] == "a.smirnov@example.test"
-    assert registry["department_name"] == "Отдел маркетинга"
-    assert registry["floor"] == "3"
-    assert registry["service_id"] == service_id
-    assert registry["service_name"] == "Корпоративный сайт"
-    assert registry["service_owner_queue_id"] == queue_id
-    assert registry["service_owner_queue_name"] == queue_name
+    assert registry["status"] == "not_found"
+    assert registry["source"] == "registry_port"
+    assert registry["code"] == "registry_active_binding_not_found"
+    assert registry["person_display_name"] is None
+    assert registry["person_phone"] is None
+    assert registry["person_email"] is None
+    assert registry["department_name"] is None
+    assert registry["floor"] is None
+    assert registry["service_id"] is None
+    assert registry["service_name"] is None
+    assert registry["service_owner_queue_id"] is None
+    assert registry["service_owner_queue_name"] is None
 
 
 @pytest.mark.asyncio

@@ -23,10 +23,12 @@ from app.db.models import (
     DeviceInventoryRefreshPolicy,
     DeviceInventoryRefreshRun,
     DeviceInventorySnapshot,
-    RegistryAsset,
-    RegistryDepartment,
-    RegistryLocation,
-    RegistryPerson,
+)
+from domain_ports import (
+    ActiveBindingProjection,
+    DeviceRef,
+    DomainPortContainer,
+    RegistryPort,
 )
 from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.presentation_overrides import ToolPresentationOverrideService
@@ -345,8 +347,16 @@ def _inventory_builtin_descriptor(tool_id: str) -> CapabilityDescriptor | None:
 
 
 class DeviceInventoryService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        registry_port: RegistryPort | None = None,
+    ):
         self.session = session
+        self.registry_port = registry_port or DomainPortContainer.from_config(
+            registry_session=session
+        ).registry
 
     def normalize_snapshot(self, snapshot: dict[str, Any]) -> dict[str, Any]:
         identity = _safe_dict(snapshot.get("identity"))
@@ -1103,36 +1113,35 @@ class DeviceInventoryService:
                 "source": "agent_profile",
                 "status": suggestion.status,
             }
-        asset_result = await self.session.execute(select(RegistryAsset).where(RegistryAsset.device_id == str(device_id)).limit(1))
-        asset = asset_result.scalar_one_or_none()
-        if asset and asset.assigned_person_id:
-            person_result = await self.session.execute(select(RegistryPerson).where(RegistryPerson.person_id == asset.assigned_person_id).limit(1))
-            person = person_result.scalar_one_or_none()
-            if person:
-                department = None
-                location = None
-                if person.department_id:
-                    department = (await self.session.execute(select(RegistryDepartment).where(RegistryDepartment.department_id == person.department_id))).scalar_one_or_none()
-                if person.location_id:
-                    location = (await self.session.execute(select(RegistryLocation).where(RegistryLocation.location_id == person.location_id))).scalar_one_or_none()
-                profiles.setdefault(
-                    str(person.profile_key or person.person_id),
-                    {
-                        "requester_id": person.profile_key,
-                        "display_name": person.display_name,
-                        "full_name": person.full_name,
-                        "department": getattr(department, "name", None),
-                        "building": getattr(location, "building", None),
-                        "floor": getattr(location, "floor", None),
-                        "room": getattr(location, "room", None),
-                        "phone": person.phone,
-                        "email": person.email,
-                        "active": False,
-                        "last_seen_at": person.last_seen_at.isoformat() if person.last_seen_at else None,
-                        "source": "agent_profile",
-                        "status": "observed",
-                    },
-                )
+        requested_device_id = str(device_id)
+        binding = await self.registry_port.active_binding(
+            DeviceRef(external_id=requested_device_id)
+        )
+        if (
+            isinstance(binding, ActiveBindingProjection)
+            and binding.device.external_id == requested_device_id
+            and binding.requester.external_id
+            == binding.requester_snapshot.person.external_id
+        ):
+            requester_id = binding.requester.external_id
+            profiles.setdefault(
+                requester_id,
+                {
+                    "requester_id": requester_id,
+                    "display_name": binding.requester_snapshot.display_name,
+                    "full_name": None,
+                    "department": None,
+                    "building": None,
+                    "floor": None,
+                    "room": None,
+                    "phone": None,
+                    "email": None,
+                    "active": False,
+                    "last_seen_at": None,
+                    "source": "registry_port",
+                    "status": binding.status,
+                },
+            )
         return sorted(profiles.values(), key=lambda item: (not bool(item.get("active")), str(item.get("last_seen_at") or "")), reverse=False)
 
     def build_suggested_binding_from_profile(self, profile: dict[str, Any]) -> dict[str, Any]:

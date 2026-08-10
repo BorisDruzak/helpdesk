@@ -8,6 +8,7 @@ import pytest
 from app.db.models import RegistryPerson, Ticket, UserConsentRequest
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.user_consent_repo import UserConsentRepo
+from domain_ports import RegistryNotFound
 from domain_ports.registry import (
     BindingRef,
     DeviceRef,
@@ -37,6 +38,11 @@ class RecordingSession:
 
     async def refresh(self, row: object) -> None:
         return None
+
+
+class MissingRequesterRegistryPort:
+    async def requester_snapshot(self, _person: PersonRef) -> RegistryNotFound:
+        return RegistryNotFound(code="registry_requester_not_found")
 
 
 class MissingPersonSession:
@@ -121,7 +127,10 @@ def test_requester_persistence_requires_complete_matching_pair() -> None:
 
 @pytest.mark.asyncio
 async def test_requester_snapshot_builder_rejects_missing_verified_person() -> None:
-    builder = TicketContextBuilder(MissingPersonSession())  # type: ignore[arg-type]
+    builder = TicketContextBuilder(
+        MissingPersonSession(),  # type: ignore[arg-type]
+        registry_port=MissingRequesterRegistryPort(),  # type: ignore[arg-type]
+    )
 
     with pytest.raises(ValueError, match="verified requester person not found"):
         await builder.requester_reference_snapshot("stale-person-id")

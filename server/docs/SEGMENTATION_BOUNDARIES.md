@@ -1,7 +1,7 @@
 # Helpdesk Segmentation Boundaries
 
-Status: normative PR-0 architecture record. This document changes no runtime
-behaviour.
+Status: normative segmentation boundary record, updated through the PR-8
+RegistryPort read cutover.
 
 ## Ownership
 
@@ -68,6 +68,26 @@ by default. Its DTOs expose only opaque refs and redacted projections. The
 `external` mode remains explicitly unavailable until PR-9 acceptance, and
 local commands are not invoked until they can honor caller-provided operation
 IDs with deterministic idempotency outcomes.
+
+The PR-8 Helpdesk read cutover is deliberately limited to operations represented
+by the frozen port: requester display snapshots, active device bindings and
+redacted account status. Ticket creation, immutable requester history,
+inventory requester projection and the support current-requester projection use
+those operations without a local ORM/service fallback. The support DTO keeps a
+typed unavailable or not-found current-state result visible as
+`status`/`source`/`code` and may display only a previously validated immutable
+ticket requester snapshot as history. It must not reconstruct current contact,
+organisation, asset or service data from local Registry tables.
+
+Use `python scripts/check_domain_import_boundaries.py --registry-scope
+requester,tickets,customer_history,inventory,web_api` for the incremental
+Registry boundary. The scoped guard covers every new ticket module and rejects
+new Registry ORM/repository/service imports in selected migration paths, while
+an exact symbol ledger records operations still waiting for a richer external
+contract. This is not yet a repository-wide claim: requester profile/on-behalf
+resolution, rich ticket diagnostic context, customer-history binding/session
+events, exact binding/session authorization and Registry commands remain
+explicitly deferred.
 
 ## Non-goals
 

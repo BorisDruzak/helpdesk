@@ -9,6 +9,13 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from app.repos import DevicesRepo, TicketEventsRepo
+from domain_ports import (
+    AccountStatusProjection,
+    DeviceRef,
+    DomainPortContainer,
+    RegistryPort,
+    RegistryUnavailable,
+)
 from tickets.assignment_service import (
     MAX_ACTIVE_TICKETS_PER_OPERATOR,
     TicketAssignmentError,
@@ -158,17 +165,69 @@ def _requester_create_marker_payload(
     return payload
 
 
-async def _find_registry_asset_id_by_device(session: Any, device_id: str | None) -> str | None:
-    if not device_id:
-        return None
-    try:
-        from app.repos.registry_repo import RegistryRepo
+async def _read_registry_account_status(
+    registry_port: RegistryPort,
+    device_id: str | None,
+) -> dict[str, Any]:
+    """Translate the redacted port outcome for the legacy ticket-create flow."""
 
-        asset = await RegistryRepo(session).get_asset_by_device_id(device_id)
-        return asset.asset_id if asset else None
-    except Exception as exc:
-        logger.warning(f"[create] requester account asset lookup failed device_id={device_id[:8]} err={exc}")
-    return None
+    if not device_id:
+        return {
+            "status": "no_device",
+            "active_binding": None,
+            "active_person": None,
+            "requires_user_action": False,
+            "requires_admin_action": False,
+            "conflict_reason": None,
+            "registry_source": "not_applicable",
+        }
+    requested_device_id = str(device_id)
+    outcome = await registry_port.account_status(
+        DeviceRef(external_id=requested_device_id)
+    )
+    if isinstance(outcome, AccountStatusProjection):
+        if outcome.device.external_id != requested_device_id:
+            raise ValueError("registry_projection_invalid")
+        active_binding = None
+        active_person = None
+        if outcome.active_binding is not None:
+            if (
+                outcome.active_binding.device.external_id != requested_device_id
+                or outcome.active_binding.requester.external_id
+                != outcome.active_binding.requester_snapshot.person.external_id
+            ):
+                raise ValueError("registry_projection_invalid")
+            active_binding = {
+                "binding_id": outcome.active_binding.binding.external_id,
+                "person_id": outcome.active_binding.requester.external_id,
+                "relationship_type": outcome.active_binding.relationship_type,
+            }
+            active_person = {
+                "person_id": outcome.active_binding.requester.external_id,
+                "display_name": outcome.active_binding.requester_snapshot.display_name,
+            }
+        return {
+            "status": outcome.status,
+            "active_binding": active_binding,
+            "active_person": active_person,
+            "requires_user_action": outcome.requires_user_action,
+            "requires_admin_action": outcome.requires_admin_action,
+            "conflict_reason": outcome.code,
+            "registry_source": outcome.source,
+        }
+    if isinstance(outcome, RegistryUnavailable):
+        if outcome.code == "registry_projection_invalid":
+            raise ValueError("registry_projection_invalid")
+        return {
+            "status": "registry_unavailable",
+            "active_binding": None,
+            "active_person": None,
+            "requires_user_action": False,
+            "requires_admin_action": False,
+            "conflict_reason": outcome.code,
+            "registry_source": "unavailable",
+        }
+    raise ValueError("registry_projection_invalid")
 
 
 async def _auto_assign_if_possible(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
@@ -325,29 +384,34 @@ async def create_ticket_with_side_effects(
     requester_account: Optional[dict[str, Any]] = None,
     ticket_context: Optional[dict[str, Any]] = None,
     state: Any | None = None,
+    registry_port: RegistryPort | None = None,
 ) -> Dict[str, Any]:
     ticket_repo = TicketEventsRepo(session)
     ticket_id = new_ticket_id()
+    registry = registry_port or DomainPortContainer.from_config(
+        registry_session=session
+    ).registry
     asset_id = None
     registry_context: dict[str, Any] | None = None
     has_requester_account = isinstance(requester_account, dict)
     existing_active_binding = None
     try:
-        from app.repos.registration_repo import RegistrationRepo
-
-        existing_active_binding = await RegistrationRepo(session).get_active_primary_binding(device_id) if device_id else None
+        registration_precheck = await _read_registry_account_status(registry, device_id)
+        existing_active_binding = registration_precheck.get("active_binding")
         if existing_active_binding:
-            asset_id = existing_active_binding.asset_id
             registry_context = {
-                "person_id": existing_active_binding.person_id,
-                "asset_id": existing_active_binding.asset_id,
+                "person_id": existing_active_binding.get("person_id"),
                 "registration": {
-                    "binding_id": existing_active_binding.binding_id,
+                    "binding_id": existing_active_binding.get("binding_id"),
                     "status": "admin_confirmed",
-                    "relationship_type": existing_active_binding.relationship_type,
+                    "relationship_type": existing_active_binding.get("relationship_type"),
                 },
                 "source": "active_registration_binding",
             }
+    except ValueError as exc:
+        if str(exc) == "registry_projection_invalid":
+            raise
+        logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
     except Exception as exc:
         logger.warning(f"[create] registration precheck failed ticket_id={ticket_id} err={exc}")
     account_mode = ""
@@ -427,14 +491,7 @@ async def create_ticket_with_side_effects(
     requester_account_mode: str | None = None
     requester_account_warning: str | None = None
     try:
-        from registry.registration_service import RegistrationService
-
-        registration_service = RegistrationService(session)
-        registration_status = (
-            await registration_service.get_device_registration_status(device_id)
-            if device_id
-            else {"status": "no_device", "active_binding": None, "active_person": None, "pending_claim": None}
-        )
+        registration_status = await _read_registry_account_status(registry, device_id)
         submitted_registration = registry_context.get("registration") if isinstance(registry_context, dict) else None
         if isinstance(submitted_registration, dict) and submitted_registration.get("status") == "conflict":
             registration_status = {
@@ -525,8 +582,6 @@ async def create_ticket_with_side_effects(
             if isinstance(registration_status, dict):
                 active_asset = registration_status.get("asset") if isinstance(registration_status.get("asset"), dict) else None
                 asset_id = (active_asset or {}).get("asset_id") or asset_id
-            if asset_id is None:
-                asset_id = await _find_registry_asset_id_by_device(session, device_id)
             requester_account_context = {
                 **_safe_account_payload(requester_account or {}),
                 "account_mode": "registration_pending",
@@ -604,6 +659,10 @@ async def create_ticket_with_side_effects(
                 }
         if account_mode != "browser_no_device":
             requester_registration_context = registration_status if isinstance(registration_status, dict) else requester_registration_context
+    except ValueError as exc:
+        if str(exc) == "registry_projection_invalid":
+            raise
+        logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
     except Exception as exc:
         logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
 
@@ -634,6 +693,7 @@ async def create_ticket_with_side_effects(
         requester_ref, requester_snapshot = await TicketContextBuilder(
             session,
             state=state,
+            registry_port=registry,
         ).requester_reference_snapshot(verified_requester_person_id)
         if requester_ref is None or requester_snapshot is None:
             raise ValueError("verified requester requires a complete requester reference snapshot")
@@ -658,7 +718,11 @@ async def create_ticket_with_side_effects(
                 if isinstance(context_custom_fields.get("policy_refs"), dict)
                 else {}
             )
-            ticket_context_snapshot = await TicketContextBuilder(session, state=state).build(
+            ticket_context_snapshot = await TicketContextBuilder(
+                session,
+                state=state,
+                registry_port=registry,
+            ).build(
                 creator_person_id=str(requester_person_id),
                 creator_actor_id=requester_id,
                 affected_person_id=str(context_input.get("affected_person_id") or "").strip() or None,
