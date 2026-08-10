@@ -66,7 +66,10 @@ REGISTRY_REPOSITORIES = frozenset(
     }
 )
 REGISTRY_REPOSITORY_EXPORTS = frozenset({"RegistrationRepo", "RegistryRepo"})
-REGISTRY_BROAD_MODULES = frozenset({"app.db.models", "app.repos"})
+# A parent package is as capable of reaching local Registry persistence as
+# its child modules, so protect it at import time instead of attempting
+# alias-use dataflow analysis.
+REGISTRY_BROAD_MODULES = frozenset({"app.db", "app.db.models", "app.repos"})
 FORBIDDEN_REGISTRY_MODELS = frozenset(
     {
         "RegistryDepartment",
