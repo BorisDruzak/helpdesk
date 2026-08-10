@@ -324,6 +324,31 @@ def test_preflight_rejects_replayed_or_stale_signed_evidence(tmp_path: Path) -> 
     assert "retirement_evidence_replayed_or_stale" in result.blocker_codes
 
 
+def test_preflight_rejects_currently_attested_evidence_with_a_stale_backup(tmp_path: Path) -> None:
+    now = datetime.now(timezone.utc)
+    evidence = _attested_evidence(attested_at=now)
+    backup = evidence["backup"]
+    acceptance = evidence["external_command_acceptance"]
+    assert isinstance(backup, dict)
+    assert isinstance(acceptance, dict)
+    stale_backup_at = now - MAX_EVIDENCE_AGE - timedelta(seconds=1)
+    backup["created_at"] = stale_backup_at.isoformat()
+    acceptance["accepted_at"] = stale_backup_at.isoformat()
+    _resign(evidence)
+    _write_evidence(tmp_path, evidence)
+    (tmp_path / "server").mkdir(parents=True)
+    (tmp_path / "server" / "config.py").write_text("REGISTRY_PORT_MODE = 'external'\n", encoding="utf-8")
+
+    result = run_preflight(
+        tmp_path,
+        attestation_verifier=_fixture_attestation_verifier,
+        now=now,
+    )
+
+    assert result.ready is False
+    assert "retirement_evidence_replayed_or_stale" in result.blocker_codes
+
+
 def test_preflight_rejects_future_signed_evidence(tmp_path: Path) -> None:
     future_attestation = datetime.now(timezone.utc) + timedelta(minutes=6)
     _write_evidence(tmp_path, _attested_evidence(attested_at=future_attestation))

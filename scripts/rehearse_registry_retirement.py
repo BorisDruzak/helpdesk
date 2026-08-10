@@ -334,17 +334,20 @@ def _evidence_time_blocker(evidence: dict[str, Any], *, now: datetime) -> Prefli
             "retirement_evidence_timeline_invalid",
             "every signed evidence stage requires an offset-aware UTC timestamp",
         )
-    attested_at = timestamps["attestation"]
     if any(timestamp > now + MAX_FUTURE_EVIDENCE_SKEW for timestamp in timestamps.values()):
         return PreflightBlocker(
             "retirement_evidence_timestamp_in_future",
             "signed evidence timestamps may not exceed the bounded future clock-skew allowance",
         )
-    if now - attested_at > MAX_EVIDENCE_AGE:
+    stale_stages = tuple(
+        name for name, timestamp in timestamps.items() if now - timestamp > MAX_EVIDENCE_AGE
+    )
+    if stale_stages:
         return PreflightBlocker(
             "retirement_evidence_replayed_or_stale",
-            "signed evidence attestation exceeds the bounded freshness window",
+            "signed evidence stage(s) exceed the bounded freshness window: " + ", ".join(stale_stages),
         )
+    attested_at = timestamps["attestation"]
     if not (
         timestamps["backup"]
         < timestamps["restore"]

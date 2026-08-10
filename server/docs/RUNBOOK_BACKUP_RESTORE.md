@@ -94,12 +94,15 @@ test-only and must never be used for a release.
 workspace and requires a release-operator supplied `--expected-environment`.
 Both must exactly match the signed evidence envelope and every evidence
 component; a copied bundle for another revision or environment is rejected.
-Evidence is valid for at most 24 hours from `attested_at`, allows at most five
-minutes of future clock skew, and is rejected as replayed/stale thereafter.
+Every signed evidence stage (`backup.created_at`, restore completion, clone
+catalog capture, maintenance approval, command acceptance and `attested_at`) is
+valid for at most 24 hours, allows at most five minutes of future clock skew,
+and is rejected as replayed/stale thereafter. A new signature cannot bless an
+old backup or restore chain.
 The signed timestamps must be strictly ordered: backup, restore drill, clone
 catalog, approved maintenance/writers-stop plan, then attestation. The command
-never writes a replay marker, so the bounded attestation lifetime is the
-enforced replay window; an operator must create and sign a fresh bundle for
+never writes a replay marker, so the bounded lifetime of every signed stage is
+the enforced replay window; an operator must create and sign a fresh bundle for
 each release window.
 
 If a forward migration has started or the application is unhealthy, rollback
