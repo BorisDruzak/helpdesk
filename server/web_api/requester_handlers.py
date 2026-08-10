@@ -939,6 +939,7 @@ async def handle_web_requester_consents(request: web.Request) -> web.Response:
         resolver = RequesterIdentityResolver(session, state=request.app.get("state"))
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         items = await UserConsentService(session).list_for_requester(
+            requester_external_ref=resolver.requester_external_ref(person),
             requester_person_id=person.person_id if person else None,
             statuses=_status_filter(request),
         )
@@ -955,6 +956,7 @@ async def handle_web_requester_consent_detail(request: web.Request) -> web.Respo
         person = await resolver.resolve_person_for_web_user(auth_context.actor_id)
         row = await UserConsentService(session).get_for_requester(
             consent_id=consent_id,
+            requester_external_ref=resolver.requester_external_ref(person),
             requester_person_id=person.person_id if person else None,
         )
         await session.commit()
@@ -975,6 +977,7 @@ async def _handle_web_requester_consent_decision(request: web.Request, decision:
             row = await UserConsentService(session, state=request.app.get("state")).decide_from_browser(
                 consent_id=consent_id,
                 decision=decision,
+                requester_external_ref=resolver.requester_external_ref(person),
                 requester_person_id=person.person_id if person else None,
                 actor_id=auth_context.actor_id,
                 reason=reason,

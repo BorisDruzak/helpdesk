@@ -40,6 +40,38 @@
   `docs/QUICK_LOOKUP.md`; port-contract coverage remains in
   `server/tests/test_domain_ports.py`.
 
+## 2026-08-10 Helpdesk requester reference persistence (PR-2)
+
+- `server/tickets/ticket_context.py` is the local Registry-adapter seam that
+  creates immutable `RequesterRef` / `RequesterSnapshot` values from a
+  server-loaded `RegistryPerson` and validates neutral values read from stored
+  ticket/consent rows. Snapshots contain only the opaque person reference and a
+  display name.
+- `server/tickets/create_flow.py` dual-writes neutral requester values with the
+  temporary legacy columns only after validated account-session, active or
+  confirmed binding, or verified web-identity resolution. Request payload
+  profile/account fields cannot create a neutral reference or snapshot.
+- `server/tickets/account_access_service.py`,
+  `server/requester/identity_service.py` and `server/consent/service.py` read
+  neutral requester references first. Legacy person/binding/session fields are
+  compatibility fallbacks only for rows without neutral state; malformed
+  snapshot-without-reference rows cannot fall back through legacy identity
+  fields. Exact confirmed-session and
+  `verified_other_account` session scoping are unchanged.
+- `server/consent/operation_consent.py` inherits the validated neutral requester
+  state from the ticket. The snapshot is historical display data only:
+  authorization still uses verified identity, active binding and account-session
+  checks. `server/web_api/requester_handlers.py` passes only the external
+  requester reference produced by the server resolver into consent list/detail/
+  decision calls. An unverified exact `ui_login` may list only its pending
+  registration claim unless an active binding traces to an approved source claim
+  for the same normalized login, person and device.
+- Regression coverage is in
+  `server/tests/test_ticket_registration_enrichment.py`,
+  `server/tests/test_ticket_account_access.py`,
+  `server/tests/test_user_consent_api.py` and
+  `server/tests/test_requester_workspace_api.py`.
+
 Карта кода `pc_client/server`. Используется для быстрой навигации и поиска (в т.ч. скрипт `scripts/agent_find.py` и контекст агента). Пути указаны относительно корня репозитория (например `server/routes.py`).
 
 ---

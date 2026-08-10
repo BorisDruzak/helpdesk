@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 import uuid
 
-from sqlalchemy import desc, or_, select
+from sqlalchemy import JSON, and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import config as config_module
@@ -19,7 +19,7 @@ from app.db.models import (
     RegistryPersonIdentity,
     Ticket,
 )
-from app.repos.registration_repo import RegistrationRepo, is_person_active
+from app.repos.registration_repo import RegistrationRepo, is_person_active, normalize_identifier
 from app.repos.registry_repo import RegistryRepo
 from consent.service import UserConsentService
 from registry.primary_agent_resolver import PrimaryAgentResolver
@@ -200,15 +200,43 @@ class RequesterIdentityResolver:
     def profile_completion_required() -> bool:
         return bool(getattr(config_module, "PROFILE_COMPLETION_REQUIRED", True))
 
+    @staticmethod
+    def requester_external_ref(person: RegistryPerson | None) -> str | None:
+        value = str(getattr(person, "person_id", None) or "")
+        return value or None
+
     async def resolve_person_for_web_user(self, actor_id: str) -> RegistryPerson | None:
         login = str(actor_id or "").strip()
         if not login:
             return None
         identity = await self.registration_repo.find_identity("ui_login", login)
-        if identity is None or identity.verified is not True:
+        if identity is None:
             return None
         person = await self.registry_repo.get_person(identity.person_id)
-        return person if is_person_active(person) else None
+        if not is_person_active(person):
+            return None
+        if identity.verified is True:
+            return person
+        active_bindings = await self.registration_repo.list_bindings_for_person(
+            identity.person_id,
+            active_only=True,
+        )
+        normalized_login = normalize_identifier("ui_login", login)
+        for binding in active_bindings:
+            source_claim_id = str(binding.source_claim_id or "").strip()
+            if not source_claim_id:
+                continue
+            source_claim = await self.registration_repo.get_claim(source_claim_id)
+            if (
+                source_claim is not None
+                and source_claim.status == "approved"
+                and source_claim.person_id == identity.person_id
+                and source_claim.device_id == binding.device_id
+                and normalize_identifier("ui_login", source_claim.source_ref)
+                == normalized_login
+            ):
+                return person
+        return None
 
     async def list_active_bindings(self, person_id: str | None) -> list[DeviceUserBinding]:
         if not person_id:
@@ -850,13 +878,34 @@ class RequesterIdentityResolver:
         binding_ids = [binding.binding_id for binding in bindings]
         sessions = await self.list_owned_sessions(person.person_id if person else None, binding_ids)
         session_ids = [session.session_id for session in sessions]
-        clauses = [Ticket.requester_id == str(actor_id)]
+        legacy_scope = and_(
+            Ticket.requester_external_ref.is_(None),
+            or_(
+                Ticket.requester_snapshot_json.is_(None),
+                Ticket.requester_snapshot_json == JSON.NULL,
+            ),
+        )
+        clauses = [and_(legacy_scope, Ticket.requester_id == str(actor_id))]
         if person is not None:
-            clauses.append(Ticket.requester_person_id == person.person_id)
+            requester_external_ref = self.requester_external_ref(person)
+            if requester_external_ref:
+                clauses.append(
+                    Ticket.requester_external_ref == requester_external_ref
+                )
+            clauses.append(
+                and_(legacy_scope, Ticket.requester_person_id == person.person_id)
+            )
         if binding_ids:
-            clauses.append(Ticket.requester_binding_id.in_(binding_ids))
+            clauses.append(
+                and_(legacy_scope, Ticket.requester_binding_id.in_(binding_ids))
+            )
         if session_ids:
-            clauses.append(Ticket.requester_account_session_id.in_(session_ids))
+            clauses.append(
+                and_(
+                    legacy_scope,
+                    Ticket.requester_account_session_id.in_(session_ids),
+                )
+            )
         result = await self.session.execute(
             select(Ticket)
             .where(or_(*clauses))
@@ -899,6 +948,51 @@ class RequesterIdentityResolver:
             for claim in result.scalars().all()
         ]
 
+    async def list_pending_claims_for_web_user(
+        self,
+        *,
+        actor_id: str,
+        resolved_person_id: str | None,
+    ) -> list[dict[str, Any]]:
+        person_id = str(resolved_person_id or "").strip() or None
+        if person_id is not None:
+            return await self.list_pending_claims(person_id)
+        identity = await self.registration_repo.find_identity("ui_login", actor_id)
+        person_id = str(getattr(identity, "person_id", None) or "").strip() or None
+        normalized_login = normalize_identifier("ui_login", actor_id)
+        if person_id is None or not normalized_login:
+            return []
+        result = await self.session.execute(
+            select(DeviceRegistrationClaim)
+            .where(DeviceRegistrationClaim.person_id == person_id)
+            .where(
+                DeviceRegistrationClaim.status.in_(
+                    [
+                        "self_reported",
+                        "pending_user_confirmation",
+                        "user_confirmed",
+                        "pending_admin_review",
+                        "conflict",
+                    ]
+                )
+            )
+            .order_by(desc(DeviceRegistrationClaim.submitted_at))
+        )
+        matching_claims = [
+            claim
+            for claim in result.scalars().all()
+            if normalize_identifier("ui_login", claim.source_ref) == normalized_login
+        ][:50]
+        return [
+            {
+                "claim_id": claim.claim_id,
+                "device_id": claim.device_id,
+                "status": claim.status,
+                "submitted_at": claim.submitted_at.isoformat() if claim.submitted_at else None,
+            }
+            for claim in matching_claims
+        ]
+
     async def build_bootstrap(self, *, actor_id: str, state: Any | None = None) -> dict[str, Any]:
         person = await self.resolve_person_for_web_user(actor_id)
         profile_schema = await RequesterProfileSchemaService(self.session).get_schema()
@@ -917,6 +1011,7 @@ class RequesterIdentityResolver:
         )
         tickets = await self.list_tickets(actor_id=actor_id, limit=25)
         pending_consents = await UserConsentService(self.session).list_for_requester(
+            requester_external_ref=self.requester_external_ref(person),
             requester_person_id=person.person_id if person else None,
             statuses=["pending"],
         )
@@ -941,7 +1036,10 @@ class RequesterIdentityResolver:
                 }
                 for device in devices
             ],
-            "pending_registration_claims": await self.list_pending_claims(person.person_id if person else None),
+            "pending_registration_claims": await self.list_pending_claims_for_web_user(
+                actor_id=actor_id,
+                resolved_person_id=person.person_id if person else None,
+            ),
             "open_ticket_count": sum(1 for ticket in tickets if str(getattr(ticket, "status", "") or "") not in {"resolved", "closed", "canceled"}),
             "tickets_requiring_user_action_count": sum(
                 1 for ticket in tickets if str(getattr(ticket, "next_action_owner", "") or "") == "requester"

@@ -62,6 +62,11 @@ async def test_ticket_with_active_binding_gets_requester_context_and_asset(test_
 
     assert ticket.requester_person_id == approved["binding"]["person_id"]
     assert ticket.requester_binding_id == approved["binding"]["binding_id"]
+    assert ticket.requester_external_ref == approved["binding"]["person_id"]
+    assert ticket.requester_snapshot_json == {
+        "person": {"external_id": approved["binding"]["person_id"]},
+        "display_name": "Ticket Active",
+    }
     assert ticket.requester_registration_status == "admin_confirmed"
     assert ticket.asset_id == approved["binding"]["asset_id"]
     assert ticket.requester_account_mode == "agent_legacy_or_device_only"
@@ -107,6 +112,11 @@ async def test_ticket_with_active_binding_ignores_conflicting_requester_profile(
 
     assert ticket.requester_person_id == approved["binding"]["person_id"]
     assert ticket.requester_binding_id == approved["binding"]["binding_id"]
+    assert ticket.requester_external_ref == approved["binding"]["person_id"]
+    assert ticket.requester_snapshot_json == {
+        "person": {"external_id": approved["binding"]["person_id"]},
+        "display_name": "Ticket Active Profile",
+    }
     assert ticket.requester_registration_status == "admin_confirmed"
     assert ticket.asset_id == approved["binding"]["asset_id"]
     assert len(claims) == 1
@@ -233,6 +243,11 @@ async def test_confirmed_binding_account_context_uses_active_binding(test_engine
 
     assert ticket.requester_person_id == approved["binding"]["person_id"]
     assert ticket.requester_binding_id == approved["binding"]["binding_id"]
+    assert ticket.requester_external_ref == approved["binding"]["person_id"]
+    assert ticket.requester_snapshot_json == {
+        "person": {"external_id": approved["binding"]["person_id"]},
+        "display_name": "Confirmed Account",
+    }
     assert ticket.requester_registration_status == "admin_confirmed"
     assert ticket.requester_account_session_id == account_session["session"]["session_id"]
     assert ticket.requester_account_mode == "confirmed_binding"
@@ -296,6 +311,9 @@ async def test_verified_other_account_session_marks_ticket_without_registration_
     assert ticket.requester_account_mode == "verified_other_account"
     assert ticket.requester_account_warning == "ticket_created_from_other_account_on_registered_device"
     assert ticket.requester_binding_id is None
+    assert ticket.requester_person_id is None
+    assert ticket.requester_external_ref is None
+    assert ticket.requester_snapshot_json is None
     assert ticket.asset_id == approved["binding"]["asset_id"]
     assert ticket.custom_fields["requester_account_context"]["created_from_other_account"] is True
     assert ticket.custom_fields["requester_account_context"]["verification_status"] == "verified"
@@ -342,6 +360,8 @@ async def test_unapproved_other_account_request_cannot_create_verified_ticket(te
         ticket = await session.get(Ticket, created["ticket_id"])
 
     assert ticket.requester_registration_status == "account_session_invalid"
+    assert ticket.requester_external_ref is None
+    assert ticket.requester_snapshot_json is None
     assert ticket.custom_fields["requester_account_context"]["validation"] == "server_session_invalid"
 
 

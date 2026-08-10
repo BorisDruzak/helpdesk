@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
-from sqlalchemy import func, select, text
+from sqlalchemy import func, null, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -12,11 +12,14 @@ from app.db.models import ConsentDecision, Device, DeviceOutbox, Operation, Regi
 from app.repos.operations_repo import OperationsRepo
 from app.repos.user_consent_repo import UserConsentRepo
 from consent.service import UserConsentService
+from consent.operation_consent import create_operation_user_consent
+from domain_ports.registry import PersonRef, RequesterRef, RequesterSnapshot
 from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 from remote_assist.service import RemoteAssistService
 from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
+import web_api.requester_handlers as requester_handlers_module
 
 pytestmark = pytest.mark.db_cleanup("full")
 
@@ -94,11 +97,8 @@ async def _seed_operation_consent(session, *, login: str, expires_delta: timedel
         requester_profile={"full_name": f"Requester {login}", "email": login},
         normalized_priority=build_default_priority_payload({}),
         requester_account={
-            "account_mode": "confirmed_binding",
-            "person_id": approved["person"]["person_id"],
-            "binding_id": approved["binding"]["binding_id"],
             "session_id": account["session"]["session_id"],
-            "validation": "test",
+            "session_token": account["session_token"],
         },
         include_public_access=True,
     )
@@ -190,6 +190,214 @@ async def test_create_request_returns_existing_pending(test_engine):
             .where(UserConsentRequest.status == "pending")
         )
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_consent_authorization_prefers_neutral_ref_with_legacy_fallback(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            RegistryPerson(
+                person_id="legacy-person",
+                display_name="Legacy Person",
+                full_name="Legacy Person",
+                source="test",
+                status="active",
+            )
+        )
+        await session.flush()
+        service = UserConsentService(session)
+        neutral = await service.create_request(
+            subject_type="diagnostic",
+            subject_id="neutral-requester-consent",
+            requester_person_id="legacy-person",
+            requester_ref=RequesterRef(external_id="registry-ref-opaque-1"),
+            requester_snapshot=RequesterSnapshot(
+                person=PersonRef(external_id="registry-ref-opaque-1"),
+                display_name="Иван",
+            ),
+            title="Neutral requester consent",
+        )
+        historical = await service.create_request(
+            subject_type="diagnostic",
+            subject_id="historical-requester-consent",
+            requester_person_id="legacy-person",
+            title="Historical requester consent",
+        )
+        malformed = UserConsentRequest(
+            consent_id=str(uuid.uuid4()),
+            subject_type="diagnostic",
+            subject_id="malformed-requester-consent",
+            requester_person_id="legacy-person",
+            requester_snapshot_json={
+                "person": {"external_id": "registry-ref-opaque-1"},
+                "display_name": "Иван",
+            },
+            title="Malformed requester consent",
+            status="pending",
+        )
+        pre_migration = UserConsentRequest(
+            consent_id=str(uuid.uuid4()),
+            subject_type="diagnostic",
+            subject_id="pre-migration-requester-consent",
+            requester_person_id="legacy-person",
+            requester_snapshot_json=null(),
+            title="Pre-migration requester consent",
+            status="pending",
+        )
+        session.add_all([malformed, pre_migration])
+        await session.flush()
+
+        assert neutral.requester_external_ref == "registry-ref-opaque-1"
+        assert neutral.requester_snapshot_json == {
+            "person": {"external_id": "registry-ref-opaque-1"},
+            "display_name": "Иван",
+        }
+        assert await service.get_for_requester(
+            consent_id=neutral.consent_id,
+            requester_external_ref="registry-ref-opaque-1",
+            requester_person_id=None,
+        ) is neutral
+        assert await service.get_for_requester(
+            consent_id=neutral.consent_id,
+            requester_external_ref="wrong-ref",
+            requester_person_id="legacy-person",
+        ) is None
+        assert await service.get_for_requester(
+            consent_id=historical.consent_id,
+            requester_external_ref=None,
+            requester_person_id="legacy-person",
+        ) is historical
+        assert await service.get_for_requester(
+            consent_id=malformed.consent_id,
+            requester_external_ref=None,
+            requester_person_id="legacy-person",
+        ) is None
+        visible_ids = {
+            item["consent_id"]
+            for item in await service.list_for_requester(
+                requester_external_ref=None,
+                requester_person_id="legacy-person",
+                statuses=["pending"],
+            )
+        }
+        assert historical.consent_id in visible_ids
+        assert pre_migration.consent_id in visible_ids
+        assert malformed.consent_id not in visible_ids
+
+
+@pytest.mark.asyncio
+async def test_requester_consent_http_uses_server_external_ref_distinct_from_legacy_person(
+    test_client,
+    test_engine,
+    monkeypatch,
+):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "consent-neutral-http@example.test"
+    person_id = str(uuid.uuid4())
+    external_ref = "registry-requester:opaque-http-owner"
+    async with session_maker() as session:
+        person = RegistryPerson(
+            person_id=person_id,
+            display_name="Neutral HTTP Owner",
+            full_name="Neutral HTTP Owner",
+            email=login,
+            source="test",
+            status="active",
+        )
+        session.add_all(
+            [
+                person,
+                RegistryPersonIdentity(
+                    person_id=person_id,
+                    provider="ui_login",
+                    identifier=login,
+                    normalized_identifier=login,
+                    verified=True,
+                    source="test",
+                ),
+            ]
+        )
+        await session.flush()
+        consent = await UserConsentService(session).create_request(
+            subject_type="file_transfer",
+            subject_id="neutral-http-consent",
+            requester_person_id=person_id,
+            requester_ref=RequesterRef(external_id=external_ref),
+            requester_snapshot=RequesterSnapshot(
+                person=PersonRef(external_id=external_ref),
+                display_name="Neutral HTTP Owner",
+            ),
+            title="Neutral HTTP consent",
+        )
+        await session.commit()
+
+    monkeypatch.setattr(
+        requester_handlers_module.RequesterIdentityResolver,
+        "requester_external_ref",
+        staticmethod(lambda person: external_ref if person is not None else None),
+    )
+    headers = _headers(f"{TEST_UI_USER_PREFIX}{login}")
+
+    listed = await test_client.get("/api/web/requester/consents", headers=headers)
+    listed_payload = await listed.json()
+    assert listed.status == 200, listed_payload
+    assert [item["consent_id"] for item in listed_payload["data"]["consents"]] == [
+        consent.consent_id
+    ]
+
+    detail = await test_client.get(
+        f"/api/web/requester/consents/{consent.consent_id}",
+        headers=headers,
+    )
+    detail_payload = await detail.json()
+    assert detail.status == 200, detail_payload
+    assert detail_payload["data"]["consent"]["requester_external_ref"] == external_ref
+
+    decision = await test_client.post(
+        f"/api/web/requester/consents/{consent.consent_id}/approve",
+        headers=headers,
+        json={"reason": "server-owned external ref"},
+    )
+    decision_payload = await decision.json()
+    assert decision.status == 200, decision_payload
+    assert decision_payload["data"]["consent"]["status"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_operation_consent_inherits_neutral_requester_snapshot_from_ticket(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    login = "operation-neutral-owner@example.test"
+    async with session_maker() as session:
+        seeded = await _seed_operation_consent(session, login=login)
+        ticket = await session.get(Ticket, seeded["ticket_id"])
+        operation = await OperationsRepo(session).create_operation(
+            operation_id=str(uuid.uuid4()),
+            device_id=seeded["device_id"],
+            ticket_id=seeded["ticket_id"],
+            kind="tool_call",
+            tool_name="observer_canary.neutral_ref_probe",
+            actor_role="support",
+            trace_id=str(uuid.uuid4()),
+            status="waiting_consent",
+        )
+
+        await create_operation_user_consent(
+            session,
+            operation=operation,
+            ticket=ticket,
+            requested_by_actor_id="support-test",
+            requested_by_role="support",
+            risk_level="safe_read",
+            tool_name="observer_canary.neutral_ref_probe",
+            params={},
+        )
+        consent = await UserConsentRepo(session).get_pending_by_subject("operation", operation.operation_id)
+
+    assert ticket.requester_external_ref == seeded["person_id"]
+    assert consent is not None
+    assert consent.requester_external_ref == ticket.requester_external_ref
+    assert consent.requester_snapshot_json == ticket.requester_snapshot_json
 
 
 @pytest.mark.asyncio

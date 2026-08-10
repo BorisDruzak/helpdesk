@@ -1059,6 +1059,7 @@ async def test_existing_pending_agent_claim_is_visible_to_requester_and_admin(te
     )
     requester_payload = await requester_response.json()
     assert requester_response.status == 200, requester_payload
+    assert requester_payload["data"]["profile"] is None
     requester_claims = requester_payload["data"]["pending_registration_claims"]
     assert any(item["claim_id"] == claim_id and item["device_id"] == device_id for item in requester_claims)
 
@@ -1067,6 +1068,85 @@ async def test_existing_pending_agent_claim_is_visible_to_requester_and_admin(te
     assert admin_response.status == 200, admin_payload
     admin_claims = admin_payload["data"]["registration_claims"]
     assert any(item["claim_id"] == claim_id and item["device_id"] == device_id for item in admin_claims)
+
+
+@pytest.mark.asyncio
+async def test_unverified_login_collision_sees_only_its_pending_claim(test_client, test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    owner_device_id = str(uuid.uuid4())
+    pending_device_id = str(uuid.uuid4())
+    other_pending_device_id = str(uuid.uuid4())
+    owner_login = "requester-collision-owner@example.test"
+    pending_login = "requester-collision-pending@example.test"
+    other_pending_login = "requester-collision-other@example.test"
+
+    async with session_maker() as session:
+        session.add(_device(owner_device_id, "collision-owner-device"))
+        approved = await _approved_binding(
+            session,
+            device_id=owner_device_id,
+            login=owner_login,
+        )
+        session.add(
+            RegistryAdminPolicy(
+                policy_key="registry_management",
+                config_json={
+                    "registration": {
+                        "require_admin_confirmation": True,
+                        "auto_approve_first_binding": False,
+                    }
+                },
+                updated_by="test",
+            )
+        )
+        session.add(_device(pending_device_id, "collision-pending-device"))
+        session.add(_device(other_pending_device_id, "collision-other-device"))
+        claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=pending_device_id,
+            requester_id=pending_login,
+            display_name="Pending Collision Login",
+            profile={
+                "full_name": "Pending Collision Login",
+                "email": owner_login,
+                "login": pending_login,
+                "user_confirmed": True,
+            },
+        )
+        other_claim = await RegistrationService(session).submit_agent_profile_claim(
+            device_id=other_pending_device_id,
+            requester_id=other_pending_login,
+            display_name="Other Pending Collision Login",
+            profile={
+                "full_name": "Other Pending Collision Login",
+                "email": owner_login,
+                "login": other_pending_login,
+                "user_confirmed": True,
+            },
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/requester/bootstrap",
+        headers=_headers(f"{TEST_UI_USER_PREFIX}{pending_login}"),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    assert payload["data"]["profile"] is None
+    assert payload["data"]["devices"] == []
+    assert payload["data"]["active_bindings"] == []
+    visible_claims = {
+        (item["claim_id"], item["device_id"])
+        for item in payload["data"]["pending_registration_claims"]
+    }
+    assert visible_claims == {
+        (claim["registration"]["claim_id"], pending_device_id)
+    }
+    assert (
+        other_claim["registration"]["claim_id"],
+        other_pending_device_id,
+    ) not in visible_claims
+    assert approved["binding"]["device_id"] == owner_device_id
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import and_, false, or_
+from sqlalchemy import JSON, and_, false, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Ticket
@@ -99,6 +99,19 @@ class TicketAccountAccessService:
         if mode == "confirmed_binding":
             if session_id and getattr(ticket, "requester_account_session_id", None) == session_id:
                 return True
+            requester_external_ref = str(
+                account_session.get("requester_external_ref")
+                or account_session.get("person_id")
+                or ""
+            )
+            ticket_external_ref = str(getattr(ticket, "requester_external_ref", None) or "")
+            if ticket_external_ref:
+                return bool(
+                    requester_external_ref
+                    and requester_external_ref == ticket_external_ref
+                )
+            if getattr(ticket, "requester_snapshot_json", None) is not None:
+                return False
             binding_id = str(account_session.get("binding_id") or "")
             person_id = str(account_session.get("person_id") or "")
             return bool(
@@ -124,13 +137,29 @@ class TicketAccountAccessService:
         if mode == "confirmed_binding":
             binding_id = str(account_session.get("binding_id") or "")
             person_id = str(account_session.get("person_id") or "")
+            requester_external_ref = str(
+                account_session.get("requester_external_ref") or person_id or ""
+            )
             clauses = []
             if session_id:
                 clauses.append(Ticket.requester_account_session_id == session_id)
+            if requester_external_ref:
+                clauses.append(Ticket.requester_external_ref == requester_external_ref)
+            legacy_scope = and_(
+                Ticket.requester_external_ref.is_(None),
+                or_(
+                    Ticket.requester_snapshot_json.is_(None),
+                    Ticket.requester_snapshot_json == JSON.NULL,
+                ),
+            )
             if binding_id:
-                clauses.append(Ticket.requester_binding_id == binding_id)
+                clauses.append(
+                    and_(legacy_scope, Ticket.requester_binding_id == binding_id)
+                )
             if person_id:
-                clauses.append(Ticket.requester_person_id == person_id)
+                clauses.append(
+                    and_(legacy_scope, Ticket.requester_person_id == person_id)
+                )
             return stmt.where(or_(*clauses)) if clauses else stmt.where(false())
         if mode == "verified_other_account":
             return stmt.where(Ticket.requester_account_session_id == session_id)

@@ -416,6 +416,7 @@ async def create_ticket_with_side_effects(
                 logger.warning(f"[create] registry profile ingest failed ticket_id={ticket_id} err={exc}")
     requester_person_id = None
     requester_binding_id = None
+    verified_requester_person_id: str | None = None
     requester_registration_status = "unregistered"
     requester_registration_context: dict[str, Any] = {"status": "unregistered"}
     legacy_agent_only = not has_requester_account
@@ -463,6 +464,7 @@ async def create_ticket_with_side_effects(
             requester_binding_id = None
             if verified and requester_account_session_validation and requester_account_session_validation.get("valid"):
                 requester_person_id = str((requester_account or {}).get("person_id") or "").strip() or None
+                verified_requester_person_id = requester_person_id
             if isinstance(active_binding, dict) and active_binding.get("binding_id"):
                 asset_id = active_binding.get("asset_id") or asset_id
                 requester_account_context = {
@@ -557,6 +559,7 @@ async def create_ticket_with_side_effects(
                 )
                 requester_person_id = binding_payload.get("person_id")
                 requester_binding_id = binding_payload.get("binding_id")
+                verified_requester_person_id = requester_person_id
                 asset_id = binding_payload.get("asset_id") or asset_id
                 requester_registration_status = "admin_confirmed"
                 requester_account_context = {
@@ -575,6 +578,7 @@ async def create_ticket_with_side_effects(
         elif isinstance(active_binding, dict) and active_binding.get("binding_id"):
             requester_person_id = active_binding.get("person_id")
             requester_binding_id = active_binding.get("binding_id")
+            verified_requester_person_id = requester_person_id
             asset_id = active_binding.get("asset_id") or asset_id
             requester_registration_status = "admin_confirmed"
             if legacy_agent_only:
@@ -603,12 +607,39 @@ async def create_ticket_with_side_effects(
     except Exception as exc:
         logger.warning(f"[create] registration requester context failed ticket_id={ticket_id} err={exc}")
 
+    if account_mode == "browser_no_device" and requester_person_id:
+        try:
+            from requester.identity_service import RequesterIdentityResolver
+
+            server_person = await RequesterIdentityResolver(session, state=state).resolve_person_for_web_user(
+                requester_id
+            )
+            if server_person is not None and str(server_person.person_id) == str(requester_person_id):
+                verified_requester_person_id = str(server_person.person_id)
+        except Exception as exc:
+            logger.warning(
+                f"[create] web requester identity verification failed ticket_id={ticket_id} err={exc}"
+            )
+
     if isinstance(requester_account_context, dict):
         requester_account_session_id = str(
             requester_account_context.get("account_session_id") or requester_account_context.get("session_id") or ""
         ).strip() or None
         requester_account_mode = str(requester_account_context.get("account_mode") or "").strip() or None
         requester_account_warning = str(requester_account_context.get("warning") or "").strip() or None
+
+    requester_ref = None
+    requester_snapshot = None
+    if verified_requester_person_id:
+        try:
+            requester_ref, requester_snapshot = await TicketContextBuilder(
+                session,
+                state=state,
+            ).requester_reference_snapshot(verified_requester_person_id)
+        except Exception as exc:
+            logger.warning(
+                f"[create] requester reference snapshot failed ticket_id={ticket_id} err={exc}"
+            )
 
     ticket_context_snapshot: dict[str, Any] | None = None
     if requester_person_id:
@@ -673,6 +704,8 @@ async def create_ticket_with_side_effects(
         requester_account_session_id=requester_account_session_id,
         requester_account_mode=requester_account_mode,
         requester_account_warning=requester_account_warning,
+        requester_ref=requester_ref,
+        requester_snapshot=requester_snapshot,
     )
 
     normalized_priority = normalized_priority or build_default_priority_payload({})

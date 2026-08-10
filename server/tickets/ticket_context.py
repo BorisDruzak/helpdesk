@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import RegistryPerson
+from domain_ports.registry import PersonRef, RequesterRef, RequesterSnapshot
 from registry.primary_agent_resolver import PrimaryAgentResolver
 
 TICKET_CONTEXT_SCHEMA = "ticket_context_v1"
@@ -42,6 +43,47 @@ def _person_payload(person: RegistryPerson | None, *, fallback_person_id: str | 
     if actor_id is not None:
         payload["actor_id"] = actor_id
     return payload
+
+
+def requester_reference_snapshot_from_person(
+    person: RegistryPerson | None,
+) -> tuple[RequesterRef | None, RequesterSnapshot | None]:
+    """Build neutral requester persistence only from a server-loaded person."""
+
+    external_ref = _clean(getattr(person, "person_id", None))
+    if external_ref is None:
+        return None, None
+    requester_ref = RequesterRef(external_id=external_ref)
+    display_name = _clean(getattr(person, "display_name", None)) or _clean(
+        getattr(person, "full_name", None)
+    )
+    snapshot = (
+        RequesterSnapshot(
+            person=PersonRef(external_id=external_ref),
+            display_name=display_name,
+        )
+        if display_name is not None
+        else None
+    )
+    return requester_ref, snapshot
+
+
+def requester_reference_snapshot_from_record(
+    row: Any,
+) -> tuple[RequesterRef | None, RequesterSnapshot | None]:
+    """Validate neutral requester values already persisted on a Helpdesk row."""
+
+    external_ref = getattr(row, "requester_external_ref", None)
+    raw_snapshot = getattr(row, "requester_snapshot_json", None)
+    if external_ref is None:
+        if raw_snapshot is not None:
+            raise ValueError("requester snapshot requires requester external ref")
+        return None, None
+    requester_ref = RequesterRef(external_id=external_ref)
+    snapshot = RequesterSnapshot.model_validate(raw_snapshot) if raw_snapshot is not None else None
+    if snapshot is not None and snapshot.person.external_id != requester_ref.external_id:
+        raise ValueError("requester snapshot person does not match requester external ref")
+    return requester_ref, snapshot
 
 
 def _target_source(*, resolved: bool, created_on_behalf: bool, reason_code: str | None) -> str:
@@ -333,6 +375,16 @@ class TicketContextBuilder:
     def __init__(self, session: AsyncSession, *, state: Any | None = None):
         self.session = session
         self.state = state
+
+    async def requester_reference_snapshot(
+        self,
+        person_id: str | None,
+    ) -> tuple[RequesterRef | None, RequesterSnapshot | None]:
+        verified_person_id = _clean(person_id)
+        if verified_person_id is None:
+            return None, None
+        person = await self.session.get(RegistryPerson, verified_person_id)
+        return requester_reference_snapshot_from_person(person)
 
     async def build(
         self,

@@ -4,14 +4,17 @@ from datetime import datetime, timezone
 from typing import Any
 import uuid
 
+from sqlalchemy import JSON, and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeviceAccountSession, DeviceUserBinding, UserConsentRequest
+from app.db.models import DeviceAccountSession, DeviceUserBinding, Ticket, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.user_consent_repo import UserConsentRepo
 from app.services.operation_service import OperationService
+from domain_ports.registry import RequesterRef, RequesterSnapshot
+from tickets.ticket_context import requester_reference_snapshot_from_record
 
 
 FINAL_STATUSES = {"approved", "denied", "expired", "superseded", "canceled"}
@@ -82,6 +85,8 @@ def serialize_user_consent(row: UserConsentRequest) -> dict[str, Any]:
         "subject_id": row.subject_id,
         "ticket_id": row.ticket_id,
         "device_id": row.device_id,
+        "requester_external_ref": row.requester_external_ref,
+        "requester_snapshot": row.requester_snapshot_json,
         "requester_person_id": row.requester_person_id,
         "requester_binding_id": row.requester_binding_id,
         "requester_account_session_id": row.requester_account_session_id,
@@ -113,6 +118,65 @@ class UserConsentService:
         self.publisher = publisher
         self.state = state
 
+    @staticmethod
+    def _requester_scope_matches(
+        row: UserConsentRequest,
+        *,
+        requester_external_ref: str | None,
+        requester_person_id: str | None,
+    ) -> bool:
+        row_external_ref = str(row.requester_external_ref or "")
+        effective_external_ref = str(
+            requester_external_ref or requester_person_id or ""
+        )
+        if row_external_ref:
+            return bool(
+                effective_external_ref
+                and effective_external_ref == row_external_ref
+            )
+        if row.requester_snapshot_json is not None:
+            return False
+        return bool(
+            requester_person_id
+            and row.requester_person_id == requester_person_id
+        )
+
+    async def _list_for_requester_scope(
+        self,
+        *,
+        requester_external_ref: str | None,
+        requester_person_id: str | None,
+        statuses: list[str] | None,
+    ) -> list[UserConsentRequest]:
+        effective_external_ref = str(
+            requester_external_ref or requester_person_id or ""
+        )
+        clauses = []
+        if effective_external_ref:
+            clauses.append(
+                UserConsentRequest.requester_external_ref == effective_external_ref
+            )
+        if requester_person_id:
+            clauses.append(
+                and_(
+                    UserConsentRequest.requester_external_ref.is_(None),
+                    or_(
+                        UserConsentRequest.requester_snapshot_json.is_(None),
+                        UserConsentRequest.requester_snapshot_json == JSON.NULL,
+                    ),
+                    UserConsentRequest.requester_person_id == str(requester_person_id),
+                )
+            )
+        if not clauses:
+            return []
+        stmt = select(UserConsentRequest).where(or_(*clauses))
+        if statuses:
+            stmt = stmt.where(UserConsentRequest.status.in_(statuses))
+        result = await self.session.execute(
+            stmt.order_by(UserConsentRequest.created_at.desc()).limit(100)
+        )
+        return list(result.scalars().all())
+
     async def create_request(
         self,
         *,
@@ -121,6 +185,8 @@ class UserConsentService:
         title: str,
         ticket_id: str | None = None,
         device_id: str | None = None,
+        requester_ref: RequesterRef | None = None,
+        requester_snapshot: RequesterSnapshot | None = None,
         requester_person_id: str | None = None,
         requester_binding_id: str | None = None,
         requester_account_session_id: str | None = None,
@@ -142,9 +208,26 @@ class UserConsentService:
             if pending is not None:
                 return pending
 
+        if requester_ref is None and ticket_id:
+            ticket = await self.session.get(Ticket, ticket_id)
+            if ticket is not None:
+                requester_ref, requester_snapshot = requester_reference_snapshot_from_record(
+                    ticket
+                )
+        if requester_snapshot is not None and requester_ref is None:
+            raise ValueError("requester_snapshot requires requester_ref")
+        if (
+            requester_ref is not None
+            and requester_snapshot is not None
+            and requester_snapshot.person.external_id != requester_ref.external_id
+        ):
+            raise ValueError("requester snapshot person does not match requester ref")
+
         try:
             async with self.session.begin_nested():
                 row = await self.repo.create(
+                    requester_ref=requester_ref,
+                    requester_snapshot=requester_snapshot,
                     consent_id=str(uuid.uuid4()),
                     subject_type=str(subject_type),
                     subject_id=str(subject_id),
@@ -176,13 +259,25 @@ class UserConsentService:
         await self._append_ticket_event(row, "user_consent_requested", actor_id=requested_by_actor_id, actor_role=requested_by_role)
         return row
 
-    async def list_for_requester(self, *, requester_person_id: str | None, statuses: list[str] | None = None) -> list[dict[str, Any]]:
-        if not requester_person_id:
-            return []
-        rows = await self.repo.list_for_person(requester_person_id, statuses=statuses)
+    async def list_for_requester(
+        self,
+        *,
+        requester_external_ref: str | None = None,
+        requester_person_id: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = await self._list_for_requester_scope(
+            requester_external_ref=requester_external_ref,
+            requester_person_id=requester_person_id,
+            statuses=statuses,
+        )
         for row in rows:
             await self._expire_if_due_with_event(row)
-        rows = await self.repo.list_for_person(requester_person_id, statuses=statuses)
+        rows = await self._list_for_requester_scope(
+            requester_external_ref=requester_external_ref,
+            requester_person_id=requester_person_id,
+            statuses=statuses,
+        )
         return [serialize_user_consent(row) for row in rows]
 
     async def list_for_agent(
@@ -192,16 +287,56 @@ class UserConsentService:
         account_session: dict[str, Any] | None = None,
         statuses: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        person_id = (account_session or {}).get("person_id")
-        rows = await self.repo.list_for_device(device_id, person_id=person_id, statuses=statuses)
+        account_session = account_session or {}
+        person_id = account_session.get("person_id")
+        effective_external_ref = account_session.get("requester_external_ref") or person_id
+        stmt = select(UserConsentRequest).where(
+            UserConsentRequest.device_id == str(device_id)
+        )
+        if effective_external_ref:
+            requester_clauses = [
+                UserConsentRequest.requester_external_ref
+                == str(effective_external_ref)
+            ]
+            if person_id:
+                requester_clauses.append(
+                    and_(
+                        UserConsentRequest.requester_external_ref.is_(None),
+                        or_(
+                            UserConsentRequest.requester_snapshot_json.is_(None),
+                            UserConsentRequest.requester_snapshot_json == JSON.NULL,
+                        ),
+                        UserConsentRequest.requester_person_id == str(person_id),
+                    )
+                )
+            stmt = stmt.where(or_(*requester_clauses))
+        if statuses:
+            stmt = stmt.where(UserConsentRequest.status.in_(statuses))
+        result = await self.session.execute(
+            stmt.order_by(UserConsentRequest.created_at.desc()).limit(100)
+        )
+        rows = list(result.scalars().all())
         for row in rows:
             await self._expire_if_due_with_event(row)
-        rows = await self.repo.list_for_device(device_id, person_id=person_id, statuses=statuses)
+        result = await self.session.execute(
+            stmt.order_by(UserConsentRequest.created_at.desc()).limit(100)
+        )
+        rows = list(result.scalars().all())
         return [serialize_user_consent(row) for row in rows]
 
-    async def get_for_requester(self, *, consent_id: str, requester_person_id: str | None) -> UserConsentRequest | None:
+    async def get_for_requester(
+        self,
+        *,
+        consent_id: str,
+        requester_external_ref: str | None = None,
+        requester_person_id: str | None = None,
+    ) -> UserConsentRequest | None:
         row = await self.repo.get(consent_id)
-        if row is None or not requester_person_id or row.requester_person_id != requester_person_id:
+        if row is None or not self._requester_scope_matches(
+            row,
+            requester_external_ref=requester_external_ref,
+            requester_person_id=requester_person_id,
+        ):
             return None
         await self._expire_if_due_with_event(row)
         return await self.repo.get(consent_id)
@@ -216,8 +351,18 @@ class UserConsentService:
         row = await self.repo.get(consent_id)
         if row is None or row.device_id != device_id:
             return None
-        if account_session and row.requester_person_id != account_session.get("person_id"):
-            return None
+        if account_session:
+            account_external_ref = account_session.get("requester_external_ref")
+            account_person_id = account_session.get("person_id")
+            if (
+                (account_external_ref or account_person_id)
+                and not self._requester_scope_matches(
+                    row,
+                    requester_external_ref=account_external_ref,
+                    requester_person_id=account_person_id,
+                )
+            ):
+                return None
         await self._expire_if_due_with_event(row)
         return await self.repo.get(consent_id)
 
@@ -226,11 +371,16 @@ class UserConsentService:
         *,
         consent_id: str,
         decision: str,
-        requester_person_id: str | None,
         actor_id: str,
+        requester_external_ref: str | None = None,
+        requester_person_id: str | None = None,
         reason: str | None = None,
     ) -> UserConsentRequest:
-        row = await self.get_for_requester(consent_id=consent_id, requester_person_id=requester_person_id)
+        row = await self.get_for_requester(
+            consent_id=consent_id,
+            requester_external_ref=requester_external_ref,
+            requester_person_id=requester_person_id,
+        )
         if row is None:
             raise ConsentAccessError("consent not found", error_code="NOT_FOUND", status=404)
         return await self._decide(row, decision=decision, actor_id=actor_id, actor_role="requester", surface="browser", reason=reason)

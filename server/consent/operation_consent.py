@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Operation, Ticket
 from consent.service import ConsentAccessError, UserConsentService
+from tickets.ticket_context import requester_reference_snapshot_from_record
 from utils.sensitive_redaction import redact_sensitive_mapping_values
 
 
@@ -41,9 +42,19 @@ async def create_operation_user_consent(
     expires_at: datetime | None = None,
 ) -> None:
     requester_person_id = getattr(ticket, "requester_person_id", None)
-    if not requester_person_id:
+    try:
+        requester_ref, requester_snapshot = requester_reference_snapshot_from_record(
+            ticket
+        )
+    except (TypeError, ValueError) as exc:
         raise ConsentAccessError(
-            "requester-scoped user consent requires ticket requester_person_id",
+            "requester-scoped user consent has invalid neutral requester scope",
+            error_code="REQUESTER_SCOPE_INVALID",
+            status=409,
+        ) from exc
+    if requester_ref is None and not requester_person_id:
+        raise ConsentAccessError(
+            "requester-scoped user consent requires ticket requester scope",
             error_code="REQUESTER_SCOPE_REQUIRED",
             status=409,
         )
@@ -60,6 +71,8 @@ async def create_operation_user_consent(
         subject_id=str(operation.operation_id),
         ticket_id=getattr(ticket, "ticket_id", None),
         device_id=device_id,
+        requester_ref=requester_ref,
+        requester_snapshot=requester_snapshot,
         requester_person_id=requester_person_id,
         requester_binding_id=getattr(ticket, "requester_binding_id", None),
         requester_account_session_id=getattr(ticket, "requester_account_session_id", None),

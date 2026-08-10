@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import uuid
 
 import pytest
+from sqlalchemy import null, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, Ticket
@@ -144,6 +145,8 @@ async def test_unverified_other_account_does_not_resolve_declared_person(test_en
     assert ticket is not None
     assert ticket.requester_person_id is None
     assert ticket.requester_binding_id is None
+    assert ticket.requester_external_ref is None
+    assert ticket.requester_snapshot_json is None
     assert ticket.requester_registration_status == "unverified_other_account"
     assert ticket.requester_account_mode == "unverified_other_account"
     assert ticket.requester_account_warning == "unverified_other_account_legacy_payload"
@@ -151,6 +154,141 @@ async def test_unverified_other_account_does_not_resolve_declared_person(test_en
     assert ticket.custom_fields["requester_account_context"]["declared_account"]["email"] == "owner@example.test"
     assert ticket.custom_fields["requester_account_context"]["active_device_person_id"] == approved["person"]["person_id"]
     assert "ticket_context" not in ticket.custom_fields
+
+
+def test_confirmed_binding_access_prefers_neutral_ref_and_falls_back_for_historical_ticket():
+    access = object.__new__(TicketAccountAccessService)
+    neutral_ticket = SimpleNamespace(
+        device_id="device-1",
+        requester_external_ref="person-neutral",
+        requester_person_id="person-legacy",
+        requester_binding_id=None,
+        requester_account_session_id=None,
+    )
+    historical_ticket = SimpleNamespace(
+        device_id="device-1",
+        requester_external_ref=None,
+        requester_snapshot_json=None,
+        requester_person_id="person-legacy",
+        requester_binding_id=None,
+        requester_account_session_id=None,
+    )
+    malformed_neutral_ticket = SimpleNamespace(
+        device_id="device-1",
+        requester_external_ref=None,
+        requester_snapshot_json={
+            "person": {"external_id": "person-neutral"},
+            "display_name": "Neutral owner",
+        },
+        requester_person_id="person-legacy",
+        requester_binding_id=None,
+        requester_account_session_id=None,
+    )
+
+    conflicting_legacy_session = {
+        "device_id": "device-1",
+        "account_mode": "confirmed_binding",
+        "person_id": "person-legacy",
+    }
+    neutral_owner_session = {
+        "device_id": "device-1",
+        "account_mode": "confirmed_binding",
+        "person_id": "person-neutral",
+    }
+
+    assert access._ticket_allowed(neutral_ticket, conflicting_legacy_session) is False
+    assert access._ticket_allowed(neutral_ticket, neutral_owner_session) is True
+    assert access._ticket_allowed(historical_ticket, conflicting_legacy_session) is True
+    assert access._ticket_allowed(malformed_neutral_ticket, conflicting_legacy_session) is False
+
+    verified_other_ticket = SimpleNamespace(
+        device_id="device-1",
+        requester_external_ref="person-neutral",
+        requester_snapshot_json={
+            "person": {"external_id": "person-neutral"},
+            "display_name": "Neutral owner",
+        },
+        requester_person_id="person-neutral",
+        requester_binding_id=None,
+        requester_account_session_id="verified-other-session-1",
+    )
+    assert access._ticket_allowed(
+        verified_other_ticket,
+        {
+            "device_id": "device-1",
+            "account_mode": "verified_other_account",
+            "person_id": "person-neutral",
+            "session_id": "verified-other-session-2",
+        },
+    ) is False
+    assert access._ticket_allowed(
+        verified_other_ticket,
+        {
+            "device_id": "device-1",
+            "account_mode": "verified_other_account",
+            "person_id": "person-neutral",
+            "session_id": "verified-other-session-1",
+        },
+    ) is True
+
+
+@pytest.mark.asyncio
+async def test_confirmed_binding_list_filter_uses_neutral_first_and_sql_null_fallback(test_engine):
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        rows = [
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Matching neutral",
+                description="matching neutral",
+                status="new",
+                requester_id="requester",
+                requester_external_ref="person-owner",
+                requester_snapshot_json={
+                    "person": {"external_id": "person-owner"},
+                    "display_name": "Owner",
+                },
+                requester_person_id="legacy-other",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Pre-migration historical",
+                description="sql null fallback",
+                status="new",
+                requester_id="requester",
+                requester_external_ref=None,
+                requester_snapshot_json=null(),
+                requester_person_id="person-owner",
+            ),
+            Ticket(
+                ticket_id=str(uuid.uuid4()),
+                title="Malformed neutral",
+                description="must not use legacy fallback",
+                status="new",
+                requester_id="requester",
+                requester_external_ref=None,
+                requester_snapshot_json={
+                    "person": {"external_id": "other-owner"},
+                    "display_name": "Other owner",
+                },
+                requester_person_id="person-owner",
+            ),
+        ]
+        session.add_all(rows)
+        await session.flush()
+
+        stmt = TicketAccountAccessService(session).apply_ticket_list_filter(
+            select(Ticket),
+            account_session={
+                "account_mode": "confirmed_binding",
+                "person_id": "person-owner",
+            },
+        )
+        visible_ids = set((await session.execute(stmt)).scalars().all())
+
+    assert rows[0] in visible_ids
+    assert rows[1] in visible_ids
+    assert rows[2] not in visible_ids
 
 
 @pytest.mark.asyncio
