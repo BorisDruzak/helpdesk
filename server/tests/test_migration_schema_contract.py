@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import asyncio
+import ast
 import importlib.util
 import os
 from pathlib import Path
+import subprocess
+import sys
 from typing import Any
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from scripts import audit_db_cleanup_schema
+from scripts.registry_retirement_manifest import RETIRED_KNOWLEDGE_AI_TABLES
 
 
 pytestmark = pytest.mark.db_cleanup("full")
@@ -29,6 +35,83 @@ def _load_test_harness():
 
 
 test_harness = _load_test_harness()
+
+
+# These Helpdesk, auth/RBAC and Registry tables are intentionally literal
+# rather than derived from the retirement migration under test.
+PROTECTED_KNOWLEDGE_RETIREMENT_TABLES = frozenset(
+    {
+        "tickets", "ticket_kb_links", "ticket_resolution_passports", "problems", "ui_users",
+        "auth_sessions", "ui_tokens", "ui_user_audit", "ui_password_reset_requests",
+        "ticket_public_sessions", "access_groups", "access_group_members",
+        "access_group_permissions", "access_group_queue_members", "access_audit", "ticket_queues",
+        "ticket_queue_members", "ticket_queue_ola_targets", "user_consent_requests",
+        "device_account_events", "device_account_login_requests", "device_account_sessions",
+        "device_browser_pairings", "device_registration_claims", "device_registration_events",
+        "device_user_bindings", "registry_admin_events", "registry_admin_policies", "registry_assets",
+        "registry_audience_group_members", "registry_audience_groups", "registry_departments",
+        "registry_locations", "registry_people", "registry_person_department_memberships",
+        "registry_person_identities", "registry_quality_issue_overrides", "registry_services",
+        "registry_vendors",
+    }
+)
+
+
+def _load_historical_retirement_migration():
+    path = SERVER_ROOT / "app" / "db" / "migrations" / "versions" / "20260810_134_retire_local_knowledge_ai_schema.py"
+    spec = importlib.util.spec_from_file_location("historical_knowledge_retirement_migration", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _historical_migration_foreign_key_edges(path: Path) -> tuple[set[str], set[tuple[str, str]]]:
+    """Extract literal ``create_table`` FK edges without importing a historical revision."""
+
+    source = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    tables: set[str] = set()
+    edges: set[tuple[str, str]] = set()
+    for node in ast.walk(source):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute) or node.func.attr != "create_table":
+            continue
+        if not node.args or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+            continue
+        table_name = node.args[0].value
+        tables.add(table_name)
+        for descendant in ast.walk(node):
+            if (
+                not isinstance(descendant, ast.Call)
+                or not isinstance(descendant.func, ast.Attribute)
+                or descendant.func.attr != "ForeignKeyConstraint"
+                or len(descendant.args) < 2
+            ):
+                continue
+            parent_columns = descendant.args[1]
+            if not isinstance(parent_columns, (ast.List, ast.Tuple)) or not parent_columns.elts:
+                continue
+            parent_column = parent_columns.elts[0]
+            if not isinstance(parent_column, ast.Constant) or not isinstance(parent_column.value, str):
+                continue
+            parent_table = parent_column.value.partition(".")[0]
+            edges.add((table_name, parent_table))
+    return tables, edges
+
+
+@pytest.mark.migration_clone
+def test_declared_historical_graph_matches_migration_118_non_self_fk_contract() -> None:
+    """A later static drop graph must not silently omit a historical FK edge."""
+
+    migration = _load_historical_retirement_migration()
+    migration_118 = SERVER_ROOT / "app" / "db" / "migrations" / "versions" / "20260612_118_knowledge_metadata_model.py"
+    migration_tables, source_edges = _historical_migration_foreign_key_edges(migration_118)
+    declared_edges = set(migration.HISTORICAL_KNOWLEDGE_AI_FK_EDGES)
+    documented_self_edges = set(migration.HISTORICAL_SELF_REFERENTIAL_FK_EDGE_EXCLUSIONS)
+
+    assert {edge for edge in source_edges if edge[0] == edge[1]} == documented_self_edges
+    assert {
+        edge for edge in declared_edges if edge[0] in migration_tables
+    } == source_edges - documented_self_edges
 
 
 async def _fetch_schema_snapshot(database_url: str) -> audit_db_cleanup_schema.SchemaSnapshot:
@@ -85,6 +168,47 @@ async def _fetch_schema_snapshot(database_url: str) -> audit_db_cleanup_schema.S
         for row in fk_rows
     )
     return audit_db_cleanup_schema.SchemaSnapshot(tables=tables, foreign_keys=foreign_keys)
+
+
+async def _catalog_tables(database_url: str) -> set[str]:
+    engine = create_async_engine(database_url, echo=False, pool_pre_ping=True, poolclass=NullPool)
+    try:
+        async with engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """
+                    SELECT table_name
+                    FROM information_schema.tables
+                    WHERE table_schema = 'public'
+                      AND table_type = 'BASE TABLE'
+                    """
+                )
+            )
+            return {str(row[0]) for row in result.all()}
+    finally:
+        await engine.dispose()
+
+
+async def _protected_knowledge_retirement_tables_are_selectable(database_url: str) -> None:
+    engine = create_async_engine(database_url, echo=False, pool_pre_ping=True, poolclass=NullPool)
+    try:
+        async with engine.connect() as connection:
+            for table_name in sorted(PROTECTED_KNOWLEDGE_RETIREMENT_TABLES):
+                # Literal test-owned table names, never request input.
+                await connection.execute(text(f'SELECT count(*) FROM "{table_name}"'))
+    finally:
+        await engine.dispose()
+
+
+def _run_alembic_upgrade_to_revision(database_url: str, revision: str) -> None:
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = database_url
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", str(SERVER_ROOT / "alembic.ini"), "upgrade", revision],
+        cwd=str(SERVER_ROOT),
+        env=environment,
+        check=True,
+    )
 
 
 async def _schema_signature(database_url: str) -> dict[str, tuple[tuple[Any, ...], ...]]:
@@ -309,6 +433,40 @@ def _assert_direct_fresh_migration_path() -> None:
         "migration_schema must run with PC_CLIENT_TEST_DB_TEMPLATE=0 so a migrated template "
         "cannot hide fresh-upgrade failures"
     )
+
+
+@pytest.mark.migration_clone
+def test_direct_migration_schema_guard_rejects_template_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_TEMPLATE", "1")
+
+    with pytest.raises(AssertionError, match="PC_CLIENT_TEST_DB_TEMPLATE=0"):
+        _assert_direct_fresh_migration_path()
+
+
+@pytest.mark.migration_clone
+def test_clone_upgrade_from_133_retires_only_historical_knowledge_ai_schema(test_database_url: str) -> None:
+    """Own the isolated 133->134 lifecycle without any pre-applied head/template."""
+
+    _assert_direct_fresh_migration_path()
+    database_name = make_url(test_database_url).database or ""
+    assert database_name.startswith("pc_support_test_")
+    assert database_name != "pc_support_test"
+    assert len(RETIRED_KNOWLEDGE_AI_TABLES) == 45
+
+    _run_alembic_upgrade_to_revision(test_database_url, "133")
+    before = asyncio.run(_catalog_tables(test_database_url))
+    assert RETIRED_KNOWLEDGE_AI_TABLES <= before
+    assert PROTECTED_KNOWLEDGE_RETIREMENT_TABLES <= before
+
+    _run_alembic_upgrade_to_revision(test_database_url, "134")
+    after = asyncio.run(_catalog_tables(test_database_url))
+    assert not RETIRED_KNOWLEDGE_AI_TABLES & after
+    assert before - after == RETIRED_KNOWLEDGE_AI_TABLES
+    assert PROTECTED_KNOWLEDGE_RETIREMENT_TABLES <= after
+    asyncio.run(_protected_knowledge_retirement_tables_are_selectable(test_database_url))
+
+    _run_alembic_upgrade_to_revision(test_database_url, "head")
+    assert asyncio.run(_catalog_tables(test_database_url)) == after
 
 
 def _format_schema_audit_failure(report: audit_db_cleanup_schema.SchemaAuditReport) -> str:

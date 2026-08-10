@@ -2,6 +2,39 @@ import importlib
 from pathlib import Path
 
 
+def test_historical_clone_contract_is_owned_by_the_no_template_migration_schema_layer():
+    """The 133->134 lifecycle must run in CI's direct-Alembic layer only."""
+
+    audit = importlib.import_module("scripts.audit_test_inventory")
+    ci = importlib.import_module("scripts.run_ci_suite")
+    catalog_module = importlib.import_module("scripts.suite_catalog")
+    workspace = Path(__file__).resolve().parents[1]
+    contract_path = workspace / "server" / "tests" / "test_migration_schema_contract.py"
+    legacy_path = workspace / "server" / "tests" / "test_knowledge_schema_retirement.py"
+
+    assert "test_clone_upgrade_from_133_retires_only_historical_knowledge_ai_schema" in contract_path.read_text(
+        encoding="utf-8"
+    )
+    assert "pytest.mark.migration_clone" in contract_path.read_text(encoding="utf-8")
+    assert not legacy_path.exists()
+
+    migration_suite = next(
+        suite for suite in catalog_module.load_suite_catalog(workspace).suites if suite.name == "migration_schema"
+    )
+    assert migration_suite.paths == ("server/tests/test_migration_schema_contract.py",)
+    assert migration_suite.database == "isolated-postgres-no-template"
+    assert str(Path("server/tests/test_migration_schema_contract.py")) in ci._migration_schema_command(
+        workspace, workspace / "artifacts" / "junit.xml"
+    )
+    assert ci._server_pytest_env(layer_name="migration_schema", use_template=False)[
+        "PC_CLIENT_TEST_DB_TEMPLATE"
+    ] == "0"
+
+    record = audit.audit_paths([contract_path], workspace=workspace).records[0]
+    assert record.suite == "migration_schema"
+    assert record.issues == ()
+
+
 def _write_test(tests_dir: Path, name: str, content: str) -> Path:
     path = tests_dir / name
     path.parent.mkdir(parents=True, exist_ok=True)

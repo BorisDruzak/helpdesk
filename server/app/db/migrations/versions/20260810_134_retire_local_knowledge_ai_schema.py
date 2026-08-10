@@ -88,6 +88,7 @@ HISTORICAL_KNOWLEDGE_AI_FK_EDGES: tuple[tuple[str, str], ...] = (
     ("knowledge_article_subscriptions", "knowledge_items"),
     ("knowledge_article_views", "knowledge_item_versions"),
     ("knowledge_article_views", "knowledge_items"),
+    ("knowledge_applicability_rules", "knowledge_items"),
     ("knowledge_bindings", "knowledge_items"),
     ("knowledge_chunk_embeddings", "ai_model_profiles"),
     ("knowledge_chunk_embeddings", "knowledge_chunks"),
@@ -112,11 +113,16 @@ HISTORICAL_KNOWLEDGE_AI_FK_EDGES: tuple[tuple[str, str], ...] = (
     ("knowledge_ingestion_jobs", "knowledge_item_versions"),
     ("knowledge_ingestion_jobs", "knowledge_items"),
     ("knowledge_ingestion_jobs", "knowledge_spaces"),
+    ("knowledge_item_properties", "knowledge_items"),
+    ("knowledge_item_properties", "knowledge_property_definitions"),
+    ("knowledge_item_taxonomy_terms", "knowledge_items"),
+    ("knowledge_item_taxonomy_terms", "knowledge_taxonomy_terms"),
     ("knowledge_item_versions", "knowledge_items"),
     ("knowledge_items", "knowledge_spaces"),
     ("knowledge_nodes", "knowledge_items"),
     ("knowledge_quality_snapshots", "knowledge_item_versions"),
     ("knowledge_quality_snapshots", "knowledge_items"),
+    ("knowledge_quality_models", "knowledge_spaces"),
     ("knowledge_review_comments", "knowledge_review_tasks"),
     ("knowledge_review_tasks", "knowledge_item_versions"),
     ("knowledge_review_tasks", "knowledge_items"),
@@ -127,9 +133,19 @@ HISTORICAL_KNOWLEDGE_AI_FK_EDGES: tuple[tuple[str, str], ...] = (
     ("knowledge_user_bookmarks", "knowledge_items"),
     ("knowledge_version_diff_cache", "knowledge_item_versions"),
     ("knowledge_version_diff_cache", "knowledge_items"),
+    ("knowledge_property_definitions", "knowledge_spaces"),
+    ("knowledge_taxonomy_terms", "knowledge_spaces"),
     ("problem_known_error_links", "knowledge_items"),
     ("ticket_knowledge_links", "knowledge_item_versions"),
     ("ticket_knowledge_links", "knowledge_items"),
+)
+
+
+# The static graph records inter-table ordering constraints.  Only a
+# self-reference is deliberately excluded because dropping a table removes its
+# own FK constraint; every non-self historical FK is represented above.
+HISTORICAL_SELF_REFERENTIAL_FK_EDGE_EXCLUSIONS: tuple[tuple[str, str], ...] = (
+    ("knowledge_taxonomy_terms", "knowledge_taxonomy_terms"),
 )
 
 
