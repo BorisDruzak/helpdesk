@@ -290,7 +290,40 @@ git add server/registry_adapter server/docs/REGISTRY_PLATFORM_API_V1.md server/c
 git commit -m "server: add RegistryPort shadow reads"
 ~~~
 
-### Task 7: Cut over Registry commands and authentication eligibility (PR-9 acceptance)
+### Task 7: Specify Registry command and eligibility API acceptance contract (PR-9 prerequisite)
+
+**Files:**
+
+- Create: server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md
+- Modify: server/docs/REGISTRY_PLATFORM_API_V1.md, docs/QUICK_LOOKUP.md, server/docs/CODEMAP.md
+- Test: server/tests/test_registry_commands_api_docs.py
+
+**Interfaces:** documents the minimum external Registry command/eligibility surface required before any authority changes: UI-login eligibility, registration request/approve/reject/bind/revoke, session create/validate/logout/revoke and exactly-once delivery, browser pairing create/lookup/confirm/pickup, and other-account approval. Every command requires trusted actor context, an operation idempotency key, correlation ID, replay semantics, typed availability and authorization errors. No runtime feature flag changes; no external authority is enabled.
+
+- [ ] **Step 1: Write failing API-contract tests**
+
+Assert the document declares HTTPS service authentication, no raw token logging, idempotency/replay rules, authoritative actor authorization, fail-closed uncertainty, immutable ticket/consent reference rules, and the protected Helpdesk-owned `ui_users`/web-session/RBAC boundary.
+
+- [ ] **Step 2: Run RED**
+
+Run: python -m pytest server/tests/test_registry_commands_api_docs.py -q --noconftest
+
+Expected: FAIL because the command API acceptance contract does not exist.
+
+- [ ] **Step 3: Publish the minimal non-runtime contract**
+
+Do not add a command transport implementation or enable any cutover flag. Add external service preflight probes and per-operation acceptance evidence that a later task must satisfy before it can change authority.
+
+- [ ] **Step 4: Run GREEN and commit**
+
+Run: python -m pytest server/tests/test_registry_commands_api_docs.py server/tests/test_segmentation_docs.py -q --noconftest
+
+~~~powershell
+git add server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md server/docs/REGISTRY_PLATFORM_API_V1.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md server/tests/test_registry_commands_api_docs.py
+git commit -m "docs: specify Registry command API acceptance"
+~~~
+
+### Task 8: Cut over Registry commands and authentication eligibility (PR-9 acceptance)
 
 **Files:**
 
@@ -333,7 +366,7 @@ git add server/auth server/registry server/consent server/web_api server/tests
 git commit -m "server: cut over Registry commands"
 ~~~
 
-### Task 8: Rehearse forward-only Knowledge/Registry schema retirement (PR-11)
+### Task 9: Rehearse forward-only Knowledge/Registry schema retirement (PR-11)
 
 **Files:**
 
