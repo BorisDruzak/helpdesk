@@ -56,7 +56,7 @@ Supported methodologies include `five_whys`, `fishbone`, `timeline`, `fault_tree
 
 Helpdesk keeps the problem lifecycle and its local root-cause/workaround/permanent-fix summaries, but it no longer creates, queries or links local Knowledge items. `ProblemKnownErrorService.create_known_error_draft()` and `create_workaround_draft()` currently return the explicit unavailable result with nullable `external_reference=None`; they do not change problem status or insert `problem_known_error_links` rows.
 
-The existing `problem_known_error_links` table is retained only for migration/history safety and is not an active source of truth. A future external Knowledge integration may store an opaque external reference through the versioned boundary; Helpdesk must not infer its format or restore a local draft fallback.
+Revision `134` removes the inactive `problem_known_error_links` physical table. A future external Knowledge integration may store an opaque external reference through the versioned boundary; Helpdesk must not infer its format or restore a local draft fallback.
 
 ## Affected Objects
 

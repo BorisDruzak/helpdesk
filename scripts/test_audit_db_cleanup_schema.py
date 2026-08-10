@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 
 
-def test_retired_local_knowledge_tables_remain_migration_only_until_pr11():
+def test_retired_local_knowledge_tables_are_not_synthesized_into_post_134_schema_audit():
     audit = importlib.import_module("scripts.audit_db_cleanup_schema")
 
     expected = {
@@ -17,7 +17,7 @@ def test_retired_local_knowledge_tables_remain_migration_only_until_pr11():
     }
 
     assert expected <= audit.RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES
-    assert audit.RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES <= audit.MIGRATION_ONLY_TABLES
+    assert audit.RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES.isdisjoint(audit.MIGRATION_ONLY_TABLES)
 
 
 def _catalog(tmp_path: Path, content: str) -> Path:

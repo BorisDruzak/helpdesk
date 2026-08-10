@@ -35,16 +35,16 @@ ALLOWED_CLASSIFICATIONS = {
 }
 CLEANUP_REQUIRED_CLASSIFICATIONS = {"ephemeral_test_data"}
 CASCADE_SAFE_ACTIONS = {"CASCADE", "SET NULL", "SET DEFAULT"}
+# Historical target declaration retained for PR-11/audit provenance.  Revision
+# 134 has removed these tables from the physical head schema, so they are not
+# synthesized as migration-only current tables.
 RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES = RETIRED_KNOWLEDGE_AI_TABLES
 
 MIGRATION_ONLY_TABLES = {
-    "knowledge_article_segments",
-    "knowledge_segmentation_jobs",
-    "knowledge_segmentation_profiles",
     "ticket_admin_audit_archive",
     "ticket_events_archive",
     "ticket_retention_runs",
-} | RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES
+}
 
 
 @dataclass(frozen=True)

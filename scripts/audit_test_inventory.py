@@ -36,6 +36,7 @@ DEFAULT_KNOWN_MARKERS = {
     "integration",
     "light_app",
     "manual",
+    "migration_clone",
     "no_db",
     "parametrize",
     "skip",

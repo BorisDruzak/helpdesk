@@ -1,4 +1,4 @@
-"""Declarative boundary for the future forward-only Registry/Knowledge retirement.
+"""Declarative boundary for the future forward-only Registry retirement.
 
 This module deliberately contains no database connection, SQL, Alembic call or
 write operation.  It is the reviewed input to the later PR-11 migration, not
@@ -191,7 +191,7 @@ def current_target_foreign_key_edges(
     so it does not impose an inter-table retirement order.
     """
 
-    targets = target_tables or (RETIRED_KNOWLEDGE_AI_TABLES | RETIRED_REGISTRY_TABLES)
+    targets = target_tables or RETIRED_REGISTRY_TABLES
     source = (models_path or _models_path()).read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(models_path or _models_path()))
     table_names = _table_names_by_class(tree)
@@ -237,17 +237,18 @@ def _deterministic_reverse_fk_drop_order(
     return tuple(groups)
 
 
-# Child-to-parent dependency order generated from the current SQLAlchemy model
-# source.  The later migration must detach retained-table columns before these
-# groups.  This is deterministic, source-only and never queries PostgreSQL.
-_RETIREMENT_TARGETS = RETIRED_KNOWLEDGE_AI_TABLES | RETIRED_REGISTRY_TABLES
+# Revision 134 has already retired the static historical Knowledge/AI graph.
+# Its table list remains above as audit provenance, but future Registry
+# acceptance evidence must not require row counts or FK signatures for tables
+# that no longer exist.  The remaining dynamic graph is current Registry only.
+_RETIREMENT_TARGETS = RETIRED_REGISTRY_TABLES
 REVERSE_FOREIGN_KEY_DROP_ORDER = _deterministic_reverse_fk_drop_order(
     _RETIREMENT_TARGETS,
     current_target_foreign_key_edges(_RETIREMENT_TARGETS),
 )
 
 RETIREMENT_MANIFEST = RetirementManifest(
-    target_tables=RETIRED_KNOWLEDGE_AI_TABLES | RETIRED_REGISTRY_TABLES,
+    target_tables=RETIRED_REGISTRY_TABLES,
     retain_tables=RETAIN_HELPDESK_TABLES,
     detach_columns=RETIRED_FOREIGN_KEY_COLUMNS,
     drop_order=REVERSE_FOREIGN_KEY_DROP_ORDER,

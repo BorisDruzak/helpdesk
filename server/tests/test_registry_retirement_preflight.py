@@ -177,17 +177,20 @@ def test_retirement_manifest_protects_actual_session_and_rbac_tables() -> None:
     }.isdisjoint(RETIREMENT_MANIFEST.retain_tables)
 
 
-def test_retirement_manifest_covers_approved_registry_knowledge_and_fk_detachments() -> None:
+def test_retirement_manifest_leaves_already_retired_knowledge_schema_out_of_registry_gate() -> None:
     assert {
         "registry_people",
         "device_registration_claims",
         "device_account_sessions",
         "device_browser_pairings",
+    } <= RETIREMENT_MANIFEST.target_tables
+    assert {
         "knowledge_items",
         "ai_providers",
         "ticket_knowledge_links",
         "problem_known_error_links",
-    } <= RETIREMENT_MANIFEST.target_tables
+    } <= RETIRED_KNOWLEDGE_AI_TABLES
+    assert RETIRED_KNOWLEDGE_AI_TABLES.isdisjoint(RETIREMENT_MANIFEST.target_tables)
     assert RETIREMENT_MANIFEST.detach_columns["tickets"] >= {
         "requester_person_id",
         "requester_binding_id",

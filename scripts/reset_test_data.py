@@ -82,9 +82,6 @@ RUNTIME_DEFINITION_KEEP_TABLES = {
     "diagnostic_capability_versions",
     "diagnostic_provider_configs",
     "diagnostic_provider_credential_refs",
-    "ai_providers",
-    "ai_model_profiles",
-    "ai_policy_profiles",
     "tool_presentation_overrides",
 }
 
@@ -137,7 +134,6 @@ EXPLICIT_CLEAR_TABLES = {
     "agent_recipe_test_runs",
     "agent_runtime_audit",
     "agent_tokens",
-    "ai_request_audit",
     "artifacts",
     "auth_sessions",
     "changes",

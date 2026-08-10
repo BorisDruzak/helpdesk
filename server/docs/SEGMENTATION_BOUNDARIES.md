@@ -44,10 +44,13 @@ outcome from `KnowledgePort`; ticket creation, routing, support work and closure
 continue without content or hidden retrieval.
 
 PR-6 rollback is a normal rollback to the preceding verified application
-release, never a local compatibility fallback. Knowledge table deletion is
-deferred to PR-11 and may occur only after the relevant cutover acceptance
-evidence and backup/rollback procedure are accepted; PR-6 first makes those
-tables unreachable from active Helpdesk code.
+release, never a local compatibility fallback. PR-11a revision `134` has
+removed the already-unreachable local Knowledge/AI physical graph, including
+`ticket_knowledge_links` and `problem_known_error_links`, after clone-path
+verification. That migration preserves `ticket_kb_links`, tickets, problems,
+resolution passports, Helpdesk identity/session/RBAC and every Registry table.
+It is forward-only: rollback is application rollback plus verified PostgreSQL
+backup restore, never Alembic downgrade.
 
 The future integration contract is
 [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md). Every path in that
@@ -119,11 +122,13 @@ local Registry fallback.
 ## PR-11 retirement boundary
 
 `scripts/registry_retirement_manifest.py` is the sole reviewed declaration of
-the future local-table retirement. It includes local `registry_*`, device
-registration, account-session and browser-pairing tables plus the approved
-local Knowledge/AI tables. It also records the required detachment of legacy
-Registry columns from tickets, consent and Helpdesk services before any table
-drop.
+the remaining future local Registry-table retirement. Revision `134` owns the
+separate, static historical Knowledge/AI graph; the Registry manifest retains
+that list solely as historical audit provenance and does not request its row
+counts or FK signature in future Registry evidence. It covers local
+`registry_*`, device registration, account-session and browser-pairing tables
+and records the required detachment of legacy Registry columns from tickets,
+consent and Helpdesk services before any table drop.
 
 The manifest explicitly excludes and protects actual Helpdesk identity/session
 tables `ui_users`, `auth_sessions`, `ui_tokens`, `ui_user_audit`,

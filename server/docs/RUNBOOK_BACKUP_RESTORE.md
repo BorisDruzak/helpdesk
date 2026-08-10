@@ -56,7 +56,7 @@ pg_basebackup -D "$BACKUP_DIR" -F tar -z -P -U replica_user
 
 ## PR-11 retirement rollback gate
 
-Before a future destructive Registry/Knowledge retirement migration, create a
+Before the remaining future destructive Registry retirement migration, create a
 fresh encrypted backup and record its SHA-256. Restore it to an isolated clone,
 run the target-table row-count/catalog/FK audit there, and record the passed
 restore drill identifier. The production maintenance plan must name its

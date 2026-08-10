@@ -125,6 +125,22 @@
   API/shadow contract and links to the command prerequisite. Focused contract
   coverage is `server/tests/test_registry_commands_api_docs.py`.
 
+## 2026-08-10 Knowledge/AI schema retirement (PR-11a)
+
+- `server/app/db/migrations/versions/20260810_134_retire_local_knowledge_ai_schema.py`
+  is the forward-only, static historical removal of the 45 retired local
+  Knowledge/AI tables, including `ticket_knowledge_links` and
+  `problem_known_error_links`. It imports neither active ORM metadata nor the
+  Registry retirement manifest; rollback is only application rollback plus a
+  verified PostgreSQL backup restore.
+- `server/tests/test_knowledge_schema_retirement.py` owns a fresh private DB
+  `133 -> 134 -> head` Alembic clone check. Its `migration_clone` marker
+  suppresses only global head/cleanup setup because the test itself creates,
+  migrates and tears down the isolated database; it rejects shared DB names.
+- `scripts/registry_retirement_manifest.py` retains historical Knowledge names
+  for audit provenance but its future evidence target is Registry-only after
+  revision 134.
+
 ## 2026-08-10 Registry retirement preflight (PR-11 prerequisite)
 
 - `scripts/registry_retirement_manifest.py` is the reviewed no-DB declaration
