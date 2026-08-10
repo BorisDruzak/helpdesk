@@ -1241,14 +1241,27 @@ def migration_clone_database_url(request) -> str:
         raise RuntimeError("migration_clone_database_url requires an isolated, non-shared test database")
     verify_test_database(test_db_url, allow_shared=False)
 
-    _run_async_blocking(_drop_test_database, admin_db_url, db_name)
-    _run_async_blocking(_create_test_database, admin_db_url, db_name)
+    private_database_touched = False
     try:
+        # Mark before the first destructive operation: a failed drop may still
+        # have terminated connections or partly changed the private clone.
+        private_database_touched = True
+        _run_async_blocking(_drop_test_database, admin_db_url, db_name)
+        _run_async_blocking(_create_test_database, admin_db_url, db_name)
         yield test_db_url
     finally:
-        if not _keep_test_database():
-            _run_async_blocking(_drop_test_database, admin_db_url, db_name)
-        _close_windows_test_db_tunnel()
+        try:
+            if private_database_touched and not _keep_test_database():
+                _run_async_blocking(_drop_test_database, admin_db_url, db_name)
+        except Exception as exc:
+            warnings.warn(
+                "Could not drop private PostgreSQL migration-clone DB "
+                f"{db_name}: {type(exc).__name__}: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        finally:
+            _close_windows_test_db_tunnel()
 
 
 @pytest.fixture(scope="session")

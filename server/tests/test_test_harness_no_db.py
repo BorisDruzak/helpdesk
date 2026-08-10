@@ -466,6 +466,39 @@ def test_migration_clone_fixture_privately_provisions_and_drops_a_blank_database
     ]
 
 
+@pytest.mark.parametrize("failing_operation", ("_drop_test_database", "_create_test_database"))
+def test_migration_clone_fixture_cleans_up_private_database_and_tunnel_after_provisioning_failure(
+    monkeypatch,
+    failing_operation,
+):
+    """A provisioning error must not leak the clone database or an owned tunnel."""
+
+    test_db_url = "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/pc_support_test_clone_unit"
+    admin_db_url = "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres"
+    events = []
+
+    def fake_run_async_blocking(func, *args):
+        events.append((func.__name__, args))
+        if func.__name__ == failing_operation and sum(name == failing_operation for name, _ in events) == 1:
+            raise RuntimeError("provisioning failed")
+
+    request = SimpleNamespace(node=_FakeNode(("migration_clone", _marker())))
+    monkeypatch.setattr(test_harness, "_resolve_test_database_urls", lambda: (test_db_url, admin_db_url, False))
+    monkeypatch.setattr(test_harness, "verify_test_database", lambda *args, **kwargs: None)
+    monkeypatch.setattr(test_harness, "_keep_test_database", lambda: False)
+    monkeypatch.setattr(test_harness, "_run_async_blocking", fake_run_async_blocking)
+    monkeypatch.setattr(test_harness, "_close_windows_test_db_tunnel", lambda: events.append(("close_tunnel", ())))
+
+    fixture = test_harness.migration_clone_database_url.__wrapped__(request)
+    with pytest.raises(RuntimeError, match="provisioning failed"):
+        next(fixture)
+
+    database_events = [event for event in events if event[0] != "close_tunnel"]
+    assert all(args == (admin_db_url, "pc_support_test_clone_unit") for _, args in database_events)
+    assert events[-1] == ("close_tunnel", ())
+    assert database_events[-1] == ("_drop_test_database", (admin_db_url, "pc_support_test_clone_unit"))
+
+
 def test_migration_clone_fixture_rejects_unmarked_test():
     request = SimpleNamespace(node=_FakeNode())
 
