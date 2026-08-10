@@ -28,6 +28,7 @@ from app.db.models import (
     TicketKbLink,
     UiUser,
 )
+from domain_ports.registry import RequesterRef, RequesterSnapshot, requester_persistence_values
 from tickets.statuses import ACTIVE_OPERATOR_STATUSES, TERMINAL_STATUSES
 
 
@@ -873,6 +874,8 @@ class TicketEventsRepo:
         requester_account_session_id: Optional[str] = None,
         requester_account_mode: Optional[str] = None,
         requester_account_warning: Optional[str] = None,
+        requester_ref: RequesterRef | None = None,
+        requester_snapshot: RequesterSnapshot | None = None,
     ) -> Ticket:
         """
         Create a new ticket.
@@ -890,6 +893,10 @@ class TicketEventsRepo:
             Created Ticket object
         """
         now = datetime.now(timezone.utc)
+        requester_values = requester_persistence_values(
+            requester_ref=requester_ref,
+            requester_snapshot=requester_snapshot,
+        )
         
         ticket = Ticket(
             ticket_id=ticket_id,
@@ -912,6 +919,7 @@ class TicketEventsRepo:
             service_owner_actor_id=service_owner_actor_id,
             support_group_code=support_group_code,
             asset_id=asset_id,
+            **requester_values,
             requester_person_id=requester_person_id,
             requester_binding_id=requester_binding_id,
             requester_registration_status=requester_registration_status,

@@ -7,6 +7,7 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import UserConsentRequest
+from domain_ports.registry import RequesterRef, RequesterSnapshot, requester_persistence_values
 
 
 class UserConsentRepo:
@@ -57,8 +58,20 @@ class UserConsentRepo:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def create(self, **fields: Any) -> UserConsentRequest:
-        row = UserConsentRequest(**fields)
+    async def create(
+        self,
+        *,
+        requester_ref: RequesterRef | None = None,
+        requester_snapshot: RequesterSnapshot | None = None,
+        **fields: Any,
+    ) -> UserConsentRequest:
+        if {"requester_external_ref", "requester_snapshot_json"} & fields.keys():
+            raise TypeError("use RequesterRef and RequesterSnapshot for neutral requester fields")
+        requester_values = requester_persistence_values(
+            requester_ref=requester_ref,
+            requester_snapshot=requester_snapshot,
+        )
+        row = UserConsentRequest(**fields, **requester_values)
         self.session.add(row)
         await self.session.flush()
         return row

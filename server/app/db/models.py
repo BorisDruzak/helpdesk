@@ -61,6 +61,10 @@ class Ticket(Base):
     urgency_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     importance_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     requester_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # Neutral PR-2 compatibility fields.  They intentionally carry no local
+    # Registry foreign key; old requester_* Registry IDs remain read-only data.
+    requester_external_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requester_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     requester_person_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     requester_binding_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     requester_registration_status: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
@@ -150,6 +154,7 @@ class Ticket(Base):
         Index("ix_tickets_queue_status_priority", "queue_id", "status", "priority"),
         Index("ix_tickets_assignee_status", "assignee_id", "status"),
         Index("ix_tickets_requester_created", "requester_id", "created_at"),
+        Index("ix_tickets_requester_external_ref", "requester_external_ref"),
         Index("ix_tickets_requester_person_created", "requester_person_id", "created_at"),
         Index("ix_tickets_requester_binding", "requester_binding_id"),
         Index("ix_tickets_requester_registration_status", "requester_registration_status"),
@@ -5207,6 +5212,10 @@ class UserConsentRequest(Base):
     subject_id: Mapped[str] = mapped_column(String(80), nullable=False)
     ticket_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("tickets.ticket_id", ondelete="SET NULL"), nullable=True)
     device_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("devices.device_id", ondelete="SET NULL"), nullable=True)
+    # Neutral PR-2 compatibility fields.  They intentionally carry no local
+    # Registry foreign key; old requester_* Registry IDs remain read-only data.
+    requester_external_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    requester_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     requester_person_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("registry_people.person_id", ondelete="SET NULL"), nullable=True)
     requester_binding_id: Mapped[Optional[str]] = mapped_column(String(36), sa.ForeignKey("device_user_bindings.binding_id", ondelete="SET NULL"), nullable=True)
     requester_account_session_id: Mapped[Optional[str]] = mapped_column(
@@ -5256,6 +5265,7 @@ class UserConsentRequest(Base):
             name="ck_user_consent_requests_surface",
         ),
         Index("ix_user_consent_requests_status_expires", "status", "expires_at"),
+        Index("ix_user_consent_requests_requester_external_ref", "requester_external_ref"),
         Index("ix_user_consent_requests_person_status", "requester_person_id", "status"),
         Index("ix_user_consent_requests_device_status", "device_id", "status"),
         Index("ix_user_consent_requests_ticket", "ticket_id"),

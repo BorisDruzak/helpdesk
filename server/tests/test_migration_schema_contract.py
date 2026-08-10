@@ -374,16 +374,22 @@ def test_required_constraints_indexes_defaults_and_nullable_migration_contracts(
     } <= catalog["constraints"]
     assert {
         "ix_tickets_device_account_session",
+        "ix_tickets_requester_external_ref",
         "ix_observer_integrity_status_severity",
         "ix_device_browser_pairings_token_hash",
+        "ix_user_consent_requests_requester_external_ref",
         "ix_user_consent_requests_status_expires",
         "ux_user_consent_requests_pending_subject",
     } <= catalog["indexes"]
 
     columns = catalog["columns"]
     assert columns[("tickets", "device_id")]["nullable"] == "YES"
+    assert columns[("tickets", "requester_external_ref")]["nullable"] == "YES"
+    assert columns[("tickets", "requester_snapshot_json")]["nullable"] == "YES"
     assert columns[("ticket_events", "device_id")]["nullable"] == "YES"
     assert columns[("user_consent_requests", "status")]["nullable"] == "NO"
+    assert columns[("user_consent_requests", "requester_external_ref")]["nullable"] == "YES"
+    assert columns[("user_consent_requests", "requester_snapshot_json")]["nullable"] == "YES"
     assert "'pending'" in str(columns[("user_consent_requests", "status")]["default"])
     assert "'{}'::jsonb" in str(columns[("user_consent_requests", "policy_snapshot")]["default"])
     assert "'{}'::jsonb" in str(columns[("device_browser_pairings", "metadata_json")]["default"])
