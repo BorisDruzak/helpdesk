@@ -35,6 +35,29 @@ def test_historical_clone_contract_is_owned_by_the_no_template_migration_schema_
     assert record.issues == ()
 
 
+def test_inventory_keeps_mixed_no_db_and_migration_clone_contracts_in_migration_schema(tmp_path):
+    audit = importlib.import_module("scripts.audit_test_inventory")
+    tests_dir = tmp_path / "server" / "tests"
+    contract_path = _write_test(
+        tests_dir,
+        "test_migration_schema_contract.py",
+        (
+            "import pytest\n\n"
+            "@pytest.mark.no_db\n"
+            "def test_static_contract():\n"
+            "    pass\n\n"
+            "@pytest.mark.migration_clone\n"
+            "def test_private_clone(migration_clone_database_url):\n"
+            "    pass\n"
+        ),
+    )
+
+    record = audit.audit_paths([contract_path], workspace=tmp_path).records[0]
+
+    assert record.suite == "migration_schema"
+    assert record.issues == ()
+
+
 def _write_test(tests_dir: Path, name: str, content: str) -> Path:
     path = tests_dir / name
     path.parent.mkdir(parents=True, exist_ok=True)

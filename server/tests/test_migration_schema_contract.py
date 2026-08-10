@@ -98,7 +98,7 @@ def _historical_migration_foreign_key_edges(path: Path) -> tuple[set[str], set[t
     return tables, edges
 
 
-@pytest.mark.migration_clone
+@pytest.mark.no_db
 def test_declared_historical_graph_matches_migration_118_non_self_fk_contract() -> None:
     """A later static drop graph must not silently omit a historical FK edge."""
 
@@ -435,7 +435,7 @@ def _assert_direct_fresh_migration_path() -> None:
     )
 
 
-@pytest.mark.migration_clone
+@pytest.mark.no_db
 def test_direct_migration_schema_guard_rejects_template_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PC_CLIENT_TEST_DB_TEMPLATE", "1")
 
@@ -444,29 +444,34 @@ def test_direct_migration_schema_guard_rejects_template_mode(monkeypatch: pytest
 
 
 @pytest.mark.migration_clone
-def test_clone_upgrade_from_133_retires_only_historical_knowledge_ai_schema(test_database_url: str) -> None:
+def test_clone_upgrade_from_133_retires_only_historical_knowledge_ai_schema(
+    migration_clone_database_url: str,
+) -> None:
     """Own the isolated 133->134 lifecycle without any pre-applied head/template."""
 
     _assert_direct_fresh_migration_path()
-    database_name = make_url(test_database_url).database or ""
+    database_name = make_url(migration_clone_database_url).database or ""
     assert database_name.startswith("pc_support_test_")
     assert database_name != "pc_support_test"
     assert len(RETIRED_KNOWLEDGE_AI_TABLES) == 45
 
-    _run_alembic_upgrade_to_revision(test_database_url, "133")
-    before = asyncio.run(_catalog_tables(test_database_url))
+    blank = asyncio.run(_catalog_tables(migration_clone_database_url))
+    assert not blank, "migration_clone must start from a blank private database"
+
+    _run_alembic_upgrade_to_revision(migration_clone_database_url, "133")
+    before = asyncio.run(_catalog_tables(migration_clone_database_url))
     assert RETIRED_KNOWLEDGE_AI_TABLES <= before
     assert PROTECTED_KNOWLEDGE_RETIREMENT_TABLES <= before
 
-    _run_alembic_upgrade_to_revision(test_database_url, "134")
-    after = asyncio.run(_catalog_tables(test_database_url))
+    _run_alembic_upgrade_to_revision(migration_clone_database_url, "134")
+    after = asyncio.run(_catalog_tables(migration_clone_database_url))
     assert not RETIRED_KNOWLEDGE_AI_TABLES & after
     assert before - after == RETIRED_KNOWLEDGE_AI_TABLES
     assert PROTECTED_KNOWLEDGE_RETIREMENT_TABLES <= after
-    asyncio.run(_protected_knowledge_retirement_tables_are_selectable(test_database_url))
+    asyncio.run(_protected_knowledge_retirement_tables_are_selectable(migration_clone_database_url))
 
-    _run_alembic_upgrade_to_revision(test_database_url, "head")
-    assert asyncio.run(_catalog_tables(test_database_url)) == after
+    _run_alembic_upgrade_to_revision(migration_clone_database_url, "head")
+    assert asyncio.run(_catalog_tables(migration_clone_database_url)) == after
 
 
 def _format_schema_audit_failure(report: audit_db_cleanup_schema.SchemaAuditReport) -> str:

@@ -163,10 +163,20 @@ def _apply_ci_layer_markers(item) -> None:
         item.add_marker("integration")
 
 
+def _is_migration_clone_test(node) -> bool:
+    """Return whether this item owns its private blank Alembic database lifecycle."""
+
+    return node.get_closest_marker("migration_clone") is not None
+
+
 def pytest_configure(config) -> None:
     config.addinivalue_line("markers", "agent_ws: tests that start the in-process WS agent fixture")
     config.addinivalue_line("markers", "db_cleanup(profile): select an explicit DB cleanup table profile")
     config.addinivalue_line("markers", "light_app: tests that opt into test_app_light/test_client_light")
+    config.addinivalue_line(
+        "markers",
+        "migration_clone: DB test owns a private blank Alembic lifecycle",
+    )
 
 
 def pytest_collection_modifyitems(config, items) -> None:
@@ -1212,6 +1222,35 @@ def test_database_url() -> str:
         _close_windows_test_db_tunnel()
 
 
+@pytest.fixture
+def migration_clone_database_url(request) -> str:
+    """Create a private blank PostgreSQL database for one explicit revision-path test.
+
+    This fixture intentionally does not depend on ``test_database_url``,
+    ``run_migrations`` or ``test_engine``.  The marked test owns every Alembic
+    upgrade itself, so CI proves the requested historical revision path rather
+    than the normal head-migrated harness path.
+    """
+
+    if not _is_migration_clone_test(request.node):
+        raise RuntimeError("migration_clone_database_url requires @pytest.mark.migration_clone")
+
+    test_db_url, admin_db_url, is_shared = _resolve_test_database_urls()
+    db_name = make_url(test_db_url).database or ""
+    if is_shared or db_name == SHARED_TEST_DATABASE_NAME:
+        raise RuntimeError("migration_clone_database_url requires an isolated, non-shared test database")
+    verify_test_database(test_db_url, allow_shared=False)
+
+    _run_async_blocking(_drop_test_database, admin_db_url, db_name)
+    _run_async_blocking(_create_test_database, admin_db_url, db_name)
+    try:
+        yield test_db_url
+    finally:
+        if not _keep_test_database():
+            _run_async_blocking(_drop_test_database, admin_db_url, db_name)
+        _close_windows_test_db_tunnel()
+
+
 @pytest.fixture(scope="session")
 def run_migrations(test_database_url: str):
     """Apply Alembic migrations once per pytest session."""
@@ -1274,7 +1313,7 @@ def test_engine(test_database_url: str, run_migrations):
 @pytest.fixture(autouse=True)
 def ensure_db_ready(request):
     """Ensure migrations are applied before DB-backed tests run."""
-    if request.node.get_closest_marker("no_db") or request.node.get_closest_marker("migration_clone"):
+    if request.node.get_closest_marker("no_db") or _is_migration_clone_test(request.node):
         return
     request.getfixturevalue("run_migrations")
 
@@ -1831,7 +1870,7 @@ def _cleanup_truncate_sql(profile: str) -> str:
 
 
 def _resolve_cleanup_profile(node) -> str | None:
-    if node.get_closest_marker("no_db") or node.get_closest_marker("migration_clone"):
+    if node.get_closest_marker("no_db") or _is_migration_clone_test(node):
         return None
     markers = list(node.iter_markers("db_cleanup"))
     if not markers:

@@ -272,6 +272,11 @@ def _classify_suite(path: Path, workspace: Path, markers: frozenset[str], fixtur
     scripts_dir = workspace / "scripts"
 
     if _is_relative_to(resolved, server_tests):
+        # The migration contract intentionally mixes no-DB static assertions
+        # with one private historical clone test.  Its filename is the
+        # canonical CI ownership boundary, not the aggregate marker set.
+        if path.name == "test_migration_schema_contract.py":
+            return _classify_server_db_api_file(path.name, workspace=workspace)
         if "no_db" in markers:
             return "server_pytest_no_db"
         if "agent_ws" in markers or "test_agent" in fixtures:

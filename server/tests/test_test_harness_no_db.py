@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from scripts.registry_retirement_manifest import RETIRED_KNOWLEDGE_AI_TABLES
+
 
 def _load_test_harness():
     path = Path(__file__).resolve().parent / "conftest.py"
@@ -436,6 +438,50 @@ def test_test_database_url_teardown_drops_database_before_closing_tunnel(monkeyp
     ]
 
 
+def test_migration_clone_fixture_privately_provisions_and_drops_a_blank_database(monkeypatch):
+    test_db_url = "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/pc_support_test_clone_unit"
+    admin_db_url = "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:55432/postgres"
+    events = []
+
+    def fake_run_async_blocking(func, *args):
+        events.append((func.__name__, args))
+
+    request = SimpleNamespace(node=_FakeNode(("migration_clone", _marker())))
+    monkeypatch.setattr(test_harness, "_resolve_test_database_urls", lambda: (test_db_url, admin_db_url, False))
+    monkeypatch.setattr(test_harness, "verify_test_database", lambda *args, **kwargs: None)
+    monkeypatch.setattr(test_harness, "_keep_test_database", lambda: False)
+    monkeypatch.setattr(test_harness, "_run_async_blocking", fake_run_async_blocking)
+    monkeypatch.setattr(test_harness, "_close_windows_test_db_tunnel", lambda: events.append(("close_tunnel", ())))
+
+    fixture = test_harness.migration_clone_database_url.__wrapped__(request)
+    assert next(fixture) == test_db_url
+    with pytest.raises(StopIteration):
+        next(fixture)
+
+    assert events == [
+        ("_drop_test_database", (admin_db_url, "pc_support_test_clone_unit")),
+        ("_create_test_database", (admin_db_url, "pc_support_test_clone_unit")),
+        ("_drop_test_database", (admin_db_url, "pc_support_test_clone_unit")),
+        ("close_tunnel", ()),
+    ]
+
+
+def test_migration_clone_fixture_rejects_unmarked_test():
+    request = SimpleNamespace(node=_FakeNode())
+
+    with pytest.raises(RuntimeError, match="requires @pytest.mark.migration_clone"):
+        next(test_harness.migration_clone_database_url.__wrapped__(request))
+
+
+def test_pytest_configure_registers_migration_clone_marker():
+    registered = []
+    config = SimpleNamespace(addinivalue_line=lambda section, value: registered.append((section, value)))
+
+    test_harness.pytest_configure(config)
+
+    assert ("markers", "migration_clone: DB test owns a private blank Alembic lifecycle") in registered
+
+
 def test_windows_isolated_alembic_upgrade_uses_subprocess(monkeypatch):
     calls = []
 
@@ -517,15 +563,9 @@ def test_web_api_cleanup_profiles_are_bounded_subsets():
     assert {"observer_traces", "observer_spans", "playbook", "playbook_run"} <= web_support_tables
 
 
-def test_cleanup_truncate_sql_uses_selected_profile_tables_only():
-    sql = test_harness._cleanup_truncate_sql("knowledge")
-    tables = test_harness.CLEANUP_TABLES_BY_PROFILE["knowledge"]
-
-    assert "knowledge_items" in tables
-    assert "knowledge_items" in sql
-    assert "ticket_queues" not in tables
-    assert "ticket_queues" not in sql
-    assert sql.strip().endswith("RESTART IDENTITY CASCADE")
+def test_cleanup_profiles_reject_the_retired_knowledge_schema():
+    with pytest.raises(RuntimeError, match="Unknown db_cleanup profile 'knowledge'"):
+        test_harness._cleanup_truncate_sql("knowledge")
 
 
 def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
@@ -550,7 +590,7 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 213
+    assert len(full_tables) == 168
     assert full_tables[:4] == (
         "observer_integrity_check_runs",
         "observer_integrity_events",
@@ -558,13 +598,12 @@ def test_full_cleanup_profile_preserves_current_table_scope():
         "observer_error_occurrences",
     )
     assert {
-        "knowledge_article_segments",
-        "knowledge_segmentation_jobs",
-        "knowledge_segmentation_profiles",
+        "ticket_kb_links",
         "ticket_admin_audit_archive",
         "ticket_events_archive",
         "ticket_retention_runs",
     } <= set(full_tables)
+    assert not RETIRED_KNOWLEDGE_AI_TABLES & set(full_tables)
     assert full_tables[-3:] == ("modules", "ticket_retention_runs", "tickets")
 
 
