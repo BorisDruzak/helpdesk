@@ -1,92 +1,29 @@
-"""Neutral dependency-injection seam for the future Registry domain."""
+"""Neutral dependency-injection seam for the Registry domain."""
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict
 
-
-# Helpdesk never parses or normalizes Registry identifiers.  They are opaque
-# references supplied by the Registry boundary and intentionally have no local
-# Registry primary-key or foreign-key meaning.
-OpaqueRegistryRef = Annotated[str, StringConstraints(strict=True, min_length=1, max_length=512)]
-RequesterDisplayName = Annotated[
-    str,
-    StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=256),
-]
-
-
-class _ImmutableRegistryDTO(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class PersonRef(_ImmutableRegistryDTO):
-    external_id: OpaqueRegistryRef
-
-
-class DeviceRef(_ImmutableRegistryDTO):
-    external_id: OpaqueRegistryRef
-
-
-class BindingRef(_ImmutableRegistryDTO):
-    external_id: OpaqueRegistryRef
-
-
-class RequesterRef(_ImmutableRegistryDTO):
-    """Canonical opaque requester identity retained by Helpdesk history."""
-
-    external_id: OpaqueRegistryRef
-
-
-class RequesterSnapshot(_ImmutableRegistryDTO):
-    """Minimal immutable display projection, deliberately excluding profile data."""
-
-    person: PersonRef
-    display_name: RequesterDisplayName
-
-
-def requester_persistence_values(
-    *,
-    requester_ref: RequesterRef | None,
-    requester_snapshot: RequesterSnapshot | None,
-) -> dict[str, str | dict[str, object] | None]:
-    """Return only validated, JSON-safe requester persistence fields.
-
-    Repository boundaries accept DTO instances rather than dictionaries or
-    local ORM rows so that callers cannot write a mutable Registry profile or
-    secret-bearing payload into Helpdesk history.
-    """
-
-    if requester_ref is not None and not isinstance(requester_ref, RequesterRef):
-        raise TypeError("requester_ref must be a RequesterRef")
-    if requester_snapshot is not None and not isinstance(requester_snapshot, RequesterSnapshot):
-        raise TypeError("requester_snapshot must be a RequesterSnapshot")
-    if (requester_ref is None) != (requester_snapshot is None):
-        raise ValueError("requester_ref and requester_snapshot must both be set or both be omitted")
-
-    validated_ref = (
-        RequesterRef.model_validate(requester_ref.model_dump(mode="python"))
-        if requester_ref is not None
-        else None
-    )
-    validated_snapshot = (
-        RequesterSnapshot.model_validate(requester_snapshot.model_dump(mode="python"))
-        if requester_snapshot is not None
-        else None
-    )
-    if (
-        validated_ref is not None
-        and validated_snapshot is not None
-        and validated_snapshot.person.external_id != validated_ref.external_id
-    ):
-        raise ValueError("requester snapshot person does not match requester ref")
-    return {
-        "requester_external_ref": validated_ref.external_id if validated_ref is not None else None,
-        "requester_snapshot_json": (
-            validated_snapshot.model_dump(mode="json") if validated_snapshot is not None else None
-        ),
-    }
+from .registry_contracts import (
+    AccountStatusOutcome,
+    ActiveBindingOutcome,
+    BindingRef,
+    BindingRevocationRequest,
+    DeviceRef,
+    OpaqueRegistryRef,
+    PersonRef,
+    RegistrationApprovalRequest,
+    RegistrationRequest,
+    RegistryCommandResult,
+    RequesterRef,
+    RequesterDisplayName,
+    RequesterSnapshot,
+    RequesterSnapshotOutcome,
+    AudienceProjectionOutcome,
+    requester_persistence_values,
+)
 
 
 class RegistryAvailability(BaseModel):
@@ -99,3 +36,20 @@ class RegistryAvailability(BaseModel):
 @runtime_checkable
 class RegistryPort(Protocol):
     async def availability(self) -> RegistryAvailability: ...
+
+    async def requester_snapshot(self, person: PersonRef) -> RequesterSnapshotOutcome: ...
+
+    async def active_binding(self, device: DeviceRef) -> ActiveBindingOutcome: ...
+
+    async def account_status(self, device: DeviceRef) -> AccountStatusOutcome: ...
+
+    async def audience_projection(self, person: PersonRef) -> AudienceProjectionOutcome: ...
+
+    async def request_registration(self, request: RegistrationRequest) -> RegistryCommandResult: ...
+
+    async def approve_registration(
+        self,
+        request: RegistrationApprovalRequest,
+    ) -> RegistryCommandResult: ...
+
+    async def revoke_binding(self, request: BindingRevocationRequest) -> RegistryCommandResult: ...

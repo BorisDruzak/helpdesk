@@ -63,6 +63,11 @@ gates pass.
 Registry is a separate external domain. Until its external API is introduced,
 Helpdesk must keep Registry access behind `RegistryPort`; it must not turn
 temporary local implementation details into a cross-domain contract.
+PR-8 composes the existing Registry through `server/registry_adapter/local.py`
+by default. Its DTOs expose only opaque refs and redacted projections. The
+`external` mode remains explicitly unavailable until PR-9 acceptance, and
+local commands are not invoked until they can honor caller-provided operation
+IDs with deterministic idempotency outcomes.
 
 ## Non-goals
 

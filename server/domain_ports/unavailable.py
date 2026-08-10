@@ -13,6 +13,15 @@ from .knowledge import (
     KnowledgeUnavailable,
 )
 from .registry import RegistryAvailability
+from .registry_contracts import (
+    BindingRevocationRequest,
+    DeviceRef,
+    PersonRef,
+    RegistrationApprovalRequest,
+    RegistrationRequest,
+    RegistryCommandResult,
+    RegistryUnavailable,
+)
 
 
 class UnavailableKnowledgePort:
@@ -40,8 +49,47 @@ class UnavailableKnowledgePort:
 
 
 class UnavailableRegistryPort:
+    def __init__(self, *, code: str = "registry_unavailable") -> None:
+        self._unavailable = RegistryUnavailable(code=code)
+
     async def availability(self) -> RegistryAvailability:
-        return RegistryAvailability(status="unavailable", code="registry_unavailable")
+        return RegistryAvailability(status="unavailable", code=self._unavailable.code)
+
+    async def requester_snapshot(self, person: PersonRef) -> RegistryUnavailable:
+        del person
+        return self._unavailable
+
+    async def active_binding(self, device: DeviceRef) -> RegistryUnavailable:
+        del device
+        return self._unavailable
+
+    async def account_status(self, device: DeviceRef) -> RegistryUnavailable:
+        del device
+        return self._unavailable
+
+    async def audience_projection(self, person: PersonRef) -> RegistryUnavailable:
+        del person
+        return self._unavailable
+
+    def _command_result(self, operation_id: str) -> RegistryCommandResult:
+        return RegistryCommandResult(
+            operation_id=operation_id,
+            status="unavailable",
+            code=self._unavailable.code,
+            idempotency_status="not_evaluated",
+        )
+
+    async def request_registration(self, request: RegistrationRequest) -> RegistryCommandResult:
+        return self._command_result(request.operation_id)
+
+    async def approve_registration(
+        self,
+        request: RegistrationApprovalRequest,
+    ) -> RegistryCommandResult:
+        return self._command_result(request.operation_id)
+
+    async def revoke_binding(self, request: BindingRevocationRequest) -> RegistryCommandResult:
+        return self._command_result(request.operation_id)
 
 
 class UnavailableEndpointPort:

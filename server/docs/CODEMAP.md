@@ -26,11 +26,16 @@
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
-  fresh adapters from the fail-closed `server/config.py::KNOWLEDGE_PORT_MODE`
-  setting; PR-1 supports only `unavailable` and defines no singleton or feature
-  activation.
-- PR-6 retains no in-process RBAC or runtime configuration. The sole
-  external-domain composition setting selects the fail-closed boundary.
+  fresh adapters from the fail-closed external-domain mode settings and defines
+  no module-level singleton.
+- `server/domain_ports/registry_contracts.py` defines the frozen/redacted
+  Registry read and command DTOs. `server/registry_adapter/local.py` is the
+  PR-8 compatibility adapter and the only new Registry ORM/repository import
+  site; `REGISTRY_PORT_MODE=local|unavailable|external` defaults to `local`.
+  The unimplemented external mode and all unavailable operations fail closed.
+  Local commands return `registry_command_not_composed` without side effects
+  until caller-owned idempotency is supported and accepted.
+- PR-6 retains no in-process RBAC or runtime configuration.
 - `scripts/check_domain_import_boundaries.py` is the AST guard for prohibited
   legacy-domain imports and local ORM dependencies; only historical Alembic
   version files are exempt. Run
