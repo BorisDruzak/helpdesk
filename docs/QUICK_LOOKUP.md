@@ -43,6 +43,14 @@
 - This is a contract/local-adapter milestone only. Existing requester, inventory and customer-history consumers remain on their Task-4 representable projection until their separate consumer cutover; do not add a direct Registry fallback.
 - Focused gate: `python -m pytest server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py -q --tb=short`; compile with `python -m compileall -q server/domain_ports server/registry_adapter`.
 
+## 2026-08-10 Registry command/eligibility acceptance boundary (PR-9 prerequisite)
+
+- Start with `server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md`, `server/docs/REGISTRY_PLATFORM_API_V1.md` and `server/tests/test_registry_commands_api_docs.py`. The commands document is the acceptance contract for future UI-login eligibility, registration/binding, account sessions, browser pairing and other-account approval; it does not add Helpdesk routes or enable an external command transport.
+- Every future command carries trusted actor context, a stable idempotency key and a fresh correlation ID; service authentication is HTTPS-only, raw secrets are never logged, replays are deterministic, and unavailable/uncertain outcomes fail closed without local fallback after cutover.
+- Preserve `ui_users`, Helpdesk web sessions/tokens, RBAC, tickets and `user_consent_requests`. Registry returns eligibility/command facts only; it never becomes a Helpdesk identity or authorization store.
+- Direct external authority is blocked until the per-operation acceptance record has service scope/certificate probe, authorized and denied actor evidence, replay/conflict/uncertain cases, redacted tracing and exactly-once pairing/session delivery evidence. Until then commands are local/off and no runtime authority changes.
+- Focused gate: `python -m pytest server/tests/test_registry_commands_api_docs.py server/tests/test_segmentation_docs.py -q --noconftest`.
+
 ## 2026-04-19 agent runtime and launcher flow
 
 - 2026-06-25 Observer integrity recurrence counters: start with `server/app/repos/observer_integrity_repo.py`, `server/app/db/models.py::ObserverIntegrityEvent`, migration `20260625_130_observer_integrity_recurrence_counters.py`, `server/web_api/observer_integrity_handlers.py`, `server/web_api/support_handlers.py`, `server/tests/test_observer_integrity_scan_scope.py`, `server/tests/test_observer_integrity.py`, `server/tests/test_migration_schema_contract.py`, `server/docs/OBSERVER_LAYER.md`, `server/docs/OBSERVER_AUTHORING_RULES.md` and `PLANS.md`. `scan_observation_count` increments for every repeated scan observation, `recurrence_count` increments only when a previously resolved condition returns, `last_reopened_at` records that transition, and legacy `occurrence_count` is kept as a recurrence alias so scanner loops do not look like repeated real incidents.

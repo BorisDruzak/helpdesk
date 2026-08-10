@@ -108,6 +108,23 @@
   behavior and savepoint isolation. These are contract/local-adapter additions;
   consumer migration remains a separate task.
 
+## 2026-08-10 Registry command/eligibility acceptance contract (PR-9 prerequisite)
+
+- `server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md` is the minimum versioned
+  external command/eligibility contract for UI-login eligibility, registration
+  and binding lifecycle, account sessions, browser pairing and other-account
+  approval. It requires HTTPS service authentication, verified actor context,
+  stable idempotency/replay semantics, correlation and typed fail-closed
+  unavailable/unauthorized/uncertain outcomes.
+- It is documentation only: no Helpdesk route, adapter command transport,
+  feature flag, migration or authority transfer is introduced. Commands remain
+  local/off until per-operation external service acceptance evidence exists.
+  `ui_users`, web sessions/tokens, RBAC, tickets and consent stay
+  Helpdesk-owned; Registry is not permitted to mutate or authorize them.
+- `server/docs/REGISTRY_PLATFORM_API_V1.md` remains the read-only external
+  API/shadow contract and links to the command prerequisite. Focused contract
+  coverage is `server/tests/test_registry_commands_api_docs.py`.
+
 ## 2026-08-10 Helpdesk requester reference persistence (PR-2)
 
 - `server/tickets/ticket_context.py` creates immutable `RequesterRef` /

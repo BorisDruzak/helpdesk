@@ -67,3 +67,12 @@ this PR and do not issue shadow calls.
 
 Breaking changes require `/v2`; additive platform fields are rejected until the
 Helpdesk projection contract is explicitly extended and accepted.
+
+## Command and eligibility boundary
+
+This is a read-only integration contract. The separate
+`REGISTRY_PLATFORM_COMMANDS_V1.md` specifies the future command and
+eligibility acceptance gate. It does not activate external authority: commands,
+registration, pairing, account sessions and UI-login eligibility remain local
+until per-operation external acceptance evidence permits a later explicit
+cutover.
