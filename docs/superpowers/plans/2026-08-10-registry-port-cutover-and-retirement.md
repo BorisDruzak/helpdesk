@@ -366,51 +366,62 @@ git add server/auth server/registry server/consent server/web_api server/tests
 git commit -m "server: cut over Registry commands"
 ~~~
 
-### Task 9: Rehearse forward-only Knowledge/Registry schema retirement (PR-11)
+### Task 9: Build non-destructive Knowledge/Registry retirement preflight (PR-11 prerequisite)
 
 **Files:**
 
-- Create: server/app/db/migrations/versions/<next>_retire_local_registry_and_knowledge.py
-- Create: scripts/rehearse_registry_retirement.py, server/tests/test_registry_retirement_migration.py
-- Modify: scripts/audit_db_cleanup_schema.py, server/app/db/models.py
+- Create: scripts/registry_retirement_manifest.py, scripts/rehearse_registry_retirement.py
+- Create: server/tests/test_registry_retirement_preflight.py
+- Modify: scripts/audit_db_cleanup_schema.py
 - Modify: server/docs/DATABASE.md, server/docs/RUNBOOK_BACKUP_RESTORE.md, server/docs/SEGMENTATION_BOUNDARIES.md
 
-**Interfaces:** consumes PR-9 proof of no local Registry runtime and an approved backup. Produces a new Alembic head without approved target tables/FKs; rollback is a tested restore.
+**Interfaces:** produces a declarative target/retain manifest and no-write verifier. It fails while local Registry command/auth/session/pairing runtime, routes, or consumers remain; it never runs DDL. The manifest explicitly retains `ui_users`, web sessions/RBAC, tickets, `user_consent_requests` and `ticket_kb_links`.
 
-- [ ] **Step 1: Write failing clone-migration tests**
+- [ ] **Step 1: Write failing preflight tests**
 
 ~~~python
-async def test_retirement_drops_only_approved_tables(isolated_database):
-    await upgrade_from_revision(isolated_database, "132")
-    await upgrade_head(isolated_database)
-    assert await catalog_has_no_tables(isolated_database, RETIRED_LOCAL_TABLES)
-    assert await catalog_has_tables(
-        isolated_database, {"ui_users", "tickets", "user_consent_requests"}
-    )
+def test_retirement_manifest_preserves_helpdesk_owned_tables():
+    assert RETIREMENT_MANIFEST.retain_tables >= {
+        "ui_users", "tickets", "user_consent_requests", "ticket_kb_links"
+    }
+
+def test_preflight_rejects_active_registry_runtime(tmp_path):
+    assert run_preflight(tmp_path).ready is False
 ~~~
 
 - [ ] **Step 2: Run RED**
 
-Run: python -m pytest server/tests/test_registry_retirement_migration.py -q --tb=short
+Run: python -m pytest server/tests/test_registry_retirement_preflight.py -q --noconftest
 
-Expected: FAIL before the retirement migration because target tables and FKs remain.
+Expected: FAIL because the manifest/verifier does not yet exist.
 
-- [ ] **Step 3: Implement migration, rehearsal and runbook**
+- [ ] **Step 3: Implement manifest, verifier and forward rollback runbook**
 
-Require advisory lock, maintenance mode, counts and backup hash. Detach ticket and consent legacy FK columns first, then drop child tables in reverse FK order: account events/pairings, sessions/login requests, registration events/bindings/claims, identities/audiences/governance, assets/people/services and remaining roots. Drop approved Knowledge/AI tables in the same migration. Never drop ui_users, RBAC, tickets or user_consent_requests. The rehearsal script performs backup, clone migration, catalog/count audit and restore drill.
+Require proof gates for no local Registry runtime/routes/writers, external command acceptance, maintenance/advisory-lock plan, counts and backup hash. Record the later reverse-FK drop order: account events/pairings, sessions/login requests, registration events/bindings/claims, identities/audiences/governance, assets/people/services and roots; detached ticket/consent legacy Registry columns; then approved Knowledge/AI tables. Never include `ui_users`, UI sessions/RBAC, tickets, `user_consent_requests` or `ticket_kb_links`. Rollback is application rollback plus a tested DB restore, never Alembic downgrade.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
-Run: python scripts/rehearse_registry_retirement.py --workspace . --dry-run; python -m pytest server/tests/test_registry_retirement_migration.py server/tests/test_migration_schema_contract.py -q --tb=short; python scripts/audit_db_cleanup_schema.py --schema-from-models --strict
+Run: python scripts/rehearse_registry_retirement.py --workspace . --dry-run; python -m pytest server/tests/test_registry_retirement_preflight.py server/tests/test_migration_schema_contract.py -q --tb=short; python scripts/audit_db_cleanup_schema.py --schema-from-models --strict
 
 ~~~powershell
-git add server/app/db/migrations/versions scripts/rehearse_registry_retirement.py server/tests/test_registry_retirement_migration.py scripts/audit_db_cleanup_schema.py server/app/db/models.py server/docs/DATABASE.md server/docs/RUNBOOK_BACKUP_RESTORE.md server/docs/SEGMENTATION_BOUNDARIES.md
-git commit -m "server: retire local Registry and Knowledge schema"
+git add scripts/rehearse_registry_retirement.py scripts/registry_retirement_manifest.py server/tests/test_registry_retirement_preflight.py scripts/audit_db_cleanup_schema.py server/docs/DATABASE.md server/docs/RUNBOOK_BACKUP_RESTORE.md server/docs/SEGMENTATION_BOUNDARIES.md
+git commit -m "scripts: add Registry retirement preflight"
 ~~~
+
+### Task 10: Apply forward-only Knowledge/Registry retirement (PR-11)
+
+**Prerequisites:** Task 8 has external command/auth/session/pairing acceptance evidence for every local writer; Task 9 returns ready against the release candidate; a fresh encrypted backup and restore drill have passed on an isolated clone; maintenance window and advisory lock are approved.
+
+**Interfaces:** produces a new Alembic head without approved local Registry/registration and retired Knowledge/AI tables/FKs. The migration never drops `ui_users`, web sessions/RBAC, tickets, `user_consent_requests` or `ticket_kb_links`.
+
+- [ ] **Step 1: Write failing clone-migration contract tests**
+- [ ] **Step 2: Implement a forward-only idempotent migration and rehearsal**
+- [ ] **Step 3: Prove clone upgrade, catalog/FK/count audit and backup restore**
+- [ ] **Step 4: Apply only after release acceptance; rollback by verified restore, never downgrade**
 
 ## Plan self-review
 
-- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5, PR-9 is Tasks 6–7, PR-11 is Task 8.
+- Coverage: PR-2 is Tasks 1–2, PR-8 is Tasks 3–5, PR-9 is Tasks 6–8, PR-11 is Tasks 9–10.
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
