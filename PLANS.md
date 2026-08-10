@@ -10,6 +10,19 @@
 - **Evidence:** focused port/import-boundary/ticket/support/problem/Registry/removed-route tests, Python compilation, default collection and webapp build are recorded in the task reports under `.superpowers/sdd/2026-08-09-helpdesk-segmentation-pr0-pr1-pr6/`. DB-backed subsets have a documented local timeout and are not claimed green.
 - **Next gates:** PR-7 may add a versioned external Knowledge API adapter only after service/auth/scope/redaction acceptance. PR-11 may delete retained schema only after acceptance, with a separately reviewed forward-only migration, backup/rollback plan and no local fallback restoration.
 
+## 2026-08-10 Registry retirement decision
+
+- **Confirmed ownership:** `ui_users`, Helpdesk web sessions and RBAC remain
+  Helpdesk-owned. Local `registry_*`, device-registration, account/pairing
+  data and Registry-linked ticket/consent FKs are retirement targets only
+  after a RegistryPort external cutover.
+- **Required sequence:** PR-2 immutable refs/snapshots; PR-8 local adapter and
+  import boundary; PR-9 external Registry API with shadow-read acceptance;
+  PR-11 forward-only schema deletion with clone rehearsal, backup/restore
+  rollback and a maintenance window. Alembic downgrade is explicitly excluded.
+- **Design record:**
+  `docs/superpowers/specs/2026-08-10-registry-retirement-design.md`.
+
 ## Goal
 
 Build a reliable bug remediation and live detection loop for the helpdesk system. Already-known P0/P1 defects from the deep audit must be verified against current `HEAD`, fixed with regression coverage and real evidence, then the stabilized system can be used for broader live bug hunting.
