@@ -9,6 +9,8 @@ import re
 from types import SimpleNamespace
 from typing import Any, AsyncIterator
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 try:
     from domain_ports.registry import RegistryAvailability
     from domain_ports.registry_contracts import (
@@ -100,8 +102,10 @@ def _safe_code(value: object) -> str | None:
 class LocalRegistryAdapter:
     """Translate the current local Registry into neutral, redacted DTOs.
 
-    A supplied session remains caller-owned. Without one, each operation opens
-    a normal application session lazily; constructing the container therefore
+    A supplied SQLAlchemy session remains caller-owned and contributes only
+    its bind; each port read opens an adapter-owned session so it cannot flush
+    or abort the caller's unit of work. Without one, each operation opens a
+    normal application session lazily; constructing the container therefore
     has no database side effect.
 
     Local command services do not yet honor caller-provided operation IDs.
@@ -124,15 +128,18 @@ class LocalRegistryAdapter:
 
     @asynccontextmanager
     async def _isolated_read_scope(self) -> AsyncIterator[Any]:
-        """Contain a local read failure inside a savepoint when one is available."""
+        """Run port reads outside the caller-owned SQLAlchemy unit of work."""
+
+        if isinstance(self._session, AsyncSession):
+            bind = self._session.bind
+            if bind is None:
+                raise RuntimeError("caller-owned registry session has no async bind")
+            async with AsyncSession(bind=bind, expire_on_commit=False, autoflush=False) as session:
+                yield session
+            return
 
         async with self._session_scope() as session:
-            begin_nested = getattr(session, "begin_nested", None)
-            if not callable(begin_nested):
-                yield session
-                return
-            async with begin_nested():
-                yield session
+            yield session
 
     async def _read(self, operation: str, reader: Any) -> object:
         try:
@@ -188,8 +195,8 @@ class LocalRegistryAdapter:
             return None
         person_ref = str(getattr(person, "person_id", "") or "")
         display_name = str(getattr(person, "display_name", "") or "")
-        status = str(getattr(person, "status", "active") or "active").strip().lower()
-        if not person_ref or status in {"archived", "disabled", "inactive", "merged"}:
+        status = _safe_code(getattr(person, "status", None))
+        if not person_ref or status is None or status in {"archived", "disabled", "inactive", "merged"}:
             return None
         try:
             return RequesterSnapshot(
@@ -208,7 +215,8 @@ class LocalRegistryAdapter:
         location_label: str | None,
     ) -> RequesterProfileProjection | None:
         snapshot = cls._requester_snapshot_from_person(person)
-        if snapshot is None:
+        status = _safe_code(getattr(person, "status", None))
+        if snapshot is None or status is None:
             return None
         try:
             return RequesterProfileProjection(
@@ -216,7 +224,7 @@ class LocalRegistryAdapter:
                 display_name=snapshot.display_name,
                 department_label=department_label,
                 location_label=location_label,
-                status=_safe_code(getattr(person, "status", "active")) or "active",
+                status=status,
                 source="local_authoritative",
             )
         except ValueError:
@@ -371,8 +379,18 @@ class LocalRegistryAdapter:
         if not isinstance(payload, dict):
             return RegistryInvalidProjection()
 
+        raw_audiences = payload.get("audience_groups") or []
+        raw_warnings = payload.get("warnings") or []
+        if (
+            not isinstance(raw_audiences, (list, tuple))
+            or not isinstance(raw_warnings, (list, tuple))
+            or len(raw_audiences) > _MAX_RICH_PROJECTION_ITEMS
+            or len(raw_warnings) > _MAX_RICH_PROJECTION_ITEMS
+        ):
+            return RegistryInvalidProjection()
+
         audiences: list[AudienceRef] = []
-        for item in payload.get("audience_groups") or []:
+        for item in raw_audiences:
             if not isinstance(item, dict):
                 continue
             external_id = str(item.get("code") or item.get("audience_group_id") or "")
@@ -384,7 +402,7 @@ class LocalRegistryAdapter:
                 return RegistryInvalidProjection()
         warning_codes = tuple(
             code
-            for item in payload.get("warnings") or []
+            for item in raw_warnings
             if isinstance(item, dict) and (code := _safe_code(item.get("code"))) is not None
         )
         return AudienceProjection(
@@ -444,7 +462,10 @@ class LocalRegistryAdapter:
         async def reader(session: Any) -> object:
             from app.repos.registry_repo import RegistryRepo
 
-            return await RegistryRepo(session).list_people(limit=_MAX_DIRECTORY_ITEMS)
+            return await RegistryRepo(session).search_people(
+                query=clean_query,
+                limit=bounded_limit,
+            )
 
         rows = await self._read("search_people", reader)
         if rows is _READ_FAILED:
@@ -453,19 +474,21 @@ class LocalRegistryAdapter:
             return RegistryInvalidProjection()
 
         items: list[DirectoryPersonProjection] = []
-        query_folded = clean_query.casefold()
         for row in rows:
             if self._is_inactive_person(row):
                 continue
             display_name = self._safe_label(getattr(row, "display_name", None))
-            if display_name is None or query_folded not in display_name.casefold():
+            status = _safe_code(getattr(row, "status", None))
+            if status is None:
+                return RegistryInvalidProjection()
+            if display_name is None:
                 continue
             try:
                 items.append(
                     DirectoryPersonProjection(
                         requester=RequesterRef(external_id=str(getattr(row, "person_id", "") or "")),
                         display_name=display_name,
-                        status=_safe_code(getattr(row, "status", "active")) or "active",
+                        status=status,
                         source="local_authoritative",
                     )
                 )
@@ -539,6 +562,8 @@ class LocalRegistryAdapter:
             person_row = await session.get(RegistryPerson, person.external_id)
             if person_row is None or self._is_inactive_person(person_row):
                 return RegistryNotFound(code="registry_requester_not_found")
+            if self._requester_snapshot_from_person(person_row) is None:
+                return RegistryInvalidProjection()
             bindings = (
                 await session.execute(
                     select(DeviceUserBinding)

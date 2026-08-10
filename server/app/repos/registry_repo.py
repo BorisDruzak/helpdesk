@@ -272,6 +272,20 @@ class RegistryRepo:
         )
         return list(result.scalars().all())
 
+    async def search_people(self, *, query: str, limit: int = 50) -> list[RegistryPerson]:
+        """Return a bounded, case-insensitive directory slice before applying SQL limit."""
+
+        clean_query = _clean(query)
+        if clean_query is None or limit < 1:
+            return []
+        result = await self.session.execute(
+            select(RegistryPerson)
+            .where(func.lower(RegistryPerson.display_name).like(f"%{clean_query.lower()}%"))
+            .order_by(RegistryPerson.updated_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def list_locations(self, *, limit: int = 200) -> list[RegistryLocation]:
         result = await self.session.execute(
             select(RegistryLocation).order_by(RegistryLocation.building, RegistryLocation.room).limit(limit)
