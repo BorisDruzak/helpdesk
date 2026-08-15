@@ -294,7 +294,7 @@ class LocalRegistryAdapter:
         row = await self._read("ticket_participant", reader)
         if row is _READ_FAILED:
             return RegistryUnavailable(code="registry_read_unavailable")
-        if row is None or self._is_inactive_person(row):
+        if row is None:
             return RegistryNotFound(code="registry_ticket_participant_not_found")
 
         def participant_text(value: object) -> str | None:

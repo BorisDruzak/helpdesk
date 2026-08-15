@@ -15,6 +15,7 @@ from domain_ports import (
     DirectorySearchProjection,
     PersonRef,
     RegistryInvalidProjection,
+    RegistryNotFound,
     RegistryReadActor,
     RegistryUnavailable,
     UnavailableRegistryPort,
@@ -164,6 +165,55 @@ async def test_local_ticket_participant_preserves_existing_ticket_context_fields
         "source": "local_authoritative",
     }
     assert "phone" not in result.model_dump(mode="json")
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["archived", "disabled", "inactive", "merged"])
+async def test_local_ticket_participant_preserves_existing_inactive_person(status: str) -> None:
+    person = _person()
+    person.status = status
+
+    result = await LocalRegistryAdapter(_Session(_Result(scalar=person))).ticket_participant(
+        PersonRef(external_id="registry-ref-opaque-person-1")
+    )
+
+    assert isinstance(result, registry_contracts.TicketParticipantProjection)
+    assert result.person.external_id == "registry-ref-opaque-person-1"
+    assert result.display_name == "Иван"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_local_ticket_participant_distinguishes_absent_person() -> None:
+    result = await LocalRegistryAdapter(_Session(_Result(scalar=None))).ticket_participant(
+        PersonRef(external_id="registry-ref-opaque-person-1")
+    )
+
+    assert isinstance(result, RegistryNotFound)
+    assert result.code == "registry_ticket_participant_not_found"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_local_ticket_participant_rejects_malformed_person_ref() -> None:
+    result = await LocalRegistryAdapter(
+        _Session(_Result(scalar=_person(person_id=" ")))
+    ).ticket_participant(PersonRef(external_id="registry-ref-opaque-person-1"))
+
+    assert isinstance(result, RegistryInvalidProjection)
+    assert result.code == "registry_projection_invalid"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_local_ticket_participant_maps_read_failure_to_typed_unavailable() -> None:
+    result = await LocalRegistryAdapter(_FailThenRecoverSession()).ticket_participant(
+        PersonRef(external_id="registry-ref-opaque-person-1")
+    )
+
+    assert isinstance(result, RegistryUnavailable)
+    assert result.code == "registry_read_unavailable"
 
 
 @pytest.mark.no_db

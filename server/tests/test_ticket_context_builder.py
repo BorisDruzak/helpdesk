@@ -18,7 +18,12 @@ from tickets.ticket_context import (
     validate_ticket_context_v1,
 )
 import domain_ports.registry_contracts as registry_contracts
-from domain_ports import PersonRef
+from domain_ports import (
+    PersonRef,
+    RegistryInvalidProjection,
+    RegistryNotFound,
+    RegistryUnavailable,
+)
 
 
 pytestmark = pytest.mark.db_cleanup("tickets")
@@ -130,6 +135,14 @@ class _TicketParticipantPort:
         )
 
 
+class _TicketParticipantOutcomePort:
+    def __init__(self, outcome: object) -> None:
+        self._outcome = outcome
+
+    async def ticket_participant(self, _person: PersonRef) -> object:
+        return self._outcome
+
+
 @pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_ticket_context_builder_reads_participants_only_through_registry_port(
@@ -173,6 +186,36 @@ async def test_ticket_context_fails_closed_when_participant_ref_does_not_match()
         await TicketContextBuilder(
             _NoRegistryOrmSession(),
             registry_port=_TicketParticipantPort(mismatch=True),
+        ).build(creator_person_id="registry-ref-person")
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "message"),
+    [
+        (
+            RegistryNotFound(code="registry_ticket_participant_not_found"),
+            "ticket participant person not found: registry_ticket_participant_not_found",
+        ),
+        (
+            RegistryUnavailable(code="registry_read_unavailable"),
+            "ticket participant Registry read unavailable: registry_read_unavailable",
+        ),
+        (
+            RegistryInvalidProjection(),
+            "ticket participant Registry projection is invalid",
+        ),
+    ],
+)
+async def test_ticket_context_maps_participant_outcomes_to_fail_closed_errors(
+    outcome: object,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        await TicketContextBuilder(
+            _NoRegistryOrmSession(),
+            registry_port=_TicketParticipantOutcomePort(outcome),
         ).build(creator_person_id="registry-ref-person")
 
 

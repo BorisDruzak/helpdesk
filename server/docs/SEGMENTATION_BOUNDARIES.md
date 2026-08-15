@@ -85,6 +85,9 @@ display/full/email values, nullable opaque department/location refs and source
 needed by the existing `ticket_context_v1`; it contains no identities,
 bindings, assets, sessions or policy metadata. Returned refs must match the
 request exactly and missing, unavailable or malformed results fail closed.
+An existing participant row remains snapshot-readable regardless of its current
+active/archived/disabled/inactive/merged lifecycle status, matching the former
+direct ticket-context read; only an absent row is `not_found`.
 Ticket creation, immutable requester history, inventory requester
 projection and the support current-requester projection use those operations
 without a local ORM/service fallback. The support DTO keeps a
@@ -127,8 +130,8 @@ enumeration accepts only support/admin actors. The local compatibility adapter
 passes actor id and role to the Registry effective-identity resolver, so
 access-group and role targeting remains authoritative. A malformed authoritative
 projection is typed as `invalid`, separately from `not_found` and
-`unavailable`; local reads use a nested transaction when available, preventing
-a failed query from aborting the caller-owned session.
+`unavailable`; local reads use an adapter-owned independent session, preventing
+query failure or autoflush from affecting the caller-owned unit of work.
 
 Customer History is the first rich consumer cut over: it accepts only a typed
 `RegistryReadActor` assembled from verified Helpdesk middleware context and

@@ -60,8 +60,10 @@ already persisted `ticket_context_v1` participant snapshot. Its `data` object
 has exactly `person`, `display_name`, `full_name`, `email`, `department` and
 `location`; the latter two are nullable opaque-ref objects and the three text
 fields are nullable. The returned `person.external_id` must exactly match
-`person_ref`. Missing people return `404`; malformed, mismatched or additional
-fields are `registry_projection_invalid` before Helpdesk injects provenance.
+`person_ref`. Only an absent person row returns `404`; an existing archived,
+disabled, inactive or merged row remains readable for compatibility with the
+already persisted ticket snapshot. Malformed, mismatched or additional fields
+are `registry_projection_invalid` before Helpdesk injects provenance.
 
 `GET /inventory-quality` returns only
 `{ "active_pc_without_location_count": <non-negative 32-bit integer> }`.
