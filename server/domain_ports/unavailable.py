@@ -28,6 +28,7 @@ from .registry_contracts import (
     RegistryUnavailable,
     RequesterHistoryOutcome,
     RequesterProfileOutcome,
+    TicketParticipantOutcome,
 )
 
 
@@ -63,6 +64,10 @@ class UnavailableRegistryPort:
         return RegistryAvailability(status="unavailable", code=self._unavailable.code)
 
     async def requester_snapshot(self, person: PersonRef) -> RegistryUnavailable:
+        del person
+        return self._unavailable
+
+    async def ticket_participant(self, person: PersonRef) -> TicketParticipantOutcome:
         del person
         return self._unavailable
 

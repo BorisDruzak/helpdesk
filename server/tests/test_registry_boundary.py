@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
+import tickets.create_flow as create_flow
 
 from domain_ports import (
     AccountStatusProjection,
@@ -30,6 +31,75 @@ from web_api.support_handlers import _build_support_registry_snapshot
 
 
 pytestmark = pytest.mark.no_db
+
+
+def test_submitted_registration_overlays_only_stale_unregistered_read() -> None:
+    result = create_flow._compose_submitted_registration_status(
+        {
+            "status": "unregistered",
+            "active_binding": None,
+            "requires_user_action": False,
+            "requires_admin_action": False,
+            "conflict_reason": None,
+        },
+        {
+            "claim_id": "local-claim-id-must-not-leak",
+            "status": "pending_user_confirmation",
+            "requires_user_action": True,
+            "requires_admin_action": False,
+            "conflict_reason": None,
+        },
+    )
+
+    assert result == {
+        "status": "self_reported",
+        "active_binding": None,
+        "requires_user_action": True,
+        "requires_admin_action": False,
+        "conflict_reason": None,
+    }
+    assert "pending_claim" not in result
+    assert "claim_id" not in result
+
+
+@pytest.mark.parametrize("observed_status", ["admin_confirmed", "conflict", "rejected"])
+def test_submitted_registration_never_overrides_observed_authoritative_state(
+    observed_status: str,
+) -> None:
+    current = {
+        "status": observed_status,
+        "active_binding": {"binding_id": "binding-1"} if observed_status == "admin_confirmed" else None,
+        "requires_user_action": False,
+        "requires_admin_action": observed_status == "conflict",
+        "conflict_reason": "observed_conflict" if observed_status == "conflict" else None,
+    }
+
+    result = create_flow._compose_submitted_registration_status(
+        current,
+        {
+            "status": "pending_user_confirmation",
+            "requires_user_action": True,
+            "requires_admin_action": False,
+        },
+    )
+
+    assert result == current
+
+
+def test_submitted_conflict_overlays_only_stale_unregistered_read() -> None:
+    result = create_flow._compose_submitted_registration_status(
+        {"status": "unregistered", "active_binding": None},
+        {
+            "status": "conflict",
+            "requires_user_action": False,
+            "requires_admin_action": True,
+            "conflict_reason": "open_claim_exists_for_device",
+        },
+    )
+
+    assert result["status"] == "conflict"
+    assert result["requires_admin_action"] is True
+    assert result["conflict_reason"] == "open_claim_exists_for_device"
 
 
 def _snapshot(person_id: str = "registry-ref-person-1") -> RequesterSnapshot:

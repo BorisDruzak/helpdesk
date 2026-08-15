@@ -19,6 +19,10 @@ RegistryDisplayLabel = Annotated[
     str,
     StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=256),
 ]
+TicketParticipantText = Annotated[
+    str,
+    StringConstraints(strict=True, strip_whitespace=True, min_length=1),
+]
 DirectorySearchText = Annotated[
     str,
     StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=120),
@@ -43,6 +47,14 @@ class _ImmutableRegistryDTO(BaseModel):
 
 
 class PersonRef(_ImmutableRegistryDTO):
+    external_id: OpaqueRegistryRef
+
+
+class DepartmentRef(_ImmutableRegistryDTO):
+    external_id: OpaqueRegistryRef
+
+
+class LocationRef(_ImmutableRegistryDTO):
     external_id: OpaqueRegistryRef
 
 
@@ -92,6 +104,18 @@ class RequesterSnapshot(_ImmutableRegistryDTO):
 
     person: PersonRef
     display_name: RequesterDisplayName
+
+
+class TicketParticipantProjection(_ImmutableRegistryDTO):
+    """Purpose-bound participant fields persisted in ``ticket_context_v1``."""
+
+    person: PersonRef
+    display_name: TicketParticipantText | None = None
+    full_name: TicketParticipantText | None = None
+    email: TicketParticipantText | None = None
+    department: DepartmentRef | None = None
+    location: LocationRef | None = None
+    source: Literal["local_authoritative", "external_authoritative"]
 
 
 def requester_persistence_values(
@@ -315,6 +339,7 @@ class RegistryCommandResult(_ImmutableRegistryDTO):
 
 
 RequesterSnapshotOutcome = RequesterSnapshot | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+TicketParticipantOutcome = TicketParticipantProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
 ActiveBindingOutcome = ActiveBindingProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
 AccountStatusOutcome = AccountStatusProjection | RegistryUnavailable | RegistryInvalidProjection
 AudienceProjectionOutcome = AudienceProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection

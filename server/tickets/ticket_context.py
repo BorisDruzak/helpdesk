@@ -9,7 +9,6 @@ from sqlalchemy import JSON, and_, cast, func, or_
 from sqlalchemy.dialects.postgresql import JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import RegistryPerson
 from domain_ports import (
     DomainPortContainer,
     PersonRef,
@@ -18,6 +17,7 @@ from domain_ports import (
     RegistryUnavailable,
     RequesterRef,
     RequesterSnapshot,
+    TicketParticipantProjection,
 )
 from registry.primary_agent_resolver import PrimaryAgentResolver
 
@@ -41,14 +41,18 @@ def _clean(value: Any) -> str | None:
     return text or None
 
 
-def _person_payload(person: RegistryPerson | None, *, fallback_person_id: str | None, actor_id: str | None = None) -> dict[str, Any]:
+def _person_payload(
+    person: TicketParticipantProjection,
+    *,
+    actor_id: str | None = None,
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "person_id": getattr(person, "person_id", None) or fallback_person_id,
-        "display_name": _clean(getattr(person, "display_name", None)),
-        "full_name": _clean(getattr(person, "full_name", None)),
-        "email": _clean(getattr(person, "email", None)),
-        "department_id": getattr(person, "department_id", None),
-        "location_id": getattr(person, "location_id", None),
+        "person_id": person.person.external_id,
+        "display_name": person.display_name,
+        "full_name": person.full_name,
+        "email": person.email,
+        "department_id": person.department.external_id if person.department is not None else None,
+        "location_id": person.location.external_id if person.location is not None else None,
     }
     if actor_id is not None:
         payload["actor_id"] = actor_id
@@ -56,7 +60,7 @@ def _person_payload(person: RegistryPerson | None, *, fallback_person_id: str | 
 
 
 def requester_reference_snapshot_from_person(
-    person: RegistryPerson | None,
+    person: object | None,
 ) -> tuple[RequesterRef | None, RequesterSnapshot | None]:
     """Build neutral requester persistence only from a server-loaded person."""
 
@@ -459,8 +463,8 @@ class TicketContextBuilder:
         affected_id = _clean(affected_person_id) or creator_id
         created_on_behalf = affected_id != creator_id
 
-        creator = await self.session.get(RegistryPerson, creator_id)
-        affected = await self.session.get(RegistryPerson, affected_id)
+        creator = await self._ticket_participant(creator_id)
+        affected = creator if affected_id == creator_id else await self._ticket_participant(affected_id)
         resolved = await PrimaryAgentResolver(self.session, state=self.state).resolve_for_person(affected_id)
         reason_code = _clean(resolved.get("reason_code")) if isinstance(resolved, dict) else None
         is_resolved = bool(resolved.get("resolved")) if isinstance(resolved, dict) else False
@@ -507,8 +511,8 @@ class TicketContextBuilder:
         )
         reason = _clean(on_behalf_reason)
         return build_ticket_context_v1(
-            creator=_person_payload(creator, fallback_person_id=creator_id, actor_id=_clean(creator_actor_id)),
-            affected=_person_payload(affected, fallback_person_id=affected_id),
+            creator=_person_payload(creator, actor_id=_clean(creator_actor_id)),
+            affected=_person_payload(affected),
             created_on_behalf=created_on_behalf,
             on_behalf_reason=reason,
             requester_context=requester_context or {},
@@ -516,6 +520,18 @@ class TicketContextBuilder:
             form=form or {},
             policy_refs=policy_refs or {},
         )
+
+    async def _ticket_participant(self, person_id: str) -> TicketParticipantProjection:
+        outcome = await self.registry_port.ticket_participant(PersonRef(external_id=person_id))
+        if isinstance(outcome, TicketParticipantProjection):
+            if outcome.person.external_id != person_id:
+                raise ValueError("ticket participant Registry projection is invalid")
+            return outcome
+        if isinstance(outcome, RegistryNotFound):
+            raise ValueError(f"ticket participant person not found: {outcome.code}")
+        if isinstance(outcome, RegistryUnavailable):
+            raise ValueError(f"ticket participant Registry read unavailable: {outcome.code}")
+        raise ValueError("ticket participant Registry projection is invalid")
 
     @staticmethod
     def custom_fields(context: dict[str, Any]) -> dict[str, Any]:

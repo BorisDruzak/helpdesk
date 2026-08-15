@@ -283,3 +283,21 @@ def test_registry_scope_allows_only_declared_create_flow_command_debt(tmp_path: 
     assert allowed.returncode == 0
     assert rejected.returncode == 1
     assert "app.repos.registry_repo" in rejected.stdout
+
+
+def test_registry_scope_rejects_ticket_context_registry_person_but_keeps_resolver_debt(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "server" / "tickets" / "ticket_context.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "from app.db.models import RegistryPerson\n"
+        "from registry.primary_agent_resolver import PrimaryAgentResolver\n",
+        encoding="utf-8",
+    )
+
+    result = run_check(tmp_path, registry_scope="tickets")
+
+    assert result.returncode == 1
+    assert "RegistryPerson" in result.stdout
+    assert "PrimaryAgentResolver" not in result.stdout

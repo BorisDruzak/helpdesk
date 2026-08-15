@@ -23,11 +23,13 @@ try:
         AudienceRef,
         BindingRef,
         BindingRevocationRequest,
+        DepartmentRef,
         DeviceContextOutcome,
         DeviceContextProjection,
         DeviceRef,
         InventoryQualityOutcome,
         InventoryQualityProjection,
+        LocationRef,
         DirectoryPersonProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
@@ -48,6 +50,8 @@ try:
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
+        TicketParticipantOutcome,
+        TicketParticipantProjection,
     )
 except ModuleNotFoundError as exc:
     if exc.name not in {"domain_ports", "domain_ports.registry"}:
@@ -63,11 +67,13 @@ except ModuleNotFoundError as exc:
         AudienceRef,
         BindingRef,
         BindingRevocationRequest,
+        DepartmentRef,
         DeviceContextOutcome,
         DeviceContextProjection,
         DeviceRef,
         InventoryQualityOutcome,
         InventoryQualityProjection,
+        LocationRef,
         DirectoryPersonProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
@@ -88,6 +94,8 @@ except ModuleNotFoundError as exc:
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
+        TicketParticipantOutcome,
+        TicketParticipantProjection,
     )
 
 
@@ -276,6 +284,48 @@ class LocalRegistryAdapter:
         if snapshot is None:
             return RegistryInvalidProjection()
         return snapshot
+
+    async def ticket_participant(self, person: PersonRef) -> TicketParticipantOutcome:
+        async def reader(session: Any) -> object | None:
+            from app.repos.registry_repo import RegistryRepo
+
+            return await RegistryRepo(session).get_person(person.external_id)
+
+        row = await self._read("ticket_participant", reader)
+        if row is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if row is None or self._is_inactive_person(row):
+            return RegistryNotFound(code="registry_ticket_participant_not_found")
+
+        def participant_text(value: object) -> str | None:
+            text = str(value or "").strip()
+            return text or None
+
+        department_id = getattr(row, "department_id", None)
+        location_id = getattr(row, "location_id", None)
+        try:
+            projection = TicketParticipantProjection(
+                person=PersonRef(external_id=str(getattr(row, "person_id", "") or "")),
+                display_name=participant_text(getattr(row, "display_name", None)),
+                full_name=participant_text(getattr(row, "full_name", None)),
+                email=participant_text(getattr(row, "email", None)),
+                department=(
+                    DepartmentRef(external_id=str(department_id))
+                    if department_id is not None
+                    else None
+                ),
+                location=(
+                    LocationRef(external_id=str(location_id))
+                    if location_id is not None
+                    else None
+                ),
+                source="local_authoritative",
+            )
+        except ValueError:
+            return RegistryInvalidProjection()
+        if projection.person.external_id != person.external_id:
+            return RegistryInvalidProjection()
+        return projection
 
     async def active_binding(self, device: DeviceRef) -> ActiveBindingOutcome:
         async def reader(session: Any) -> object:

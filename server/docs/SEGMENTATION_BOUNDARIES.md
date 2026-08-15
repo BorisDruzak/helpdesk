@@ -78,7 +78,14 @@ IDs with deterministic idempotency outcomes.
 
 The PR-8 Helpdesk read cutover uses the represented port operations for requester
 display snapshots, active device bindings, redacted account status and requester
-history. Ticket creation, immutable requester history, inventory requester
+history. `TicketContextBuilder` additionally reads creator and affected
+participants only through the purpose-bound `ticket_participant` operation. Its
+frozen projection contains exactly the opaque person ref, nullable
+display/full/email values, nullable opaque department/location refs and source
+needed by the existing `ticket_context_v1`; it contains no identities,
+bindings, assets, sessions or policy metadata. Returned refs must match the
+request exactly and missing, unavailable or malformed results fail closed.
+Ticket creation, immutable requester history, inventory requester
 projection and the support current-requester projection use those operations
 without a local ORM/service fallback. The support DTO keeps a
 typed unavailable or not-found current-state result visible as
@@ -100,7 +107,7 @@ Registry boundary. The scoped guard covers every new ticket module and rejects
 new Registry ORM/repository/service imports in selected migration paths, while
 an exact symbol ledger records operations still waiting for a richer external
 contract. This is not yet a repository-wide claim: requester profile/on-behalf
-resolution, rich ticket diagnostic context, exact binding/session authorization
+resolution, primary diagnostic-target resolution, exact binding/session authorization
 and Registry commands remain
 explicitly deferred.
 

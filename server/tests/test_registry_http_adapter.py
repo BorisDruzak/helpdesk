@@ -62,6 +62,129 @@ async def test_http_adapter_returns_only_redacted_requester_snapshot() -> None:
 
 
 @pytest.mark.asyncio
+async def test_http_adapter_reads_exact_ticket_participant_projection() -> None:
+    async def participant(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {
+                    "person": {"external_id": "registry-ref-opaque-1"},
+                    "display_name": "Иван",
+                    "full_name": "Иван Иванов",
+                    "email": "ivan@example.test",
+                    "department": {"external_id": "registry-ref-opaque-department-1"},
+                    "location": {"external_id": "registry-ref-opaque-location-1"},
+                },
+                "correlation_id": "registry-correlation-ticket-participant",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{person_ref}/ticket-participant",
+        participant,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-ticket-participant",
+            allow_insecure_test_url=True,
+        ).ticket_participant(PersonRef(external_id="registry-ref-opaque-1"))
+
+        assert result.model_dump(mode="json") == {
+            "person": {"external_id": "registry-ref-opaque-1"},
+            "display_name": "Иван",
+            "full_name": "Иван Иванов",
+            "email": "ivan@example.test",
+            "department": {"external_id": "registry-ref-opaque-department-1"},
+            "location": {"external_id": "registry-ref-opaque-location-1"},
+            "source": "external_authoritative",
+        }
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_ticket_participant_extra_keys_before_source_injection() -> None:
+    async def participant(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {
+                    "person": {"external_id": "registry-ref-opaque-1"},
+                    "display_name": "Иван",
+                    "full_name": None,
+                    "email": None,
+                    "department": None,
+                    "location": None,
+                    "source": "external_authoritative",
+                },
+                "correlation_id": "registry-correlation-ticket-participant-extra",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{person_ref}/ticket-participant",
+        participant,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-ticket-participant-extra",
+            allow_insecure_test_url=True,
+        ).ticket_participant(PersonRef(external_id="registry-ref-opaque-1"))
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_mismatched_ticket_participant_ref() -> None:
+    async def participant(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {
+                    "person": {"external_id": "registry-ref-other-person"},
+                    "display_name": "Иван",
+                    "full_name": None,
+                    "email": None,
+                    "department": None,
+                    "location": None,
+                },
+                "correlation_id": "registry-correlation-ticket-participant-mismatch",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{person_ref}/ticket-participant",
+        participant,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-ticket-participant-mismatch",
+            allow_insecure_test_url=True,
+        ).ticket_participant(PersonRef(external_id="registry-ref-opaque-1"))
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 async def test_http_adapter_reads_redacted_inventory_quality_projection() -> None:
     async def inventory_quality(_request: web.Request) -> web.Response:
         return web.json_response(

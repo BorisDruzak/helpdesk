@@ -33,6 +33,12 @@ def _device(device_id: str) -> Device:
     )
 
 
+async def _commit_registry_prerequisites(session) -> None:
+    """Expose Registry setup to adapter-owned read sessions before ticket create."""
+
+    await session.commit()
+
+
 @pytest.mark.asyncio
 async def test_ticket_with_active_binding_gets_requester_context_and_asset(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -48,6 +54,7 @@ async def test_ticket_with_active_binding_gets_requester_context_and_asset(test_
             profile={"full_name": "Ticket Active", "email": "ticket-active@example.test", "user_confirmed": True},
         )
         approved = await service.approve_claim(result["registration"]["claim_id"], reviewed_by="admin")
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -115,6 +122,7 @@ async def test_verified_requester_with_invalid_snapshot_does_not_create_legacy_o
         person.display_name = invalid_display_name
         person.full_name = invalid_display_name
         await session.flush()
+        await _commit_registry_prerequisites(session)
 
         with pytest.raises(ValueError):
             await create_ticket_with_side_effects(
@@ -156,6 +164,7 @@ async def test_stale_verified_requester_does_not_create_legacy_only_ticket(
             result["registration"]["claim_id"],
             reviewed_by="admin",
         )
+        await _commit_registry_prerequisites(session)
 
         async def _missing_verified_person(_builder, _person_id):
             return None, None
@@ -195,6 +204,7 @@ async def test_ticket_with_active_binding_ignores_conflicting_requester_profile(
             profile={"full_name": "Ticket Active Profile", "email": "ticket-active-profile@example.test", "user_confirmed": True},
         )
         approved = await service.approve_claim(result["registration"]["claim_id"], reviewed_by="admin")
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -232,6 +242,7 @@ async def test_ticket_with_requester_profile_creates_claim_and_pending_status(te
 
     async with session_maker() as session:
         session.add(_device(device_id))
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -284,6 +295,7 @@ async def test_ticket_with_conflict_claim_does_not_assign_requester_person(test_
             profile={"full_name": "Second Ticket", "email": "second-ticket@example.test", "user_confirmed": True},
         )
         await service.revoke_binding(approved["binding"]["binding_id"], revoked_by="admin", reason="test conflict without active")
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -324,6 +336,7 @@ async def test_confirmed_binding_account_context_uses_active_binding(test_engine
             device_id=device_id,
             binding_id=approved["binding"]["binding_id"],
         )
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -389,6 +402,7 @@ async def test_verified_other_account_session_marks_ticket_without_registration_
             },
         )
         session_payload = await account_service.approve_login_request(request["request_id"], reviewed_by="admin")
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -449,6 +463,7 @@ async def test_unapproved_other_account_request_cannot_create_verified_ticket(te
             device_id=device_id,
             requested_account={"full_name": "Other Account", "login": "other-account", "reason": "Temporary replacement"},
         )
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -491,6 +506,7 @@ async def test_registration_pending_account_after_revoke_marks_pending_without_b
             display_name="Pending After Revoke",
             profile={"full_name": "Pending After Revoke", "email": "pending-after-revoke@example.test"},
         )
+        await _commit_registry_prerequisites(session)
         created = await create_ticket_with_side_effects(
             session,
             device_id=device_id,

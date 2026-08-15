@@ -17,6 +17,8 @@ from tickets.ticket_context import (
     project_support_ticket_context,
     validate_ticket_context_v1,
 )
+import domain_ports.registry_contracts as registry_contracts
+from domain_ports import PersonRef
 
 
 pytestmark = pytest.mark.db_cleanup("tickets")
@@ -106,6 +108,74 @@ def _requester_account(person: RegistryPerson) -> dict[str, str]:
     }
 
 
+class _NoRegistryOrmSession:
+    async def get(self, *_args: object, **_kwargs: object) -> object:
+        raise AssertionError("ticket participant reads must use RegistryPort")
+
+
+class _TicketParticipantPort:
+    def __init__(self, *, mismatch: bool = False) -> None:
+        self._mismatch = mismatch
+
+    async def ticket_participant(self, person: PersonRef):
+        external_id = "registry-ref-other-person" if self._mismatch else person.external_id
+        return registry_contracts.TicketParticipantProjection(
+            person=PersonRef(external_id=external_id),
+            display_name="Port Display",
+            full_name="Port Full Name",
+            email="port@example.test",
+            department={"external_id": "registry-ref-department"},
+            location={"external_id": "registry-ref-location"},
+            source="local_authoritative",
+        )
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_ticket_context_builder_reads_participants_only_through_registry_port(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def unresolved(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "resolved": False,
+            "reason_code": "primary_device_missing",
+            "candidate_count": 0,
+        }
+
+    monkeypatch.setattr(
+        "tickets.ticket_context.PrimaryAgentResolver.resolve_for_person",
+        unresolved,
+    )
+    context = await TicketContextBuilder(
+        _NoRegistryOrmSession(),
+        registry_port=_TicketParticipantPort(),
+    ).build(
+        creator_person_id="registry-ref-person",
+        creator_actor_id="support-login",
+    )
+
+    assert context["creator"] == {
+        "person_id": "registry-ref-person",
+        "display_name": "Port Display",
+        "full_name": "Port Full Name",
+        "email": "port@example.test",
+        "department_id": "registry-ref-department",
+        "location_id": "registry-ref-location",
+        "actor_id": "support-login",
+    }
+    assert context["affected"]["person_id"] == "registry-ref-person"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_ticket_context_fails_closed_when_participant_ref_does_not_match() -> None:
+    with pytest.raises(ValueError, match="ticket participant Registry projection is invalid"):
+        await TicketContextBuilder(
+            _NoRegistryOrmSession(),
+            registry_port=_TicketParticipantPort(mismatch=True),
+        ).build(creator_person_id="registry-ref-person")
+
+
 @pytest.mark.asyncio
 async def test_ticket_context_builder_resolves_normal_creator_primary_agent(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -124,6 +194,7 @@ async def test_ticket_context_builder_resolves_normal_creator_primary_agent(test
             reviewed_by="admin",
             reason="creator primary diagnostic target",
         )
+        await session.commit()
 
         context = await TicketContextBuilder(session, state=_State({device_id})).build(
             creator_person_id=creator.person_id,
@@ -166,6 +237,7 @@ async def test_ticket_context_builder_emits_phase_b_canonical_sections(test_engi
             reviewed_by="admin",
             reason="canonical context target",
         )
+        await session.commit()
 
         requester_context = _requester_account(creator)
         context = await TicketContextBuilder(session, state=_State({device_id})).build(
@@ -239,6 +311,7 @@ async def test_ticket_context_builder_resolves_on_behalf_affected_primary_agent(
             reviewed_by="admin",
             reason="affected primary diagnostic target",
         )
+        await session.commit()
 
         context = await TicketContextBuilder(session, state=_State(set())).build(
             creator_person_id=creator.person_id,
@@ -268,6 +341,7 @@ async def test_ticket_context_builder_records_missing_primary_agent(test_engine)
         creator = _person("No Agent Creator")
         session.add(creator)
         await session.flush()
+        await session.commit()
 
         context = await TicketContextBuilder(session, state=_State(set())).build(
             creator_person_id=creator.person_id,
@@ -309,6 +383,7 @@ async def test_create_flow_stores_ticket_context_without_trusting_current_device
             reviewed_by="admin",
             reason="creator primary diagnostic target",
         )
+        await session.commit()
 
         result = await create_ticket_with_side_effects(
             session,
@@ -362,6 +437,7 @@ async def test_create_flow_stores_on_behalf_affected_target_context(test_engine)
             reviewed_by="admin",
             reason="affected primary diagnostic target",
         )
+        await session.commit()
 
         result = await create_ticket_with_side_effects(
             session,
@@ -442,6 +518,7 @@ async def test_create_flow_writes_ticket_context_resolved_event(test_engine):
             reviewed_by="admin",
             reason="event target",
         )
+        await session.commit()
 
         result = await create_ticket_with_side_effects(
             session,

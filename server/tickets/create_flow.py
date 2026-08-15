@@ -230,6 +230,38 @@ async def _read_registry_account_status(
     raise ValueError("registry_projection_invalid")
 
 
+_SUBMITTED_REGISTRATION_STATUS = {
+    "pending_user_confirmation": "self_reported",
+    "self_reported": "self_reported",
+    "user_confirmed": "pending_admin_review",
+    "pending_admin_review": "pending_admin_review",
+    "conflict": "conflict",
+}
+
+
+def _compose_submitted_registration_status(
+    current: dict[str, Any],
+    submitted: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Overlay a trusted same-transaction submission only onto stale absence."""
+
+    observed_status = str(current.get("status") or "").strip()
+    if current.get("active_binding") or observed_status not in {"", "unregistered"}:
+        return current
+    submitted_status = str((submitted or {}).get("status") or "").strip()
+    composed_status = _SUBMITTED_REGISTRATION_STATUS.get(submitted_status)
+    if composed_status is None:
+        return current
+    conflict_reason = str((submitted or {}).get("conflict_reason") or "").strip() or None
+    return {
+        **current,
+        "status": composed_status,
+        "requires_user_action": bool((submitted or {}).get("requires_user_action")),
+        "requires_admin_action": bool((submitted or {}).get("requires_admin_action")),
+        "conflict_reason": conflict_reason,
+    }
+
+
 async def _auto_assign_if_possible(session: Any, ticket_repo: TicketEventsRepo, ticket: Any) -> Any:
     if getattr(ticket, "assignee_id", None):
         return ticket
@@ -493,20 +525,10 @@ async def create_ticket_with_side_effects(
     try:
         registration_status = await _read_registry_account_status(registry, device_id)
         submitted_registration = registry_context.get("registration") if isinstance(registry_context, dict) else None
-        if isinstance(submitted_registration, dict) and submitted_registration.get("status") == "conflict":
-            registration_status = {
-                **(registration_status if isinstance(registration_status, dict) else {}),
-                "status": "conflict",
-                "active_binding": None,
-                "active_person": None,
-                "pending_claim": {
-                    "claim_id": submitted_registration.get("claim_id"),
-                    "status": "conflict",
-                    "conflict_reason": submitted_registration.get("conflict_reason"),
-                },
-                "requires_admin_action": True,
-                "conflict_reason": submitted_registration.get("conflict_reason"),
-            }
+        registration_status = _compose_submitted_registration_status(
+            registration_status,
+            submitted_registration if isinstance(submitted_registration, dict) else None,
+        )
         active_binding = registration_status.get("active_binding") if isinstance(registration_status, dict) else None
         if account_mode == "account_session_invalid":
             requester_registration_status = "account_session_invalid"

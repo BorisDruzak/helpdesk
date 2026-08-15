@@ -81,7 +81,7 @@ TOPICS: tuple[Topic, ...] = (
     Topic(
         key="helpdesk_external_domain_ports",
         title="Helpdesk external domain ports",
-        summary="PR-0/PR-1/PR-6 ownership boundary, dependency-injection contracts, local Knowledge-runtime removal and AST import guards for Knowledge plus incrementally scoped Registry consumers. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists. Local Knowledge routes, UI, AI runtime and configuration are removed; retained tables are history-only until PR-11 and PR-7 is the external adapter acceptance gate. PR-8 adds frozen/redacted RegistryPort contracts, local compatibility composition and incremental requester/ticket/inventory/support/customer-history/tech reads. Customer History projects only actor-scoped requester-history DTOs and returns typed Registry source states, never local binding/session ORM fallback. Tech reads the bounded InventoryQualityProjection only, retaining its authoritative numeric count; typed unavailable/invalid states add a redacted visible degradation alert rather than falling back to Registry ORM. Rich Registry reads use actor-scoped, bounded requester-profile, directory, device-context and history DTOs; malformed data is typed separately from not-found/unavailable and local failures are savepoint-isolated. Typed unavailable support state may display only immutable ticket history; remaining consumer cutovers and Registry commands stay explicit debt until their acceptance tasks.",
+        summary="PR-0/PR-1/PR-6 ownership boundary, dependency-injection contracts, local Knowledge-runtime removal and AST import guards for Knowledge plus incrementally scoped Registry consumers. Knowledge composition is fail-closed through KNOWLEDGE_PORT_MODE=unavailable; the unavailable adapters perform no database or HTTP work and no module-level port singleton exists. Local Knowledge routes, UI, AI runtime and configuration are removed; retained tables are history-only until PR-11 and PR-7 is the external adapter acceptance gate. PR-8 adds frozen/redacted RegistryPort contracts, local compatibility composition and incremental requester/ticket/inventory/support/customer-history/tech reads. TicketContextBuilder reads creator/affected fields only through the purpose-bound TicketParticipantProjection and preserves exact opaque-ref correlation while PrimaryAgentResolver remains explicit debt. Customer History projects only actor-scoped requester-history DTOs and returns typed Registry source states, never local binding/session ORM fallback. Tech reads the bounded InventoryQualityProjection only, retaining its authoritative numeric count; typed unavailable/invalid states add a redacted visible degradation alert rather than falling back to Registry ORM. Rich Registry reads use actor-scoped, bounded requester-profile, directory, device-context and history DTOs; malformed data is typed separately from not-found/unavailable and local failures are isolated from the caller unit of work. Typed unavailable support state may display only immutable ticket history; remaining consumer cutovers and Registry commands stay explicit debt until their acceptance tasks.",
         aliases=(
             "helpdesk segmentation",
             "external domain ports",
@@ -96,6 +96,7 @@ TOPICS: tuple[Topic, ...] = (
             "registry_external_not_composed",
             "RegistryReadActor",
             "RegistryInvalidProjection",
+            "TicketParticipantProjection",
             "registry_inventory_quality_degraded",
             "registry_port_local_read_failed",
             "check_domain_import_boundaries",
@@ -131,6 +132,7 @@ TOPICS: tuple[Topic, ...] = (
             "server/tests/test_registry_port_rich_projections.py",
             "server/tests/test_registry_http_adapter.py",
             "server/tests/test_registry_shadow_read.py",
+            "server/tests/test_ticket_context_builder.py",
             "server/tests/test_admin_tech_api.py",
             "server/tests/test_tech_alert_rules_unit.py",
             "server/tests/test_tech_panel_snapshot.py",
@@ -140,6 +142,7 @@ TOPICS: tuple[Topic, ...] = (
         ),
         related_docs=(
             "server/docs/SEGMENTATION_BOUNDARIES.md",
+            "server/docs/REGISTRY_PLATFORM_API_V1.md",
             "server/docs/KNOWLEDGE_PLATFORM_API_V1.md",
             "server/docs/adr/0001-helpdesk-external-domain-ports.md",
             "server/docs/CODEMAP.md",
@@ -154,7 +157,7 @@ TOPICS: tuple[Topic, ...] = (
             'python scripts/agent_find.py "domain_ports" --dir server',
             "python -m pytest server/tests/test_domain_ports.py -q --tb=short",
             "python -m pytest server/tests/test_registry_port.py server/tests/test_domain_ports.py -q --tb=short",
-            "python -m pytest server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py -q --tb=short",
+            "python -m pytest server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py server/tests/test_registry_http_adapter.py server/tests/test_registry_shadow_read.py server/tests/test_ticket_context_builder.py -q --tb=short",
             "python -m pytest server/tests/test_domain_import_boundaries.py -q --tb=short",
             "python scripts/check_domain_import_boundaries.py --registry-scope requester,tickets,customer_history,inventory,web_api,tech",
             "python -m pytest server/tests/test_knowledge_routes_removed.py server/tests/test_segmentation_docs.py -q --tb=short",

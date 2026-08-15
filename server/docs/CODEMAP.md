@@ -54,9 +54,18 @@
 
 - `server/tickets/ticket_context.py` builds verified immutable requester
   reference/snapshot pairs through `RegistryPort.requester_snapshot()`.
+  Creator and affected participant fields for `ticket_context_v1` come only
+  from the purpose-bound `RegistryPort.ticket_participant()` projection, with
+  exact opaque-ref correlation and typed fail-closed outcomes. The separate
+  `PrimaryAgentResolver` dependency remains explicit deferred diagnostic-target
+  debt.
   `server/tickets/create_flow.py` reads redacted current registration state
   through `RegistryPort.account_status()`; an invalid projection fails closed
   instead of creating a verified requester ticket with legacy-only identity.
+  A trusted registration result created inside that same ticket transaction may
+  overlay only an absent/`unregistered` isolated read with safe status/action
+  fields; observed active, conflict, rejected and other non-stale states retain
+  authority, and no client payload or claim ID participates.
 - `server/inventory/service.py` uses `RegistryPort.active_binding()` and exposes
   only requester ref/display plus typed source/status. Registry contact,
   organisation and asset fields are intentionally `null` until a future
@@ -89,7 +98,7 @@
   Repository-wide Registry enforcement is deferred while richer operations are
   absent from the frozen Task-3 contract.
 - Deferred consumers are requester profile/schema/on-behalf/identity reads,
-  rich ticket context and primary diagnostic-target resolution, and richer
+  primary diagnostic-target resolution, and richer
   inventory/contact/organisation/asset/service
   projections. Exact shared-binding and account-session revalidation plus
   Registry ingestion/commands remain in `create_flow.py` to preserve requester
@@ -105,6 +114,10 @@
   They contain opaque references and bounded display/status labels only; local
   contacts, identity aliases, account-session IDs, asset IDs, serial numbers and
   ORM metadata are deliberately not serializable through the port.
+- Its purpose-bound `TicketParticipantProjection` is the sole contact-field
+  exception: it carries only the existing ticket-context person/display/full/
+  email and department/location opaque refs plus provenance, never local
+  identities, bindings, assets, sessions or policy metadata.
 - `RegistryReadActor` carries only trusted composition-time actor context.
   `LocalRegistryAdapter.audience_projection()`, requester profile and history
   require it; directory search is support/admin-only and audience resolution
@@ -112,10 +125,11 @@
   access-group evaluation. Requester actors may read only their matching opaque
   requester reference.
 - `RegistryInvalidProjection` separates malformed authoritative data from
-  `RegistryNotFound` and `RegistryUnavailable`. All local reads use a nested
-  transaction when the supplied session supports it, preserving a caller-owned
-  session after a failed Registry query while logging only an operation-level
-  safe diagnostic. Contract maxima are directory 50 and audience/history 100.
+  `RegistryNotFound` and `RegistryUnavailable`. Local reads use an adapter-owned
+  independent session when supplied an async application session, preserving
+  the caller-owned unit of work after failure while logging only an
+  operation-level safe diagnostic. Contract maxima are directory 50 and
+  audience/history 100.
 - `server/tests/test_registry_port_rich_projections.py` covers redaction,
   trusted directory visibility, invalid outcomes, collection bounds, unavailable
   behavior and savepoint isolation. Customer History consumes the requester-

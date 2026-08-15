@@ -14,6 +14,7 @@ from domain_ports import (
     RegistrationRequest,
     InventoryQualityProjection,
 )
+import domain_ports.registry_contracts as registry_contracts
 from registry_adapter.http import ShadowReadRegistryPort
 
 
@@ -58,6 +59,28 @@ class _InventoryQualityExternalPort:
     async def inventory_quality(self) -> InventoryQualityProjection:
         return InventoryQualityProjection(
             active_pc_without_location_count=3,
+            source="external_authoritative",
+        )
+
+
+class _TicketParticipantLocalPort:
+    async def ticket_participant(self, _person: PersonRef):
+        return registry_contracts.TicketParticipantProjection(
+            person=PersonRef(external_id="registry-ref-opaque-person-1"),
+            display_name="Requester One",
+            full_name="Requester One",
+            email="local@example.test",
+            source="local_authoritative",
+        )
+
+
+class _TicketParticipantExternalPort:
+    async def ticket_participant(self, _person: PersonRef):
+        return registry_contracts.TicketParticipantProjection(
+            person=PersonRef(external_id="registry-ref-opaque-person-1"),
+            display_name="Requester One",
+            full_name="Requester One",
+            email="external@example.test",
             source="external_authoritative",
         )
 
@@ -136,5 +159,29 @@ async def test_shadow_inventory_quality_keeps_local_count_and_reports_redacted_m
             "operation": "inventory_quality",
             "outcome": "mismatch",
             "fields": ("active_pc_without_location_count",),
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_shadow_ticket_participant_reports_only_purpose_bound_field_names() -> None:
+    evidence: list[dict[str, object]] = []
+    port = ShadowReadRegistryPort(
+        authoritative=_TicketParticipantLocalPort(),
+        shadow=_TicketParticipantExternalPort(),
+        mismatch_reporter=evidence.append,
+    )
+
+    result = await port.ticket_participant(
+        PersonRef(external_id="registry-ref-opaque-person-1")
+    )
+    await asyncio.sleep(0)
+
+    assert result.email == "local@example.test"
+    assert evidence == [
+        {
+            "operation": "ticket_participant",
+            "outcome": "mismatch",
+            "fields": ("email",),
         }
     ]

@@ -26,6 +26,7 @@ from .registry_contracts import (
     RequesterDisplayName,
     RequesterSnapshot,
     RequesterSnapshotOutcome,
+    TicketParticipantOutcome,
     RequesterProfileOutcome,
     RequesterHistoryOutcome,
     AudienceProjectionOutcome,
@@ -45,6 +46,8 @@ class RegistryPort(Protocol):
     async def availability(self) -> RegistryAvailability: ...
 
     async def requester_snapshot(self, person: PersonRef) -> RequesterSnapshotOutcome: ...
+
+    async def ticket_participant(self, person: PersonRef) -> TicketParticipantOutcome: ...
 
     async def active_binding(self, device: DeviceRef) -> ActiveBindingOutcome: ...
 

@@ -154,7 +154,8 @@ REGISTRY_IMPORT_ALLOWANCES = {
     ),
     "server/tickets/ticket_context.py": frozenset(
         {
-            ("app.db.models", "RegistryPerson"),
+            # Diagnostic-target projection remains deferred until RegistryPort
+            # has the richer resolver contract; participant reads are cut over.
             ("registry.primary_agent_resolver", "PrimaryAgentResolver"),
         }
     ),

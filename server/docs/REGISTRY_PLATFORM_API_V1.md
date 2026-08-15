@@ -30,6 +30,7 @@ the command/auth acceptance cutover.
 return only frozen, redacted `RegistryPort` DTOs:
 
 - `GET /requesters/{person_ref}/snapshot`
+- `GET /requesters/{person_ref}/ticket-participant`
 - `GET /devices/{device_ref}/active-binding`
 - `GET /devices/{device_ref}/account-status`
 - `GET /requesters/{person_ref}/audience`
@@ -48,10 +49,19 @@ typed `registry_*_not_found`; it is distinct from unavailable or invalid data.
 `GET /inventory-quality` has no not-found state: its `404` and every other
 non-200 response map to typed unavailable.
 
-No endpoint returns contact data, identities, sessions, Registry numeric IDs,
+No endpoint except the purpose-bound ticket-participant read returns contact
+data. No endpoint returns identities, sessions, Registry numeric IDs,
 asset/serial data, ORM metadata, credentials or policy internals. Helpdesk sets
-the response `source=external_authoritative` locally; Registry need not send a
+the response `source=external_authoritative` locally; Registry must not send a
 source marker.
+
+`GET /requesters/{person_ref}/ticket-participant` exists only to preserve the
+already persisted `ticket_context_v1` participant snapshot. Its `data` object
+has exactly `person`, `display_name`, `full_name`, `email`, `department` and
+`location`; the latter two are nullable opaque-ref objects and the three text
+fields are nullable. The returned `person.external_id` must exactly match
+`person_ref`. Missing people return `404`; malformed, mismatched or additional
+fields are `registry_projection_invalid` before Helpdesk injects provenance.
 
 `GET /inventory-quality` returns only
 `{ "active_pc_without_location_count": <non-negative 32-bit integer> }`.
@@ -69,7 +79,7 @@ them, or with a non-HTTPS URL, it fails closed as
 reads authoritative and performs non-blocking external comparisons. Direct
 external authority requires a later explicit acceptance change.
 
-Shadow evidence contains only operation name, `mismatch` and changed redacted
+Shadow evidence contains only operation name, `mismatch` and changed purpose-bound
 DTO field names. It never includes correlation IDs, values, references,
 payloads, tokens or authorization decisions. Shadow calls are limited to reads. Commands,
 registration, pairing, account sessions and login eligibility remain local in

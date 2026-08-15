@@ -7,6 +7,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+import domain_ports.registry_contracts as registry_contracts
 from domain_ports import (
     ActorRef,
     DeviceRef,
@@ -102,6 +103,77 @@ def _person(*, person_id: str = "registry-ref-opaque-person-1") -> SimpleNamespa
         location_id=None,
         status="active",
     )
+
+
+@pytest.mark.no_db
+def test_ticket_participant_contract_is_immutable_and_purpose_bound() -> None:
+    projection = registry_contracts.TicketParticipantProjection(
+        person={"external_id": "registry-ref-opaque-person-1"},
+        display_name="Иван",
+        full_name="Иван Иванов",
+        email="ivan@example.test",
+        department={"external_id": "registry-ref-opaque-department-1"},
+        location={"external_id": "registry-ref-opaque-location-1"},
+        source="external_authoritative",
+    )
+
+    assert projection.model_dump(mode="json") == {
+        "person": {"external_id": "registry-ref-opaque-person-1"},
+        "display_name": "Иван",
+        "full_name": "Иван Иванов",
+        "email": "ivan@example.test",
+        "department": {"external_id": "registry-ref-opaque-department-1"},
+        "location": {"external_id": "registry-ref-opaque-location-1"},
+        "source": "external_authoritative",
+    }
+    with pytest.raises(ValueError):
+        projection.email = "changed@example.test"
+    with pytest.raises(ValueError):
+        registry_contracts.TicketParticipantProjection(
+            person={"external_id": "registry-ref-opaque-person-1"},
+            source="local_authoritative",
+            identity_id=123,
+        )
+
+    existing_text = "x" * 5000
+    assert registry_contracts.TicketParticipantProjection(
+        person={"external_id": "registry-ref-opaque-person-1"},
+        full_name=existing_text,
+        source="local_authoritative",
+    ).full_name == existing_text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_local_ticket_participant_preserves_existing_ticket_context_fields() -> None:
+    person = _person()
+    person.department_id = "registry-ref-opaque-department-1"
+    person.location_id = "registry-ref-opaque-location-1"
+
+    result = await LocalRegistryAdapter(_Session(_Result(scalar=person))).ticket_participant(
+        PersonRef(external_id="registry-ref-opaque-person-1")
+    )
+
+    assert result.model_dump(mode="json") == {
+        "person": {"external_id": "registry-ref-opaque-person-1"},
+        "display_name": "Иван",
+        "full_name": "Иван Иванов",
+        "email": "ivan@example.test",
+        "department": {"external_id": "registry-ref-opaque-department-1"},
+        "location": {"external_id": "registry-ref-opaque-location-1"},
+        "source": "local_authoritative",
+    }
+    assert "phone" not in result.model_dump(mode="json")
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_unavailable_ticket_participant_is_typed_and_fail_closed() -> None:
+    result = await UnavailableRegistryPort().ticket_participant(
+        PersonRef(external_id="registry-ref-opaque-person-1")
+    )
+
+    assert isinstance(result, RegistryUnavailable)
 
 
 @pytest.mark.no_db

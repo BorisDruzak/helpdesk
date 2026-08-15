@@ -46,6 +46,8 @@ try:
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
+        TicketParticipantOutcome,
+        TicketParticipantProjection,
     )
 except ModuleNotFoundError as exc:
     if exc.name not in {"domain_ports", "domain_ports.registry"}:
@@ -83,6 +85,8 @@ except ModuleNotFoundError as exc:
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
+        TicketParticipantOutcome,
+        TicketParticipantProjection,
     )
 
 
@@ -249,6 +253,28 @@ class ExternalRegistryHttpAdapter:
             ),
             RequesterSnapshot,
         )
+
+    async def ticket_participant(self, person: PersonRef) -> TicketParticipantOutcome:
+        payload = await self._get(
+            f"/v1/helpdesk/requesters/{_path_ref(person.external_id)}/ticket-participant",
+            not_found_code="registry_ticket_participant_not_found",
+        )
+        if isinstance(payload, Mapping) and set(payload) != {
+            "person",
+            "display_name",
+            "full_name",
+            "email",
+            "department",
+            "location",
+        }:
+            return RegistryInvalidProjection()
+        result = self._parse(payload, TicketParticipantProjection)
+        if (
+            isinstance(result, TicketParticipantProjection)
+            and result.person.external_id != person.external_id
+        ):
+            return RegistryInvalidProjection()
+        return result
 
     async def active_binding(self, device: DeviceRef) -> ActiveBindingOutcome:
         return self._parse(
@@ -441,6 +467,11 @@ class ShadowReadRegistryPort:
     async def requester_snapshot(self, person: PersonRef) -> RequesterSnapshotOutcome:
         local = await self._authoritative.requester_snapshot(person)
         self._schedule("requester_snapshot", local, self._shadow.requester_snapshot(person))
+        return local
+
+    async def ticket_participant(self, person: PersonRef) -> TicketParticipantOutcome:
+        local = await self._authoritative.ticket_participant(person)
+        self._schedule("ticket_participant", local, self._shadow.ticket_participant(person))
         return local
 
     async def active_binding(self, device: DeviceRef) -> ActiveBindingOutcome:
