@@ -451,6 +451,61 @@ async def test_person_history_matches_only_exact_valid_neutral_ref_or_legacy_per
 
 
 @pytest.mark.asyncio
+async def test_support_person_history_preserves_percent_encoded_opaque_ref_whitespace(
+    test_client,
+    test_engine,
+):
+    raw_ref = " requester ref "
+    trimmed_ref = raw_ref.strip()
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add_all(
+            [
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-RAW-REF",
+                    title="raw opaque ref",
+                    description="raw opaque ref",
+                    status="new",
+                    requester_id="unrelated-login",
+                    requester_external_ref=raw_ref,
+                    requester_snapshot_json=_neutral_requester_snapshot(raw_ref),
+                    created_at=now,
+                    updated_at=now,
+                ),
+                Ticket(
+                    ticket_id=str(uuid.uuid4()),
+                    ticket_code="T-HIST-TRIM-REF",
+                    title="trimmed opaque ref",
+                    description="trimmed opaque ref",
+                    status="new",
+                    requester_id="unrelated-login",
+                    requester_external_ref=trimmed_ref,
+                    requester_snapshot_json=_neutral_requester_snapshot(trimmed_ref),
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await test_client.get(
+        "/api/web/support/people/%20requester%20ref%20/history",
+        headers=_headers(TEST_UI_SUPPORT_TOKEN),
+    )
+    payload = await response.json()
+
+    assert response.status == 200, payload
+    ticket_refs = {
+        event["ticket_ref"]
+        for event in payload["data"]["events"]
+        if event["source"] == "ticket" and event["event_type"] == "ticket_created"
+    }
+    assert ticket_refs == {"T-HIST-RAW-REF"}
+
+
+@pytest.mark.asyncio
 async def test_person_history_uses_creator_and_affected_aliases_only_for_legacy_rows(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     alias_ref = "legacy-history-alias"

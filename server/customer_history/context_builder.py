@@ -112,18 +112,3 @@ class CustomerHistoryContextBuilder:
             since=filter_map.get("since"),
             window_days=filter_map.get("window_days"),
         )
-
-    async def build_requester_history(
-        self,
-        actor_context: dict[str, Any],
-        *,
-        registry_actor: RegistryReadActor | None = None,
-    ) -> dict[str, Any]:
-        person_id = str(actor_context.get("person_id") or "").strip()
-        if not person_id:
-            return {"events": [], "count": 0, "redaction_report": {"removed_count": 0, "role": "requester"}}
-        return await self.build_person_history(
-            person_id,
-            actor_context=actor_context,
-            registry_actor=registry_actor,
-        )

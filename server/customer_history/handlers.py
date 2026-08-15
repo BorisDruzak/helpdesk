@@ -68,7 +68,7 @@ def _registry_actor_from_verified_auth(
 @require_auth("admin", "support")
 async def handle_web_support_person_history(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
-    person_id = str(request.match_info.get("person_id") or "").strip()
+    person_id = str(request.match_info.get("person_id") or "")
     if not person_id:
         return _error("person not found", status=404, error_code="NOT_FOUND")
     async with get_session() as session:
