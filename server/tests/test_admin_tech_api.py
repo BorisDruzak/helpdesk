@@ -67,7 +67,7 @@ async def test_tech_overview_roles(test_client):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("outcome", "expected_count", "expected_state"),
+    ("outcome", "expected_count", "expected_state", "expected_alert_kind"),
     [
         (
             InventoryQualityProjection(
@@ -76,16 +76,19 @@ async def test_tech_overview_roles(test_client):
             ),
             6,
             {"status": "available", "source": "local_authoritative"},
+            None,
         ),
         (
             RegistryUnavailable(code="registry_external_timeout"),
             0,
             {"status": "unavailable", "code": "registry_external_timeout"},
+            "registry_inventory_quality_degraded",
         ),
         (
             RegistryInvalidProjection(),
             0,
             {"status": "invalid", "code": "registry_projection_invalid"},
+            "registry_inventory_quality_degraded",
         ),
     ],
 )
@@ -95,6 +98,7 @@ async def test_tech_overview_keeps_inventory_count_numeric_and_exposes_registry_
     outcome,
     expected_count,
     expected_state,
+    expected_alert_kind,
 ):
     from tech import handlers as tech_handlers
 
@@ -119,6 +123,11 @@ async def test_tech_overview_keeps_inventory_count_numeric_and_exposes_registry_
     assert quality["devices_without_location"] == expected_count
     assert isinstance(quality["devices_without_location"], int)
     assert quality["source_state"] == expected_state
+    alert_kinds = {str(alert.get("kind") or "") for alert in payload["overview"]["alerts"]}
+    if expected_alert_kind is None:
+        assert "registry_inventory_quality_degraded" not in alert_kinds
+    else:
+        assert expected_alert_kind in alert_kinds
 
 
 @pytest.mark.asyncio

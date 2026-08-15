@@ -112,6 +112,53 @@ async def test_tech_panel_snapshot_permissions(snapshot_handler_patch, role, exp
 
 
 @pytest.mark.no_db
+@pytest.mark.parametrize(
+    ("source_state", "expected_status", "expected_code", "expected_title"),
+    [
+        (
+            {"status": "unavailable", "code": "registry_external_timeout"},
+            "unavailable",
+            "registry_external_timeout",
+            "Данные качества инвентаря Реестра временно недоступны",
+        ),
+        (
+            {"status": "invalid", "code": "registry_projection_invalid"},
+            "invalid",
+            "registry_projection_invalid",
+            "Данные качества инвентаря Реестра некорректны",
+        ),
+    ],
+)
+async def test_tech_snapshot_keeps_registry_inventory_quality_degradation_alert_visible(
+    monkeypatch,
+    source_state,
+    expected_status,
+    expected_code,
+    expected_title,
+):
+    from tech import handlers as tech_handlers
+
+    alert = tech_handlers._inventory_quality_degradation_alert(source_state)
+
+    async def fake_overview(_request):
+        return {
+            "postgres_health": {"reachable": False},
+            "alerts": [alert],
+        }
+
+    monkeypatch.setattr(tech_handlers, "_build_overview", fake_overview)
+    async with TestClient(TestServer(_app_with_role("admin"))) as client:
+        response = await client.get("/api/web/admin/tech/snapshot")
+        payload = await response.json()
+
+    assert response.status == 200
+    degradation = next(alert for alert in payload["alerts"] if alert["kind"] == "registry_inventory_quality_degraded")
+    assert degradation["details"] == {"status": expected_status, "code": expected_code}
+    assert degradation["title"] == expected_title
+    assert degradation["description"]
+
+
+@pytest.mark.no_db
 def test_readiness_gate_blocks_when_db_persistence_disabled():
     from tech.snapshot import aggregate_readiness, build_readiness_gates
 

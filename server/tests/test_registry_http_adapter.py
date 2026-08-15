@@ -121,6 +121,37 @@ async def test_http_adapter_rejects_invalid_inventory_quality_projection() -> No
 
 
 @pytest.mark.asyncio
+async def test_http_adapter_rejects_inventory_quality_source_before_local_source_injection() -> None:
+    async def inventory_quality(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {
+                    "active_pc_without_location_count": 4,
+                    "source": "external_authoritative",
+                },
+                "correlation_id": "registry-correlation-unexpected-source",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/v1/helpdesk/inventory-quality", inventory_quality)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-unexpected-source",
+            allow_insecure_test_url=True,
+        ).inventory_quality()
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 async def test_http_adapter_maps_timeout_to_typed_unavailable_without_diagnostics() -> None:
     async def slow_snapshot(_request: web.Request) -> web.Response:
         await __import__("asyncio").sleep(0.05)

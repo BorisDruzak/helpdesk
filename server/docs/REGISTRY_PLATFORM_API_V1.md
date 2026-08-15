@@ -43,8 +43,10 @@ Audience, profile, directory and history reads additionally receive the
 verified caller context as `actor_ref`, `actor_role`, and, for requester
 actors, `requester_ref`. Registry must authorize that context itself. Result
 collections are capped by the Helpdesk contract (directory 50; audience and
-history 100). A `404` maps to the operation's typed `registry_*_not_found`;
-it is distinct from unavailable or invalid data.
+history 100). For requester/device reads, a `404` maps to the operation's
+typed `registry_*_not_found`; it is distinct from unavailable or invalid data.
+`GET /inventory-quality` has no not-found state: its `404` and every other
+non-200 response map to typed unavailable.
 
 No endpoint returns contact data, identities, sessions, Registry numeric IDs,
 asset/serial data, ORM metadata, credentials or policy internals. Helpdesk sets

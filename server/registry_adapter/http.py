@@ -314,8 +314,11 @@ class ExternalRegistryHttpAdapter:
         )
 
     async def inventory_quality(self) -> InventoryQualityOutcome:
+        payload = await self._get("/v1/helpdesk/inventory-quality")
+        if isinstance(payload, Mapping) and set(payload) != {"active_pc_without_location_count"}:
+            return RegistryInvalidProjection()
         return self._parse(
-            await self._get("/v1/helpdesk/inventory-quality"),
+            payload,
             InventoryQualityProjection,
         )
 

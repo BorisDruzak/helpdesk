@@ -684,6 +684,37 @@ async def _inventory_quality_from_registry(
     return 0, {"status": "invalid", "code": "registry_projection_invalid"}
 
 
+def _inventory_quality_degradation_alert(source_state: dict[str, str]) -> dict[str, Any] | None:
+    status = str(source_state.get("status") or "").strip().lower()
+    if status not in {"unavailable", "invalid"}:
+        return None
+    code = str(source_state.get("code") or "registry_projection_invalid")
+    unavailable = status == "unavailable"
+    title = (
+        "Данные качества инвентаря Реестра временно недоступны"
+        if unavailable
+        else "Данные качества инвентаря Реестра некорректны"
+    )
+    alert = _alert(
+        severity="warning",
+        kind="registry_inventory_quality_degraded",
+        entity_type="registry",
+        entity_id="inventory_quality",
+        summary=title,
+        details={"status": status, "code": code},
+        link="/app/admin/registry",
+    )
+    # The React tech panel renders title/description, while legacy consumers
+    # continue to receive the established summary/details alert envelope.
+    alert["title"] = title
+    alert["description"] = (
+        "Реестр временно не ответил; число показано как 0."
+        if unavailable
+        else "Реестр вернул некорректную проекцию; число показано как 0."
+    )
+    return alert
+
+
 async def _build_overview(request: web.Request) -> dict[str, Any]:
     state = request.app["state"]
     now = datetime.now(timezone.utc)
@@ -694,6 +725,12 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
     outbox_backlog_warn = _threshold("TECH_OUTBOX_BACKLOG_WARN", 100)
 
     alerts: list[dict[str, Any]] = []
+    devices_without_location, inventory_quality_source_state = await _inventory_quality_from_registry(
+        DomainPortContainer.from_config().registry
+    )
+    inventory_quality_alert = _inventory_quality_degradation_alert(inventory_quality_source_state)
+    if inventory_quality_alert is not None:
+        alerts.append(inventory_quality_alert)
 
     postgres_health = {"reachable": False, "latency_ms": None, "database": None, "pool_status": None, "error": None}
     db_started = datetime.now(timezone.utc)
@@ -796,10 +833,6 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     continue
                 env_uuid_by_hostname[hostname_key] = env_uuid_by_hostname.get(hostname_key, 0) + 1
             env_uuid_duplicate_groups = sum(1 for count in env_uuid_by_hostname.values() if count > 1)
-            devices_without_location, inventory_quality_source_state = await _inventory_quality_from_registry(
-                DomainPortContainer.from_config(registry_session=session).registry
-            )
-
             active_updates = await session.scalar(
                 select(func.count()).select_from(Operation).where(
                     and_(
