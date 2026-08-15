@@ -95,11 +95,11 @@ class _WebCabinetCheckResult:
 
 
 class _WebCabinetCheckSession:
-    def __init__(self, ticket: object) -> None:
-        self._ticket = ticket
+    def __init__(self, ticket: object | list[object]) -> None:
+        self._tickets = ticket if isinstance(ticket, list) else [ticket]
 
     async def execute(self, _statement: object) -> _WebCabinetCheckResult:
-        return _WebCabinetCheckResult([self._ticket])
+        return _WebCabinetCheckResult(self._tickets)
 
     async def scalar(self, _statement: object) -> int:
         return 1
@@ -1021,6 +1021,70 @@ async def test_web_cabinet_skips_completion_evidence_when_profile_completion_por
 
     assert not any(event.event_type.startswith("profile_completion_registry_") for event in result.events)
     assert not any(event.event_type == "profile_incomplete_normal_ticket_created" for event in result.events)
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_web_cabinet_contains_malformed_creator_ref_and_continues_next_ticket() -> None:
+    malformed_ref = "x" * 513
+    invalid_ticket = SimpleNamespace(
+        ticket_id="web-cabinet-malformed-ref-ticket",
+        device_id="web-cabinet-malformed-ref-device",
+        requester_id="malformed-ref@example.test",
+        requester_person_id=malformed_ref,
+        requester_account_mode="confirmed_binding",
+        custom_fields={
+            "request_context": "authenticated_requester_workspace",
+            "requester_account_mode": "confirmed_binding",
+            "ticket_context": _web_ticket_context(
+                creator_person_id=malformed_ref,
+                affected_person_id=malformed_ref,
+                target_device_id="web-cabinet-malformed-ref-device",
+                source="creator_primary_agent",
+                requester_context={"account": {"account_mode": "confirmed_binding"}},
+            ),
+        },
+        created_at=None,
+    )
+    valid_ticket = SimpleNamespace(
+        ticket_id="web-cabinet-valid-after-malformed-ticket",
+        device_id="web-cabinet-valid-after-malformed-device",
+        requester_id="valid-after-malformed@example.test",
+        requester_person_id="valid-person",
+        requester_account_mode="confirmed_binding",
+        custom_fields={
+            "request_context": "authenticated_requester_workspace",
+            "requester_account_mode": "confirmed_binding",
+            "ticket_context": _web_ticket_context(
+                creator_person_id="valid-person",
+                affected_person_id="valid-person",
+                target_device_id="web-cabinet-valid-after-malformed-device",
+                source="creator_primary_agent",
+                requester_context={"account": {"account_mode": "confirmed_binding"}},
+            ),
+        },
+        created_at=None,
+    )
+    profile_completion_port = _ProfileCompletionPort()
+
+    result = await check_web_cabinet(
+        _WebCabinetCheckSession([invalid_ticket, valid_ticket]),
+        registry_port=profile_completion_port,
+    )
+
+    invalid_event = next(
+        event
+        for event in result.events
+        if event.ticket_id == invalid_ticket.ticket_id
+        and event.event_type == "profile_completion_registry_invalid"
+    )
+    assert malformed_ref not in json.dumps(invalid_event.evidence, sort_keys=True)
+    assert profile_completion_port.calls == [("observer.web_cabinet", "valid-person")]
+    assert any(
+        event.ticket_id == valid_ticket.ticket_id
+        and event.event_type == "profile_incomplete_normal_ticket_created"
+        for event in result.events
+    )
 
 
 @pytest.mark.asyncio

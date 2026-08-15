@@ -247,6 +247,63 @@ async def test_http_adapter_rejects_incoherent_observer_profile_completion_proje
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("data", "correlation_id", "expected_type"),
+    [
+        (
+            {"status": "not_found", "code": "registry_requester_not_found"},
+            "registry-correlation-observer-profile-completion-not-found",
+            RegistryNotFound,
+        ),
+        (
+            {"status": "not_found", "code": "unexpected_not_found"},
+            "registry-correlation-observer-profile-completion-not-found",
+            RegistryInvalidProjection,
+        ),
+        (
+            {"status": "not_found", "code": "registry_requester_not_found"},
+            "wrong-registry-correlation",
+            RegistryInvalidProjection,
+        ),
+    ],
+    ids=("valid", "malformed", "wrong-correlation"),
+)
+async def test_http_adapter_validates_observer_profile_completion_not_found_envelope(
+    data: dict[str, str],
+    correlation_id: str,
+    expected_type: type[RegistryNotFound] | type[RegistryInvalidProjection],
+) -> None:
+    async def profile_completion(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {"data": data, "correlation_id": correlation_id},
+            status=404,
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/observer/requesters/{person_ref}/profile-completion",
+        profile_completion,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-observer-profile-completion-not-found",
+            allow_insecure_test_url=True,
+        ).requester_profile_completion(
+            RegistryObserverReadContext(source="observer.web_cabinet"),
+            RequesterRef(external_id="person-1"),
+        )
+
+        assert isinstance(result, expected_type)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 async def test_http_adapter_authorize_on_behalf_sends_exact_lookup_and_parses_allowed() -> None:
     received_query: dict[str, str] = {}
 

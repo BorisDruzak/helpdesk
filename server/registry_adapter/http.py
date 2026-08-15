@@ -383,7 +383,7 @@ class ExternalRegistryHttpAdapter:
             return RegistryInvalidProjection()
         payload = await self._get(
             f"/v1/helpdesk/observer/requesters/{_path_ref(person.external_id)}/profile-completion",
-            not_found_code="registry_requester_not_found",
+            not_found_codes=frozenset({"registry_requester_not_found"}),
         )
         if isinstance(payload, Mapping) and set(payload) != {
             "person",

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -363,9 +364,13 @@ async def _recompute_profile_completion(
 ) -> tuple[dict[str, Any], str | None, RegistryUnavailable | RegistryInvalidProjection | None]:
     if not person_id:
         return {}, None, None
+    try:
+        person = RequesterRef(external_id=person_id)
+    except ValidationError:
+        return {}, None, RegistryInvalidProjection()
     result = await registry_port.requester_profile_completion(
         RegistryObserverReadContext(source=SOURCE),
-        RequesterRef(external_id=person_id),
+        person,
     )
     if isinstance(result, RequesterProfileCompletionProjection):
         return (

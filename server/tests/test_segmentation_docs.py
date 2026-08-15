@@ -61,7 +61,7 @@ def test_docs_reference_external_knowledge_contract_not_removed_runtime() -> Non
     assert "KnowledgePort" in ticket_system
     assert "knowledge_unavailable" in ticket_system
     assert "PR-11" in database
-    assert "Retained historical Knowledge tables" in database
+    assert "Retired local Knowledge/AI schema (revision 134)" in database
 
 
 def test_codemaps_do_not_advertise_removed_local_knowledge_runtime() -> None:
@@ -117,7 +117,8 @@ def test_server_codemap_limits_knowledge_to_external_boundary_and_history() -> N
     approved_server_lines = {
         "  configuration and content packs are removed. `KnowledgePort` is external-only",
         "  and remains fail-closed as `knowledge_unavailable` until PR-7 accepts a",
-        "  and sanitized `knowledge_attempts`, are retained until the PR-11 forward-only",
+        "  the physical legacy graph; `TicketKbLink`/`ticket_kb_links` history and",
+        "  sanitized `knowledge_attempts` remain read-only historical projections.",
         "  control plane; future Knowledge and Registry Platforms are separate domains.",
         "  to consume Endpoint, Knowledge and Registry only through explicitly composed,",
         "- `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines a future external",
@@ -133,12 +134,19 @@ def test_server_codemap_limits_knowledge_to_external_boundary_and_history() -> N
         "any future external content integration must be composed behind the Helpdesk "
         "`KnowledgePort` contract, not as a direct agent-to-Helpdesk API."
     )
+    retirement_start = next(
+        line_number
+        for line_number, line in enumerate(server_lines, start=1)
+        if line == "## 2026-08-10 Knowledge/AI schema retirement (PR-11a)"
+    )
 
     for line_number, line in enumerate(server_lines, start=1):
         if "knowledge" in line.casefold():
-            assert line_number <= 50, line
-            assert line in approved_server_lines, line
-            assert not re.search(r"\b(local|fallback|search|ask|service|route)\b", line, re.I), line
+            if line_number <= 50:
+                assert line in approved_server_lines, line
+                assert not re.search(r"\b(local|fallback|search|ask|service|route)\b", line, re.I), line
+            else:
+                assert retirement_start <= line_number <= retirement_start + 14, line
 
     for line in agent_lines:
         if "knowledge" in line.casefold():
@@ -179,38 +187,10 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
         if "knowledge_attempts" in line:
             assert "read-only" in line.casefold(), line
 
-    retained_local_knowledge_migrations = (
-        "- `083_knowledge_platform.py`",
-        "- `084_knowledge_acceptance_constraints.py`",
-        "- `085_knowledge_operations.py`",
-        "- `086_knowledge_ops_models.py`",
-        "- `087_knowledge_rollout_policy_hardening.py`",
-        "- `110_ai_provider_settings.py`",
-        "- `111_knowledge_search_settings.py`",
-        "- `112_knowledge_article_segments.py`",
-        "- `113_knowledge_embeddings_indexing.py`",
-        "- `114_knowledge_portal_persistence.py`",
-        "- `115_knowledge_editor_history.py`",
-        "- `116_knowledge_graph_layouts.py`",
-        "- `117_knowledge_ai_proposals.py`",
-        "- `118_knowledge_metadata_model.py`",
-        "- `119_knowledge_quality_model_uniqueness.py`",
-        "- `121_knowledge_audience_rules.py`",
-        "- `123_knowledge_correction_reviewing_status.py`",
-    )
-    retained_migration_marker = "retained historical physical schema; non-runtime"
-
-    for migration_name in retained_local_knowledge_migrations:
-        matching_lines = [line for line in database_lines if line.startswith(migration_name)]
-        assert len(matching_lines) == 1, migration_name
-        assert retained_migration_marker in matching_lines[0], matching_lines[0]
-
-    for line in database_lines:
-        if "knowledge" in line.casefold():
-            assert "Retained historical Knowledge tables" in line or (
-                line.startswith(retained_local_knowledge_migrations)
-                and retained_migration_marker in line
-            ), line
+    database = "\n".join(database_lines)
+    assert "Retired local Knowledge/AI schema (revision 134)" in database
+    assert "134_retire_local_knowledge_ai_schema.py" in database
+    assert "forward-only removal" in database
 
     for forbidden_surface in (
         "knowledge_repo.py",
@@ -240,3 +220,20 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
         "Knowledge RAG",
     ):
         assert forbidden_surface not in canonical_text
+
+
+def test_observer_docs_do_not_advertise_retired_requester_knowledge_events() -> None:
+    authoring_rules = (DOCS_ROOT / "OBSERVER_AUTHORING_RULES.md").read_text(encoding="utf-8")
+    navigation_catalog = Path("scripts/navigation_catalog.py").read_text(encoding="utf-8")
+    observer_topic = navigation_catalog.split('key="observer"', maxsplit=1)[1].split(
+        "    Topic(", maxsplit=1
+    )[0]
+
+    for retired_event in (
+        "requester_knowledge",
+        "knowledge_suggest_succeeded",
+        "knowledge_ask_succeeded",
+        "knowledge_attempt_guard_succeeded",
+    ):
+        assert retired_event not in authoring_rules
+        assert retired_event not in observer_topic

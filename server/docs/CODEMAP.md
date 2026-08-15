@@ -5,10 +5,9 @@
 - PR-6 is complete: in-process runtime, routes, UI, AI components,
   configuration and content packs are removed. `KnowledgePort` is external-only
   and remains fail-closed as `knowledge_unavailable` until PR-7 accepts a
-  versioned adapter plus shadow-read evidence. Physical legacy tables and
-  migrations, including the read-only `TicketKbLink`/`ticket_kb_links` history
-  and sanitized `knowledge_attempts`, are retained until the PR-11 forward-only
-  deletion gate and rollback acceptance.
+  versioned adapter plus shadow-read evidence. PR-11a revision `134` removed
+  the physical legacy graph; `TicketKbLink`/`ticket_kb_links` history and
+  sanitized `knowledge_attempts` remain read-only historical projections.
 - `server/docs/SEGMENTATION_BOUNDARIES.md` is the normative ownership map:
   Helpdesk owns tickets/ITSM processes; Endpoint Platform owns the endpoint-agent
   control plane; future Knowledge and Registry Platforms are separate domains.
