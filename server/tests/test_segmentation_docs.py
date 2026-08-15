@@ -10,6 +10,22 @@ pytestmark = pytest.mark.no_db
 DOCS_ROOT = Path("server/docs")
 
 
+def test_registry_docs_define_correlated_observer_profile_completion_not_found() -> None:
+    api = (DOCS_ROOT / "REGISTRY_PLATFORM_API_V1.md").read_text(encoding="utf-8")
+    normalized_api = " ".join(api.split())
+
+    assert "only documented non-200 projection envelopes" in normalized_api
+    assert (
+        "observer requester-profile-completion read returns a correlated exact `404` envelope"
+        in normalized_api
+    )
+    assert (
+        '`data` is exactly `{ "status": "not_found", "code": "registry_requester_not_found" }`'
+        in normalized_api
+    )
+    assert "unknown codes, additional fields or correlation mismatch are invalid projections" in normalized_api
+
+
 def test_segmentation_docs_define_external_knowledge_contract_without_fallback() -> None:
     boundaries = (DOCS_ROOT / "SEGMENTATION_BOUNDARIES.md").read_text(encoding="utf-8")
     adr = (DOCS_ROOT / "adr/0001-helpdesk-external-domain-ports.md").read_text(

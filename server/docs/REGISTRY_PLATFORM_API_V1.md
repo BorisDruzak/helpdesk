@@ -17,8 +17,9 @@ the command/auth acceptance cutover.
 - `REGISTRY_EXTERNAL_TIMEOUT_SECONDS` is bounded to 0.05–10 seconds (default
   2). Transport failure, an undocumented non-200 response, disabled integration
   or timeout map to `registry_unavailable`; they never trigger a direct ORM
-  fallback. The correlated on-behalf authorization `404` described below is the
-  only documented non-200 projection envelope.
+  fallback. The correlated on-behalf authorization and observer
+  requester-profile-completion `404` envelopes described below are the only
+  documented non-200 projection envelopes.
 - Every success is exactly `{ "data": { ... }, "correlation_id": "opaque" }`;
   the returned opaque ID must exactly match the one sent by Helpdesk.
   Helpdesk accepts only the redacted DTO fields documented below; unexpected,
@@ -68,8 +69,12 @@ exactly `person`, `complete`, `blocks`, `status` and `missing_field_keys`.
 `missing_field_keys` is bounded and deduplicated. The projection contains no
 profile values, labels, identities, sessions, policy internals or ORM metadata.
 An archived person remains evaluable for this observer audit; only an absent
-person is not-found. Unavailable or invalid outcomes are handled as redacted
-observer integrity degradation, never as a completed profile gate.
+person is not-found. The observer requester-profile-completion read returns a
+correlated exact `404` envelope whose `data` is exactly `{ "status":
+"not_found", "code": "registry_requester_not_found" }`; unknown codes,
+additional fields or correlation mismatch are invalid projections. Unavailable
+or invalid outcomes are handled as redacted observer integrity degradation,
+never as a completed profile gate.
 
 No endpoint except the purpose-bound ticket-participant and on-behalf candidate
 reads returns the already exposed contact fields. No endpoint returns identities, sessions, Registry numeric IDs,
