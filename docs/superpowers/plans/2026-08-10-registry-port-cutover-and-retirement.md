@@ -466,9 +466,54 @@ git commit -m "scripts: add Registry retirement preflight"
 
 **Interfaces:** adds a redacted bounded `InventoryQualityProjection(active_pc_without_location_count)` to local/HTTP/shadow adapters, then replaces the one direct `RegistryAsset` aggregate in tech handlers. It must not approximate the aggregate with per-device lookups or expose asset/person identifiers.
 
+### Task 15: Route ticket participant context reads through RegistryPort (PR-8 completion)
+
+**Files:**
+
+- Modify: `server/domain_ports/registry_contracts.py`, `server/domain_ports/registry.py`, `server/domain_ports/unavailable.py`
+- Modify: `server/registry_adapter/local.py`, `server/registry_adapter/http.py`, `server/docs/REGISTRY_PLATFORM_API_V1.md`
+- Modify: `server/tickets/ticket_context.py`, `scripts/check_domain_import_boundaries.py`
+- Test: `server/tests/test_registry_port_rich_projections.py`, `server/tests/test_registry_http_adapter.py`, `server/tests/test_registry_shadow_read.py`, `server/tests/test_ticket_context_builder.py`, `server/tests/test_domain_import_boundaries.py`
+- Modify only as needed for contract drift: `docs/QUICK_LOOKUP.md`, `server/docs/CODEMAP.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `docs/ARCHITECTURE_BOUNDARIES.md`, `scripts/navigation_catalog.py`
+
+**Interfaces:** adds an immutable, purpose-bound `TicketParticipantProjection` for an existing ticket-context snapshot. It returns exactly the already persisted participant fields: opaque person ref, display name, full name, email, and opaque department/location refs, plus local/external source; no local numeric IDs, identities, bindings, assets, sessions, or policy metadata. Local and HTTP/shadow adapters distinguish unavailable, missing and malformed outcomes. `TicketContextBuilder.build()` loads creator and affected participants only through the port, validates that returned opaque refs match requested refs, and fails closed on missing/unavailable/invalid projection; it preserves the existing `ticket_context_v1` and flat-field behavior. It removes the direct `RegistryPerson` import/allowance, but deliberately retains the separate `PrimaryAgentResolver` debt until its own richer diagnostic-target contract is accepted. The external HTTP endpoint is service-to-service only and must validate an exact envelope before Helpdesk adds its source marker.
+
+- [ ] **Step 1: Write RED contract and ticket-context tests**
+
+```python
+async def test_ticket_participant_projection_preserves_existing_ticket_context_fields(session):
+    result = await LocalRegistryAdapter(session).ticket_participant(PersonRef(external_id="person-1"))
+    assert result.person.external_id == "person-1"
+    assert result.email == "person-1@example.test"
+    assert result.department.external_id == "department-1"
+
+async def test_ticket_context_fails_closed_when_participant_ref_does_not_match():
+    with pytest.raises(ValueError, match="ticket participant Registry projection is invalid"):
+        await TicketContextBuilder(session, registry_port=mismatched_port).build(creator_person_id="person-1")
+```
+
+- [ ] **Step 2: Verify RED**
+
+Run: `python -m pytest server/tests/test_registry_port_rich_projections.py server/tests/test_ticket_context_builder.py -q --tb=short`
+
+Expected: FAIL because the ticket-participant operation and port-only builder path do not exist.
+
+- [ ] **Step 3: Implement exact read projection and cutover**
+
+Use frozen DTOs and existing opaque-ref validation. Keep all existing ticket-context participant fields; do not replace department/location refs with labels or omit email/full name. Validate HTTP payload keys before local provenance injection; never directly query Registry ORM from tickets. Leave `PrimaryAgentResolver` untouched and explicitly guarded as deferred debt.
+
+- [ ] **Step 4: Verify GREEN and commit**
+
+Run: `python -m pytest server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py server/tests/test_registry_http_adapter.py server/tests/test_registry_shadow_read.py server/tests/test_ticket_context_builder.py server/tests/test_domain_import_boundaries.py -q --tb=short`; `python scripts/check_domain_import_boundaries.py --workspace . --registry-scope requester,tickets,customer_history,inventory,web_api,tech`; `python scripts/docs_drift_check.py --base <task-base> --json`
+
+```powershell
+git add server/domain_ports server/registry_adapter server/tickets/ticket_context.py scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md server/docs/SEGMENTATION_BOUNDARIES.md docs/ARCHITECTURE_BOUNDARIES.md scripts/navigation_catalog.py docs/superpowers/plans/2026-08-10-registry-port-cutover-and-retirement.md
+git commit -m "server: route ticket participants through RegistryPort"
+```
+
 ## Plan self-review
 
-- Coverage: PR-2 is Tasks 1–2 and 13, PR-8 is Tasks 3–5, 12 and 14, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
+- Coverage: PR-2 is Tasks 1–2 and 13, PR-8 is Tasks 3–5 and 12–15, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
