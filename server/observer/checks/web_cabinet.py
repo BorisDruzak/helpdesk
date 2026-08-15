@@ -6,12 +6,20 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ObserverTrace, RegistryPerson, Ticket
+from app.db.models import ObserverTrace, Ticket
 from app.repos.observer_integrity_repo import ObserverIntegrityEventInput
 from customer_history.projection_service import CustomerHistoryProjectionService
+from domain_ports import (
+    DomainPortContainer,
+    RegistryInvalidProjection,
+    RegistryNotFound,
+    RegistryObserverReadContext,
+    RegistryPort,
+    RegistryUnavailable,
+    RequesterProfileCompletionProjection,
+    RequesterRef,
+)
 from observer.checks.types import ObserverIntegrityCheckResult, limit_plus_one_window
-from registry.profile_schema_service import RequesterProfileSchemaService
-from requester.identity_service import RequesterIdentityResolver
 
 
 SOURCE = "observer.web_cabinet"
@@ -349,25 +357,38 @@ async def _has_create_observer_trace(session: AsyncSession, ticket_id: str) -> b
 
 
 async def _recompute_profile_completion(
-    session: AsyncSession,
+    registry_port: RegistryPort,
     *,
     person_id: str | None,
-) -> tuple[dict[str, Any], str | None]:
+) -> tuple[dict[str, Any], str | None, RegistryUnavailable | RegistryInvalidProjection | None]:
     if not person_id:
-        return {}, None
-    person = await session.get(RegistryPerson, person_id)
-    if person is None:
-        return {}, None
-    profile_schema = await RequesterProfileSchemaService(session).get_schema()
-    return (
-        RequesterIdentityResolver(session).build_profile_completion(person, profile_schema=profile_schema),
-        "registry_recomputed",
+        return {}, None, None
+    result = await registry_port.requester_profile_completion(
+        RegistryObserverReadContext(source=SOURCE),
+        RequesterRef(external_id=person_id),
     )
+    if isinstance(result, RequesterProfileCompletionProjection):
+        return (
+            {
+                "complete": result.complete,
+                "blocks": result.blocks,
+                "status": result.status,
+                "missing_fields": [{"key": key} for key in result.missing_field_keys],
+            },
+            "registry_recomputed",
+            None,
+        )
+    if isinstance(result, RegistryNotFound):
+        return {}, None, None
+    if isinstance(result, (RegistryUnavailable, RegistryInvalidProjection)):
+        return {}, None, result
+    return {}, None, RegistryInvalidProjection()
 
 
 async def _web_invariant_events(
     session: AsyncSession,
     *,
+    registry_port: RegistryPort,
     ticket: Ticket,
     custom_fields: dict[str, Any],
     context: dict[str, Any],
@@ -381,10 +402,32 @@ async def _web_invariant_events(
 
     completion, completion_source = _profile_completion_snapshot(context, custom_fields)
     if not completion:
-        completion, completion_source = await _recompute_profile_completion(
-            session,
+        completion, completion_source, source_state = await _recompute_profile_completion(
+            registry_port,
             person_id=creator_id or _clean(getattr(ticket, "requester_person_id", None)),
         )
+        if source_state is not None:
+            outcome = "unavailable" if isinstance(source_state, RegistryUnavailable) else "invalid"
+            events.append(
+                ObserverIntegrityEventInput(
+                    event_type=f"profile_completion_registry_{outcome}",
+                    severity="medium",
+                    source=SOURCE,
+                    dedupe_key=f"profile_completion_registry_{outcome}:{ticket.ticket_id}",
+                    ticket_id=ticket.ticket_id,
+                    device_id=ticket.device_id,
+                    actor_role="requester",
+                    expected="Observer profile-completion recomputation must receive a valid RegistryPort projection.",
+                    actual=f"RegistryPort returned typed {outcome} profile-completion state.",
+                    evidence={
+                        "profile_completion_source": "registry_port",
+                        "registry_outcome": outcome,
+                        "registry_code": source_state.code,
+                    },
+                    runbook="docs/runbooks/observer_web_cabinet.md",
+                    run_id=run_id,
+                )
+            )
     if _profile_completion_blocks(completion) and not _profile_gate_bypass_allowed(context, custom_fields):
         missing = completion.get("missing_fields") if isinstance(completion.get("missing_fields"), list) else []
         events.append(
@@ -564,9 +607,12 @@ async def _web_invariant_events(
 async def check_web_cabinet(
     session: AsyncSession,
     *,
+    registry_port: RegistryPort | None = None,
     run_id: str | None = None,
     limit: int = 300,
 ) -> ObserverIntegrityCheckResult:
+    if registry_port is None:
+        registry_port = DomainPortContainer.from_config(registry_session=session).registry
     query_limit = max(1, min(int(limit or 300), 1000))
     ticket_rows = (
         await session.execute(
@@ -617,6 +663,7 @@ async def check_web_cabinet(
             events.extend(
                 await _web_invariant_events(
                     session,
+                    registry_port=registry_port,
                     ticket=ticket,
                     custom_fields=custom_fields,
                     context=context,

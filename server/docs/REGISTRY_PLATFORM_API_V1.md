@@ -37,6 +37,7 @@ return only frozen, redacted `RegistryPort` DTOs:
 - `GET /devices/{device_ref}/account-status`
 - `GET /requesters/{person_ref}/audience`
 - `GET /requesters/{person_ref}/profile`
+- `GET /observer/requesters/{person_ref}/profile-completion`
 - `GET /directory/people?q={query}&limit={limit}`
 - `GET /requesters/{creator_ref}/on-behalf/candidates`
 - `GET /requesters/{creator_ref}/on-behalf/{affected_ref}/authorize`
@@ -57,6 +58,18 @@ a correlated exact `404` envelope whose `data` is `{ "status": "not_found",
 or correlation mismatch are invalid projections.
 `GET /inventory-quality` has no not-found state: its `404` and every other
 non-200 response map to typed unavailable.
+
+`GET /observer/requesters/{person_ref}/profile-completion` is the one
+observer-only profile-gate read. Helpdesk creates its frozen
+`RegistryObserverReadContext(source="observer.web_cabinet")` only in trusted
+observer composition; browsers cannot supply it. Its success `data` object has
+exactly `person`, `complete`, `blocks`, `status` and `missing_field_keys`.
+`person.external_id` must match the requested opaque reference exactly;
+`missing_field_keys` is bounded and deduplicated. The projection contains no
+profile values, labels, identities, sessions, policy internals or ORM metadata.
+An archived person remains evaluable for this observer audit; only an absent
+person is not-found. Unavailable or invalid outcomes are handled as redacted
+observer integrity degradation, never as a completed profile gate.
 
 No endpoint except the purpose-bound ticket-participant and on-behalf candidate
 reads returns the already exposed contact fields. No endpoint returns identities, sessions, Registry numeric IDs,
@@ -124,6 +137,10 @@ result may report only a redacted mismatch and never replaces the local
 authoritative decision. Commands,
 registration, pairing, account sessions and login eligibility remain local in
 this PR and do not issue shadow calls.
+The observer profile-completion read follows the same local-authoritative
+shadow rule: comparison evidence contains only the operation and changed
+projection field names, never person refs, missing-field values or response
+payloads.
 
 Breaking changes require `/v2`; additive platform fields are rejected until the
 Helpdesk projection contract is explicitly extended and accepted.

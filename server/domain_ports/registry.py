@@ -25,6 +25,7 @@ from .registry_contracts import (
     RegistrationApprovalRequest,
     RegistrationRequest,
     RegistryCommandResult,
+    RegistryObserverReadContext,
     RegistryReadActor,
     RequesterRef,
     RequesterDisplayName,
@@ -32,6 +33,7 @@ from .registry_contracts import (
     RequesterSnapshotOutcome,
     TicketParticipantOutcome,
     RequesterProfileOutcome,
+    RequesterProfileCompletionOutcome,
     RequesterHistoryOutcome,
     AudienceProjectionOutcome,
     requester_persistence_values,
@@ -70,6 +72,12 @@ class RegistryPort(Protocol):
         *,
         actor: RegistryReadActor,
     ) -> RequesterProfileOutcome: ...
+
+    async def requester_profile_completion(
+        self,
+        observer: RegistryObserverReadContext,
+        person: RequesterRef,
+    ) -> RequesterProfileCompletionOutcome: ...
 
     async def search_people(
         self,

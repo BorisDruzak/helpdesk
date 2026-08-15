@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import json
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -27,6 +28,15 @@ from app.db.models import (
 from app.repos.service_catalog_repo import ServiceCatalogRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from customer_history.projection_service import CustomerHistoryProjectionService
+from domain_ports import (
+    RegistryInvalidProjection,
+    RegistryNotFound,
+    RegistryObserverReadContext,
+    RequesterProfileCompletionProjection,
+    RequesterRef,
+    UnavailableRegistryPort,
+)
+from observer.checks.web_cabinet import check_web_cabinet
 from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from observer.web_event_writer import write_web_cabinet_observer_event
@@ -39,6 +49,60 @@ import web_api.session_handlers as session_handlers_module
 
 
 pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
+
+class _ProfileCompletionPort:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def requester_profile_completion(
+        self,
+        observer: RegistryObserverReadContext,
+        person: RequesterRef,
+    ) -> RequesterProfileCompletionProjection:
+        self.calls.append((observer.source, person.external_id))
+        return RequesterProfileCompletionProjection(
+            person=person,
+            complete=False,
+            blocks=True,
+            status="required",
+            missing_field_keys=("phone",),
+            source="local_authoritative",
+        )
+
+
+class _ProfileCompletionOutcomePort:
+    def __init__(self, outcome: object) -> None:
+        self._outcome = outcome
+
+    async def requester_profile_completion(
+        self,
+        _observer: RegistryObserverReadContext,
+        _person: RequesterRef,
+    ) -> object:
+        return self._outcome
+
+
+class _WebCabinetCheckResult:
+    def __init__(self, rows: list[object]) -> None:
+        self._rows = rows
+
+    def scalars(self) -> "_WebCabinetCheckResult":
+        return self
+
+    def all(self) -> list[object]:
+        return list(self._rows)
+
+
+class _WebCabinetCheckSession:
+    def __init__(self, ticket: object) -> None:
+        self._ticket = ticket
+
+    async def execute(self, _statement: object) -> _WebCabinetCheckResult:
+        return _WebCabinetCheckResult([self._ticket])
+
+    async def scalar(self, _statement: object) -> int:
+        return 1
 
 def _headers(token: str, *, request_id: str | None = None) -> dict[str, str]:
     headers = {"Authorization": f"Bearer {token}"}
@@ -809,6 +873,156 @@ async def test_web_cabinet_integrity_scan_detects_missing_customer_history_proje
     assert "Customer History projection missing" not in json.dumps(event.evidence_json)
 
 
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_web_cabinet_recomputes_completion_through_registry_port_when_snapshot_is_missing() -> None:
+    ticket_id = "web-cabinet-port-ticket"
+    person_id = "person-1"
+    device_id = "web-cabinet-port-device"
+    context = _web_ticket_context(
+        creator_person_id=person_id,
+        affected_person_id=person_id,
+        target_device_id=device_id,
+        source="creator_primary_agent",
+        requester_context={"account": {"account_mode": "confirmed_binding"}},
+    )
+
+    ticket = SimpleNamespace(
+        ticket_id=ticket_id,
+        device_id=device_id,
+        requester_id="person-1@example.test",
+        requester_person_id=person_id,
+        requester_account_mode="confirmed_binding",
+        custom_fields={
+            "request_context": "authenticated_requester_workspace",
+            "requester_account_mode": "confirmed_binding",
+            "ticket_context": context,
+        },
+        created_at=None,
+    )
+
+    profile_completion_port = _ProfileCompletionPort()
+    result = await check_web_cabinet(
+        _WebCabinetCheckSession(ticket),
+        registry_port=profile_completion_port,
+    )
+
+    assert profile_completion_port.calls == [("observer.web_cabinet", "person-1")]
+    assert any(event.event_type == "profile_incomplete_normal_ticket_created" for event in result.events)
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_web_cabinet_emits_degradation_when_profile_completion_port_is_unavailable() -> None:
+    ticket_id = "web-cabinet-unavailable-ticket"
+    person_id = "web-cabinet-unavailable-person"
+    device_id = "web-cabinet-unavailable-device"
+    context = _web_ticket_context(
+        creator_person_id=person_id,
+        affected_person_id=person_id,
+        target_device_id=device_id,
+        source="creator_primary_agent",
+        requester_context={"account": {"account_mode": "confirmed_binding"}},
+    )
+
+    ticket = SimpleNamespace(
+        ticket_id=ticket_id,
+        device_id=device_id,
+        requester_id="profile-unavailable@example.test",
+        requester_person_id=person_id,
+        requester_account_mode="confirmed_binding",
+        custom_fields={
+            "request_context": "authenticated_requester_workspace",
+            "requester_account_mode": "confirmed_binding",
+            "ticket_context": context,
+        },
+        created_at=None,
+    )
+    result = await check_web_cabinet(
+        _WebCabinetCheckSession(ticket),
+        registry_port=UnavailableRegistryPort(),
+    )
+
+    assert any(event.event_type == "profile_completion_registry_unavailable" for event in result.events)
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_web_cabinet_emits_redacted_degradation_when_profile_completion_port_is_invalid() -> None:
+    ticket_id = "web-cabinet-invalid-ticket"
+    person_id = "web-cabinet-invalid-person"
+    device_id = "web-cabinet-invalid-device"
+    context = _web_ticket_context(
+        creator_person_id=person_id,
+        affected_person_id=person_id,
+        target_device_id=device_id,
+        source="creator_primary_agent",
+        requester_context={"account": {"account_mode": "confirmed_binding"}},
+    )
+    ticket = SimpleNamespace(
+        ticket_id=ticket_id,
+        device_id=device_id,
+        requester_id="profile-invalid@example.test",
+        requester_person_id=person_id,
+        requester_account_mode="confirmed_binding",
+        custom_fields={
+            "request_context": "authenticated_requester_workspace",
+            "requester_account_mode": "confirmed_binding",
+            "ticket_context": context,
+        },
+        created_at=None,
+    )
+
+    result = await check_web_cabinet(
+        _WebCabinetCheckSession(ticket),
+        registry_port=_ProfileCompletionOutcomePort(RegistryInvalidProjection()),
+    )
+
+    event = next(event for event in result.events if event.event_type == "profile_completion_registry_invalid")
+    assert event.evidence == {
+        "profile_completion_source": "registry_port",
+        "registry_outcome": "invalid",
+        "registry_code": "registry_projection_invalid",
+    }
+    assert not any(event.event_type == "profile_incomplete_normal_ticket_created" for event in result.events)
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_web_cabinet_skips_completion_evidence_when_profile_completion_port_returns_not_found() -> None:
+    ticket_id = "web-cabinet-not-found-ticket"
+    person_id = "web-cabinet-not-found-person"
+    device_id = "web-cabinet-not-found-device"
+    context = _web_ticket_context(
+        creator_person_id=person_id,
+        affected_person_id=person_id,
+        target_device_id=device_id,
+        source="creator_primary_agent",
+        requester_context={"account": {"account_mode": "confirmed_binding"}},
+    )
+    ticket = SimpleNamespace(
+        ticket_id=ticket_id,
+        device_id=device_id,
+        requester_id="profile-not-found@example.test",
+        requester_person_id=person_id,
+        requester_account_mode="confirmed_binding",
+        custom_fields={
+            "request_context": "authenticated_requester_workspace",
+            "requester_account_mode": "confirmed_binding",
+            "ticket_context": context,
+        },
+        created_at=None,
+    )
+
+    result = await check_web_cabinet(
+        _WebCabinetCheckSession(ticket),
+        registry_port=_ProfileCompletionOutcomePort(RegistryNotFound(code="registry_requester_not_found")),
+    )
+
+    assert not any(event.event_type.startswith("profile_completion_registry_") for event in result.events)
+    assert not any(event.event_type == "profile_incomplete_normal_ticket_created" for event in result.events)
+
+
 @pytest.mark.asyncio
 async def test_web_cabinet_integrity_recomputes_profile_completion_when_ticket_lacks_snapshot(test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -1027,7 +1241,10 @@ async def test_web_requester_create_missing_diagnostic_target_writes_observer_ev
 @pytest.mark.asyncio
 async def test_web_form_runtime_preview_and_create_write_observer_events(test_client, test_engine) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    suffix = uuid.uuid4().hex[:8]
+    suffix_seed = uuid.uuid4().hex
+    # Keep an alphabetic separator inside the generated form key: an all-digit
+    # UUID fragment is intentionally redacted as phone-like observer evidence.
+    suffix = f"{suffix_seed[:4]}x{suffix_seed[4:8]}"
     login = f"observer-form-runtime-{suffix}@example.test"
     device_id = str(uuid.uuid4())
     service_code = f"observer_runtime_{suffix}"
@@ -1273,7 +1490,10 @@ async def test_web_form_runtime_preview_and_create_write_observer_events(test_cl
 
 
 @pytest.mark.asyncio
-async def test_web_knowledge_attempts_write_requester_guard_observer_event(test_client, test_engine) -> None:
+async def test_web_ticket_create_discards_retired_knowledge_attempts_without_local_observer_write(
+    test_client,
+    test_engine,
+) -> None:
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     suffix = uuid.uuid4().hex[:8]
     login = f"observer-knowledge-attempt-{suffix}@example.test"
@@ -1313,6 +1533,7 @@ async def test_web_knowledge_attempts_write_requester_guard_observer_event(test_
     ticket_id = payload["data"]["ticket_id"]
 
     async with session_maker() as session:
+        ticket = await session.get(Ticket, ticket_id)
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
@@ -1325,34 +1546,14 @@ async def test_web_knowledge_attempts_write_requester_guard_observer_event(test_
             ),
             limit=10,
         )
-        assert len(traces) == 1
-        trace = await session.get(ObserverTrace, traces[0]["trace_id"])
-        span = (
-            await session.execute(sa.select(ObserverSpan).where(ObserverSpan.trace_id == traces[0]["trace_id"]))
-        ).scalar_one()
 
-    assert trace is not None
-    assert trace.status == "succeeded"
-    assert trace.ticket_id == ticket_id
-    assert trace.attrs_json["source"] == "requester_knowledge"
-    assert trace.attrs_json["event_type"] == "knowledge_attempt_guard_succeeded"
-    assert trace.attrs_json["person_id"] == person.person_id
-    assert span.attrs_json["route"] == "/api/web/requester/tickets"
-    assert span.attrs_json["method"] == "POST"
-    guard_payload = span.attrs_json["payload"]
-    assert guard_payload == {
-        "surface": "requester_portal",
-        "attempt_count": 1,
-        "results": ["not_helpful"],
-        "attempt_surfaces": ["requester_portal"],
-        "visibility_scopes": ["creator_visible"],
-        "audience_scopes": ["creator"],
-    }
-    serialized = json.dumps({"trace": trace.attrs_json, "span": span.attrs_json}, sort_keys=True)
+    assert ticket is not None
+    assert traces == []
+    serialized = json.dumps(ticket.custom_fields, sort_keys=True)
+    assert "knowledge_attempts" not in ticket.custom_fields
     assert raw_query not in serialized
     assert raw_item_id not in serialized
     assert raw_version_id not in serialized
-    assert login not in serialized
     assert "raw-attempt-token" not in serialized
 
 

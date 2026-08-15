@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -45,6 +46,7 @@ MAX_REGISTRY_AUDIENCES = 100
 MAX_DIRECTORY_RESULTS = 50
 MAX_ON_BEHALF_CANDIDATES = 10
 MAX_REQUESTER_HISTORY_EVENTS = 100
+MAX_PROFILE_COMPLETION_MISSING_FIELDS = 12
 
 
 class _ImmutableRegistryDTO(BaseModel):
@@ -102,6 +104,13 @@ class RegistryReadActor(_ImmutableRegistryDTO):
     actor: ActorRef
     role: Literal["admin", "support", "user"]
     requester: RequesterRef | None = None
+
+
+@dataclass(frozen=True)
+class RegistryObserverReadContext:
+    """Trusted observer provenance for the one profile-completion read."""
+
+    source: Literal["observer.web_cabinet"]
 
 
 class RequesterSnapshot(_ImmutableRegistryDTO):
@@ -295,6 +304,34 @@ class RequesterProfileProjection(_ImmutableRegistryDTO):
     source: Literal["local_authoritative", "external_authoritative"]
 
 
+class RequesterProfileCompletionProjection(_ImmutableRegistryDTO):
+    """Observer-only profile gate state without profile or identity data."""
+
+    person: RequesterRef
+    complete: bool
+    blocks: bool
+    status: SafeRegistryCode
+    missing_field_keys: tuple[SafeRegistryCode, ...] = ()
+    source: Literal["local_authoritative", "external_authoritative"]
+
+    @model_validator(mode="after")
+    def validate_bounded_missing_field_keys(self) -> "RequesterProfileCompletionProjection":
+        if len(self.missing_field_keys) > MAX_PROFILE_COMPLETION_MISSING_FIELDS:
+            raise ValueError("profile completion projection exceeds maximum missing field count")
+        if len(set(self.missing_field_keys)) != len(self.missing_field_keys):
+            raise ValueError("profile completion projection repeats missing field keys")
+        if self.complete != (not self.missing_field_keys):
+            raise ValueError("profile completion state conflicts with missing field keys")
+        if self.complete:
+            if self.blocks or self.status != "complete":
+                raise ValueError("complete profile completion cannot block or have non-complete status")
+        elif self.status not in {"required", "optional"}:
+            raise ValueError("incomplete profile completion must have required or optional status")
+        elif self.blocks != (self.status == "required"):
+            raise ValueError("profile completion blocks must match required status")
+        return self
+
+
 class DeviceContextProjection(_ImmutableRegistryDTO):
     """Inventory-safe device context without asset, serial or owner identifiers."""
 
@@ -398,6 +435,9 @@ ActiveBindingOutcome = ActiveBindingProjection | RegistryNotFound | RegistryUnav
 AccountStatusOutcome = AccountStatusProjection | RegistryUnavailable | RegistryInvalidProjection
 AudienceProjectionOutcome = AudienceProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
 RequesterProfileOutcome = RequesterProfileProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+RequesterProfileCompletionOutcome = (
+    RequesterProfileCompletionProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+)
 DirectorySearchOutcome = DirectorySearchProjection | RegistryUnavailable | RegistryInvalidProjection
 OnBehalfCandidatesOutcome = (
     OnBehalfCandidatesProjection

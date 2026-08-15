@@ -48,6 +48,13 @@
 - Customer History consumes the requester-history projection, and requester on-behalf reads use their separate purpose-bound projection and decision operations. Generic directory enumeration is still support/admin-only; requester profile and other rich consumers remain separate cutovers. Do not add a direct Registry fallback.
 - Focused gate: `python -m pytest server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py -q --tb=short`; compile with `python -m compileall -q server/domain_ports server/registry_adapter`.
 
+## 2026-08-15 Observer profile completion through RegistryPort
+
+- Start with `server/domain_ports/registry_contracts.py`, `server/registry_adapter/{local,http}.py`, `server/observer/checks/web_cabinet.py`, `server/observer/integrity_service.py`, `scripts/check_domain_import_boundaries.py` and `server/tests/test_observer_web_cabinet.py`.
+- `RegistryPort.requester_profile_completion()` accepts only the frozen trusted `RegistryObserverReadContext(source="observer.web_cabinet")` and returns a redacted opaque requester ref plus completion/block/status and bounded deduplicated missing-field keys. No generic requester-profile or directory read is exposed through this operation; archived people remain audit-evaluable.
+- Web Cabinet recomputes a missing ticket profile snapshot only through that port. Not-found preserves no evidence; unavailable/invalid produces redacted `profile_completion_registry_unavailable|profile_completion_registry_invalid` integrity evidence and never reports a complete gate. Local is authoritative in shadow mode; mismatches expose field names only.
+- Run `python scripts/check_domain_import_boundaries.py --registry-scope observer` with `python -m pytest server/tests/test_registry_port_rich_projections.py server/tests/test_registry_http_adapter.py server/tests/test_registry_shadow_read.py server/tests/test_observer_web_cabinet.py server/tests/test_observer_integrity_scan_scope.py server/tests/test_domain_import_boundaries.py -q --tb=short`.
+
 ## 2026-08-10 Registry command/eligibility acceptance boundary (PR-9 prerequisite)
 
 - Start with `server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md`, `server/docs/REGISTRY_PLATFORM_API_V1.md` and `server/tests/test_registry_commands_api_docs.py`. The commands document is the acceptance contract for future UI-login eligibility, registration/binding, account sessions, browser pairing and other-account approval; it does not add Helpdesk routes or enable an external command transport.

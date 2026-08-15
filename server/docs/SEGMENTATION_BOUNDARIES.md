@@ -117,7 +117,7 @@ corresponding redacted `source_state`, never a local ORM fallback or entity
 identifier.
 
 Use `python scripts/check_domain_import_boundaries.py --registry-scope
- requester,tickets,customer_history,inventory,web_api,tech` for the incremental
+ requester,tickets,customer_history,inventory,web_api,tech,observer` for the incremental
 Registry boundary. The scoped guard covers every new ticket module and rejects
 new Registry ORM/repository/service imports in selected migration paths, while
 an exact symbol ledger records operations still waiting for a richer external
@@ -158,6 +158,22 @@ Only fully legacy rows may use their retained `requester_person_id`, creator or
 affected aliases; `Ticket.requester_id` is never a Registry/history alias.
 Remaining rich consumers must be cut over separately and may not bypass the
 port.
+
+### Observer profile-completion read
+
+`server/observer/checks/web_cabinet.py` uses only
+`RegistryPort.requester_profile_completion()` when a web-ticket snapshot lacks
+profile-completion evidence. The frozen observer context is composed only by
+the trusted observer with `source=observer.web_cabinet`; it is not an HTTP
+authority channel. The purpose-bound projection carries only the opaque
+requester ref, complete/blocks/status values, a bounded deduplicated list of
+missing field keys and provenance. `RegistryNotFound` retains no-evidence
+behavior. Typed unavailable or invalid outcomes emit redacted
+`profile_completion_registry_unavailable` or
+`profile_completion_registry_invalid` integrity evidence and never make the
+gate complete. Local values remain authoritative in shadow mode. The
+`observer` Registry import-guard scope forbids direct Registry ORM/repository/
+service imports in that checker.
 
 ## PR-11 retirement boundary
 

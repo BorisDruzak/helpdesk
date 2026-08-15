@@ -18,6 +18,7 @@ from app.repos.observer_integrity_repo import (
     ObserverIntegrityRepo,
     serialize_observer_integrity_event,
 )
+from domain_ports import DomainPortContainer, RegistryPort
 from observer.checks.account_boundary import check_account_boundary
 from observer.checks.account_boundary import SOURCE as ACCOUNT_SOURCE
 from observer.checks.governance import SOURCE as GOVERNANCE_SOURCE
@@ -163,10 +164,12 @@ class ObserverIntegrityService:
         session: AsyncSession,
         *,
         state: Any = None,
+        registry_port: RegistryPort | None = None,
         checker_timeout_seconds: float = DEFAULT_CHECKER_TIMEOUT_SECONDS,
     ) -> None:
         self.session = session
         self.state = state
+        self.registry_port = registry_port or DomainPortContainer.from_config(registry_session=session).registry
         self.checker_timeout_seconds = max(float(checker_timeout_seconds), 0.001)
         self.repo = ObserverIntegrityRepo(session)
 
@@ -363,7 +366,10 @@ class ObserverIntegrityService:
         await collect_checker(ACCOUNT_SOURCE, lambda: check_account_boundary(self.session, run_id=run_id))
         await collect_checker(MODULE_TOOLSET_SOURCE, lambda: check_module_toolset(self.session, run_id=run_id))
         await collect_checker(GOVERNANCE_SOURCE, lambda: check_governance(self.session, run_id=run_id))
-        await collect_checker(WEB_CABINET_SOURCE, lambda: check_web_cabinet(self.session, run_id=run_id))
+        await collect_checker(
+            WEB_CABINET_SOURCE,
+            lambda: check_web_cabinet(self.session, registry_port=self.registry_port, run_id=run_id),
+        )
 
         active_dedupe_by_source: dict[str, set[str]] = {}
         reports_by_source = {report.source: report for report in check_reports}

@@ -45,12 +45,15 @@ try:
         RegistryCommandResult,
         RegistryInvalidProjection,
         RegistryNotFound,
+        RegistryObserverReadContext,
         RegistryReadActor,
         RegistryUnavailable,
         RequesterRef,
         RequesterHistoryOutcome,
         RequesterHistoryProjection,
         RequesterProfileOutcome,
+        RequesterProfileCompletionOutcome,
+        RequesterProfileCompletionProjection,
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
@@ -92,12 +95,15 @@ except ModuleNotFoundError as exc:
         RegistryCommandResult,
         RegistryInvalidProjection,
         RegistryNotFound,
+        RegistryObserverReadContext,
         RegistryReadActor,
         RegistryUnavailable,
         RequesterRef,
         RequesterHistoryOutcome,
         RequesterHistoryProjection,
         RequesterProfileOutcome,
+        RequesterProfileCompletionOutcome,
+        RequesterProfileCompletionProjection,
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
@@ -367,6 +373,33 @@ class ExternalRegistryHttpAdapter:
             ),
             RequesterProfileProjection,
         )
+
+    async def requester_profile_completion(
+        self,
+        observer: RegistryObserverReadContext,
+        person: RequesterRef,
+    ) -> RequesterProfileCompletionOutcome:
+        if observer.source != "observer.web_cabinet":
+            return RegistryInvalidProjection()
+        payload = await self._get(
+            f"/v1/helpdesk/observer/requesters/{_path_ref(person.external_id)}/profile-completion",
+            not_found_code="registry_requester_not_found",
+        )
+        if isinstance(payload, Mapping) and set(payload) != {
+            "person",
+            "complete",
+            "blocks",
+            "status",
+            "missing_field_keys",
+        }:
+            return RegistryInvalidProjection()
+        result = self._parse(payload, RequesterProfileCompletionProjection)
+        if (
+            isinstance(result, RequesterProfileCompletionProjection)
+            and result.person.external_id != person.external_id
+        ):
+            return RegistryInvalidProjection()
+        return result
 
     async def search_people(
         self, query: DirectorySearchText, *, actor: RegistryReadActor, limit: int = 20
@@ -656,6 +689,19 @@ class ShadowReadRegistryPort:
     ) -> RequesterProfileOutcome:
         local = await self._authoritative.requester_profile(person, actor=actor)
         self._schedule("requester_profile", local, self._shadow.requester_profile(person, actor=actor))
+        return local
+
+    async def requester_profile_completion(
+        self,
+        observer: RegistryObserverReadContext,
+        person: RequesterRef,
+    ) -> RequesterProfileCompletionOutcome:
+        local = await self._authoritative.requester_profile_completion(observer, person)
+        self._schedule(
+            "requester_profile_completion",
+            local,
+            self._shadow.requester_profile_completion(observer, person),
+        )
         return local
 
     async def search_people(

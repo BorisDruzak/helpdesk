@@ -49,12 +49,15 @@ try:
         RegistryHistoryEventProjection,
         RegistryInvalidProjection,
         RegistryNotFound,
+        RegistryObserverReadContext,
         RegistryReadActor,
         RegistryUnavailable,
         RequesterRef,
         RequesterHistoryOutcome,
         RequesterHistoryProjection,
         RequesterProfileOutcome,
+        RequesterProfileCompletionOutcome,
+        RequesterProfileCompletionProjection,
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
@@ -101,12 +104,15 @@ except ModuleNotFoundError as exc:
         RegistryHistoryEventProjection,
         RegistryInvalidProjection,
         RegistryNotFound,
+        RegistryObserverReadContext,
         RegistryReadActor,
         RegistryUnavailable,
         RequesterRef,
         RequesterHistoryOutcome,
         RequesterHistoryProjection,
         RequesterProfileOutcome,
+        RequesterProfileCompletionOutcome,
+        RequesterProfileCompletionProjection,
         RequesterProfileProjection,
         RequesterSnapshot,
         RequesterSnapshotOutcome,
@@ -624,6 +630,70 @@ class LocalRegistryAdapter:
         if projection is None or projection.requester.external_id != person.external_id:
             return RegistryInvalidProjection()
         return projection
+
+    async def requester_profile_completion(
+        self,
+        observer: RegistryObserverReadContext,
+        person: RequesterRef,
+    ) -> RequesterProfileCompletionOutcome:
+        if observer.source != "observer.web_cabinet":
+            return RegistryInvalidProjection()
+
+        async def reader(session: Any) -> object:
+            from app.db.models import RegistryPerson
+            from registry.profile_schema_service import RequesterProfileSchemaService
+            from requester.identity_service import RequesterIdentityResolver
+
+            row = await session.get(RegistryPerson, person.external_id)
+            if row is None:
+                return RegistryNotFound(code="registry_requester_not_found")
+            profile_schema = await RequesterProfileSchemaService(session).get_schema()
+            return RequesterIdentityResolver(session).build_profile_completion(
+                row,
+                profile_schema=profile_schema,
+            )
+
+        completion = await self._read("requester_profile_completion", reader)
+        if completion is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(completion, RegistryNotFound):
+            return completion
+        if not isinstance(completion, dict):
+            return RegistryInvalidProjection()
+
+        raw_missing = completion.get("missing_fields")
+        raw_blocks = completion.get("blocks")
+        if (
+            not isinstance(completion.get("complete"), bool)
+            or not isinstance(raw_blocks, dict)
+            or not isinstance(raw_blocks.get("ticket_create"), bool)
+        ):
+            return RegistryInvalidProjection()
+        missing_field_keys: list[str] = []
+        if not isinstance(raw_missing, list):
+            return RegistryInvalidProjection()
+        for item in raw_missing:
+            if not isinstance(item, dict):
+                return RegistryInvalidProjection()
+            key = _safe_code(item.get("key"))
+            if key is None:
+                return RegistryInvalidProjection()
+            if key not in missing_field_keys:
+                missing_field_keys.append(key)
+        status = _safe_code(completion.get("status"))
+        if status is None:
+            return RegistryInvalidProjection()
+        try:
+            return RequesterProfileCompletionProjection(
+                person=person,
+                complete=completion["complete"],
+                blocks=raw_blocks["ticket_create"],
+                status=status,
+                missing_field_keys=tuple(missing_field_keys),
+                source="local_authoritative",
+            )
+        except ValueError:
+            return RegistryInvalidProjection()
 
     async def search_people(
         self,

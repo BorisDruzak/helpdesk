@@ -18,6 +18,7 @@ from domain_ports import (
     PersonRef,
     RegistryInvalidProjection,
     RegistryNotFound,
+    RegistryObserverReadContext,
     RegistryReadActor,
     RegistryUnavailable,
     RequesterRef,
@@ -523,6 +524,20 @@ async def test_invalid_requester_profile_is_distinct_from_not_found() -> None:
 
     assert isinstance(result, RegistryInvalidProjection)
     assert result.code == "registry_projection_invalid"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_local_profile_completion_keeps_archived_person_evaluable() -> None:
+    archived = _person(person_id="archived")
+    archived.status = "archived"
+
+    result = await LocalRegistryAdapter(_Session(get_rows={"archived": archived})).requester_profile_completion(
+        RegistryObserverReadContext(source="observer.web_cabinet"),
+        RequesterRef(external_id="archived"),
+    )
+
+    assert result.person.external_id == "archived"
 
 
 @pytest.mark.no_db

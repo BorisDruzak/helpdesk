@@ -199,6 +199,8 @@ TOPICS: tuple[Topic, ...] = (
             "server/web_api/support_handlers.py",
             "server/web_api/dto/support.py",
             "scripts/check_domain_import_boundaries.py",
+            "server/observer/checks/web_cabinet.py",
+            "server/observer/integrity_service.py",
             "server/tests/test_domain_import_boundaries.py",
             "server/tests/test_registry_boundary.py",
             "server/tests/test_registry_http_adapter.py",

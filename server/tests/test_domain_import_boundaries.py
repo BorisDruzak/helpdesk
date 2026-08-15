@@ -263,6 +263,34 @@ def test_registry_scope_rejects_tech_registry_orm_import(tmp_path: Path) -> None
     assert "RegistryAsset" in result.stdout
 
 
+def test_registry_scope_rejects_observer_web_cabinet_registry_orm_import(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "observer" / "checks" / "web_cabinet.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("from app.db.models import RegistryPerson, Ticket\n", encoding="utf-8")
+
+    result = run_check(tmp_path, registry_scope="observer")
+
+    assert result.returncode == 1
+    assert "server/observer/checks/web_cabinet.py:1" in result.stdout
+    assert "RegistryPerson" in result.stdout
+    assert "Ticket" not in result.stdout
+
+
+def test_registry_scope_rejects_observer_web_cabinet_identity_resolver_import(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "observer" / "checks" / "web_cabinet.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "from requester.identity_service import RequesterIdentityResolver\n",
+        encoding="utf-8",
+    )
+
+    result = run_check(tmp_path, registry_scope="observer")
+
+    assert result.returncode == 1
+    assert "server/observer/checks/web_cabinet.py:1" in result.stdout
+    assert "RequesterIdentityResolver" in result.stdout
+
+
 def test_registry_scope_allows_only_declared_create_flow_command_debt(tmp_path: Path) -> None:
     source = tmp_path / "server" / "tickets" / "create_flow.py"
     source.parent.mkdir(parents=True)

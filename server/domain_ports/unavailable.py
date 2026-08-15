@@ -28,11 +28,13 @@ from .registry_contracts import (
     RegistrationApprovalRequest,
     RegistrationRequest,
     RegistryCommandResult,
+    RegistryObserverReadContext,
     RegistryReadActor,
     RegistryUnavailable,
     RequesterRef,
     RequesterHistoryOutcome,
     RequesterProfileOutcome,
+    RequesterProfileCompletionOutcome,
     TicketParticipantOutcome,
 )
 
@@ -100,6 +102,14 @@ class UnavailableRegistryPort:
         actor: RegistryReadActor,
     ) -> RequesterProfileOutcome:
         del person, actor
+        return self._unavailable
+
+    async def requester_profile_completion(
+        self,
+        observer: RegistryObserverReadContext,
+        person: RequesterRef,
+    ) -> RequesterProfileCompletionOutcome:
+        del observer, person
         return self._unavailable
 
     async def search_people(

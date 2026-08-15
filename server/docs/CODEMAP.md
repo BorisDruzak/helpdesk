@@ -38,6 +38,12 @@
   command/auth acceptance; uncomposed local commands return
   `registry_command_not_composed` without side effects.
   until caller-owned idempotency is supported and accepted.
+- `RegistryPort.requester_profile_completion()` is the narrow observer-only
+  profile-gate read. `server/observer/checks/web_cabinet.py` composes its fixed
+  provenance, receives only the redacted completion projection and records
+  typed unavailable/invalid source degradations. It has no direct Registry ORM
+  or requester-profile-schema dependency; `server/observer/integrity_service.py`
+  injects the composed port into the checker.
 - PR-6 retains no in-process RBAC or runtime configuration.
 - `scripts/check_domain_import_boundaries.py` is the AST guard for prohibited
   legacy-domain imports and local ORM dependencies; only historical Alembic
@@ -46,6 +52,8 @@
   `--registry-scope`; focused coverage
   is in `server/tests/test_domain_import_boundaries.py` and
   `server/tests/test_registry_boundary.py`.
+  Its `observer` Registry scope protects
+  `server/observer/checks/web_cabinet.py` from future direct Registry imports.
 - Navigation and drift routing live in `scripts/navigation_catalog.py` and
   `docs/QUICK_LOOKUP.md`; port-contract coverage remains in
   `server/tests/test_domain_ports.py`.

@@ -111,11 +111,17 @@ REGISTRY_SCOPE_TARGETS = {
         }
     ),
     "tech": frozenset({"server/tech/handlers.py"}),
+    "observer": frozenset({"server/observer/checks/web_cabinet.py"}),
 }
 REGISTRY_SCOPE_PREFIXES = {
     # New ticket modules are guarded immediately. Existing unmigrated ticket
     # consumers must be named in the allowance ledger below.
     "tickets": ("server/tickets/",),
+}
+REGISTRY_SCOPE_FORBIDDEN_MODULES = {
+    # This legacy resolver reaches Registry ORM and profile-schema services.
+    # Observer completion must use only its purpose-bound RegistryPort read.
+    "observer": frozenset({"requester.identity_service"}),
 }
 
 # These exact imports are known, reviewable debt for operations not represented
@@ -225,6 +231,14 @@ def _registry_scopes(raw: str) -> frozenset[str]:
     return scopes
 
 
+def _registry_scope_forbids_module(module: str, scopes: frozenset[str]) -> bool:
+    return any(
+        module == forbidden or module.startswith(f"{forbidden}.")
+        for scope in scopes
+        for forbidden in REGISTRY_SCOPE_FORBIDDEN_MODULES.get(scope, ())
+    )
+
+
 def _registry_guard_applies(path: Path, workspace: Path, scopes: frozenset[str]) -> bool:
     if not scopes:
         return False
@@ -307,6 +321,7 @@ def _find_file_violations(
                         _is_registry_module(alias.name)
                         or _is_registry_repository(alias.name)
                         or alias.name in REGISTRY_BROAD_MODULES
+                        or _registry_scope_forbids_module(alias.name, registry_scopes)
                     )
                     and not _registry_import_allowed(
                         path,
@@ -341,7 +356,9 @@ def _find_file_violations(
             continue
 
         registry_names: list[ast.alias] = []
-        if _is_registry_module(module) or _is_registry_repository(module):
+        if _registry_scope_forbids_module(module, registry_scopes):
+            registry_names = list(node.names)
+        elif _is_registry_module(module) or _is_registry_repository(module):
             registry_names = [
                 alias
                 for alias in node.names

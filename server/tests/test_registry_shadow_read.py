@@ -10,6 +10,7 @@ from domain_ports import (
     BindingRef,
     DeviceRef,
     PersonRef,
+    RegistryObserverReadContext,
     RegistryReadActor,
     RequesterRef,
     RequesterSnapshot,
@@ -98,6 +99,30 @@ class _OnBehalfLocalPort:
 class _OnBehalfExternalPort:
     async def authorize_on_behalf(self, **_kwargs):
         return registry_contracts.OnBehalfDenied(code="registry_on_behalf_scope_denied")
+
+
+class _ProfileCompletionLocalPort:
+    async def requester_profile_completion(self, _observer, person: RequesterRef):
+        return registry_contracts.RequesterProfileCompletionProjection(
+            person=person,
+            complete=True,
+            blocks=False,
+            status="complete",
+            missing_field_keys=(),
+            source="local_authoritative",
+        )
+
+
+class _ProfileCompletionExternalPort:
+    async def requester_profile_completion(self, _observer, person: RequesterRef):
+        return registry_contracts.RequesterProfileCompletionProjection(
+            person=person,
+            complete=False,
+            blocks=True,
+            status="required",
+            missing_field_keys=("phone",),
+            source="external_authoritative",
+        )
 
 
 class _CommandLocalPort(_LocalPort):
@@ -231,5 +256,30 @@ async def test_shadow_on_behalf_authorization_never_changes_local_decision() -> 
             "operation": "authorize_on_behalf",
             "outcome": "mismatch",
             "fields": ("outcome",),
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_shadow_profile_completion_keeps_local_authority_and_redacts_mismatch() -> None:
+    evidence: list[dict[str, object]] = []
+    port = ShadowReadRegistryPort(
+        authoritative=_ProfileCompletionLocalPort(),
+        shadow=_ProfileCompletionExternalPort(),
+        mismatch_reporter=evidence.append,
+    )
+
+    result = await port.requester_profile_completion(
+        RegistryObserverReadContext(source="observer.web_cabinet"),
+        RequesterRef(external_id="person-1"),
+    )
+    await asyncio.sleep(0)
+
+    assert result.source == "local_authoritative"
+    assert evidence == [
+        {
+            "operation": "requester_profile_completion",
+            "outcome": "mismatch",
+            "fields": ("blocks", "complete", "missing_field_keys", "status"),
         }
     ]

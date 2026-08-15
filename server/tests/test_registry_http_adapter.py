@@ -10,6 +10,7 @@ from domain_ports import (
     PersonRef,
     RegistryInvalidProjection,
     RegistryNotFound,
+    RegistryObserverReadContext,
     RegistryReadActor,
     RegistryUnavailable,
     RequesterRef,
@@ -147,6 +148,97 @@ async def test_http_adapter_rejects_on_behalf_candidate_source_before_injection(
             creator=RequesterRef(external_id="creator-person"),
             policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
             query="Affected",
+        )
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_reads_exact_observer_profile_completion_projection() -> None:
+    received_headers: dict[str, str] = {}
+
+    async def profile_completion(request: web.Request) -> web.Response:
+        received_headers.update(request.headers)
+        return web.json_response(
+            {
+                "data": {
+                    "person": {"external_id": "person-1"},
+                    "complete": False,
+                    "blocks": True,
+                    "status": "required",
+                    "missing_field_keys": ["phone"],
+                },
+                "correlation_id": "registry-correlation-observer-profile-completion",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/observer/requesters/{person_ref}/profile-completion",
+        profile_completion,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-observer-profile-completion",
+            allow_insecure_test_url=True,
+        ).requester_profile_completion(
+            RegistryObserverReadContext(source="observer.web_cabinet"),
+            RequesterRef(external_id="person-1"),
+        )
+
+        assert result.model_dump(mode="json") == {
+            "person": {"external_id": "person-1"},
+            "complete": False,
+            "blocks": True,
+            "status": "required",
+            "missing_field_keys": ["phone"],
+            "source": "external_authoritative",
+        }
+        assert received_headers["X-Registry-Service-Scope"] == "registry.helpdesk.read.v1"
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_incoherent_observer_profile_completion_projection() -> None:
+    async def profile_completion(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {
+                    "person": {"external_id": "person-1"},
+                    "complete": True,
+                    "blocks": False,
+                    "status": "complete",
+                    "missing_field_keys": ["phone"],
+                },
+                "correlation_id": "registry-correlation-observer-profile-completion-invalid",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/observer/requesters/{person_ref}/profile-completion",
+        profile_completion,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-observer-profile-completion-invalid",
+            allow_insecure_test_url=True,
+        ).requester_profile_completion(
+            RegistryObserverReadContext(source="observer.web_cabinet"),
+            RequesterRef(external_id="person-1"),
         )
 
         assert isinstance(result, RegistryInvalidProjection)
