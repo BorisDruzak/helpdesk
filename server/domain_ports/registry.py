@@ -13,6 +13,7 @@ from .registry_contracts import (
     BindingRevocationRequest,
     DeviceRef,
     DeviceContextOutcome,
+    InventoryQualityOutcome,
     DirectorySearchOutcome,
     DirectorySearchText,
     OpaqueRegistryRef,
@@ -72,6 +73,8 @@ class RegistryPort(Protocol):
     ) -> DirectorySearchOutcome: ...
 
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome: ...
+
+    async def inventory_quality(self) -> InventoryQualityOutcome: ...
 
     async def requester_history(
         self,

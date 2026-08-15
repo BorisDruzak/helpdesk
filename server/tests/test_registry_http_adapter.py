@@ -62,6 +62,65 @@ async def test_http_adapter_returns_only_redacted_requester_snapshot() -> None:
 
 
 @pytest.mark.asyncio
+async def test_http_adapter_reads_redacted_inventory_quality_projection() -> None:
+    async def inventory_quality(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {"active_pc_without_location_count": 4},
+                "correlation_id": "registry-correlation-inventory-quality",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/v1/helpdesk/inventory-quality", inventory_quality)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-inventory-quality",
+            allow_insecure_test_url=True,
+        ).inventory_quality()
+
+        assert result.model_dump(mode="json") == {
+            "active_pc_without_location_count": 4,
+            "source": "external_authoritative",
+        }
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_invalid_inventory_quality_projection() -> None:
+    async def inventory_quality(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {"active_pc_without_location_count": "four"},
+                "correlation_id": "registry-correlation-invalid-inventory-quality",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/v1/helpdesk/inventory-quality", inventory_quality)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-invalid-inventory-quality",
+            allow_insecure_test_url=True,
+        ).inventory_quality()
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 async def test_http_adapter_maps_timeout_to_typed_unavailable_without_diagnostics() -> None:
     async def slow_snapshot(_request: web.Request) -> web.Response:
         await __import__("asyncio").sleep(0.05)

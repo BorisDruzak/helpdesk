@@ -26,6 +26,8 @@ try:
         DeviceContextOutcome,
         DeviceContextProjection,
         DeviceRef,
+        InventoryQualityOutcome,
+        InventoryQualityProjection,
         DirectoryPersonProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
@@ -64,6 +66,8 @@ except ModuleNotFoundError as exc:
         DeviceContextOutcome,
         DeviceContextProjection,
         DeviceRef,
+        InventoryQualityOutcome,
+        InventoryQualityProjection,
         DirectoryPersonProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
@@ -538,6 +542,37 @@ class LocalRegistryAdapter:
                 requester_snapshot=snapshot,
                 department_label=self._safe_label(getattr(department, "name", None)),
                 location_label=self._safe_label(getattr(location, "display_name", None)),
+                source="local_authoritative",
+            )
+        except ValueError:
+            return RegistryInvalidProjection()
+
+    async def inventory_quality(self) -> InventoryQualityOutcome:
+        async def reader(session: Any) -> object:
+            from sqlalchemy import and_, func, select
+
+            from app.db.models import RegistryAsset
+
+            return await session.scalar(
+                select(func.count()).select_from(RegistryAsset).where(
+                    and_(
+                        RegistryAsset.asset_type == "pc",
+                        RegistryAsset.status == "active",
+                        RegistryAsset.location_id.is_(None),
+                    )
+                )
+            )
+
+        count = await self._read("inventory_quality", reader)
+        if count is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if count is None:
+            count = 0
+        if isinstance(count, bool) or not isinstance(count, int):
+            return RegistryInvalidProjection()
+        try:
+            return InventoryQualityProjection(
+                active_pc_without_location_count=count,
                 source="local_authoritative",
             )
         except ValueError:

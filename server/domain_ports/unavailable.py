@@ -17,6 +17,7 @@ from .registry_contracts import (
     BindingRevocationRequest,
     DeviceContextOutcome,
     DeviceRef,
+    InventoryQualityOutcome,
     DirectorySearchOutcome,
     DirectorySearchText,
     PersonRef,
@@ -103,6 +104,9 @@ class UnavailableRegistryPort:
 
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:
         del device
+        return self._unavailable
+
+    async def inventory_quality(self) -> InventoryQualityOutcome:
         return self._unavailable
 
     async def requester_history(

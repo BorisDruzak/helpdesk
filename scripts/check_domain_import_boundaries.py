@@ -110,6 +110,7 @@ REGISTRY_SCOPE_TARGETS = {
             "server/web_api/support_handlers.py",
         }
     ),
+    "tech": frozenset({"server/tech/handlers.py"}),
 }
 REGISTRY_SCOPE_PREFIXES = {
     # New ticket modules are guarded immediately. Existing unmigrated ticket

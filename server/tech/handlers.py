@@ -25,7 +25,13 @@ from app.db.models import (
     AgentRuntimeAudit,
     AgentToken,
     TicketAdminAudit,
-    RegistryAsset,
+)
+from domain_ports import (
+    DomainPortContainer,
+    InventoryQualityProjection,
+    RegistryInvalidProjection,
+    RegistryPort,
+    RegistryUnavailable,
 )
 from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.observer_settings_repo import ObserverSettingsRepo
@@ -660,6 +666,24 @@ def _build_alerts_from_metrics(
     return alerts
 
 
+async def _inventory_quality_from_registry(
+    registry_port: RegistryPort,
+) -> tuple[int, dict[str, str]]:
+    """Keep the legacy tech count numeric while making Registry degradation explicit."""
+
+    outcome = await registry_port.inventory_quality()
+    if isinstance(outcome, InventoryQualityProjection):
+        return outcome.active_pc_without_location_count, {
+            "status": "available",
+            "source": outcome.source,
+        }
+    if isinstance(outcome, RegistryUnavailable):
+        return 0, {"status": "unavailable", "code": outcome.code}
+    if isinstance(outcome, RegistryInvalidProjection):
+        return 0, {"status": "invalid", "code": outcome.code}
+    return 0, {"status": "invalid", "code": "registry_projection_invalid"}
+
+
 async def _build_overview(request: web.Request) -> dict[str, Any]:
     state = request.app["state"]
     now = datetime.now(timezone.utc)
@@ -772,15 +796,9 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                     continue
                 env_uuid_by_hostname[hostname_key] = env_uuid_by_hostname.get(hostname_key, 0) + 1
             env_uuid_duplicate_groups = sum(1 for count in env_uuid_by_hostname.values() if count > 1)
-            devices_without_location = await session.scalar(
-                select(func.count()).select_from(RegistryAsset).where(
-                    and_(
-                        RegistryAsset.asset_type == "pc",
-                        RegistryAsset.status == "active",
-                        RegistryAsset.location_id.is_(None),
-                    )
-                )
-            ) or 0
+            devices_without_location, inventory_quality_source_state = await _inventory_quality_from_registry(
+                DomainPortContainer.from_config(registry_session=session).registry
+            )
 
             active_updates = await session.scalar(
                 select(func.count()).select_from(Operation).where(
@@ -994,6 +1012,7 @@ async def _build_overview(request: web.Request) -> dict[str, Any]:
                 "inventory_quality": {
                     "env_uuid_duplicate_groups": int(env_uuid_duplicate_groups),
                     "devices_without_location": int(devices_without_location),
+                    "source_state": inventory_quality_source_state,
                 },
                 "update_health": {
                     "in_progress": int(active_updates),

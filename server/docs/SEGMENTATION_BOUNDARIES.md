@@ -86,8 +86,16 @@ typed unavailable or not-found current-state result visible as
 ticket requester snapshot as history. It must not reconstruct current contact,
 organisation, asset or service data from local Registry tables.
 
+Tech overview inventory quality also reads `RegistryPort.inventory_quality()`.
+Its frozen projection contains only the non-negative active-PC-without-location
+count and its authoritative source. The legacy
+`inventory_quality.devices_without_location` API value remains numeric; typed
+unavailable or invalid Registry outcomes fail closed to `0` and expose only the
+corresponding redacted `source_state`, never a local ORM fallback or entity
+identifier.
+
 Use `python scripts/check_domain_import_boundaries.py --registry-scope
-requester,tickets,customer_history,inventory,web_api` for the incremental
+ requester,tickets,customer_history,inventory,web_api,tech` for the incremental
 Registry boundary. The scoped guard covers every new ticket module and rejects
 new Registry ORM/repository/service imports in selected migration paths, while
 an exact symbol ledger records operations still waiting for a richer external

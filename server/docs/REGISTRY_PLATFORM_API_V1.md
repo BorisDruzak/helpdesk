@@ -36,6 +36,7 @@ return only frozen, redacted `RegistryPort` DTOs:
 - `GET /requesters/{person_ref}/profile`
 - `GET /directory/people?q={query}&limit={limit}`
 - `GET /devices/{device_ref}/context`
+- `GET /inventory-quality`
 - `GET /requesters/{person_ref}/history?limit={limit}`
 
 Audience, profile, directory and history reads additionally receive the
@@ -49,6 +50,13 @@ No endpoint returns contact data, identities, sessions, Registry numeric IDs,
 asset/serial data, ORM metadata, credentials or policy internals. Helpdesk sets
 the response `source=external_authoritative` locally; Registry need not send a
 source marker.
+
+`GET /inventory-quality` returns only
+`{ "active_pc_without_location_count": <non-negative 32-bit integer> }`.
+It is the aggregate for active `pc` assets whose `location_id` is null; it
+contains no asset, person, device, location or other entity identifier. A
+malformed count is `registry_projection_invalid`; transport failure remains
+typed unavailable.
 
 ## Feature flags and shadow operation
 

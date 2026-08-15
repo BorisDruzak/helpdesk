@@ -7,6 +7,7 @@ import pytest
 from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, replace_bound_app_value
 from app.db import get_session
 from app.db.models import AgentRuntimeAudit, AgentToken, Device, Operation, Ticket, TicketEvent, UiUserAudit
+from domain_ports import InventoryQualityProjection, RegistryInvalidProjection, RegistryUnavailable
 from observer.runtime import ObserverRefreshRuntime
 from tech.log_buffer import append_log_record
 from tech.handlers import _compact_agent_action_entry
@@ -62,6 +63,62 @@ async def test_tech_overview_roles(test_client):
     assert body["status"] == "ok"
     assert "overview" in body
     assert "alerts" in body["overview"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "expected_count", "expected_state"),
+    [
+        (
+            InventoryQualityProjection(
+                active_pc_without_location_count=6,
+                source="local_authoritative",
+            ),
+            6,
+            {"status": "available", "source": "local_authoritative"},
+        ),
+        (
+            RegistryUnavailable(code="registry_external_timeout"),
+            0,
+            {"status": "unavailable", "code": "registry_external_timeout"},
+        ),
+        (
+            RegistryInvalidProjection(),
+            0,
+            {"status": "invalid", "code": "registry_projection_invalid"},
+        ),
+    ],
+)
+async def test_tech_overview_keeps_inventory_count_numeric_and_exposes_registry_source_state(
+    monkeypatch,
+    test_client,
+    outcome,
+    expected_count,
+    expected_state,
+):
+    from tech import handlers as tech_handlers
+
+    class _RegistryPort:
+        async def inventory_quality(self):
+            return outcome
+
+    class _Ports:
+        registry = _RegistryPort()
+
+    monkeypatch.setattr(
+        tech_handlers.DomainPortContainer,
+        "from_config",
+        lambda **_kwargs: _Ports(),
+    )
+
+    response = await test_client.get("/api/admin/tech/overview", headers=_auth(ADMIN_TOKEN))
+    payload = await response.json()
+
+    assert response.status == 200
+    quality = payload["overview"]["inventory_quality"]
+    assert quality["devices_without_location"] == expected_count
+    assert isinstance(quality["devices_without_location"], int)
+    assert quality["source_state"] == expected_state
 
 
 @pytest.mark.asyncio

@@ -251,6 +251,18 @@ def test_registry_scope_rejects_customer_history_local_binding_imports(tmp_path:
     assert "DeviceAccountSession, DeviceUserBinding" in result.stdout
 
 
+def test_registry_scope_rejects_tech_registry_orm_import(tmp_path: Path) -> None:
+    source = tmp_path / "server" / "tech" / "handlers.py"
+    source.parent.mkdir(parents=True)
+    source.write_text("from app.db.models import RegistryAsset\n", encoding="utf-8")
+
+    result = run_check(tmp_path, registry_scope="tech")
+
+    assert result.returncode == 1
+    assert "server/tech/handlers.py:1" in result.stdout
+    assert "RegistryAsset" in result.stdout
+
+
 def test_registry_scope_allows_only_declared_create_flow_command_debt(tmp_path: Path) -> None:
     source = tmp_path / "server" / "tickets" / "create_flow.py"
     source.parent.mkdir(parents=True)

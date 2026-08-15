@@ -13,6 +13,7 @@ from domain_ports import (
     BindingRef,
     BindingRevocationRequest,
     DeviceRef,
+    InventoryQualityProjection,
     DomainPortContainer,
     PersonRef,
     RegistrationApprovalRequest,
@@ -54,11 +55,18 @@ class _SequencedSession:
     ) -> None:
         self._results = list(results)
         self._get_rows = dict(get_rows or {})
+        self.scalar_statements: list[object] = []
 
     async def execute(self, _statement: object) -> _Result:
         if not self._results:
             raise AssertionError("unexpected Registry query")
         return self._results.pop(0)
+
+    async def scalar(self, _statement: object) -> object | None:
+        if not self._results:
+            raise AssertionError("unexpected Registry query")
+        self.scalar_statements.append(_statement)
+        return self._results.pop(0)._scalar
 
     async def get(self, _model: object, key: str) -> object | None:
         return self._get_rows.get(str(key))
@@ -128,6 +136,40 @@ async def test_local_adapter_returns_redacted_requester_snapshot() -> None:
         "display_name": "Requester One",
     }
     assert "email" not in result.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_local_adapter_inventory_quality_uses_active_pc_without_location_aggregate() -> None:
+    session = _SequencedSession(_Result(scalar=7))
+
+    result = await LocalRegistryAdapter(session).inventory_quality()
+
+    assert result.model_dump(mode="json") == {
+        "active_pc_without_location_count": 7,
+        "source": "local_authoritative",
+    }
+    statement = str(session.scalar_statements[0]).lower()
+    assert "from registry_assets" in statement
+    assert "registry_assets.asset_type" in statement
+    assert "registry_assets.status" in statement
+    assert "registry_assets.location_id is null" in statement
+    bound_values = session.scalar_statements[0].compile().params.values()
+    assert "pc" in bound_values
+    assert "active" in bound_values
+
+
+def test_inventory_quality_projection_is_redacted_and_bounded() -> None:
+    with pytest.raises(ValueError):
+        InventoryQualityProjection(
+            active_pc_without_location_count=-1,
+            source="local_authoritative",
+        )
+    with pytest.raises(ValueError):
+        InventoryQualityProjection(
+            active_pc_without_location_count=1,
+            source="local_authoritative",
+            asset_id="must-not-leak",
+        )
 
 
 @pytest.mark.asyncio
@@ -299,6 +341,7 @@ async def test_unavailable_registry_port_fails_closed_for_every_read() -> None:
             PersonRef(external_id="registry-ref-opaque-person-1"),
             actor=_support_actor(),
         ),
+        await port.inventory_quality(),
     )
 
     assert isinstance(port, RegistryPort)

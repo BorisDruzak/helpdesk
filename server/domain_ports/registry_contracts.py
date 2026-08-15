@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 # Opaque references are never parsed, trimmed, case-folded or otherwise
@@ -243,6 +243,13 @@ class DeviceContextProjection(_ImmutableRegistryDTO):
         return self
 
 
+class InventoryQualityProjection(_ImmutableRegistryDTO):
+    """Bounded aggregate for inventory-quality monitoring, without asset detail."""
+
+    active_pc_without_location_count: int = Field(strict=True, ge=0, le=2_147_483_647)
+    source: Literal["local_authoritative", "external_authoritative"]
+
+
 class RegistryHistoryEventProjection(_ImmutableRegistryDTO):
     event_type: SafeRegistryCode
     occurred_at: datetime
@@ -314,4 +321,5 @@ AudienceProjectionOutcome = AudienceProjection | RegistryNotFound | RegistryUnav
 RequesterProfileOutcome = RequesterProfileProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
 DirectorySearchOutcome = DirectorySearchProjection | RegistryUnavailable | RegistryInvalidProjection
 DeviceContextOutcome = DeviceContextProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
+InventoryQualityOutcome = InventoryQualityProjection | RegistryUnavailable | RegistryInvalidProjection
 RequesterHistoryOutcome = RequesterHistoryProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection

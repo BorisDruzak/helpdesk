@@ -12,6 +12,7 @@ from domain_ports import (
     RequesterRef,
     RequesterSnapshot,
     RegistrationRequest,
+    InventoryQualityProjection,
 )
 from registry_adapter.http import ShadowReadRegistryPort
 
@@ -42,6 +43,22 @@ class _ExternalPort:
     async def active_binding(self, _device: DeviceRef) -> ActiveBindingProjection:
         return _local_binding().model_copy(
             update={"relationship_type": "responsible", "source": "external_authoritative"}
+        )
+
+
+class _InventoryQualityLocalPort:
+    async def inventory_quality(self) -> InventoryQualityProjection:
+        return InventoryQualityProjection(
+            active_pc_without_location_count=2,
+            source="local_authoritative",
+        )
+
+
+class _InventoryQualityExternalPort:
+    async def inventory_quality(self) -> InventoryQualityProjection:
+        return InventoryQualityProjection(
+            active_pc_without_location_count=3,
+            source="external_authoritative",
         )
 
 
@@ -98,3 +115,26 @@ async def test_shadow_registry_commands_never_call_external_port() -> None:
 
     assert result == {"local_operation_id": "registry-operation-1"}
     assert external.called is False
+
+
+@pytest.mark.asyncio
+async def test_shadow_inventory_quality_keeps_local_count_and_reports_redacted_mismatch() -> None:
+    evidence: list[dict[str, object]] = []
+    port = ShadowReadRegistryPort(
+        authoritative=_InventoryQualityLocalPort(),
+        shadow=_InventoryQualityExternalPort(),
+        mismatch_reporter=evidence.append,
+    )
+
+    result = await port.inventory_quality()
+    await asyncio.sleep(0)
+
+    assert result.active_pc_without_location_count == 2
+    assert result.source == "local_authoritative"
+    assert evidence == [
+        {
+            "operation": "inventory_quality",
+            "outcome": "mismatch",
+            "fields": ("active_pc_without_location_count",),
+        }
+    ]

@@ -25,6 +25,8 @@ try:
         DeviceContextOutcome,
         DeviceContextProjection,
         DeviceRef,
+        InventoryQualityOutcome,
+        InventoryQualityProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
         DirectorySearchText,
@@ -60,6 +62,8 @@ except ModuleNotFoundError as exc:
         DeviceContextOutcome,
         DeviceContextProjection,
         DeviceRef,
+        InventoryQualityOutcome,
+        InventoryQualityProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
         DirectorySearchText,
@@ -309,6 +313,12 @@ class ExternalRegistryHttpAdapter:
             DeviceContextProjection,
         )
 
+    async def inventory_quality(self) -> InventoryQualityOutcome:
+        return self._parse(
+            await self._get("/v1/helpdesk/inventory-quality"),
+            InventoryQualityProjection,
+        )
+
     async def requester_history(
         self, person: PersonRef, *, actor: RegistryReadActor, limit: int = 50
     ) -> RequesterHistoryOutcome:
@@ -464,6 +474,11 @@ class ShadowReadRegistryPort:
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:
         local = await self._authoritative.device_context(device)
         self._schedule("device_context", local, self._shadow.device_context(device))
+        return local
+
+    async def inventory_quality(self) -> InventoryQualityOutcome:
+        local = await self._authoritative.inventory_quality()
+        self._schedule("inventory_quality", local, self._shadow.inventory_quality())
         return local
 
     async def requester_history(

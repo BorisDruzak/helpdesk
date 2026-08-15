@@ -53,6 +53,11 @@ class _Session:
             raise AssertionError("unexpected Registry query")
         return self._results.pop(0)
 
+    async def scalar(self, _statement: object) -> object | None:
+        if not self._results:
+            raise AssertionError("unexpected Registry query")
+        return self._results.pop(0)._scalar
+
     async def get(self, _model: object, key: str) -> object | None:
         return self._get_rows.get(str(key))
 
@@ -330,3 +335,11 @@ async def test_device_context_is_typed_unavailable_without_local_fallback() -> N
     )
 
     assert result.code == "registry_unavailable"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_inventory_quality_invalid_count_is_typed_invalid_projection() -> None:
+    result = await LocalRegistryAdapter(_Session(_Result(scalar="not-a-count"))).inventory_quality()
+
+    assert isinstance(result, RegistryInvalidProjection)
