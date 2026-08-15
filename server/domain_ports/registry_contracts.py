@@ -27,6 +27,10 @@ DirectorySearchText = Annotated[
     str,
     StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=120),
 ]
+OnBehalfLookupText = Annotated[
+    str,
+    StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=240),
+]
 SafeRegistryCode = Annotated[
     str,
     StringConstraints(
@@ -39,6 +43,7 @@ SafeRegistryCode = Annotated[
 ]
 MAX_REGISTRY_AUDIENCES = 100
 MAX_DIRECTORY_RESULTS = 50
+MAX_ON_BEHALF_CANDIDATES = 10
 MAX_REQUESTER_HISTORY_EVENTS = 100
 
 
@@ -230,6 +235,55 @@ class DirectorySearchProjection(_ImmutableRegistryDTO):
         return self
 
 
+class OnBehalfPolicyProjection(_ImmutableRegistryDTO):
+    """Server-owned requester on-behalf policy snapshot."""
+
+    allowed: bool = True
+    scope: SafeRegistryCode = "same_department_or_privileged"
+    reason_required: bool = False
+
+
+class OnBehalfCandidateProjection(_ImmutableRegistryDTO):
+    """Purpose-bound candidate fields already exposed by the requester API."""
+
+    person: RequesterRef
+    display_name: TicketParticipantText
+    full_name: TicketParticipantText | None = None
+    email: TicketParticipantText | None = None
+    department: DepartmentRef | None = None
+    department_label: TicketParticipantText | None = None
+    location: LocationRef | None = None
+    location_label: TicketParticipantText | None = None
+    source: Literal["local_authoritative", "external_authoritative"]
+
+
+class OnBehalfCandidatesProjection(_ImmutableRegistryDTO):
+    items: tuple[OnBehalfCandidateProjection, ...] = ()
+    source: Literal["local_authoritative", "external_authoritative"]
+
+    @model_validator(mode="after")
+    def validate_bounded_items(self) -> "OnBehalfCandidatesProjection":
+        if len(self.items) > MAX_ON_BEHALF_CANDIDATES:
+            raise ValueError("on-behalf candidate projection exceeds maximum item count")
+        return self
+
+
+class OnBehalfAllowed(_ImmutableRegistryDTO):
+    status: Literal["allowed"] = "allowed"
+    code: Literal["registry_on_behalf_allowed"] = "registry_on_behalf_allowed"
+    affected: RequesterRef
+    source: Literal["local_authoritative", "external_authoritative"]
+
+
+class OnBehalfDenied(_ImmutableRegistryDTO):
+    status: Literal["denied"] = "denied"
+    code: Literal[
+        "registry_actor_forbidden",
+        "registry_on_behalf_not_allowed",
+        "registry_on_behalf_scope_denied",
+    ]
+
+
 class RequesterProfileProjection(_ImmutableRegistryDTO):
     """Requester profile bounded to labels safe for Helpdesk display."""
 
@@ -345,6 +399,20 @@ AccountStatusOutcome = AccountStatusProjection | RegistryUnavailable | RegistryI
 AudienceProjectionOutcome = AudienceProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
 RequesterProfileOutcome = RequesterProfileProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
 DirectorySearchOutcome = DirectorySearchProjection | RegistryUnavailable | RegistryInvalidProjection
+OnBehalfCandidatesOutcome = (
+    OnBehalfCandidatesProjection
+    | OnBehalfDenied
+    | RegistryNotFound
+    | RegistryUnavailable
+    | RegistryInvalidProjection
+)
+OnBehalfAuthorizationOutcome = (
+    OnBehalfAllowed
+    | OnBehalfDenied
+    | RegistryNotFound
+    | RegistryUnavailable
+    | RegistryInvalidProjection
+)
 DeviceContextOutcome = DeviceContextProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection
 InventoryQualityOutcome = InventoryQualityProjection | RegistryUnavailable | RegistryInvalidProjection
 RequesterHistoryOutcome = RequesterHistoryProjection | RegistryNotFound | RegistryUnavailable | RegistryInvalidProjection

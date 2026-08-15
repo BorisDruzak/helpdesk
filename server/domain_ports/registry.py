@@ -16,6 +16,10 @@ from .registry_contracts import (
     InventoryQualityOutcome,
     DirectorySearchOutcome,
     DirectorySearchText,
+    OnBehalfAuthorizationOutcome,
+    OnBehalfCandidatesOutcome,
+    OnBehalfLookupText,
+    OnBehalfPolicyProjection,
     OpaqueRegistryRef,
     PersonRef,
     RegistrationApprovalRequest,
@@ -74,6 +78,25 @@ class RegistryPort(Protocol):
         actor: RegistryReadActor,
         limit: int = 20,
     ) -> DirectorySearchOutcome: ...
+
+    async def on_behalf_candidates(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        query: DirectorySearchText,
+    ) -> OnBehalfCandidatesOutcome: ...
+
+    async def authorize_on_behalf(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        affected: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        lookup: OnBehalfLookupText | None = None,
+    ) -> OnBehalfAuthorizationOutcome: ...
 
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome: ...
 

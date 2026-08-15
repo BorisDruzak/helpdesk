@@ -161,8 +161,9 @@ REGISTRY_IMPORT_ALLOWANCES = {
     ),
     "server/web_api/requester_handlers.py": frozenset(
         {
-            ("app.db.models", "RegistryDepartment"),
-            ("app.db.models", "RegistryLocation"),
+            # Requester identity/profile and primary diagnostic-target
+            # resolution remain explicit debt. On-behalf people,
+            # department and location reads are cut over to RegistryPort.
             ("app.db.models", "RegistryPerson"),
             ("registry.primary_agent_resolver", "PrimaryAgentResolver"),
             ("registry.profile_schema_service", "RequesterProfileSchemaService"),

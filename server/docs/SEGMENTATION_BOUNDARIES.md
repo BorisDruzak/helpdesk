@@ -88,6 +88,18 @@ request exactly and missing, unavailable or malformed results fail closed.
 An existing participant row remains snapshot-readable regardless of its current
 active/archived/disabled/inactive/merged lifecycle status, matching the former
 direct ticket-context read; only an absent row is `not_found`.
+Requester on-behalf search and authorization use separate purpose-bound
+`on_behalf_candidates` and `authorize_on_behalf` operations. Their verified
+actor must be a requester correlated exactly to the server-resolved creator;
+their policy snapshot is built only from the resolved server form. The adapter
+owns inactive exclusion, same-department/direct-report scopes, exact-vs-
+substring search and exact-selection authorization. Candidate results are
+capped at 10 and expose only opaque person/department/location refs plus the
+display/full/email and organisation labels already returned by the requester
+API. Generic directory search remains support/admin-only. The handler may use
+`PrimaryAgentResolver` only after authorization to preserve the existing live
+`primary_agent` decoration; that resolver remains explicit deferred debt and
+does not grant visibility.
 Ticket creation, immutable requester history, inventory requester
 projection and the support current-requester projection use those operations
 without a local ORM/service fallback. The support DTO keeps a
@@ -109,7 +121,7 @@ Use `python scripts/check_domain_import_boundaries.py --registry-scope
 Registry boundary. The scoped guard covers every new ticket module and rejects
 new Registry ORM/repository/service imports in selected migration paths, while
 an exact symbol ledger records operations still waiting for a richer external
-contract. This is not yet a repository-wide claim: requester profile/on-behalf
+contract. This is not yet a repository-wide claim: requester profile
 resolution, primary diagnostic-target resolution, exact binding/session authorization
 and Registry commands remain
 explicitly deferred.

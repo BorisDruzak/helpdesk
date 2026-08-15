@@ -45,10 +45,14 @@
   support may display only the validated immutable requester snapshot already
   stored on the ticket with `source=ticket_snapshot`; it is historical display,
   not authorization or current Registry truth.
-- Contact, organisation, asset, service and pending-claim identifiers are not
-  represented by the current port. Their richer external contract and the
-  frontend degraded-state presentation/browser acceptance are deferred; no
-  local Registry query is used as a hidden fallback in migrated consumers.
+- Generic profile and inventory projections do not expose contact,
+  organisation, asset, service or pending-claim identifiers. The narrow
+  requester on-behalf operations are the only current exception: they return
+  the already requester-visible candidate email plus opaque department/location
+  refs and labels so Registry owns candidate visibility and authorization.
+  Richer generic contracts and frontend degraded-state browser acceptance remain
+  deferred; no local Registry query is used as a hidden fallback in migrated
+  consumers.
 
 ## Источники создания тикета и инварианты
 

@@ -1546,6 +1546,10 @@ async def test_requester_shared_device_tickets_stay_scoped_to_person_and_binding
             confirmed_at=datetime.now(timezone.utc),
         )
         session.add(shared_binding)
+        # Ticket context Registry reads intentionally use an adapter-owned
+        # transaction. Commit the completed identity/binding fixture before
+        # ticket creation so those verified rows are visible at that boundary.
+        await session.commit()
         primary_ticket = await create_ticket_with_side_effects(
             session,
             device_id=device_id,
@@ -2140,11 +2144,10 @@ async def test_requester_create_ticket_accepts_catalog_form_payload(test_client,
     assert custom_fields["service_catalog"]["offering_full_code"] == f"{service_code}.laptop_broken"
     assert "knowledge_attempts" not in custom_fields
     async with session_maker() as session:
-        knowledge_event_count = await session.scalar(
-            text("SELECT COUNT(*) FROM knowledge_feedback_events WHERE ticket_id = :ticket_id"),
-            {"ticket_id": payload["data"]["ticket_id"]},
+        retired_knowledge_feedback_table = await session.scalar(
+            text("SELECT to_regclass('knowledge_feedback_events')")
         )
-    assert knowledge_event_count == 0
+    assert retired_knowledge_feedback_table is None
 
 
 @pytest.mark.asyncio

@@ -32,6 +32,13 @@ try:
         DirectorySearchText,
         MAX_DIRECTORY_RESULTS,
         MAX_REQUESTER_HISTORY_EVENTS,
+        OnBehalfAllowed,
+        OnBehalfAuthorizationOutcome,
+        OnBehalfCandidatesOutcome,
+        OnBehalfCandidatesProjection,
+        OnBehalfDenied,
+        OnBehalfLookupText,
+        OnBehalfPolicyProjection,
         PersonRef,
         RegistrationApprovalRequest,
         RegistrationRequest,
@@ -40,6 +47,7 @@ try:
         RegistryNotFound,
         RegistryReadActor,
         RegistryUnavailable,
+        RequesterRef,
         RequesterHistoryOutcome,
         RequesterHistoryProjection,
         RequesterProfileOutcome,
@@ -71,6 +79,13 @@ except ModuleNotFoundError as exc:
         DirectorySearchText,
         MAX_DIRECTORY_RESULTS,
         MAX_REQUESTER_HISTORY_EVENTS,
+        OnBehalfAllowed,
+        OnBehalfAuthorizationOutcome,
+        OnBehalfCandidatesOutcome,
+        OnBehalfCandidatesProjection,
+        OnBehalfDenied,
+        OnBehalfLookupText,
+        OnBehalfPolicyProjection,
         PersonRef,
         RegistrationApprovalRequest,
         RegistrationRequest,
@@ -79,6 +94,7 @@ except ModuleNotFoundError as exc:
         RegistryNotFound,
         RegistryReadActor,
         RegistryUnavailable,
+        RequesterRef,
         RequesterHistoryOutcome,
         RequesterHistoryProjection,
         RequesterProfileOutcome,
@@ -94,6 +110,12 @@ logger = logging.getLogger(__name__)
 _T = TypeVar("_T", bound=BaseModel)
 _SERVICE_SCOPE = "registry.helpdesk.read.v1"
 _UNAVAILABLE = RegistryUnavailable()
+_ON_BEHALF_NOT_FOUND_CODES = frozenset(
+    {
+        "registry_on_behalf_creator_not_found",
+        "registry_on_behalf_affected_not_found",
+    }
+)
 
 
 def _new_correlation_id() -> str:
@@ -180,6 +202,7 @@ class ExternalRegistryHttpAdapter:
         *,
         params: Mapping[str, str | int] | None = None,
         not_found_code: str | None = None,
+        not_found_codes: frozenset[str] | None = None,
     ) -> Mapping[str, object] | RegistryUnavailable | RegistryNotFound | RegistryInvalidProjection:
         if not self.configured:
             return RegistryUnavailable(code="registry_external_unconfigured")
@@ -192,11 +215,15 @@ class ExternalRegistryHttpAdapter:
                     params=params,
                     headers=self._headers(correlation_id),
                 ) as response:
-                    if response.status == 404 and not_found_code is not None:
+                    response_status = response.status
+                    if response_status == 404 and not_found_code is not None:
                         return RegistryNotFound(code=not_found_code)
-                    if response.status != 200:
+                    if response_status not in ({200, 404} if not_found_codes else {200}):
                         return _UNAVAILABLE
-                    envelope = await response.json(content_type=None)
+                    try:
+                        envelope = await response.json(content_type=None)
+                    except ValueError:
+                        return RegistryInvalidProjection()
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
             return _UNAVAILABLE
         if (
@@ -207,6 +234,15 @@ class ExternalRegistryHttpAdapter:
         ):
             return RegistryInvalidProjection()
         data = envelope.get("data")
+        if response_status == 404:
+            if (
+                not isinstance(data, Mapping)
+                or set(data) != {"status", "code"}
+                or data.get("status") != "not_found"
+                or data.get("code") not in not_found_codes
+            ):
+                return RegistryInvalidProjection()
+            return RegistryNotFound(code=str(data["code"]))
         return dict(data) if isinstance(data, Mapping) else RegistryInvalidProjection()
 
     @staticmethod
@@ -237,6 +273,22 @@ class ExternalRegistryHttpAdapter:
         if actor.requester is not None:
             params["requester_ref"] = actor.requester.external_id
         return params
+
+    @staticmethod
+    def _on_behalf_actor_matches(actor: RegistryReadActor, creator: RequesterRef) -> bool:
+        return (
+            actor.role == "user"
+            and actor.requester is not None
+            and actor.requester.external_id == creator.external_id
+        )
+
+    @staticmethod
+    def _on_behalf_policy_params(policy: OnBehalfPolicyProjection) -> dict[str, str]:
+        return {
+            "policy_allowed": str(policy.allowed).lower(),
+            "policy_scope": policy.scope,
+            "policy_reason_required": str(policy.reason_required).lower(),
+        }
 
     async def availability(self) -> RegistryAvailability:
         result = await self._get("/v1/helpdesk/availability")
@@ -319,6 +371,8 @@ class ExternalRegistryHttpAdapter:
     async def search_people(
         self, query: DirectorySearchText, *, actor: RegistryReadActor, limit: int = 20
     ) -> DirectorySearchOutcome:
+        if actor.role not in {"admin", "support"}:
+            return RegistryUnavailable(code="registry_actor_forbidden")
         bounded_limit = self._bounded_limit(limit, maximum=MAX_DIRECTORY_RESULTS)
         if bounded_limit is None:
             return RegistryInvalidProjection()
@@ -329,6 +383,112 @@ class ExternalRegistryHttpAdapter:
             DirectorySearchProjection,
             nested_sources=("items",),
         )
+
+    async def on_behalf_candidates(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        query: DirectorySearchText,
+    ) -> OnBehalfCandidatesOutcome:
+        if not self._on_behalf_actor_matches(actor, creator):
+            return OnBehalfDenied(code="registry_actor_forbidden")
+        if not isinstance(policy, OnBehalfPolicyProjection):
+            return RegistryInvalidProjection()
+        if not policy.allowed:
+            return OnBehalfDenied(code="registry_on_behalf_not_allowed")
+        clean_query = str(query or "").strip()
+        if not clean_query or len(clean_query) > 120:
+            return RegistryInvalidProjection()
+        params: dict[str, str | int] = self._actor_params(actor)
+        params.update(self._on_behalf_policy_params(policy))
+        params["q"] = clean_query
+        payload = await self._get(
+            f"/v1/helpdesk/requesters/{_path_ref(creator.external_id)}/on-behalf/candidates",
+            params=params,
+            not_found_code="registry_on_behalf_creator_not_found",
+        )
+        if not isinstance(payload, Mapping):
+            return payload
+        if set(payload) == {"status", "code"} and payload.get("status") == "denied":
+            try:
+                return OnBehalfDenied.model_validate(payload)
+            except ValidationError:
+                return RegistryInvalidProjection()
+        if set(payload) != {"items"} or not isinstance(payload.get("items"), list):
+            return RegistryInvalidProjection()
+        expected_item_keys = {
+            "person",
+            "display_name",
+            "full_name",
+            "email",
+            "department",
+            "department_label",
+            "location",
+            "location_label",
+        }
+        if any(
+            not isinstance(item, Mapping) or set(item) != expected_item_keys
+            for item in payload["items"]
+        ):
+            return RegistryInvalidProjection()
+        return self._parse(
+            payload,
+            OnBehalfCandidatesProjection,
+            nested_sources=("items",),
+        )
+
+    async def authorize_on_behalf(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        affected: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        lookup: OnBehalfLookupText | None = None,
+    ) -> OnBehalfAuthorizationOutcome:
+        if not self._on_behalf_actor_matches(actor, creator):
+            return OnBehalfDenied(code="registry_actor_forbidden")
+        if not isinstance(policy, OnBehalfPolicyProjection):
+            return RegistryInvalidProjection()
+        if not policy.allowed:
+            return OnBehalfDenied(code="registry_on_behalf_not_allowed")
+        clean_lookup = str(lookup or "").strip()
+        if lookup is not None and (not clean_lookup or len(clean_lookup) > 240):
+            return RegistryInvalidProjection()
+        params: dict[str, str | int] = self._actor_params(actor)
+        params.update(self._on_behalf_policy_params(policy))
+        if clean_lookup:
+            params["lookup"] = clean_lookup
+        payload = await self._get(
+            f"/v1/helpdesk/requesters/{_path_ref(creator.external_id)}/on-behalf/"
+            f"{_path_ref(affected.external_id)}/authorize",
+            params=params,
+            not_found_codes=_ON_BEHALF_NOT_FOUND_CODES,
+        )
+        if not isinstance(payload, Mapping):
+            return payload
+        if payload.get("status") == "denied":
+            if set(payload) != {"status", "code"}:
+                return RegistryInvalidProjection()
+            try:
+                return OnBehalfDenied.model_validate(payload)
+            except ValidationError:
+                return RegistryInvalidProjection()
+        if payload.get("status") != "allowed" or set(payload) != {
+            "status",
+            "code",
+            "affected",
+        }:
+            return RegistryInvalidProjection()
+        result = self._parse(payload, OnBehalfAllowed)
+        if (
+            isinstance(result, OnBehalfAllowed)
+            and result.affected.external_id != affected.external_id
+        ):
+            return RegistryInvalidProjection()
+        return result
 
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:
         return self._parse(
@@ -503,6 +663,61 @@ class ShadowReadRegistryPort:
     ) -> DirectorySearchOutcome:
         local = await self._authoritative.search_people(query, actor=actor, limit=limit)
         self._schedule("search_people", local, self._shadow.search_people(query, actor=actor, limit=limit))
+        return local
+
+    async def on_behalf_candidates(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        query: DirectorySearchText,
+    ) -> OnBehalfCandidatesOutcome:
+        local = await self._authoritative.on_behalf_candidates(
+            actor=actor,
+            creator=creator,
+            policy=policy,
+            query=query,
+        )
+        self._schedule(
+            "on_behalf_candidates",
+            local,
+            self._shadow.on_behalf_candidates(
+                actor=actor,
+                creator=creator,
+                policy=policy,
+                query=query,
+            ),
+        )
+        return local
+
+    async def authorize_on_behalf(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        affected: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        lookup: OnBehalfLookupText | None = None,
+    ) -> OnBehalfAuthorizationOutcome:
+        local = await self._authoritative.authorize_on_behalf(
+            actor=actor,
+            creator=creator,
+            affected=affected,
+            policy=policy,
+            lookup=lookup,
+        )
+        self._schedule(
+            "authorize_on_behalf",
+            local,
+            self._shadow.authorize_on_behalf(
+                actor=actor,
+                creator=creator,
+                affected=affected,
+                policy=policy,
+                lookup=lookup,
+            ),
+        )
         return local
 
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:

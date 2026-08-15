@@ -9,13 +9,466 @@ from domain_ports import (
     DirectorySearchText,
     PersonRef,
     RegistryInvalidProjection,
+    RegistryNotFound,
     RegistryReadActor,
     RegistryUnavailable,
+    RequesterRef,
 )
+import domain_ports.registry_contracts as registry_contracts
 from registry_adapter.http import ExternalRegistryHttpAdapter
 
 
 pytestmark = pytest.mark.no_db
+
+
+def _requester_actor() -> RegistryReadActor:
+    return RegistryReadActor(
+        actor=ActorRef(external_id="verified-ui-user"),
+        role="user",
+        requester=RequesterRef(external_id="creator-person"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_reads_exact_on_behalf_candidate_projection_and_context() -> None:
+    received_query: dict[str, str] = {}
+
+    async def candidates(request: web.Request) -> web.Response:
+        received_query.update(request.query)
+        return web.json_response(
+            {
+                "data": {
+                    "items": [
+                        {
+                            "person": {"external_id": "affected-person"},
+                            "display_name": "Affected Person",
+                            "full_name": "Affected Person Full",
+                            "email": "affected@example.test",
+                            "department": {"external_id": "department-1"},
+                            "department_label": "Support",
+                            "location": {"external_id": "location-1"},
+                            "location_label": "Office 1",
+                        }
+                    ]
+                },
+                "correlation_id": "registry-correlation-on-behalf-candidates",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/candidates",
+        candidates,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-candidates",
+            allow_insecure_test_url=True,
+        ).on_behalf_candidates(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(
+                allowed=True,
+                scope="same_department",
+                reason_required=True,
+            ),
+            query="Affected",
+        )
+
+        assert result.items[0].model_dump(mode="json") == {
+            "person": {"external_id": "affected-person"},
+            "display_name": "Affected Person",
+            "full_name": "Affected Person Full",
+            "email": "affected@example.test",
+            "department": {"external_id": "department-1"},
+            "department_label": "Support",
+            "location": {"external_id": "location-1"},
+            "location_label": "Office 1",
+            "source": "external_authoritative",
+        }
+        assert received_query == {
+            "actor_ref": "verified-ui-user",
+            "actor_role": "user",
+            "requester_ref": "creator-person",
+            "policy_allowed": "true",
+            "policy_scope": "same_department",
+            "policy_reason_required": "true",
+            "q": "Affected",
+        }
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_on_behalf_candidate_source_before_injection() -> None:
+    async def candidates(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {
+                    "items": [
+                        {
+                            "person": {"external_id": "affected-person"},
+                            "display_name": "Affected Person",
+                            "full_name": None,
+                            "email": None,
+                            "department": None,
+                            "department_label": None,
+                            "location": None,
+                            "location_label": None,
+                            "source": "external_authoritative",
+                        }
+                    ]
+                },
+                "correlation_id": "registry-correlation-on-behalf-extra",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/candidates",
+        candidates,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-extra",
+            allow_insecure_test_url=True,
+        ).on_behalf_candidates(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+            query="Affected",
+        )
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_authorize_on_behalf_sends_exact_lookup_and_parses_allowed() -> None:
+    received_query: dict[str, str] = {}
+
+    async def authorize(request: web.Request) -> web.Response:
+        received_query.update(request.query)
+        return web.json_response(
+            {
+                "data": {
+                    "status": "allowed",
+                    "code": "registry_on_behalf_allowed",
+                    "affected": {"external_id": "affected-person"},
+                },
+                "correlation_id": "registry-correlation-on-behalf-authorize",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/{affected_ref}/authorize",
+        authorize,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-authorize",
+            allow_insecure_test_url=True,
+        ).authorize_on_behalf(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            affected=RequesterRef(external_id="affected-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="exact_search_only"),
+            lookup="Exact Search Person",
+        )
+
+        assert result.status == "allowed"
+        assert result.affected.external_id == "affected-person"
+        assert received_query["lookup"] == "Exact Search Person"
+        assert received_query["actor_ref"] == "verified-ui-user"
+        assert received_query["requester_ref"] == "creator-person"
+        assert received_query["policy_scope"] == "exact_search_only"
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_overlong_on_behalf_lookup_before_request() -> None:
+    received = False
+
+    async def authorize(_request: web.Request) -> web.Response:
+        nonlocal received
+        received = True
+        return web.json_response({})
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/{affected_ref}/authorize",
+        authorize,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            allow_insecure_test_url=True,
+        ).authorize_on_behalf(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            affected=RequesterRef(external_id="affected-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="exact_search_only"),
+            lookup="x" * 241,
+        )
+
+        assert isinstance(result, RegistryInvalidProjection)
+        assert received is False
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_directory_search_denies_requester_before_request() -> None:
+    received = False
+
+    async def directory(_request: web.Request) -> web.Response:
+        nonlocal received
+        received = True
+        return web.json_response({})
+
+    app = web.Application()
+    app.router.add_get("/v1/helpdesk/directory/people", directory)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            allow_insecure_test_url=True,
+        ).search_people("requester", actor=_requester_actor())
+
+        assert isinstance(result, RegistryUnavailable)
+        assert result.code == "registry_actor_forbidden"
+        assert received is False
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_allowed_on_behalf_with_non_allowed_code() -> None:
+    async def authorize(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {
+                    "status": "allowed",
+                    "code": "registry_on_behalf_scope_denied",
+                    "affected": {"external_id": "affected-person"},
+                },
+                "correlation_id": "registry-correlation-on-behalf-wrong-code",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/{affected_ref}/authorize",
+        authorize,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-wrong-code",
+            allow_insecure_test_url=True,
+        ).authorize_on_behalf(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            affected=RequesterRef(external_id="affected-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+        )
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_denied_on_behalf_with_unknown_code() -> None:
+    async def authorize(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {"status": "denied", "code": "registry_unknown_denial"},
+                "correlation_id": "registry-correlation-on-behalf-unknown-denial",
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/{affected_ref}/authorize",
+        authorize,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-unknown-denial",
+            allow_insecure_test_url=True,
+        ).authorize_on_behalf(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            affected=RequesterRef(external_id="affected-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+        )
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "not_found_code",
+    [
+        "registry_on_behalf_creator_not_found",
+        "registry_on_behalf_affected_not_found",
+    ],
+)
+async def test_http_adapter_preserves_correlated_on_behalf_not_found_code(
+    not_found_code: str,
+) -> None:
+    async def authorize(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": {"status": "not_found", "code": not_found_code},
+                "correlation_id": "registry-correlation-on-behalf-not-found",
+            },
+            status=404,
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/{affected_ref}/authorize",
+        authorize,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-not-found",
+            allow_insecure_test_url=True,
+        ).authorize_on_behalf(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            affected=RequesterRef(external_id="affected-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+        )
+
+        assert isinstance(result, RegistryNotFound)
+        assert result.code == not_found_code
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "not_found_data",
+    [
+        {"status": "not_found", "code": "registry_unknown_not_found"},
+        {
+            "status": "not_found",
+            "code": "registry_on_behalf_creator_not_found",
+            "creator": {"external_id": "must-not-be-accepted"},
+        },
+    ],
+)
+async def test_http_adapter_rejects_malformed_on_behalf_not_found_envelope(
+    not_found_data: dict[str, object],
+) -> None:
+    async def authorize(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "data": not_found_data,
+                "correlation_id": "registry-correlation-on-behalf-bad-not-found",
+            },
+            status=404,
+        )
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/{affected_ref}/authorize",
+        authorize,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-bad-not-found",
+            allow_insecure_test_url=True,
+        ).authorize_on_behalf(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            affected=RequesterRef(external_id="affected-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+        )
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_http_adapter_rejects_non_json_on_behalf_not_found_envelope() -> None:
+    async def authorize(_request: web.Request) -> web.Response:
+        return web.Response(text="not-json", status=404, content_type="text/plain")
+
+    app = web.Application()
+    app.router.add_get(
+        "/v1/helpdesk/requesters/{creator_ref}/on-behalf/{affected_ref}/authorize",
+        authorize,
+    )
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await ExternalRegistryHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            timeout_seconds=1,
+            correlation_id_factory=lambda: "registry-correlation-on-behalf-non-json",
+            allow_insecure_test_url=True,
+        ).authorize_on_behalf(
+            actor=_requester_actor(),
+            creator=RequesterRef(external_id="creator-person"),
+            affected=RequesterRef(external_id="affected-person"),
+            policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+        )
+
+        assert isinstance(result, RegistryInvalidProjection)
+    finally:
+        await server.close()
 
 
 @pytest.mark.asyncio

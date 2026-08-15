@@ -6,9 +6,11 @@ import pytest
 
 from domain_ports import (
     ActiveBindingProjection,
+    ActorRef,
     BindingRef,
     DeviceRef,
     PersonRef,
+    RegistryReadActor,
     RequesterRef,
     RequesterSnapshot,
     RegistrationRequest,
@@ -83,6 +85,19 @@ class _TicketParticipantExternalPort:
             email="external@example.test",
             source="external_authoritative",
         )
+
+
+class _OnBehalfLocalPort:
+    async def authorize_on_behalf(self, **_kwargs):
+        return registry_contracts.OnBehalfAllowed(
+            affected=RequesterRef(external_id="affected-person"),
+            source="local_authoritative",
+        )
+
+
+class _OnBehalfExternalPort:
+    async def authorize_on_behalf(self, **_kwargs):
+        return registry_contracts.OnBehalfDenied(code="registry_on_behalf_scope_denied")
 
 
 class _CommandLocalPort(_LocalPort):
@@ -183,5 +198,38 @@ async def test_shadow_ticket_participant_reports_only_purpose_bound_field_names(
             "operation": "ticket_participant",
             "outcome": "mismatch",
             "fields": ("email",),
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_shadow_on_behalf_authorization_never_changes_local_decision() -> None:
+    evidence: list[dict[str, object]] = []
+    port = ShadowReadRegistryPort(
+        authoritative=_OnBehalfLocalPort(),
+        shadow=_OnBehalfExternalPort(),
+        mismatch_reporter=evidence.append,
+    )
+    actor = RegistryReadActor(
+        actor=ActorRef(external_id="verified-ui-user"),
+        role="user",
+        requester=RequesterRef(external_id="creator-person"),
+    )
+
+    result = await port.authorize_on_behalf(
+        actor=actor,
+        creator=RequesterRef(external_id="creator-person"),
+        affected=RequesterRef(external_id="affected-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="same_department"),
+    )
+    await asyncio.sleep(0)
+
+    assert result.status == "allowed"
+    assert result.source == "local_authoritative"
+    assert evidence == [
+        {
+            "operation": "authorize_on_behalf",
+            "outcome": "mismatch",
+            "fields": ("outcome",),
         }
     ]

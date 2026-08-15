@@ -15,8 +15,10 @@ the command/auth acceptance cutover.
   and scope. Tokens, headers, URLs, query values and response bodies must not
   be logged by either service.
 - `REGISTRY_EXTERNAL_TIMEOUT_SECONDS` is bounded to 0.05–10 seconds (default
-  2). Transport failure, non-200 response, disabled integration or timeout map
-  to `registry_unavailable`; they never trigger a direct ORM fallback.
+  2). Transport failure, an undocumented non-200 response, disabled integration
+  or timeout map to `registry_unavailable`; they never trigger a direct ORM
+  fallback. The correlated on-behalf authorization `404` described below is the
+  only documented non-200 projection envelope.
 - Every success is exactly `{ "data": { ... }, "correlation_id": "opaque" }`;
   the returned opaque ID must exactly match the one sent by Helpdesk.
   Helpdesk accepts only the redacted DTO fields documented below; unexpected,
@@ -36,24 +38,57 @@ return only frozen, redacted `RegistryPort` DTOs:
 - `GET /requesters/{person_ref}/audience`
 - `GET /requesters/{person_ref}/profile`
 - `GET /directory/people?q={query}&limit={limit}`
+- `GET /requesters/{creator_ref}/on-behalf/candidates`
+- `GET /requesters/{creator_ref}/on-behalf/{affected_ref}/authorize`
 - `GET /devices/{device_ref}/context`
 - `GET /inventory-quality`
 - `GET /requesters/{person_ref}/history?limit={limit}`
 
-Audience, profile, directory and history reads additionally receive the
+Audience, profile, directory, history and on-behalf reads additionally receive the
 verified caller context as `actor_ref`, `actor_role`, and, for requester
 actors, `requester_ref`. Registry must authorize that context itself. Result
 collections are capped by the Helpdesk contract (directory 50; audience and
-history 100). For requester/device reads, a `404` maps to the operation's
-typed `registry_*_not_found`; it is distinct from unavailable or invalid data.
+history 100). For single-subject requester/device reads, a `404` maps to the
+operation's typed `registry_*_not_found`; it is distinct from unavailable or
+invalid data. The two-subject on-behalf authorization endpoint instead returns
+a correlated exact `404` envelope whose `data` is `{ "status": "not_found",
+"code": "registry_on_behalf_creator_not_found"|
+"registry_on_behalf_affected_not_found" }`; unknown codes, additional fields
+or correlation mismatch are invalid projections.
 `GET /inventory-quality` has no not-found state: its `404` and every other
 non-200 response map to typed unavailable.
 
-No endpoint except the purpose-bound ticket-participant read returns contact
-data. No endpoint returns identities, sessions, Registry numeric IDs,
+No endpoint except the purpose-bound ticket-participant and on-behalf candidate
+reads returns the already exposed contact fields. No endpoint returns identities, sessions, Registry numeric IDs,
 asset/serial data, ORM metadata, credentials or policy internals. Helpdesk sets
 the response `source=external_authoritative` locally; Registry must not send a
 source marker.
+
+The on-behalf endpoints are purpose-bound requester reads; they do not widen
+`GET /directory/people`, which remains support/admin-only. Both receive the
+server-owned policy snapshot as `policy_allowed=true|false`,
+`policy_scope={safe-code}` and `policy_reason_required=true|false`. The
+candidate endpoint additionally receives `q` (trimmed, 1–120 characters). Its
+success `data` is exactly `{ "items": [...] }`, capped at 10, where each item
+has exactly `person`, `display_name`, `full_name`, `email`, `department`,
+`department_label`, `location` and `location_label`; refs are opaque and
+department/location plus their labels may be null. It never returns phone,
+identities, account/session, binding, device, metadata or primary-agent data.
+
+Authorization receives optional `lookup` (trimmed, 1–240 characters) only as
+exact-selection evidence for `policy_scope=exact_search_only`. Allowed `data`
+is exactly `{ "status": "allowed", "code":
+"registry_on_behalf_allowed", "affected": { "external_id": ... } }` and its
+affected ref must match the requested path exactly. Denial `data` is exactly
+`{ "status": "denied", "code": <safe-code> }`; stable policy codes are
+`registry_actor_forbidden`, `registry_on_behalf_not_allowed` and
+`registry_on_behalf_scope_denied`. A missing creator/affected row maps to the
+typed not-found code for that operation; malformed or additional fields map to
+`registry_projection_invalid`. Registry owns creator lifecycle,
+same-department/direct-report and exact-search evaluation. Helpdesk constructs
+the actor/creator tuple only from verified auth plus its server identity
+resolver and the policy only from resolved server form configuration; browser
+role, creator and policy values are never forwarded as authority.
 
 `GET /requesters/{person_ref}/ticket-participant` exists only to preserve the
 already persisted `ticket_context_v1` participant snapshot. Its `data` object
@@ -83,7 +118,10 @@ external authority requires a later explicit acceptance change.
 
 Shadow evidence contains only operation name, `mismatch` and changed purpose-bound
 DTO field names. It never includes correlation IDs, values, references,
-payloads, tokens or authorization decisions. Shadow calls are limited to reads. Commands,
+payloads, tokens or authorization decisions. Shadow calls are limited to reads.
+On-behalf authorization is a read-only decision comparison: its external
+result may report only a redacted mismatch and never replaces the local
+authoritative decision. Commands,
 registration, pairing, account sessions and login eligibility remain local in
 this PR and do not issue shadow calls.
 

@@ -301,3 +301,24 @@ def test_registry_scope_rejects_ticket_context_registry_person_but_keeps_resolve
     assert result.returncode == 1
     assert "RegistryPerson" in result.stdout
     assert "PrimaryAgentResolver" not in result.stdout
+
+
+def test_registry_scope_rejects_requester_on_behalf_models_but_keeps_identity_debt(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "server" / "web_api" / "requester_handlers.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson\n"
+        "from registry.primary_agent_resolver import PrimaryAgentResolver\n"
+        "from registry.profile_schema_service import RequesterProfileSchemaService\n",
+        encoding="utf-8",
+    )
+
+    result = run_check(tmp_path, registry_scope="web_api")
+
+    assert result.returncode == 1
+    assert "RegistryDepartment, RegistryLocation" in result.stdout
+    assert "RegistryPerson" not in result.stdout
+    assert "PrimaryAgentResolver" not in result.stdout
+    assert "RequesterProfileSchemaService" not in result.stdout

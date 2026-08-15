@@ -6,16 +6,27 @@ from typing import Any
 
 from aiohttp import web
 from loguru import logger
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import or_, update
 
 from app.api.serializers import ticket_to_dict
 from app.db import get_session
-from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson, Ticket
+from app.db.models import RegistryPerson, Ticket
 from app.repos import ArtifactsRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from auth.middleware import ensure_server_request_id, require_auth
 from consent.service import OPERATION_SUBJECT_TYPES, ConsentAccessError, UserConsentService, serialize_user_consent
+from domain_ports import (
+    ActorRef,
+    DomainPortContainer,
+    OnBehalfAllowed,
+    OnBehalfCandidateProjection,
+    OnBehalfCandidatesProjection,
+    OnBehalfDenied,
+    OnBehalfPolicyProjection,
+    RegistryReadActor,
+    RequesterRef,
+)
 from observer.web_event_writer import write_web_cabinet_observer_event
 from quality.feedback_service import TicketFeedbackService
 from quality.reopen_service import TicketReopenService
@@ -53,7 +64,6 @@ from tickets.ticket_context import TicketContextBuilder, project_requester_ticke
 from tickets.workflow_service import TicketWorkflowService
 from tools.service import ToolExecutionService
 
-_ON_BEHALF_EXCLUDED_PERSON_STATUSES = frozenset({"archived", "deleted", "disabled", "inactive", "merged"})
 _AVAILABILITY_POLICY_FIELDS = (
     "available_without_completed_profile",
     "available_without_agent_binding",
@@ -421,58 +431,58 @@ async def _resolve_on_behalf_policy(
     return {"allowed": False}
 
 
-def _metadata_value(person: RegistryPerson, *keys: str) -> str:
-    metadata = person.metadata_json if isinstance(person.metadata_json, dict) else {}
-    for key in keys:
-        value = _clean(metadata.get(key), max_length=120)
-        if value:
-            return value
-    return ""
+def _on_behalf_policy_projection(policy: dict[str, Any]) -> OnBehalfPolicyProjection | None:
+    """Freeze only server-resolved form policy fields for the Registry boundary."""
+
+    try:
+        return OnBehalfPolicyProjection(
+            allowed=bool(policy.get("allowed")),
+            scope=_clean(policy.get("allowed_scope"), max_length=80)
+            or "same_department_or_privileged",
+            reason_required=bool(policy.get("reason_required")),
+        )
+    except ValueError:
+        return None
 
 
-def _person_selectable_for_on_behalf(person: RegistryPerson | None) -> bool:
-    if person is None:
-        return False
-    status = str(getattr(person, "status", "") or "active").strip().lower()
-    return status not in _ON_BEHALF_EXCLUDED_PERSON_STATUSES
-
-
-def _on_behalf_scope_allows(
+def _on_behalf_actor_from_verified_auth(
+    auth_context: Any,
     *,
-    creator: RegistryPerson,
-    affected: RegistryPerson,
-    scope: str,
-) -> bool:
-    if affected.person_id == creator.person_id:
-        return True
-    if scope == "any_employee":
-        return True
-    if scope in {"same_department", "same_department_or_privileged"}:
-        return bool(creator.department_id and creator.department_id == affected.department_id)
-    if scope == "direct_reports":
-        manager_id = _metadata_value(affected, "manager_person_id", "manager_id", "reports_to_person_id")
-        return bool(manager_id and manager_id == creator.person_id)
-    if scope in {"self_only", "privileged_only", "exact_search_only"}:
-        return False
-    return False
+    creator: RequesterRef,
+) -> RegistryReadActor | None:
+    """Build requester actor correlation only from middleware and resolved identity."""
+
+    actor_id = str(getattr(auth_context, "actor_id", "") or "").strip()
+    actor_role = str(getattr(auth_context, "actor_role", "") or "").strip().lower()
+    if actor_role not in {"user", "requester"} or not actor_id:
+        return None
+    try:
+        return RegistryReadActor(
+            actor=ActorRef(external_id=actor_id),
+            role="user",
+            requester=creator,
+        )
+    except ValueError:
+        return None
 
 
-def _person_matches_exact_lookup(person: RegistryPerson, lookup: str) -> bool:
-    normalized = lookup.strip().lower()
-    if not normalized:
-        return False
-    candidates = [
-        getattr(person, "display_name", None),
-        getattr(person, "full_name", None),
-        getattr(person, "email", None),
-    ]
-    return any(str(candidate or "").strip().lower() == normalized for candidate in candidates)
+def _requester_ref_from_resolved_person(person: RegistryPerson | None) -> RequesterRef | None:
+    """Translate only the server-resolved Registry identity into an opaque ref."""
+
+    person_id = str(getattr(person, "person_id", "") or "")
+    if not person_id:
+        return None
+    try:
+        return RequesterRef(external_id=person_id)
+    except ValueError:
+        return None
 
 
 async def _authorize_on_behalf_context(
     session,
     *,
-    creator: RegistryPerson | None,
+    auth_context: Any,
+    creator: RequesterRef | None,
     policy: dict[str, Any],
     data: dict[str, Any],
 ) -> dict[str, str] | None:
@@ -486,41 +496,58 @@ async def _authorize_on_behalf_context(
             status=403,
             error_code="REQUESTER_IDENTITY_REQUIRED",
         )
-    if affected_person_id == creator.person_id:
+    if affected_person_id == creator.external_id:
         return None
-    if not policy.get("allowed"):
+    policy_projection = _on_behalf_policy_projection(policy)
+    if policy_projection is None:
         raise _OnBehalfRequestError(
             "On-behalf ticket creation is not allowed for this form",
             status=403,
             error_code="ON_BEHALF_NOT_ALLOWED",
         )
     reason = raw_context.get("on_behalf_reason", "")
-    if policy.get("reason_required") and not reason:
+    if policy_projection.allowed and policy_projection.reason_required and not reason:
         raise _OnBehalfRequestError(
             "On-behalf reason is required",
             status=400,
             error_code="ON_BEHALF_REASON_REQUIRED",
         )
 
-    affected = await session.get(RegistryPerson, affected_person_id)
-    if not _person_selectable_for_on_behalf(affected):
+    actor = _on_behalf_actor_from_verified_auth(auth_context, creator=creator)
+    if actor is None:
+        raise _OnBehalfRequestError(
+            "Requester identity is required for on-behalf tickets",
+            status=403,
+            error_code="REQUESTER_IDENTITY_REQUIRED",
+        )
+    try:
+        affected = RequesterRef(external_id=affected_person_id)
+    except ValueError:
+        affected = None
+    outcome = (
+        await DomainPortContainer.from_config(registry_session=session).registry.authorize_on_behalf(
+            actor=actor,
+            creator=creator,
+            affected=affected,
+            policy=policy_projection,
+            lookup=raw_context.get("affected_person_lookup") or None,
+        )
+        if affected is not None
+        else None
+    )
+    if isinstance(outcome, OnBehalfDenied) and outcome.code == "registry_on_behalf_not_allowed":
+        raise _OnBehalfRequestError(
+            "On-behalf ticket creation is not allowed for this form",
+            status=403,
+            error_code="ON_BEHALF_NOT_ALLOWED",
+        )
+    if not isinstance(outcome, OnBehalfAllowed) or outcome.affected.external_id != affected_person_id:
         raise _OnBehalfRequestError(
             "Affected person is outside the allowed scope",
             status=403,
             error_code="ON_BEHALF_SCOPE_DENIED",
         )
-    scope = _clean(policy.get("allowed_scope"), max_length=80) or "same_department_or_privileged"
-    if scope == "exact_search_only":
-        allowed = _person_matches_exact_lookup(affected, raw_context.get("affected_person_lookup", ""))
-    else:
-        allowed = _on_behalf_scope_allows(creator=creator, affected=affected, scope=scope)
-    if not allowed:
-        raise _OnBehalfRequestError(
-            "Affected person is outside the allowed scope",
-            status=403,
-            error_code="ON_BEHALF_SCOPE_DENIED",
-        )
-    context = {"affected_person_id": affected.person_id}
+    context = {"affected_person_id": outcome.affected.external_id}
     if reason:
         context["on_behalf_reason"] = reason
     if raw_context.get("affected_person_lookup"):
@@ -528,25 +555,33 @@ async def _authorize_on_behalf_context(
     return context
 
 
-async def _serialize_on_behalf_person(session, person: RegistryPerson, *, state: Any | None = None) -> dict[str, Any]:
-    department = await session.get(RegistryDepartment, person.department_id) if person.department_id else None
-    location = await session.get(RegistryLocation, person.location_id) if person.location_id else None
-    resolved = await PrimaryAgentResolver(session, state=state).resolve_for_person(person.person_id)
+async def _serialize_on_behalf_person(
+    session,
+    person: OnBehalfCandidateProjection,
+    *,
+    state: Any | None = None,
+) -> dict[str, Any]:
+    # PrimaryAgentResolver is intentionally separate deferred Registry debt; it
+    # decorates the existing response but does not participate in candidate
+    # visibility or authorization.
+    resolved = await PrimaryAgentResolver(session, state=state).resolve_for_person(
+        person.person.external_id
+    )
     primary_status = "available" if resolved.get("resolved") else "missing"
     if not resolved.get("resolved") and resolved.get("reason_code") == "ambiguous_primary_device":
         primary_status = "ambiguous"
     return {
-        "person_id": person.person_id,
+        "person_id": person.person.external_id,
         "display_name": person.display_name,
         "full_name": person.full_name,
         "email": person.email,
         "department": {
-            "id": person.department_id,
-            "name": getattr(department, "name", None),
+            "id": person.department.external_id if person.department is not None else None,
+            "name": person.department_label,
         },
         "location": {
-            "id": person.location_id,
-            "display_name": getattr(location, "display_name", None),
+            "id": person.location.external_id if person.location is not None else None,
+            "display_name": person.location_label,
         },
         "primary_agent": {
             "status": primary_status,
@@ -806,6 +841,21 @@ async def handle_web_requester_on_behalf_people(request: web.Request) -> web.Res
                 status=403,
                 error_code="REQUESTER_IDENTITY_REQUIRED",
             )
+        try:
+            creator_ref = RequesterRef(external_id=str(creator.person_id))
+        except ValueError:
+            return _error(
+                "Requester identity is required for on-behalf search",
+                status=403,
+                error_code="REQUESTER_IDENTITY_REQUIRED",
+            )
+        actor = _on_behalf_actor_from_verified_auth(auth_context, creator=creator_ref)
+        if actor is None:
+            return _error(
+                "Requester identity is required for on-behalf search",
+                status=403,
+                error_code="REQUESTER_IDENTITY_REQUIRED",
+            )
         policy = await _resolve_on_behalf_policy(
             session,
             pack_key=pack_key,
@@ -813,44 +863,18 @@ async def handle_web_requester_on_behalf_people(request: web.Request) -> web.Res
             form_key=form_key,
             request_template_key=request_template_key,
         )
-        if not policy.get("allowed"):
+        policy_projection = _on_behalf_policy_projection(policy)
+        if policy_projection is None:
             return _success({"people": []})
-
-        scope = _clean(policy.get("allowed_scope"), max_length=80) or "same_department_or_privileged"
-        lowered_query = query.lower()
-        stmt = select(RegistryPerson).where(
-            ~RegistryPerson.status.in_(sorted(_ON_BEHALF_EXCLUDED_PERSON_STATUSES)),
-            RegistryPerson.person_id != creator.person_id,
+        result = await DomainPortContainer.from_config(
+            registry_session=session
+        ).registry.on_behalf_candidates(
+            actor=actor,
+            creator=creator_ref,
+            policy=policy_projection,
+            query=query,
         )
-        if scope == "exact_search_only":
-            stmt = stmt.where(
-                or_(
-                    func.lower(RegistryPerson.display_name) == lowered_query,
-                    func.lower(RegistryPerson.full_name) == lowered_query,
-                    func.lower(RegistryPerson.email) == lowered_query,
-                )
-            )
-        else:
-            pattern = f"%{lowered_query}%"
-            stmt = stmt.where(
-                or_(
-                    func.lower(RegistryPerson.display_name).like(pattern),
-                    func.lower(RegistryPerson.full_name).like(pattern),
-                    func.lower(RegistryPerson.email).like(pattern),
-                )
-            )
-        stmt = stmt.order_by(RegistryPerson.display_name.asc()).limit(20)
-        result = await session.execute(stmt)
-        matched_people = result.scalars().all()
-        scoped_people = (
-            matched_people[:10]
-            if scope == "exact_search_only"
-            else [
-                person
-                for person in matched_people
-                if _on_behalf_scope_allows(creator=creator, affected=person, scope=scope)
-            ][:10]
-        )
+        scoped_people = result.items if isinstance(result, OnBehalfCandidatesProjection) else ()
         people = [
             await _serialize_on_behalf_person(session, person, state=request.app.get("state"))
             for person in scoped_people
@@ -1550,7 +1574,8 @@ async def handle_web_requester_ticket_preview(request: web.Request) -> web.Respo
         try:
             on_behalf_context = await _authorize_on_behalf_context(
                 session,
-                creator=person,
+                auth_context=auth_context,
+                creator=_requester_ref_from_resolved_person(person),
                 policy=await _resolve_on_behalf_policy(
                     session,
                     pack_key=pack_key,
@@ -1935,7 +1960,8 @@ async def handle_web_requester_ticket_create(request: web.Request) -> web.Respon
         try:
             on_behalf_context = await _authorize_on_behalf_context(
                 session,
-                creator=person,
+                auth_context=auth_context,
+                creator=_requester_ref_from_resolved_person(person),
                 policy=policy,
                 data=data,
             )

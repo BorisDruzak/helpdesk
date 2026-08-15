@@ -30,6 +30,14 @@ try:
         InventoryQualityOutcome,
         InventoryQualityProjection,
         LocationRef,
+        OnBehalfAllowed,
+        OnBehalfAuthorizationOutcome,
+        OnBehalfCandidateProjection,
+        OnBehalfCandidatesOutcome,
+        OnBehalfCandidatesProjection,
+        OnBehalfDenied,
+        OnBehalfLookupText,
+        OnBehalfPolicyProjection,
         DirectoryPersonProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
@@ -74,6 +82,14 @@ except ModuleNotFoundError as exc:
         InventoryQualityOutcome,
         InventoryQualityProjection,
         LocationRef,
+        OnBehalfAllowed,
+        OnBehalfAuthorizationOutcome,
+        OnBehalfCandidateProjection,
+        OnBehalfCandidatesOutcome,
+        OnBehalfCandidatesProjection,
+        OnBehalfDenied,
+        OnBehalfLookupText,
+        OnBehalfPolicyProjection,
         DirectoryPersonProjection,
         DirectorySearchOutcome,
         DirectorySearchProjection,
@@ -102,6 +118,11 @@ except ModuleNotFoundError as exc:
 _SAFE_CODE_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,119}$")
 _MAX_RICH_PROJECTION_ITEMS = 100
 _MAX_DIRECTORY_ITEMS = 50
+_MAX_ON_BEHALF_QUERY_ROWS = 20
+_MAX_ON_BEHALF_CANDIDATES = 10
+_ON_BEHALF_EXCLUDED_PERSON_STATUSES = frozenset(
+    {"archived", "deleted", "disabled", "inactive", "merged"}
+)
 logger = logging.getLogger(__name__)
 _READ_FAILED = object()
 
@@ -176,6 +197,11 @@ class LocalRegistryAdapter:
         }
 
     @staticmethod
+    def _is_excluded_on_behalf_person(person: object | None) -> bool:
+        status = str(getattr(person, "status", "active") or "active").strip().lower()
+        return status in _ON_BEHALF_EXCLUDED_PERSON_STATUSES
+
+    @staticmethod
     def _actor_may_read_person(actor: RegistryReadActor, person: PersonRef) -> bool:
         if actor.role in {"admin", "support"}:
             return True
@@ -191,6 +217,104 @@ class LocalRegistryAdapter:
     def _safe_label(value: object) -> str | None:
         text = str(value or "").strip()
         return text if 0 < len(text) <= 256 else None
+
+    @staticmethod
+    def _on_behalf_actor_matches(actor: RegistryReadActor, creator: RequesterRef) -> bool:
+        return (
+            actor.role == "user"
+            and actor.requester is not None
+            and actor.requester.external_id == creator.external_id
+        )
+
+    @staticmethod
+    def _on_behalf_metadata_value(person: object, *keys: str) -> str:
+        metadata = getattr(person, "metadata_json", None)
+        values = metadata if isinstance(metadata, dict) else {}
+        for key in keys:
+            value = str(values.get(key) or "").strip()[:120]
+            if value:
+                return value
+        return ""
+
+    @classmethod
+    def _on_behalf_scope_allows(
+        cls,
+        *,
+        creator: object,
+        affected: object,
+        scope: str,
+        lookup: str | None = None,
+    ) -> bool:
+        creator_id = str(getattr(creator, "person_id", "") or "")
+        affected_id = str(getattr(affected, "person_id", "") or "")
+        if affected_id == creator_id:
+            return True
+        if scope == "any_employee":
+            return True
+        if scope in {"same_department", "same_department_or_privileged"}:
+            creator_department = getattr(creator, "department_id", None)
+            return bool(
+                creator_department
+                and creator_department == getattr(affected, "department_id", None)
+            )
+        if scope == "direct_reports":
+            manager_id = cls._on_behalf_metadata_value(
+                affected,
+                "manager_person_id",
+                "manager_id",
+                "reports_to_person_id",
+            )
+            return bool(manager_id and manager_id == creator_id)
+        if scope == "exact_search_only":
+            normalized = str(lookup or "").strip().lower()
+            if not normalized:
+                return False
+            return any(
+                str(candidate or "").strip().lower() == normalized
+                for candidate in (
+                    getattr(affected, "display_name", None),
+                    getattr(affected, "full_name", None),
+                    getattr(affected, "email", None),
+                )
+            )
+        return False
+
+    @classmethod
+    def _on_behalf_candidate(
+        cls,
+        *,
+        person: object,
+        department: object | None,
+        location: object | None,
+    ) -> OnBehalfCandidateProjection | None:
+        def optional_text(value: object) -> str | None:
+            text = str(value or "").strip()
+            return text or None
+
+        department_id = getattr(person, "department_id", None)
+        location_id = getattr(person, "location_id", None)
+        try:
+            return OnBehalfCandidateProjection(
+                person=RequesterRef(external_id=str(getattr(person, "person_id", "") or "")),
+                display_name=str(getattr(person, "display_name", "") or ""),
+                full_name=optional_text(getattr(person, "full_name", None)),
+                email=optional_text(getattr(person, "email", None)),
+                department=(
+                    DepartmentRef(external_id=str(department_id))
+                    if department_id is not None
+                    else None
+                ),
+                department_label=optional_text(getattr(department, "name", None)),
+                location=(
+                    LocationRef(external_id=str(location_id))
+                    if location_id is not None
+                    else None
+                ),
+                location_label=optional_text(getattr(location, "display_name", None)),
+                source="local_authoritative",
+            )
+        except ValueError:
+            return None
 
     async def _person_labels(self, session: Any, person: object) -> tuple[str | None, str | None]:
         from app.repos.registry_repo import RegistryRepo
@@ -553,6 +677,176 @@ class LocalRegistryAdapter:
             if len(items) >= bounded_limit:
                 break
         return DirectorySearchProjection(items=tuple(items), source="local_authoritative")
+
+    async def on_behalf_candidates(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        query: DirectorySearchText,
+    ) -> OnBehalfCandidatesOutcome:
+        if not self._on_behalf_actor_matches(actor, creator):
+            return OnBehalfDenied(code="registry_actor_forbidden")
+        if not isinstance(policy, OnBehalfPolicyProjection):
+            return RegistryInvalidProjection()
+        if not policy.allowed:
+            return OnBehalfDenied(code="registry_on_behalf_not_allowed")
+        clean_query = str(query or "").strip()
+        if not clean_query or len(clean_query) > 120:
+            return RegistryInvalidProjection()
+
+        async def reader(session: Any) -> object:
+            from sqlalchemy import func, or_, select
+
+            from app.db.models import RegistryDepartment, RegistryLocation, RegistryPerson
+
+            creator_row = (
+                await session.execute(
+                    select(RegistryPerson).where(RegistryPerson.person_id == creator.external_id)
+                )
+            ).scalar_one_or_none()
+            if creator_row is None or self._is_excluded_on_behalf_person(creator_row):
+                return RegistryNotFound(code="registry_on_behalf_creator_not_found")
+            if str(getattr(creator_row, "person_id", "") or "") != creator.external_id:
+                return RegistryInvalidProjection()
+
+            lowered_query = clean_query.lower()
+            statement = (
+                select(RegistryPerson, RegistryDepartment, RegistryLocation)
+                .outerjoin(
+                    RegistryDepartment,
+                    RegistryPerson.department_id == RegistryDepartment.department_id,
+                )
+                .outerjoin(
+                    RegistryLocation,
+                    RegistryPerson.location_id == RegistryLocation.location_id,
+                )
+                .where(
+                    ~RegistryPerson.status.in_(sorted(_ON_BEHALF_EXCLUDED_PERSON_STATUSES)),
+                    RegistryPerson.person_id != creator.external_id,
+                )
+            )
+            if policy.scope == "exact_search_only":
+                statement = statement.where(
+                    or_(
+                        func.lower(RegistryPerson.display_name) == lowered_query,
+                        func.lower(RegistryPerson.full_name) == lowered_query,
+                        func.lower(RegistryPerson.email) == lowered_query,
+                    )
+                )
+            else:
+                pattern = f"%{lowered_query}%"
+                statement = statement.where(
+                    or_(
+                        func.lower(RegistryPerson.display_name).like(pattern),
+                        func.lower(RegistryPerson.full_name).like(pattern),
+                        func.lower(RegistryPerson.email).like(pattern),
+                    )
+                )
+            rows = (
+                await session.execute(
+                    statement.order_by(RegistryPerson.display_name.asc()).limit(
+                        _MAX_ON_BEHALF_QUERY_ROWS
+                    )
+                )
+            ).all()
+            return creator_row, rows
+
+        loaded = await self._read("on_behalf_candidates", reader)
+        if loaded is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(loaded, (RegistryNotFound, RegistryInvalidProjection)):
+            return loaded
+        creator_row, rows = loaded
+        if not isinstance(rows, list):
+            return RegistryInvalidProjection()
+
+        items: list[OnBehalfCandidateProjection] = []
+        for row in rows:
+            try:
+                person, department, location = row
+            except (TypeError, ValueError):
+                return RegistryInvalidProjection()
+            if self._is_excluded_on_behalf_person(person):
+                continue
+            if policy.scope != "exact_search_only" and not self._on_behalf_scope_allows(
+                creator=creator_row,
+                affected=person,
+                scope=policy.scope,
+            ):
+                continue
+            projection = self._on_behalf_candidate(
+                person=person,
+                department=department,
+                location=location,
+            )
+            if projection is None:
+                return RegistryInvalidProjection()
+            items.append(projection)
+            if len(items) >= _MAX_ON_BEHALF_CANDIDATES:
+                break
+        return OnBehalfCandidatesProjection(items=tuple(items), source="local_authoritative")
+
+    async def authorize_on_behalf(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        affected: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        lookup: OnBehalfLookupText | None = None,
+    ) -> OnBehalfAuthorizationOutcome:
+        if not self._on_behalf_actor_matches(actor, creator):
+            return OnBehalfDenied(code="registry_actor_forbidden")
+        if not isinstance(policy, OnBehalfPolicyProjection):
+            return RegistryInvalidProjection()
+        if not policy.allowed:
+            return OnBehalfDenied(code="registry_on_behalf_not_allowed")
+        clean_lookup = str(lookup or "").strip()
+        if lookup is not None and (not clean_lookup or len(clean_lookup) > 240):
+            return RegistryInvalidProjection()
+
+        async def reader(session: Any) -> object:
+            from sqlalchemy import select
+
+            from app.db.models import RegistryPerson
+
+            creator_row = (
+                await session.execute(
+                    select(RegistryPerson).where(RegistryPerson.person_id == creator.external_id)
+                )
+            ).scalar_one_or_none()
+            if creator_row is None or self._is_excluded_on_behalf_person(creator_row):
+                return RegistryNotFound(code="registry_on_behalf_creator_not_found")
+            affected_row = (
+                await session.execute(
+                    select(RegistryPerson).where(RegistryPerson.person_id == affected.external_id)
+                )
+            ).scalar_one_or_none()
+            if affected_row is None:
+                return RegistryNotFound(code="registry_on_behalf_affected_not_found")
+            if (
+                str(getattr(creator_row, "person_id", "") or "") != creator.external_id
+                or str(getattr(affected_row, "person_id", "") or "") != affected.external_id
+            ):
+                return RegistryInvalidProjection()
+            return creator_row, affected_row
+
+        loaded = await self._read("authorize_on_behalf", reader)
+        if loaded is _READ_FAILED:
+            return RegistryUnavailable(code="registry_read_unavailable")
+        if isinstance(loaded, (RegistryNotFound, RegistryInvalidProjection)):
+            return loaded
+        creator_row, affected_row = loaded
+        if self._is_excluded_on_behalf_person(affected_row) or not self._on_behalf_scope_allows(
+            creator=creator_row,
+            affected=affected_row,
+            scope=policy.scope,
+            lookup=clean_lookup or None,
+        ):
+            return OnBehalfDenied(code="registry_on_behalf_scope_denied")
+        return OnBehalfAllowed(affected=affected, source="local_authoritative")
 
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:
         async def reader(session: Any) -> object:

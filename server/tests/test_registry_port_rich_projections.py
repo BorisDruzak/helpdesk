@@ -13,11 +13,14 @@ from domain_ports import (
     DeviceRef,
     DirectoryPersonProjection,
     DirectorySearchProjection,
+    OnBehalfCandidateProjection,
+    OnBehalfPolicyProjection,
     PersonRef,
     RegistryInvalidProjection,
     RegistryNotFound,
     RegistryReadActor,
     RegistryUnavailable,
+    RequesterRef,
     UnavailableRegistryPort,
 )
 from registry_adapter import LocalRegistryAdapter
@@ -93,6 +96,14 @@ def _actor(*, role: str = "support") -> RegistryReadActor:
     )
 
 
+def _requester_actor(*, creator_id: str = "creator-person") -> RegistryReadActor:
+    return RegistryReadActor(
+        actor=ActorRef(external_id="verified-ui-user"),
+        role="user",
+        requester=RequesterRef(external_id=creator_id),
+    )
+
+
 def _person(*, person_id: str = "registry-ref-opaque-person-1") -> SimpleNamespace:
     return SimpleNamespace(
         person_id=person_id,
@@ -104,6 +115,241 @@ def _person(*, person_id: str = "registry-ref-opaque-person-1") -> SimpleNamespa
         location_id=None,
         status="active",
     )
+
+
+@pytest.mark.no_db
+def test_on_behalf_candidate_contract_is_bounded_and_purpose_bound() -> None:
+    item = registry_contracts.OnBehalfCandidateProjection(
+        person={"external_id": "affected-person"},
+        display_name="Affected Person",
+        full_name="Affected Person Full",
+        email="affected@example.test",
+        department={"external_id": "department-1"},
+        department_label="Support",
+        location={"external_id": "location-1"},
+        location_label="Office 1",
+        source="external_authoritative",
+    )
+
+    assert item.model_dump(mode="json") == {
+        "person": {"external_id": "affected-person"},
+        "display_name": "Affected Person",
+        "full_name": "Affected Person Full",
+        "email": "affected@example.test",
+        "department": {"external_id": "department-1"},
+        "department_label": "Support",
+        "location": {"external_id": "location-1"},
+        "location_label": "Office 1",
+        "source": "external_authoritative",
+    }
+    assert "phone" not in item.model_dump(mode="json")
+    with pytest.raises(ValueError, match="on-behalf candidate projection exceeds"):
+        registry_contracts.OnBehalfCandidatesProjection(
+            items=tuple(item for _ in range(11)),
+            source="external_authoritative",
+        )
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_requester_on_behalf_candidates_are_scoped_to_verified_creator() -> None:
+    creator = _person(person_id="creator-person")
+    creator.department_id = "department-1"
+    same_department = _person(person_id="same-department-person")
+    same_department.display_name = "Иван Same"
+    same_department.department_id = "department-1"
+    same_department.location_id = "location-1"
+    outside = _person(person_id="outside-person")
+    outside.display_name = "Иван Outside"
+    outside.department_id = "department-2"
+    session = _Session(
+        _Result(scalar=creator),
+        _Result(
+            rows=[
+                (
+                    same_department,
+                    SimpleNamespace(department_id="department-1", name="Support"),
+                    SimpleNamespace(location_id="location-1", display_name="Office 1"),
+                ),
+                (
+                    outside,
+                    SimpleNamespace(department_id="department-2", name="Outside"),
+                    None,
+                ),
+            ]
+        ),
+    )
+
+    result = await LocalRegistryAdapter(session).on_behalf_candidates(
+        actor=_requester_actor(),
+        creator=RequesterRef(external_id="creator-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="same_department"),
+        query="Иван",
+    )
+
+    assert [item.person.external_id for item in result.items] == ["same-department-person"]
+    assert result.items[0].department.external_id == "department-1"
+    assert result.items[0].department_label == "Support"
+    assert result.items[0].location.external_id == "location-1"
+    assert result.items[0].location_label == "Office 1"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_requester_on_behalf_candidates_allow_only_direct_reports() -> None:
+    creator = _person(person_id="creator-person")
+    direct_report = _person(person_id="direct-report-person")
+    direct_report.metadata_json = {"manager_person_id": "creator-person"}
+    other = _person(person_id="other-person")
+    other.metadata_json = {"manager_person_id": "different-manager"}
+    session = _Session(
+        _Result(scalar=creator),
+        _Result(rows=[(direct_report, None, None), (other, None, None)]),
+    )
+
+    result = await LocalRegistryAdapter(session).on_behalf_candidates(
+        actor=_requester_actor(),
+        creator=RequesterRef(external_id="creator-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="direct_reports"),
+        query="Иван",
+    )
+
+    assert [item.person.external_id for item in result.items] == ["direct-report-person"]
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["archived", "deleted", "disabled", "inactive", "merged"])
+async def test_requester_on_behalf_candidates_exclude_inactive_people(status: str) -> None:
+    creator = _person(person_id="creator-person")
+    affected = _person(person_id="inactive-person")
+    affected.status = status
+
+    result = await LocalRegistryAdapter(
+        _Session(_Result(scalar=creator), _Result(rows=[(affected, None, None)]))
+    ).on_behalf_candidates(
+        actor=_requester_actor(),
+        creator=RequesterRef(external_id="creator-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+        query="Иван",
+    )
+
+    assert result.items == ()
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_requester_on_behalf_exact_search_uses_sql_equality_before_limit() -> None:
+    creator = _person(person_id="creator-person")
+    affected = _person(person_id="affected-person")
+    affected.display_name = "Exact Search Person"
+    session = _CaptureSession(
+        _Result(scalar=creator),
+        _Result(rows=[(affected, None, None)]),
+    )
+
+    result = await LocalRegistryAdapter(session).on_behalf_candidates(
+        actor=_requester_actor(),
+        creator=RequesterRef(external_id="creator-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="exact_search_only"),
+        query="Exact Search Person",
+    )
+
+    assert [item.person.external_id for item in result.items] == ["affected-person"]
+    statement = str(session.statements[-1]).lower()
+    assert "lower(registry_people.display_name) =" in statement
+    assert "like" not in statement
+    assert statement.index("where") < statement.index("limit")
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_on_behalf_authorization_denies_spoofed_creator_without_query() -> None:
+    outcome = await LocalRegistryAdapter(_Session()).authorize_on_behalf(
+        actor=_requester_actor(creator_id="verified-creator"),
+        creator=RequesterRef(external_id="spoofed-creator"),
+        affected=RequesterRef(external_id="affected-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+    )
+
+    assert outcome.status == "denied"
+    assert outcome.code == "registry_actor_forbidden"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_on_behalf_authorization_enforces_exact_lookup() -> None:
+    creator = _person(person_id="creator-person")
+    affected = _person(person_id="affected-person")
+    affected.display_name = "Exact Search Person"
+    adapter = LocalRegistryAdapter(_Session(_Result(scalar=creator), _Result(scalar=affected)))
+
+    denied = await adapter.authorize_on_behalf(
+        actor=_requester_actor(),
+        creator=RequesterRef(external_id="creator-person"),
+        affected=RequesterRef(external_id="affected-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="exact_search_only"),
+        lookup="Exact",
+    )
+
+    assert denied.status == "denied"
+    assert denied.code == "registry_on_behalf_scope_denied"
+
+    allowed = await LocalRegistryAdapter(
+        _Session(_Result(scalar=creator), _Result(scalar=affected))
+    ).authorize_on_behalf(
+        actor=_requester_actor(),
+        creator=RequesterRef(external_id="creator-person"),
+        affected=RequesterRef(external_id="affected-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="exact_search_only"),
+        lookup="Exact Search Person",
+    )
+
+    assert allowed.status == "allowed"
+    assert allowed.affected.external_id == "affected-person"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_on_behalf_authorization_distinguishes_missing_affected_person() -> None:
+    creator = _person(person_id="creator-person")
+
+    outcome = await LocalRegistryAdapter(
+        _Session(_Result(scalar=creator), _Result(scalar=None))
+    ).authorize_on_behalf(
+        actor=_requester_actor(),
+        creator=RequesterRef(external_id="creator-person"),
+        affected=RequesterRef(external_id="missing-person"),
+        policy=registry_contracts.OnBehalfPolicyProjection(scope="any_employee"),
+    )
+
+    assert isinstance(outcome, RegistryNotFound)
+    assert outcome.code == "registry_on_behalf_affected_not_found"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_unavailable_on_behalf_operations_are_typed_and_fail_closed() -> None:
+    port = UnavailableRegistryPort()
+    policy = registry_contracts.OnBehalfPolicyProjection(scope="same_department")
+    actor = _requester_actor()
+    creator = RequesterRef(external_id="creator-person")
+
+    candidates = await port.on_behalf_candidates(
+        actor=actor,
+        creator=creator,
+        policy=policy,
+        query="Иван",
+    )
+    authorization = await port.authorize_on_behalf(
+        actor=actor,
+        creator=creator,
+        affected=RequesterRef(external_id="affected-person"),
+        policy=policy,
+    )
+
+    assert isinstance(candidates, RegistryUnavailable)
+    assert isinstance(authorization, RegistryUnavailable)
 
 
 @pytest.mark.no_db

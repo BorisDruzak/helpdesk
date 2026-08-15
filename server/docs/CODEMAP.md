@@ -59,6 +59,14 @@
   exact opaque-ref correlation and typed fail-closed outcomes. The separate
   `PrimaryAgentResolver` dependency remains explicit deferred diagnostic-target
   debt.
+- `server/web_api/requester_handlers.py` builds requester on-behalf
+  `RegistryReadActor` correlation only from middleware auth and the
+  server-resolved creator identity, freezes only the resolved form policy and
+  calls `RegistryPort.on_behalf_candidates()` / `authorize_on_behalf()`.
+  Candidate lifecycle, same-department/direct-report and exact-search policy
+  evaluation belongs to the adapter. Generic `search_people()` remains
+  support/admin-only. The existing `primary_agent` response decoration still
+  uses `PrimaryAgentResolver` as explicit deferred resolver debt.
   `server/tickets/create_flow.py` reads redacted current registration state
   through `RegistryPort.account_status()`; an invalid projection fails closed
   instead of creating a verified requester ticket with legacy-only identity.
@@ -92,12 +100,12 @@
   malformed neutral ticket identity fails closed and never authorizes a legacy
   Registry fallback.
 - `scripts/check_domain_import_boundaries.py --registry-scope
-  requester,tickets,customer_history,inventory,web_api` is the incremental AST
+  requester,tickets,customer_history,inventory,web_api,tech` is the incremental AST
   boundary. It guards all new ticket modules and the named migration paths, and
   permits only the exact known symbol debt recorded in its allowance ledger.
   Repository-wide Registry enforcement is deferred while richer operations are
   absent from the frozen Task-3 contract.
-- Deferred consumers are requester profile/schema/on-behalf/identity reads,
+- Deferred consumers are requester profile/schema/identity reads,
   primary diagnostic-target resolution, and richer
   inventory/contact/organisation/asset/service
   projections. Exact shared-binding and account-session revalidation plus

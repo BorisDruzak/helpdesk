@@ -20,12 +20,17 @@ from .registry_contracts import (
     InventoryQualityOutcome,
     DirectorySearchOutcome,
     DirectorySearchText,
+    OnBehalfAuthorizationOutcome,
+    OnBehalfCandidatesOutcome,
+    OnBehalfLookupText,
+    OnBehalfPolicyProjection,
     PersonRef,
     RegistrationApprovalRequest,
     RegistrationRequest,
     RegistryCommandResult,
     RegistryReadActor,
     RegistryUnavailable,
+    RequesterRef,
     RequesterHistoryOutcome,
     RequesterProfileOutcome,
     TicketParticipantOutcome,
@@ -105,6 +110,29 @@ class UnavailableRegistryPort:
         limit: int = 20,
     ) -> DirectorySearchOutcome:
         del query, actor, limit
+        return self._unavailable
+
+    async def on_behalf_candidates(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        query: DirectorySearchText,
+    ) -> OnBehalfCandidatesOutcome:
+        del actor, creator, policy, query
+        return self._unavailable
+
+    async def authorize_on_behalf(
+        self,
+        *,
+        actor: RegistryReadActor,
+        creator: RequesterRef,
+        affected: RequesterRef,
+        policy: OnBehalfPolicyProjection,
+        lookup: OnBehalfLookupText | None = None,
+    ) -> OnBehalfAuthorizationOutcome:
+        del actor, creator, affected, policy, lookup
         return self._unavailable
 
     async def device_context(self, device: DeviceRef) -> DeviceContextOutcome:

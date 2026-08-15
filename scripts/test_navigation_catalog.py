@@ -102,6 +102,26 @@ def test_context_index_drift_requires_context_docs() -> None:
     assert "docs/QUICK_LOOKUP.md" in docs
 
 
+def test_registry_adapter_and_requester_handler_drift_require_registry_contract_docs() -> None:
+    expected = {
+        "server/docs/REGISTRY_PLATFORM_API_V1.md",
+        "server/docs/SEGMENTATION_BOUNDARIES.md",
+        "server/docs/CODEMAP.md",
+        "docs/QUICK_LOOKUP.md",
+        "docs/ARCHITECTURE_BOUNDARIES.md",
+    }
+
+    adapter_docs = set(
+        nav.collect_docs_to_update((), paths=("server/registry_adapter/http.py",))
+    )
+    requester_docs = set(
+        nav.collect_docs_to_update((), paths=("server/web_api/requester_handlers.py",))
+    )
+
+    assert expected <= adapter_docs
+    assert expected <= requester_docs
+
+
 def test_all_topic_artifacts_exist() -> None:
     missing: list[str] = []
     for topic in nav.TOPICS:
