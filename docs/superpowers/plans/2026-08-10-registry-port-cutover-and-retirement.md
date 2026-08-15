@@ -511,9 +511,62 @@ git add server/domain_ports server/registry_adapter server/tickets/ticket_contex
 git commit -m "server: route ticket participants through RegistryPort"
 ```
 
+### Task 16: Route requester on-behalf reads and authorization through RegistryPort (PR-8 completion)
+
+**Files:**
+
+- Modify: `server/domain_ports/registry_contracts.py`, `server/domain_ports/registry.py`, `server/domain_ports/unavailable.py`
+- Modify: `server/registry_adapter/local.py`, `server/registry_adapter/http.py`, `server/docs/REGISTRY_PLATFORM_API_V1.md`
+- Modify: `server/web_api/requester_handlers.py`, `scripts/check_domain_import_boundaries.py`
+- Test: `server/tests/test_registry_port_rich_projections.py`, `server/tests/test_registry_http_adapter.py`, `server/tests/test_registry_shadow_read.py`, `server/tests/test_requester_workspace_api.py`, `server/tests/test_domain_import_boundaries.py`
+- Modify only as needed for contract drift: `docs/QUICK_LOOKUP.md`, `server/docs/CODEMAP.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `docs/ARCHITECTURE_BOUNDARIES.md`, `scripts/navigation_catalog.py`, `server/docs/REQUEST_FORM_BUILDER.md`
+
+**Interfaces:** adds purpose-bound, actor-scoped RegistryPort operations for requester on-behalf candidates and authorization. They accept a verified `RegistryReadActor`, an opaque creator `RequesterRef`, a server-owned on-behalf policy snapshot and either a bounded search query or affected `RequesterRef`; they return only the existing requester-facing candidate fields (opaque person/dept/location refs, display/full name, email, department/location labels) and typed allowed/denied/not-found/invalid/unavailable decisions. The adapter owns lifecycle, same-department, direct-report and exact-search policy evaluation; generic `search_people()` remains support/admin-only. The caller must build actor/policy only from authenticated context and resolved server form policy, never client role or policy body. The external HTTP endpoints validate exact envelopes before Helpdesk adds source markers; shadow remains read-only. `requester_handlers.py` must no longer directly query Registry people/departments/locations for the on-behalf path, but may retain unrelated explicit requester-identity debt. Primary-agent status remains a separate deferred resolver dependency and must not be falsely marked migrated.
+
+- [ ] **Step 1: Write RED authorization and visibility tests**
+
+```python
+async def test_requester_on_behalf_candidates_are_scoped_to_verified_creator(session):
+    result = await LocalRegistryAdapter(session).on_behalf_candidates(
+        actor=RegistryReadActor(actor=ActorRef(external_id="ui-user"), role="user", requester=RequesterRef(external_id="creator")),
+        creator=RequesterRef(external_id="creator"),
+        policy=OnBehalfPolicyProjection(scope="same_department"),
+        query="Иван",
+    )
+    assert [item.person.external_id for item in result.items] == ["same-department-person"]
+
+async def test_on_behalf_authorization_denies_client_spoofed_creator():
+    outcome = await port.authorize_on_behalf(
+        actor=verified_creator_actor,
+        creator=RequesterRef(external_id="other-person"),
+        affected=RequesterRef(external_id="affected"),
+        policy=policy,
+    )
+    assert outcome.code == "registry_actor_forbidden"
+```
+
+- [ ] **Step 2: Verify RED**
+
+Run: `python -m pytest server/tests/test_registry_port_rich_projections.py server/tests/test_requester_workspace_api.py -q --tb=short`
+
+Expected: FAIL because the purpose-bound contract and port-only requester handler path do not exist.
+
+- [ ] **Step 3: Implement exact policy-bound read operations and cutover**
+
+Preserve current inactive exclusion, exact-vs-substring rules, SQL ordering/bounds, same-department/direct-report policy semantics and typed requester API denials. Do not expose generic directory enumeration to requester actors, loosen actor correlation or fall back to local ORM in handlers. Keep primary-agent resolver debt explicit.
+
+- [ ] **Step 4: Verify GREEN and commit**
+
+Run: `python -m pytest server/tests/test_registry_port_rich_projections.py server/tests/test_registry_http_adapter.py server/tests/test_registry_shadow_read.py server/tests/test_requester_workspace_api.py server/tests/test_domain_import_boundaries.py -q --tb=short`; `python scripts/check_domain_import_boundaries.py --workspace . --registry-scope requester,tickets,customer_history,inventory,web_api,tech`; `python scripts/docs_drift_check.py --base <task-base> --json`
+
+```powershell
+git add server/domain_ports server/registry_adapter server/web_api/requester_handlers.py scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md server/docs/SEGMENTATION_BOUNDARIES.md docs/ARCHITECTURE_BOUNDARIES.md server/docs/REQUEST_FORM_BUILDER.md scripts/navigation_catalog.py docs/superpowers/plans/2026-08-10-registry-port-cutover-and-retirement.md
+git commit -m "server: route requester on-behalf reads through RegistryPort"
+```
+
 ## Plan self-review
 
-- Coverage: PR-2 is Tasks 1–2 and 13, PR-8 is Tasks 3–5 and 12–15, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
+- Coverage: PR-2 is Tasks 1–2 and 13, PR-8 is Tasks 3–5 and 12–16, PR-9 is Tasks 6–8, PR-11 preflight is Task 9, Knowledge retirement is Task 10 and Registry retirement is Task 11.
 - Safety: no schema deletion precedes external command/auth acceptance, clone rehearsal, backup and restore evidence.
 - Consistency: all cross-domain values use opaque Task 1 refs; RegistryPort is the only Helpdesk interface after Task 4.
 - Explicit exclusions: UI users/sessions/RBAC, tickets and consent tables remain; browser smoke is a later deployment gate.
