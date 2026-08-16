@@ -49,3 +49,26 @@ node_modules/
 .pnpm-debug.log*
 webapp/test-results/
 playwright-report/
+
+# Local validation and UI audit artifacts
+/artifacts/
+/audit_artifacts/
+/output/
+/webapp/artifacts/
+
+# Root-level local validation artifacts
+/admin-registry-*.png
+/ai-integration-*.json
+/ai-integration-*.png
+/device-binding-*.png
+/knowledge-*.json
+/knowledge-*.md
+/knowledge-*.png
+/phase[0-9]*.json
+/phase[0-9]*.png
+/registry-*.md
+/registry-*.png
+/requester-*.json
+/requester-*.md
+/requester-*.png
+/stage3-*.png
