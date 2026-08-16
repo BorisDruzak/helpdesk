@@ -57,7 +57,6 @@ Nested `AGENTS.md` files should route to skills, not duplicate them.
 
 Use:
 
-- `.agents/skills/pc-client-context-pack/SKILL.md`
 - `.agents/skills/pc-client-systematic-debug/SKILL.md`
 - `.agents/skills/pc-client-browser-check/SKILL.md`
 - `.agents/skills/pc-client-release-gate/SKILL.md`

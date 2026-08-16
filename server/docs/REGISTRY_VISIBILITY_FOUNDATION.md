@@ -233,4 +233,3 @@ Live evidence must cover a real agent account gate, registration pending, confir
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md)
 - [CODEMAP.md](CODEMAP.md)
 - [Architecture boundaries](../../docs/ARCHITECTURE_BOUNDARIES.md)
-- [Quick lookup](../../docs/QUICK_LOOKUP.md)

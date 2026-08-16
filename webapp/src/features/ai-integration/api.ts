@@ -14,12 +14,6 @@ export type AiIntegrationMcpPayload = {
       latency_ms?: number;
       error?: string | null;
     };
-    context_freshness: {
-      status: string;
-      reason?: string;
-      stale_sources_count?: number;
-      recommended_command?: string | null;
-    };
     runtime_status: {
       status: string;
       runtime_snapshot_available?: boolean;

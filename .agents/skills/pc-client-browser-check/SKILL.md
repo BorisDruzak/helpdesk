@@ -25,7 +25,6 @@ Typical triggers: UI, browser, frontend, webapp, admin page, form, button, modal
 2. Check workspace state:
    - `git status --short`
 3. Read relevant docs when available:
-   - `docs/QUICK_LOOKUP.md`
    - `docs/CODEX_WORKFLOW.md`
    - `docs/LIVE_TESTING_DEBUG_RULES.md`
 4. Bootstrap frontend toolchain when the project requires it:

@@ -28,20 +28,6 @@ def object_schema(properties: dict[str, Any] | None = None, required: list[str] 
 
 TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "helpdesk_db_health": object_schema(),
-    "helpdesk_context_search": object_schema(
-        {
-            "query": {"type": "string"},
-            "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
-            "kind": {"type": "string", "enum": ["doc", "topic", "route", "symbol", "test"]},
-            "profile": {
-                "type": "string",
-                "enum": ["default", "debug", "contract", "route", "test", "web"],
-                "default": "default",
-            },
-        },
-        ["query"],
-    ),
-    "helpdesk_context_freshness": object_schema(),
     "helpdesk_locate": object_schema(
         {
             "q": {"type": "string"},

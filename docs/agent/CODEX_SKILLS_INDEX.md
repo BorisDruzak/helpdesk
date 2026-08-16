@@ -14,19 +14,17 @@ Project-scoped Codex custom subagents are indexed in `docs/agent/SUBAGENTS_INDEX
 
 | Task type | Skill | Supporting docs | Required evidence/checks |
 |---|---|---|---|
-| Find files, routes, docs, tests, symbols, contracts | `pc-client-context-pack` | `docs/QUICK_LOOKUP.md`, `docs/CONTEXT_INDEX.md`, relevant CODEMAP files | search commands used, relevant files/docs found |
 | Bug, regression, failing test, unexpected behavior, runtime error | `pc-client-systematic-debug` | `docs/LIVE_TESTING_DEBUG_RULES.md`, `docs/CODEX_WORKFLOW.md`, relevant CODEMAP files | repro, root cause, targeted test/check |
 | Browser-visible UI/admin/webapp change | `pc-client-browser-check` | frontend docs, browser/live testing docs | real browser evidence, route/flow tested |
 | Release candidate, deploy, remote smoke, full gate | `pc-client-release-gate` | release/deploy docs, workflow docs | SHA/branch, local checks, remote checks |
 | Review changed code or PR-style diff | `pc-client-code-review` | architecture/security docs, CODEMAP files | actionable findings with severity |
-| Docs/CODEMAP drift after code, route, workflow, contract, deploy, or script change | `pc-client-docs-drift` | `docs/QUICK_LOOKUP.md`, CODEMAP files, protocol/deploy docs | docs checked, docs updated or intentionally skipped |
+| Docs/CODEMAP drift after code, route, workflow, contract, deploy, or script change | `pc-client-docs-drift` | relevant CODEMAP files, protocol/deploy docs | docs checked, docs updated or intentionally skipped |
 
 ## Usage examples
 
 Explicit skill invocation examples:
 
 ```text
-Use pc-client-context-pack to find all files involved in ticket lifecycle.
 Use pc-client-systematic-debug to investigate this failing pytest.
 Use pc-client-browser-check to validate the admin UI change in a real browser.
 Use pc-client-release-gate for release candidate preflight.
@@ -36,7 +34,6 @@ Use pc-client-docs-drift to check whether docs/CODEMAP need updates.
 
 ## Maintenance rules
 
-- Keep skill descriptions trigger-focused.
 - Keep each skill focused on one job.
 - Do not move hard safety rules out of root `AGENTS.md`.
 - Do not duplicate full workflows between root `AGENTS.md` and skills.

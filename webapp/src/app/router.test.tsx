@@ -671,7 +671,6 @@ describe("appRoutes", () => {
               safety: { no_business_mutation: true, no_run_tool: true },
             },
             db_health: { status: "ok", reachable: true, latency_ms: 2.1 },
-            context_freshness: { status: "ok", reason: "fresh", stale_sources_count: 0 },
             runtime_status: {
               status: "ok",
               runtime_snapshot_available: true,

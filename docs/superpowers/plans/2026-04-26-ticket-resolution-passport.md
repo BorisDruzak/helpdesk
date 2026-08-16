@@ -92,7 +92,6 @@
 - Modify: `server/tests/test_ticket_workflow_visibility.py`
 - Modify: `server/docs/TICKET_SYSTEM.md`
 - Modify: `server/docs/CODEMAP.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Update: `PLANS.md`
 
 ---
@@ -742,7 +741,6 @@ git commit -m "webapp: add printable ticket passport view"
 **Files:**
 - Modify: `server/docs/TICKET_SYSTEM.md`
 - Modify: `server/docs/CODEMAP.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Modify: `PLANS.md`
 
 - [ ] **Step 1: Update ticket docs**
@@ -766,7 +764,7 @@ In `server/docs/CODEMAP.md`, add passport files under:
 - typed web boundary;
 - DB/repositories.
 
-In `docs/QUICK_LOOKUP.md`, update the `Ticket flows / helpdesk` row to include `server/tickets/passport_service.py` and passport API/UI notes.
+Update the ticket documentation to include `server/tickets/passport_service.py` and passport API/UI notes.
 
 - [ ] **Step 3: Update PLANS.md**
 
@@ -783,7 +781,7 @@ Add a short current-state block:
 - [ ] **Step 4: Commit docs**
 
 ```powershell
-git add server/docs/TICKET_SYSTEM.md server/docs/CODEMAP.md docs/QUICK_LOOKUP.md PLANS.md
+git add server/docs/TICKET_SYSTEM.md server/docs/CODEMAP.md PLANS.md
 git commit -m "docs: document ticket resolution passports"
 ```
 

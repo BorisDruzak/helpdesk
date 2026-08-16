@@ -1,6 +1,6 @@
 # helpdesk-server-debug MCP
 
-Read-only stdio MCP server for `pc_client` diagnostics. It exposes Observer, Tech locator, Context Index, DB health and runtime/presence snapshot tools without HTTP API proxying, `run_tool`, DeviceOutbox writes, approvals or observer rebuild.
+Read-only stdio MCP server for `pc_client` diagnostics. It exposes Observer, Tech locator, DB health and runtime/presence snapshot tools without HTTP API proxying, `run_tool`, DeviceOutbox writes, approvals or observer rebuild.
 
 Run from the repository root:
 

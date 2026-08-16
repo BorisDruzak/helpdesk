@@ -35,7 +35,6 @@ pc_agent/dist/
 .worktrees/
 artifacts/ci/
 artifacts/browser_checks/
-artifacts/context_index/
 artifacts/diagnostics/
 artifacts/live_checks/
 artifacts/observer_canaries/

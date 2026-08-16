@@ -61,7 +61,6 @@ Server handshake may also auto-enqueue an `agent_update` for already-installed o
 - `pc_agent/docs/SELF_UPDATE.md` или `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`;
 - `server/docs/CODEMAP.md`;
 - `pc_agent/docs/CODEMAP.md`;
-- `docs/QUICK_LOOKUP.md`;
 - skill/playbook для agent updates, если изменился operator workflow.
 
 ## 8. Обязательные проверки

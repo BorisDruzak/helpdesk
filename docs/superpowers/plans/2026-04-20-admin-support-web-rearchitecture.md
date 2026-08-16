@@ -534,7 +534,7 @@ Operational note:
 - Modify: `server/static_pages/handlers.py`
 - Modify: `server/routes.py`
 - Delete later: legacy UI-only scripts after parity is confirmed
-- Update: `docs/QUICK_LOOKUP.md`
+- Update: relevant CODEMAP documentation.
 - Update: `server/docs/CODEMAP.md`
 - Update: `PLANS.md`
 

@@ -46,7 +46,6 @@
 - Create: `server/web_api/reports_handlers.py`
 - Modify: `server/routes.py`
 - Modify: `server/docs/CODEMAP.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Create: `webapp/src/features/reports/api.ts`
 - Modify: `webapp/src/pages/reports/index.tsx`
 - Test: `server/tests/test_web_reports_api.py`
@@ -63,7 +62,6 @@
 - Create: `server/web_api/settings_handlers.py`
 - Modify: `server/routes.py`
 - Modify: `server/docs/CODEMAP.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Create: `webapp/src/features/settings/api.ts`
 - Modify: `webapp/src/pages/settings/index.tsx`
 - Modify: `webapp/src/app/navigation.tsx`
@@ -81,7 +79,6 @@
 **Files:**
 - Modify: `webapp/src/pages/knowledge/index.tsx`
 - Modify: `PLANS.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Modify: `server/docs/CODEMAP.md`
 - Test: `python scripts/verify_workspace.py`, relevant `pytest`, `pnpm --dir webapp run test`, `pnpm --dir webapp run build`
 

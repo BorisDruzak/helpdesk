@@ -66,7 +66,6 @@ def test_triaged_docs_mentions_are_legacy_compatibility_only() -> None:
     """Docs may mention triaged only when explicitly documenting legacy compatibility."""
 
     docs = [
-        PROJECT_ROOT / "docs" / "QUICK_LOOKUP.md",
         SERVER_ROOT / "docs" / "CODEMAP.md",
         SERVER_ROOT / "docs" / "DATABASE.md",
         SERVER_ROOT / "docs" / "RUNBOOK_TICKET_QUEUE_OPERATIONS.md",
@@ -95,7 +94,6 @@ def test_triaged_occurrences_are_limited_to_legacy_alias_migrations_and_tests() 
         SERVER_ROOT / "app" / "db" / "models.py",
         SERVER_ROOT / "app" / "db" / "migrations" / "versions",
         SERVER_ROOT / "docs",
-        PROJECT_ROOT / "docs" / "QUICK_LOOKUP.md",
         PROJECT_ROOT / "webapp" / "src",
     ]
     offenders: list[str] = []

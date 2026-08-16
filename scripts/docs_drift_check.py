@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-"""Fail fast when navigation or contract docs were likely forgotten."""
+"""Require documentation updates for code changes without a navigation index."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Sequence
 
-from navigation_catalog import collect_changed_paths, iter_triggered_drift_rules, repo_path
-
-
-TRACKED_ARTIFACT_SUFFIXES = (".md", ".mdc", ".toml")
-TRACKED_ARTIFACT_FILES = {"PLANS.md", "scripts/navigation_catalog.py"}
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DOCUMENTATION_SUFFIXES = (".md", ".mdc", ".toml")
+DOCUMENTATION_FILES = {"PLANS.md"}
+CODE_PREFIXES = ("server/", "pc_agent/", "webapp/", "mcp_helpdesk_server/", "scripts/")
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -28,13 +31,58 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def is_tracked_artifact(path: str) -> bool:
+def repo_path(value: str | Path) -> str:
+    return str(value).replace("\\", "/").strip("/")
+
+
+@dataclass(frozen=True)
+class ChangedPath:
+    status: str
+    path: str
+    old_path: str | None = None
+
+
+def _parse_name_status(output: str) -> list[ChangedPath]:
+    changes: list[ChangedPath] = []
+    for raw_line in output.splitlines():
+        parts = raw_line.split("\t")
+        status = parts[0].strip() if parts else ""
+        if status.startswith("R") and len(parts) >= 3:
+            changes.append(ChangedPath(status="R", old_path=repo_path(parts[1]), path=repo_path(parts[2])))
+        elif len(parts) >= 2:
+            changes.append(ChangedPath(status=status[:1], path=repo_path(parts[1])))
+    return changes
+
+
+def collect_changed_paths(
+    *, base: str | None = None, staged: bool = False, pathspecs: Sequence[str] | None = None
+) -> list[ChangedPath]:
+    pathspec_list = [repo_path(item) for item in (pathspecs or ())]
+    command = ["git", "diff", "--name-status", "--find-renames", "--relative"]
+    if staged:
+        command.append("--cached")
+    if base:
+        command.append(f"{base}...HEAD")
+    elif not staged:
+        command.append("HEAD")
+    if pathspec_list:
+        command.extend(("--", *pathspec_list))
+    result = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, encoding="utf-8")
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "git diff failed")
+    return _parse_name_status(result.stdout)
+
+
+def is_documentation_artifact(path: str) -> bool:
     normalized = repo_path(path)
-    if normalized.endswith("/SKILL.md"):
-        return True
-    if normalized in TRACKED_ARTIFACT_FILES:
-        return True
-    return normalized.endswith(TRACKED_ARTIFACT_SUFFIXES)
+    return normalized in DOCUMENTATION_FILES or normalized.endswith(DOCUMENTATION_SUFFIXES) or normalized.endswith("/SKILL.md")
+
+
+def needs_documentation(path: str) -> bool:
+    normalized = repo_path(path)
+    if not normalized.startswith(CODE_PREFIXES) or is_documentation_artifact(normalized):
+        return False
+    return "/tests/" not in normalized and not normalized.startswith("scripts/test_")
 
 
 def main() -> int:
@@ -55,62 +103,21 @@ def main() -> int:
         print("docs_drift_check: no changes found.")
         return 0
 
-    changed_artifacts = {repo_path(change.path) for change in changes if is_tracked_artifact(change.path)}
-    triggered = iter_triggered_drift_rules(changes)
-
-    if not triggered:
+    code_changes = sorted(change.path for change in changes if needs_documentation(change.path))
+    docs_changed = any(is_documentation_artifact(change.path) for change in changes)
+    if code_changes and not docs_changed:
+        message = "Code changes require at least one documentation or CODEMAP update: " + ", ".join(code_changes)
         if args.json:
-            print(
-                json.dumps(
-                    {"status": "ok", "message": "no documentation-sensitive changes detected", "failures": []},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 0
-        print("docs_drift_check: no documentation-sensitive changes detected.")
-        return 0
-
-    failures: list[dict[str, object]] = []
-    for rule, matched in triggered:
-        matched_paths = ", ".join(sorted(change.path for change in matched))
-        missing_all = [artifact for artifact in rule.required_artifacts_all if artifact not in changed_artifacts]
-        has_any_required = any(doc in changed_artifacts for doc in rule.required_docs)
-        if not missing_all and has_any_required:
-            continue
-
-        required_docs = ", ".join(rule.required_docs)
-        missing_all_text = ", ".join(missing_all)
-        parts: list[str] = [f"{rule.title}: {rule.reason} Changed: {matched_paths}."]
-        if missing_all:
-            parts.append(f"Required artifacts missing: {missing_all_text}.")
-        if not has_any_required:
-            parts.append(f"Update at least one of: {required_docs}")
-        failures.append(
-            {
-                "rule": rule.key,
-                "title": rule.title,
-                "reason": rule.reason,
-                "changed": sorted(change.path for change in matched),
-                "required_artifacts": list(rule.required_docs),
-                "required_artifacts_all": list(rule.required_artifacts_all),
-                "message": " ".join(parts),
-            }
-        )
-
-    if failures:
-        if args.json:
-            print(json.dumps({"status": "failed", "failures": failures}, ensure_ascii=False, indent=2))
+            print(json.dumps({"status": "failed", "failures": [message]}, ensure_ascii=False, indent=2))
             return 1
-        print("docs_drift_check failed:")
-        for item in failures:
-            print(f" - {item['message']}")
+        print(f"docs_drift_check failed: {message}")
         return 1
 
+    message = "documentation coverage present" if code_changes else "no documentation-sensitive changes detected"
     if args.json:
-        print(json.dumps({"status": "ok", "message": "ok", "failures": []}, ensure_ascii=False, indent=2))
+        print(json.dumps({"status": "ok", "message": message, "failures": []}, ensure_ascii=False, indent=2))
         return 0
-    print("docs_drift_check: ok.")
+    print(f"docs_drift_check: {message}.")
     return 0
 
 

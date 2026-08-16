@@ -150,14 +150,12 @@ Updated/created tests:
 
 Updated routing/docs:
 
-- `docs/QUICK_LOOKUP.md`
 - `docs/ARCHITECTURE_BOUNDARIES.md`
 - `docs/README.md`
 - `server/docs/CODEMAP.md`
 - `server/docs/README.md`
 - `server/docs/SEGMENTATION_BOUNDARIES.md`
 - `server/docs/TICKET_SYSTEM.md`
-- `scripts/navigation_catalog.py`
 
 ## Independent review disposition
 

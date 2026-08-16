@@ -19,7 +19,6 @@ def test_every_tool_has_object_input_schema() -> None:
 
 
 def test_required_fields_are_declared_for_required_inputs() -> None:
-    assert TOOL_SCHEMAS["helpdesk_context_search"]["required"] == ["query"]
     assert TOOL_SCHEMAS["helpdesk_locate"]["required"] == ["q"]
     assert TOOL_SCHEMAS["observer_trace_detail"]["required"] == ["trace_id"]
     assert TOOL_SCHEMAS["observer_ticket_summary"]["required"] == ["ticket_id"]

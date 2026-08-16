@@ -7,7 +7,6 @@ ROOT = Path(__file__).resolve().parents[1]
 TOUCHED_TEXT_FILES = [
     "PLANS.md",
     "docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md",
-    "docs/QUICK_LOOKUP.md",
     "server/docs/CODEMAP.md",
     "server/docs/REGISTRY_MANAGEMENT_CENTER.md",
     "webapp/src/app/navigation.tsx",

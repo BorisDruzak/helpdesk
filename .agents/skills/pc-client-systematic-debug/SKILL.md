@@ -29,28 +29,19 @@ Typical triggers: bug, regression, failing test, pytest failed, exception, trace
    - whether the issue is reproducible
 2. Check workspace state:
    - `git status --short`
-3. Run project task intake when available:
-   - `python scripts/task_intake.py`
-4. Read relevant docs when available:
+3. Read only docs relevant to the failing surface:
    - `docs/CODEX_WORKFLOW.md`
-   - `docs/QUICK_LOOKUP.md`
-   - `docs/CONTEXT_INDEX.md`
    - `docs/ARCHITECTURE_BOUNDARIES.md`
    - `docs/LIVE_TESTING_DEBUG_RULES.md`
-5. Build focused context:
-   - `python scripts/build_context_pack.py --topic "<bug summary>"`
-   - `python scripts/search_context_index.py "<error route symbol concept>"`
-   - `python scripts/agent_find.py "<pattern>" --dir server`
-   - `python scripts/agent_find.py "<pattern>" --dir pc_agent`
-6. Identify likely root cause before editing:
+4. Identify likely root cause before editing:
    - failing component
    - immediate cause
    - deeper cause if visible
    - why the old behavior was wrong
    - why the proposed fix is minimal
-7. Make the smallest correct fix.
-8. Add or update regression coverage when realistic.
-9. Verify in increasing scope: targeted check, affected-surface check, workspace sanity, and browser/GUI/remote check when applicable.
+5. Make the smallest correct fix.
+6. Add or update regression coverage when realistic.
+7. Verify in increasing scope: targeted check, affected-surface check, workspace sanity, and browser/GUI/remote check when applicable.
 
 ## Rules
 

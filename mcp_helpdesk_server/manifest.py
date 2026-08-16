@@ -8,8 +8,6 @@ MODE = "debug_readonly"
 
 TOOL_NAMES = [
     "helpdesk_db_health",
-    "helpdesk_context_search",
-    "helpdesk_context_freshness",
     "helpdesk_locate",
     "observer_debug_bundle",
     "observer_trace_detail",
@@ -51,7 +49,6 @@ def get_manifest() -> dict[str, Any]:
                 "DATABASE_URL",
                 "MCP_HELPDESK_MODE",
                 "MCP_HELPDESK_MAX_ROWS",
-                "MCP_HELPDESK_CONTEXT_INDEX_PATH",
             ],
             "tools": TOOL_NAMES,
             "modes": {MODE: MUTATION_FLAGS},

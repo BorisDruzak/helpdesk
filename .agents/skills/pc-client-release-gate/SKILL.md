@@ -28,7 +28,6 @@ Typical triggers: release, deploy, full gate, preflight, RC, release candidate, 
 2. Confirm candidate state: branch, SHA, dirty/untracked files, whether candidate is frozen, and whether the user explicitly requested full gate.
 3. Read relevant docs when available:
    - `docs/CODEX_WORKFLOW.md`
-   - `docs/QUICK_LOOKUP.md`
    - `docs/ARCHITECTURE_BOUNDARIES.md`
    - `docs/LOCAL_WORKFLOW.md`
    - `docs/LIVE_TESTING_DEBUG_RULES.md`

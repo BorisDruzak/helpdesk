@@ -313,7 +313,6 @@ git commit -m "server: remove local Knowledge platform runtime"
 - Modify: server/docs/TICKET_SYSTEM.md
 - Modify: server/docs/SERVICE_CATALOG.md
 - Modify: server/docs/REGISTRY_VISIBILITY_FOUNDATION.md
-- Modify: docs/QUICK_LOOKUP.md
 - Modify: docs/ARCHITECTURE_BOUNDARIES.md
 - Modify: server/docs/CODEMAP.md
 - Modify: pc_agent/docs/CODEMAP.md

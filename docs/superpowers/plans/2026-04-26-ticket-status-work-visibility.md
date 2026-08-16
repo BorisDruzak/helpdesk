@@ -98,7 +98,7 @@ Add new tables:
 - `webapp/src/pages/tickets/detail-page.tsx`: requester view with public status mapping and next action.
 - `server/ticket.js`: legacy requester shell parity.
 - `pc_agent/ui_gui/ticket_format.py`, `pc_agent/ui_gui/chat_panel.py`, `pc_agent/ui_gui/server_api.py`: local requester GUI status mapping and confirmation flow.
-- `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `docs/ARCHITECTURE_BOUNDARIES.md`: docs sync.
+- `server/docs/TICKET_SYSTEM.md`, `server/docs/CODEMAP.md`, `docs/ARCHITECTURE_BOUNDARIES.md`: docs sync.
 
 ---
 
@@ -106,7 +106,6 @@ Add new tables:
 
 **Files:**
 - Read: `AGENTS.md`
-- Read: `docs/QUICK_LOOKUP.md`
 - Read: `docs/ARCHITECTURE_BOUNDARIES.md`
 - Read: `server/docs/TICKET_SYSTEM.md`
 - Read: `server/docs/OBSERVER_LAYER.md`
@@ -122,12 +121,11 @@ Run:
 
 Expected: output contains `PowerShell UTF-8 bootstrap applied.`
 
-- [ ] **Step 2: Refresh task intake**
+- [ ] **Step 2: Refresh relevant documentation**
 
 Run:
 
 ```powershell
-python scripts/task_intake.py --task "ticket status lifecycle next_action_owner requester status mapping evidence closure passport support visibility live testing"
 ```
 
 Expected: output names ticket/helpdesk, web boundary, docs and verification targets.
@@ -721,9 +719,7 @@ Expected: pass.
 - Modify: `server/docs/CODEMAP.md`
 - Modify: `server/docs/OBSERVER_LAYER.md`
 - Modify: `server/docs/OBSERVER_AUTHORING_RULES.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Modify: `docs/ARCHITECTURE_BOUNDARIES.md`
-- Modify: `scripts/navigation_catalog.py`
 - Modify: `PLANS.md`
 
 - [ ] **Step 1: Update ticket system doc**
@@ -746,7 +742,7 @@ Document that ticket-root traces include lifecycle, waits, evidence and operatio
 
 - [ ] **Step 3: Update navigation**
 
-Ensure `task_intake.py` and context search route future ticket-status tasks to:
+Ensure the relevant ticket documentation lists:
 
 - `server/tickets/statuses.py`
 - `server/tickets/workflow_service.py`

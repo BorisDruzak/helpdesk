@@ -19,26 +19,15 @@ Root `AGENTS.md` still applies.
 
 ## Local context
 
-Before non-trivial webapp edits, consult available project routing docs:
+Before non-trivial webapp edits, consult only the relevant frontend documentation:
 
-- `docs/QUICK_LOOKUP.md`
 - `docs/CODEX_WORKFLOW.md`
-- `docs/CONTEXT_INDEX.md`
 - `docs/LIVE_TESTING_DEBUG_RULES.md`
-
-Use focused context tools when available:
-
-```powershell
-python scripts/build_context_pack.py --topic "<webapp task>"
-python scripts/search_context_index.py "<route component error symbol>"
-rg "<pattern>" webapp
-```
 
 ## Relevant skills
 
 Use repo-local skills when applicable:
 
-- Context discovery: `.agents/skills/pc-client-context-pack/SKILL.md`
 - Browser validation: `.agents/skills/pc-client-browser-check/SKILL.md`
 - Bugs, regressions, failing tests: `.agents/skills/pc-client-systematic-debug/SKILL.md`
 - Code review: `.agents/skills/pc-client-code-review/SKILL.md`

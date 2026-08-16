@@ -32,7 +32,6 @@ def test_release_relevant_dirty_entries_ignores_generated_artifacts() -> None:
     assert preflight.release_relevant_dirty_entries(
         [
             "?? artifacts/ui_audit_2026-05-19/report.md",
-            "?? artifacts\\context_index\\pc_client.sqlite",
             " M scripts/release_server_to_remote.py",
         ]
     ) == [" M scripts/release_server_to_remote.py"]

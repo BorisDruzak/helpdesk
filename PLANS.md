@@ -164,10 +164,7 @@ Phase 1 fixes follow this order. P2 items in the same area may be fixed in the w
 
 - Bootstrap UTF-8 and rebuild stale context:
   `.\scripts\bootstrap_shell_utf8.ps1`
-  `python scripts/build_context_index.py --force`
 - Run intake and focused context:
-  `python scripts/task_intake.py --task "known helpdesk bug remediation live detection"`
-  `python scripts/build_context_pack.py --topic "known helpdesk bug remediation live detection"`
 - Record exact local commit, deployed commit, branch, expected schema head, actual schema head, environment and release run id.
 - Collect a read-only DB report for:
   case-colliding UI logins, UI accounts without verified `ui_login`, ambiguous person-to-web-account links, closed tickets with active public sessions, consumed pairings without account session, approved login requests without deliverable secret, duplicate event/message IDs, `in_progress` without assignee, queue/OLA mismatch.
@@ -562,10 +559,6 @@ Use these as the default command set, narrowing by phase where appropriate.
 
 ```powershell
 .\scripts\bootstrap_shell_utf8.ps1
-python scripts/task_intake.py --task "known helpdesk bug remediation live detection"
-python scripts/build_context_index.py --force
-python scripts/build_context_pack.py --topic "known helpdesk bug remediation live detection"
-python scripts/search_context_index.py "known bug registry live evidence observer release gate" --profile contract
 python scripts/verify_workspace.py
 ```
 

@@ -109,7 +109,7 @@ def classify_doc(path: Path) -> str:
         return "canonical"
     if any(marker in stem for marker in HISTORICAL_NAME_MARKERS):
         return "historical"
-    if name in {"readme.md", "quick_lookup.md", "local_workflow.md"}:
+    if name in {"readme.md", "local_workflow.md"}:
         return "canonical"
     return "canonical"
 

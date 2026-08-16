@@ -228,11 +228,9 @@ Candidate listing (`GET /api/modules/{module_name}/{version}/live_test_candidate
 - `server/docs/OBSERVER_AUTHORING_RULES.md`
 - `server/docs/CODEMAP.md`
 - `pc_agent/docs/CODEMAP.md`
-- `docs/QUICK_LOOKUP.md`
 
 Если меняется routing/навигация или playbook:
 
-- `scripts/navigation_catalog.py`
 - Codex skill `pc-client-observer-diagnostics`
 
 Observer нельзя считать завершённым, если код уже поменяли, а canonical docs ещё нет.

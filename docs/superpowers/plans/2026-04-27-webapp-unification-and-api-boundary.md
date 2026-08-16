@@ -34,7 +34,6 @@
   - `server/tests/test_static_pages_handlers.py`
   - targeted API tests for any new `server/web_api` requester handlers.
 - Update docs:
-  - `docs/QUICK_LOOKUP.md`
   - `server/docs/CODEMAP.md`
   - `server/docs/SECURITY_AND_AUTH.md`
   - `docs/WEBAPP_CUTOVER_CHECKLIST.md`
@@ -352,7 +351,6 @@ Expected: admin/support/login remain active; help/ticket report requested/active
 
 **Files:**
 - Modify: `docs/WEBAPP_CUTOVER_CHECKLIST.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 
 - [ ] **Step 1: Produce current API inventory**
 

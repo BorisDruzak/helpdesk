@@ -1,14 +1,13 @@
 # CODEMAP (pc_agent)
 
-Карта кода `pc_client/pc_agent`. Используется для быстрой навигации и поиска (в т.ч. скрипт `scripts/agent_find.py` и контекст агента). Пути указаны относительно корня репозитория (например `pc_agent/ws_agent.py`).
+Карта кода `pc_client/pc_agent`. Пути указаны относительно корня репозитория (например `pc_agent/ws_agent.py`).
 
 ---
 
 ## 0. Операционный старт
 
-- Если задача начинается с diff, сначала выполните `python scripts/diff_context.py`.
-- Если тема пересекает сервер и агент или неясно, где вход, откройте `docs/QUICK_LOOKUP.md`.
-- Для точечного поиска по агенту используйте `python scripts/agent_find.py "<ключевое слово>" --dir pc_agent`.
+- При работе от diff сначала определите затронутые файлы через `git diff --name-status`.
+- Если тема пересекает сервер и агент или неясно, где вход, откройте только профильные protocol/runtime docs.
 - Если тема касается observer, module breadcrumbs, update trace или action-trace bridge, дополнительно откройте `server/docs/OBSERVER_LAYER.md` и `server/docs/OBSERVER_AUTHORING_RULES.md`.
 
 ### Truth baseline
@@ -159,7 +158,7 @@ Protocol V3 is unchanged. The Qt client continues the Service Catalog/form ticke
 
 ## 3. Быстрый поиск (ключевое слово → файлы)
 
-Используйте поиск по документу, `docs/QUICK_LOOKUP.md` или `scripts/agent_find.py <ключевое_слово> --dir pc_agent`. Ниже — куда смотреть в первую очередь.
+Используйте поиск по документу. Ниже — куда смотреть в первую очередь.
 
 - **handshake, protocol_version, ws_ticket_v3** — `ws_agent.py`, `docs/PROTOCOL_V3.md`; handshake diagnostics log the current `PROTOCOL_VERSION` value and must not mention legacy `ws_mcp_v1`; raw diagnostic probes use `client_kind=diagnostic_probe`, while the real agent remains `agent_runtime`
 - **outbox, outbox_ack, ACK/NACK** — `core/sender.py`, `core/database.py`, `docs/SENDER.md`

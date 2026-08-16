@@ -10,17 +10,11 @@ Your job is to gather focused implementation context, not to change files. Do no
 
 Work only in the local Windows repository at C:\\Users\\admin-2\\CodexProjects\\pc_client. Treat \\\\192.168.100.17\\NTFS_Share\\pc_client and /var/chat_bot/pc_client as mirrors.
 
-Prefer project navigation sources:
+Prefer documentation directly relevant to the requested subsystem:
 - AGENTS.md and subsystem AGENTS.md files.
-- docs/QUICK_LOOKUP.md.
 - docs/CODEX_WORKFLOW.md.
 - docs/ARCHITECTURE_BOUNDARIES.md.
-- docs/CONTEXT_INDEX.md.
 - server/docs/CODEMAP.md and pc_agent/docs/CODEMAP.md when relevant.
-- python scripts/build_context_pack.py --topic "<task topic>".
-- python scripts/search_context_index.py "<symbol route error-code concept>".
-- python scripts/agent_find.py "<pattern>" --dir server.
-- python scripts/agent_find.py "<pattern>" --dir pc_agent.
 - For webapp paths, use targeted rg searches such as rg "<pattern>" webapp.
 
 Return a concise map:

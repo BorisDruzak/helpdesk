@@ -70,7 +70,7 @@ git commit -m "server: add neutral requester snapshots"
 - Modify: server/tickets/account_access_service.py, server/consent/service.py
 - Modify: server/consent/operation_consent.py, server/requester/identity_service.py
 - Modify: server/web_api/requester_handlers.py
-- Modify: docs/QUICK_LOOKUP.md, server/docs/CODEMAP.md
+- Modify: server/docs/CODEMAP.md
 - Test: server/tests/test_ticket_registration_enrichment.py
 - Test: server/tests/test_ticket_account_access.py, server/tests/test_user_consent_api.py
 
@@ -109,7 +109,7 @@ Build snapshots only from verified server account/binding state, never from HTTP
 Run: python -m pytest server/tests/test_ticket_registration_enrichment.py server/tests/test_ticket_account_access.py server/tests/test_user_consent_api.py server/tests/test_requester_workspace_api.py -q --tb=short; python scripts/docs_drift_check.py --base <task-base> --json
 
 ~~~powershell
-git add server/tickets server/consent server/requester/identity_service.py server/tests/test_ticket_registration_enrichment.py server/tests/test_ticket_account_access.py server/tests/test_user_consent_api.py server/tests/test_requester_workspace_api.py docs/QUICK_LOOKUP.md server/docs/CODEMAP.md
+git add server/tickets server/consent server/requester/identity_service.py server/tests/test_ticket_registration_enrichment.py server/tests/test_ticket_account_access.py server/tests/test_user_consent_api.py server/tests/test_requester_workspace_api.py server/docs/CODEMAP.md
 git commit -m "server: persist requester references independently"
 ~~~
 
@@ -295,7 +295,7 @@ git commit -m "server: add RegistryPort shadow reads"
 **Files:**
 
 - Create: server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md
-- Modify: server/docs/REGISTRY_PLATFORM_API_V1.md, docs/QUICK_LOOKUP.md, server/docs/CODEMAP.md
+- Modify: server/docs/REGISTRY_PLATFORM_API_V1.md, server/docs/CODEMAP.md
 - Test: server/tests/test_registry_commands_api_docs.py
 
 **Interfaces:** documents the minimum external Registry command/eligibility surface required before any authority changes: UI-login eligibility, registration request/approve/reject/bind/revoke, session create/validate/logout/revoke and exactly-once delivery, browser pairing create/lookup/confirm/pickup, and other-account approval. Every command requires trusted actor context, an operation idempotency key, correlation ID, replay semantics, typed availability and authorization errors. No runtime feature flag changes; no external authority is enabled.
@@ -319,7 +319,7 @@ Do not add a command transport implementation or enable any cutover flag. Add ex
 Run: python -m pytest server/tests/test_registry_commands_api_docs.py server/tests/test_segmentation_docs.py -q --noconftest
 
 ~~~powershell
-git add server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md server/docs/REGISTRY_PLATFORM_API_V1.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md server/tests/test_registry_commands_api_docs.py
+git add server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md server/docs/REGISTRY_PLATFORM_API_V1.md server/docs/CODEMAP.md server/tests/test_registry_commands_api_docs.py
 git commit -m "docs: specify Registry command API acceptance"
 ~~~
 
@@ -437,7 +437,7 @@ git commit -m "scripts: add Registry retirement preflight"
 - Modify: server/customer_history/sources.py, server/customer_history/projection_service.py
 - Modify: scripts/check_domain_import_boundaries.py, server/tests/test_domain_import_boundaries.py
 - Test: server/tests/test_customer_history_projection.py, server/tests/test_customer_history_context_builder.py, server/tests/test_registry_boundary.py
-- Modify: docs/QUICK_LOOKUP.md, server/docs/CODEMAP.md, server/docs/SEGMENTATION_BOUNDARIES.md
+- Modify: server/docs/CODEMAP.md, server/docs/SEGMENTATION_BOUNDARIES.md
 
 **Interfaces:** consumes `RegistryPort.requester_history()` with a trusted server-side `RegistryReadActor`, then projects its redacted events to the existing customer-history API shape. `unavailable`, `not_found` and `invalid` become typed degraded source states; no direct Registry ORM/session fallback is allowed. This task does not change ticket history queries, auth/session/registration commands, or external authority.
 
@@ -453,7 +453,7 @@ git commit -m "scripts: add Registry retirement preflight"
 - Modify: server/customer_history/projection_service.py, server/customer_history/context_builder.py, server/customer_history/sources.py, server/customer_history/handlers.py
 - Modify: server/tickets/ticket_context.py only if existing neutral/legacy scope helpers need reuse
 - Test: server/tests/test_customer_history_projection.py, server/tests/test_customer_history_context_builder.py, server/tests/test_registry_boundary.py
-- Modify: server/docs/TICKET_SYSTEM.md, server/docs/CODEMAP.md, server/docs/SEGMENTATION_BOUNDARIES.md, docs/QUICK_LOOKUP.md
+- Modify: server/docs/TICKET_SYSTEM.md, server/docs/CODEMAP.md, server/docs/SEGMENTATION_BOUNDARIES.md
 
 **Interfaces:** treats a history subject as an opaque `RequesterRef.external_id`, not a local Registry primary key. Canonical tickets match only a valid neutral pair and exact `requester_external_ref`; legacy fallback matches only legacy-scoped `requester_person_id`. `Ticket.requester_id` is never a person-history alias. Requester-derived ref remains server verified; malformed neutral data matches neither path.
 
@@ -474,7 +474,7 @@ git commit -m "scripts: add Registry retirement preflight"
 - Modify: `server/registry_adapter/local.py`, `server/registry_adapter/http.py`, `server/docs/REGISTRY_PLATFORM_API_V1.md`
 - Modify: `server/tickets/ticket_context.py`, `scripts/check_domain_import_boundaries.py`
 - Test: `server/tests/test_registry_port_rich_projections.py`, `server/tests/test_registry_http_adapter.py`, `server/tests/test_registry_shadow_read.py`, `server/tests/test_ticket_context_builder.py`, `server/tests/test_domain_import_boundaries.py`
-- Modify only as needed for contract drift: `docs/QUICK_LOOKUP.md`, `server/docs/CODEMAP.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `docs/ARCHITECTURE_BOUNDARIES.md`, `scripts/navigation_catalog.py`
+- Modify only as needed for contract drift: `server/docs/CODEMAP.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `docs/ARCHITECTURE_BOUNDARIES.md`
 
 **Interfaces:** adds an immutable, purpose-bound `TicketParticipantProjection` for an existing ticket-context snapshot. It returns exactly the already persisted participant fields: opaque person ref, display name, full name, email, and opaque department/location refs, plus local/external source; no local numeric IDs, identities, bindings, assets, sessions, or policy metadata. Local and HTTP/shadow adapters distinguish unavailable, missing and malformed outcomes. `TicketContextBuilder.build()` loads creator and affected participants only through the port, validates that returned opaque refs match requested refs, and fails closed on missing/unavailable/invalid projection; it preserves the existing `ticket_context_v1` and flat-field behavior. It removes the direct `RegistryPerson` import/allowance, but deliberately retains the separate `PrimaryAgentResolver` debt until its own richer diagnostic-target contract is accepted. The external HTTP endpoint is service-to-service only and must validate an exact envelope before Helpdesk adds its source marker.
 
@@ -507,7 +507,7 @@ Use frozen DTOs and existing opaque-ref validation. Keep all existing ticket-con
 Run: `python -m pytest server/tests/test_registry_port.py server/tests/test_registry_port_rich_projections.py server/tests/test_registry_http_adapter.py server/tests/test_registry_shadow_read.py server/tests/test_ticket_context_builder.py server/tests/test_domain_import_boundaries.py -q --tb=short`; `python scripts/check_domain_import_boundaries.py --workspace . --registry-scope requester,tickets,customer_history,inventory,web_api,tech`; `python scripts/docs_drift_check.py --base <task-base> --json`
 
 ```powershell
-git add server/domain_ports server/registry_adapter server/tickets/ticket_context.py scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md server/docs/SEGMENTATION_BOUNDARIES.md docs/ARCHITECTURE_BOUNDARIES.md scripts/navigation_catalog.py docs/superpowers/plans/2026-08-10-registry-port-cutover-and-retirement.md
+git add server/domain_ports server/registry_adapter server/tickets/ticket_context.py scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md server/docs/CODEMAP.md server/docs/SEGMENTATION_BOUNDARIES.md docs/ARCHITECTURE_BOUNDARIES.md docs/superpowers/plans/2026-08-10-registry-port-cutover-and-retirement.md
 git commit -m "server: route ticket participants through RegistryPort"
 ```
 
@@ -519,7 +519,7 @@ git commit -m "server: route ticket participants through RegistryPort"
 - Modify: `server/registry_adapter/local.py`, `server/registry_adapter/http.py`, `server/docs/REGISTRY_PLATFORM_API_V1.md`
 - Modify: `server/web_api/requester_handlers.py`, `scripts/check_domain_import_boundaries.py`
 - Test: `server/tests/test_registry_port_rich_projections.py`, `server/tests/test_registry_http_adapter.py`, `server/tests/test_registry_shadow_read.py`, `server/tests/test_requester_workspace_api.py`, `server/tests/test_domain_import_boundaries.py`
-- Modify only as needed for contract drift: `docs/QUICK_LOOKUP.md`, `server/docs/CODEMAP.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `docs/ARCHITECTURE_BOUNDARIES.md`, `scripts/navigation_catalog.py`, `server/docs/REQUEST_FORM_BUILDER.md`
+- Modify only as needed for contract drift: `server/docs/CODEMAP.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `docs/ARCHITECTURE_BOUNDARIES.md`, `server/docs/REQUEST_FORM_BUILDER.md`
 
 **Interfaces:** adds purpose-bound, actor-scoped RegistryPort operations for requester on-behalf candidates and authorization. They accept a verified `RegistryReadActor`, an opaque creator `RequesterRef`, a server-owned on-behalf policy snapshot and either a bounded search query or affected `RequesterRef`; they return only the existing requester-facing candidate fields (opaque person/dept/location refs, display/full name, email, department/location labels) and typed allowed/denied/not-found/invalid/unavailable decisions. The adapter owns lifecycle, same-department, direct-report and exact-search policy evaluation; generic `search_people()` remains support/admin-only. The caller must build actor/policy only from authenticated context and resolved server form policy, never client role or policy body. The external HTTP endpoints validate exact envelopes before Helpdesk adds source markers; shadow remains read-only. `requester_handlers.py` must no longer directly query Registry people/departments/locations for the on-behalf path, but may retain unrelated explicit requester-identity debt. Primary-agent status remains a separate deferred resolver dependency and must not be falsely marked migrated.
 
@@ -560,7 +560,7 @@ Preserve current inactive exclusion, exact-vs-substring rules, SQL ordering/boun
 Run: `python -m pytest server/tests/test_registry_port_rich_projections.py server/tests/test_registry_http_adapter.py server/tests/test_registry_shadow_read.py server/tests/test_requester_workspace_api.py server/tests/test_domain_import_boundaries.py -q --tb=short`; `python scripts/check_domain_import_boundaries.py --workspace . --registry-scope requester,tickets,customer_history,inventory,web_api,tech`; `python scripts/docs_drift_check.py --base <task-base> --json`
 
 ```powershell
-git add server/domain_ports server/registry_adapter server/web_api/requester_handlers.py scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md docs/QUICK_LOOKUP.md server/docs/CODEMAP.md server/docs/SEGMENTATION_BOUNDARIES.md docs/ARCHITECTURE_BOUNDARIES.md server/docs/REQUEST_FORM_BUILDER.md scripts/navigation_catalog.py docs/superpowers/plans/2026-08-10-registry-port-cutover-and-retirement.md
+git add server/domain_ports server/registry_adapter server/web_api/requester_handlers.py scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md server/docs/CODEMAP.md server/docs/SEGMENTATION_BOUNDARIES.md docs/ARCHITECTURE_BOUNDARIES.md server/docs/REQUEST_FORM_BUILDER.md docs/superpowers/plans/2026-08-10-registry-port-cutover-and-retirement.md
 git commit -m "server: route requester on-behalf reads through RegistryPort"
 ```
 

@@ -10,10 +10,8 @@ Audit consistency between changed code/config and the canonical docs. Do not edi
 
 Check the relevant surfaces:
 - root AGENTS.md and subsystem AGENTS.md files;
-- docs/QUICK_LOOKUP.md;
 - docs/CODEX_WORKFLOW.md;
 - docs/ARCHITECTURE_BOUNDARIES.md;
-- docs/CONTEXT_INDEX.md;
 - docs/agent/*.md;
 - server/docs/CODEMAP.md;
 - pc_agent/docs/CODEMAP.md;

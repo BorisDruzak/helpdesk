@@ -174,15 +174,10 @@ def test_server_codemap_limits_knowledge_to_external_boundary_and_history() -> N
 
 def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
     database_lines = (DOCS_ROOT / "DATABASE.md").read_text(encoding="utf-8").splitlines()
-    quick_lookup_lines = Path("docs/QUICK_LOOKUP.md").read_text(encoding="utf-8").splitlines()
     web_first_lines = Path("docs/WEB_FIRST_REGISTRATION_UX_CONTRACT.md").read_text(
         encoding="utf-8"
     ).splitlines()
-    canonical_text = "\n".join((*database_lines, *quick_lookup_lines, *web_first_lines))
-
-    for line_number, line in enumerate(quick_lookup_lines, start=1):
-        if "knowledge" in line.casefold():
-            assert line_number <= 11, line
+    canonical_text = "\n".join((*database_lines, *web_first_lines))
 
     assert not any("knowledge" in line.casefold() for line in web_first_lines)
 
@@ -192,7 +187,7 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
     assert "external-content" not in canonical_text
     assert "draft context" not in canonical_text.casefold()
 
-    for line in (*quick_lookup_lines, *database_lines):
+    for line in database_lines:
         assert re.search(r"\bKB\b", line) is None, line
         assert "kb_linked" not in line and "kb_unlinked" not in line, line
         if "kb_links" in line:
@@ -240,11 +235,6 @@ def test_canonical_docs_do_not_advertise_local_knowledge_flows() -> None:
 
 def test_observer_docs_do_not_advertise_retired_requester_knowledge_events() -> None:
     authoring_rules = (DOCS_ROOT / "OBSERVER_AUTHORING_RULES.md").read_text(encoding="utf-8")
-    navigation_catalog = Path("scripts/navigation_catalog.py").read_text(encoding="utf-8")
-    observer_topic = navigation_catalog.split('key="observer"', maxsplit=1)[1].split(
-        "    Topic(", maxsplit=1
-    )[0]
-
     for retired_event in (
         "requester_knowledge",
         "knowledge_suggest_succeeded",
@@ -252,4 +242,3 @@ def test_observer_docs_do_not_advertise_retired_requester_knowledge_events() -> 
         "knowledge_attempt_guard_succeeded",
     ):
         assert retired_event not in authoring_rules
-        assert retired_event not in observer_topic

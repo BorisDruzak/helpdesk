@@ -11,7 +11,6 @@ from mcp.types import TextContent, Tool
 
 from .manifest import SERVER_NAME, get_manifest
 from .schemas import TOOL_SCHEMAS, controlled_error, redact_and_bound, validate_tool_schemas
-from .tools.context_tools import helpdesk_context_freshness, helpdesk_context_search
 from .tools.db_tools import helpdesk_db_health
 from .tools.observer_tools import observer_debug_bundle, observer_ticket_summary, observer_trace_detail
 from .tools.runtime_tools import observer_presence_snapshot, observer_runtime_status
@@ -23,8 +22,6 @@ server = Server(SERVER_NAME)
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
     "helpdesk_db_health": helpdesk_db_health,
-    "helpdesk_context_search": helpdesk_context_search,
-    "helpdesk_context_freshness": helpdesk_context_freshness,
     "helpdesk_locate": helpdesk_locate,
     "observer_debug_bundle": observer_debug_bundle,
     "observer_trace_detail": observer_trace_detail,
@@ -81,8 +78,6 @@ async def main() -> None:
 def _tool_description(name: str) -> str:
     descriptions = {
         "helpdesk_db_health": "Read-only PostgreSQL reachability check through project DB bootstrap.",
-        "helpdesk_context_search": "Search the deterministic local Context Index without shelling out.",
-        "helpdesk_context_freshness": "Report Context Index freshness; does not rebuild.",
         "helpdesk_locate": "Locate ticket, device, operation or trace context from DB evidence.",
         "observer_debug_bundle": "Build a bounded read-only observer debug bundle for one locator input.",
         "observer_trace_detail": "Return observer trace detail from the service layer.",

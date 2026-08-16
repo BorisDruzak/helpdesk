@@ -11,13 +11,10 @@
   "optional_env": [
     "DATABASE_URL",
     "MCP_HELPDESK_MODE",
-    "MCP_HELPDESK_MAX_ROWS",
-    "MCP_HELPDESK_CONTEXT_INDEX_PATH"
+    "MCP_HELPDESK_MAX_ROWS"
   ],
   "tools": [
     "helpdesk_db_health",
-    "helpdesk_context_search",
-    "helpdesk_context_freshness",
     "helpdesk_locate",
     "observer_debug_bundle",
     "observer_trace_detail",

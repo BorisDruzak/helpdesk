@@ -60,7 +60,6 @@
   New runtime responsibilities and queue components.
 - `pc_agent/docs/CODEMAP.md`
   New scheduler/runtime boundaries.
-- `docs/QUICK_LOOKUP.md`
   Updated navigation hints for reconnect safety, command waiters, scheduler, and priority dispatch.
 
 ## Test inventory to add or extend
@@ -556,7 +555,6 @@ git commit -m "feat: add negotiated outbox batch transport"
 - Modify: `pc_agent/docs/PROTOCOL_V3.md`
 - Modify: `server/docs/CODEMAP.md`
 - Modify: `pc_agent/docs/CODEMAP.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Modify: `PLANS.md`
 
 - [ ] **Step 1: Update protocol and navigation docs after the code phases land**
@@ -647,7 +645,7 @@ Expected: logs show no new reconnect/waiter regressions, and the server is stopp
 - [ ] **Step 9: Commit the docs + verification handoff**
 
 ```bash
-git add server/docs/PROTOCOL_V3.md pc_agent/docs/PROTOCOL_V3.md server/docs/CODEMAP.md pc_agent/docs/CODEMAP.md docs/QUICK_LOOKUP.md PLANS.md
+git add server/docs/PROTOCOL_V3.md pc_agent/docs/PROTOCOL_V3.md server/docs/CODEMAP.md pc_agent/docs/CODEMAP.md PLANS.md
 git commit -m "docs: sync contract hardening plan and protocol notes"
 ```
 

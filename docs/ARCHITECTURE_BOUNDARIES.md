@@ -8,12 +8,10 @@
 
 Перед изменением кода агент должен:
 
-1. Открыть `docs/CODEX_WORKFLOW.md`, `docs/QUICK_LOOKUP.md`, `docs/CONTEXT_INDEX.md` и соответствующий CODEMAP.
-2. Выбрать рабочий режим Codex: Explore, Debug, Plan, Execute, Feature, Contract, Verify, Commit или Deploy.
-3. Выполнить точечный `python scripts/search_context_index.py "<символ route error-code concept>"`, чтобы быстро найти связанные docs/routes/symbols.
-4. Найти затронутую ownership zone в этом документе.
-5. Проверить, не меняется ли contract surface из раздела ниже.
-6. Если меняется contract surface, считать задачу cross-cutting: обновить связанные docs/CODEMAP, расширить тесты и не вести параллельно независимую на вид задачу в соседней зоне без явной проверки.
+1. Открыть только соответствующий CODEMAP и профильные документы.
+2. Найти затронутую ownership zone в этом документе.
+3. Проверить, не меняется ли contract surface из раздела ниже.
+4. Если меняется contract surface, считать задачу cross-cutting: обновить связанные docs/CODEMAP, расширить тесты и не вести параллельно независимую на вид задачу в соседней зоне без явной проверки.
 
 Короткое решение:
 
@@ -26,7 +24,7 @@
 
 ```mermaid
 flowchart TB
-    Docs["Docs / Navigation<br/>AGENTS, QUICK_LOOKUP, CODEMAP, navigation_catalog"]
+    Docs["Docs<br/>AGENTS, CODEMAP, профильные спецификации"]
 
     Web["Web UI<br/>webapp + legacy admin/support"]
     Gui["Agent GUI<br/>pc_agent/ui_gui + ui_bridge"]
@@ -82,7 +80,7 @@ flowchart TB
 
 | Zone | Primary files | Owns | Public boundary | Typical checks |
 |---|---|---|---|---|
-| Project workflow and navigation | `AGENTS.md`, `docs/CODEX_WORKFLOW.md`, `docs/QUICK_LOOKUP.md`, `docs/CONTEXT_INDEX.md`, `docs/README.md`, `scripts/navigation_catalog.py`, `scripts/task_intake.py`, `scripts/context_index.py`, `scripts/search_context_index.py`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md` | How agents find context, required docs, drift rules, recommended checks and retrieval | Human and machine workflow contract | `python scripts/task_intake.py --task "<task>"`, `python scripts/search_context_index.py "<query>"`, `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` |
+| Project workflow | `AGENTS.md`, `docs/CODEX_WORKFLOW.md`, `docs/README.md`, `server/docs/CODEMAP.md`, `pc_agent/docs/CODEMAP.md` | Project workflow, relevant documentation, and verification | Human workflow contract | `python scripts/docs_inventory.py --check-links`, `python scripts/verify_workspace.py` |
 | Server startup and routes | `server/server.py`, `server/routes.py`, `server/config.py`, `server/static_pages/*` | aiohttp app, route registration, startup/shutdown, static SPA/legacy shells | HTTP/WS route table, feature flags, runtime startup behavior | `python scripts/verify_workspace.py`, route/API tests, browser check for UI routes |
 | Typed web boundary | `server/web_api/*`, `server/web_api/dto/*`, `webapp/src/features/*/api.ts`, `webapp/src/shared/realtime/*` | Stable payloads for React workspaces and web session/realtime bootstrap | `/api/web/*` DTO shape, httpOnly session behavior, `/ws_ui` bootstrap contract | server web API tests, webapp type/build checks, remote browser signoff for visible changes |
 | Legacy web UI | `server/admin.*`, `server/support.*`, `server/ticket.*`, `server/help.*`, `server/web_shared.js` | Legacy admin/support/ticket/requester shells | Legacy endpoints, DOM contracts used by browser checks, shared JS helpers | browser check at `https://192.168.100.17:9443/admin`, relevant server tests |
@@ -282,7 +280,7 @@ Start with:
 - `webapp/src/features/admin/*`
 - `webapp/src/pages/admin/*`
 
-If the field reflects a new domain rule, also update the owning server domain docs/tests. If it changes route shape, update `server/routes.py`, `docs/QUICK_LOOKUP.md` and `server/docs/CODEMAP.md`.
+If the field reflects a new domain rule, also update the owning server domain docs/tests. If it changes route shape, update `server/routes.py` and `server/docs/CODEMAP.md`.
 
 ### Changing handshake identity
 
@@ -340,14 +338,14 @@ If work must proceed in parallel, split by branch/worktree and merge the contrac
 
 Update documentation in the same cycle as code when these change:
 
-- Structure, key entrypoints or route registration: update the relevant CODEMAP and `docs/QUICK_LOOKUP.md`.
+- Structure, key entrypoints or route registration: update the relevant CODEMAP.
 - Protocol V3 behavior: update both protocol docs and both CODEMAPs if entrypoints changed.
 - Module manifest, authoring, publish, preflight or runtime contract: update `server/docs/MODULES_API.md`, `server/docs/MODULE_AUTHORING_RULES.md`, `server/docs/RUNTIME_EXECUTION_CONTRACT.md`, `pc_agent/docs/MODULES.md` as applicable.
 - Observer, dangerous flow, trace-visible API or tech/support trace UI: update `server/docs/OBSERVER_LAYER.md` and `server/docs/OBSERVER_AUTHORING_RULES.md`.
 - Auth or identity: update `server/docs/SECURITY_AND_AUTH.md` and `pc_agent/docs/AUTHENTICATION.md`.
 - Agent update or launcher flow: update `pc_agent/docs/AGENT_UPDATE_WORKFLOW.md`, `pc_agent/docs/SELF_UPDATE.md`, `server/docs/AGENT_UPDATES_API.md`.
 - Release/deploy/browser verification flow: update `docs/LOCAL_WORKFLOW.md`, `docs/WEBAPP_CUTOVER_CHECKLIST.md` or release scripts docs.
-- Navigation/workflow/retrieval rules: update `AGENTS.md`, `docs/CODEX_WORKFLOW.md`, `docs/QUICK_LOOKUP.md`, `docs/CONTEXT_INDEX.md`, `docs/README.md`, `scripts/navigation_catalog.py` and this document if boundaries or retrieval rules change.
+- Workflow rules: update `AGENTS.md`, `docs/CODEX_WORKFLOW.md`, `docs/README.md`, and this document if boundaries or workflow rules change.
 
 ## Pre-Edit Checklist
 

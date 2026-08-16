@@ -30,7 +30,7 @@
 
 ## Скиллы проекта
 
-Проектный канон живёт в `AGENTS.md`, `docs/QUICK_LOOKUP.md`, `docs/LOCAL_WORKFLOW.md`, `scripts/navigation_catalog.py` и профильных docs рядом с кодом. User-level Codex skills в `C:\Users\admin-2\.codex\skills` — вспомогательные подсказки для Codex Desktop; они помогают быстро выбрать workflow, но не заменяют проектную документацию.
+Проектный канон живёт в `AGENTS.md`, `docs/LOCAL_WORKFLOW.md` и профильных docs рядом с кодом. User-level Codex skills в `C:\Users\admin-2\.codex\skills` — вспомогательные подсказки для Codex Desktop; они не заменяют проектную документацию.
 
 - **pc-client-plans** — ведение `PLANS.md` для длинных задач и handoff.
 - **pc-client-tests** — какие проверки, pytest, browser/smoke и live-сценарии запускать.

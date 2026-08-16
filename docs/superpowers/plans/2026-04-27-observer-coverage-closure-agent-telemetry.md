@@ -23,7 +23,6 @@ The Linux copy `/var/chat_bot/pc_client` is a deploy/live stand, not the editing
 
 Relevant docs and maps:
 
-- `docs/QUICK_LOOKUP.md`
 - `server/docs/CODEMAP.md`
 - `pc_agent/docs/CODEMAP.md`
 - `server/docs/OBSERVER_LAYER.md`
@@ -37,7 +36,6 @@ Before broad code changes:
 
 ```powershell
 .\scripts\bootstrap_shell_utf8.ps1
-python scripts/task_intake.py --task "observer coverage closure agent telemetry playbook module reconcile web auth diagnostics"
 ```
 
 Before frontend commands:
@@ -324,7 +322,6 @@ Docs:
 - `server/docs/OBSERVER_AUTHORING_RULES.md`
 - `server/docs/CODEMAP.md`
 - `pc_agent/docs/CODEMAP.md`
-- `docs/QUICK_LOOKUP.md`
 - `PLANS.md`
 
 ---
@@ -335,7 +332,6 @@ Docs:
 
 - Create: `server/tests/test_observer_coverage_gaps.py`
 - Modify: `server/docs/OBSERVER_LAYER.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 
 - [ ] **Step 1: Write coverage matrix in docs**
 
@@ -843,7 +839,6 @@ pnpm --dir webapp run build
 - Modify: `server/docs/OBSERVER_AUTHORING_RULES.md`
 - Modify: `server/docs/CODEMAP.md`
 - Modify: `pc_agent/docs/CODEMAP.md`
-- Modify: `docs/QUICK_LOOKUP.md`
 - Create or extend observer canary script under `scripts/`
 
 - [ ] **Step 1: Update docs**
@@ -923,8 +918,6 @@ Start by reading this file, then run:
 
 ```powershell
 .\scripts\bootstrap_shell_utf8.ps1
-python scripts/task_intake.py --task "observer coverage closure agent telemetry"
-Get-Content docs/QUICK_LOOKUP.md
 Get-Content server/docs/OBSERVER_LAYER.md
 Get-Content server/docs/OBSERVER_AUTHORING_RULES.md
 ```

@@ -33,9 +33,7 @@ Typical triggers: docs drift, update docs, CODEMAP, route changed, API changed, 
    - protocol/deploy workflow update required
 3. Check whether changes affect routes/endpoints, API contracts, Protocol V3/messages/lifecycle, startup flow, deploy/release flow, scripts/commands, configuration, architecture boundaries, user-visible behavior, admin/browser workflow, tests/check commands, or troubleshooting/debug procedures.
 4. Read relevant docs when available:
-   - `docs/QUICK_LOOKUP.md`
    - `docs/CODEX_WORKFLOW.md`
-   - `docs/CONTEXT_INDEX.md`
    - `docs/ARCHITECTURE_BOUNDARIES.md`
    - `docs/LIVE_TESTING_DEBUG_RULES.md`
    - `docs/LOCAL_WORKFLOW.md`

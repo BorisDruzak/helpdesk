@@ -320,7 +320,5 @@ Agent action rows в admin tech detail/bundle являются диагност�
 - `server/docs/OBSERVER_AUTHORING_RULES.md`
 - `server/docs/CODEMAP.md`
 - `pc_agent/docs/CODEMAP.md`
-- `docs/QUICK_LOOKUP.md`
-- `scripts/navigation_catalog.py`
 
 Observer docs должны поддерживаться в актуальном состоянии наравне с CODEMAP.

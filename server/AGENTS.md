@@ -19,27 +19,16 @@ Root `AGENTS.md` still applies.
 
 ## Local context
 
-Before non-trivial server edits, consult available project routing docs:
+Before non-trivial server edits, consult only the relevant server documentation:
 
-- `docs/QUICK_LOOKUP.md`
 - `docs/CODEX_WORKFLOW.md`
-- `docs/CONTEXT_INDEX.md`
 - `docs/ARCHITECTURE_BOUNDARIES.md`
 - `server/docs/CODEMAP.md`
-
-Use focused context tools when available:
-
-```powershell
-python scripts/build_context_pack.py --topic "<server task>"
-python scripts/search_context_index.py "<route service error symbol>"
-python scripts/agent_find.py "<pattern>" --dir server
-```
 
 ## Relevant skills
 
 Use repo-local skills when applicable:
 
-- Context discovery: `.agents/skills/pc-client-context-pack/SKILL.md`
 - Bugs, regressions, failing tests: `.agents/skills/pc-client-systematic-debug/SKILL.md`
 - Code review: `.agents/skills/pc-client-code-review/SKILL.md`
 - Docs/CODEMAP drift: `.agents/skills/pc-client-docs-drift/SKILL.md`

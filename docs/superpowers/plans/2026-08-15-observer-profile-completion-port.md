@@ -29,7 +29,7 @@
 - Modify: `server/registry_adapter/local.py`, `server/registry_adapter/http.py`, `server/registry_adapter/shadow.py`
 - Modify: `server/observer/checks/web_cabinet.py`, `server/observer/integrity_service.py`, `scripts/check_domain_import_boundaries.py`
 - Test: `server/tests/test_registry_port_rich_projections.py`, `server/tests/test_registry_http_adapter.py`, `server/tests/test_registry_shadow_read.py`, `server/tests/test_observer_web_cabinet.py`, `server/tests/test_observer_integrity_scan_scope.py`, `server/tests/test_domain_import_boundaries.py`
-- Modify: `server/docs/REGISTRY_PLATFORM_API_V1.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `server/docs/CODEMAP.md`, `docs/QUICK_LOOKUP.md`, `scripts/navigation_catalog.py`
+- Modify: `server/docs/REGISTRY_PLATFORM_API_V1.md`, `server/docs/SEGMENTATION_BOUNDARIES.md`, `server/docs/CODEMAP.md`
 
 **Interfaces:**
 
@@ -101,6 +101,6 @@ Expected: all targeted tests and workspace verification pass; no direct `Registr
 Document the observer-only endpoint/provenance, redacted output, local-shadow authority, and unavailable/invalid integrity behavior. Update navigation drift triggers for the adapter/observer changes. Commit only the scoped implementation, tests, and docs:
 
 ```powershell
-git add server/domain_ports server/registry_adapter server/observer scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md server/docs/SEGMENTATION_BOUNDARIES.md server/docs/CODEMAP.md docs/QUICK_LOOKUP.md scripts/navigation_catalog.py
+git add server/domain_ports server/registry_adapter server/observer scripts/check_domain_import_boundaries.py server/tests server/docs/REGISTRY_PLATFORM_API_V1.md server/docs/SEGMENTATION_BOUNDARIES.md server/docs/CODEMAP.md
 git commit -m "server: route observer profile checks through RegistryPort"
 ```

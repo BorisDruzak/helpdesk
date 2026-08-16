@@ -11,8 +11,6 @@
 **Проверенные файлы:**
 
 - `PLANS.md`
-- `docs/QUICK_LOOKUP.md`
-- `scripts/navigation_catalog.py`
 - `server/tests/test_device_registration_service.py`
 - `server/tests/test_quality_service_catalog_integration.py`
 - `server/web_api/support_handlers.py`
@@ -22,7 +20,7 @@
 1. `server/tests/test_device_registration_service.py` теперь явно выставляет `registration.require_admin_confirmation=true` перед сценарием, который ожидает `pending_admin_review`. Это стабилизирует тестовую политику и не меняет пользовательский кабинет.
 2. `server/tests/test_quality_service_catalog_integration.py` использует bounded окно `now ± 1 hour` для deterministic проверки service/offering quality analytics. Это не меняет requester UI/runtime.
 3. `server/web_api/support_handlers.py` усиливает support/operator observer projection: web-flow/integrity payload handling и operation trace relation metadata. Это support-facing слой, не requester-visible DOM и не динамические формы обращений.
-4. `docs/QUICK_LOOKUP.md` и `scripts/navigation_catalog.py` синхронизируют навигационную документацию; новых пользовательских requester-visible терминов или raw ID leakage в проверенном diff не обнаружено.
+4. Новых пользовательских requester-visible терминов или raw ID leakage в проверенном diff не обнаружено.
 5. Ранее зафиксированная проблема публичной терминологии Service Catalog (`Заявка` вместо `Обращение`) остаётся открытой до отдельного исправления, но в этом диапазоне не появилась новая проверенная requester-scope проблема.
 
 **Приоритет:** P3 для этой записи проверки; дополнительное исправление по проверенному диапазону не требуется.

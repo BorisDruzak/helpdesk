@@ -20,31 +20,22 @@ For any non-trivial task:
    - `.\scripts\bootstrap_shell_utf8.ps1`
 2. Check the workspace:
    - `git status --short`
-3. Run task intake when available:
-   - `python scripts/task_intake.py`
-4. Read the routing docs when relevant:
+3. Read only the documents directly relevant to the changed subsystem:
    - `docs/CODEX_WORKFLOW.md`
-   - `docs/QUICK_LOOKUP.md`
    - `docs/ARCHITECTURE_BOUNDARIES.md`
-   - `docs/CONTEXT_INDEX.md`
-5. Classify the change:
+   - the matching `server/docs/CODEMAP.md` or `pc_agent/docs/CODEMAP.md`
+4. Classify the change:
    - local
    - boundary
    - cross-cutting
    - release-control
-6. Build focused context before editing:
-   - `python scripts/build_context_pack.py --topic "<task>"`
-   - `python scripts/search_context_index.py "<symbol route error concept>"`
-   - `python scripts/agent_find.py "<pattern>" --dir server|pc_agent`
-7. If context search reports a stale index, rebuild it with `python scripts/build_context_index.py --force` unless the current task is explicitly read-only.
-8. For new `webapp/`, React, frontend bundle, or web-asset release work, run:
+5. For new `webapp/`, React, frontend bundle, or web-asset release work, run:
    - `python scripts/bootstrap_web_toolchain.py`
 
 ## Skill routing
 
 Use repo-local Codex skills for repeatable workflows:
 
-- Context discovery, file/symbol search, docs routing: `.agents/skills/pc-client-context-pack/SKILL.md`
 - Bugs, regressions, failing tests, runtime errors: `.agents/skills/pc-client-systematic-debug/SKILL.md`
 - Browser-visible UI/webapp/admin changes: `.agents/skills/pc-client-browser-check/SKILL.md`
 - Release candidate, deploy, remote smoke, full gate: `.agents/skills/pc-client-release-gate/SKILL.md`

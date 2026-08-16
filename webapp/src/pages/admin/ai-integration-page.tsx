@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Database, RefreshCcw, RotateCcw, ShieldCheck, Terminal } from "lucide-react";
+import { Bot, Database, RefreshCcw, RotateCcw, ShieldCheck } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -83,20 +83,6 @@ export function AdminAiIntegrationPage() {
               <CardContent className="space-y-2">
                 <Badge tone={toneForStatus(mcp.db_health.status)}>{mcp.db_health.status}</Badge>
                 <p className="text-sm text-slate-600">Latency: {formatValue(mcp.db_health.latency_ms)} ms</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Terminal className="h-4 w-4" />
-                  Context index
-                </CardTitle>
-                <CardDescription>{mcp.context_freshness.reason ?? "freshness status"}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Badge tone={toneForStatus(mcp.context_freshness.status)}>{mcp.context_freshness.status}</Badge>
-                <p className="text-sm text-slate-600">Stale sources: {mcp.context_freshness.stale_sources_count ?? 0}</p>
               </CardContent>
             </Card>
 

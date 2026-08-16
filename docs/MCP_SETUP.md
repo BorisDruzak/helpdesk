@@ -9,7 +9,7 @@
 
 ---
 
-## helpdesk-server-debug (read-only Observer / Tech / Context)
+## helpdesk-server-debug (read-only Observer / Tech)
 
 Для read-only диагностики сервера через Codex используйте MCP-сервер **helpdesk-server-debug**.
 

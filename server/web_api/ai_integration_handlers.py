@@ -7,7 +7,6 @@ from aiohttp import web
 from auth.middleware import require_auth
 from app.db import get_session
 from mcp_helpdesk_server.manifest import get_manifest
-from mcp_helpdesk_server.tools.context_tools import helpdesk_context_freshness
 from mcp_helpdesk_server.tools.db_tools import helpdesk_db_health
 from observer.debug_facade import runtime_snapshot
 from shared.redaction import redact_sensitive_payload
@@ -29,7 +28,6 @@ async def handle_ai_integration_mcp_status(request: web.Request) -> web.Response
         "mcp": {
             "manifest": manifest,
             "db_health": await helpdesk_db_health({}),
-            "context_freshness": await helpdesk_context_freshness({}),
             "runtime_status": runtime_status,
             "reload": {
                 "required_after_deploy": True,

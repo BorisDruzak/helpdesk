@@ -2,7 +2,7 @@
 
 `helpdesk-server-debug` is a standalone stdio MCP server for Codex read-only diagnostics in `pc_client`.
 
-It exposes Observer, Tech locator, Context Index, DB health and persisted runtime/presence snapshots through project Python services and DB sessions. It does not proxy the HTTP API and does not start the aiohttp server.
+It exposes Observer, Tech locator, DB health and persisted runtime/presence snapshots through project Python services and DB sessions. It does not proxy the HTTP API and does not start the aiohttp server.
 
 ## Safety Model
 
@@ -19,8 +19,6 @@ It exposes Observer, Tech locator, Context Index, DB health and persisted runtim
 ## Tools
 
 - `helpdesk_db_health`: checks PostgreSQL reachability through project DB bootstrap with redacted error output.
-- `helpdesk_context_search`: searches the deterministic local Context Index.
-- `helpdesk_context_freshness`: reports index freshness without rebuilding.
 - `helpdesk_locate`: locates tickets, devices, operations and traces from DB evidence.
 - `observer_debug_bundle`: returns a bounded observer diagnostics bundle for one locator input.
 - `observer_trace_detail`: returns trace, spans, span links and error occurrences.
@@ -31,7 +29,7 @@ It exposes Observer, Tech locator, Context Index, DB health and persisted runtim
 
 ## Admin UI
 
-The React admin route `/app/admin/ai-integration` shows the MCP server status, DB health, Context Index freshness, latest persisted runtime snapshot and the reload-after-deploy instruction. The backing endpoint is `GET /api/web/admin/ai-integration/mcp` and stays read-only.
+The React admin route `/app/admin/ai-integration` shows the MCP server status, DB health, latest persisted runtime snapshot and the reload-after-deploy instruction. The backing endpoint is `GET /api/web/admin/ai-integration/mcp` and stays read-only.
 
 When the admin status endpoint invokes MCP DB health inside the already running aiohttp process, the MCP bootstrap reuses the existing app DB engine. The standalone stdio MCP process starts and owns its DB engine, so shutdown only closes engines started by that bootstrap path.
 
