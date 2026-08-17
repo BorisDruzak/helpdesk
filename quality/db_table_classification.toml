@@ -92,7 +92,7 @@ reason = "Device identity, registration, inventory, pairing, and outbox rows are
 [[rules]]
 name = "operation runtime rows"
 classification = "ephemeral_test_data"
-tables = ["operation_dependencies", "operations"]
+tables = ["endpoint_operation_links", "operation_dependencies", "operations"]
 reason = "Operation graph rows are created by agent/server workflows during tests."
 
 [[rules]]

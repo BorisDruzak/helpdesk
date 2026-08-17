@@ -63,6 +63,16 @@
   `server/observer/checks/web_cabinet.py` from future direct Registry imports.
 - Port-contract coverage remains in `server/tests/test_domain_ports.py` and
   `server/tests/test_endpoint_port_contracts.py`.
+- `Ticket.endpoint_device_ref` and `endpoint_device_snapshot_json` are nullable
+  server-owned Endpoint mapping fields. `server/app/services/endpoint_device_reference_service.py`
+  accepts only an exact opaque legacy candidate, reads it through `EndpointPort`
+  outside the database session, and persists a frozen `endpoint_device_snapshot_v1`
+  only when the external reference matches exactly; it has no client-input,
+  hostname/IP/MAC lookup, or legacy fallback path. Revision `135` adds those
+  ticket fields plus `endpoint_operation_links`, the safe local facade-to-external
+  operation link table. `server/app/repos/endpoint_operation_links_repo.py`
+  contains only exact link lookup/create persistence and performs no HTTP,
+  DeviceOutbox, tool, or WebSocket work.
 
 ## 2026-08-10 RegistryPort Helpdesk read cutover (PR-8)
 

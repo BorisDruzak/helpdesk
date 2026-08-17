@@ -38,6 +38,10 @@ class Ticket(Base):
         server_default=sa.text("'T-' || lpad(nextval('ticket_code_seq')::text, 6, '0')"),
     )
     device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    # Verified external Endpoint identity is deliberately separate from the
+    # legacy Helpdesk device key. Only server-owned resolution may write it.
+    endpoint_device_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True, index=True)
+    endpoint_device_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
@@ -3301,6 +3305,72 @@ class Operation(Base):
             f"<Operation(operation_id={self.operation_id!r}, device_id={self.device_id!r}, "
             f"kind={self.kind!r}, status={self.status!r})>"
         )
+
+
+class EndpointOperationLink(Base):
+    """Safe local linkage from a Helpdesk facade operation to Endpoint state."""
+
+    __tablename__ = "endpoint_operation_links"
+
+    link_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(
+        String(36),
+        sa.ForeignKey("operations.operation_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    endpoint_operation_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True, unique=True)
+    endpoint_device_ref: Mapped[str] = mapped_column(Text, nullable=False)
+    capability_code: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default="context.diagnostic.collect"
+    )
+    create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    remote_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="create_pending")
+    diagnostic_session_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("diagnostic_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    diagnostic_step_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        sa.ForeignKey("diagnostic_steps.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    safe_result_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    last_error_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+    lease_owner: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    lease_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    last_synced_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        server_default=sa.text("now()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=sa.text("now()"),
+    )
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "capability_code = 'context.diagnostic.collect'",
+            name="ck_endpoint_operation_links_capability_code",
+        ),
+        sa.CheckConstraint(
+            "remote_status IN ('create_pending', 'queued', 'delivered', 'acknowledged', 'running', "
+            "'succeeded', 'failed', 'canceled', 'expired')",
+            name="ck_endpoint_operation_links_remote_status",
+        ),
+        sa.CheckConstraint("attempt_count >= 0", name="ck_endpoint_operation_links_attempt_count"),
+        Index("ix_endpoint_operation_links_ready", "remote_status", "next_attempt_at"),
+        Index("ix_endpoint_operation_links_lease_until", "lease_until"),
+    )
 
 
 class OperationDependency(Base):
