@@ -5,6 +5,14 @@ import re
 from typing import Any, Dict, Optional
 
 from diagnostics.capability_models import CapabilityDescriptor, CapabilityReadiness
+from domain_ports.endpoint import (
+    EndpointAvailability,
+    EndpointCapabilitiesProjection,
+    EndpointDeviceProjection,
+    EndpointDeviceRef,
+    EndpointNotFound,
+    EndpointUnavailable,
+)
 
 
 @dataclass(frozen=True)
@@ -24,6 +32,9 @@ class ReadinessContext:
     has_root_trace: Optional[bool] = None
     remote_assist: Dict[str, Any] | None = None
     has_permission: Optional[bool] = True
+    endpoint_execution_mode: Optional[str] = None
+    endpoint_port: Any = None
+    endpoint_device_ref: Optional[str] = None
 
 
 class CapabilityReadinessService:
@@ -63,7 +74,101 @@ class CapabilityReadinessService:
             return self._remote_assist_readiness(capability, context)
         if target == "manual":
             return self._status(capability, "available", None, ["create_manual_evidence"])
+        if target == "endpoint_operation":
+            return await self._endpoint_operation_readiness(capability, context)
         return self._status(capability, "unknown", "Capability target is reserved but not implemented", [])
+
+    async def _endpoint_operation_readiness(
+        self,
+        capability: CapabilityDescriptor,
+        context: ReadinessContext,
+    ) -> CapabilityReadiness:
+        if str(context.endpoint_execution_mode or "legacy").strip().lower() != "endpoint":
+            return self._status(
+                capability,
+                "disabled_by_policy",
+                "Endpoint diagnostic cutover is disabled by policy",
+                [],
+                reason_code="ENDPOINT_DIAGNOSTIC_MODE_DISABLED",
+            )
+        if context.endpoint_port is None:
+            return self._status(
+                capability,
+                "integration_not_configured",
+                "Endpoint integration is not configured",
+                [],
+                reason_code="ENDPOINT_INTEGRATION_NOT_CONFIGURED",
+            )
+        availability = await context.endpoint_port.availability()
+        if isinstance(availability, EndpointUnavailable) or not isinstance(availability, EndpointAvailability):
+            return self._status(
+                capability,
+                "integration_not_configured",
+                "Endpoint integration is unavailable",
+                [],
+                reason_code="ENDPOINT_INTEGRATION_NOT_CONFIGURED",
+            )
+        if availability.status != "available":
+            return self._status(
+                capability,
+                "unavailable",
+                "Endpoint integration is temporarily unavailable",
+                [],
+                reason_code="ENDPOINT_TEMPORARILY_UNAVAILABLE",
+            )
+        if not context.endpoint_device_ref:
+            return self._status(
+                capability,
+                "mapping_missing",
+                "Ticket has no Endpoint device mapping",
+                [],
+                reason_code="ENDPOINT_DEVICE_MAPPING_MISSING",
+            )
+        try:
+            device = EndpointDeviceRef(external_id=context.endpoint_device_ref)
+        except ValueError:
+            return self._status(
+                capability,
+                "mapping_missing",
+                "Ticket Endpoint device mapping is invalid",
+                [],
+                reason_code="ENDPOINT_DEVICE_MAPPING_MISSING",
+            )
+        device_outcome = await context.endpoint_port.read_device(device)
+        if isinstance(device_outcome, EndpointUnavailable):
+            return self._status(
+                capability,
+                "unavailable",
+                "Endpoint device read is temporarily unavailable",
+                [],
+                reason_code="ENDPOINT_TEMPORARILY_UNAVAILABLE",
+            )
+        if isinstance(device_outcome, EndpointNotFound) or not isinstance(device_outcome, EndpointDeviceProjection):
+            return self._status(
+                capability,
+                "mapping_missing",
+                "Ticket Endpoint device mapping is missing",
+                [],
+                reason_code="ENDPOINT_DEVICE_MAPPING_MISSING",
+            )
+        capabilities = await context.endpoint_port.list_capabilities(device)
+        if not isinstance(capabilities, EndpointCapabilitiesProjection):
+            return self._status(
+                capability,
+                "unavailable",
+                "Endpoint capabilities are temporarily unavailable",
+                [],
+                reason_code="ENDPOINT_TEMPORARILY_UNAVAILABLE",
+            )
+        if not any(item.capability == "context.diagnostic.collect" and item.available for item in capabilities.items):
+            return self._status(
+                capability,
+                "unavailable",
+                "Endpoint diagnostic collection is unavailable for the device",
+                [],
+                reason_code="ENDPOINT_DIAGNOSTIC_CAPABILITY_UNAVAILABLE",
+            )
+        return self._status(capability, "available", None, ["run"])
 
     def _common_readiness(
         self,

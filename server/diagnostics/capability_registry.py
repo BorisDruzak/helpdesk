@@ -6,6 +6,7 @@ from diagnostics.capability_models import CapabilityDescriptor
 from diagnostics.providers.server_builtin import list_server_builtin_capabilities
 from diagnostics.providers.server_connector import list_server_connector_capabilities
 from diagnostics.providers.static_providers import list_static_capabilities
+from diagnostics.providers.endpoint_platform import list_endpoint_platform_capabilities
 
 
 def _merge_tool_blocks(raw_tool: Dict[str, Any]) -> Dict[str, Any]:
@@ -78,23 +79,44 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
 
 
 class CapabilityRegistry:
-    def __init__(self, *, tool_service: Any = None, state: Any = None) -> None:
+    def __init__(
+        self,
+        *,
+        tool_service: Any = None,
+        state: Any = None,
+        endpoint_diagnostic_execution_mode: str | None = None,
+        endpoint_cutover_only: bool = False,
+    ) -> None:
         self.tool_service = tool_service
         self.state = state
+        self.endpoint_diagnostic_execution_mode = endpoint_diagnostic_execution_mode
+        self.endpoint_cutover_only = endpoint_cutover_only
 
     async def list_capabilities(self, *, device_id: Optional[str] = None) -> List[CapabilityDescriptor]:
         capabilities: List[CapabilityDescriptor] = []
-        if self.tool_service and device_id:
+        endpoint_mode = self._endpoint_diagnostic_mode()
+        if not self.endpoint_cutover_only and self.tool_service and device_id:
             device_tools = await self.tool_service.get_tools_list(device_id)
             capabilities.extend(self._project_tools(device_tools, default_source="builtin"))
-        if self.tool_service:
+        if not self.endpoint_cutover_only and self.tool_service:
             server_tools = await self.tool_service.get_tools_from_server(device_id)
             capabilities.extend(self._project_tools(server_tools, default_source="managed_module"))
         capabilities.extend(list_server_builtin_capabilities())
         capabilities.extend(list_server_connector_capabilities())
         capabilities.extend(list_static_capabilities())
-        capabilities.extend(await self._list_persisted_agent_recipes())
+        capabilities.extend(list_endpoint_platform_capabilities(execution_mode=endpoint_mode))
+        if not self.endpoint_cutover_only:
+            capabilities.extend(await self._list_persisted_agent_recipes())
         return self._dedupe(capabilities)
+
+    def _endpoint_diagnostic_mode(self) -> str:
+        if self.endpoint_diagnostic_execution_mode is not None:
+            return str(self.endpoint_diagnostic_execution_mode).strip().lower()
+        try:
+            import config
+        except ModuleNotFoundError:
+            from server import config  # type: ignore[no-redef]
+        return str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy").strip().lower()
 
     async def resolve_capability(
         self,

@@ -14,6 +14,7 @@ EXECUTION_TARGETS = {
     "remote_assist",
     "manual",
     "hybrid",
+    "endpoint_operation",
 }
 
 READINESS_STATUSES = {

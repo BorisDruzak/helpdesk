@@ -22,6 +22,7 @@ TARGET_EXECUTION_KIND = {
     "remote_assist": "session",
     "manual": "manual_evidence",
     "hybrid": "session",
+    "endpoint_operation": "operation",
 }
 
 EXECUTABLE_READINESS = {"available"}
@@ -38,6 +39,7 @@ class CapabilityExecutionRouter:
         observer_provider: Any = None,
         remote_assist_provider: Any = None,
         manual_provider: Any = None,
+        endpoint_platform_provider: Any = None,
         observability: Any = None,
     ) -> None:
         self.capability_registry = capability_registry
@@ -47,6 +49,7 @@ class CapabilityExecutionRouter:
         self.observer_provider = observer_provider or ObserverCapabilityProvider()
         self.remote_assist_provider = remote_assist_provider or RemoteAssistCapabilityProvider()
         self.manual_provider = manual_provider or ManualCapabilityProvider()
+        self.endpoint_platform_provider = endpoint_platform_provider
         self.observability = observability or NullCapabilityExecutionObserver()
 
     async def resolve_capability(self, capability_id: str, *, device_id: Optional[str] = None):
@@ -252,6 +255,30 @@ class CapabilityExecutionRouter:
                 idempotency_key=idempotency_key,
                 timeout_ms=timeout_ms,
             )
+        if target == "endpoint_operation":
+            if self.endpoint_platform_provider is None:
+                return {
+                    "status": "error",
+                    "error_code": "ENDPOINT_DIAGNOSTIC_NOT_COMPOSED",
+                    "capability_id": capability.id,
+                }
+            result = await self.route_endpoint_operation(
+                capability,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                params=params,
+                actor=actor,
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+            )
+            return self._envelope(
+                capability,
+                result,
+                ticket_id=ticket_id,
+                device_id=device_id,
+                idempotency_key=idempotency_key,
+                timeout_ms=timeout_ms,
+            )
         return {
             "status": "unsupported",
             "error_code": "CAPABILITY_TARGET_UNSUPPORTED",
@@ -331,6 +358,9 @@ class CapabilityExecutionRouter:
 
     async def route_manual(self, capability, **kwargs) -> Dict[str, Any]:
         return await self.manual_provider.run(capability, **kwargs)
+
+    async def route_endpoint_operation(self, capability, **kwargs) -> Dict[str, Any]:
+        return await self.endpoint_platform_provider.run(capability, **kwargs)
 
     def _readiness_error(
         self,

@@ -44,6 +44,13 @@
   `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint`, then stops it during shutdown.
   Its only post-commit notification is a reloaded local operation through the
   Helpdesk UI publisher, never an agent command dispatch.
+- `server/diagnostics/providers/endpoint_platform.py` exposes only
+  `endpoint.context.diagnostic.collect` while
+  `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint`; its `endpoint_operation`
+  router target invokes the injected local facade and returns HTTP-202 queued
+  semantics. The endpoint-mode handler composes no ToolExecutionService or
+  agent transport; readiness checks the typed Endpoint port, exact ticket
+  mapping and the one external capability before execution.
 - Revisions `135` and `136` add nullable ticket Endpoint device snapshots,
   local `endpoint_operation_links`, and the durable opaque external correlation
   ref. Both are forward-only; the reconciler fails historical links lacking the

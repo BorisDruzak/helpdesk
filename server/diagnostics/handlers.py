@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import dataclass
 import uuid
 
 from aiohttp import web
 from sqlalchemy import select
 
 from app.db import get_session
+from app.db.engine import get_session_maker
 from access_control.service import resolve_effective_access
 from app.db.models import (
     AgentRecipeVersion,
@@ -22,6 +24,11 @@ from app.db.models import (
 )
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.diagnostics_repo import DiagnosticRepo
+from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
+from app.services.endpoint_diagnostic_operation_service import (
+    EndpointDiagnosticOperationService,
+    SqlAlchemyEndpointDiagnosticOperationStore,
+)
 from auth.middleware import require_auth
 import config
 from diagnostics.capability_registry import CapabilityRegistry
@@ -41,6 +48,7 @@ from diagnostics.passport_bridge import DiagnosticPassportBridgeService
 from diagnostics.presentation_overrides import PresentationSchemaValidationError, ToolPresentationOverrideService
 from diagnostics.provider_config import DiagnosticProviderConfigService
 from diagnostics.providers.manual_provider import ManualCapabilityProvider
+from diagnostics.providers.endpoint_platform import EndpointPlatformDiagnosticProvider
 from diagnostics.profiles import list_profiles, resolve_ticket_profile
 from diagnostics.profile_runner import DiagnosticProfileRunnerService
 from diagnostics.projection import DiagnosticProjectionService
@@ -51,6 +59,63 @@ from diagnostics.service import DiagnosticOverviewService
 from remote_assist.policy import is_remote_assist_mode_enabled
 from diagnostics.sessions import DiagnosticSessionService
 from tools.service import ToolExecutionService
+from domain_ports.container import DomainPortContainer
+
+
+class _HandlerVerifiedEndpointAccess:
+    """Preserve the handler's verified ticket/auth boundary for the facade."""
+
+    def __init__(self, *, ticket_id: str) -> None:
+        self._ticket_id = ticket_id
+
+    async def require_ticket_operation_access(self, *, actor: object, ticket_id: str) -> None:
+        if actor is None or ticket_id != self._ticket_id:
+            raise PermissionError("verified ticket operation access is required")
+
+
+@dataclass(frozen=True)
+class _DiagnosticRuntime:
+    registry: CapabilityRegistry
+    tool_service: object | None
+    endpoint_port: object | None
+    endpoint_platform_provider: object | None
+
+
+def _build_endpoint_platform_provider(ticket_id: str) -> tuple[object, EndpointPlatformDiagnosticProvider]:
+    """Compose the local facade from typed endpoint dependencies only."""
+
+    endpoint_port = DomainPortContainer.from_config().endpoint
+    session_factory = get_session_maker
+    operation_service = EndpointDiagnosticOperationService(
+        access_service=_HandlerVerifiedEndpointAccess(ticket_id=ticket_id),
+        device_resolver=EndpointDeviceReferenceService(endpoint_port, session_factory),
+        store=SqlAlchemyEndpointDiagnosticOperationStore(session_factory),
+    )
+    return endpoint_port, EndpointPlatformDiagnosticProvider(operation_service=operation_service)
+
+
+def _build_diagnostic_runtime(*, state: object, ticket_id: str) -> _DiagnosticRuntime:
+    mode = str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy").strip().lower()
+    if mode == "endpoint":
+        endpoint_port, endpoint_platform_provider = _build_endpoint_platform_provider(ticket_id)
+        return _DiagnosticRuntime(
+            registry=CapabilityRegistry(
+                tool_service=None,
+                state=state,
+                endpoint_diagnostic_execution_mode="endpoint",
+                endpoint_cutover_only=True,
+            ),
+            tool_service=None,
+            endpoint_port=endpoint_port,
+            endpoint_platform_provider=endpoint_platform_provider,
+        )
+    tool_service = ToolExecutionService(state)
+    return _DiagnosticRuntime(
+        registry=CapabilityRegistry(tool_service=tool_service, state=state),
+        tool_service=tool_service,
+        endpoint_port=None,
+        endpoint_platform_provider=None,
+    )
 
 
 def _capability_payload(capability):
@@ -165,6 +230,10 @@ def _result_should_persist_as_evidence(capability, result: dict) -> bool:
     if result.get("error_code") in {"CAPABILITY_NOT_FOUND", "CAPABILITY_NOT_READY", "CAPABILITY_TARGET_UNSUPPORTED"}:
         return False
     if capability.execution_target in {"agent_builtin", "agent_managed_module"}:
+        return False
+    if capability.execution_target == "endpoint_operation":
+        # The reconciler owns terminal safe-result projection.  A queued local
+        # facade must not create premature diagnostic evidence.
         return False
     if capability.execution_target == "agent_recipe" and result.get("status") in {
         "queued",
@@ -769,8 +838,8 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
             status=404,
         )
     device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
-    tool_service = ToolExecutionService(state)
-    registry = CapabilityRegistry(tool_service=tool_service, state=state)
+    runtime = _build_diagnostic_runtime(state=state, ticket_id=ticket_id)
+    registry = runtime.registry
     readiness_service = CapabilityReadinessService(state=state)
     capabilities = await registry.list_capabilities(device_id=device_id)
     auth_context = request.get("auth_context")
@@ -808,6 +877,9 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         permissions=set(access.permissions),
         has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
         remote_assist=_remote_assist_context(active_remote_assist_session),
+        endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
+        endpoint_port=runtime.endpoint_port,
+        endpoint_device_ref=getattr(ticket, "endpoint_device_ref", None) or getattr(ticket, "device_id", None),
     )
     capability_items = []
     for capability in capabilities:
@@ -878,8 +950,8 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
             status=404,
         )
     device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
-    tool_service = ToolExecutionService(state)
-    registry = CapabilityRegistry(tool_service=tool_service, state=state)
+    runtime = _build_diagnostic_runtime(state=state, ticket_id=ticket_id)
+    registry = runtime.registry
     capability = await registry.resolve_capability(capability_id, device_id=device_id)
     readiness = None
     if capability is not None:
@@ -916,11 +988,19 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
             permissions=set(access.permissions),
             has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
             remote_assist=_remote_assist_context(active_remote_assist_session),
+            endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
+            endpoint_port=runtime.endpoint_port,
+            endpoint_device_ref=getattr(ticket, "endpoint_device_ref", None) or getattr(ticket, "device_id", None),
         )
         readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
         params = _with_provider_runtime_params(params, capability, persisted_maps)
     observability = RuntimeAuditCapabilityExecutionObserver(state=state)
-    router = CapabilityExecutionRouter(capability_registry=registry, tool_service=tool_service, observability=observability)
+    router = CapabilityExecutionRouter(
+        capability_registry=registry,
+        tool_service=runtime.tool_service,
+        endpoint_platform_provider=runtime.endpoint_platform_provider,
+        observability=observability,
+    )
     result = await router.run_capability(
         ticket_id=ticket_id,
         device_id=device_id,
@@ -970,6 +1050,8 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         status = 409
     elif result.get("error_code") == "CAPABILITY_TARGET_UNSUPPORTED":
         status = 501
+    elif result.get("execution_target") == "endpoint_operation" and result.get("status") == "queued":
+        status = 202
     elif result.get("status") == "error":
         status = 400
     return web.json_response(result, status=status)
