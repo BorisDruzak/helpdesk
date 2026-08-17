@@ -371,7 +371,11 @@ class SqlAlchemyEndpointOperationReconcileStore:
                 link.last_synced_at = datetime.now(timezone.utc)
                 link.lease_owner = None
                 link.lease_until = None
-                if error_code == "endpoint_unavailable":
+                if (
+                    error_code is not None
+                    and remote_status == claim.remote_status
+                    and operation_status == claim.local_status
+                ):
                     link.attempt_count += 1
                 operation.status = operation_status
                 operation.phase = phase
