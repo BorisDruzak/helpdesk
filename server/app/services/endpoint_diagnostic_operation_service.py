@@ -15,9 +15,10 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
+from sqlalchemy.exc import IntegrityError
 from typing_extensions import Annotated
 
-from app.db.models import DiagnosticSession, DiagnosticStep
+from app.db.models import DiagnosticSession, DiagnosticStep, Ticket
 from app.repos.endpoint_operation_links_repo import EndpointOperationLinkConflict, EndpointOperationLinksRepo
 from app.repos.operations_repo import OperationsRepo
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceResolution
@@ -84,7 +85,9 @@ class EndpointDiagnosticDeviceResolver(Protocol):
 
 
 class EndpointDiagnosticOperationStore(Protocol):
-    async def get_by_idempotency_key(self, key: str) -> EndpointDiagnosticOperationStored | dict[str, Any] | None: ...
+    async def get_by_operation_id(
+        self, operation_id: str
+    ) -> EndpointDiagnosticOperationStored | dict[str, Any] | None: ...
 
     async def create_pending(self, **values: Any) -> EndpointDiagnosticOperationStored | dict[str, Any]: ...
 
@@ -106,6 +109,12 @@ def deterministic_endpoint_operation_id(
             f"helpdesk:{ticket_id}:{endpoint_device_ref}:{ENDPOINT_DIAGNOSTIC_CAPABILITY}:{idempotency_key}",
         )
     )
+
+
+def remote_endpoint_idempotency_key(operation_id: str) -> str:
+    """Stable Endpoint replay key; the caller key never leaves Helpdesk."""
+
+    return f"helpdesk-endpoint-operation:{operation_id}"
 
 
 class EndpointDiagnosticOperationService:
@@ -141,7 +150,7 @@ class EndpointDiagnosticOperationService:
             endpoint_device_ref=resolution.device_ref,
             idempotency_key=key,
         )
-        existing = await self._store.get_by_idempotency_key(key)
+        existing = await self._store.get_by_operation_id(operation_id)
         if existing is not None:
             return self._return_existing(
                 existing,
@@ -156,12 +165,10 @@ class EndpointDiagnosticOperationService:
         created = await self._store.create_pending(
             operation_id=operation_id,
             ticket_id=request.ticket_id,
-            # Kept only for Operation compatibility until the legacy projection is retired.
-            legacy_device_id=resolution.device_ref,
             actor_id=str(getattr(actor, "actor_id", "")),
             actor_role=str(getattr(actor, "actor_role", "")),
             endpoint_device_ref=resolution.device_ref,
-            idempotency_key=key,
+            idempotency_key=remote_endpoint_idempotency_key(operation_id),
             trace_id=self._new_trace_id(),
             created_at=now,
         )
@@ -208,9 +215,9 @@ class SqlAlchemyEndpointDiagnosticOperationStore:
     def __init__(self, session_factory: Callable[[], Any]) -> None:
         self._session_factory = session_factory
 
-    async def get_by_idempotency_key(self, key: str) -> EndpointDiagnosticOperationStored | None:
+    async def get_by_operation_id(self, operation_id: str) -> EndpointDiagnosticOperationStored | None:
         async with self._session_factory() as session:
-            link = await EndpointOperationLinksRepo(session).get_by_idempotency_key(key)
+            link = await EndpointOperationLinksRepo(session).get_by_operation_id(operation_id)
             if link is None:
                 return None
             operation = await OperationsRepo(session).get_by_operation_id(link.operation_id)
@@ -225,12 +232,35 @@ class SqlAlchemyEndpointDiagnosticOperationStore:
             )
 
     async def create_pending(self, **values: Any) -> EndpointDiagnosticOperationStored:
-        async with self._session_factory() as session:
-            async with session.begin():
-                operations = OperationsRepo(session)
-                operation = await operations.create_operation(
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    return await self._create_pending_in_transaction(session, values)
+        except IntegrityError as exc:
+            if self._constraint_name(exc) != "operations_pkey":
+                raise
+            existing = await self.get_by_operation_id(values["operation_id"])
+            if existing is None or (
+                existing.ticket_id != values["ticket_id"]
+                or existing.endpoint_device_ref != values["endpoint_device_ref"]
+            ):
+                raise EndpointDiagnosticOperationConflict(
+                    "endpoint operation identity conflicts with an existing local operation"
+                ) from exc
+            return existing
+
+    async def _create_pending_in_transaction(
+        self, session: Any, values: dict[str, Any]
+    ) -> EndpointDiagnosticOperationStored:
+        ticket = await session.get(Ticket, values["ticket_id"], with_for_update=True)
+        legacy_device_id = str(getattr(ticket, "device_id", "") or "")
+        if ticket is None or not legacy_device_id or len(legacy_device_id) > 36:
+            raise EndpointDiagnosticOperationUnavailable("ENDPOINT_LEGACY_DEVICE_MISSING")
+        operations = OperationsRepo(session)
+        operation = await operations.create_operation(
                     operation_id=values["operation_id"],
-                    device_id=values["legacy_device_id"],
+                    # This is the local Ticket compatibility identifier, never an Endpoint ref.
+                    device_id=legacy_device_id,
                     ticket_id=values["ticket_id"],
                     kind="endpoint_operation",
                     tool_name=ENDPOINT_DIAGNOSTIC_CAPABILITY,
@@ -239,16 +269,16 @@ class SqlAlchemyEndpointDiagnosticOperationStore:
                     status="queued",
                     phase="endpoint_create_pending",
                 )
-                diagnostic_session = DiagnosticSession(
+        diagnostic_session = DiagnosticSession(
                     id=str(uuid.uuid4()),
                     ticket_id=values["ticket_id"],
                     status="draft",
                     trigger_source="endpoint_platform",
                     started_by_user_id=values["actor_id"] or None,
                 )
-                session.add(diagnostic_session)
-                await session.flush()
-                diagnostic_step = DiagnosticStep(
+        session.add(diagnostic_session)
+        await session.flush()
+        diagnostic_step = DiagnosticStep(
                     id=str(uuid.uuid4()),
                     session_id=diagnostic_session.id,
                     ticket_id=values["ticket_id"],
@@ -258,23 +288,38 @@ class SqlAlchemyEndpointDiagnosticOperationStore:
                     operation_id=operation.operation_id,
                     status="pending",
                 )
-                session.add(diagnostic_step)
-                await session.flush()
-                try:
-                    await EndpointOperationLinksRepo(session).create_pending(
+        session.add(diagnostic_step)
+        await session.flush()
+        try:
+            await EndpointOperationLinksRepo(session).create_pending(
                         operation_id=operation.operation_id,
                         endpoint_device_ref=values["endpoint_device_ref"],
                         create_idempotency_key=values["idempotency_key"],
                         next_attempt_at=values["created_at"],
                         diagnostic_session_id=diagnostic_session.id,
                         diagnostic_step_id=diagnostic_step.id,
-                    )
-                except EndpointOperationLinkConflict as exc:
-                    raise EndpointDiagnosticOperationConflict(str(exc)) from exc
-                return EndpointDiagnosticOperationStored(
+            )
+        except EndpointOperationLinkConflict as exc:
+            raise EndpointDiagnosticOperationConflict(str(exc)) from exc
+        return EndpointDiagnosticOperationStored(
                     operation_id=operation.operation_id,
                     ticket_id=str(operation.ticket_id),
                     endpoint_device_ref=values["endpoint_device_ref"],
                     status=operation.status,
                     trace_id=operation.trace_id,
-                )
+        )
+
+    @staticmethod
+    def _constraint_name(exc: IntegrityError) -> str | None:
+        pending = [exc, getattr(exc, "orig", None)]
+        seen: set[int] = set()
+        while pending:
+            current = pending.pop()
+            if current is None or id(current) in seen:
+                continue
+            seen.add(id(current))
+            name = getattr(current, "constraint_name", None)
+            if isinstance(name, str):
+                return name
+            pending.extend((getattr(current, "orig", None), getattr(current, "diag", None)))
+        return None

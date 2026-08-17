@@ -11,6 +11,7 @@ from app.services.endpoint_operation_reconciler import (
     EndpointOperationReconciler,
     EndpointReconcileClaim,
     _REMOTE_TO_LOCAL,
+    endpoint_operation_correlation_ref,
     endpoint_retry_delay_seconds,
 )
 from domain_ports.endpoint import (
@@ -59,6 +60,7 @@ def _claim() -> EndpointReconcileClaim:
         endpoint_operation_ref=None,
         attempt_count=0,
         remote_status="create_pending",
+        create_idempotency_key="helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111",
     )
 
 
@@ -138,6 +140,10 @@ async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -
     assert processed == 1
     assert len(port.create_calls) == 1
     assert port.create_calls[0][2] == "helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111"
+    assert port.create_calls[0][1].correlation.source_entity_id == endpoint_operation_correlation_ref(
+        "11111111-1111-1111-1111-111111111111"
+    )
+    assert port.create_calls[0][1].correlation.source_entity_id != "ticket-1"
     assert store.committed == [
         {
             "claim": _claim(),
@@ -154,6 +160,41 @@ async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -
 
 
 @pytest.mark.asyncio
+async def test_retryable_unavailable_preserves_current_local_progress() -> None:
+    now = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    claim = _claim()
+    claim = EndpointReconcileClaim(**(claim.__dict__ | {"local_status": "running", "local_phase": "endpoint_running"}))
+    store = _ClaimStore(claims=[claim], committed=[])
+    reconciler = EndpointOperationReconciler(
+        endpoint_port=_Port(EndpointUnavailable(retryable=True)), store=store,
+        mode="external", diagnostic_execution_mode="endpoint", owner="test-worker", now=lambda: now,
+    )
+
+    await reconciler.reconcile_once(limit=1)
+
+    assert store.committed[0]["operation_status"] == "running"
+    assert store.committed[0]["phase"] == "endpoint_running"
+
+
+@pytest.mark.asyncio
+async def test_nonretryable_unavailable_is_terminal_and_does_not_publish_without_change() -> None:
+    now = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    store = _ClaimStore(claims=[_claim()], committed=[])
+    published: list[str] = []
+    reconciler = EndpointOperationReconciler(
+        endpoint_port=_Port(EndpointUnavailable(retryable=False)), store=store,
+        mode="external", diagnostic_execution_mode="endpoint", owner="test-worker",
+        now=lambda: now, publish_after_commit=published.append,
+    )
+
+    await reconciler.reconcile_once(limit=1)
+
+    assert store.committed[0]["operation_status"] == "failed"
+    assert store.committed[0]["phase"] == "endpoint_failed"
+    assert published == ["11111111-1111-1111-1111-111111111111"]
+
+
+@pytest.mark.asyncio
 async def test_success_persists_only_validated_safe_snapshot_and_remote_ref() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     claim = _claim()
@@ -165,7 +206,7 @@ async def test_success_persists_only_validated_safe_snapshot_and_remote_ref() ->
         deadline_at=None,
         completed_at=now,
         correlation=EndpointOperationCorrelation(
-            source_entity_id=claim.ticket_id,
+            source_entity_id=endpoint_operation_correlation_ref(claim.operation_id),
             request_id="11111111-1111-1111-1111-111111111111",
         ),
         result_available=True,

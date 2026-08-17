@@ -31,6 +31,11 @@ Helpdesk must not import Endpoint Python modules, query an Endpoint database,
 create Endpoint credentials, parse an external reference, or use Endpoint
 correlation for authorization. There is no cross-service database foreign key.
 The Endpoint Agent must not receive `ticket_id` or any other Helpdesk entity.
+The operation correlation carries only a Helpdesk-generated, non-reversible
+opaque value derived from the local operation ID; it never carries a ticket,
+diagnostic-session, actor, or other Helpdesk entity ID. The durable Endpoint
+idempotency key is exactly `helpdesk-endpoint-operation:<local-operation-id>`;
+the browser caller idempotency key remains local-only.
 
 ## Required integration surface
 

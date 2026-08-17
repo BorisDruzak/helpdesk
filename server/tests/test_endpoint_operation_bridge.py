@@ -11,6 +11,7 @@ from app.services.endpoint_diagnostic_operation_service import (
     EndpointDiagnosticOperationConflict,
     EndpointDiagnosticOperationRequest,
     validate_endpoint_operation_idempotency_key,
+    remote_endpoint_idempotency_key,
 )
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceResolution
 
@@ -40,8 +41,8 @@ class _Store:
         self.created: list[dict] = []
         self.existing: dict[str, object] = {}
 
-    async def get_by_idempotency_key(self, key: str):
-        return self.existing.get(key)
+    async def get_by_operation_id(self, operation_id: str):
+        return self.existing.get(operation_id)
 
     async def create_pending(self, **values):
         self.created.append(values)
@@ -79,11 +80,10 @@ async def test_create_uses_server_generated_deterministic_identity_and_never_rem
     assert created | {"trace_id": None} == {
         "operation_id": expected,
         "ticket_id": "ticket-1",
-        "legacy_device_id": "endpoint-device-1",
         "actor_id": "support-42",
         "actor_role": "support",
         "endpoint_device_ref": "endpoint-device-1",
-        "idempotency_key": "caller-key-0001",
+        "idempotency_key": remote_endpoint_idempotency_key(expected),
         "trace_id": None,
         "created_at": datetime(2026, 8, 17, tzinfo=timezone.utc),
     }
@@ -102,7 +102,12 @@ def test_idempotency_key_must_be_ascii_bounded_and_untrimmed(value: str) -> None
 @pytest.mark.asyncio
 async def test_create_rejects_reused_key_with_different_immutable_identity() -> None:
     store = _Store()
-    store.existing["caller-key-0001"] = {
+    store.existing[str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            "helpdesk:ticket-1:endpoint-device-1:context.diagnostic.collect:caller-key-0001",
+        )
+    )] = {
         "operation_id": "different-operation",
         "ticket_id": "ticket-1",
         "endpoint_device_ref": "endpoint-device-1",
@@ -133,8 +138,14 @@ async def test_exact_repeat_returns_existing_local_operation_without_another_cre
     )
 
     first = await service.create(actor=_Actor(), request=request)
-    store.existing[request.idempotency_key] = store.created[0] | {"status": "queued"}
+    store.existing[first.operation_id] = store.created[0] | {"status": "queued"}
     second = await service.create(actor=_Actor(), request=request)
 
     assert second == first
     assert len(store.created) == 1
+
+
+def test_remote_idempotency_is_derived_from_the_local_operation_not_caller_key() -> None:
+    assert remote_endpoint_idempotency_key("11111111-1111-1111-1111-111111111111") == (
+        "helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111"
+    )

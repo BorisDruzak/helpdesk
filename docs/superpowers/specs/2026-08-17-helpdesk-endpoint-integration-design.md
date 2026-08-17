@@ -28,6 +28,9 @@ only a versioned service API through the existing `EndpointPort`; it does not
 dispatch an agent command by Helpdesk WebSocket or `device_outbox`.
 
 Endpoint correlations are tracing/idempotency data, never authorization data.
+They are non-reversible opaque values derived from the local operation ID; no
+Helpdesk ticket, actor, diagnostic session, or other entity ID is sent to
+Endpoint.
 Helpdesk authenticates and authorizes the user/ticket locally; Endpoint
 authorizes its service bearer and its own device operation independently.
 

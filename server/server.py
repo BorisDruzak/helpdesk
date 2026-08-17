@@ -37,6 +37,10 @@ from config import (
     LOG_FORMAT,
     DATABASE_URL,
     ENABLE_DB_PERSISTENCE,
+    ENDPOINT_DIAGNOSTIC_EXECUTION_MODE,
+    ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE,
+    ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
+    ENDPOINT_PORT_MODE,
     is_strict_runtime_mode,
     validate_security_config,
 )
@@ -47,7 +51,7 @@ from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, OUTBOX_SEN
 from routes import setup_routes
 
 # Import database initialization
-from app.db import init_db, shutdown_db
+from app.db import get_session_maker, init_db, shutdown_db
 
 # Phase C: Import device outbox sender
 from websocket.device_outbox_sender import DeviceOutboxSender, recover_pending_commands
@@ -233,6 +237,34 @@ async def on_startup(app: web.Application):
             await watchdog.start()
             app['operation_watchdog'] = watchdog
             logger.success("✅ Operation watchdog started")
+
+            # Endpoint diagnostic reconciliation is isolated from the legacy
+            # outbox: it exists only for the explicit external/endpoint cutover.
+            if (
+                ENDPOINT_PORT_MODE == "external"
+                and ENDPOINT_DIAGNOSTIC_EXECUTION_MODE == "endpoint"
+            ):
+                from app.services.endpoint_operation_reconciler import (
+                    EndpointOperationReconciler,
+                    EndpointOperationReconcilerRunner,
+                    SqlAlchemyEndpointOperationReconcileStore,
+                )
+                from domain_ports.container import DomainPortContainer
+
+                runner = EndpointOperationReconcilerRunner(
+                    EndpointOperationReconciler(
+                        endpoint_port=DomainPortContainer.from_config().endpoint,
+                        store=SqlAlchemyEndpointOperationReconcileStore(get_session_maker()),
+                        mode=ENDPOINT_PORT_MODE,
+                        diagnostic_execution_mode=ENDPOINT_DIAGNOSTIC_EXECUTION_MODE,
+                        owner="helpdesk-endpoint-reconciler",
+                    ),
+                    interval_seconds=ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
+                    batch_size=ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE,
+                )
+                runner.start()
+                app["endpoint_operation_reconciler"] = runner
+                logger.success("✅ Endpoint operation reconciler started")
             
             # Этап 2: Ticket SLA Watchdog (breach + reminders)
             from app.services.ticket_sla_watchdog import get_ticket_sla_watchdog
@@ -348,6 +380,11 @@ async def on_cleanup(app: web.Application):
         logger.success("✅ Housekeeping cleanup task stopped")
     
     # PR#7: Stop operation watchdog
+    if "endpoint_operation_reconciler" in app:
+        logger.info("⏹️ Stopping Endpoint operation reconciler...")
+        await app["endpoint_operation_reconciler"].stop()
+        logger.success("✅ Endpoint operation reconciler stopped")
+
     if 'operation_watchdog' in app:
         logger.info("⏹️ Stopping operation watchdog...")
         await app['operation_watchdog'].stop()

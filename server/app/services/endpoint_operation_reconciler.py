@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from sqlalchemy import or_, select
 
@@ -32,7 +32,7 @@ from app.services.endpoint_diagnostic_operation_service import (
     ENDPOINT_DIAGNOSTIC_CAPABILITY,
     ENDPOINT_DIAGNOSTIC_REASON,
 )
-from app.db.models import DiagnosticStep, EndpointOperationLink, Operation
+from app.db.models import DiagnosticEvidence, DiagnosticSession, DiagnosticStep, EndpointOperationLink, Operation
 
 
 _TERMINAL_LOCAL = frozenset({"succeeded", "failed", "timed_out", "canceled"})
@@ -47,6 +47,7 @@ _REMOTE_TO_LOCAL: dict[str, tuple[str, str]] = {
     "canceled": ("canceled", "endpoint_canceled"),
     "expired": ("timed_out", "endpoint_expired"),
 }
+_LOCAL_PROGRESS = {"queued": 0, "sent": 1, "accepted": 2, "running": 3}
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,9 @@ class EndpointReconcileClaim:
     endpoint_operation_ref: str | None
     attempt_count: int
     remote_status: str
+    create_idempotency_key: str
+    local_status: str = "queued"
+    local_phase: str | None = "endpoint_create_pending"
     lease_token: str = ""
 
 
@@ -86,6 +90,12 @@ def endpoint_retry_delay_seconds(attempt_count: int, *, random: Callable[[], flo
     initial = (2, 5, 15, 30, 60)
     base = initial[index] if index < len(initial) else min(300, 60 * 2 ** (index - 4))
     return min(300.0, base * (1.0 + max(0.0, min(random(), 1.0)) * 0.1))
+
+
+def endpoint_operation_correlation_ref(operation_id: str) -> str:
+    """Non-reversible opaque trace ref; Helpdesk entity identifiers never cross the port."""
+
+    return str(uuid5(NAMESPACE_URL, f"helpdesk-endpoint-correlation:{operation_id}"))
 
 
 class EndpointOperationReconciler:
@@ -139,22 +149,35 @@ class EndpointOperationReconciler:
             request = EndpointOperationCreateRequest(
                 parameters=EndpointDiagnosticParameters(reason=ENDPOINT_DIAGNOSTIC_REASON),
                 correlation=EndpointOperationCorrelation(
-                    source_entity_id=claim.ticket_id, request_id=UUID(claim.operation_id)
+                    source_entity_id=endpoint_operation_correlation_ref(claim.operation_id),
+                    request_id=UUID(claim.operation_id),
                 ),
             )
             outcome = await self._endpoint_port.create_operation(
                 EndpointDeviceRef(external_id=claim.endpoint_device_ref),
                 request,
-                idempotency_key=f"helpdesk-endpoint-operation:{claim.operation_id}",
+                idempotency_key=claim.create_idempotency_key,
             )
         now = self._aware_now()
         if isinstance(outcome, EndpointUnavailable):
+            if not outcome.retryable:
+                await self._commit_and_publish(
+                    claim=claim,
+                    endpoint_operation_ref=None,
+                    remote_status="failed",
+                    operation_status="failed",
+                    phase="endpoint_failed",
+                    error_code=outcome.code,
+                    safe_result_snapshot=None,
+                    next_attempt_at=now,
+                )
+                return
             await self._commit_and_publish(
                 claim=claim,
                 endpoint_operation_ref=None,
                 remote_status=claim.remote_status,
-                operation_status="queued",
-                phase="endpoint_create_pending" if not claim.endpoint_operation_ref else "endpoint_sync_pending",
+                operation_status=claim.local_status,
+                phase=claim.local_phase or "endpoint_create_pending",
                 error_code=outcome.code,
                 safe_result_snapshot=None,
                 next_attempt_at=now + timedelta(
@@ -193,7 +216,7 @@ class EndpointOperationReconciler:
         status, phase = _REMOTE_TO_LOCAL[outcome.status]
         if (
             outcome.device.external_id != claim.endpoint_device_ref
-            or outcome.correlation.source_entity_id != claim.ticket_id
+            or outcome.correlation.source_entity_id != endpoint_operation_correlation_ref(claim.operation_id)
             or outcome.correlation.request_id != UUID(claim.operation_id)
         ):
             await self._commit_and_publish(
@@ -274,6 +297,9 @@ class SqlAlchemyEndpointOperationReconcileStore:
                             endpoint_operation_ref=link.endpoint_operation_ref,
                             attempt_count=link.attempt_count,
                             remote_status=link.remote_status,
+                            create_idempotency_key=link.create_idempotency_key,
+                            local_status=operation.status,
+                            local_phase=operation.phase,
                             lease_token=token,
                         )
                     )
@@ -309,6 +335,13 @@ class SqlAlchemyEndpointOperationReconcileStore:
                     or link.lease_owner != claim.lease_token
                 ):
                     return False
+                if (
+                    operation_status in _LOCAL_PROGRESS
+                    and operation.status in _LOCAL_PROGRESS
+                    and _LOCAL_PROGRESS[operation_status] < _LOCAL_PROGRESS[operation.status]
+                ):
+                    return False
+                previous_endpoint_operation_ref = link.endpoint_operation_ref
                 if endpoint_operation_ref is not None:
                     if link.endpoint_operation_ref not in (None, endpoint_operation_ref):
                         return False
@@ -319,6 +352,18 @@ class SqlAlchemyEndpointOperationReconcileStore:
                     safe_result_snapshot = EndpointDiagnosticResultProjection.model_validate(
                         safe_result_snapshot
                     ).model_dump(mode="json")
+                state_changed = any(
+                    (
+                        link.remote_status != remote_status,
+                        operation.status != operation_status,
+                        operation.phase != phase,
+                        previous_endpoint_operation_ref != endpoint_operation_ref
+                        if endpoint_operation_ref is not None
+                        else False,
+                        link.safe_result_snapshot_json != safe_result_snapshot,
+                        link.last_error_code != error_code,
+                    )
+                )
                 link.remote_status = remote_status
                 link.last_error_code = error_code
                 link.safe_result_snapshot_json = safe_result_snapshot
@@ -352,8 +397,43 @@ class SqlAlchemyEndpointOperationReconcileStore:
                         step.error_message = None
                         if operation_status in _TERMINAL_LOCAL:
                             step.finished_at = datetime.now(timezone.utc)
+                if (
+                    operation_status == "succeeded"
+                    and safe_result_snapshot is not None
+                    and link.endpoint_operation_ref
+                ):
+                    evidence = (
+                        await session.execute(
+                            select(DiagnosticEvidence).where(
+                                DiagnosticEvidence.ticket_id == operation.ticket_id,
+                                DiagnosticEvidence.source_type == "endpoint_platform",
+                                DiagnosticEvidence.source_id == link.endpoint_operation_ref,
+                                DiagnosticEvidence.kind == "diagnostic_result",
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if evidence is None:
+                        evidence = DiagnosticEvidence(
+                            id=str(uuid4()), ticket_id=operation.ticket_id,
+                            session_id=link.diagnostic_session_id, step_id=link.diagnostic_step_id,
+                            source_type="endpoint_platform", source_id=link.endpoint_operation_ref,
+                            provider_id="endpoint_platform", capability_id=ENDPOINT_DIAGNOSTIC_CAPABILITY,
+                            kind="diagnostic_result", domain="diagnostics", perspective="endpoint_platform",
+                            title="Endpoint diagnostic collection", summary="Endpoint diagnostic collection completed",
+                            status="succeeded", normalized_payload=safe_result_snapshot,
+                            raw_ref=None, artifact_refs=[], trace_id=operation.trace_id,
+                            redaction_level="endpoint_safe_projection", tags=[], passport_eligible=False,
+                        )
+                        session.add(evidence)
+                        state_changed = True
+                    if link.diagnostic_session_id:
+                        diagnostic_session = await session.get(DiagnosticSession, link.diagnostic_session_id, with_for_update=True)
+                        if diagnostic_session is not None and diagnostic_session.status != "completed":
+                            diagnostic_session.status = "completed"
+                            diagnostic_session.finished_at = datetime.now(timezone.utc)
+                            state_changed = True
                 await session.flush()
-                return True
+                return state_changed
 
 
 def _validated_safe_success_snapshot(outcome: EndpointOperationProjection) -> dict[str, Any] | None:
