@@ -48,6 +48,49 @@ def _bounded_registry_external_timeout() -> float:
 
 REGISTRY_EXTERNAL_TIMEOUT_SECONDS = _bounded_registry_external_timeout()
 
+# Endpoint Operations API v1 composition is fail-closed. The external adapter
+# is introduced separately; these settings contain no production defaults.
+ENDPOINT_PORT_MODE = (os.getenv("ENDPOINT_PORT_MODE", "unavailable") or "unavailable").strip().lower()
+ENDPOINT_EXTERNAL_BASE_URL = (os.getenv("ENDPOINT_EXTERNAL_BASE_URL", "") or "").strip().rstrip("/")
+ENDPOINT_EXTERNAL_SERVICE_TOKEN = os.getenv("ENDPOINT_EXTERNAL_SERVICE_TOKEN", "") or ""
+ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").strip()
+ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
+    os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy") or "legacy"
+).strip().lower()
+
+
+def _bounded_endpoint_external_timeout() -> float:
+    try:
+        timeout = float(os.getenv("ENDPOINT_EXTERNAL_TIMEOUT_SECONDS", "2.0") or "2.0")
+    except (TypeError, ValueError):
+        return 2.0
+    if not math.isfinite(timeout):
+        return 2.0
+    return max(0.05, min(timeout, 10.0))
+
+
+def _bounded_endpoint_reconcile_int(name: str, default: int, minimum: int, maximum: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)) or str(default))
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(value, maximum))
+
+
+ENDPOINT_EXTERNAL_TIMEOUT_SECONDS = _bounded_endpoint_external_timeout()
+ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS = _bounded_endpoint_reconcile_int(
+    "ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS",
+    5,
+    1,
+    60,
+)
+ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE = _bounded_endpoint_reconcile_int(
+    "ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE",
+    25,
+    1,
+    100,
+)
+
 # ============================================================================
 # Database Configuration
 # ============================================================================

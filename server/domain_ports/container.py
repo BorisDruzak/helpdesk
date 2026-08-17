@@ -28,6 +28,15 @@ def _configured_registry_port_mode() -> str:
     return str(config.REGISTRY_PORT_MODE or "").strip().lower()
 
 
+def _configured_endpoint_port_mode() -> str:
+    try:
+        import config
+    except ModuleNotFoundError:  # Package import from the repository root.
+        from server import config  # type: ignore[no-redef]
+
+    return str(config.ENDPOINT_PORT_MODE or "").strip().lower()
+
+
 def _configured_registry_http_settings() -> tuple[str, str, float]:
     try:
         import config
@@ -112,8 +121,14 @@ class DomainPortContainer:
             else:
                 raise ValueError(f"unsupported REGISTRY_PORT_MODE: {mode!r}")
 
+        if endpoint is None:
+            endpoint_mode = _configured_endpoint_port_mode()
+            if endpoint_mode != "unavailable":
+                raise ValueError(f"unsupported ENDPOINT_PORT_MODE: {endpoint_mode!r}")
+            endpoint = UnavailableEndpointPort()
+
         return cls(
             knowledge=knowledge,
             registry=registry,
-            endpoint=endpoint if endpoint is not None else UnavailableEndpointPort(),
+            endpoint=endpoint,
         )

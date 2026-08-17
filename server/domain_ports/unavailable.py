@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from .endpoint import EndpointAvailability
+from .endpoint import (
+    EndpointAvailability,
+    EndpointCapabilitiesOutcome,
+    EndpointDeviceOutcome,
+    EndpointDeviceRef,
+    EndpointOperationCreateOutcome,
+    EndpointOperationCreateRequest,
+    EndpointOperationReadOutcome,
+    EndpointOperationRef,
+    EndpointUnavailable,
+    OpaqueEndpointRef,
+)
 from .knowledge import (
     KnowledgeFeedbackOutcome,
     KnowledgeFeedbackRequest,
@@ -186,3 +197,25 @@ class UnavailableRegistryPort:
 class UnavailableEndpointPort:
     async def availability(self) -> EndpointAvailability:
         return EndpointAvailability(status="unavailable", code="endpoint_unavailable")
+
+    async def read_device(self, device: EndpointDeviceRef) -> EndpointDeviceOutcome:
+        del device
+        return EndpointUnavailable()
+
+    async def list_capabilities(self, device: EndpointDeviceRef) -> EndpointCapabilitiesOutcome:
+        del device
+        return EndpointUnavailable()
+
+    async def create_operation(
+        self,
+        device: EndpointDeviceRef,
+        request: EndpointOperationCreateRequest,
+        *,
+        idempotency_key: OpaqueEndpointRef,
+    ) -> EndpointOperationCreateOutcome:
+        del device, request, idempotency_key
+        return EndpointUnavailable()
+
+    async def read_operation(self, operation: EndpointOperationRef) -> EndpointOperationReadOutcome:
+        del operation
+        return EndpointUnavailable()
