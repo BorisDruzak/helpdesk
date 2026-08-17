@@ -148,7 +148,7 @@ configuration is complete and exposing safe versioned Endpoint API projections.
 
 - [ ] **Step 1: Write failing transport tests**
 
-Exercise valid device/capability/read response, create `201`,
+Exercise valid availability/device/capability/read response, create `201`,
 replay `200`, and `401/403/404/409/422/429/5xx/timeout/malformed JSON/extra
 fields/correlation mismatch`. Assert redirects/off-origin redirects fail; service
 bearer, raw body and result excerpts never enter logs.
