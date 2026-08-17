@@ -35,6 +35,19 @@
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
   fresh adapters from the fail-closed external-domain mode settings and defines
   no module-level singleton.
+- `server/app/services/endpoint_diagnostic_operation_service.py` creates the
+  ticket-facing Endpoint diagnostic facade with a deterministic local operation
+  id. `server/app/services/endpoint_operation_reconciler.py` claims durable
+  links, calls only `EndpointPort` outside database transactions, and projects
+  safe terminal results into diagnostic evidence. `server/server.py` starts
+  its runner only for `ENDPOINT_PORT_MODE=external` together with
+  `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint`, then stops it during shutdown.
+  Its only post-commit notification is a reloaded local operation through the
+  Helpdesk UI publisher, never an agent command dispatch.
+- Revisions `135` and `136` add nullable ticket Endpoint device snapshots,
+  local `endpoint_operation_links`, and the durable opaque external correlation
+  ref. Both are forward-only; the reconciler fails historical links lacking the
+  correlation ref closed rather than creating a remote operation.
 - `server/domain_ports/registry_contracts.py` defines the frozen/redacted
   Registry read and command DTOs. `server/registry_adapter/local.py` is the
   PR-8 compatibility adapter and the only new Registry ORM/repository import

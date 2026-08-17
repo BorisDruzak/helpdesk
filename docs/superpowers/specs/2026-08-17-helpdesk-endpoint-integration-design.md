@@ -74,6 +74,10 @@ performs HTTP outside a DB transaction and recovers create/bind crashes by
 reusing the stable key. The new forward-only migration follows revision 134;
 historical migrations and legacy tables remain unchanged.
 
+Revisions `135` and `136` are forward-only. A disposable PostgreSQL upgrade
+rehearsal plus a two-session idempotency/lease check remain required before a
+release; neither is a production migration action.
+
 ## Diagnostics and UI
 
 `EndpointPlatformCapabilityProvider` is selected only for
