@@ -2,6 +2,41 @@
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
++## 2026-08-17 Helpdesk Endpoint Integration v1
+
+- **Status:** architectural boundary and implementation plan recorded; runtime
+  work has not started.
+- **Goal:** implement exactly one external vertical slice,
+  `endpoint.context.diagnostic.collect` → Endpoint
+  `context.diagnostic.collect`, without Helpdesk WebSocket/DeviceOutbox agent
+  dispatch.
+- **Starting baseline:** `062703ab291645123e01d3732939c1dfebe43339` on
+  `codex/helpdesk-process-model`; current Alembic head at planning time is
+  `134`.
+- **Decisions:** Endpoint Platform owns endpoint-agent operations/control
+  plane; Helpdesk owns tickets, diagnostics, UI, local facade `Operation`, and
+  safe evidence. Endpoint refs/correlation are opaque and non-authorizing; no
+  cross-service imports, DB FK, automatic fallback, or dual dispatch.
+- **Default state:** Endpoint unavailable and diagnostic execution `legacy`.
+  `endpoint` mode is explicit, fail-closed, asynchronous, and reconciles
+  external operations into safe local diagnostics.
+- **Constraints:** legacy agent `/ws`, `DeviceOutbox`, runtime/tables and
+  `/ws_ui` remain. No production deployment/migration, service credential
+  change, test-agent action or agent rollout is in scope.
+- **Next steps:** execute
+  `docs/superpowers/plans/2026-08-17-helpdesk-endpoint-integration.md` in a
+  dedicated worktree, beginning with baseline evidence and port-contract RED
+  tests. Keep
+  `docs/segmentation/HELPDESK_ENDPOINT_RESIDUAL_INVENTORY.md` current whenever
+  a residual component's ownership changes.
+- **Verification gate:** Endpoint contract/adapter/device/link/reconciler/
+  provider/cutover guard tests; affected diagnostics/operations/ticket/API/
+  `/ws_ui`/migration suites; workspace verifier and diff check; browser
+  evidence plus webapp build only if the UI changes.
+- **Handoff:** accepted boundary:
+  `docs/segmentation/HELPDESK_ENDPOINT_OPERATION_BOUNDARY.md`; approved design:
+  `docs/superpowers/specs/2026-08-17-helpdesk-endpoint-integration-design.md`.
+
 ## 2026-08-09 Helpdesk segmentation milestone (PR-0 / PR-1 / PR-6)
 
 - **Completed locally:** ownership ADR/API target, neutral domain ports, AST import guard, ticket/support/problem/Registry detachment, and removal of the in-process Knowledge runtime, routes, UI, agent client, local AI runtime, content packs and active ORM mappings.
