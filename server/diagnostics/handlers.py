@@ -48,7 +48,10 @@ from diagnostics.passport_bridge import DiagnosticPassportBridgeService
 from diagnostics.presentation_overrides import PresentationSchemaValidationError, ToolPresentationOverrideService
 from diagnostics.provider_config import DiagnosticProviderConfigService
 from diagnostics.providers.manual_provider import ManualCapabilityProvider
-from diagnostics.providers.endpoint_platform import EndpointPlatformDiagnosticProvider
+from diagnostics.providers.endpoint_platform import (
+    ENDPOINT_DIAGNOSTIC_CAPABILITY_ID,
+    EndpointPlatformDiagnosticProvider,
+)
 from diagnostics.profiles import list_profiles, resolve_ticket_profile
 from diagnostics.profile_runner import DiagnosticProfileRunnerService
 from diagnostics.projection import DiagnosticProjectionService
@@ -116,6 +119,13 @@ def _build_diagnostic_runtime(*, state: object, ticket_id: str) -> _DiagnosticRu
         endpoint_port=None,
         endpoint_platform_provider=None,
     )
+
+
+def _stored_endpoint_device_ref(ticket: Ticket) -> str | None:
+    """Return only the validated Endpoint mapping, never the legacy device id."""
+
+    value = getattr(ticket, "endpoint_device_ref", None)
+    return value if isinstance(value, str) and value else None
 
 
 def _capability_payload(capability):
@@ -879,7 +889,7 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         remote_assist=_remote_assist_context(active_remote_assist_session),
         endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
         endpoint_port=runtime.endpoint_port,
-        endpoint_device_ref=getattr(ticket, "endpoint_device_ref", None) or getattr(ticket, "device_id", None),
+        endpoint_device_ref=_stored_endpoint_device_ref(ticket),
     )
     capability_items = []
     for capability in capabilities:
@@ -914,7 +924,19 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
-    params = payload.get("params") if isinstance(payload, dict) and isinstance(payload.get("params"), dict) else {}
+    raw_params = payload.get("params", {}) if isinstance(payload, dict) else {}
+    if capability_id == ENDPOINT_DIAGNOSTIC_CAPABILITY_ID and (
+        not isinstance(raw_params, dict) or raw_params
+    ):
+        return web.json_response(
+            {
+                "status": "error",
+                "error_code": "ENDPOINT_DIAGNOSTIC_PARAMS_INVALID",
+                "error": "Endpoint diagnostic capability accepts only an empty params object",
+            },
+            status=400,
+        )
+    params = raw_params if isinstance(raw_params, dict) else {}
     idempotency_key = _request_idempotency_key(request, payload)
     timeout_ms = _request_timeout_ms(payload)
     state = request.app.get("state")
@@ -990,7 +1012,7 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
             remote_assist=_remote_assist_context(active_remote_assist_session),
             endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
             endpoint_port=runtime.endpoint_port,
-            endpoint_device_ref=getattr(ticket, "endpoint_device_ref", None) or getattr(ticket, "device_id", None),
+            endpoint_device_ref=_stored_endpoint_device_ref(ticket),
         )
         readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
         params = _with_provider_runtime_params(params, capability, persisted_maps)

@@ -91,6 +91,26 @@ class CapabilityReadinessService:
                 [],
                 reason_code="ENDPOINT_DIAGNOSTIC_MODE_DISABLED",
             )
+        # A Helpdesk legacy device id is not an Endpoint reference.  Fail
+        # before touching the port so no legacy identifier can cross domains.
+        if not context.endpoint_device_ref:
+            return self._status(
+                capability,
+                "mapping_missing",
+                "Ticket has no Endpoint device mapping",
+                [],
+                reason_code="ENDPOINT_DEVICE_MAPPING_MISSING",
+            )
+        try:
+            device = EndpointDeviceRef(external_id=context.endpoint_device_ref)
+        except ValueError:
+            return self._status(
+                capability,
+                "mapping_missing",
+                "Ticket Endpoint device mapping is invalid",
+                [],
+                reason_code="ENDPOINT_DEVICE_MAPPING_MISSING",
+            )
         if context.endpoint_port is None:
             return self._status(
                 capability,
@@ -115,24 +135,6 @@ class CapabilityReadinessService:
                 "Endpoint integration is temporarily unavailable",
                 [],
                 reason_code="ENDPOINT_TEMPORARILY_UNAVAILABLE",
-            )
-        if not context.endpoint_device_ref:
-            return self._status(
-                capability,
-                "mapping_missing",
-                "Ticket has no Endpoint device mapping",
-                [],
-                reason_code="ENDPOINT_DEVICE_MAPPING_MISSING",
-            )
-        try:
-            device = EndpointDeviceRef(external_id=context.endpoint_device_ref)
-        except ValueError:
-            return self._status(
-                capability,
-                "mapping_missing",
-                "Ticket Endpoint device mapping is invalid",
-                [],
-                reason_code="ENDPOINT_DEVICE_MAPPING_MISSING",
             )
         device_outcome = await context.endpoint_port.read_device(device)
         if isinstance(device_outcome, EndpointUnavailable):

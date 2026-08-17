@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,6 +16,7 @@ from diagnostics.providers.endpoint_platform import (
     list_endpoint_platform_capabilities,
 )
 from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
+from diagnostics.provider_config import DiagnosticReadinessMaps
 from domain_ports.endpoint import (
     EndpointAvailability,
     EndpointCapabilitiesProjection,
@@ -50,11 +54,14 @@ class _OperationService:
 class _EndpointPort:
     def __init__(self, availability) -> None:
         self._availability = availability
+        self.calls = []
 
     async def availability(self):
+        self.calls.append("availability")
         return self._availability
 
     async def read_device(self, device):
+        self.calls.append("read_device")
         return EndpointDeviceProjection(
             device=device,
             display_name="Endpoint device",
@@ -63,10 +70,108 @@ class _EndpointPort:
         )
 
     async def list_capabilities(self, device):
+        self.calls.append("list_capabilities")
         return EndpointCapabilitiesProjection(
             device=device,
             items=(EndpointCapabilityProjection(),),
         )
+
+
+class _HandlerResult:
+    def __init__(self, value=None) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+    def scalars(self):
+        return []
+
+
+class _HandlerSession:
+    def __init__(self, ticket) -> None:
+        self.ticket = ticket
+        self.calls = 0
+
+    async def execute(self, _statement):
+        self.calls += 1
+        return _HandlerResult(self.ticket if self.calls == 1 else None)
+
+
+class _HandlerRequest(dict):
+    def __init__(self, *, payload: object, auth_context) -> None:
+        super().__init__(auth_context=auth_context)
+        self.match_info = {
+            "ticket_id": "ticket-1",
+            "capability_id": ENDPOINT_DIAGNOSTIC_CAPABILITY_ID,
+        }
+        self.app = {"state": object()}
+        self._payload = payload
+
+    async def json(self):
+        return self._payload
+
+
+class _NoopExecutionObserver:
+    def __init__(self, **_kwargs) -> None:
+        pass
+
+    async def record_started(self, **_kwargs) -> None:
+        return None
+
+    async def record_finished(self, **_kwargs) -> None:
+        return None
+
+
+def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_service) -> None:
+    import diagnostics.handlers as handlers
+
+    @asynccontextmanager
+    async def fake_get_session():
+        yield _HandlerSession(ticket)
+
+    class _ProviderConfigService:
+        def __init__(self, _session) -> None:
+            pass
+
+        async def build_readiness_maps(self):
+            return DiagnosticReadinessMaps({}, {}, {}, {}, {})
+
+    class _RemoteAccessRepo:
+        def __init__(self, _session) -> None:
+            pass
+
+        async def active_for_ticket_device(self, *_args):
+            return None
+
+    class _BombToolService:
+        def __init__(self, _state) -> None:
+            raise AssertionError("Endpoint handler must not construct ToolExecutionService")
+
+    async def _bomb(*_args, **_kwargs):
+        raise AssertionError("Endpoint handler must not dispatch legacy agent work")
+
+    monkeypatch.setattr(handlers.config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
+    monkeypatch.setattr(handlers, "get_session", fake_get_session)
+    monkeypatch.setattr(handlers, "DiagnosticProviderConfigService", _ProviderConfigService)
+    monkeypatch.setattr(handlers, "RemoteAccessRepo", _RemoteAccessRepo)
+    monkeypatch.setattr(handlers, "RuntimeAuditCapabilityExecutionObserver", _NoopExecutionObserver)
+    monkeypatch.setattr(handlers, "ToolExecutionService", _BombToolService)
+    monkeypatch.setattr(
+        handlers,
+        "_build_endpoint_platform_provider",
+        lambda _ticket_id: (
+            endpoint_port,
+            EndpointPlatformDiagnosticProvider(operation_service=operation_service),
+        ),
+    )
+    monkeypatch.setattr("websocket.protocol.send_ws_command", _bomb)
+    monkeypatch.setattr("websocket.protocol.enqueue_command_async", _bomb)
+    monkeypatch.setattr("app.repos.device_outbox_repo.DeviceOutboxRepo.enqueue_command", _bomb)
+
+
+def _handler_auth_context():
+    return SimpleNamespace(actor_id="support-1", actor_role="support")
 
 
 def test_endpoint_capability_descriptor_is_exact_and_mode_gated():
@@ -167,7 +272,11 @@ async def test_endpoint_readiness_requires_cutover_config_mapping_and_capability
     )
     unconfigured = await service.get_readiness(
         capability,
-        ReadinessContext(endpoint_execution_mode="endpoint", endpoint_port=_EndpointPort(EndpointUnavailable())),
+        ReadinessContext(
+            endpoint_execution_mode="endpoint",
+            endpoint_port=_EndpointPort(EndpointUnavailable()),
+            endpoint_device_ref="endpoint-device-1",
+        ),
     )
     missing_mapping = await service.get_readiness(
         capability,
@@ -205,3 +314,109 @@ def test_endpoint_handler_runtime_composition_does_not_construct_tool_service(mo
     assert runtime.endpoint_port is marker
     assert runtime.endpoint_platform_provider is marker
     assert runtime.registry.endpoint_diagnostic_execution_mode == "endpoint"
+
+
+def test_handler_uses_only_stored_endpoint_device_ref_for_readiness():
+    import diagnostics.handlers as handlers
+
+    ticket = SimpleNamespace(endpoint_device_ref=None, device_id="legacy-device-1")
+
+    assert handlers._stored_endpoint_device_ref(ticket) is None
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_params", [["not-an-object"], {"unexpected": True}])
+async def test_endpoint_handler_rejects_nonempty_or_non_object_params_before_routing(monkeypatch, raw_params):
+    import diagnostics.handlers as handlers
+
+    ticket = SimpleNamespace(
+        ticket_id="ticket-1",
+        device_id=None,
+        endpoint_device_ref="endpoint-device-1",
+        observer_root_trace_id=None,
+    )
+    _install_handler_fakes(
+        monkeypatch,
+        ticket=ticket,
+        endpoint_port=_EndpointPort(EndpointAvailability(status="available")),
+        operation_service=_OperationService(),
+    )
+
+    response = await handlers.handle_ticket_diagnostics_capability_run(
+        _HandlerRequest(
+            payload={"params": raw_params, "idempotency_key": "browser-request-0001"},
+            auth_context=_handler_auth_context(),
+        )
+    )
+
+    assert response.status == 400
+    assert json.loads(response.body)["error_code"] == "ENDPOINT_DIAGNOSTIC_PARAMS_INVALID"
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_endpoint_handler_with_only_legacy_device_id_fails_mapping_without_port_call(monkeypatch):
+    import diagnostics.handlers as handlers
+
+    ticket = SimpleNamespace(
+        ticket_id="ticket-1",
+        device_id="legacy-device-1",
+        endpoint_device_ref=None,
+        observer_root_trace_id=None,
+    )
+    endpoint_port = _EndpointPort(EndpointAvailability(status="available"))
+    _install_handler_fakes(
+        monkeypatch,
+        ticket=ticket,
+        endpoint_port=endpoint_port,
+        operation_service=_OperationService(),
+    )
+
+    response = await handlers.handle_ticket_diagnostics_capability_run(
+        _HandlerRequest(
+            payload={"params": {}, "idempotency_key": "browser-request-0001"},
+            auth_context=_handler_auth_context(),
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert response.status == 409
+    assert payload["error_code"] == "CAPABILITY_NOT_READY"
+    assert payload["reason_code"] == "ENDPOINT_DEVICE_MAPPING_MISSING"
+    assert endpoint_port.calls == []
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
+async def test_endpoint_handler_returns_queued_202_without_legacy_dispatch(monkeypatch):
+    import diagnostics.handlers as handlers
+
+    ticket = SimpleNamespace(
+        ticket_id="ticket-1",
+        device_id="legacy-device-1",
+        endpoint_device_ref="endpoint-device-1",
+        observer_root_trace_id=None,
+    )
+    operation_service = _OperationService()
+    endpoint_port = _EndpointPort(EndpointAvailability(status="available"))
+    _install_handler_fakes(
+        monkeypatch,
+        ticket=ticket,
+        endpoint_port=endpoint_port,
+        operation_service=operation_service,
+    )
+
+    response = await handlers.handle_ticket_diagnostics_capability_run(
+        _HandlerRequest(
+            payload={"params": {}, "idempotency_key": "browser-request-0001"},
+            auth_context=_handler_auth_context(),
+        )
+    )
+    payload = json.loads(response.body)
+
+    assert response.status == 202
+    assert payload["status"] == "queued"
+    assert payload["operation_id"] == "local-endpoint-operation-1"
+    assert payload["execution_target"] == "endpoint_operation"
+    assert operation_service.requests[0][1].ticket_id == "ticket-1"
