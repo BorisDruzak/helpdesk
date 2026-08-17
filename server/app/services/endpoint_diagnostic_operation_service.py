@@ -117,6 +117,10 @@ def remote_endpoint_idempotency_key(operation_id: str) -> str:
     return f"helpdesk-endpoint-operation:{operation_id}"
 
 
+def endpoint_operation_correlation_ref(operation_id: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"helpdesk-endpoint-correlation:{operation_id}"))
+
+
 class EndpointDiagnosticOperationService:
     """Creates only a local durable operation; remote work is reconciled later."""
 
@@ -295,6 +299,7 @@ class SqlAlchemyEndpointDiagnosticOperationStore:
                         operation_id=operation.operation_id,
                         endpoint_device_ref=values["endpoint_device_ref"],
                         create_idempotency_key=values["idempotency_key"],
+                        correlation_ref=endpoint_operation_correlation_ref(operation.operation_id),
                         next_attempt_at=values["created_at"],
                         diagnostic_session_id=diagnostic_session.id,
                         diagnostic_step_id=diagnostic_step.id,

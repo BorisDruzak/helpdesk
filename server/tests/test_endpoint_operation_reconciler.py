@@ -61,6 +61,7 @@ def _claim() -> EndpointReconcileClaim:
         attempt_count=0,
         remote_status="create_pending",
         create_idempotency_key="helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111",
+        correlation_ref=endpoint_operation_correlation_ref("11111111-1111-1111-1111-111111111111"),
     )
 
 

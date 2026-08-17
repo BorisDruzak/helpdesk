@@ -3325,6 +3325,7 @@ class EndpointOperationLink(Base):
         String(128), nullable=False, server_default="context.diagnostic.collect"
     )
     create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    correlation_ref: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     remote_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="create_pending")
     diagnostic_session_id: Mapped[Optional[str]] = mapped_column(
         String(36),

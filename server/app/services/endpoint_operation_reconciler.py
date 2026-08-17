@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
-from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from uuid import UUID, uuid4
 
 from sqlalchemy import or_, select
 
@@ -31,6 +31,7 @@ from domain_ports.endpoint import (
 from app.services.endpoint_diagnostic_operation_service import (
     ENDPOINT_DIAGNOSTIC_CAPABILITY,
     ENDPOINT_DIAGNOSTIC_REASON,
+    endpoint_operation_correlation_ref,
 )
 from app.db.models import DiagnosticEvidence, DiagnosticSession, DiagnosticStep, EndpointOperationLink, Operation
 
@@ -61,6 +62,7 @@ class EndpointReconcileClaim:
     create_idempotency_key: str
     local_status: str = "queued"
     local_phase: str | None = "endpoint_create_pending"
+    correlation_ref: str | None = None
     lease_token: str = ""
 
 
@@ -90,12 +92,6 @@ def endpoint_retry_delay_seconds(attempt_count: int, *, random: Callable[[], flo
     initial = (2, 5, 15, 30, 60)
     base = initial[index] if index < len(initial) else min(300, 60 * 2 ** (index - 4))
     return min(300.0, base * (1.0 + max(0.0, min(random(), 1.0)) * 0.1))
-
-
-def endpoint_operation_correlation_ref(operation_id: str) -> str:
-    """Non-reversible opaque trace ref; Helpdesk entity identifiers never cross the port."""
-
-    return str(uuid5(NAMESPACE_URL, f"helpdesk-endpoint-correlation:{operation_id}"))
 
 
 class EndpointOperationReconciler:
@@ -146,10 +142,18 @@ class EndpointOperationReconciler:
                 EndpointOperationRef(external_id=claim.endpoint_operation_ref)
             )
         else:
+            if not claim.correlation_ref:
+                await self._commit_and_publish(
+                    claim=claim, endpoint_operation_ref=None, remote_status="failed",
+                    operation_status="failed", phase="endpoint_failed",
+                    error_code="endpoint_invalid_projection", safe_result_snapshot=None,
+                    next_attempt_at=self._aware_now(),
+                )
+                return
             request = EndpointOperationCreateRequest(
                 parameters=EndpointDiagnosticParameters(reason=ENDPOINT_DIAGNOSTIC_REASON),
                 correlation=EndpointOperationCorrelation(
-                    source_entity_id=endpoint_operation_correlation_ref(claim.operation_id),
+                    source_entity_id=claim.correlation_ref or "",
                     request_id=UUID(claim.operation_id),
                 ),
             )
@@ -216,7 +220,7 @@ class EndpointOperationReconciler:
         status, phase = _REMOTE_TO_LOCAL[outcome.status]
         if (
             outcome.device.external_id != claim.endpoint_device_ref
-            or outcome.correlation.source_entity_id != endpoint_operation_correlation_ref(claim.operation_id)
+            or outcome.correlation.source_entity_id != claim.correlation_ref
             or outcome.correlation.request_id != UUID(claim.operation_id)
         ):
             await self._commit_and_publish(
@@ -300,6 +304,7 @@ class SqlAlchemyEndpointOperationReconcileStore:
                             create_idempotency_key=link.create_idempotency_key,
                             local_status=operation.status,
                             local_phase=operation.phase,
+                            correlation_ref=link.correlation_ref,
                             lease_token=token,
                         )
                     )
@@ -432,7 +437,19 @@ class SqlAlchemyEndpointOperationReconcileStore:
                         state_changed = True
                     if link.diagnostic_session_id:
                         diagnostic_session = await session.get(DiagnosticSession, link.diagnostic_session_id, with_for_update=True)
-                        if diagnostic_session is not None and diagnostic_session.status != "completed":
+                        active_step = (
+                            await session.execute(
+                                select(DiagnosticStep.id).where(
+                                    DiagnosticStep.session_id == link.diagnostic_session_id,
+                                    DiagnosticStep.status.in_(("pending", "running")),
+                                ).limit(1)
+                            )
+                        ).scalar_one_or_none()
+                        if (
+                            diagnostic_session is not None
+                            and active_step is None
+                            and diagnostic_session.status != "completed"
+                        ):
                             diagnostic_session.status = "completed"
                             diagnostic_session.finished_at = datetime.now(timezone.utc)
                             state_changed = True

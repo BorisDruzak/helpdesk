@@ -51,7 +51,10 @@ from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, OUTBOX_SEN
 from routes import setup_routes
 
 # Import database initialization
-from app.db import get_session_maker, init_db, shutdown_db
+from app.db import get_session, init_db, shutdown_db
+from app.db.engine import get_session_maker
+from app.repos.operations_repo import OperationsRepo
+from websocket.ui_publisher import UiPublisherImpl
 
 # Phase C: Import device outbox sender
 from websocket.device_outbox_sender import DeviceOutboxSender, recover_pending_commands
@@ -194,6 +197,22 @@ async def artifacts_expired_cleanup_task(app: web.Application):
             logger.error(f"[ARTIFACTS_CLEANUP] Error: {e}", exc_info=True)
 
 
+
+def _endpoint_operation_ui_publisher(state: StateManager):
+    """Build the post-commit UI publication callback for Endpoint facades."""
+
+    publisher = UiPublisherImpl(state)
+
+    async def publish(operation_id: str) -> None:
+        # Called only by EndpointOperationReconciler after its store commit.
+        async with get_session() as session:
+            operation = await OperationsRepo(session).get_by_operation_id(operation_id)
+        if operation is not None:
+            await publisher.push_operation_updated(operation)
+
+    return publish
+
+
 async def start_inventory_refresh_runtime(app: web.Application) -> None:
     """Start the inventory scheduler once per aiohttp application lifecycle."""
     if app.get("inventory_refresh_runtime") is not None:
@@ -258,6 +277,7 @@ async def on_startup(app: web.Application):
                         mode=ENDPOINT_PORT_MODE,
                         diagnostic_execution_mode=ENDPOINT_DIAGNOSTIC_EXECUTION_MODE,
                         owner="helpdesk-endpoint-reconciler",
+                        publish_after_commit=_endpoint_operation_ui_publisher(app["state"]),
                     ),
                     interval_seconds=ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
                     batch_size=ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE,
