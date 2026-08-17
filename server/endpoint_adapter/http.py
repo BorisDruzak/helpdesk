@@ -130,7 +130,7 @@ class ExternalEndpointHttpAdapter(EndpointPort):
             return False
         if parsed.scheme == "http":
             return self._allow_insecure_test_url
-        return bool(self._ca_file and Path(self._ca_file).is_file())
+        return bool(self._ca_file and Path(self._ca_file).is_file() and self._ssl_context())
 
     def _parsed_base_url(self) -> Any | None:
         try:

@@ -51,11 +51,14 @@ Endpoint API integration targets are not Helpdesk routes:
 
 | Method | Endpoint API v1 target | Purpose |
 | --- | --- | --- |
-| `GET` | Endpoint Operations API v1 availability contract | Availability projection |
 | `GET` | `/api/v1/devices/{endpoint_device_ref}` | Exact device projection |
 | `GET` | `/api/v1/devices/{endpoint_device_ref}/capabilities` | Capability projection |
 | `POST` | `/api/v1/devices/{endpoint_device_ref}/operations` | Idempotent external creation |
 | `GET` | `/api/v1/operations/{endpoint_operation_ref}` | Safe operation projection |
+
+`EndpointPort.availability()` is a local configuration projection. It never
+issues an Endpoint Operations API request and must not introduce a health or
+availability route.
 
 The actual adapter implementation must verify this route table against the
 read-only Endpoint Platform contracts and committed schemas before coding.

@@ -22,6 +22,7 @@ from domain_ports import (
     EndpointOperationRef,
     EndpointUnauthorized,
     EndpointUnavailable,
+    UnavailableEndpointPort,
 )
 from endpoint_adapter.http import ExternalEndpointHttpAdapter
 
@@ -349,7 +350,7 @@ async def test_adapter_maps_timeout_to_typed_unavailable() -> None:
         await server.close()
 
 
-def test_container_composes_http_adapter_only_after_complete_external_configuration(
+def test_container_rejects_invalid_pem_ca_before_composing_http_adapter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -365,7 +366,38 @@ def test_container_composes_http_adapter_only_after_complete_external_configurat
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", str(ca_file))
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_TIMEOUT_SECONDS", 1.0)
 
-    assert isinstance(DomainPortContainer.from_config().endpoint, ExternalEndpointHttpAdapter)
+    endpoint = DomainPortContainer.from_config().endpoint
+
+    assert isinstance(endpoint, UnavailableEndpointPort)
+    assert endpoint._unavailable.code == "endpoint_external_ca_invalid"
+
+
+def test_container_rejects_ca_file_that_ssl_context_cannot_read(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import config
+    import domain_ports.container as container_module
+    from domain_ports import DomainPortContainer
+
+    ca_file = tmp_path / "endpoint-ca.pem"
+    ca_file.write_text("test-only-placeholder", encoding="utf-8")
+
+    def fail_ca_read(*_args: object, **_kwargs: object) -> None:
+        raise OSError("CA file is unavailable")
+
+    monkeypatch.setattr(container_module.ssl, "create_default_context", fail_ca_read)
+    monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.invalid")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "service-token")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", str(ca_file))
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_TIMEOUT_SECONDS", 1.0)
+
+    endpoint = DomainPortContainer.from_config().endpoint
+
+    assert isinstance(endpoint, UnavailableEndpointPort)
+    assert endpoint._unavailable.code == "endpoint_external_ca_invalid"
 
 
 @pytest.mark.asyncio

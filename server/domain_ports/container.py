@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import ssl
 from urllib.parse import urlsplit
 
 from .endpoint import EndpointPort
@@ -90,6 +91,10 @@ def _endpoint_external_unavailable_code(
     if not ca_file:
         return "endpoint_external_ca_missing"
     if not Path(ca_file).is_file():
+        return "endpoint_external_ca_invalid"
+    try:
+        ssl.create_default_context(cafile=ca_file)
+    except (OSError, ssl.SSLError):
         return "endpoint_external_ca_invalid"
     return None
 
