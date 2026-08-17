@@ -1,0 +1,382 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import asyncio
+from pathlib import Path
+from uuid import uuid4
+
+from aiohttp import web
+from aiohttp.test_utils import TestServer
+import pytest
+
+from domain_ports import (
+    EndpointCapabilitiesProjection,
+    EndpointConflict,
+    EndpointDeviceProjection,
+    EndpointDeviceRef,
+    EndpointForbidden,
+    EndpointInvalidProjection,
+    EndpointNotFound,
+    EndpointOperationCreateRequest,
+    EndpointOperationProjection,
+    EndpointOperationRef,
+    EndpointUnauthorized,
+    EndpointUnavailable,
+)
+from endpoint_adapter.http import ExternalEndpointHttpAdapter
+
+
+pytestmark = pytest.mark.no_db
+
+
+def _correlation() -> dict[str, object]:
+    return {
+        "schema_version": "endpoint_operation_correlation_v1",
+        "source_system": "helpdesk",
+        "source_entity_type": "ticket",
+        "source_entity_id": "opaque-source-ref",
+        "request_id": str(uuid4()),
+    }
+
+
+def _operation_data(*, operation_ref: str = "operation-1") -> dict[str, object]:
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "operation": {"external_id": operation_ref},
+        "device": {"external_id": "device-1"},
+        "capability": "context.diagnostic.collect",
+        "status": "queued",
+        "created_at": now,
+        "deadline_at": None,
+        "completed_at": None,
+        "correlation": _correlation(),
+        "result_available": False,
+        "safe_result": None,
+        "warning_codes": [],
+    }
+
+
+def _envelope(data: object, *, correlation_id: str) -> dict[str, object]:
+    return {"data": data, "correlation_id": correlation_id}
+
+
+def _adapter(server: TestServer, *, correlation_id: str = "http-correlation") -> ExternalEndpointHttpAdapter:
+    return ExternalEndpointHttpAdapter(
+        base_url=str(server.make_url("")),
+        service_token="test-service-token",
+        ca_file="",
+        timeout_seconds=1,
+        correlation_id_factory=lambda: correlation_id,
+        allow_insecure_test_url=True,
+    )
+
+
+@pytest.mark.asyncio
+async def test_adapter_reads_exact_device_projection_without_putting_ref_in_query() -> None:
+    received: dict[str, object] = {}
+
+    async def device(request: web.Request) -> web.Response:
+        received["path"] = request.path
+        received["query"] = dict(request.query)
+        return web.json_response(
+            _envelope(
+                {
+                    "device": {"external_id": "device-1"},
+                    "display_name": "Endpoint One",
+                    "retired": False,
+                    "last_seen_at": datetime.now(timezone.utc).isoformat(),
+                },
+                correlation_id="http-correlation",
+            )
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/devices/{device_id}", device)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_device(EndpointDeviceRef(external_id="device-1"))
+
+        assert isinstance(result, EndpointDeviceProjection)
+        assert result.device.external_id == "device-1"
+        assert received == {"path": "/api/v1/devices/device-1", "query": {}}
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_reads_exact_capabilities_projection() -> None:
+    async def capabilities(_request: web.Request) -> web.Response:
+        return web.json_response(
+            _envelope(
+                {
+                    "device": {"external_id": "device-1"},
+                    "items": [
+                        {
+                            "capability": "context.diagnostic.collect",
+                            "available": True,
+                            "transport": "gateway_wss",
+                            "risk": "read_only",
+                            "consent_required": False,
+                            "parameter_schema_version": "diagnostic_collection_parameters_v1",
+                            "last_observed_at": None,
+                        }
+                    ],
+                },
+                correlation_id="http-correlation",
+            )
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/devices/{device_id}/capabilities", capabilities)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).list_capabilities(EndpointDeviceRef(external_id="device-1"))
+
+        assert isinstance(result, EndpointCapabilitiesProjection)
+        assert result.items[0].capability == "context.diagnostic.collect"
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", (201, 200), ids=("created", "replayed"))
+async def test_adapter_creates_or_replays_exact_operation(status: int) -> None:
+    received: dict[str, object] = {}
+    correlation = _correlation()
+
+    async def create(request: web.Request) -> web.Response:
+        received["path"] = request.path
+        received["query"] = dict(request.query)
+        received["idempotency"] = request.headers.get("Idempotency-Key")
+        received["body"] = await request.json()
+        data = _operation_data()
+        data["correlation"] = correlation
+        return web.json_response(_envelope(data, correlation_id="http-correlation"), status=status)
+
+    app = web.Application()
+    app.router.add_post("/api/v1/devices/{device_id}/operations", create)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        request = EndpointOperationCreateRequest.model_validate(
+            {"parameters": {}, "correlation": correlation}
+        )
+        result = await _adapter(server).create_operation(
+            EndpointDeviceRef(external_id="device-1"),
+            request,
+            idempotency_key="stable-idempotency-key",
+        )
+
+        assert isinstance(result, EndpointOperationProjection)
+        assert received["path"] == "/api/v1/devices/device-1/operations"
+        assert received["query"] == {}
+        assert received["idempotency"] == "stable-idempotency-key"
+        assert "opaque-source-ref" not in str(received["path"])
+        assert received["body"] == request.model_dump(mode="json")
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_operation_with_mismatched_correlation() -> None:
+    expected = _correlation()
+
+    async def create(_request: web.Request) -> web.Response:
+        data = _operation_data()
+        return web.json_response(_envelope(data, correlation_id="http-correlation"), status=201)
+
+    app = web.Application()
+    app.router.add_post("/api/v1/devices/{device_id}/operations", create)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        request = EndpointOperationCreateRequest.model_validate(
+            {"parameters": {}, "correlation": expected}
+        )
+        result = await _adapter(server).create_operation(
+            EndpointDeviceRef(external_id="device-1"),
+            request,
+            idempotency_key="stable-idempotency-key",
+        )
+
+        assert isinstance(result, EndpointInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_reads_exact_operation_projection() -> None:
+    async def operation(_request: web.Request) -> web.Response:
+        return web.json_response(
+            _envelope(_operation_data(), correlation_id="http-correlation")
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/operations/{operation_id}", operation)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_operation(
+            EndpointOperationRef(external_id="operation-1")
+        )
+
+        assert isinstance(result, EndpointOperationProjection)
+        assert result.operation.external_id == "operation-1"
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("http_status", "expected_type"),
+    (
+        (401, EndpointUnauthorized),
+        (403, EndpointForbidden),
+        (404, EndpointNotFound),
+        (409, EndpointConflict),
+        (422, EndpointInvalidProjection),
+        (429, EndpointUnavailable),
+        (500, EndpointUnavailable),
+    ),
+)
+async def test_adapter_maps_remote_statuses_to_typed_outcomes(
+    http_status: int,
+    expected_type: type[object],
+) -> None:
+    async def device(_request: web.Request) -> web.Response:
+        return web.json_response({}, status=http_status)
+
+    app = web.Application()
+    app.router.add_get("/api/v1/devices/{device_id}", device)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_device(EndpointDeviceRef(external_id="device-1"))
+
+        assert isinstance(result, expected_type)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_bad_envelope_and_never_uses_redirect_target() -> None:
+    received_redirect_target = False
+
+    async def device(_request: web.Request) -> web.Response:
+        raise web.HTTPFound("/unexpected")
+
+    async def unexpected(_request: web.Request) -> web.Response:
+        nonlocal received_redirect_target
+        received_redirect_target = True
+        return web.json_response(_envelope({}, correlation_id="http-correlation"))
+
+    app = web.Application()
+    app.router.add_get("/api/v1/devices/{device_id}", device)
+    app.router.add_get("/unexpected", unexpected)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_device(EndpointDeviceRef(external_id="device-1"))
+
+        assert isinstance(result, EndpointUnavailable)
+        assert received_redirect_target is False
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_factory",
+    (
+        lambda: web.Response(text="not-json", content_type="text/plain"),
+        lambda: web.json_response(
+            _envelope(
+                {
+                    "device": {"external_id": "device-1"},
+                    "display_name": "Endpoint One",
+                    "retired": False,
+                    "last_seen_at": None,
+                    "raw_context": {"must": "not pass"},
+                },
+                correlation_id="http-correlation",
+            )
+        ),
+    ),
+    ids=("malformed_json", "extra_projection_field"),
+)
+async def test_adapter_rejects_unsafe_or_malformed_response(
+    response_factory: object,
+) -> None:
+    async def device(_request: web.Request) -> web.Response:
+        return response_factory()  # type: ignore[operator]
+
+    app = web.Application()
+    app.router.add_get("/api/v1/devices/{device_id}", device)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_device(EndpointDeviceRef(external_id="device-1"))
+
+        assert isinstance(result, EndpointInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_maps_timeout_to_typed_unavailable() -> None:
+    async def device(_request: web.Request) -> web.Response:
+        await asyncio.sleep(0.05)
+        return web.json_response({})
+
+    app = web.Application()
+    app.router.add_get("/api/v1/devices/{device_id}", device)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        adapter = ExternalEndpointHttpAdapter(
+            base_url=str(server.make_url("")),
+            service_token="test-service-token",
+            ca_file="",
+            timeout_seconds=0.001,
+            allow_insecure_test_url=True,
+        )
+        result = await adapter.read_device(EndpointDeviceRef(external_id="device-1"))
+
+        assert isinstance(result, EndpointUnavailable)
+    finally:
+        await server.close()
+
+
+def test_container_composes_http_adapter_only_after_complete_external_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import config
+    from domain_ports import DomainPortContainer
+
+    ca_file = tmp_path / "endpoint-ca.pem"
+    ca_file.write_text("test-only-placeholder", encoding="utf-8")
+    monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.invalid")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "service-token")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", str(ca_file))
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_TIMEOUT_SECONDS", 1.0)
+
+    assert isinstance(DomainPortContainer.from_config().endpoint, ExternalEndpointHttpAdapter)
+
+
+@pytest.mark.asyncio
+async def test_adapter_availability_is_local_and_never_invents_a_health_route() -> None:
+    app = web.Application()
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        availability = await _adapter(server).availability()
+
+        assert availability.status == "available"
+        assert availability.code == "endpoint_external"
+    finally:
+        await server.close()

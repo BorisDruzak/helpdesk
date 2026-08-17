@@ -26,7 +26,10 @@
   exact operation-read contracts for `context.diagnostic.collect`; its frozen
   safe projections reject raw context/credentials and use opaque 128-character
   external refs. External composition defaults to unavailable and rejects
-  invalid Endpoint modes/configuration.
+  invalid Endpoint modes/configuration. `server/endpoint_adapter/http.py`
+  composes only a complete external Endpoint configuration into the four-route,
+  HTTPS-only Operations API v1 transport; it has no Helpdesk database,
+  WebSocket or ticket dependencies.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
