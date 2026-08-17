@@ -67,6 +67,10 @@ def test_endpoint_operation_overview_projection_is_strictly_allowlisted():
         "result_available": True,
     }
     assert _endpoint_operation_overview_projection(
+        SimpleNamespace(operation_id="local-operation-3"),
+        SimpleNamespace(remote_status="succeeded", safe_result_snapshot_json={}),
+    )["result_available"] is True
+    assert _endpoint_operation_overview_projection(
         SimpleNamespace(operation_id="local-operation-2"),
         SimpleNamespace(remote_status="unexpected", safe_result_snapshot_json=None),
     ) is None

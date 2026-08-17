@@ -29,7 +29,7 @@ def _endpoint_operation_overview_projection(operation: Operation, link: Endpoint
     return {
         "operation_id": operation.operation_id,
         "status": link.remote_status,
-        "result_available": bool(link.safe_result_snapshot_json),
+        "result_available": link.safe_result_snapshot_json is not None,
     }
 
 
