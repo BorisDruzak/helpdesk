@@ -190,8 +190,15 @@ class EndpointOperationProjection(_ImmutableEndpointDTO):
     def validate_operation_projection(self) -> "EndpointOperationProjection":
         if len(self.warning_codes) > MAX_ENDPOINT_WARNING_CODES:
             raise ValueError("endpoint operation warnings exceed maximum item count")
-        if self.safe_result is not None and not self.result_available:
-            raise ValueError("endpoint safe result requires result_available")
+        if self.result_available != (self.safe_result is not None):
+            raise ValueError("endpoint result_available must match safe result presence")
+        if self.safe_result is not None and self.status not in {
+            "succeeded",
+            "failed",
+            "canceled",
+            "expired",
+        }:
+            raise ValueError("endpoint safe result requires terminal operation status")
         if self.deadline_at is not None and self.deadline_at < self.created_at:
             raise ValueError("endpoint operation deadline cannot precede creation")
         if self.completed_at is not None and self.completed_at < self.created_at:

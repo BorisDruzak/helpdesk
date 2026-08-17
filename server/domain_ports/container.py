@@ -68,10 +68,16 @@ def _endpoint_external_unavailable_code(
     service_token: str,
     ca_file: str,
 ) -> str | None:
-    parsed = urlsplit(base_url)
+    try:
+        parsed = urlsplit(base_url)
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError:
+        return "endpoint_external_invalid_origin"
     if (
         parsed.scheme != "https"
         or not parsed.netloc
+        or not hostname
         or parsed.username is not None
         or parsed.password is not None
         or parsed.path not in {"", "/"}
@@ -79,7 +85,7 @@ def _endpoint_external_unavailable_code(
         or parsed.fragment
     ):
         return "endpoint_external_invalid_origin"
-    if not service_token:
+    if not service_token.strip():
         return "endpoint_external_service_token_missing"
     if not ca_file:
         return "endpoint_external_ca_missing"

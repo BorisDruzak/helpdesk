@@ -231,6 +231,29 @@ def test_terminal_operation_projection_carries_only_typed_safe_diagnostic_result
             result_available=False,
             safe_result=safe_result,
         )
+    with pytest.raises(ValidationError):
+        projection_type(
+            operation=operation_ref_type(external_id="endpoint-operation-1"),
+            device=device_ref_type(external_id="endpoint-device-1"),
+            status="succeeded",
+            created_at=datetime.now(timezone.utc),
+            deadline_at=None,
+            completed_at=datetime.now(timezone.utc),
+            correlation=_example_correlation(),
+            result_available=True,
+        )
+    with pytest.raises(ValidationError):
+        projection_type(
+            operation=operation_ref_type(external_id="endpoint-operation-1"),
+            device=device_ref_type(external_id="endpoint-device-1"),
+            status="queued",
+            created_at=datetime.now(timezone.utc),
+            deadline_at=None,
+            completed_at=None,
+            correlation=_example_correlation(),
+            result_available=True,
+            safe_result=safe_result,
+        )
 
 
 @pytest.mark.asyncio
@@ -330,6 +353,10 @@ def test_container_defaults_to_endpoint_unavailable_and_rejects_unknown_mode(
         ("https://endpoint.invalid/path?query=1", "service-token", "configured-ca.pem", "endpoint_external_invalid_origin"),
         ("https://endpoint.invalid", "", "configured-ca.pem", "endpoint_external_service_token_missing"),
         ("https://endpoint.invalid", "service-token", "", "endpoint_external_ca_missing"),
+        ("https://[::1", "service-token", "configured-ca.pem", "endpoint_external_invalid_origin"),
+        ("https://endpoint.invalid:notaport", "service-token", "configured-ca.pem", "endpoint_external_invalid_origin"),
+        ("https://endpoint.invalid:99999", "service-token", "configured-ca.pem", "endpoint_external_invalid_origin"),
+        ("https://endpoint.invalid", "   ", "configured-ca.pem", "endpoint_external_service_token_missing"),
     ),
 )
 def test_external_endpoint_configuration_degrades_to_typed_unavailable(
@@ -352,3 +379,24 @@ def test_external_endpoint_configuration_degrades_to_typed_unavailable(
 
     assert isinstance(endpoint, UnavailableEndpointPort)
     assert endpoint._unavailable.code == expected_code
+
+
+@pytest.mark.parametrize(
+    "status",
+    ("available", "unavailable", "invalid_projection", "unauthorized", "forbidden", "not_found", "conflict"),
+)
+def test_availability_accepts_only_the_documented_outcomes(status: str) -> None:
+    availability_type = _type("EndpointAvailability")
+
+    assert availability_type(status=status).status == status
+    with pytest.raises(ValidationError):
+        availability_type(status="unexpected")
+
+
+def test_diagnostic_process_rejects_unknown_state_or_raw_fields() -> None:
+    process_type = _type("EndpointDiagnosticProcessProjection")
+
+    with pytest.raises(ValidationError):
+        process_type(name="service", state="unknown_state")
+    with pytest.raises(ValidationError):
+        process_type(name="service", state="running", command_line="secret")

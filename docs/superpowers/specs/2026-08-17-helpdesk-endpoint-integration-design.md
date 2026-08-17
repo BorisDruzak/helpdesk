@@ -40,7 +40,7 @@ authorizes its service bearer and its own device operation independently.
   `SafeEndpointCode` (`^[a-z0-9][a-z0-9._-]*$`), and bounded stripped
   `SafeEndpointText`;
 - `EndpointDeviceRef`, `EndpointOperationRef`, availability outcomes, exact
-  safe device/capability projections, correlation/request/create/read/list
+  safe device/capability projections, correlation/request/create/read
   operation contracts, and safe terminal result projections;
 - fixed capability `context.diagnostic.collect`, transport `gateway_wss`, risk
   `read_only`, no consent, and parameter schema version
@@ -52,9 +52,9 @@ bounded sizes. Raw context, tokens, credentials, network addresses, WSS
 metadata, raw HTTP bodies and arbitrary result fields are rejected.
 
 `EndpointPort` exposes availability, exact device/capability reads, idempotent
-operation creation, exact operation read, and bounded operation listing. The
-HTTP adapter remains transport-only; persistence, ticket authorization and
-diagnostic policy stay in Helpdesk services.
+operation creation, and exact operation read. The HTTP adapter remains
+transport-only; persistence, ticket authorization and diagnostic policy stay in
+Helpdesk services.
 
 ## Persistence and recovery
 
