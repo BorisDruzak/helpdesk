@@ -120,5 +120,27 @@ class EndpointOperationLinksRepo:
 
     @staticmethod
     def _constraint_name(exc: IntegrityError) -> str | None:
-        diagnostics = getattr(getattr(exc, "orig", None), "diag", None)
-        return getattr(diagnostics, "constraint_name", None)
+        """Read only the PostgreSQL constraint name across driver wrappers."""
+
+        pending = [exc, getattr(exc, "orig", None)]
+        seen: set[int] = set()
+        while pending:
+            current = pending.pop()
+            if current is None or id(current) in seen:
+                continue
+            seen.add(id(current))
+            constraint_name = getattr(current, "constraint_name", None)
+            if isinstance(constraint_name, str):
+                return constraint_name
+            diagnostics = getattr(current, "diag", None)
+            diagnostic_constraint_name = getattr(diagnostics, "constraint_name", None)
+            if isinstance(diagnostic_constraint_name, str):
+                return diagnostic_constraint_name
+            pending.extend(
+                [
+                    getattr(current, "orig", None),
+                    getattr(current, "__cause__", None),
+                    getattr(current, "__context__", None),
+                ]
+            )
+        return None

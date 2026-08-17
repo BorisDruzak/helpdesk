@@ -6,6 +6,7 @@ import uuid
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from app.db.models import EndpointOperationLink, Operation
 
@@ -29,6 +30,58 @@ def _operation() -> Operation:
 class _NoDatabaseSession:
     async def execute(self, *args, **kwargs):
         raise AssertionError("invalid safe identifiers must not reach database persistence")
+
+
+class _Result:
+    def __init__(self, value) -> None:
+        self._value = value
+
+    def scalar_one_or_none(self):
+        return self._value
+
+
+class _Savepoint:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _AsyncpgShapedUniqueViolation(Exception):
+    def __init__(self, constraint_name: str) -> None:
+        self.constraint_name = constraint_name
+
+
+class _ConflictSession:
+    def __init__(self, outcomes: list[object]) -> None:
+        self._outcomes = iter(outcomes)
+
+    def begin_nested(self):
+        return _Savepoint()
+
+    async def execute(self, *_args, **_kwargs):
+        outcome = next(self._outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return _Result(outcome)
+
+
+def _link(*, operation_id: str = "operation-1", key: str = "endpoint-create-key-1", device: str = "endpoint-device-1"):
+    return type(
+        "Link",
+        (),
+        {
+            "operation_id": operation_id,
+            "create_idempotency_key": key,
+            "endpoint_device_ref": device,
+            "capability_code": "context.diagnostic.collect",
+        },
+    )()
+
+
+def _integrity(constraint_name: str) -> IntegrityError:
+    return IntegrityError("INSERT", {}, _AsyncpgShapedUniqueViolation(constraint_name))
 
 
 @pytest.mark.asyncio
@@ -141,3 +194,87 @@ async def test_repo_rejects_oversized_external_ref_before_any_database_write():
             create_idempotency_key="endpoint-create-key-1",
             next_attempt_at=datetime(2026, 8, 17, tzinfo=timezone.utc),
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_repo_conflicts_when_operation_id_is_reused_with_another_idempotency_key():
+    from app.repos.endpoint_operation_links_repo import EndpointOperationLinkConflict, EndpointOperationLinksRepo
+
+    repo = EndpointOperationLinksRepo(
+        _ConflictSession(
+            [
+                _integrity("uq_endpoint_operation_links_operation_id"),
+                _link(key="other-key"),
+                None,
+            ]
+        )
+    )
+
+    with pytest.raises(EndpointOperationLinkConflict):
+        await repo.create_pending(
+            operation_id="operation-1",
+            endpoint_device_ref="endpoint-device-1",
+            create_idempotency_key="endpoint-create-key-1",
+            next_attempt_at=datetime(2026, 8, 17, tzinfo=timezone.utc),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_repo_conflicts_when_idempotency_key_is_reused_for_another_operation():
+    from app.repos.endpoint_operation_links_repo import EndpointOperationLinkConflict, EndpointOperationLinksRepo
+
+    repo = EndpointOperationLinksRepo(_ConflictSession([None, None, _link(operation_id="operation-2")]))
+
+    with pytest.raises(EndpointOperationLinkConflict):
+        await repo.create_pending(
+            operation_id="operation-1",
+            endpoint_device_ref="endpoint-device-1",
+            create_idempotency_key="endpoint-create-key-1",
+            next_attempt_at=datetime(2026, 8, 17, tzinfo=timezone.utc),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_repo_rethrows_unrelated_integrity_error():
+    from app.repos.endpoint_operation_links_repo import EndpointOperationLinksRepo
+
+    error = _integrity("fk_endpoint_operation_links_operation_id")
+    repo = EndpointOperationLinksRepo(_ConflictSession([error]))
+
+    with pytest.raises(IntegrityError) as raised:
+        await repo.create_pending(
+            operation_id="operation-1",
+            endpoint_device_ref="endpoint-device-1",
+            create_idempotency_key="endpoint-create-key-1",
+            next_attempt_at=datetime(2026, 8, 17, tzinfo=timezone.utc),
+        )
+    assert raised.value is error
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_repo_re_reads_asyncpg_operation_id_conflict_for_matching_identity():
+    from app.repos.endpoint_operation_links_repo import EndpointOperationLinksRepo
+
+    existing = _link()
+    repo = EndpointOperationLinksRepo(
+        _ConflictSession(
+            [
+                _integrity("uq_endpoint_operation_links_operation_id"),
+                existing,
+                existing,
+            ]
+        )
+    )
+
+    result = await repo.create_pending(
+        operation_id="operation-1",
+        endpoint_device_ref="endpoint-device-1",
+        create_idempotency_key="endpoint-create-key-1",
+        next_attempt_at=datetime(2026, 8, 17, tzinfo=timezone.utc),
+    )
+
+    assert result is existing
