@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import uuid
 
 import pytest
@@ -50,6 +51,25 @@ def test_agent_recipe_waiting_dependency_result_does_not_persist_evidence():
     )
 
     assert _result_should_persist_as_evidence(capability, {"status": "waiting_dependency"}) is False
+
+
+def test_endpoint_operation_overview_projection_is_strictly_allowlisted():
+    from diagnostics.service import _endpoint_operation_overview_projection
+
+    projection = _endpoint_operation_overview_projection(
+        SimpleNamespace(operation_id="local-operation-1"),
+        SimpleNamespace(remote_status="queued", safe_result_snapshot_json={"processes": []}),
+    )
+
+    assert projection == {
+        "operation_id": "local-operation-1",
+        "status": "queued",
+        "result_available": True,
+    }
+    assert _endpoint_operation_overview_projection(
+        SimpleNamespace(operation_id="local-operation-2"),
+        SimpleNamespace(remote_status="unexpected", safe_result_snapshot_json=None),
+    ) is None
 
 
 @pytest.mark.asyncio

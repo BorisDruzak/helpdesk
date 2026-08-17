@@ -2291,6 +2291,91 @@ async def handle_support_ticket_workspace(request: web.Request) -> web.Response:
     return json_success(build_ticket_workspace(state, ticket_id))
 
 
+def _diagnostic_overview_fixture(ticket_id: str) -> dict:
+    return {
+        "ticket_id": ticket_id,
+        "device_id": "device-1",
+        "status": "info",
+        "summary": "Диагностика ожидает результата.",
+        "profile": {
+            "id": "profile_sync",
+            "version": "1",
+            "title": "Диагностика синхронизации профиля",
+            "recommended_capabilities": [],
+            "recommended_playbooks": [],
+            "required_evidence_kinds": [],
+            "optional_evidence_kinds": [],
+        },
+        "evidence_counts": {"ok": 0, "warning": 0, "error": 0, "info": 0, "unknown": 0},
+        "perspectives": {},
+        "latest_evidence": [],
+        "latest_operations": [],
+        "endpoint_operations": [
+            {"operation_id": "local-fixture-operation", "status": "queued", "result_available": False}
+        ],
+        "latest_playbooks": [],
+        "remote_assist": {"count": 0, "latest": None},
+        "observer": {"root_trace_id": None, "available": False},
+        "artifacts": {"count": 0, "items": []},
+        "findings": [],
+        "recommended_actions": [],
+    }
+
+
+async def handle_support_ticket_diagnostics_overview(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    if ticket_id not in request.app["fixture_state"]["tickets"]:
+        raise web.HTTPNotFound()
+    return json_success(_diagnostic_overview_fixture(ticket_id))
+
+
+async def handle_support_ticket_diagnostics_capabilities(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    if ticket_id not in request.app["fixture_state"]["tickets"]:
+        raise web.HTTPNotFound()
+    return web.json_response(
+        {
+            "status": "ok",
+            "count": 1,
+            "capabilities": [
+                {
+                    "id": "endpoint.context.diagnostic.collect",
+                    "title": "Диагностика устройства через Endpoint Platform",
+                    "provider_id": "endpoint_platform",
+                    "provider_type": "endpoint_platform",
+                    "execution_target": "endpoint_operation",
+                    "risk_level": "low",
+                    "readiness": "mapping_missing",
+                    "reason_code": "ENDPOINT_DEVICE_MAPPING_MISSING",
+                    "reason": "Для обращения не определено устройство Endpoint Platform.",
+                    "actions": [],
+                    "requires_consent": False,
+                    "requires_integration": False,
+                    "integration_key": None,
+                    "install_required_on_agent": False,
+                }
+            ],
+        }
+    )
+
+
+async def handle_support_ticket_diagnostics_empty_collection(request: web.Request) -> web.Response:
+    unauthorized = require_session(request)
+    if unauthorized:
+        return unauthorized
+    ticket_id = request.match_info["ticket_id"]
+    if ticket_id not in request.app["fixture_state"]["tickets"]:
+        raise web.HTTPNotFound()
+    collection = request.match_info["collection"]
+    return web.json_response({"status": "ok", collection: []})
+
+
 async def handle_support_ticket_tools(request: web.Request) -> web.Response:
     unauthorized = require_session(request)
     if unauthorized:
@@ -2983,6 +3068,12 @@ def build_app() -> web.Application:
             web.put("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_update),
             web.delete("/api/web/support/queue/saved-views/{view_id}", handle_support_queue_saved_view_delete),
             web.get("/api/web/support/tickets/{ticket_id}/workspace", handle_support_ticket_workspace),
+            web.get("/api/web/support/tickets/{ticket_id}/diagnostics/overview", handle_support_ticket_diagnostics_overview),
+            web.get("/api/web/support/tickets/{ticket_id}/diagnostics/capabilities", handle_support_ticket_diagnostics_capabilities),
+            web.get(
+                "/api/web/support/tickets/{ticket_id}/diagnostics/{collection:evidence|sessions|findings}",
+                handle_support_ticket_diagnostics_empty_collection,
+            ),
             web.get("/api/web/support/tickets/{ticket_id}/playbooks", handle_support_ticket_playbooks),
             web.get("/api/web/support/tickets/{ticket_id}/passport", handle_support_ticket_passport),
             web.get("/api/web/support/tickets/{ticket_id}", handle_support_ticket_detail),

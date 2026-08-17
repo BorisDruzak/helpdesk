@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Artifact, DiagnosticEvidence, Operation, PlaybookRun, RemoteAccessSession, Ticket
+from app.db.models import Artifact, DiagnosticEvidence, EndpointOperationLink, Operation, PlaybookRun, RemoteAccessSession, Ticket
 from app.repos.diagnostics_repo import DiagnosticRepo
 from diagnostics.findings import DiagnosticFindingService
 from diagnostics.profiles import resolve_ticket_profile
@@ -16,6 +16,21 @@ from diagnostics.serialization import evidence_to_dict, finding_to_dict, operati
 
 EVIDENCE_STATUSES = ("ok", "warning", "error", "info", "unknown")
 PERSPECTIVES = ("endpoint", "server", "monitoring", "observer", "remote_assist", "manual", "hybrid")
+_ENDPOINT_OPERATION_STATUSES = frozenset(
+    {"create_pending", "queued", "delivered", "acknowledged", "running", "succeeded", "failed", "canceled", "expired"}
+)
+
+
+def _endpoint_operation_overview_projection(operation: Operation, link: EndpointOperationLink) -> dict[str, Any] | None:
+    """Return only the support-safe state required by the diagnostics workspace."""
+
+    if link.remote_status not in _ENDPOINT_OPERATION_STATUSES:
+        return None
+    return {
+        "operation_id": operation.operation_id,
+        "status": link.remote_status,
+        "result_available": bool(link.safe_result_snapshot_json),
+    }
 
 
 def _overview_status(evidence: list[DiagnosticEvidence]) -> str:
@@ -95,6 +110,17 @@ class DiagnosticOverviewService:
                 )
             ).scalars()
         )
+        endpoint_operation_rows = list(
+            (
+                await self.session.execute(
+                    select(Operation, EndpointOperationLink)
+                    .join(EndpointOperationLink, EndpointOperationLink.operation_id == Operation.operation_id)
+                    .where(Operation.ticket_id == ticket_id)
+                    .order_by(Operation.queued_at.desc())
+                    .limit(10)
+                )
+            ).all()
+        )
         playbooks = list(
             (
                 await self.session.execute(
@@ -134,6 +160,11 @@ class DiagnosticOverviewService:
             "perspectives": _perspectives(evidence),
             "latest_evidence": [evidence_to_dict(item) for item in evidence[:8]],
             "latest_operations": [operation_to_dict(item) for item in operations],
+            "endpoint_operations": [
+                projection
+                for operation, link in endpoint_operation_rows
+                if (projection := _endpoint_operation_overview_projection(operation, link)) is not None
+            ],
             "latest_playbooks": [
                 {
                     "id": item.id,

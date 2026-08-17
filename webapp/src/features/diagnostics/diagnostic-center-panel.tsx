@@ -38,6 +38,7 @@ import {
   type DiagnosticCapability,
   type DiagnosticEvidence,
   type DiagnosticCapabilityRunResult,
+  type EndpointDiagnosticOperation,
 } from "./api";
 import { normalizeCapabilityParamSchema } from "./params-schema";
 
@@ -52,6 +53,49 @@ type ManualEvidenceDraft = {
 };
 
 const ALL_FILTER = "all";
+const ENDPOINT_DIAGNOSTIC_CAPABILITY_ID = "endpoint.context.diagnostic.collect";
+
+const ENDPOINT_OPERATION_STATUS_LABELS: Record<string, string> = {
+  create_pending: "Ожидает отправки",
+  queued: "Поставлено в очередь Endpoint",
+  delivered: "Доставлено агенту",
+  acknowledged: "Принято агентом",
+  running: "Выполняется",
+  succeeded: "Завершено",
+  failed: "Ошибка",
+  canceled: "Отменено",
+  expired: "Истекло время ожидания",
+};
+
+function isEndpointDiagnosticCapability(capability: DiagnosticCapability | null | undefined): boolean {
+  return capability?.id === ENDPOINT_DIAGNOSTIC_CAPABILITY_ID && capability.provider_id === "endpoint_platform";
+}
+
+function endpointCapabilityGuidance(capability: DiagnosticCapability | null | undefined): string | null {
+  if (!capability || !isEndpointDiagnosticCapability(capability)) {
+    return null;
+  }
+  if (capability.reason_code === "ENDPOINT_DEVICE_MAPPING_MISSING") {
+    return "Для обращения не определено устройство Endpoint Platform.";
+  }
+  if (capability.reason_code === "ENDPOINT_TEMPORARILY_UNAVAILABLE") {
+    return "Endpoint Platform временно недоступна. Обращение продолжает обрабатываться, но техническая диагностика сейчас недоступна.";
+  }
+  return null;
+}
+
+function endpointOperationStatusLabel(status: string): string {
+  return ENDPOINT_OPERATION_STATUS_LABELS[status] ?? "Статус Endpoint недоступен";
+}
+
+function endpointOperationStatusTone(status: string): "neutral" | "brand" | "success" | "warning" | "danger" | "info" {
+  if (status === "succeeded") return "success";
+  if (status === "failed" || status === "expired") return "danger";
+  if (status === "canceled") return "warning";
+  if (status === "running" || status === "acknowledged") return "info";
+  if (status === "delivered") return "brand";
+  return "neutral";
+}
 
 function formatDateTime(value: string | null | undefined): string {
   if (!value) {
@@ -273,6 +317,7 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
   const findings = findingsQuery.data ?? [];
   const sessions = sessionsQuery.data ?? [];
   const overview = overviewQuery.data ?? null;
+  const endpointOperations = overview?.endpoint_operations ?? [];
 
   const filteredCapabilities = useMemo(
     () =>
@@ -302,6 +347,8 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
     [selectedCapability?.id, selectedCapability?.params_schema, selectedCapabilityParams],
   );
   const selectedCapabilityBlockedTitle = selectedCapability ? blockedCapabilityTitle(selectedCapability) : null;
+  const hasEndpointDiagnostic = endpointOperations.length > 0 || capabilities.some(isEndpointDiagnosticCapability);
+  const endpointQueueIsOffline = endpointOperations.some((operation) => operation.status === "queued");
   const runAccess = selectedCapability ? requireToolRunPermission(session, selectedCapability.risk_level) : null;
   const manualAccess = requirePermission(session, "diagnostics.create_manual_evidence");
   const passportAccess = requirePermission(session, "ticket.passport.manage");
@@ -501,6 +548,36 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
       </div>
       {!passportAccess.allowed ? <p className="text-sm text-amber-700">{passportAccess.reason}</p> : null}
 
+      {hasEndpointDiagnostic ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Endpoint Platform</CardTitle>
+            <CardDescription>Источник технической диагностики устройства.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {endpointOperations.length ? (
+              <div className="flex flex-wrap gap-2" aria-label="Состояния операций Endpoint Platform">
+                {endpointOperations.map((operation: EndpointDiagnosticOperation) => (
+                  <Badge key={operation.operation_id} tone={endpointOperationStatusTone(operation.status)}>
+                    {endpointOperationStatusLabel(operation.status)}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Операций Endpoint Platform пока нет.</p>
+            )}
+            {endpointQueueIsOffline ? (
+              <p className="text-sm text-slate-600">
+                Операция поставлена в очередь и будет доставлена при подключении агента.
+              </p>
+            ) : null}
+            {endpointOperations.some((operation) => operation.result_available) ? (
+              <p className="text-sm text-emerald-700">Безопасный результат диагностики сохранён.</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
         <section className="space-y-4">
           <Card>
@@ -582,7 +659,10 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                         <Badge tone={statusTone(capability.readiness)}>{label(capability.readiness)}</Badge>
                       </div>
                       <p className="mt-3 text-sm text-slate-600">
-                        {capability.reason ?? capability.description ?? "Готовность рассчитана без дополнительного пояснения."}
+                        {endpointCapabilityGuidance(capability) ??
+                          capability.reason ??
+                          capability.description ??
+                          "Готовность рассчитана без дополнительного пояснения."}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Badge tone="neutral">{capabilityDomain(capability)}</Badge>
@@ -621,7 +701,10 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                       <Badge tone="neutral">{selectedCapability.risk_level}</Badge>
                     </div>
                     <p className="mt-3 text-sm text-slate-600">
-                      {selectedCapability.description || selectedCapability.reason || "Описание capability не передано."}
+                      {selectedCapability.description ??
+                        (isEndpointDiagnosticCapability(selectedCapability)
+                          ? "Техническая диагностика выполняется через Endpoint Platform."
+                          : selectedCapability.reason ?? "Описание capability не передано.")}
                     </p>
                   </div>
 
@@ -688,9 +771,13 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                     <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold">{selectedCapabilityBlockedTitle}</p>
-                        {selectedCapability.reason_code ? <Badge tone="warning">{selectedCapability.reason_code}</Badge> : null}
+                        {selectedCapability.reason_code && !isEndpointDiagnosticCapability(selectedCapability) ? (
+                          <Badge tone="warning">{selectedCapability.reason_code}</Badge>
+                        ) : null}
                       </div>
-                      <p className="mt-2">{blockedCapabilityDetail(selectedCapability)}</p>
+                      {!isEndpointDiagnosticCapability(selectedCapability) ? (
+                        <p className="mt-2">{blockedCapabilityDetail(selectedCapability)}</p>
+                      ) : null}
                     </div>
                   ) : null}
 

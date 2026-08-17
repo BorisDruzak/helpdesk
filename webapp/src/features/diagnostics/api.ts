@@ -78,6 +78,12 @@ export type DiagnosticProfile = {
   optional_evidence_kinds: string[];
 };
 
+export type EndpointDiagnosticOperation = {
+  operation_id: string;
+  status: string;
+  result_available: boolean;
+};
+
 export type DiagnosticOverview = {
   ticket_id: string;
   device_id: string | null;
@@ -88,6 +94,7 @@ export type DiagnosticOverview = {
   perspectives: Record<string, DiagnosticPerspectiveSummary>;
   latest_evidence: DiagnosticEvidence[];
   latest_operations: Array<Record<string, unknown>>;
+  endpoint_operations?: EndpointDiagnosticOperation[];
   latest_playbooks: Array<Record<string, unknown>>;
   remote_assist: {
     count: number;

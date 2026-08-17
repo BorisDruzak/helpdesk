@@ -35,6 +35,57 @@ test("оператор открывает tickets workspace через новы�
   await expect(page.getByText("Право: запуск безопасных инструментов")).toBeVisible();
 });
 
+test("оператор видит безопасное состояние диагностики Endpoint Platform", async ({ page }, testInfo) => {
+  const consoleErrors: string[] = [];
+  const failedDiagnosticsRequests: string[] = [];
+  const knownFixtureFailures: string[] = [];
+  const unexpectedFailedRequests: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      const failure = `${response.status()} ${response.request().method()} ${response.url()}`;
+      if (response.url().includes("/diagnostics/")) {
+        failedDiagnosticsRequests.push(failure);
+      } else if (response.url().includes("/timeline?") || response.url().endsWith("/read")) {
+        knownFixtureFailures.push(failure);
+      } else {
+        unexpectedFailedRequests.push(failure);
+      }
+    }
+  });
+
+  await loginSupport(page);
+  await page.goto("/app/tickets/ticket-1");
+  await expect(page.getByText(/T-200001 Ошибка синхронизации/)).toBeVisible();
+  await page.getByRole("button", { name: "Инструменты", exact: true }).click();
+  await page.getByRole("tab", { name: "Диагностика", exact: true }).click();
+
+  await expect(page.getByText("Endpoint Platform", { exact: true })).toBeVisible();
+  await expect(page.getByText("Поставлено в очередь Endpoint")).toBeVisible();
+  await expect(page.getByText("Операция поставлена в очередь и будет доставлена при подключении агента.")).toBeVisible();
+  await expect(page.getByText("Для обращения не определено устройство Endpoint Platform.")).toBeVisible();
+  expect(failedDiagnosticsRequests).toEqual([]);
+  expect(unexpectedFailedRequests).toEqual([]);
+  expect(knownFixtureFailures).toEqual([
+    "404 GET http://127.0.0.1:4173/api/web/support/tickets/ticket-1/timeline?filter=all",
+    "404 POST http://127.0.0.1:4173/api/web/support/tickets/ticket-1/read",
+  ]);
+  expect(consoleErrors).toEqual([
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+  ]);
+
+  await page.setViewportSize({ width: 1366, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(2);
+  await page.screenshot({ path: testInfo.outputPath("endpoint-diagnostics-1366.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(2);
+  await page.screenshot({ path: testInfo.outputPath("endpoint-diagnostics-1920.png"), fullPage: true });
+});
+
 for (const width of [1366, 1440, 1920]) {
   test(`tickets workspace сохраняет читаемость на ${width}px в dark/light`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });

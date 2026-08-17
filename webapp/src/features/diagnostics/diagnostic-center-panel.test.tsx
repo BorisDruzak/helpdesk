@@ -41,6 +41,88 @@ afterEach(() => {
 });
 
 describe("DiagnosticCenterPanel", () => {
+  it("presents safe Endpoint Platform states and guidance without sensitive remote details", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/diagnostics/overview")) {
+        return jsonResponse({
+          status: "success",
+          data: {
+            ticket_id: "ticket-1",
+            device_id: "device-1",
+            status: "info",
+            summary: "Диагностика ожидает результата.",
+            profile: { id: "generic", version: "1", title: "Generic", recommended_capabilities: [], recommended_playbooks: [], required_evidence_kinds: [], optional_evidence_kinds: [] },
+            evidence_counts: {}, perspectives: {}, latest_evidence: [], latest_operations: [], latest_playbooks: [],
+            endpoint_operations: [
+              "create_pending", "queued", "delivered", "acknowledged", "running", "succeeded", "failed", "canceled", "expired",
+            ].map((status, index) => ({ operation_id: `local-operation-${index}`, status, result_available: status === "succeeded" })),
+            remote_assist: { count: 0, latest: null }, observer: { root_trace_id: null, available: false }, artifacts: { count: 0, items: [] }, findings: [], recommended_actions: [],
+          },
+        });
+      }
+      if (url.endsWith("/diagnostics/capabilities")) {
+        return jsonResponse({
+          status: "ok", count: 1, capabilities: [{
+            id: "endpoint.context.diagnostic.collect", title: "Диагностика устройства через Endpoint Platform", provider_id: "endpoint_platform",
+            execution_target: "endpoint_operation", risk_level: "low", readiness: "mapping_missing", reason_code: "ENDPOINT_DEVICE_MAPPING_MISSING",
+            reason: "Ticket Endpoint device mapping is missing", actions: [], requires_consent: false, requires_integration: false,
+            integration_key: null, install_required_on_agent: false,
+          }],
+        });
+      }
+      if (url.endsWith("/diagnostics/evidence")) return jsonResponse({ status: "ok", evidence: [] });
+      if (url.endsWith("/diagnostics/sessions")) return jsonResponse({ status: "ok", sessions: [] });
+      if (url.endsWith("/diagnostics/findings")) return jsonResponse({ status: "ok", findings: [] });
+      return jsonResponse({ status: "error", error: `unexpected ${url}` }, 500);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithQueryClient(<DiagnosticCenterPanel ticketId="ticket-1" />);
+
+    expect(await screen.findByText("Endpoint Platform")).toBeInTheDocument();
+    for (const label of [
+      "Ожидает отправки", "Поставлено в очередь Endpoint", "Доставлено агенту", "Принято агентом", "Выполняется",
+      "Завершено", "Ошибка", "Отменено", "Истекло время ожидания",
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getByText("Для обращения не определено устройство Endpoint Platform.")).toBeInTheDocument();
+    expect(screen.getByText("Операция поставлена в очередь и будет доставлена при подключении агента.")).toBeInTheDocument();
+    expect(screen.queryByText("local-operation-0")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ticket Endpoint device mapping is missing")).not.toBeInTheDocument();
+  });
+
+  it("uses the bounded unavailable copy for the Endpoint diagnostic capability", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/diagnostics/overview")) {
+        return jsonResponse({ status: "success", data: {
+          ticket_id: "ticket-1", device_id: "device-1", status: "unknown", summary: "Нет данных.",
+          profile: { id: "generic", version: "1", title: "Generic", recommended_capabilities: [], recommended_playbooks: [], required_evidence_kinds: [], optional_evidence_kinds: [] },
+          evidence_counts: {}, perspectives: {}, latest_evidence: [], latest_operations: [], latest_playbooks: [], endpoint_operations: [],
+          remote_assist: { count: 0, latest: null }, observer: { root_trace_id: null, available: false }, artifacts: { count: 0, items: [] }, findings: [], recommended_actions: [],
+        }});
+      }
+      if (url.endsWith("/diagnostics/capabilities")) return jsonResponse({ status: "ok", count: 1, capabilities: [{
+        id: "endpoint.context.diagnostic.collect", title: "Диагностика устройства через Endpoint Platform", provider_id: "endpoint_platform",
+        execution_target: "endpoint_operation", risk_level: "low", readiness: "unavailable", reason_code: "ENDPOINT_TEMPORARILY_UNAVAILABLE",
+        reason: "Endpoint integration is temporarily unavailable", actions: [], requires_consent: false, requires_integration: false,
+        integration_key: null, install_required_on_agent: false,
+      }] });
+      if (url.endsWith("/diagnostics/evidence")) return jsonResponse({ status: "ok", evidence: [] });
+      if (url.endsWith("/diagnostics/sessions")) return jsonResponse({ status: "ok", sessions: [] });
+      if (url.endsWith("/diagnostics/findings")) return jsonResponse({ status: "ok", findings: [] });
+      return jsonResponse({ status: "error", error: `unexpected ${url}` }, 500);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithQueryClient(<DiagnosticCenterPanel ticketId="ticket-1" />);
+
+    expect(await screen.findByText("Endpoint Platform временно недоступна. Обращение продолжает обрабатываться, но техническая диагностика сейчас недоступна.")).toBeInTheDocument();
+    expect(screen.queryByText("Endpoint integration is temporarily unavailable")).not.toBeInTheDocument();
+  });
+
   it("renders capability readiness and routes a capability run through the diagnostics API", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
