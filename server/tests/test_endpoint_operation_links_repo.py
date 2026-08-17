@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import uuid
 
@@ -67,6 +68,50 @@ async def test_repo_creates_idempotent_pending_link_for_local_operation(test_eng
         assert not {"service_token", "authorization", "raw_response", "parameters"} & set(
             EndpointOperationLink.__table__.columns.keys()
         )
+
+
+@pytest.mark.asyncio
+async def test_repo_concurrently_creates_one_link_for_the_same_immutable_identity(test_engine):
+    """A retry race must return one persisted link instead of an IntegrityError."""
+
+    from app.repos.endpoint_operation_links_repo import EndpointOperationLinksRepo
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    operation = _operation()
+    next_attempt_at = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    async with session_maker() as session:
+        session.add(operation)
+        await session.commit()
+
+    start = asyncio.Barrier(2)
+
+    async def create_from_separate_session() -> str:
+        async with session_maker() as session:
+            await start.wait()
+            link = await EndpointOperationLinksRepo(session).create_pending(
+                operation_id=operation.operation_id,
+                endpoint_device_ref="endpoint-device-1",
+                create_idempotency_key="endpoint-create-key-race-1",
+                next_attempt_at=next_attempt_at,
+            )
+            await session.commit()
+            return link.link_id
+
+    first_id, second_id = await asyncio.gather(
+        create_from_separate_session(),
+        create_from_separate_session(),
+    )
+
+    assert first_id == second_id
+    async with session_maker() as session:
+        count = await session.scalar(
+            select(func.count()).select_from(EndpointOperationLink).where(
+                EndpointOperationLink.operation_id == operation.operation_id
+            )
+        )
+    assert count == 1
 
 
 @pytest.mark.no_db
