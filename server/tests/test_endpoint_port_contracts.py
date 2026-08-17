@@ -106,6 +106,8 @@ def test_endpoint_projections_accept_only_safe_bounded_values() -> None:
     assert projection.source == "external_authoritative"
     assert caps.items[0].capability == "context.diagnostic.collect"
     assert caps.items[0].transport == "gateway_wss"
+    with pytest.raises((FrozenInstanceError, TypeError, ValueError)):
+        projection.retired = True  # type: ignore[misc]
 
     with pytest.raises(ValidationError):
         device_projection_type(
@@ -193,6 +195,44 @@ def test_safe_diagnostic_result_rejects_oversized_or_unknown_content() -> None:
         result_type(collected_at=datetime.now(timezone.utc), raw_context={})
 
 
+def test_terminal_operation_projection_carries_only_typed_safe_diagnostic_result() -> None:
+    device_ref_type = _type("EndpointDeviceRef")
+    operation_ref_type = _type("EndpointOperationRef")
+    process_type = _type("EndpointDiagnosticProcessProjection")
+    result_type = _type("EndpointDiagnosticResultProjection")
+    projection_type = _type("EndpointOperationProjection")
+
+    safe_result = result_type(
+        collected_at=datetime.now(timezone.utc),
+        processes=(process_type(name="service", state="running"),),
+    )
+    projection = projection_type(
+        operation=operation_ref_type(external_id="endpoint-operation-1"),
+        device=device_ref_type(external_id="endpoint-device-1"),
+        status="succeeded",
+        created_at=datetime.now(timezone.utc),
+        deadline_at=None,
+        completed_at=datetime.now(timezone.utc),
+        correlation=_example_correlation(),
+        result_available=True,
+        safe_result=safe_result,
+    )
+
+    assert projection.safe_result == safe_result
+    with pytest.raises(ValidationError):
+        projection_type(
+            operation=operation_ref_type(external_id="endpoint-operation-1"),
+            device=device_ref_type(external_id="endpoint-device-1"),
+            status="succeeded",
+            created_at=datetime.now(timezone.utc),
+            deadline_at=None,
+            completed_at=datetime.now(timezone.utc),
+            correlation=_example_correlation(),
+            result_available=False,
+            safe_result=safe_result,
+        )
+
+
 @pytest.mark.asyncio
 async def test_unavailable_endpoint_port_fails_closed_for_every_operation() -> None:
     from domain_ports.unavailable import UnavailableEndpointPort
@@ -276,3 +316,39 @@ def test_container_defaults_to_endpoint_unavailable_and_rejects_unknown_mode(
     monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "unexpected")
     with pytest.raises(ValueError, match="ENDPOINT_PORT_MODE"):
         DomainPortContainer.from_config()
+
+    monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "unavailable")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "unexpected")
+    with pytest.raises(ValueError, match="ENDPOINT_DIAGNOSTIC_EXECUTION_MODE"):
+        DomainPortContainer.from_config()
+
+
+@pytest.mark.parametrize(
+    ("base_url", "token", "ca_file", "expected_code"),
+    (
+        ("http://endpoint.invalid", "service-token", "configured-ca.pem", "endpoint_external_invalid_origin"),
+        ("https://endpoint.invalid/path?query=1", "service-token", "configured-ca.pem", "endpoint_external_invalid_origin"),
+        ("https://endpoint.invalid", "", "configured-ca.pem", "endpoint_external_service_token_missing"),
+        ("https://endpoint.invalid", "service-token", "", "endpoint_external_ca_missing"),
+    ),
+)
+def test_external_endpoint_configuration_degrades_to_typed_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    base_url: str,
+    token: str,
+    ca_file: str,
+    expected_code: str,
+) -> None:
+    import config
+    from domain_ports import DomainPortContainer, UnavailableEndpointPort
+
+    monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", base_url)
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", token)
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", ca_file)
+
+    endpoint = DomainPortContainer.from_config().endpoint
+
+    assert isinstance(endpoint, UnavailableEndpointPort)
+    assert endpoint._unavailable.code == expected_code

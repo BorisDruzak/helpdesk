@@ -37,7 +37,8 @@ The Endpoint Agent must not receive `ticket_id` or any other Helpdesk entity.
 The existing `server/domain_ports/endpoint.py::EndpointPort` is the only
 Helpdesk boundary. It is extended, never replaced by a second port, with typed
 versioned operations for availability, device/capability projections, and
-`create_operation`, `get_operation`, and `list_operations`.
+`create_operation` and `read_operation`. Reconciliation is driven from
+Helpdesk's durable local links; it does not add an Endpoint operation-list API.
 
 The concrete adapter is `ExternalEndpointHttpAdapter` under
 `server/endpoint_adapter/`. It calls only HTTPS Endpoint Operations API v1 with
@@ -50,12 +51,11 @@ Endpoint API integration targets are not Helpdesk routes:
 
 | Method | Endpoint API v1 target | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/v1/service/availability` | Availability projection |
-| `GET` | `/api/v1/service/devices/{endpoint_device_ref}` | Exact device projection |
-| `GET` | `/api/v1/service/devices/{endpoint_device_ref}/capabilities` | Capability projection |
-| `POST` | `/api/v1/service/operations` | Idempotent external creation |
-| `GET` | `/api/v1/service/operations/{endpoint_operation_ref}` | Safe operation projection |
-| `GET` | `/api/v1/service/operations?...` | Bounded reconciliation reads |
+| `GET` | Endpoint Operations API v1 availability contract | Availability projection |
+| `GET` | `/api/v1/devices/{endpoint_device_ref}` | Exact device projection |
+| `GET` | `/api/v1/devices/{endpoint_device_ref}/capabilities` | Capability projection |
+| `POST` | `/api/v1/devices/{endpoint_device_ref}/operations` | Idempotent external creation |
+| `GET` | `/api/v1/operations/{endpoint_operation_ref}` | Safe operation projection |
 
 The actual adapter implementation must verify this route table against the
 read-only Endpoint Platform contracts and committed schemas before coding.

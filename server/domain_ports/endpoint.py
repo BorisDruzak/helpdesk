@@ -183,12 +183,15 @@ class EndpointOperationProjection(_ImmutableEndpointDTO):
     completed_at: AwareDatetime | None
     correlation: EndpointOperationCorrelation
     result_available: bool = False
+    safe_result: "EndpointDiagnosticResultProjection | None" = None
     warning_codes: tuple[SafeEndpointCode, ...] = ()
 
     @model_validator(mode="after")
     def validate_operation_projection(self) -> "EndpointOperationProjection":
         if len(self.warning_codes) > MAX_ENDPOINT_WARNING_CODES:
             raise ValueError("endpoint operation warnings exceed maximum item count")
+        if self.safe_result is not None and not self.result_available:
+            raise ValueError("endpoint safe result requires result_available")
         if self.deadline_at is not None and self.deadline_at < self.created_at:
             raise ValueError("endpoint operation deadline cannot precede creation")
         if self.completed_at is not None and self.completed_at < self.created_at:
@@ -216,6 +219,9 @@ class EndpointDiagnosticResultProjection(_ImmutableEndpointDTO):
         if len(self.processes) > MAX_ENDPOINT_DIAGNOSTIC_PROCESSES:
             raise ValueError("endpoint diagnostic processes exceed maximum item count")
         return self
+
+
+EndpointOperationProjection.model_rebuild()
 
 
 EndpointDeviceOutcome: TypeAlias = EndpointDeviceProjection | EndpointFailureOutcome

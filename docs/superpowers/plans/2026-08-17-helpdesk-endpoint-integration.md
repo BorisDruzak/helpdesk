@@ -98,7 +98,8 @@ git commit -m "docs: define Helpdesk Endpoint integration boundary"
 
 **Interfaces:** Produces frozen Pydantic opaque refs, safe projections, and
 `EndpointPort.availability()`, exact device/capability reads, idempotent create,
-exact read, and bounded list methods for only `context.diagnostic.collect`.
+and exact read methods for only `context.diagnostic.collect`. Reconciliation
+uses Helpdesk's durable local links, not a remote operation-list API.
 
 - [ ] **Step 1: Write failing contract tests**
 

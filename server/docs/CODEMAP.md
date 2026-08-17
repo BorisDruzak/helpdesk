@@ -21,7 +21,12 @@
 - `server/domain_ports/knowledge.py`, `registry.py` and `endpoint.py` define the
   neutral, runtime-checkable dependency-injection protocols. Knowledge request
   and result DTOs are frozen, forbid extra content fields and preserve opaque
-  refs exactly, subject to the documented 512-character limit.
+  refs exactly, subject to the documented 512-character limit. EndpointPort
+  exposes only typed availability, exact device/capability, create-operation and
+  exact operation-read contracts for `context.diagnostic.collect`; its frozen
+  safe projections reject raw context/credentials and use opaque 128-character
+  external refs. External composition defaults to unavailable and rejects
+  invalid Endpoint modes/configuration.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
@@ -53,7 +58,8 @@
   `server/tests/test_registry_boundary.py`.
   Its `observer` Registry scope protects
   `server/observer/checks/web_cabinet.py` from future direct Registry imports.
-- Port-contract coverage remains in `server/tests/test_domain_ports.py`.
+- Port-contract coverage remains in `server/tests/test_domain_ports.py` and
+  `server/tests/test_endpoint_port_contracts.py`.
 
 ## 2026-08-10 RegistryPort Helpdesk read cutover (PR-8)
 

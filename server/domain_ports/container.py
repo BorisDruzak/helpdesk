@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
 
 from .endpoint import EndpointPort
 from .knowledge import KnowledgePort
@@ -35,6 +37,55 @@ def _configured_endpoint_port_mode() -> str:
         from server import config  # type: ignore[no-redef]
 
     return str(config.ENDPOINT_PORT_MODE or "").strip().lower()
+
+
+def _configured_endpoint_diagnostic_execution_mode() -> str:
+    try:
+        import config
+    except ModuleNotFoundError:  # Package import from the repository root.
+        from server import config  # type: ignore[no-redef]
+
+    return str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "").strip().lower()
+
+
+def _configured_endpoint_external_settings() -> tuple[str, str, str, float]:
+    try:
+        import config
+    except ModuleNotFoundError:  # Package import from the repository root.
+        from server import config  # type: ignore[no-redef]
+
+    return (
+        str(config.ENDPOINT_EXTERNAL_BASE_URL or ""),
+        str(config.ENDPOINT_EXTERNAL_SERVICE_TOKEN or ""),
+        str(config.ENDPOINT_EXTERNAL_CA_FILE or ""),
+        float(config.ENDPOINT_EXTERNAL_TIMEOUT_SECONDS),
+    )
+
+
+def _endpoint_external_unavailable_code(
+    *,
+    base_url: str,
+    service_token: str,
+    ca_file: str,
+) -> str | None:
+    parsed = urlsplit(base_url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        return "endpoint_external_invalid_origin"
+    if not service_token:
+        return "endpoint_external_service_token_missing"
+    if not ca_file:
+        return "endpoint_external_ca_missing"
+    if not Path(ca_file).is_file():
+        return "endpoint_external_ca_invalid"
+    return None
 
 
 def _configured_registry_http_settings() -> tuple[str, str, float]:
@@ -122,10 +173,29 @@ class DomainPortContainer:
                 raise ValueError(f"unsupported REGISTRY_PORT_MODE: {mode!r}")
 
         if endpoint is None:
+            diagnostic_mode = _configured_endpoint_diagnostic_execution_mode()
+            if diagnostic_mode not in {"legacy", "endpoint"}:
+                raise ValueError(
+                    "unsupported ENDPOINT_DIAGNOSTIC_EXECUTION_MODE: "
+                    f"{diagnostic_mode!r}"
+                )
             endpoint_mode = _configured_endpoint_port_mode()
-            if endpoint_mode != "unavailable":
+            if endpoint_mode == "unavailable":
+                endpoint = UnavailableEndpointPort()
+            elif endpoint_mode == "external":
+                base_url, service_token, ca_file, _timeout_seconds = (
+                    _configured_endpoint_external_settings()
+                )
+                unavailable_code = _endpoint_external_unavailable_code(
+                    base_url=base_url,
+                    service_token=service_token,
+                    ca_file=ca_file,
+                )
+                endpoint = UnavailableEndpointPort(
+                    code=unavailable_code or "endpoint_external_adapter_unavailable"
+                )
+            else:
                 raise ValueError(f"unsupported ENDPOINT_PORT_MODE: {endpoint_mode!r}")
-            endpoint = UnavailableEndpointPort()
 
         return cls(
             knowledge=knowledge,

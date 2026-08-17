@@ -13,6 +13,7 @@ from .endpoint import (
     EndpointOperationRef,
     EndpointUnavailable,
     OpaqueEndpointRef,
+    SafeEndpointCode,
 )
 from .knowledge import (
     KnowledgeFeedbackOutcome,
@@ -195,16 +196,19 @@ class UnavailableRegistryPort:
 
 
 class UnavailableEndpointPort:
+    def __init__(self, *, code: SafeEndpointCode = "endpoint_unavailable") -> None:
+        self._unavailable = EndpointUnavailable(code=code)
+
     async def availability(self) -> EndpointAvailability:
-        return EndpointAvailability(status="unavailable", code="endpoint_unavailable")
+        return EndpointAvailability(status="unavailable", code=self._unavailable.code)
 
     async def read_device(self, device: EndpointDeviceRef) -> EndpointDeviceOutcome:
         del device
-        return EndpointUnavailable()
+        return self._unavailable
 
     async def list_capabilities(self, device: EndpointDeviceRef) -> EndpointCapabilitiesOutcome:
         del device
-        return EndpointUnavailable()
+        return self._unavailable
 
     async def create_operation(
         self,
@@ -214,8 +218,8 @@ class UnavailableEndpointPort:
         idempotency_key: OpaqueEndpointRef,
     ) -> EndpointOperationCreateOutcome:
         del device, request, idempotency_key
-        return EndpointUnavailable()
+        return self._unavailable
 
     async def read_operation(self, operation: EndpointOperationRef) -> EndpointOperationReadOutcome:
         del operation
-        return EndpointUnavailable()
+        return self._unavailable
