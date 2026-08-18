@@ -27,6 +27,9 @@ from domain_ports.endpoint import (
 )
 
 
+pytestmark = pytest.mark.no_db
+
+
 class _BombToolService:
     async def get_tools_list(self, _device_id):
         raise AssertionError("Endpoint cutover must not enumerate legacy tools")

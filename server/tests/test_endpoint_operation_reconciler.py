@@ -30,6 +30,9 @@ from domain_ports.endpoint import (
 )
 
 
+pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
+
+
 @dataclass
 class _ClaimStore:
     claims: list[EndpointReconcileClaim]

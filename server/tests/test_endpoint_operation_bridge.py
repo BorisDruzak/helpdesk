@@ -16,6 +16,9 @@ from app.services.endpoint_diagnostic_operation_service import (
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceResolution
 
 
+pytestmark = pytest.mark.no_db
+
+
 @dataclass
 class _Actor:
     actor_id: str = "support-42"

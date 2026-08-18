@@ -3,6 +3,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
+
+pytestmark = pytest.mark.no_db
+
 
 ROOT = Path(__file__).resolve().parents[2]
 FORBIDDEN_IMPORT_PREFIXES = (
