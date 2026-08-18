@@ -2,10 +2,13 @@
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
-+## 2026-08-17 Helpdesk Endpoint Integration v1
+## 2026-08-17 Helpdesk Endpoint Integration v1
 
-- **Status:** architectural boundary and implementation plan recorded; runtime
-  work has not started.
+- **Status:** implementation completed locally and merged into
+  `codex/helpdesk-process-model`. Focused endpoint, standard PostgreSQL and
+  workspace-verifier gates passed; no deployment or production migration ran.
+  The full CI baseline remains blocked by four pre-existing non-Endpoint
+  DB-cleanup-profile audit gaps.
 - **Goal:** implement exactly one external vertical slice,
   `endpoint.context.diagnostic.collect` → Endpoint
   `context.diagnostic.collect`, without Helpdesk WebSocket/DeviceOutbox agent
@@ -23,10 +26,9 @@
 - **Constraints:** legacy agent `/ws`, `DeviceOutbox`, runtime/tables and
   `/ws_ui` remain. No production deployment/migration, service credential
   change, test-agent action or agent rollout is in scope.
-- **Next steps:** execute
-  `docs/superpowers/plans/2026-08-17-helpdesk-endpoint-integration.md` in a
-  dedicated worktree, beginning with baseline evidence and port-contract RED
-  tests. Keep
+- **Next steps:** before any deployment, rehearse migrations on the release
+  candidate and validate the four allowed HTTPS Endpoint API routes against an
+  integration fixture or approved Endpoint Platform environment. Keep
   `docs/segmentation/HELPDESK_ENDPOINT_RESIDUAL_INVENTORY.md` current whenever
   a residual component's ownership changes.
 - **Verification gate:** Endpoint contract/adapter/device/link/reconciler/
