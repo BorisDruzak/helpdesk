@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import ast
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.db.models import EndpointOperationLink, Operation
 from app.services.endpoint_operation_reconciler import (
     EndpointOperationReconciler,
     EndpointReconcileClaim,
+    SqlAlchemyEndpointOperationReconcileStore,
     _REMOTE_TO_LOCAL,
     endpoint_operation_correlation_ref,
     endpoint_retry_delay_seconds,
@@ -63,6 +67,61 @@ def _claim() -> EndpointReconcileClaim:
         create_idempotency_key="helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111",
         correlation_ref=endpoint_operation_correlation_ref("11111111-1111-1111-1111-111111111111"),
     )
+
+
+def _pending_link(*, operation_id: str, now: datetime) -> EndpointOperationLink:
+    return EndpointOperationLink(
+        link_id="22222222-2222-2222-2222-222222222222",
+        operation_id=operation_id,
+        endpoint_device_ref="endpoint-device-1",
+        capability_code="context.diagnostic.collect",
+        create_idempotency_key="helpdesk-endpoint-operation:lease-test",
+        correlation_ref=endpoint_operation_correlation_ref(operation_id),
+        remote_status="create_pending",
+        attempt_count=0,
+        next_attempt_at=now,
+    )
+
+
+@pytest.mark.asyncio
+async def test_sql_reconcile_store_claims_ready_link_once_across_sessions(test_engine) -> None:
+    """The PostgreSQL lease must let just one worker claim the same ready link."""
+
+    now = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    operation_id = "11111111-1111-1111-1111-111111111111"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id="local-ticket-device",
+                ticket_id="33333333-3333-3333-3333-333333333333",
+                kind="endpoint_diagnostic",
+                actor_role="system",
+                trace_id="44444444-4444-4444-4444-444444444444",
+                status="queued",
+                queued_at=now,
+            )
+        )
+        await session.flush()
+        session.add(_pending_link(operation_id=operation_id, now=now))
+        await session.commit()
+
+    first_store = SqlAlchemyEndpointOperationReconcileStore(session_maker)
+    second_store = SqlAlchemyEndpointOperationReconcileStore(session_maker)
+    start = asyncio.Barrier(2)
+
+    async def claim(store: SqlAlchemyEndpointOperationReconcileStore, owner: str):
+        await start.wait()
+        return await store.claim_ready(owner=owner, now=now, limit=1, lease_seconds=30)
+
+    first, second = await asyncio.gather(claim(first_store, "worker-a"), claim(second_store, "worker-b"))
+
+    assert sorted(map(len, (first, second))) == [0, 1]
+    claimed = (first or second)[0]
+    assert claimed.operation_id == operation_id
+    assert claimed.lease_token is not None
+    assert claimed.lease_token.startswith(("worker-a:", "worker-b:"))
 
 
 def test_retry_delay_has_bounded_jitter_and_caps_at_five_minutes() -> None:

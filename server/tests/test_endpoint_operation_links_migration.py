@@ -9,6 +9,9 @@ import sqlalchemy as sa
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 MIGRATION_PATH = SERVER_ROOT / "app" / "db" / "migrations" / "versions" / "20260817_135_endpoint_operation_links.py"
+CORRELATION_MIGRATION_PATH = (
+    SERVER_ROOT / "app" / "db" / "migrations" / "versions" / "20260817_136_endpoint_operation_correlation_ref.py"
+)
 
 
 @pytest.mark.no_db
@@ -82,3 +85,36 @@ def test_endpoint_operation_links_migration_declares_only_additive_safe_schema(m
         "ix_endpoint_operation_links_ready",
         "ix_endpoint_operation_links_lease_until",
     }
+
+
+@pytest.mark.no_db
+def test_endpoint_operation_correlation_migration_is_forward_only_and_additive(monkeypatch):
+    spec = importlib.util.spec_from_file_location(
+        "endpoint_operation_correlation_migration", CORRELATION_MIGRATION_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.columns: list[tuple[str, sa.Column]] = []
+
+        def add_column(self, table_name: str, column: sa.Column) -> None:
+            self.columns.append((table_name, column))
+
+    recorder = _Recorder()
+    monkeypatch.setattr(module, "op", recorder)
+    module.upgrade()
+
+    assert module.revision == "136"
+    assert module.down_revision == "135"
+    assert [(table, column.name) for table, column in recorder.columns] == [
+        ("endpoint_operation_links", "correlation_ref")
+    ]
+    column = recorder.columns[0][1]
+    assert isinstance(column.type, sa.String)
+    assert column.type.length == 128
+    assert column.nullable is True
+    with pytest.raises(RuntimeError, match="forward-only"):
+        module.downgrade()
