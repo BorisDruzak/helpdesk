@@ -17,6 +17,7 @@ from pydantic import BaseModel, ValidationError
 from .wire import (
     DeviceCapabilitiesWireV1,
     DeviceSummaryWireV1,
+    OperationCreateWireV1,
     OperationResponseWireV1,
 )
 
@@ -284,11 +285,16 @@ class ExternalEndpointHttpAdapter(EndpointPort):
         *,
         idempotency_key: OpaqueEndpointRef,
     ) -> EndpointOperationCreateOutcome:
+        wire_request = OperationCreateWireV1(
+            schema_version=request.schema_version,
+            capability=request.capability,
+            parameters={},
+        )
         payload = await self._request(
                 "POST",
                 f"/api/v1/devices/{_path_ref(device.external_id)}/operations",
                 expected_statuses=frozenset({200, 201}),
-                body={"schema_version": request.schema_version, "capability": request.capability, "parameters": request.parameters.model_dump(mode="json")},
+                body=wire_request.model_dump(mode="json"),
                 extra_headers={"Idempotency-Key": idempotency_key},
             )
         result = self._operation_projection(payload, correlation=request.correlation)
@@ -330,7 +336,7 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                 safe_result=None if wire.result is None else {
                     "profile": wire.result.profile,
                     "collected_at": wire.result.collected_at,
-                    "reason": wire.result.reason,
+                    "reason": "Диагностика по обращению",
                     "warnings": tuple(wire.result.warnings),
                     "processes": tuple(item.model_dump() for item in wire.result.processes),
                     "log_excerpt": wire.result.log_excerpt,

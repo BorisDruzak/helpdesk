@@ -167,7 +167,7 @@ async def test_adapter_creates_or_replays_exact_operation(status: int) -> None:
         assert received["query"] == {}
         assert received["idempotency"] == "stable-idempotency-key"
         assert "opaque-source-ref" not in str(received["path"])
-        assert received["body"] == {"schema_version": "endpoint_operation_create_v1", "capability": "context.diagnostic.collect", "parameters": {"reason": "Диагностика по обращению"}}
+        assert received["body"] == {"schema_version": "endpoint_operation_create_v1", "capability": "context.diagnostic.collect", "parameters": {"reason": "Collect bounded diagnostic context"}}
     finally:
         await server.close()
 

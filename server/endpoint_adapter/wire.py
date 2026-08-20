@@ -36,6 +36,18 @@ class DeviceCapabilitiesWireV1(_Wire):
     capabilities: list[CapabilityWireV1] = Field(max_length=32)
 
 
+class DiagnosticParametersWireV1(_Wire):
+    """Provider-owned wording; Helpdesk keeps its localized internal DTO."""
+
+    reason: Literal["Collect bounded diagnostic context"] = "Collect bounded diagnostic context"
+
+
+class OperationCreateWireV1(_Wire):
+    schema_version: Literal["endpoint_operation_create_v1"]
+    capability: Literal["context.diagnostic.collect"]
+    parameters: DiagnosticParametersWireV1
+
+
 class OperationWireV1(_Wire):
     schema_version: Literal["endpoint_operation_v1"]
     operation_id: UUID
@@ -58,7 +70,7 @@ class DiagnosticResultWireV1(_Wire):
     schema_version: Literal["endpoint_diagnostic_result_v1"]
     profile: Literal["diagnostic_v1"]
     collected_at: datetime
-    reason: str = Field(min_length=1, max_length=256)
+    reason: Literal["Collect bounded diagnostic context"]
     warnings: list[str] = Field(max_length=16)
     processes: list[DiagnosticProcessWireV1] = Field(max_length=64)
     log_excerpt: str | None = Field(default=None, max_length=8192)
