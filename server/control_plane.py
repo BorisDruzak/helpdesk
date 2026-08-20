@@ -38,6 +38,12 @@ from runtime_control import (
 
 CONTROL_HOST = (os.getenv("CONTROL_HOST", "0.0.0.0") or "0.0.0.0").strip()
 CONTROL_PORT = int(os.getenv("CONTROL_PORT", "8667") or "8667")
+CONTROL_LIFECYCLE_ENABLED = str(os.getenv("HELPDESK_CONTROL_LIFECYCLE_ENABLED") or "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 CONTROL_API_PREFIX = "/api/control"
 STATE_KEY = web.AppKey("control_state", SimpleNamespace)
 STARTED_AT_KEY = web.AppKey("control_started_at", str)
@@ -168,7 +174,15 @@ async def handle_control_status(request: web.Request) -> web.Response:
     runtime_state = request.app[RUNTIME_STATE_KEY]
     current_action = runtime_state.get("current_action")
     pending_action = current_action.get("action") if isinstance(current_action, dict) else None
-    status = get_unit_status("server", pending_action=pending_action)
+    if CONTROL_LIFECYCLE_ENABLED:
+        status = get_unit_status("server", pending_action=pending_action)
+    else:
+        status = {
+            "target": "server",
+            "display_state": "unavailable",
+            "lifecycle_enabled": False,
+            "reason": "Helpdesk lifecycle is managed by the reviewed systemd deployment procedure.",
+        }
     state = load_control_state()
     server_state = {
         **status,
@@ -190,6 +204,11 @@ async def handle_control_status(request: web.Request) -> web.Response:
 
 @require_control_auth("admin", "support", "auditor")
 async def handle_control_logs(request: web.Request) -> web.Response:
+    if not CONTROL_LIFECYCLE_ENABLED:
+        return web.json_response(
+            {"status": "error", "error": "Lifecycle logs are unavailable in this deployment", "error_code": "CONTROL_LIFECYCLE_UNAVAILABLE"},
+            status=503,
+        )
     try:
         limit = max(10, min(int(request.query.get("limit", "200")), 500))
     except (TypeError, ValueError):
@@ -202,6 +221,11 @@ async def handle_control_logs(request: web.Request) -> web.Response:
 
 @require_control_auth("admin", "support", "auditor")
 async def handle_control_logs_download(request: web.Request) -> web.Response:
+    if not CONTROL_LIFECYCLE_ENABLED:
+        return web.json_response(
+            {"status": "error", "error": "Lifecycle logs are unavailable in this deployment", "error_code": "CONTROL_LIFECYCLE_UNAVAILABLE"},
+            status=503,
+        )
     try:
         limit = max(10, min(int(request.query.get("limit", "300")), 1000))
     except (TypeError, ValueError):
@@ -230,6 +254,15 @@ async def handle_control_action(request: web.Request) -> web.Response:
     reason = str(payload.get("reason") or "").strip() or None
     if action not in {"start", "stop", "restart", "smoke"}:
         return web.json_response({"status": "error", "error": "Unsupported action"}, status=400)
+    if not CONTROL_LIFECYCLE_ENABLED:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Lifecycle actions are unavailable in this deployment",
+                "error_code": "CONTROL_LIFECYCLE_UNAVAILABLE",
+            },
+            status=503,
+        )
 
     runtime_state = request.app[RUNTIME_STATE_KEY]
     lock: asyncio.Lock = request.app[ACTION_LOCK_KEY]

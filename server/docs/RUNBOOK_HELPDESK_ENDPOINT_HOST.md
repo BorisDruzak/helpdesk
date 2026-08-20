@@ -32,6 +32,10 @@ Rollback is an operator action: point `current` at a known previous immutable
 release and restart the two Helpdesk services. Do not roll back PostgreSQL by
 copying Endpoint data.
 
+The browser control-plane lifecycle endpoints are deliberately fail-closed on
+this host: the `helpdesk` process has no privilege to manage system services.
+Use the reviewed remote management script above instead.
+
 ## Security and staged acceptance
 
 - `/etc/helpdesk/helpdesk.env` is root-owned, mode 0600, and is never committed
