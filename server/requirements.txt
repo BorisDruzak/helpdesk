@@ -1,6 +1,8 @@
 aiohttp
 alembic
 asyncpg
+loguru
+pydantic>=2.0
 python-dateutil
 python-dotenv
 SQLAlchemy>=2.0
