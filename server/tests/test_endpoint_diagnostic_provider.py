@@ -100,6 +100,9 @@ class _HandlerSession:
         self.calls += 1
         return _HandlerResult(self.ticket if self.calls == 1 else None)
 
+    async def get(self, _model, ticket_id):
+        return self.ticket if ticket_id == self.ticket.ticket_id else None
+
 
 class _HandlerRequest(dict):
     def __init__(self, *, payload: object, auth_context) -> None:
@@ -156,6 +159,7 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
 
     monkeypatch.setattr(handlers.config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(handlers, "get_session", fake_get_session)
+    monkeypatch.setattr(handlers, "get_session_maker", fake_get_session)
     monkeypatch.setattr(handlers, "DiagnosticProviderConfigService", _ProviderConfigService)
     monkeypatch.setattr(handlers, "RemoteAccessRepo", _RemoteAccessRepo)
     monkeypatch.setattr(handlers, "RuntimeAuditCapabilityExecutionObserver", _NoopExecutionObserver)
@@ -175,6 +179,18 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
 
 def _handler_auth_context():
     return SimpleNamespace(actor_id="support-1", actor_role="support")
+
+
+def _verified_endpoint_snapshot(device_ref: str) -> dict[str, object]:
+    return {
+        "schema_version": "endpoint_device_snapshot_v1",
+        "device_ref": device_ref,
+        "display_name": "Endpoint device",
+        "retired": False,
+        "last_seen_at": "2026-08-17T00:00:00+00:00",
+        "captured_at": "2026-08-17T00:00:00+00:00",
+        "source": "endpoint_platform",
+    }
 
 
 def test_endpoint_capability_descriptor_is_exact_and_mode_gated():
@@ -399,6 +415,7 @@ async def test_endpoint_handler_returns_queued_202_without_legacy_dispatch(monke
         ticket_id="ticket-1",
         device_id="legacy-device-1",
         endpoint_device_ref="endpoint-device-1",
+        endpoint_device_snapshot_json=_verified_endpoint_snapshot("endpoint-device-1"),
         observer_root_trace_id=None,
     )
     operation_service = _OperationService()
