@@ -35,8 +35,8 @@ def test_manage_remote_stack_forwards_smoke_base_url_and_tls_flag() -> None:
 
 
 def test_manage_remote_stack_uses_env_profile_paths(monkeypatch) -> None:
-    monkeypatch.setenv("PC_CLIENT_REMOTE_ROOT", "/srv/pc_client")
-    monkeypatch.setenv("PC_CLIENT_REMOTE_SERVER_PYTHON", "/srv/pc_client/server/venv/bin/python")
+    monkeypatch.setenv("HELPDESK_REMOTE_ROOT", "/srv/helpdesk/current")
+    monkeypatch.setenv("HELPDESK_REMOTE_SERVER_PYTHON", "/srv/helpdesk/current/server/venv/bin/python")
 
     command = manage_remote_stack.build_remote_command(
         Namespace(
@@ -52,8 +52,8 @@ def test_manage_remote_stack_uses_env_profile_paths(monkeypatch) -> None:
         )
     )
 
-    assert command.startswith("cd /srv/pc_client && /srv/pc_client/server/venv/bin/python")
-    assert "/var/chat_bot/pc_client" not in command
+    assert command.startswith("cd /srv/helpdesk/current && /srv/helpdesk/current/server/venv/bin/python")
+    assert "/opt/helpdesk/current" not in command
 
 
 def test_runtime_smoke_uses_env_https_url_and_insecure_tls(monkeypatch) -> None:

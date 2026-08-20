@@ -42,8 +42,8 @@ def test_main_passes_remote_and_default_upgrade(monkeypatch: pytest.MonkeyPatch)
         "key",
         "altserver@example",
         (
-            "cd /var/chat_bot/pc_client/server && "
-            "/var/chat_bot/pc_client/server/venv/bin/python scripts/run_migrations.py "
+            "cd /opt/helpdesk/current/server && "
+            "/opt/helpdesk/current/server/venv/bin/python scripts/run_migrations.py "
             "upgrade head"
         ),
     ]
