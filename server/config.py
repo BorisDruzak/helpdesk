@@ -22,8 +22,8 @@ except ImportError:
 # Server Configuration
 # ============================================================================
 
-SERVER_HOST = '0.0.0.0'
-SERVER_PORT = 8666
+SERVER_HOST = (os.getenv("SERVER_HOST", "0.0.0.0") or "0.0.0.0").strip()
+SERVER_PORT = int(os.getenv("SERVER_PORT", "8666") or "8666")
 
 # External-domain composition is fail-closed. Knowledge has no runtime adapter;
 # Registry remains on its local compatibility adapter until external acceptance.

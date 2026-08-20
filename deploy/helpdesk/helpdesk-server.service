@@ -1,0 +1,23 @@
+[Unit]
+Description=Helpdesk API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=helpdesk
+Group=helpdesk
+WorkingDirectory=/opt/helpdesk/current
+EnvironmentFile=/etc/helpdesk/helpdesk.env
+ExecStart=/opt/helpdesk/current/server/venv/bin/python scripts/run_server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/helpdesk
+
+[Install]
+WantedBy=multi-user.target

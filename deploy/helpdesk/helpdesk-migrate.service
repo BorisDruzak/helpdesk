@@ -1,0 +1,17 @@
+[Unit]
+Description=Helpdesk schema migration
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=helpdesk
+Group=helpdesk
+WorkingDirectory=/opt/helpdesk/current/server
+EnvironmentFile=/etc/helpdesk/helpdesk.env
+ExecStart=/opt/helpdesk/current/server/venv/bin/python scripts/run_migrations.py upgrade head
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/helpdesk
