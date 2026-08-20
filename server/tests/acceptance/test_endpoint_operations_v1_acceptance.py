@@ -42,22 +42,37 @@ from app.services.endpoint_operation_reconciler import (
 )
 from domain_ports.endpoint import EndpointDeviceRef, EndpointOperationCreateRequest
 from endpoint_adapter.http import ExternalEndpointHttpAdapter
+from scripts.validate_endpoint_contract_lock import validate as validate_contract_lock
 
 
-_ENDPOINT_ROOT = Path(r"C:\Users\admin-2\Documents\endpoint\.worktrees\codex-helpdesk-contract-alignment-v1")
+_endpoint_root_value = os.environ.get("ENDPOINT_PLATFORM_REPO")
+if not _endpoint_root_value:
+    pytest.skip(
+        "cross-repository acceptance requires ENDPOINT_PLATFORM_REPO",
+        allow_module_level=True,
+    )
+_ENDPOINT_ROOT = Path(_endpoint_root_value).resolve()
+try:
+    validate_contract_lock(
+        lock_path=Path(__file__).resolve().parents[3]
+        / "integration"
+        / "endpoint_contract.lock.json",
+        provider_root=_ENDPOINT_ROOT,
+    )
+except ValueError as error:
+    raise RuntimeError("cross-repository Endpoint provider lock validation failed") from error
 if str(_ENDPOINT_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENDPOINT_ROOT))
 
 # Test-only provider imports.  This special acceptance test starts the real
 # factory and uses its real routes; it never substitutes a JSON test server.
 from endpoint_contracts import AgentResultV1, DeviceContextDiagnosticV1  # noqa: E402
-from endpoint_server.auth.scopes import ServicePrincipal  # noqa: E402
+from endpoint_server.auth.service_tokens import create_service_credential  # noqa: E402
 from endpoint_server.config import Settings  # noqa: E402
 from endpoint_server.db.models import (  # noqa: E402
     Device,
     DeviceCredential,
     ServiceClient,
-    ServiceCredential,
 )
 from endpoint_server.enrollment.credentials import device_token_digest  # noqa: E402
 from endpoint_server.db.session import AsyncSessionProvider  # noqa: E402
@@ -67,6 +82,26 @@ from endpoint_server.main import create_app  # noqa: E402
 _DEVICE_TOKEN = "acceptance-device-token"
 _DEVICE_PEPPER = b"acceptance-device-pepper"
 _SERVICE_PEPPER = b"acceptance-service-pepper"
+
+
+async def _issue_acceptance_service_token(
+    provider: AsyncSessionProvider,
+    *,
+    service_client_id,
+    credential_identifier: str,
+) -> str:
+    async with provider() as session:
+        issued = await create_service_credential(
+            session,
+            service_client_id,
+            _SERVICE_PEPPER,
+            actor_kind="test",
+            actor_identifier="helpdesk-endpoint-acceptance",
+            request_id="endpoint-contract-acceptance",
+            scopes=("devices.read", "operations.create", "operations.read"),
+            credential_identifier=credential_identifier,
+        )
+    return issued.token
 
 
 @dataclass
@@ -250,8 +285,9 @@ async def _complete_next_command(websocket, *, device_id: str, sequence: int) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.cross_repo_acceptance
 async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_database_admin_url: str
+    tmp_path: Path, test_database_admin_url: str
 ) -> None:
     """Exercise Helpdesk's adapter against the actual Endpoint factory and WSS agent."""
 
@@ -271,17 +307,11 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
         )
         await session.commit()
 
-    credential = ServiceCredential(
-        id=uuid4(), service_client_id=client.id, credential_identifier="a" * 32,
-        token_prefix="svc_" + "a" * 32, secret_digest="test-only-digest",
-        scopes=["devices.read", "operations.create", "operations.read"], expires_at=None, revoked_at=None,
+    service_token = await _issue_acceptance_service_token(
+        provider,
+        service_client_id=client.id,
+        credential_identifier="a" * 32,
     )
-    principal = ServicePrincipal(client=client, credential=credential)
-
-    async def load_test_principal(*_args):
-        return principal
-
-    monkeypatch.setattr("endpoint_server.auth.scopes._load_service_principal", load_test_principal)
 
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
@@ -296,16 +326,21 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
     server, task = await _start(create_app(settings, provider), port)
     base_url = f"http://127.0.0.1:{port}"
     adapter = ExternalEndpointHttpAdapter(
-        base_url=base_url, service_token="test-only-service-token", ca_file="", timeout_seconds=2,
+        base_url=base_url, service_token=service_token, ca_file="", timeout_seconds=2,
         allow_insecure_test_url=True, correlation_id_factory=lambda: "acceptance-correlation",
     )
-    headers = {"Authorization": "Bearer test-only-service-token", "X-Correlation-ID": "route-correlation"}
+    headers = {"Authorization": f"Bearer {service_token}", "X-Correlation-ID": "route-correlation"}
     request_body = {
         "schema_version": "endpoint_operation_create_v1", "capability": "context.diagnostic.collect",
         "parameters": {"reason": "Collect bounded diagnostic context"},
     }
     try:
         async with aiohttp.ClientSession() as http:
+            unauthorized = await http.get(
+                f"{base_url}/api/v1/devices/{device.id}",
+                headers={"Authorization": "Bearer svc_" + "0" * 32 + "." + "A" * 43, "X-Correlation-ID": "route-correlation"},
+            )
+            assert unauthorized.status == 401
             device_response = await http.get(f"{base_url}/api/v1/devices/{device.id}", headers=headers)
             assert device_response.status == 200
             assert device_response.headers["X-Correlation-ID"] == "route-correlation"
@@ -369,9 +404,10 @@ class _FacadeAccess:
 
 
 @pytest.mark.asyncio
+@pytest.mark.cross_repo_acceptance
 @pytest.mark.db_cleanup("observer_diagnostics")
 async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_database_admin_url: str, test_engine
+    tmp_path: Path, test_database_admin_url: str, test_engine
 ) -> None:
     """Full durable Helpdesk facade → provider → WSS → evidence vertical slice."""
 
@@ -391,17 +427,11 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
         )
         await session.commit()
 
-    credential = ServiceCredential(
-        id=uuid4(), service_client_id=client.id, credential_identifier="b" * 32,
-        token_prefix="svc_" + "b" * 32, secret_digest="test-only-digest",
-        scopes=["devices.read", "operations.create", "operations.read"], expires_at=None, revoked_at=None,
+    service_token = await _issue_acceptance_service_token(
+        provider,
+        service_client_id=client.id,
+        credential_identifier="b" * 32,
     )
-    principal = ServicePrincipal(client=client, credential=credential)
-
-    async def load_test_principal(*_args):
-        return principal
-
-    monkeypatch.setattr("endpoint_server.auth.scopes._load_service_principal", load_test_principal)
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     settings = Settings(
@@ -414,7 +444,7 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
     port = _free_port()
     server, task = await _start(create_app(settings, provider), port)
     adapter = ExternalEndpointHttpAdapter(
-        base_url=f"http://127.0.0.1:{port}", service_token="test-only-service-token", ca_file="",
+        base_url=f"http://127.0.0.1:{port}", service_token=service_token, ca_file="",
         timeout_seconds=2, allow_insecure_test_url=True, correlation_id_factory=lambda: "facade-correlation",
     )
     session_factory = async_sessionmaker(test_engine, expire_on_commit=False)

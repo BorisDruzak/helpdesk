@@ -36,12 +36,17 @@ pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
 class _ClaimStore:
     claims: list[EndpointReconcileClaim]
     committed: list[dict]
+    unexpected_failures: list[dict]
 
     async def claim_ready(self, *, owner: str, now: datetime, limit: int, lease_seconds: int):
         return [self.claims.pop(0)] if self.claims and limit == 1 else []
 
     async def commit(self, **values):
         self.committed.append(values)
+        return True
+
+    async def record_unexpected_failure(self, **values):
+        self.unexpected_failures.append(values)
         return True
 
 
@@ -130,6 +135,58 @@ async def test_sql_reconcile_store_claims_ready_link_once_across_sessions(test_e
     assert claimed.lease_token.startswith(("worker-a:", "worker-b:"))
 
 
+@pytest.mark.asyncio
+async def test_sql_store_records_unexpected_failure_only_for_live_claim(test_engine) -> None:
+    now = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    operation_id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with session_maker() as session:
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id="local-ticket-device",
+                ticket_id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+                kind="endpoint_diagnostic",
+                actor_role="system",
+                trace_id="cccccccc-cccc-cccc-cccc-cccccccccccc",
+                status="queued",
+                queued_at=now,
+                phase="endpoint_create_pending",
+            )
+        )
+        await session.flush()
+        session.add(_pending_link(operation_id=operation_id, now=now))
+        await session.commit()
+
+    store = SqlAlchemyEndpointOperationReconcileStore(session_maker)
+    claim = (await store.claim_ready(owner="worker-a", now=now, limit=1, lease_seconds=30))[0]
+    retry_at = now + timedelta(seconds=2)
+    assert await store.record_unexpected_failure(
+        claim=claim,
+        error_code="endpoint_reconcile_unexpected",
+        next_attempt_at=retry_at,
+    )
+    stale = EndpointReconcileClaim(**(claim.__dict__ | {"lease_token": "stale"}))
+    assert not await store.record_unexpected_failure(
+        claim=stale,
+        error_code="endpoint_reconcile_unexpected",
+        next_attempt_at=retry_at,
+    )
+
+    async with session_maker() as session:
+        link = await session.get(EndpointOperationLink, "22222222-2222-2222-2222-222222222222")
+        operation = await session.get(Operation, operation_id)
+
+    assert link is not None and operation is not None
+    assert link.attempt_count == 1
+    assert link.last_error_code == "endpoint_reconcile_unexpected"
+    assert link.next_attempt_at == retry_at
+    assert link.lease_owner is None and link.lease_until is None
+    assert operation.status == "queued"
+    assert operation.phase == "endpoint_create_pending"
+    assert operation.error_code == "endpoint_reconcile_unexpected"
+
+
 def test_retry_delay_has_bounded_jitter_and_caps_at_five_minutes() -> None:
     assert endpoint_retry_delay_seconds(0, random=lambda: 0.0) == 2.0
     assert endpoint_retry_delay_seconds(4, random=lambda: 1.0) == 66.0
@@ -189,7 +246,7 @@ def test_endpoint_services_have_no_legacy_agent_runtime_imports() -> None:
 @pytest.mark.no_db
 async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
-    store = _ClaimStore(claims=[_claim()], committed=[])
+    store = _ClaimStore(claims=[_claim()], committed=[], unexpected_failures=[])
     port = _Port(EndpointUnavailable())
     published: list[str] = []
     reconciler = EndpointOperationReconciler(
@@ -231,7 +288,7 @@ async def test_retryable_unavailable_preserves_current_local_progress() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     claim = _claim()
     claim = EndpointReconcileClaim(**(claim.__dict__ | {"local_status": "running", "local_phase": "endpoint_running"}))
-    store = _ClaimStore(claims=[claim], committed=[])
+    store = _ClaimStore(claims=[claim], committed=[], unexpected_failures=[])
     reconciler = EndpointOperationReconciler(
         endpoint_port=_Port(EndpointUnavailable(retryable=True)), store=store,
         mode="external", diagnostic_execution_mode="endpoint", owner="test-worker", now=lambda: now,
@@ -247,7 +304,7 @@ async def test_retryable_unavailable_preserves_current_local_progress() -> None:
 @pytest.mark.no_db
 async def test_nonretryable_unavailable_is_terminal_and_does_not_publish_without_change() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
-    store = _ClaimStore(claims=[_claim()], committed=[])
+    store = _ClaimStore(claims=[_claim()], committed=[], unexpected_failures=[])
     published: list[str] = []
     reconciler = EndpointOperationReconciler(
         endpoint_port=_Port(EndpointUnavailable(retryable=False)), store=store,
@@ -266,7 +323,7 @@ async def test_nonretryable_unavailable_is_terminal_and_does_not_publish_without
 @pytest.mark.no_db
 async def test_ui_publication_failure_does_not_undo_committed_claim() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
-    store = _ClaimStore(claims=[_claim()], committed=[])
+    store = _ClaimStore(claims=[_claim()], committed=[], unexpected_failures=[])
 
     async def fail_publication(_operation_id: str) -> None:
         raise RuntimeError("UI unavailable")
@@ -285,6 +342,7 @@ async def test_ui_publication_failure_does_not_undo_committed_claim() -> None:
     assert await reconciler.reconcile_once(limit=1) == 1
     assert len(store.committed) == 1
     assert store.committed[0]["operation_status"] == "queued"
+    assert store.unexpected_failures == []
 
 
 @pytest.mark.asyncio
@@ -306,7 +364,7 @@ async def test_success_persists_only_validated_safe_snapshot_and_remote_ref() ->
             processes=(EndpointDiagnosticProcessProjection(name="safe-process", state="running"),),
         ),
     )
-    store = _ClaimStore(claims=[claim], committed=[])
+    store = _ClaimStore(claims=[claim], committed=[], unexpected_failures=[])
     reconciler = EndpointOperationReconciler(
         endpoint_port=_Port(projection),
         store=store,
@@ -338,7 +396,7 @@ async def test_one_unexpected_claim_failure_does_not_stop_following_claims() -> 
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     first = _claim()
     second = EndpointReconcileClaim(**(first.__dict__ | {"operation_id": "22222222-2222-2222-2222-222222222222"}))
-    store = _ClaimStore(claims=[first, second], committed=[])
+    store = _ClaimStore(claims=[first, second], committed=[], unexpected_failures=[])
 
     class FlakyPort(_Port):
         def __init__(self) -> None:
@@ -353,6 +411,13 @@ async def test_one_unexpected_claim_failure_does_not_stop_following_claims() -> 
 
     reconciler = EndpointOperationReconciler(endpoint_port=FlakyPort(), store=store, mode="external", diagnostic_execution_mode="endpoint", owner="test", now=lambda: now, random=lambda: 0.0)
     assert await reconciler.reconcile_once(limit=2) == 2
+    assert store.unexpected_failures == [
+        {
+            "claim": first,
+            "error_code": "endpoint_reconcile_unexpected",
+            "next_attempt_at": now + timedelta(seconds=2),
+        }
+    ]
     assert [value["claim"].operation_id for value in store.committed] == [second.operation_id]
 
 

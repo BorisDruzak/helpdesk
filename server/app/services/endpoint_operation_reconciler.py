@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -49,6 +50,7 @@ _REMOTE_TO_LOCAL: dict[str, tuple[str, str]] = {
     "expired": ("timed_out", "endpoint_expired"),
 }
 _LOCAL_PROGRESS = {"queued": 0, "sent": 1, "accepted": 2, "running": 3}
+_LOGGER = logging.getLogger(__name__)
 
 __all__ = ("endpoint_operation_correlation_ref",)
 
@@ -83,6 +85,14 @@ class EndpointOperationReconcileStore(Protocol):
         phase: str,
         error_code: str | None,
         safe_result_snapshot: dict[str, Any] | None,
+        next_attempt_at: datetime,
+    ) -> bool: ...
+
+    async def record_unexpected_failure(
+        self,
+        *,
+        claim: EndpointReconcileClaim,
+        error_code: str,
         next_attempt_at: datetime,
     ) -> bool: ...
 
@@ -144,12 +154,48 @@ class EndpointOperationReconciler:
             claim = claims[0]
             try:
                 await self._reconcile_claim(claim)
-            except Exception:
-                # A failed remote call or UI publication cannot strand other claims
-                # or undo already committed local state.
-                pass
+            except Exception as error:
+                await self._record_unexpected_claim_failure(claim, error)
             processed += 1
         return processed
+
+    async def _record_unexpected_claim_failure(
+        self,
+        claim: EndpointReconcileClaim,
+        error: Exception,
+    ) -> None:
+        retry_seconds = endpoint_retry_delay_seconds(
+            claim.attempt_count,
+            random=self._random,
+        )
+        next_attempt_at = self._aware_now() + timedelta(seconds=retry_seconds)
+        try:
+            changed = await self._store.record_unexpected_failure(
+                claim=claim,
+                error_code="endpoint_reconcile_unexpected",
+                next_attempt_at=next_attempt_at,
+            )
+        except Exception as record_error:
+            _LOGGER.error(
+                "endpoint_reconcile_claim_failure_record_failed",
+                extra={
+                    "endpoint_operation_id": claim.operation_id,
+                    "attempt": claim.attempt_count + 1,
+                    "owner": self._owner,
+                    "error_type": type(record_error).__name__,
+                },
+            )
+            return
+        _LOGGER.warning(
+            "endpoint_reconcile_claim_failed" if changed else "endpoint_reconcile_claim_stale",
+            extra={
+                "endpoint_operation_id": claim.operation_id,
+                "attempt": claim.attempt_count + 1,
+                "owner": self._owner,
+                "retry_seconds": retry_seconds,
+                "error_type": type(error).__name__,
+            },
+        )
 
     async def _reconcile_claim(self, claim: EndpointReconcileClaim) -> None:
         # There is intentionally no database session/transaction across this await.
@@ -269,7 +315,17 @@ class EndpointOperationReconciler:
         if committed is not False and self._publish_after_commit is not None:
             published = self._publish_after_commit(values["claim"].operation_id)
             if published is not None:
-                await published
+                try:
+                    await published
+                except Exception as error:
+                    _LOGGER.warning(
+                        "endpoint_reconcile_ui_publish_failed",
+                        extra={
+                            "endpoint_operation_id": values["claim"].operation_id,
+                            "owner": self._owner,
+                            "error_type": type(error).__name__,
+                        },
+                    )
 
     def _aware_now(self) -> datetime:
         value = self._now()
@@ -474,6 +530,43 @@ class SqlAlchemyEndpointOperationReconcileStore:
                 await session.flush()
                 return state_changed
 
+    async def record_unexpected_failure(
+        self,
+        *,
+        claim: EndpointReconcileClaim,
+        error_code: str,
+        next_attempt_at: datetime,
+    ) -> bool:
+        """Persist one safe retry state only while this worker still owns its lease."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                link = (
+                    await session.execute(
+                        select(EndpointOperationLink)
+                        .where(EndpointOperationLink.operation_id == claim.operation_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                operation = await session.get(Operation, claim.operation_id, with_for_update=True)
+                if (
+                    link is None
+                    or operation is None
+                    or operation.status in _TERMINAL_LOCAL
+                    or link.remote_status in _TERMINAL_REMOTE
+                    or link.lease_owner != claim.lease_token
+                ):
+                    return False
+                link.last_error_code = error_code
+                link.attempt_count += 1
+                link.next_attempt_at = next_attempt_at
+                link.last_synced_at = datetime.now(timezone.utc)
+                link.lease_owner = None
+                link.lease_until = None
+                operation.error_code = error_code
+                operation.error_message = None
+                await session.flush()
+                return True
+
 
 def _validated_safe_success_snapshot(outcome: EndpointOperationProjection) -> dict[str, Any] | None:
     """Revalidate before persistence; never accept raw remote response fields."""
@@ -511,11 +604,16 @@ class EndpointOperationReconcilerRunner:
         while not self._stop.is_set():
             try:
                 await self._reconciler.reconcile_once(limit=self._batch_size)
-            except Exception:
+            except Exception as error:
                 # This runner is a lifecycle loop: a transient unexpected
                 # failure must not turn off future reconciliation attempts.
-                pass
+                _LOGGER.error(
+                    "endpoint_reconcile_runner_failed",
+                    extra={"error_type": type(error).__name__},
+                )
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self._interval_seconds)
+                await asyncio.wait_for(
+                    self._stop.wait(), timeout=max(0.1, float(self._interval_seconds))
+                )
             except TimeoutError:
                 continue

@@ -4,11 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
+import re
 from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from app.db.models import Ticket
+from app.db.models import Ticket, TicketAdminAudit
 from domain_ports.endpoint import (
     EndpointDeviceProjection,
     EndpointDeviceRef,
@@ -22,6 +32,32 @@ from domain_ports.endpoint import (
 
 class _ImmutableEndpointDeviceDTO(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class EndpointDeviceMappingRequestV1(_ImmutableEndpointDeviceDTO):
+    """Strict admin intent for an exact, server-verified Endpoint device mapping."""
+
+    schema_version: Literal["endpoint_device_mapping_request_v1"]
+    endpoint_device_ref: OpaqueEndpointRef
+    replace: StrictBool
+    expected_previous_ref: OpaqueEndpointRef | None
+    reason: str | None = Field(default=None, min_length=8, max_length=256, strict=True)
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        if value is not None and ("://" in value or re.search(r"[\x00-\x1f\x7f]", value)):
+            raise ValueError("mapping replacement reason must be control-character- and URL-free")
+        return value
+
+    @model_validator(mode="after")
+    def validate_replacement_intent(self) -> "EndpointDeviceMappingRequestV1":
+        if self.replace:
+            if self.expected_previous_ref is None or self.reason is None:
+                raise ValueError("mapping replacement requires expected previous ref and reason")
+        elif self.expected_previous_ref is not None or self.reason is not None:
+            raise ValueError("initial mapping must not provide replacement fields")
+        return self
 
 
 class EndpointDeviceSnapshotV1(_ImmutableEndpointDeviceDTO):
@@ -42,6 +78,7 @@ class EndpointDeviceReferenceResolution(_ImmutableEndpointDeviceDTO):
         "ENDPOINT_DEVICE_MAPPING_MISSING",
         "ENDPOINT_UNAVAILABLE",
         "ENDPOINT_DEVICE_MAPPING_INVALID",
+        "ENDPOINT_DEVICE_RETIRED",
     ] | None = None
     device_ref: OpaqueEndpointRef | None = None
     persisted: bool = False
@@ -67,7 +104,16 @@ class EndpointDeviceReferenceService:
         return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
 
     async def assign_verified_mapping(
-        self, *, ticket_id: str, endpoint_device_ref: str
+        self,
+        *,
+        ticket_id: str,
+        endpoint_device_ref: str,
+        replace: bool = False,
+        expected_previous_ref: str | None = None,
+        reason: str | None = None,
+        actor_id: str = "system",
+        actor_role: str = "system",
+        request_correlation: str | None = None,
     ) -> EndpointDeviceReferenceResolution:
         """Verify the exact provider id before atomically assigning it to a ticket."""
 
@@ -85,6 +131,8 @@ class EndpointDeviceReferenceService:
             return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
         if outcome.device.external_id != device.external_id:
             return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
+        if outcome.retired:
+            return self._unresolved("ENDPOINT_DEVICE_RETIRED")
 
         snapshot = EndpointDeviceSnapshotV1(
             device_ref=outcome.device.external_id,
@@ -95,14 +143,45 @@ class EndpointDeviceReferenceService:
         )
 
         async with self._session_factory() as session:
-            ticket = await session.get(Ticket, ticket_id)
+            ticket = await session.get(Ticket, ticket_id, with_for_update=True)
             if ticket is None:
                 return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
             existing = getattr(ticket, "endpoint_device_ref", None)
-            if existing is not None and existing != device.external_id:
+            if existing == device.external_id:
+                return EndpointDeviceReferenceResolution(
+                    status="resolved",
+                    device_ref=device.external_id,
+                    persisted=False,
+                )
+            if existing is None and replace:
+                return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
+            if existing is not None and (
+                not replace
+                or expected_previous_ref != existing
+                or reason is None
+            ):
                 return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
             ticket.endpoint_device_ref = device.external_id
             ticket.endpoint_device_snapshot_json = snapshot.model_dump(mode="json")
+            audit_after = {"endpoint_device_ref": device.external_id}
+            if reason is not None:
+                audit_after["reason"] = reason
+            if _safe_correlation(request_correlation):
+                audit_after["request_correlation"] = request_correlation
+            session.add(
+                TicketAdminAudit(
+                    entity_type="endpoint_device_mapping",
+                    entity_id=ticket_id,
+                    action="replaced" if existing is not None else "created",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    before_json=None
+                    if existing is None
+                    else {"endpoint_device_ref": existing},
+                    after_json=audit_after,
+                    trace_id=None,
+                )
+            )
             await session.flush()
             await session.commit()
             return EndpointDeviceReferenceResolution(
@@ -131,6 +210,14 @@ class EndpointDeviceReferenceService:
             "ENDPOINT_DEVICE_MAPPING_MISSING",
             "ENDPOINT_UNAVAILABLE",
             "ENDPOINT_DEVICE_MAPPING_INVALID",
+            "ENDPOINT_DEVICE_RETIRED",
         ],
     ) -> EndpointDeviceReferenceResolution:
         return EndpointDeviceReferenceResolution(status="unresolved", code=code)
+
+
+def _safe_correlation(value: str | None) -> bool:
+    return bool(
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value)
+    )

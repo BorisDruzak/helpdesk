@@ -9,6 +9,7 @@ python-dateutil
 python-dotenv
 SQLAlchemy>=2.0
 jsonschema
+websockets>=14,<17
 
 pytest
 pytest-asyncio
