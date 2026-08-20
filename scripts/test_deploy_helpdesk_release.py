@@ -22,5 +22,6 @@ def test_remote_install_command_uses_immutable_release_and_system_services() -> 
     assert "test -f /etc/helpdesk/helpdesk.env" in command
     assert "test ! -e /opt/helpdesk/releases/helpdesk-abc123" in command
     assert "sudo ln -sfn /opt/helpdesk/releases/helpdesk-abc123 /opt/helpdesk/current" in command
+    assert "sudo systemctl reset-failed helpdesk-migrate.service || true" in command
     assert "sudo systemctl start helpdesk-migrate.service" in command
     assert "sudo systemctl restart helpdesk-server.service helpdesk-control.service" in command
