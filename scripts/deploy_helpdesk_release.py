@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
-from scripts.helpdesk_remote_profile import RemoteProfile
-
-
 WORKSPACE = Path(__file__).resolve().parents[1]
+if str(WORKSPACE) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE))
+
+from scripts.helpdesk_remote_profile import RemoteProfile
 
 
 def release_path(profile: RemoteProfile, commit: str) -> str:

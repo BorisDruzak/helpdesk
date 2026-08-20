@@ -1,4 +1,4 @@
-from scripts.deploy_helpdesk_release import release_path, remote_install_command
+from scripts.deploy_helpdesk_release import WORKSPACE, release_path, remote_install_command
 from scripts.helpdesk_remote_profile import RemoteProfile
 
 
@@ -6,6 +6,12 @@ def test_release_path_is_scoped_to_helpdesk_releases() -> None:
     profile = RemoteProfile.from_environment({})
 
     assert release_path(profile, "abc123") == "/opt/helpdesk/releases/helpdesk-abc123"
+
+
+def test_script_bootstraps_workspace_for_direct_python_execution() -> None:
+    source = (WORKSPACE / "scripts" / "deploy_helpdesk_release.py").read_text(encoding="utf-8")
+
+    assert "sys.path.insert(0, str(WORKSPACE))" in source
 
 
 def test_remote_install_command_uses_immutable_release_and_system_services() -> None:
