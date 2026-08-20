@@ -6,6 +6,13 @@ from __future__ import annotations
 import argparse
 import shlex
 import subprocess
+import sys
+from pathlib import Path
+
+WORKSPACE = Path(__file__).resolve().parents[1]
+if str(WORKSPACE) not in sys.path:
+    sys.path.insert(0, str(WORKSPACE))
+
 from scripts.helpdesk_remote_profile import RemoteProfile
 
 DEFAULT_REMOTE = RemoteProfile.from_environment().remote

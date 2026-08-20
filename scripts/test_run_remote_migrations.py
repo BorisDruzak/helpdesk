@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,12 @@ def test_parse_args_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(args, argparse.Namespace)
     assert args.remote == run_remote_migrations.DEFAULT_REMOTE
     assert args.alembic_args == []
+
+
+def test_migration_script_bootstraps_workspace_for_direct_execution() -> None:
+    source = Path(run_remote_migrations.__file__).resolve().read_text(encoding="utf-8")
+
+    assert "sys.path.insert(0, str(WORKSPACE))" in source
 
 
 def test_main_passes_remote_and_default_upgrade(monkeypatch: pytest.MonkeyPatch) -> None:

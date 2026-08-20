@@ -171,6 +171,13 @@ def _iter_legacy_dir_candidates(relative_path: str):
 def _prepare_runtime_dir(relative_path: str, *, legacy_relative_paths: tuple[str, ...]) -> Path:
     target = (SERVER_DATA_ROOT / relative_path).resolve()
     target.mkdir(parents=True, exist_ok=True)
+    if str(os.getenv("PC_CLIENT_DISABLE_LEGACY_RUNTIME_MIGRATION") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return target
     if any(target.iterdir()):
         return target
     for legacy_relative_path in legacy_relative_paths:

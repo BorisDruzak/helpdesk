@@ -53,6 +53,12 @@ def test_manage_remote_stack_uses_env_profile_paths(monkeypatch) -> None:
     assert command == "sudo systemctl status helpdesk-server.service --no-pager"
 
 
+def test_remote_management_script_bootstraps_workspace_for_direct_execution() -> None:
+    source = (Path(manage_remote_stack.__file__).resolve()).read_text(encoding="utf-8")
+
+    assert "sys.path.insert(0, str(WORKSPACE))" in source
+
+
 def test_runtime_smoke_uses_env_https_url_and_insecure_tls(monkeypatch) -> None:
     captured: dict[str, str] = {}
 
