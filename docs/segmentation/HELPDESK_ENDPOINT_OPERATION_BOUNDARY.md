@@ -73,6 +73,15 @@ diagnostic wording) and maps it to the localized internal port DTO; unknown
 fields, mismatched IDs, correlation mismatch and an unaccompanied succeeded
 result fail closed.
 
+## Cross-repository acceptance database boundary
+
+The special cross-repository acceptance test starts the real Endpoint factory
+with a disposable loopback PostgreSQL database. It applies the Endpoint
+Alembic head before seeding test-only credentials and drops that database after
+the WSS/evidence flow. The Helpdesk side uses its independently migrated
+temporary PostgreSQL database. SQLite is not an acceptance backend for either
+side of this contract.
+
 ## Local facade and lifecycle
 
 For a browser request Helpdesk authorizes ticket/diagnostic access locally,

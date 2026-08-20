@@ -10,19 +10,24 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import os
 import socket
+import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
 import aiohttp
+import asyncpg
 import pytest
 import uvicorn
 import websockets
-from sqlalchemy import select, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy import select
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import DiagnosticEvidence, Ticket
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
@@ -48,32 +53,94 @@ if str(_ENDPOINT_ROOT) not in sys.path:
 from endpoint_contracts import AgentResultV1, DeviceContextDiagnosticV1  # noqa: E402
 from endpoint_server.auth.scopes import ServicePrincipal  # noqa: E402
 from endpoint_server.config import Settings  # noqa: E402
-from endpoint_server.context.models import (  # noqa: E402
-    ContextCollection,
-    ContextCurrent,
-    ContextDiff,
-    ContextSnapshot,
-)
 from endpoint_server.db.models import (  # noqa: E402
-    AuditEvent,
-    Command,
-    CommandDelivery,
-    CommandResult,
     Device,
     DeviceCredential,
-    DeviceInstance,
-    DeviceSession,
-    EndpointOperation,
     ServiceClient,
     ServiceCredential,
 )
 from endpoint_server.enrollment.credentials import device_token_digest  # noqa: E402
+from endpoint_server.db.session import AsyncSessionProvider  # noqa: E402
 from endpoint_server.main import create_app  # noqa: E402
 
 
 _DEVICE_TOKEN = "acceptance-device-token"
 _DEVICE_PEPPER = b"acceptance-device-pepper"
 _SERVICE_PEPPER = b"acceptance-service-pepper"
+
+
+@dataclass
+class _DisposableEndpointPostgres:
+    database_url: str
+    database_name: str
+    admin_url: str
+    provider: AsyncSessionProvider
+
+    async def close(self) -> None:
+        await self.provider.close()
+        connection = await asyncpg.connect(self.admin_url)
+        try:
+            await connection.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                f"WHERE datname = '{self.database_name}' AND pid <> pg_backend_pid()"
+            )
+            await connection.execute(f'DROP DATABASE "{self.database_name}"')
+        finally:
+            await connection.close()
+
+
+async def _disposable_endpoint_postgres(admin_database_url: str) -> _DisposableEndpointPostgres:
+    """Create a loopback-only Endpoint PostgreSQL DB migrated through real head."""
+
+    parsed = make_url(admin_database_url)
+    if (
+        parsed.get_backend_name() != "postgresql"
+        or parsed.host not in {"127.0.0.1", "localhost", "::1"}
+        or bool(parsed.query)
+        or not parsed.username
+        or not parsed.password
+    ):
+        raise ValueError("Endpoint acceptance requires a loopback PostgreSQL test admin URL")
+    database_name = f"endpoint_acceptance_{uuid4().hex}"
+    plain_admin_url = parsed.set(drivername="postgresql", query={}).render_as_string(
+        hide_password=False
+    )
+    database_url = parsed.set(
+        drivername="postgresql+asyncpg", database=database_name, query={}
+    ).render_as_string(hide_password=False)
+    connection = await asyncpg.connect(plain_admin_url)
+    try:
+        await connection.execute(f'CREATE DATABASE "{database_name}"')
+    finally:
+        await connection.close()
+    environment = os.environ | {"DATABASE_URL": database_url}
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "alembic", "-c", str(_ENDPOINT_ROOT / "alembic.ini"), "upgrade", "head"],
+            cwd=_ENDPOINT_ROOT,
+            env=environment,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        cleanup_connection = await asyncpg.connect(plain_admin_url)
+        try:
+            await cleanup_connection.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                f"WHERE datname = '{database_name}' AND pid <> pg_backend_pid()"
+            )
+            await cleanup_connection.execute(f'DROP DATABASE "{database_name}"')
+        finally:
+            await cleanup_connection.close()
+        raise RuntimeError("Endpoint acceptance PostgreSQL migration failed") from error
+    return _DisposableEndpointPostgres(
+        database_url=database_url,
+        database_name=database_name,
+        admin_url=plain_admin_url,
+        provider=AsyncSessionProvider(database_url),
+    )
 
 
 def _free_port() -> int:
@@ -183,24 +250,13 @@ async def _complete_next_command(websocket, *, device_id: str, sequence: int) ->
 
 
 @pytest.mark.asyncio
-@pytest.mark.no_db
 async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_database_admin_url: str
 ) -> None:
     """Exercise Helpdesk's adapter against the actual Endpoint factory and WSS agent."""
 
-    database_path = tmp_path / "endpoint-acceptance.sqlite3"
-    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path.as_posix()}")
-    tables = (
-        ServiceClient.__table__, Device.__table__, DeviceCredential.__table__,
-        DeviceInstance.__table__, DeviceSession.__table__, Command.__table__, CommandDelivery.__table__,
-        CommandResult.__table__, ContextCollection.__table__, ContextSnapshot.__table__, ContextDiff.__table__,
-        ContextCurrent.__table__, EndpointOperation.__table__, AuditEvent.__table__,
-    )
-    async with engine.begin() as connection:
-        await connection.execute(text("PRAGMA foreign_keys=ON"))
-        await connection.run_sync(lambda sync: Device.metadata.create_all(sync, tables=tables))
-    provider = async_sessionmaker(engine, expire_on_commit=False)
+    provider_database = await _disposable_endpoint_postgres(test_database_admin_url)
+    provider = provider_database.provider
     async with provider() as session:
         client = ServiceClient(id=uuid4(), client_identifier="helpdesk-acceptance", display_name="Helpdesk acceptance")
         device = Device(id=uuid4(), device_identifier="acceptance-device", display_name="Acceptance device")
@@ -230,7 +286,7 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{database_path.as_posix()}", public_base_url="https://endpoint.sosnadmin.local",
+        database_url=provider_database.database_url, public_base_url="https://endpoint.sosnadmin.local",
         device_token_pepper=_DEVICE_PEPPER, service_token_pepper=_SERVICE_PEPPER, session_secret=b"acceptance-session",
         allowed_agent_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), allowed_admin_cidrs=(),
         trusted_proxy_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), artifact_root=artifacts,
@@ -303,7 +359,7 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
         assert completed.safe_result.processes[0].name == "acceptance-safe-process"
     finally:
         await _stop(server, task)
-        await engine.dispose()
+        await provider_database.close()
 
 
 class _FacadeAccess:
@@ -315,22 +371,12 @@ class _FacadeAccess:
 @pytest.mark.asyncio
 @pytest.mark.db_cleanup("observer_diagnostics")
 async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_engine
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_database_admin_url: str, test_engine
 ) -> None:
     """Full durable Helpdesk facade → provider → WSS → evidence vertical slice."""
 
-    database_path = tmp_path / "endpoint-facade-acceptance.sqlite3"
-    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path.as_posix()}")
-    tables = (
-        ServiceClient.__table__, Device.__table__, DeviceCredential.__table__,
-        DeviceInstance.__table__, DeviceSession.__table__, Command.__table__, CommandDelivery.__table__,
-        CommandResult.__table__, ContextCollection.__table__, ContextSnapshot.__table__, ContextDiff.__table__,
-        ContextCurrent.__table__, EndpointOperation.__table__, AuditEvent.__table__,
-    )
-    async with engine.begin() as connection:
-        await connection.execute(text("PRAGMA foreign_keys=ON"))
-        await connection.run_sync(lambda sync: Device.metadata.create_all(sync, tables=tables))
-    provider = async_sessionmaker(engine, expire_on_commit=False)
+    provider_database = await _disposable_endpoint_postgres(test_database_admin_url)
+    provider = provider_database.provider
     async with provider() as session:
         client = ServiceClient(id=uuid4(), client_identifier="helpdesk-facade", display_name="Helpdesk facade")
         device = Device(id=uuid4(), device_identifier="facade-device", display_name="Facade device")
@@ -359,7 +405,7 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     settings = Settings(
-        database_url=f"sqlite+aiosqlite:///{database_path.as_posix()}", public_base_url="https://endpoint.sosnadmin.local",
+        database_url=provider_database.database_url, public_base_url="https://endpoint.sosnadmin.local",
         device_token_pepper=_DEVICE_PEPPER, service_token_pepper=_SERVICE_PEPPER, session_secret=b"facade-session",
         allowed_agent_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), allowed_admin_cidrs=(),
         trusted_proxy_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), artifact_root=artifacts,
@@ -436,4 +482,4 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
         assert evidence[0].normalized_payload["processes"][0]["name"] == "acceptance-safe-process"
     finally:
         await _stop(server, task)
-        await engine.dispose()
+        await provider_database.close()
