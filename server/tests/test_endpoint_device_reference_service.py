@@ -19,6 +19,7 @@ class _Session:
         self._factory = factory
         self._ticket = ticket
         self.flush_count = 0
+        self.commit_count = 0
 
     async def __aenter__(self) -> "_Session":
         self._factory.open_sessions += 1
@@ -34,6 +35,9 @@ class _Session:
 
     async def flush(self) -> None:
         self.flush_count += 1
+
+    async def commit(self) -> None:
+        self.commit_count += 1
 
 
 class _SessionFactory:
@@ -80,14 +84,16 @@ def _device_projection(ref: str = "legacy-device") -> EndpointDeviceProjection:
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_resolver_persists_only_exact_verified_device_ref_after_port_read():
+async def test_admin_mapping_persists_only_exact_verified_device_ref_after_port_read():
     from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 
     ticket = _ticket()
     sessions = _SessionFactory(ticket)
     port = _EndpointPort(sessions, _device_projection())
 
-    result = await EndpointDeviceReferenceService(port, sessions).resolve_ticket("ticket-1")
+    result = await EndpointDeviceReferenceService(port, sessions).assign_verified_mapping(
+        ticket_id="ticket-1", endpoint_device_ref="legacy-device"
+    )
 
     assert result.status == "resolved"
     assert result.code is None
@@ -104,8 +110,9 @@ async def test_resolver_persists_only_exact_verified_device_ref_after_port_read(
         "source": "endpoint_platform",
     }
     assert ticket.endpoint_device_snapshot_json["captured_at"].endswith("Z")
-    assert len(sessions.sessions) == 2
-    assert sessions.sessions[1].flush_count == 1
+    assert len(sessions.sessions) == 1
+    assert sessions.sessions[0].flush_count == 1
+    assert sessions.sessions[0].commit_count == 1
 
 
 @pytest.mark.asyncio
@@ -114,6 +121,15 @@ async def test_resolver_preserves_existing_validated_endpoint_ref_without_port_l
     from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 
     ticket = _ticket(endpoint_device_ref="already-verified", device_id="different-legacy-device")
+    ticket.endpoint_device_snapshot_json = {
+        "schema_version": "endpoint_device_snapshot_v1",
+        "device_ref": "already-verified",
+        "display_name": "Endpoint workstation",
+        "retired": False,
+        "last_seen_at": None,
+        "captured_at": "2026-08-17T09:00:00Z",
+        "source": "endpoint_platform",
+    }
     sessions = _SessionFactory(ticket)
     port = _EndpointPort(sessions, _device_projection("different-legacy-device"))
 
@@ -135,14 +151,16 @@ async def test_resolver_preserves_existing_validated_endpoint_ref_without_port_l
         (EndpointUnavailable(), "ENDPOINT_UNAVAILABLE"),
     ],
 )
-async def test_resolver_does_not_persist_failed_endpoint_lookup(outcome, expected_code: str):
+async def test_admin_mapping_does_not_persist_failed_endpoint_lookup(outcome, expected_code: str):
     from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 
     ticket = _ticket()
     sessions = _SessionFactory(ticket)
     port = _EndpointPort(sessions, outcome)
 
-    result = await EndpointDeviceReferenceService(port, sessions).resolve_ticket("ticket-1")
+    result = await EndpointDeviceReferenceService(port, sessions).assign_verified_mapping(
+        ticket_id="ticket-1", endpoint_device_ref="legacy-device"
+    )
 
     assert result.status == "unresolved"
     assert result.code == expected_code
@@ -154,20 +172,38 @@ async def test_resolver_does_not_persist_failed_endpoint_lookup(outcome, expecte
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_resolver_rejects_mismatched_endpoint_ref_without_persistence():
+async def test_admin_mapping_rejects_mismatched_endpoint_ref_without_persistence():
     from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 
     ticket = _ticket()
     sessions = _SessionFactory(ticket)
     port = _EndpointPort(sessions, _device_projection("different-device"))
 
-    result = await EndpointDeviceReferenceService(port, sessions).resolve_ticket("ticket-1")
+    result = await EndpointDeviceReferenceService(port, sessions).assign_verified_mapping(
+        ticket_id="ticket-1", endpoint_device_ref="legacy-device"
+    )
 
     assert result.status == "unresolved"
     assert result.code == "ENDPOINT_DEVICE_MAPPING_INVALID"
     assert ticket.endpoint_device_ref is None
     assert ticket.endpoint_device_snapshot_json is None
     assert all(session.flush_count == 0 for session in sessions.sessions)
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_resolver_never_uses_legacy_ticket_device_id_as_endpoint_mapping():
+    from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
+
+    ticket = _ticket(device_id="legacy-device")
+    sessions = _SessionFactory(ticket)
+    port = _EndpointPort(sessions, _device_projection())
+
+    result = await EndpointDeviceReferenceService(port, sessions).resolve_ticket("ticket-1")
+
+    assert result.status == "unresolved"
+    assert result.code == "ENDPOINT_DEVICE_MAPPING_MISSING"
+    assert port.calls == []
 
 
 @pytest.mark.no_db

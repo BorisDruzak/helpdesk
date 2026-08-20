@@ -48,14 +48,14 @@ class EndpointDeviceReferenceResolution(_ImmutableEndpointDeviceDTO):
 
 
 class EndpointDeviceReferenceService:
-    """Resolve exactly one server-owned candidate without legacy fallback."""
+    """Resolve a verified mapping; never derive one from legacy device metadata."""
 
     def __init__(self, endpoint_port: EndpointPort, session_factory: Callable[[], Any]) -> None:
         self._endpoint_port = endpoint_port
         self._session_factory = session_factory
 
     async def resolve_ticket(self, ticket_id: str) -> EndpointDeviceReferenceResolution:
-        """Read a candidate, call Endpoint outside DB work, then guarded-persist."""
+        """Return a previously verified mapping suitable for readiness checks."""
 
         async with self._session_factory() as session:
             ticket = await session.get(Ticket, ticket_id)
@@ -64,10 +64,15 @@ class EndpointDeviceReferenceService:
             existing = getattr(ticket, "endpoint_device_ref", None)
             if existing is not None:
                 return self._validated_existing(ticket)
-            candidate = getattr(ticket, "device_id", None)
+        return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
+
+    async def assign_verified_mapping(
+        self, *, ticket_id: str, endpoint_device_ref: str
+    ) -> EndpointDeviceReferenceResolution:
+        """Verify the exact provider id before atomically assigning it to a ticket."""
 
         try:
-            device = EndpointDeviceRef(external_id=candidate)
+            device = EndpointDeviceRef(external_id=endpoint_device_ref)
         except ValidationError:
             return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
 
@@ -94,13 +99,12 @@ class EndpointDeviceReferenceService:
             if ticket is None:
                 return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
             existing = getattr(ticket, "endpoint_device_ref", None)
-            if existing is not None:
-                return self._validated_existing(ticket)
-            if getattr(ticket, "device_id", None) != device.external_id:
-                return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
+            if existing is not None and existing != device.external_id:
+                return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
             ticket.endpoint_device_ref = device.external_id
             ticket.endpoint_device_snapshot_json = snapshot.model_dump(mode="json")
             await session.flush()
+            await session.commit()
             return EndpointDeviceReferenceResolution(
                 status="resolved",
                 device_ref=device.external_id,
@@ -112,10 +116,11 @@ class EndpointDeviceReferenceService:
         try:
             ref = EndpointDeviceRef(external_id=getattr(ticket, "endpoint_device_ref", None))
             raw_snapshot = getattr(ticket, "endpoint_device_snapshot_json", None)
-            if raw_snapshot is not None:
-                snapshot = EndpointDeviceSnapshotV1.model_validate(raw_snapshot)
-                if snapshot.device_ref != ref.external_id:
-                    raise ValueError("endpoint device snapshot ref does not match ticket ref")
+            if raw_snapshot is None:
+                raise ValueError("endpoint device mapping has no verified snapshot")
+            snapshot = EndpointDeviceSnapshotV1.model_validate(raw_snapshot)
+            if snapshot.device_ref != ref.external_id:
+                raise ValueError("endpoint device snapshot ref does not match ticket ref")
         except (ValidationError, ValueError):
             return EndpointDeviceReferenceService._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
         return EndpointDeviceReferenceResolution(status="resolved", device_ref=ref.external_id)

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import EndpointOperationLink, Operation
 from app.services.endpoint_operation_reconciler import (
     EndpointOperationReconciler,
+    EndpointOperationReconcilerRunner,
     EndpointReconcileClaim,
     SqlAlchemyEndpointOperationReconcileStore,
     _REMOTE_TO_LOCAL,
@@ -20,8 +21,6 @@ from app.services.endpoint_operation_reconciler import (
 )
 from domain_ports.endpoint import (
     EndpointDeviceRef,
-    EndpointOperationCorrelation,
-    EndpointOperationCreateRequest,
     EndpointOperationProjection,
     EndpointOperationRef,
     EndpointDiagnosticResultProjection,
@@ -39,7 +38,7 @@ class _ClaimStore:
     committed: list[dict]
 
     async def claim_ready(self, *, owner: str, now: datetime, limit: int, lease_seconds: int):
-        return self.claims[:limit]
+        return [self.claims.pop(0)] if self.claims and limit == 1 else []
 
     async def commit(self, **values):
         self.committed.append(values)
@@ -53,9 +52,13 @@ class _Port:
 
     async def create_operation(self, device, request, *, idempotency_key):
         self.create_calls.append((device, request, idempotency_key))
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
         return self.outcome
 
     async def read_operation(self, operation):
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
         return self.outcome
 
 
@@ -146,6 +149,7 @@ def test_remote_statuses_have_the_exact_local_operation_and_phase_projection() -
     }
 
 
+@pytest.mark.no_db
 def test_endpoint_services_have_no_legacy_agent_runtime_imports() -> None:
     services = Path(__file__).parents[1] / "app" / "services"
     forbidden = {
@@ -182,6 +186,7 @@ def test_endpoint_services_have_no_legacy_agent_runtime_imports() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     store = _ClaimStore(claims=[_claim()], committed=[])
@@ -203,9 +208,7 @@ async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -
     assert processed == 1
     assert len(port.create_calls) == 1
     assert port.create_calls[0][2] == "helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111"
-    assert port.create_calls[0][1].correlation.source_entity_id == endpoint_operation_correlation_ref(
-        "11111111-1111-1111-1111-111111111111"
-    )
+    assert port.create_calls[0][1].correlation is not None
     assert port.create_calls[0][1].correlation.source_entity_id != "ticket-1"
     assert store.committed == [
         {
@@ -223,6 +226,7 @@ async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -
 
 
 @pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_retryable_unavailable_preserves_current_local_progress() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     claim = _claim()
@@ -240,6 +244,7 @@ async def test_retryable_unavailable_preserves_current_local_progress() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_nonretryable_unavailable_is_terminal_and_does_not_publish_without_change() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     store = _ClaimStore(claims=[_claim()], committed=[])
@@ -258,6 +263,32 @@ async def test_nonretryable_unavailable_is_terminal_and_does_not_publish_without
 
 
 @pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_ui_publication_failure_does_not_undo_committed_claim() -> None:
+    now = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    store = _ClaimStore(claims=[_claim()], committed=[])
+
+    async def fail_publication(_operation_id: str) -> None:
+        raise RuntimeError("UI unavailable")
+
+    reconciler = EndpointOperationReconciler(
+        endpoint_port=_Port(EndpointUnavailable()),
+        store=store,
+        mode="external",
+        diagnostic_execution_mode="endpoint",
+        owner="test-worker",
+        now=lambda: now,
+        random=lambda: 0.0,
+        publish_after_commit=fail_publication,
+    )
+
+    assert await reconciler.reconcile_once(limit=1) == 1
+    assert len(store.committed) == 1
+    assert store.committed[0]["operation_status"] == "queued"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_success_persists_only_validated_safe_snapshot_and_remote_ref() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     claim = _claim()
@@ -268,10 +299,7 @@ async def test_success_persists_only_validated_safe_snapshot_and_remote_ref() ->
         created_at=now,
         deadline_at=None,
         completed_at=now,
-        correlation=EndpointOperationCorrelation(
-            source_entity_id=endpoint_operation_correlation_ref(claim.operation_id),
-            request_id="11111111-1111-1111-1111-111111111111",
-        ),
+        correlation=None,
         result_available=True,
         safe_result=EndpointDiagnosticResultProjection(
             collected_at=now,
@@ -302,3 +330,53 @@ async def test_success_persists_only_validated_safe_snapshot_and_remote_ref() ->
         "processes": [{"name": "safe-process", "state": "running"}],
         "log_excerpt": None,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_one_unexpected_claim_failure_does_not_stop_following_claims() -> None:
+    now = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    first = _claim()
+    second = EndpointReconcileClaim(**(first.__dict__ | {"operation_id": "22222222-2222-2222-2222-222222222222"}))
+    store = _ClaimStore(claims=[first, second], committed=[])
+
+    class FlakyPort(_Port):
+        def __init__(self) -> None:
+            super().__init__(EndpointUnavailable())
+            self.calls = 0
+
+        async def create_operation(self, device, request, *, idempotency_key):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("unexpected")
+            return await super().create_operation(device, request, idempotency_key=idempotency_key)
+
+    reconciler = EndpointOperationReconciler(endpoint_port=FlakyPort(), store=store, mode="external", diagnostic_execution_mode="endpoint", owner="test", now=lambda: now, random=lambda: 0.0)
+    assert await reconciler.reconcile_once(limit=2) == 2
+    assert [value["claim"].operation_id for value in store.committed] == [second.operation_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_runner_survives_unexpected_reconcile_failure() -> None:
+    completed = asyncio.Event()
+
+    class FlakyReconciler:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def reconcile_once(self, *, limit: int) -> int:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("unexpected")
+            completed.set()
+            return 0
+
+    reconciler = FlakyReconciler()
+    runner = EndpointOperationReconcilerRunner(
+        reconciler, interval_seconds=0.01, batch_size=1
+    )
+    runner.start()
+    await asyncio.wait_for(completed.wait(), timeout=1)
+    await runner.stop()
+    assert reconciler.calls >= 2

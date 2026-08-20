@@ -72,7 +72,7 @@ async def test_create_uses_server_generated_deterministic_identity_and_never_rem
     expected = str(
         uuid.uuid5(
             uuid.NAMESPACE_URL,
-            "helpdesk:ticket-1:endpoint-device-1:context.diagnostic.collect:caller-key-0001",
+            "helpdesk:support-42:ticket-1:endpoint-device-1:context.diagnostic.collect:caller-key-0001",
         )
     )
     assert result.operation_id == expected
@@ -87,6 +87,7 @@ async def test_create_uses_server_generated_deterministic_identity_and_never_rem
         "actor_role": "support",
         "endpoint_device_ref": "endpoint-device-1",
         "idempotency_key": remote_endpoint_idempotency_key(expected),
+        "caller_idempotency_key": "caller-key-0001",
         "trace_id": None,
         "created_at": datetime(2026, 8, 17, tzinfo=timezone.utc),
     }
@@ -108,7 +109,7 @@ async def test_create_rejects_reused_key_with_different_immutable_identity() -> 
     store.existing[str(
         uuid.uuid5(
             uuid.NAMESPACE_URL,
-            "helpdesk:ticket-1:endpoint-device-1:context.diagnostic.collect:caller-key-0001",
+            "helpdesk:support-42:ticket-1:endpoint-device-1:context.diagnostic.collect:caller-key-0001",
         )
     )] = {
         "operation_id": "different-operation",

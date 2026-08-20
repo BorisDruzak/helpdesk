@@ -31,11 +31,12 @@ Helpdesk must not import Endpoint Python modules, query an Endpoint database,
 create Endpoint credentials, parse an external reference, or use Endpoint
 correlation for authorization. There is no cross-service database foreign key.
 The Endpoint Agent must not receive `ticket_id` or any other Helpdesk entity.
-The operation correlation carries only a Helpdesk-generated, non-reversible
-opaque value derived from the local operation ID; it never carries a ticket,
-diagnostic-session, actor, or other Helpdesk entity ID. The durable Endpoint
-idempotency key is exactly `helpdesk-endpoint-operation:<local-operation-id>`;
-the browser caller idempotency key remains local-only.
+`X-Correlation-ID` is a transport-only tracing header: Helpdesk requires the
+Endpoint response to echo it exactly, never places it in a JSON envelope, and
+never uses it for authorization. It never reaches a Gateway WSS command. The
+durable Endpoint idempotency key is exactly
+`helpdesk-endpoint-operation:<local-operation-id>`; the browser caller key is
+stored only with the actor that supplied it and never leaves Helpdesk.
 
 ## Required integration surface
 
@@ -67,6 +68,19 @@ availability route.
 
 The actual adapter implementation must verify this route table against the
 read-only Endpoint Platform contracts and committed schemas before coding.
+It parses a strict provider-owned wire DTO (including the provider's canonical
+diagnostic wording) and maps it to the localized internal port DTO; unknown
+fields, mismatched IDs, correlation mismatch and an unaccompanied succeeded
+result fail closed.
+
+## Cross-repository acceptance database boundary
+
+The special cross-repository acceptance test starts the real Endpoint factory
+with a disposable loopback PostgreSQL database. It applies the Endpoint
+Alembic head before seeding test-only credentials and drops that database after
+the WSS/evidence flow. The Helpdesk side uses its independently migrated
+temporary PostgreSQL database. SQLite is not an acceptance backend for either
+side of this contract.
 
 ## Local facade and lifecycle
 
@@ -121,8 +135,13 @@ external operation may remain queued until the agent reconnects.
 
 Browser input carries no Endpoint device reference, correlation, reason, or
 arbitrary parameters. The capability has an empty object parameter schema.
-Only server-side verified ticket mapping can persist `endpoint_device_ref`;
-there is no hostname/IP/MAC matching or client override.
+Only the admin-only `PUT /api/admin/tickets/{ticket_id}/endpoint-device-mapping`
+may persist `endpoint_device_ref`. It performs an exact Endpoint device read,
+stores an immutable `endpoint_device_snapshot_v1`, and readiness calls the
+same reference service before exposing the capability. There is no
+hostname/IP/MAC matching, legacy `Ticket.device_id` fallback, or client
+override. Revision `137` adds the partial unique
+`(caller_actor_id, caller_idempotency_key)` constraint for caller idempotency.
 
 The existing diagnostics workspace gains only source and state presentation:
 Endpoint Platform; queued/delivered/accepted/running/terminal states; a safe
