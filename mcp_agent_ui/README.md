@@ -42,7 +42,7 @@ python -m mcp_agent_ui.server
 |------------|----------|--------------|
 | `AGENT_UI_BASE_URL` | Базовый URL UI Bridge | `http://127.0.0.1:8765` |
 
-Для агента на другой машине задайте, например: `AGENT_UI_BASE_URL=http://192.168.100.17:8765`.
+Для агента на другой машине задайте, например: `AGENT_UI_BASE_URL=http://example.test:8765`.
 
 ## Инструменты (tools)
 

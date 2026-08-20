@@ -18,8 +18,8 @@ The repository must be edited in the local Windows working copy:
 
 The Linux copy `/var/chat_bot/pc_client` is a deploy/live stand, not the editing source. Browser checks use:
 
-- `http://192.168.100.17:8666/app/admin/observer`
-- canonical admin base from project docs: `http://192.168.100.17:8666/admin`
+- `http://example.test:8666/app/admin/observer`
+- canonical admin base from project docs: `http://example.test:8666/admin`
 
 Relevant docs and maps:
 
@@ -882,7 +882,7 @@ python scripts/manage_remote_stack.py smoke server
 
 Browser:
 
-- open `http://192.168.100.17:8666/app/admin/observer`;
+- open `http://example.test:8666/app/admin/observer`;
 - confirm runtime health;
 - confirm new root_kind filters;
 - run or inspect canary traces;

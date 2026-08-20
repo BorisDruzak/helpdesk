@@ -12,7 +12,7 @@ Subagents are helpers for parallel context gathering, checks, browser evidence, 
 - Do not use subagents to edit the same source files concurrently.
 - Read-only agents must not write files, artifacts, git state, or remote state.
 - Workspace-write agents may write only normal verification artifacts, caches, logs, screenshots, traces, or temporary profiles.
-- No subagent may stage, commit, push, deploy, manually patch `/var/chat_bot/pc_client`, or manually patch `\\192.168.100.17\NTFS_Share\pc_client`.
+- No subagent may stage, commit, push, deploy, manually patch `/var/chat_bot/pc_client`, or manually patch `\\example.test\NTFS_Share\pc_client`.
 - The main agent owns source edits, docs edits, final integration, and final completion claims.
 
 ## Agent Routing
@@ -31,7 +31,7 @@ Subagents are helpers for parallel context gathering, checks, browser evidence, 
 Ask context-mapper to map the ticket lifecycle files, docs, tests, and risk boundaries for this change.
 Ask test-runner to run python scripts/verify_workspace.py and the targeted pytest for the changed server route.
 Ask reviewer to review the staged diff for regressions, missing tests, and project-rule violations.
-Ask browser-verifier to validate the relevant route on https://192.168.100.17:9443 in a real browser and capture evidence.
+Ask browser-verifier to validate the relevant route on https://example.test:9443 in a real browser and capture evidence.
 Ask docs-drift-auditor to check whether this route/contract change requires CODEMAP or workflow doc updates.
 ```
 

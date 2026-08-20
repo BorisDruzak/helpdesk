@@ -31,7 +31,7 @@ def test_main_refuses_dirty_workspace_without_override(monkeypatch: pytest.Monke
         lambda: argparse.Namespace(
             workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
             remote_name="linux",
-            remote_host="altserver@192.168.100.17",
+            remote_host="altserver@example.test",
             remote_worktree="/var/chat_bot/pc_client",
             branch="main",
             allow_local_dirty=False,
@@ -62,7 +62,7 @@ def test_main_allows_dirty_workspace_with_override(
         lambda: argparse.Namespace(
             workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
             remote_name="linux",
-            remote_host="altserver@192.168.100.17",
+            remote_host="altserver@example.test",
             remote_worktree="/var/chat_bot/pc_client",
             branch="main",
             allow_local_dirty=True,
@@ -100,7 +100,7 @@ def make_args(**overrides: object) -> argparse.Namespace:
     values: dict[str, object] = {
         "workspace": Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
         "remote_name": "linux",
-        "remote_host": "altserver@192.168.100.17",
+        "remote_host": "altserver@example.test",
         "remote_worktree": "/var/chat_bot/pc_client",
         "branch": "master",
         "allow_local_dirty": False,

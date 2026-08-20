@@ -35,8 +35,8 @@ LINK_RE = re.compile(r"(?<!!)\[[^\]\n]+\]\((?P<target>[^)\n]+)\)")
 IGNORED_SCHEMES = {"http", "https", "mailto", "tel", "data"}
 ACTIVE_LINK_STATUSES = {"canonical", "plan", "spec"}
 LEGACY_REPO_PREFIXES = (
-    "/192.168.100.17/NTFS_Share/pc_client/",
-    "//192.168.100.17/NTFS_Share/pc_client/",
+    "/example.test/NTFS_Share/pc_client/",
+    "//example.test/NTFS_Share/pc_client/",
 )
 
 if hasattr(sys.stdout, "reconfigure"):

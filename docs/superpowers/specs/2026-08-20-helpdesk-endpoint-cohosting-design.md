@@ -8,8 +8,8 @@ and deployment reference.
 
 ## Goal
 
-Replace the retired Helpdesk deployment on `192.168.100.17` with a fresh,
-independently operated Helpdesk service on `osn_admin@192.168.100.19`. The
+Deploy a fresh, independently operated Helpdesk service on
+`osn_admin@192.168.100.19`. The
 service is colocated with Endpoint Platform but is not merged with it.
 
 The initial Helpdesk database is empty except for a newly bootstrapped
@@ -56,8 +56,8 @@ procedure rather than the retired host's Git-working-tree deployment:
 6. retain the previous immutable release for application rollback. Database
    rollback is restore-from-backup only, never automatic Alembic downgrade.
 
-The release procedure must not use the `linux` Git remote, SSH user/key, SMB
-share, or runtime paths belonging to `192.168.100.17`.
+The release procedure uses only the dedicated Helpdesk deployment profile and
+must not reuse legacy Git, SMB, or runtime paths.
 
 ## Configuration and Secrets
 

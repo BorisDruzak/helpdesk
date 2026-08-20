@@ -39,7 +39,7 @@ pip install -r mcp_agent_ui/requirements.txt
       "command": "python",
       "args": ["mcp_agent_ui/server.py"],
       "env": {
-        "AGENT_UI_BASE_URL": "http://192.168.100.17:8765"
+        "AGENT_UI_BASE_URL": "http://example.test:8765"
       }
     }
   }

@@ -34,8 +34,8 @@ def _normalize_enabled_modules(module_names: List[str] | None) -> List[str]:
 
 class ServerConfig(BaseModel):
     """Конфигурация сервера."""
-    ws_url: str = Field(default="ws://192.168.100.17:8666/ws", description="URL WebSocket сервера")
-    api_url: str = Field(default="http://192.168.100.17:8666/api", description="URL API сервера")
+    ws_url: str = Field(default="ws://example.test:8666/ws", description="URL WebSocket сервера")
+    api_url: str = Field(default="http://example.test:8666/api", description="URL API сервера")
     http_port: int = Field(default=12345, ge=1, le=65535, description="Порт HTTP сервера")
     reconnect_interval: int = Field(default=5, ge=1, description="Интервал переподключения (сек)")
 

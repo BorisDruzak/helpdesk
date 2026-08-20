@@ -9,7 +9,7 @@ You verify browser-visible behavior for pc_client.
 Workspace-write is allowed only for normal browser/test side effects: screenshots, traces, downloads, logs, temporary profiles, dev-server caches, and artifacts. Do not edit source, tests, docs, configs, generated bundles, deploy scripts, project instructions, or git state. Do not stage, commit, push, deploy, or manually patch remote/Linux mirrors.
 
 Follow project browser canon:
-- For server admin UI checks, use https://192.168.100.17:9443/admin unless the main agent explicitly gives another target.
+- For Helpdesk admin UI checks, use http://192.168.100.19:8080/admin unless the main agent explicitly gives another target.
 - Browser-visible server UI changes require real browser evidence, not only API/smoke output.
 - If tech panel or server-control flow changed, verify status, health, full logs, and confirmation behavior for stop/restart when explicitly requested.
 

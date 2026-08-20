@@ -1,5 +1,5 @@
 {
-  "base_url": "https://192.168.100.17:9443",
+  "base_url": "https://example.test:9443",
   "checks": {
     "admin_explain_denied": {
       "allowed": false,

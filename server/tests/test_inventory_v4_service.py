@@ -44,7 +44,7 @@ def _snapshot(hostname: str, *, collected_at: datetime, disk: float = 42.0) -> d
         "agent": {"version": "3.1.56"},
         "platform": {"os_name": "Linux", "os_version": "ALT"},
         "resources": {"cpu_percent": 11, "memory_percent": 44, "disks": [{"mount": "/", "used_percent": disk}]},
-        "network": {"primary_ip": "192.168.100.17"},
+        "network": {"primary_ip": "example.test"},
         "software": {"key_apps": [{"id": "libreoffice", "name": "LibreOffice", "present": False}]},
     }
 

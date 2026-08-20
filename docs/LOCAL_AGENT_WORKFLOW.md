@@ -85,13 +85,13 @@ For PowerShell-heavy payloads, pass JSON via stdin or `@file` instead of inline 
 
 По умолчанию локальные инстансы идут на удалённый Linux-сервер:
 
-- WS: `wss://192.168.100.17:9443/ws`
-- API: `https://192.168.100.17:9443/api`
+- WS: `wss://example.test:9443/ws`
+- API: `https://example.test:9443/api`
 
 При необходимости URLs можно переопределить:
 
 ```powershell
-python scripts/manage_local_agent.py start test-agent --ws-url wss://192.168.100.17:9443/ws --api-url https://192.168.100.17:9443/api
+python scripts/manage_local_agent.py start test-agent --ws-url wss://example.test:9443/ws --api-url https://example.test:9443/api
 ```
 
 ## Токен

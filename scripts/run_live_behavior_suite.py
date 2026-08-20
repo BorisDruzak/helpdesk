@@ -27,7 +27,7 @@ DEFAULT_BROWSER_SURFACES_CSV = ",".join(DEFAULT_BROWSER_SURFACES)
 DEFAULT_BASE_URL = (
     os.environ.get("PC_CLIENT_BROWSER_BASE_URL")
     or os.environ.get("REMOTE_SMOKE_BASE_URL")
-    or "https://192.168.100.17:9443"
+    or "https://example.test:9443"
 )
 DEFAULT_OUT_DIR = ROOT / "artifacts" / "live_behavior_suite"
 AGENT_OPERATION_SURFACES = {"native_agent", "operation_lifecycle", "protocol_v3"}

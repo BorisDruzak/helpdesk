@@ -59,7 +59,7 @@
 
 ### 2.4 Admin UI
 
-В `http://192.168.100.17:8666/admin` раздел Agent Updates теперь включает:
+В `http://example.test:8666/admin` раздел Agent Updates теперь включает:
 
 - загрузку билдов;
 - запуск single-device update;

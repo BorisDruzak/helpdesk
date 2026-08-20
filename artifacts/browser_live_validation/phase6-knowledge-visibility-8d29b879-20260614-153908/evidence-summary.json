@@ -1,7 +1,7 @@
 ﻿{
     "status":  "passed",
     "commit":  "8d29b879517a3f4c408d420314eb9878666c16a1",
-    "base_url":  "https://192.168.100.17:9443/admin",
+    "base_url":  "https://example.test:9443/admin",
     "route":  "/app/admin/knowledge/studio",
     "evidence_dir":  "artifacts\\browser_live_validation\\phase6-knowledge-visibility-8d29b879-20260614-153908",
     "checks":  [

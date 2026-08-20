@@ -8,7 +8,6 @@ Keep this root contract short. Put detailed procedures in `.agents/skills/*/SKIL
 - The local `endpoint_platform` workspace is `C:\Users\admin-2\Documents\endpoint`; use it only to inspect and analyze endpoint code. Do not modify files there.
 - Helpdesk production target is `osn_admin@192.168.100.19`, colocated with Endpoint Platform but deployed as an independent service. Its canonical runtime paths are `/opt/helpdesk/current`, `/etc/helpdesk`, and `/var/lib/helpdesk`; do not patch a deployed release manually.
 - Deploy Helpdesk through its reviewed release procedure and separate systemd, PostgreSQL, Unix-user, and Nginx resources. Never merge it into the Endpoint Platform repository, database, service account, or runtime directories.
-- `192.168.100.17` is the retired Helpdesk host, not a deployment target. Do not use its SMB mirror or `/var/chat_bot/pc_client` as an edit or release workspace.
 - Do not make changes to the code without explicit instructions.
 - Code and documentation share the local working copy as their canon.
 - Before non-trivial work, bootstrap UTF-8 with `.\scripts\bootstrap_shell_utf8.ps1` and inspect `git status --short`.

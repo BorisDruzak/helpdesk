@@ -289,7 +289,7 @@ def test_status_treats_reused_pid_as_stopped(tmp_path, monkeypatch, capsys):
                 "pid": 19092,
                 "gui": True,
                 "start_mode": "launcher",
-                "ws_url": "wss://192.168.100.17:9443/ws",
+                "ws_url": "wss://example.test:9443/ws",
                 "data_dir": str(instance_dir / "data"),
                 "install_root": str(instance_dir / "install"),
                 "launcher_log": str(instance_dir / "launcher.log"),

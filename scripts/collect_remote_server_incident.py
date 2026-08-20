@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-DEFAULT_REMOTE = "altserver@192.168.100.17"
+DEFAULT_REMOTE = "altserver@example.test"
 DEFAULT_KEY = Path(r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519")
 
 SECRET_QUERY_RE = re.compile(r"([?&](?:token|session_token|account_session_token|access_token)=)[^\\s\"&]+", re.I)

@@ -27,7 +27,7 @@ def test_sanitize_for_report_redacts_tokens_and_auth_headers() -> None:
 def test_initial_report_declares_http_smoke_not_real_agent_signoff() -> None:
     report = smoke.build_initial_report(
         run_id="phase7-test",
-        base_url="https://192.168.100.17:9443",
+        base_url="https://example.test:9443",
         commit="abc1234",
     )
 

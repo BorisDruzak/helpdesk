@@ -11,7 +11,7 @@ def _complete_manifest(root: Path) -> Path:
         json.dumps(
             {
                 "generated_at": "2026-06-23T01:00:45+00:00",
-                "base_url": "https://192.168.100.17:9443",
+                "base_url": "https://example.test:9443",
                 "device_id": "device-abc",
                 "coverage": {
                     "ok": True,

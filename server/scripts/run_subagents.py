@@ -93,7 +93,7 @@ async def run(args: argparse.Namespace) -> int:
     py = sys.executable
     env_readonly = os.getenv(
         "READONLY_DATABASE_URL",
-        "postgresql://pc_client_ro:1.Abcdef@192.168.100.17:5432/pc_client",
+        "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client",
     )
 
     cmd_server = [
@@ -159,7 +159,7 @@ def parse_args() -> argparse.Namespace:
     default_repo = script.parents[2]
     p = argparse.ArgumentParser(description="Run project subagent workers in parallel")
     p.add_argument("--repo-root", default=str(default_repo))
-    p.add_argument("--admin-url", default="http://192.168.100.17:8666/admin")
+    p.add_argument("--admin-url", default="http://example.test:8666/admin")
     p.add_argument("--output-dir", default="")
     return p.parse_args()
 

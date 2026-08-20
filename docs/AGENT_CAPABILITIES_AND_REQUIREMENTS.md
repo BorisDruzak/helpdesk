@@ -4,7 +4,7 @@
 
 ## SSH
 
-- **Проверка подключения:** агент может проверить SSH до `altserver@192.168.100.17` (ключ `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519` или пароль через `PC_CLIENT_SSH_PASSWORD`).
+- **Проверка подключения:** агент может проверить SSH до `altserver@example.test` (ключ `C:\Users\admin-2\.ssh\pc_client_altserver_ed25519` или пароль через `PC_CLIENT_SSH_PASSWORD`).
 - **Выполнение команд на удалённом хосте:** через `ssh` из терминала или через скрипты скилла pc-client-remote-control (`ssh_remote.py exec`, `manage_remote.py`).
 - **Ограничение:** интерактивные команды и ввод пароля в stdin с Windows неудобны; предпочтительно использование ключа.
 
@@ -25,7 +25,7 @@
 - **Локальная копия кода:** `C:\Users\admin-2\CodexProjects\pc_client` — все правки и коммиты только здесь.
 - **Скрипты в `scripts/`:** deploy, verify_workspace, manage_remote_stack, manage_local_agent — агент должен использовать их, а не ad-hoc команды.
 - **Документация и CODEMAP:** при изменении структуры/API/протокола — обновлять доки и CODEMAP (скилл **pc-client-docs-sync**).
-- **Браузер (GUI):** проверки веба выполнять на стенде `https://192.168.100.17:9443`; `/admin` использовать для admin/tech-panel, а web-first requester/web-agent сценарии проверять через соответствующие `/app/*` маршруты (`/app/requester`, `/app/requester/devices`, `/app/device/*`) со скиллом **pc-client-browser-check**.
+- **Браузер (GUI):** проверки веба выполнять на стенде `https://example.test:9443`; `/admin` использовать для admin/tech-panel, а web-first requester/web-agent сценарии проверять через соответствующие `/app/*` маршруты (`/app/requester`, `/app/requester/devices`, `/app/device/*`) со скиллом **pc-client-browser-check**.
 - **Секреты:** не логировать сырой токен; не хардкодить пароли в коде; при необходимости использовать `.env` (в .gitignore/.cursorignore).
 
 ## Скиллы проекта
@@ -35,7 +35,7 @@
 - **pc-client-plans** — ведение `PLANS.md` для длинных задач и handoff.
 - **pc-client-tests** — какие проверки, pytest, browser/smoke и live-сценарии запускать.
 - **pc-client-docs-sync** — синхронизация документации, CODEMAP и контрактов.
-- **pc-client-browser-check** — проверка веба через `https://192.168.100.17:9443` на route, который является канонической поверхностью сценария: `/admin` для admin/tech-panel, `/app/*` для React/requester/web-agent.
+- **pc-client-browser-check** — проверка веба через `https://example.test:9443` на route, который является канонической поверхностью сценария: `/admin` для admin/tech-panel, `/app/*` для React/requester/web-agent.
 - **pc-client-release** — чеклист перед commit/push/deploy и фиксация проверок.
 - **pc-client-migrations** — строгие правила миграций PostgreSQL и remote alembic.
 - **pc-client-commit-message** — формат сообщений коммитов.

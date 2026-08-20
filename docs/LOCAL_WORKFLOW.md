@@ -3,8 +3,9 @@
 ## Точки среды
 
 - Локальная рабочая копия: `C:\Users\admin-2\CodexProjects\pc_client`
-- Сетевая шара: `\\192.168.100.17\NTFS_Share\pc_client`
-- Удалённый Linux-хост: `altserver@192.168.100.17:/var/chat_bot/pc_client`
+- Helpdesk production target: `osn_admin@192.168.100.19`, deployed through
+  `scripts/deploy_helpdesk_release.py` into `/opt/helpdesk/current`.
+- Endpoint Platform remains a separate repository and service on the same host.
 
 ## Правило
 
@@ -24,7 +25,7 @@ python scripts/release_candidate_preflight.py
 Preflight показывает текущий `HEAD`, проверяет `artifacts/ci/<HEAD>/summary.json`, совпадение `summary.commit == HEAD`, `status == green`, наличие webapp bundle, passing `artifacts/live/release-summary.json` для exact commit/environment и release-relevant dirty workspace. Сгенерированные `artifacts/*` не блокируют preflight. Если artifact отсутствует, это сигнал не запускать full gate: сначала freeze commit, `python scripts/run_ci_suite.py`, полный live behavior pack + `python scripts/build_live_release_summary.py --commit <HEAD> --environment <name> --release-run-id <id> --expected-schema-head <head> --output artifacts/live/release-summary.json`, либо продолжить итерации через `--gate quick`.
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
-- Git для Linux настроен через bare-репозиторий `altserver@192.168.100.17:/var/chat_bot/git/pc_client.git`; локальный Windows-remote: `linux`; Linux working copy `/var/chat_bot/pc_client` использует `origin`.
+- Helpdesk release не использует отдельный Git remote или рабочую копию на хосте: точный локальный commit передаётся архивом через `scripts/deploy_helpdesk_release.py`.
 
 ## Рекомендуемый поток
 
@@ -140,10 +141,10 @@ python scripts/manage_remote_stack.py smoke server
 For HTTPS-hardened stands, remote smoke must use the same externally reachable origin as the browser:
 
 ```powershell
-python scripts/manage_remote_stack.py smoke server --base-url https://192.168.100.17:9443 --insecure-tls
+python scripts/manage_remote_stack.py smoke server --base-url http://192.168.100.19:8080
 ```
 
-The default can also come from remote `server/.env`: `REMOTE_SMOKE_BASE_URL=https://192.168.100.17:9443` and `REMOTE_SMOKE_INSECURE_TLS=true` for the current self-signed stand certificate. `release_server_to_remote.py` reuses the same remote smoke path via `--smoke-base-url` / `--smoke-insecure-tls` or those env values, so quick/full release gates do not fail just because `REQUIRE_HTTPS=true`.
+Set `REMOTE_SMOKE_BASE_URL` explicitly for non-production test environments. The temporary production bootstrap uses the HTTP origin above; HTTPS/WSS will be configured only after the Helpdesk FQDN and certificate are available.
 
 Stand-specific remote defaults are profile/env driven, with the current stand kept only as fallback. Use `PC_CLIENT_REMOTE`, `PC_CLIENT_REMOTE_ROOT`, `PC_CLIENT_REMOTE_SERVER_PYTHON` and `PC_CLIENT_SSH_KEY` for deploy/control/migration helpers, and `PC_CLIENT_BROWSER_BASE_URL` or `REMOTE_SMOKE_BASE_URL` for browser signoff. This keeps new stands out of code edits and avoids stale `http://...:8666` assumptions.
 
@@ -154,11 +155,11 @@ For the Tech Panel business marker on a self-signed HTTPS stand, run `scripts/bu
 
 13. Если менялся GUI сервера, дополнительно проверить:
 
-- [admin](https://192.168.100.17:9443/admin)
-- [help](https://192.168.100.17:9443/help)
-- React workspace routes under `https://192.168.100.17:9443/app/*` when that workspace is the changed surface.
+- [admin](http://192.168.100.19:8080/admin)
+- [help](http://192.168.100.19:8080/help)
+- React workspace routes under `http://192.168.100.19:8080/app/*` when that workspace is the changed surface.
 - Web-first requester/web-agent routes: `/app/requester`, `/app/requester/devices`, and compatible `/app/device/*` linking routes. These checks must verify browser-visible profile/device binding state, not only local agent GUI/UIA.
-- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443` — helper проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и теперь ожидает полноценный webapp-mode как каноническое состояние после финального cutover
+- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.19:8080` — helper проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и теперь ожидает полноценный webapp-mode как каноническое состояние после финального cutover
 - Для техпанели дополнительно проверить status/health/full logs и confirm-модалку для `stop/restart`.
 
 14. После проверок остановить процессы:
@@ -214,7 +215,7 @@ git status --short
 9. Запускать и останавливать удалённый сервер только через `python scripts/manage_remote_stack.py start server` и `python scripts/manage_remote_stack.py stop server`.
 10. Перед server lifecycle-проверками держать поднятым внешний control-plane: `python scripts/manage_remote_stack.py start control` или `python scripts/release_server_to_remote.py`.
 11. Если `status server` показывает `failed`, но `smoke server` или браузерный GET на `:8666` живы, сначала смотреть строку `external_listener`: это признак ручного `python server.py` вне canonical lifecycle.
-12. Если менялся веб-интерфейс, обязательно открыть канонический route на `https://192.168.100.17:9443` через браузерный MCP: `/admin` для admin/tech-panel, `/app/*` для React workspace, `/app/requester`, `/app/requester/devices` и `/app/device/*` для web-first requester/web-agent цепочек; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
+12. Если менялся веб-интерфейс Helpdesk, обязательно открыть канонический route на `http://192.168.100.19:8080` через браузерный MCP: `/admin` для admin/tech-panel, `/app/*` для React workspace, `/app/requester`, `/app/requester/devices` и `/app/device/*` для web-first requester/web-agent цепочек; для техпанели проверить status/health/full logs и confirm для `stop/restart`.
 13. Для полного verified server-flow по явному запросу пользователя использовать `python scripts/release_server_to_remote.py` в дефолтном `--gate full` после green CI artifact и passing live release summary; для итерационного стенда использовать `--gate quick`, а emergency bypass CI gate через `--skip-ci-check` использовать только как совместимый аварийный алиас.
 14. GitHub push выполняется сразу после каждого локального commit. Green CI artifact и full gate обязательны не для самого dev-branch push, а для финального release/deploy-claim; Codex напоминает о них в конце блока изменений и уточняет запуск, если план выполняется частями.
 

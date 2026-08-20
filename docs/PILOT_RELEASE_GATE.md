@@ -23,7 +23,7 @@ Use a dedicated smoke account, not a human admin password. For self-signed stand
 
 ```powershell
 python scripts/business_smoke.py `
-  --base-url https://192.168.100.17:9443 `
+  --base-url https://example.test:9443 `
   --username $env:BUSINESS_SMOKE_USERNAME `
   --password $env:BUSINESS_SMOKE_PASSWORD `
   --output $env:TECH_BUSINESS_SMOKE_STATUS_PATH `
@@ -37,7 +37,7 @@ Optional deeper acceptance requires an explicit test device and ticket:
 
 ```powershell
 python scripts/business_smoke.py `
-  --base-url https://192.168.100.17:9443 `
+  --base-url https://example.test:9443 `
   --username $env:BUSINESS_SMOKE_USERNAME `
   --password $env:BUSINESS_SMOKE_PASSWORD `
   --output $env:TECH_BUSINESS_SMOKE_STATUS_PATH `
@@ -59,10 +59,10 @@ The marker must not contain passwords, cookies, bearer tokens or raw secrets.
 Run after release:
 
 ```powershell
-pnpm --dir webapp run check:remote:webapp -- --base-url https://192.168.100.17:9443
+pnpm --dir webapp run check:remote:webapp -- --base-url https://example.test:9443
 ```
 
-If `--base-url` is omitted, the helper reads `PC_CLIENT_BROWSER_BASE_URL`, then `REMOTE_SMOKE_BASE_URL`, and finally falls back to `https://192.168.100.17:9443`.
+If `--base-url` is omitted, the helper reads `PC_CLIENT_BROWSER_BASE_URL`, then `REMOTE_SMOKE_BASE_URL`, and finally falls back to `https://example.test:9443`.
 
 ## Stand Profile
 
@@ -76,7 +76,7 @@ Use env/profile settings instead of editing scripts when a stand changes:
 - `REMOTE_SMOKE_INSECURE_TLS`
 - `PC_CLIENT_BROWSER_BASE_URL`
 
-The current 192.168.100.17 stand remains the fallback only for the existing lab profile.
+The current example.test stand remains the fallback only for the existing lab profile.
 
 ## GitHub Gate
 

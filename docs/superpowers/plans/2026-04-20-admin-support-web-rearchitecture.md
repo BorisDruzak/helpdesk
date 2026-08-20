@@ -500,8 +500,8 @@ Expected:
 - [ ] **Step 3: Browser-check the new app routes**
 
 Verify:
-- `http://192.168.100.17:8666/app/support`
-- `http://192.168.100.17:8666/app/admin`
+- `http://example.test:8666/app/support`
+- `http://example.test:8666/app/admin`
 
 Expected:
 - pages load without JS/runtime boot failures

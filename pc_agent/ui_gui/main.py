@@ -412,7 +412,7 @@ async def run_gui(
             stop_event.set()
         raise
     
-    # Получаем конфигурацию для API URL (дефолт — сервер 192.168.100.17, не localhost)
+    # Получаем конфигурацию для API URL (дефолт — сервер example.test, не localhost)
     try:
         from pc_agent.config.config_loader import get_config
         cfg = get_config()

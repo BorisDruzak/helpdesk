@@ -20,7 +20,7 @@ def test_write_release_marker_local_path(tmp_path: Path) -> None:
         commit="abc123",
         gate="quick",
         dirty=False,
-        remote_profile="altserver@192.168.100.17",
+        remote_profile="altserver@example.test",
         webapp_bundle_commit="abc123",
         alembic_current="20260519_097",
         alembic_head="20260519_097",
@@ -46,7 +46,7 @@ def test_main_writes_release_marker_after_success(monkeypatch: pytest.MonkeyPatc
         return argparse.Namespace(
             workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
             branch="codex/helpdesk-process-model",
-            remote="altserver@192.168.100.17",
+            remote="altserver@example.test",
             allow_local_dirty=True,
             gate="quick",
             skip_verify=True,
@@ -87,7 +87,7 @@ def test_main_collects_alembic_current_and_head_after_migration(monkeypatch: pyt
         return argparse.Namespace(
             workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
             branch="codex/helpdesk-process-model",
-            remote="altserver@192.168.100.17",
+            remote="altserver@example.test",
             allow_local_dirty=True,
             gate="quick",
             skip_verify=True,
@@ -133,7 +133,7 @@ def test_main_writes_release_marker_to_remote_worktree_path(monkeypatch: pytest.
         return argparse.Namespace(
             workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
             branch="codex/helpdesk-process-model",
-            remote="altserver@192.168.100.17",
+            remote="altserver@example.test",
             allow_local_dirty=True,
             gate="quick",
             skip_verify=True,
@@ -148,7 +148,7 @@ def test_main_writes_release_marker_to_remote_worktree_path(monkeypatch: pytest.
         )
 
     def write_remote(path: str, *, payload: dict[str, object], remote: str, cwd: Path) -> dict[str, object]:
-        assert remote == "altserver@192.168.100.17"
+        assert remote == "altserver@example.test"
         remote_writes.append((path, payload))
         return payload
 
@@ -196,7 +196,7 @@ def test_main_forwards_https_smoke_options(monkeypatch: pytest.MonkeyPatch, tmp_
         return argparse.Namespace(
             workspace=Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
             branch="codex/helpdesk-process-model",
-            remote="altserver@192.168.100.17",
+            remote="altserver@example.test",
             allow_local_dirty=True,
             gate="quick",
             skip_verify=True,
@@ -206,7 +206,7 @@ def test_main_forwards_https_smoke_options(monkeypatch: pytest.MonkeyPatch, tmp_
             leave_running=True,
             smoke_attempts=1,
             smoke_delay=0,
-            smoke_base_url="https://192.168.100.17:9443",
+            smoke_base_url="https://example.test:9443",
             smoke_insecure_tls=True,
             release_status_path=marker_path,
             require_marker_write=True,
@@ -233,11 +233,11 @@ def test_main_forwards_https_smoke_options(monkeypatch: pytest.MonkeyPatch, tmp_
             sys.executable,
             str(Path(r"C:\Users\admin-2\CodexProjects\pc_client") / "scripts" / "manage_remote_stack.py"),
             "--remote",
-            "altserver@192.168.100.17",
+            "altserver@example.test",
             "smoke",
             "server",
             "--base-url",
-            "https://192.168.100.17:9443",
+            "https://example.test:9443",
             "--insecure-tls",
         ]
     ]

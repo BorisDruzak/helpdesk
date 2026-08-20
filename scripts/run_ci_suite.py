@@ -428,7 +428,7 @@ def _is_tcp_port_open(host: str, port: int) -> bool:
 def _windows_parallel_db_tunnel_settings() -> tuple[str, int, str, str, str]:
     host = os.getenv("PC_CLIENT_TEST_DB_TUNNEL_HOST", "127.0.0.1")
     port = int(os.getenv("PC_CLIENT_TEST_DB_TUNNEL_PORT", "55432"))
-    target = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@192.168.100.17")
+    target = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@example.test")
     remote_bind = os.getenv("PC_CLIENT_TEST_DB_REMOTE_BIND", "127.0.0.1:5432")
     ssh_key = os.getenv(
         "PC_CLIENT_TEST_DB_SSH_KEY",

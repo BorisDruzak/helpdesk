@@ -48,7 +48,7 @@ def _snapshot(hostname: str, *, collected_at: datetime, disk: float = 42.0, apps
             "memory_percent": 44,
             "disks": [{"name": "/", "mount": "/", "used_percent": disk}],
         },
-        "network": {"primary_ip": "192.168.100.17", "interfaces": []},
+        "network": {"primary_ip": "example.test", "interfaces": []},
         "printers": {"default_printer": "Office", "items": [{"name": "Office", "status": "idle"}]},
         "software": {"key_apps": apps or [{"id": "libreoffice", "name": "LibreOffice", "present": True}]},
         "warnings": [],

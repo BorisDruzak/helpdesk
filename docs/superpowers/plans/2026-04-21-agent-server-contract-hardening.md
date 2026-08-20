@@ -621,7 +621,7 @@ Expected: remote release succeeds, status is healthy, smoke is green.
 
 - [ ] **Step 7: Perform browser/live admin verification on the canonical URL**
 
-Use MCP browser on: `http://192.168.100.17:8666/admin`
+Use MCP browser on: `http://example.test:8666/admin`
 
 Checks:
 - agent/device stays online across a forced reconnect;

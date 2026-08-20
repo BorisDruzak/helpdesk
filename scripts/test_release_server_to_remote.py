@@ -11,7 +11,7 @@ def make_args(**overrides: object) -> argparse.Namespace:
     values: dict[str, object] = {
         "workspace": Path(r"C:\Users\admin-2\CodexProjects\pc_client"),
         "branch": None,
-        "remote": "altserver@192.168.100.17",
+        "remote": "altserver@example.test",
         "allow_local_dirty": False,
         "gate": "full",
         "skip_verify": False,
@@ -65,7 +65,7 @@ def test_main_runs_standard_flow(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "verify_workspace.py" in calls[0][1][1]
     assert "deploy_workspace_to_remote.py" in calls[1][1][1]
     assert "run_remote_migrations.py" in calls[2][1][1]
-    assert calls[2][1][-4:] == ["--remote", "altserver@192.168.100.17", "upgrade", "head"]
+    assert calls[2][1][-4:] == ["--remote", "altserver@example.test", "upgrade", "head"]
     assert calls[4][1][-2:] == ["start", "control"]
     assert calls[5][1][-2:] == ["start", "server"]
     assert calls[6][1][-2:] == ["smoke", "server"]

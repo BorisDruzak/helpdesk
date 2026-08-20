@@ -26,7 +26,7 @@ PostgreSQL по умолчанию слушает только `localhost`. Ну
 listen_addresses = '*'
 
 # Вариант 2: только на конкретном IP (безопаснее)
-# listen_addresses = '192.168.100.17'
+# listen_addresses = 'example.test'
 ```
 
 После правки — перезапуск PostgreSQL (или `pg_ctl reload`, если параметр допускает reload; `listen_addresses` требует **restart**):
@@ -132,7 +132,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO pc_client_ro
 
 | Параметр   | Значение |
 |-----------|----------|
-| **Host**  | IP или hostname сервера, где крутится PostgreSQL (например `192.168.100.17`) |
+| **Host**  | IP или hostname сервера, где крутится PostgreSQL (например `example.test`) |
 | **Port**  | `5432` (или другой, если меняли в postgresql.conf) |
 | **User**  | `pc_client_ro` |
 | **Password** | тот, что задали при создании пользователя |
@@ -141,13 +141,13 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO pc_client_ro
 **Строка подключения (для клиентов, ожидающих обычный postgres URL):**
 
 ```text
-postgresql://pc_client_ro:YOUR_PASSWORD@192.168.100.17:5432/pc_client
+postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client
 ```
 
 Для asyncpg (Python):
 
 ```text
-postgresql://pc_client_ro:YOUR_PASSWORD@192.168.100.17:5432/pc_client
+postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client
 ```
 
 (Тот же URL; asyncpg использует стандартный формат.)
@@ -159,8 +159,8 @@ postgresql://pc_client_ro:YOUR_PASSWORD@192.168.100.17:5432/pc_client
 С другой машины (или с хоста второго агента):
 
 ```bash
-psql "postgresql://pc_client_ro:YOUR_PASSWORD@192.168.100.17:5432/pc_client" -c "SELECT 1;"
-psql "postgresql://pc_client_ro:YOUR_PASSWORD@192.168.100.17:5432/pc_client" -c "SELECT COUNT(*) FROM tickets;"
+psql "postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client" -c "SELECT 1;"
+psql "postgresql://pc_client_ro:YOUR_PASSWORD@example.test:5432/pc_client" -c "SELECT COUNT(*) FROM tickets;"
 ```
 
 Попытка записи должна завершаться ошибкой:
@@ -178,7 +178,7 @@ psql "..." -c "DELETE FROM tickets LIMIT 1;"
 
 **Причины:** (1) пароль роли не был задан или задан иначе; (2) в `pg_hba.conf` нет правила для вашего IP и пользователя.
 
-**Выполнить на сервере, где запущен PostgreSQL (192.168.100.17), от суперпользователя `postgres`.**
+**Выполнить на сервере, где запущен PostgreSQL (example.test), от суперпользователя `postgres`.**
 
 ### 7.1. Задать/сбросить пароль для pc_client_ro
 
@@ -222,15 +222,15 @@ sudo -u postgres psql -c "SELECT pg_reload_conf();"
 ### 7.3. Проверка с клиента (10.10.10.2)
 
 ```bash
-psql "postgresql://pc_client_ro:1.Abcdef@192.168.100.17:5432/pc_client" -c "SELECT 1;"
-psql "postgresql://pc_client_ro:1.Abcdef@192.168.100.17:5432/pc_client" -c "SELECT COUNT(*) FROM tickets;"
+psql "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client" -c "SELECT 1;"
+psql "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client" -c "SELECT COUNT(*) FROM tickets;"
 ```
 
 Через Python (psycopg):
 
 ```python
 import psycopg
-conn = psycopg.connect("postgresql://pc_client_ro:1.Abcdef@192.168.100.17:5432/pc_client")
+conn = psycopg.connect("postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client")
 print(conn.execute("SELECT 1").fetchone())
 print(conn.execute("SELECT COUNT(*) FROM tickets").fetchone())
 conn.close()

@@ -12,7 +12,6 @@
 
 ## Global Constraints
 
-- Never use `192.168.100.17`, its Git remote, SMB share, or `/var/chat_bot/pc_client` as a deployment source.
 - Do not modify Endpoint Platform source, database, service account, release tree, or runtime directories.
 - The Helpdesk database starts empty. Do not copy device, agent-token, user, ticket, session, attachment, audit, or other database data.
 - The IP-only bootstrap is restricted and temporary. Final acceptance requires FQDN, trusted TLS, HTTPS/WSS and secure cookies.
@@ -26,7 +25,7 @@
 - Create: `scripts/helpdesk_remote_profile.py`, `scripts/test_helpdesk_remote_profile.py`
 - Modify: `scripts/manage_remote_stack.py`, `scripts/run_remote_migrations.py`, `scripts/release_server_to_remote.py`
 
-- [ ] Write tests that assert the default remote is `osn_admin@192.168.100.19`, root is `/opt/helpdesk/current`, server Python resolves inside that root, and the old host/path are absent from generated commands.
+- [ ] Write tests that assert the default remote is `osn_admin@192.168.100.19`, root is `/opt/helpdesk/current`, server Python resolves inside that root, and generated commands use only the current deployment profile.
 - [ ] Run the test and verify RED.
 - [ ] Implement one environment-overridable profile (`HELPDESK_REMOTE`, `HELPDESK_REMOTE_ROOT`, `HELPDESK_SSH_KEY`) and migrate the three scripts to it.
 - [ ] Run focused tests and `git diff --check`.
@@ -38,7 +37,7 @@
 - Create: `deploy/helpdesk/helpdesk-server.service`, `deploy/helpdesk/helpdesk-control.service`, `deploy/helpdesk/helpdesk-migrate.service`, `deploy/helpdesk/helpdesk.nginx.conf`, `deploy/helpdesk/helpdesk.env.example`, `deploy/helpdesk/install_helpdesk_host.sh`, `deploy/helpdesk/release_helpdesk.sh`
 - Create: `scripts/test_helpdesk_deploy_assets.py`
 
-- [ ] Write asset-contract tests for dedicated paths/users/ports, root-owned environment file, `/var/lib/helpdesk` writable only by Helpdesk, loopback binding, systemd hardening, Nginx websocket proxying, and no Endpoint directories or `192.168.100.17` references.
+- [ ] Write asset-contract tests for dedicated paths/users/ports, root-owned environment file, `/var/lib/helpdesk` writable only by Helpdesk, loopback binding, systemd hardening, Nginx websocket proxying, and no Endpoint directories or legacy release paths.
 - [ ] Run RED.
 - [ ] Implement the assets: `/opt/helpdesk/releases`, `current` symlink, `helpdesk` non-login user, private venv, separate database role/database, backup before migration, and restricted Nginx IP bootstrap vhost.
 - [ ] Run asset tests and shell syntax checks; commit `build(deploy): add Helpdesk production assets`.

@@ -44,7 +44,7 @@ def _env_value(name: str, default: str) -> str:
 
 
 def _default_remote() -> str:
-    return _env_value("PC_CLIENT_REMOTE", "altserver@192.168.100.17")
+    return _env_value("PC_CLIENT_REMOTE", "altserver@example.test")
 
 
 def _default_remote_worktree() -> str:

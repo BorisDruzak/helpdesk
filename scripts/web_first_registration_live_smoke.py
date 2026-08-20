@@ -376,7 +376,7 @@ def default_output(run_id: str) -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a production-style web-first registration smoke.")
-    parser.add_argument("--base-url", default="https://192.168.100.17:9443")
+    parser.add_argument("--base-url", default="https://example.test:9443")
     parser.add_argument("--run-id", default=f"webfirst-{_now_slug()}-{uuid.uuid4().hex[:6]}")
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--insecure-tls", action="store_true")

@@ -1,6 +1,6 @@
 {
   "case": "double_connect",
-  "ws_url": "wss://192.168.100.17:9443/ws",
+  "ws_url": "wss://example.test:9443/ws",
   "token": {
     "present": true,
     "prefix": "47fca88b",
@@ -28,7 +28,7 @@
             "size": 4470,
             "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
             "module_name": "network_basic",
-            "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+            "download_url": "http://example.test:8666/api/modules/network_basic/1.0.0/download",
             "module_version": "1.0.0",
             "replace_if_different_sha": true
           },
@@ -116,7 +116,7 @@
           "size": 4470,
           "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
           "module_name": "network_basic",
-          "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+          "download_url": "http://example.test:8666/api/modules/network_basic/1.0.0/download",
           "module_version": "1.0.0",
           "replace_if_different_sha": true
         },
@@ -144,7 +144,7 @@
             "size": 4470,
             "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
             "module_name": "network_basic",
-            "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+            "download_url": "http://example.test:8666/api/modules/network_basic/1.0.0/download",
             "module_version": "1.0.0",
             "replace_if_different_sha": true
           },
@@ -225,7 +225,7 @@
             "size": 4470,
             "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
             "module_name": "network_basic",
-            "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+            "download_url": "http://example.test:8666/api/modules/network_basic/1.0.0/download",
             "module_version": "1.0.0",
             "replace_if_different_sha": true
           },
@@ -259,7 +259,7 @@
           "size": 4470,
           "sha256": "3b2e7ab417d2499b05cb45bcb7656721a3ae2f011a0387fc03bf1081d5046840",
           "module_name": "network_basic",
-          "download_url": "http://192.168.100.17:8666/api/modules/network_basic/1.0.0/download",
+          "download_url": "http://example.test:8666/api/modules/network_basic/1.0.0/download",
           "module_version": "1.0.0",
           "replace_if_different_sha": true
         },

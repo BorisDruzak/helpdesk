@@ -19,8 +19,8 @@ import urllib.request
 from pathlib import Path
 
 
-DEFAULT_ADMIN_URL = "http://192.168.100.17:8666/admin"
-DEFAULT_DB_URL = "postgresql://pc_client_ro:1.Abcdef@192.168.100.17:5432/pc_client"
+DEFAULT_ADMIN_URL = "http://example.test:8666/admin"
+DEFAULT_DB_URL = "postgresql://pc_client_ro:1.Abcdef@example.test:5432/pc_client"
 
 
 def check_files(repo_root: Path) -> dict:

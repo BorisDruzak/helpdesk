@@ -98,12 +98,12 @@ describe("SchemaParamEditor", () => {
     expect(screen.queryByLabelText("Hosts JSON")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Host 1")).toHaveValue("localhost");
 
-    fireEvent.change(screen.getByLabelText("Host 1"), { target: { value: "192.168.100.17" } });
+    fireEvent.change(screen.getByLabelText("Host 1"), { target: { value: "example.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Добавить Host" }));
     fireEvent.change(screen.getByLabelText("Host 2"), { target: { value: "gateway.local" } });
 
     expect(onChange).toHaveBeenLastCalledWith({
-      hosts: ["192.168.100.17", "gateway.local"],
+      hosts: ["example.test", "gateway.local"],
     });
   });
 });

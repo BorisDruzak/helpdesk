@@ -1,6 +1,6 @@
 {
   "captured_at": "2026-06-14T12:40:55.650Z",
-  "url": "https://192.168.100.17:9443/app/tickets/a9c61438-663e-4f34-919c-1d12a0b26724",
+  "url": "https://example.test:9443/app/tickets/a9c61438-663e-4f34-919c-1d12a0b26724",
   "ticket_id": "a9c61438-663e-4f34-919c-1d12a0b26724",
   "ticket_code": "T-000706",
   "run_id": "p7547a33c2",
@@ -9,7 +9,7 @@
   "checks": {
     "financeSlugVisible": false,
     "hiddenItSlugVisible": false,
-    "location": "https://192.168.100.17:9443/app/tickets/a9c61438-663e-4f34-919c-1d12a0b26724",
+    "location": "https://example.test:9443/app/tickets/a9c61438-663e-4f34-919c-1d12a0b26724",
     "publicSlugVisible": false,
     "warningContext": "f34-919c-1d12a0b26724/observer\n\nКОНТЕКСТ УСТРОЙСТВА\n\nphase7-owner_device_id-p7547a33c2\n\ndevice_id: bf3fb9c9-6c5d-404f-a1f6-0a4496556e61\n\noffline\nИнвентаризация отсутствует\nАгент offline\n\nАГЕНТ\n\nСостояние\noffline\nВерсия\nregistry-visibility-smoke\nОбновления\n—\nПоследний вход\n14.06.2026, 16:51\n\nИНВЕНТАРИЗАЦИЯ\n\nСвежесть\nНет данных\nПоследний снимок\n—\nИсточник\n—\nsnapshot_id\n—\n\nПРИВЯЗКА\n\nОтветственный\nPhase 7 IT Owner p7547a33c2\nОтдел\n—\nЗдание\n—\nКабинет\n—\nСтатус\n—\nТеги\n—\n\nОБНОВЛЕНИЕ\n\nПоследний запуск\n—\nСтатус запуска\n—\nСледующий запуск\n—\nrun_id\n—\nОткрыть карточку устройства\nОткрыть Inventory\nОбновить инвентаризацию\n\nЗАЯВИТЕЛЬ\n\nPhase 7 IT Owner p7547a33c2\n\nPhase 7 IT p7547a33c2\n\nПрофиль: live_smoke\n\nОбращение создано с другого аккаунта на зарегистрированном устройстве.\n\nЗаявленный аккаунт\nPhase 7 Finance Other p7547a33c2\nЛогин\nphase7-other-p7547a33c2\nEmail\nphase7-other-p7547a33c2@live-smoke.test\nТелефон\n+70000000000\nЗарегистрированный владелец\nPhase 7 IT Owner p7547a33c2\nПроверка\nadmin_approval / verified\nПричина\nregistry visibility live smoke p7547a33c2\n\nАККАУНТ ОБРАЩЕНИЯ\n\nРежим\nverified_other_account\nSession\nace30b58-9f42-4614-a43e-194b4b719d30\nЗаявленный аккаунт\nPhase 7 Finance Other p7547a33c2\nЛогин\nphase7-other-p7547a33c2\nEmail\nphase7-other-p7547a33c2@live-smoke.test\nТелефон\n+70000000000\nПричина\nregistry visibility live smoke p7547a33c2\nПроверка\nadmin_approval / verified\nВладелец устройства\nPhase 7 IT Owner p7547a33c2\nBase binding\n831d3562-96d3-4712-81de-c4e1da7ecb93\nТелефон\n+70000000000\nEmail\nphase7-owner-p7547a33c2@live-smoke.test\nЛокация\nНе указана\n\nУСТРОЙСТВО\n\nОфлайн\n\nphase7-owner_device_id-p7547a33c2\n\nWindows 11 smoke\n\nТип актива\nПК\nAsset ID",
     "warningVisible": true

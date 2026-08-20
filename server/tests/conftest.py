@@ -52,7 +52,7 @@ TEST_DB_TEMPLATE_CLONED_FROM_ENV = "PC_CLIENT_TEST_DB_TEMPLATE_CLONED_FROM"
 TEST_DB_TEMPLATE_FINGERPRINT_ENV = "PC_CLIENT_TEST_DB_TEMPLATE_FINGERPRINT"
 WINDOWS_TEST_DB_TUNNEL_PORT = int(os.getenv("PC_CLIENT_TEST_DB_TUNNEL_PORT", "55432"))
 WINDOWS_TEST_DB_TUNNEL_HOST = os.getenv("PC_CLIENT_TEST_DB_TUNNEL_HOST", "127.0.0.1")
-WINDOWS_TEST_DB_SSH_TARGET = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@192.168.100.17")
+WINDOWS_TEST_DB_SSH_TARGET = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@example.test")
 WINDOWS_TEST_DB_REMOTE_BIND = os.getenv("PC_CLIENT_TEST_DB_REMOTE_BIND", "127.0.0.1:5432")
 WINDOWS_TEST_DB_SSH_KEY = os.getenv(
     "PC_CLIENT_TEST_DB_SSH_KEY",
@@ -260,7 +260,7 @@ def _default_runtime_database_url() -> str:
     if runtime_url:
         return runtime_url
     if os.name == "nt":
-        return "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_client"
+        return "postgresql+asyncpg://chatbot:chatbot@example.test:5432/pc_client"
     return "postgresql+asyncpg://chatbot:chatbot@127.0.0.1:5432/pc_client"
 
 

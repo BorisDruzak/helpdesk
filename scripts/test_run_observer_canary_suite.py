@@ -28,12 +28,12 @@ def test_build_canary_module_payload_contains_expected_tools() -> None:
 
 def test_build_remote_python_command_uses_remote_shell() -> None:
     command, input_text = suite.build_remote_python_command(
-        remote="altserver@192.168.100.17",
+        remote="altserver@example.test",
         code="print('hello')",
     )
 
     assert command[0] == "ssh"
-    assert command[-2:] == ["altserver@192.168.100.17", suite.build_remote_python_shell()]
+    assert command[-2:] == ["altserver@example.test", suite.build_remote_python_shell()]
     assert input_text == "print('hello')"
     assert "PYTHONPATH=" in suite.build_remote_python_shell()
 
@@ -152,7 +152,7 @@ def test_build_observer_coverage_summary_tracks_required_root_kinds() -> None:
 def test_render_markdown_report_includes_coverage_and_results() -> None:
     report = {
         "generated_at": "2026-04-28T10:00:00+00:00",
-        "base_url": "https://192.168.100.17:9443",
+        "base_url": "https://example.test:9443",
         "device_id": "device-1",
         "coverage": {
             "ok": False,

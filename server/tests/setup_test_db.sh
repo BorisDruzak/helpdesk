@@ -6,7 +6,7 @@ set -e
 DB_NAME="pc_support_test"
 DB_USER="${DB_USER:-chatbot}"
 DB_PASSWORD="${DB_PASSWORD:-chatbot}"
-DB_HOST="${DB_HOST:-192.168.100.17}"
+DB_HOST="${DB_HOST:-example.test}"
 DB_PORT="${DB_PORT:-5432}"
 
 echo "Creating test database: $DB_NAME"

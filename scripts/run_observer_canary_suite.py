@@ -33,9 +33,9 @@ from scripts.manage_remote_stack import (  # noqa: E402
 )
 
 
-DEFAULT_BASE_URL = "https://192.168.100.17:9443"
-DEFAULT_WS_URL = "wss://192.168.100.17:9443/ws"
-DEFAULT_UI_WS_URL = "wss://192.168.100.17:9443/ws_ui"
+DEFAULT_BASE_URL = "https://example.test:9443"
+DEFAULT_WS_URL = "wss://example.test:9443/ws"
+DEFAULT_UI_WS_URL = "wss://example.test:9443/ws_ui"
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
 INSTANCE_ROOT = WORKSPACE / ".local-agent" / "instances"
 ARTIFACTS_DIR = WORKSPACE / "artifacts" / "observer_canaries"

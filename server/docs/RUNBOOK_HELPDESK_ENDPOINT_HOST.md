@@ -8,9 +8,6 @@ but it is a separate application. It owns `/opt/helpdesk`, `/etc/helpdesk`,
 Unix account. Never use Endpoint paths, roles, database or service account for
 Helpdesk operations.
 
-The retired `192.168.100.17` host, its SMB share and `/var/chat_bot/pc_client`
-are not a deployment source.
-
 ## Release and lifecycle
 
 For a new/rebuilt host, install the root-only environment first and then run

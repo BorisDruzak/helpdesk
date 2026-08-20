@@ -9,7 +9,7 @@ import { chromium } from "playwright";
 const DEFAULT_BASE_URL =
   process.env.PC_CLIENT_BROWSER_BASE_URL ??
   process.env.REMOTE_SMOKE_BASE_URL ??
-  "https://192.168.100.17:9443";
+  "https://example.test:9443";
 const DEFAULT_OUT_DIR = path.resolve("..", "artifacts", "browser_live_validation", "live-behavior-suite");
 const RUSSIAN_TITLE = "pc_client — рабочие места";
 

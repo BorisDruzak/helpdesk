@@ -17,7 +17,7 @@
 
 Если ошибка «Cannot connect to host localhost:8666» или «Удаленный компьютер отклонил»:
   сервер может быть на другом хосте. Задайте переменные окружения перед запуском агента:
-  PC_AGENT_WS_URL=wss://192.168.100.17:9443/ws  PC_AGENT_API_URL=https://192.168.100.17:9443/api
+  PC_AGENT_WS_URL=wss://example.test:9443/ws  PC_AGENT_API_URL=https://example.test:9443/api
   (или укажите URL вашего сервера). Либо используйте scripts/manage_local_agent.py start notoken --gui,
   он подставляет нужные URL для тестового сервера.
 

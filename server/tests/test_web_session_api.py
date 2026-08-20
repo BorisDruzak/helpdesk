@@ -990,9 +990,9 @@ async def test_web_session_cookie_auth_accepts_forwarded_public_origin(monkeypat
             "/api/web/requester/consents/consent-1/approve",
             headers={
                 "Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token",
-                "Origin": "https://192.168.100.17:9443",
+                "Origin": "https://example.test:9443",
                 "X-Forwarded-Proto": "https",
-                "X-Forwarded-Host": "192.168.100.17:9443",
+                "X-Forwarded-Host": "example.test:9443",
             },
             json={"reason": "approve"},
         )

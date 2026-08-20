@@ -572,7 +572,7 @@ function copyToClipboard(text: string) {
 function buildPreviewCurl(mode: "validate" | "save", payload: Record<string, unknown>) {
   const action = mode === "validate" ? "validate" : "publish";
   return [
-    `curl -X POST http://192.168.100.17:8666/api/web/admin/modules/workbench/authoring/${action} \\`,
+    `curl -X POST http://example.test:8666/api/web/admin/modules/workbench/authoring/${action} \\`,
     `  -H "Content-Type: application/json" \\`,
     `  -d '${JSON.stringify(payload, null, 2)}'`,
   ].join("\n");

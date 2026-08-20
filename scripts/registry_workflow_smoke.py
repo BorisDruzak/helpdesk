@@ -597,7 +597,7 @@ class RegistryWorkflowSmoke:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run live Registry Management Center workflow smoke.")
-    parser.add_argument("--base-url", default="https://192.168.100.17:9443")
+    parser.add_argument("--base-url", default="https://example.test:9443")
     parser.add_argument("--run-id", default=f"{_now_id()}-{uuid.uuid4().hex[:8]}")
     parser.add_argument("--insecure-tls", action="store_true", help="Disable TLS certificate verification for the smoke target.")
     return parser.parse_args()

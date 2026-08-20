@@ -2871,7 +2871,7 @@
         }
         if (state.apiPreviewMode === "curl-validate") {
             pre.textContent = [
-                "curl -X POST https://192.168.100.17:9443/api/modules/authoring/validate \\",
+                "curl -X POST https://example.test:9443/api/modules/authoring/validate \\",
                 '  -H "Authorization: Bearer <admin-token>" \\',
                 '  -H "Content-Type: application/json" \\',
                 `  -d '${JSON.stringify(payload)}'`,
@@ -2880,7 +2880,7 @@
         }
         if (state.apiPreviewMode === "curl-save") {
             pre.textContent = [
-                "curl -X POST https://192.168.100.17:9443/api/modules/authoring/publish \\",
+                "curl -X POST https://example.test:9443/api/modules/authoring/publish \\",
                 '  -H "Authorization: Bearer <admin-token>" \\',
                 '  -H "Content-Type: application/json" \\',
                 `  -d '${JSON.stringify(payload)}'`,

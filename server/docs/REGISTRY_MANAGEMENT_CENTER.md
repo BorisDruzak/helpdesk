@@ -247,7 +247,7 @@ Registry Visibility Foundation quality issues also include `audience_group_empty
 For the full workflow smoke, deploy the current commit to the Linux stand and run:
 
 ```bash
-python scripts/registry_workflow_smoke.py --base-url https://192.168.100.17:9443 --insecure-tls
+python scripts/registry_workflow_smoke.py --base-url https://example.test:9443 --insecure-tls
 ```
 
 The script issues short-lived admin/agent tokens through `AuthService`, drives admin and agent HTTP APIs, creates unique smoke objects, and verifies the database invariants below without printing raw tokens. It revokes smoke account sessions during cleanup and leaves audit/history records intact.

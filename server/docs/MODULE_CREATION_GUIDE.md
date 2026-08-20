@@ -261,7 +261,7 @@ Vendor/public модули должны использовать свой namesp
 
 Основной UI:
 
-- `http://192.168.100.17:8666/admin`
+- `http://example.test:8666/admin`
 - вкладка `Модули`
 
 Workbench построен вокруг:

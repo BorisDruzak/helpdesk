@@ -491,7 +491,7 @@ Run:
 
 ```powershell
 python scripts/release_server_to_remote.py --allow-local-dirty --skip-ci-check --leave-running
-pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666
+pnpm --dir webapp run check:remote:webapp -- --base-url http://example.test:8666
 python scripts/manage_remote_stack.py stop server
 ```
 
@@ -534,4 +534,4 @@ Expected: remote browser signoff passes; server is stopped after checks unless t
 - [ ] `python -m pytest server/tests/test_web_admin_api.py -q`
 - [ ] `python scripts/check_webapp_cutover.py --json`
 - [ ] `python scripts/verify_workspace.py`
-- [ ] `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.17:8666`
+- [ ] `pnpm --dir webapp run check:remote:webapp -- --base-url http://example.test:8666`

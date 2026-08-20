@@ -69,7 +69,7 @@ ws_agent.config.server.api_url = test_api_url
 
 ```bash
 cd /var/chat_bot/pc_client/server
-TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test" \
+TEST_DATABASE_URL="postgresql+asyncpg://chatbot:chatbot@example.test:5432/pc_support_test" \
 python3 -m pytest tests/test_integration_p0.py::test_happy_path_echo -v
 ```
 

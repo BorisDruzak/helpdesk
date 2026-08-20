@@ -11,7 +11,7 @@ import { chromium } from "playwright";
 const DEFAULT_BASE_URL =
   process.env.PC_CLIENT_BROWSER_BASE_URL ??
   process.env.REMOTE_SMOKE_BASE_URL ??
-  "https://192.168.100.17:9443";
+  "https://example.test:9443";
 const DEFAULT_LOGIN = process.env.PC_CLIENT_UI_LOGIN ?? "admin";
 const DEFAULT_PASSWORD = process.env.PC_CLIENT_UI_PASSWORD ?? "admin123";
 const DEFAULT_OUT_DIR = path.resolve("..", "artifacts", "browser_checks", "live-webapp-signoff");

@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 DEFAULT_WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 DEFAULT_REMOTE_NAME = "linux"
-DEFAULT_REMOTE_HOST = "altserver@192.168.100.17"
+DEFAULT_REMOTE_HOST = "altserver@example.test"
 DEFAULT_REMOTE_WORKTREE = "/var/chat_bot/pc_client"
 DEFAULT_KEY = Path(r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519")
 DEFAULT_GIT = Path(r"C:\Program Files\Git\bin\git.exe")

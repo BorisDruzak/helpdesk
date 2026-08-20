@@ -23,7 +23,7 @@ Execute the approved follow-up tracks:
 - `pnpm --dir webapp run test -- observer`
 - `pnpm --dir webapp run build`
 - `python scripts/verify_workspace.py`
-- deploy/release to the Linux stand, start server, run smoke, then browser-check `http://192.168.100.17:8666/app/admin/observer`.
+- deploy/release to the Linux stand, start server, run smoke, then browser-check `http://example.test:8666/app/admin/observer`.
 - run the live observer canary suite and inspect the generated reports.
 
 ## Live Safety

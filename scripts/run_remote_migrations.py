@@ -9,7 +9,7 @@ Examples:
   python scripts/run_remote_migrations.py
   python scripts/run_remote_migrations.py current
   python scripts/run_remote_migrations.py upgrade head
-  python scripts/run_remote_migrations.py --remote altserver@192.168.100.17 downgrade -1
+  python scripts/run_remote_migrations.py --remote altserver@example.test downgrade -1
 """
 
 from __future__ import annotations

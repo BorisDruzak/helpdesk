@@ -360,20 +360,20 @@ def test_main_window_builds_absolute_browser_pairing_url():
 
 def test_main_window_browser_pairing_url_uses_https_stand_origin_for_legacy_api_url():
     window = MainWindow.__new__(MainWindow)
-    window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="http://192.168.100.17:8666/api"))
+    window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="http://example.test:8666/api"))
 
     assert (
         window._browser_pairing_url("/app/device/login?pairing_id=pair-1")
-        == "https://192.168.100.17:9443/app/device/login?pairing_id=pair-1"
+        == "https://example.test:9443/app/device/login?pairing_id=pair-1"
     )
 
 
 def test_main_window_web_cabinet_url_uses_public_app_origin():
     window = MainWindow.__new__(MainWindow)
-    window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="http://192.168.100.17:8666/api"))
+    window.chat_panel = SimpleNamespace(ticket_client=SimpleNamespace(base_url="http://example.test:8666/api"))
 
-    assert window._web_app_url("/app/requester") == "https://192.168.100.17:9443/app/requester"
-    assert window._web_app_url("/app/login?forgot_password=1") == "https://192.168.100.17:9443/app/login?forgot_password=1"
+    assert window._web_app_url("/app/requester") == "https://example.test:9443/app/requester"
+    assert window._web_app_url("/app/login?forgot_password=1") == "https://example.test:9443/app/login?forgot_password=1"
 
 
 @pytest.mark.asyncio

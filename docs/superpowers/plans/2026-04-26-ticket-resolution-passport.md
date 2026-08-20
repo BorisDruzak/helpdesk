@@ -775,7 +775,7 @@ Add a short current-state block:
 
 - Scope: DB-backed passport, evidence/action/approval/object records, typed API, ticket UI tab, print/PDF view, docs and live browser verification.
 - Current State: implementation plan saved at `docs/superpowers/plans/2026-04-26-ticket-resolution-passport.md`.
-- Verification target: schema/service/API pytest, webapp tests/build, `python scripts/verify_workspace.py`, remote release smoke and browser check at `http://192.168.100.17:8666/admin`.
+- Verification target: schema/service/API pytest, webapp tests/build, `python scripts/verify_workspace.py`, remote release smoke and browser check at `http://example.test:8666/admin`.
 ```
 
 - [ ] **Step 4: Commit docs**
@@ -833,7 +833,7 @@ Expected:
 
 - [ ] **Step 5: Live browser verification**
 
-Use MCP browser at `http://192.168.100.17:8666/admin`, then navigate to `/app/tickets/{ticket_id}`.
+Use MCP browser at `http://example.test:8666/admin`, then navigate to `/app/tickets/{ticket_id}`.
 
 Check:
 

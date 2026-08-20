@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bootstrap or refresh the local pc_client workspace from the SMB share."""
+"""Bootstrap or refresh the local pc_client workspace from an explicit source."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-DEFAULT_SOURCE = Path(r"\\192.168.100.17\NTFS_Share\pc_client")
 DEFAULT_DEST = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
 
 RELATIVE_EXCLUDED_DIRS = [
@@ -39,7 +38,7 @@ EXCLUDED_FILES = ["*.pyc", "*.pyo", "*.log", "*.tmp", "*.bak", "*.zip", "*.rar"]
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
+    parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--dest", type=Path, default=DEFAULT_DEST)
     parser.add_argument("--mirror", action="store_true", help="Use /MIR instead of /E")
     return parser.parse_args()

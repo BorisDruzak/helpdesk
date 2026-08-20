@@ -100,7 +100,7 @@
 
 ### 3.3 SERVER_PUBLIC_BASE_URL и preflight
 
-- URL для скачивания модулей агентом строится из `SERVER_PUBLIC_BASE_URL` (server/config.py). Текущий дефолт в коде: `http://192.168.100.17:{SERVER_PORT}`. В **production** обязательно задавать `SERVER_PUBLIC_BASE_URL` явно через env; дефолт считается только dev-safe. Если агент на другой машине, URL должен быть доступен с хоста агента. Неверная настройка ведёт к ошибкам вида MODULE_DOWNLOAD_FAILED. Описано в server/docs/MODULES_API.md.
+- URL для скачивания модулей агентом строится из `SERVER_PUBLIC_BASE_URL` (server/config.py). Текущий дефолт в коде: `http://example.test:{SERVER_PORT}`. В **production** обязательно задавать `SERVER_PUBLIC_BASE_URL` явно через env; дефолт считается только dev-safe. Если агент на другой машине, URL должен быть доступен с хоста агента. Неверная настройка ведёт к ошибкам вида MODULE_DOWNLOAD_FAILED. Описано в server/docs/MODULES_API.md.
 - При старте агент дополнительно проверяет префикс module API (`GET /api/modules/ping` и см. MODULES_API.md).
 
 ---

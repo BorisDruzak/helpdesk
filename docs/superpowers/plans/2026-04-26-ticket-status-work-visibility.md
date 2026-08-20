@@ -839,7 +839,7 @@ Expected: control status and server smoke pass.
 Use only:
 
 ```text
-http://192.168.100.17:8666/admin
+http://example.test:8666/admin
 ```
 
 Browser checks:
@@ -883,7 +883,7 @@ Expected: server stops unless the user explicitly asks to leave it running.
 - Evidence enforcement can block operators. Control: ship in warn mode first, then enforce per request kind.
 - Operation rows may show unrelated device work. Control: ticket-scoped operation query first, device fallback explicitly labeled.
 - SLA/OLA pause semantics can regress. Control: wait ledger tests must assert due dates and pause seconds.
-- Browser UX can pass API tests but confuse users. Control: required live browser checklist on `http://192.168.100.17:8666/admin`.
+- Browser UX can pass API tests but confuse users. Control: required live browser checklist on `http://example.test:8666/admin`.
 
 ## Completion Criteria
 

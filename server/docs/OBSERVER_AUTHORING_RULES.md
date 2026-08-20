@@ -215,7 +215,7 @@ Candidate listing (`GET /api/modules/{module_name}/{version}/live_test_candidate
 
 - `python scripts/verify_workspace.py`
 - релевантный `pytest` для server/pc_agent
-- browser check через `http://192.168.100.17:8666/admin`
+- browser check через `http://example.test:8666/admin`
 - если менялся dangerous flow: live canary или observer suite
 
 ## 9. Документация обязательна

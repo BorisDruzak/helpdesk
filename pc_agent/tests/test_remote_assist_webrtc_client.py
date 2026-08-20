@@ -69,8 +69,8 @@ def test_elevated_admin_mode_enables_elevated_input_controller() -> None:
 
 
 def test_remote_assist_tls_context_only_for_secure_urls() -> None:
-    assert build_remote_assist_ssl_context("ws://192.168.100.17/ws/remote-assist/session") is None
-    assert build_remote_assist_ssl_context("wss://192.168.100.17/ws/remote-assist/session") is not None
+    assert build_remote_assist_ssl_context("ws://example.test/ws/remote-assist/session") is None
+    assert build_remote_assist_ssl_context("wss://example.test/ws/remote-assist/session") is not None
 
 
 def test_tls_error_hint_mentions_agent_ca_configuration() -> None:

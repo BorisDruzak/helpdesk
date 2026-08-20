@@ -1,7 +1,7 @@
 {
   "run_marker": "p5-close-20260529-0030-1d8e986d",
   "surface": "real browser admin session, direct anonymous HTTP, server DB, agent SQLite, pywinauto UIA",
-  "server_url": "https://192.168.100.17:9443",
+  "server_url": "https://example.test:9443",
   "deployed_commit": "1d8e986d3fcfe266b6428f5d937a6d9dcd12d5b3",
   "changes": {
     "standard_preapproved": "CHG-000015",

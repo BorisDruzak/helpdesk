@@ -18,7 +18,7 @@ def test_phase8_default_output_path_uses_registry_visibility_foundation_folder()
 def test_phase8_initial_report_declares_browser_quality_tab_as_separate_evidence() -> None:
     report = signoff.build_initial_report(
         run_id="phase8-test",
-        base_url="https://192.168.100.17:9443",
+        base_url="https://example.test:9443",
         commit="abc1234",
     )
 

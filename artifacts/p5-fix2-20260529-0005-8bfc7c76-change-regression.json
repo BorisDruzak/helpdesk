@@ -1,7 +1,7 @@
 {
   "run_marker": "p5-fix2-20260529-0005-8bfc7c76",
   "surface": "real browser admin session + /api/web/changes API",
-  "server_url": "https://192.168.100.17:9443",
+  "server_url": "https://example.test:9443",
   "commit": "8bfc7c7688c4396625495d3f8a20ae539a6ca94c",
   "change": {
     "change_id": "39603dc0-9cfa-49c8-bed4-265b25b3af66",

@@ -277,7 +277,7 @@ Minimum required additions:
 
 ## Remote Linux Validation
 
-Validation was run against `altserver@192.168.100.17:/var/chat_bot/pc_client` on 2026-04-20.
+Validation was run against `altserver@example.test:/var/chat_bot/pc_client` on 2026-04-20.
 
 ## Local Web Toolchain Validation
 

@@ -118,7 +118,7 @@ python3 build.py
 
 ## Загрузка на сервер
 
-1. Откройте страницу модулей: http://192.168.100.17:8666/modules.html
+1. Откройте страницу модулей: http://example.test:8666/modules.html
 2. В панели "Module Registry" заполните форму:
    - ZIP File: выберите `os_check-1.0.0.zip`
    - Module Name: `os_check`

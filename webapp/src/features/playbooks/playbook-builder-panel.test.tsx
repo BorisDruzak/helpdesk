@@ -394,7 +394,7 @@ describe("PlaybookBuilderPanel", () => {
     fireEvent.change(screen.getByLabelText("Tail lines"), { target: { value: "900" } });
     fireEvent.click(screen.getByLabelText("Include journal"));
     fireEvent.change(screen.getByLabelText("Severity"), { target: { value: "warning" } });
-    fireEvent.change(screen.getByLabelText("Host 1"), { target: { value: "192.168.100.17" } });
+    fireEvent.change(screen.getByLabelText("Host 1"), { target: { value: "example.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Опубликовать" }));
 
     await waitFor(() => {
@@ -409,7 +409,7 @@ describe("PlaybookBuilderPanel", () => {
             tail_lines: 900,
             include_journal: true,
             filters: { severity: "warning" },
-            hosts: ["192.168.100.17"],
+            hosts: ["example.test"],
           },
         },
       ],

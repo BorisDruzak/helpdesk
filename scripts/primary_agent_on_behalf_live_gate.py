@@ -777,7 +777,7 @@ def parse_args() -> argparse.Namespace:
     commit = _git_commit()
     day = datetime.now(timezone.utc).strftime("%Y%m%d")
     parser = argparse.ArgumentParser(description="Final PA-release live gate for primary-agent on-behalf behavior.")
-    parser.add_argument("--base-url", default="https://192.168.100.17:9443")
+    parser.add_argument("--base-url", default="https://example.test:9443")
     parser.add_argument("--run-id", default=f"pa-release-{_now_slug()}-{uuid.uuid4().hex[:6]}")
     parser.add_argument("--commit", default=commit)
     parser.add_argument("--output-dir", type=Path, default=default_evidence_dir(commit=commit, day=day))

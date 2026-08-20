@@ -235,14 +235,14 @@ def test_auto_fallback_to_shared_db_when_admin_db_unavailable(monkeypatch):
     monkeypatch.setattr(
         test_harness,
         "_default_test_database_url",
-        lambda db_name: f"postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/{db_name}",
+        lambda db_name: f"postgresql+asyncpg://chatbot:chatbot@example.test:5432/{db_name}",
     )
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         test_db_url, admin_db_url, is_shared = test_harness._maybe_fallback_to_shared_test_db(
-            "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test_deadbeef",
-            "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/postgres",
+            "postgresql+asyncpg://chatbot:chatbot@example.test:5432/pc_support_test_deadbeef",
+            "postgresql+asyncpg://chatbot:chatbot@example.test:5432/postgres",
             False,
             allow_auto_shared_fallback=True,
         )
@@ -253,8 +253,8 @@ def test_auto_fallback_to_shared_db_when_admin_db_unavailable(monkeypatch):
     assert any("falling back to shared test DB" in str(item.message) for item in caught)
     assert any("not valid for full DB/API gate" in str(item.message) for item in caught)
     assert probed == [
-        "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/postgres",
-        "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test",
+        "postgresql+asyncpg://chatbot:chatbot@example.test:5432/postgres",
+        "postgresql+asyncpg://chatbot:chatbot@example.test:5432/pc_support_test",
     ]
 
 
@@ -320,8 +320,8 @@ def test_auto_fallback_is_not_used_when_disabled(monkeypatch):
     monkeypatch.setattr(test_harness, "_probe_database_sync", fake_probe)
 
     test_db_url, admin_db_url, is_shared = test_harness._maybe_fallback_to_shared_test_db(
-        "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/pc_support_test_deadbeef",
-        "postgresql+asyncpg://chatbot:chatbot@192.168.100.17:5432/postgres",
+        "postgresql+asyncpg://chatbot:chatbot@example.test:5432/pc_support_test_deadbeef",
+        "postgresql+asyncpg://chatbot:chatbot@example.test:5432/postgres",
         False,
         allow_auto_shared_fallback=False,
     )

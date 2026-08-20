@@ -604,7 +604,7 @@ async def async_main(args: argparse.Namespace) -> int:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Live Phase 7 Registry Visibility Foundation HTTP/DB smoke.")
-    parser.add_argument("--base-url", default="https://192.168.100.17:9443")
+    parser.add_argument("--base-url", default="https://example.test:9443")
     parser.add_argument("--run-id", default=_now_id())
     parser.add_argument("--output", default="")
     parser.add_argument("--insecure-tls", action="store_true")

@@ -1044,7 +1044,7 @@ def test_open_create_wizard_refreshes_when_form_pack_changes():
 
 def test_build_ticket_create_error_message_uses_user_language():
     assert "Сервер поддержки недоступен" in build_ticket_create_error_message(
-        RuntimeError("Cannot connect to host 192.168.100.17:8666")
+        RuntimeError("Cannot connect to host example.test:8666")
     )
     assert "Форма обращения изменилась" in build_ticket_create_error_message(
         RuntimeError("FORM_VERSION_CONFLICT")

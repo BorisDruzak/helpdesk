@@ -2,8 +2,8 @@
 # Фактические пути (data_dir, logs, modules) задаются через runtime_paths (data_root).
 
 server:
-  ws_url: "ws://192.168.100.17:8666/ws"
-  api_url: "http://192.168.100.17:8666/api"
+  ws_url: "ws://example.test:8666/ws"
+  api_url: "http://example.test:8666/api"
   http_port: 12345
   reconnect_interval: 5
 

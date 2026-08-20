@@ -9,7 +9,7 @@
 ## 1. Что сделано
 
 - Создан **атомарный модуль `ip_address`**: узнаёт IP-адрес машины (только stdlib `socket`).
-- Модуль упакован в ZIP, загружен на сервер, установлен на агента, вызван `ip_address.get_ip` — результат `{"ip": "192.168.100.17", "ok": true}`.
+- Модуль упакован в ZIP, загружен на сервер, установлен на агента, вызван `ip_address.get_ip` — результат `{"ip": "example.test", "ok": true}`.
 - Цепочка проверена: сборка → upload (preflight + smoke) → install на устройство → run_tool.
 
 **Расположение модуля:** `pc_agent/modules_packages/ip_address/` (manifest.json, module.py).

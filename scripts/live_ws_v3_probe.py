@@ -24,7 +24,7 @@ from typing import Any
 import aiohttp
 
 
-DEFAULT_WS_URL = "wss://192.168.100.17:9443/ws"
+DEFAULT_WS_URL = "wss://example.test:9443/ws"
 DEFAULT_DEVICE_ID = "7a3429ec-1c0b-5495-9aad-b284f08ae965"
 DEFAULT_MACHINE_ID = DEFAULT_DEVICE_ID
 DEFAULT_INSTALL_ID = "a34642e5-e3d2-4ae4-90a0-480c4a188cf1"
