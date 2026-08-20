@@ -20,7 +20,7 @@
   TLS certificate, `REQUIRE_HTTPS=true`, and `REQUIRE_WSS=true`; insecure
   transport is never the steady-state design.
 - **Deployment record:** immutable release
-  `436e1cb00acf19c4457141536ee7fd4461533737` is active at
+  `fb203b6026dde49a2673f0126a7a727d597aebe4` is active at
   `/opt/helpdesk/current`; Alembic revision is `136`. The dedicated
   `helpdesk-server.service` and `helpdesk-control.service` are enabled and
   active, bind only to loopback, and are exposed through the restricted
