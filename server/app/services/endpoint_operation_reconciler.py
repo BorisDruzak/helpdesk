@@ -31,6 +31,7 @@ from domain_ports.endpoint import (
 from app.services.endpoint_diagnostic_operation_service import (
     ENDPOINT_DIAGNOSTIC_CAPABILITY,
     ENDPOINT_DIAGNOSTIC_REASON,
+    endpoint_operation_correlation_ref,
 )
 from app.db.models import DiagnosticEvidence, DiagnosticSession, DiagnosticStep, EndpointOperationLink, Operation
 
@@ -48,6 +49,8 @@ _REMOTE_TO_LOCAL: dict[str, tuple[str, str]] = {
     "expired": ("timed_out", "endpoint_expired"),
 }
 _LOCAL_PROGRESS = {"queued": 0, "sent": 1, "accepted": 2, "running": 3}
+
+__all__ = ("endpoint_operation_correlation_ref",)
 
 
 @dataclass(frozen=True)
