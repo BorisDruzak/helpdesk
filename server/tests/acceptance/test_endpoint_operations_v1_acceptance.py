@@ -12,22 +12,32 @@ import ipaddress
 import json
 import socket
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import aiohttp
 import pytest
 import uvicorn
 import websockets
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.db.models import DiagnosticEvidence, Ticket
+from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
+from app.services.endpoint_diagnostic_operation_service import (
+    EndpointDiagnosticOperationRequest,
+    EndpointDiagnosticOperationService,
+    SqlAlchemyEndpointDiagnosticOperationStore,
+)
+from app.services.endpoint_operation_reconciler import (
+    EndpointOperationReconciler,
+    SqlAlchemyEndpointOperationReconcileStore,
+)
 from domain_ports.endpoint import EndpointDeviceRef, EndpointOperationCreateRequest
 from endpoint_adapter.http import ExternalEndpointHttpAdapter
 
-
-pytestmark = pytest.mark.no_db
 
 _ENDPOINT_ROOT = Path(r"C:\Users\admin-2\Documents\endpoint\.worktrees\codex-helpdesk-contract-alignment-v1")
 if str(_ENDPOINT_ROOT) not in sys.path:
@@ -173,6 +183,7 @@ async def _complete_next_command(websocket, *, device_id: str, sequence: int) ->
 
 
 @pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -290,6 +301,139 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
         assert completed.status == "succeeded", json.dumps(raw_completed_body, sort_keys=True)
         assert completed.safe_result is not None
         assert completed.safe_result.processes[0].name == "acceptance-safe-process"
+    finally:
+        await _stop(server, task)
+        await engine.dispose()
+
+
+class _FacadeAccess:
+    async def require_ticket_operation_access(self, *, actor: object, ticket_id: str) -> None:
+        assert getattr(actor, "actor_id", None) == "support-acceptance"
+        assert ticket_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.db_cleanup("observer_diagnostics")
+async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_engine
+) -> None:
+    """Full durable Helpdesk facade → provider → WSS → evidence vertical slice."""
+
+    database_path = tmp_path / "endpoint-facade-acceptance.sqlite3"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path.as_posix()}")
+    tables = (
+        ServiceClient.__table__, Device.__table__, DeviceCredential.__table__,
+        DeviceInstance.__table__, DeviceSession.__table__, Command.__table__, CommandDelivery.__table__,
+        CommandResult.__table__, ContextCollection.__table__, ContextSnapshot.__table__, ContextDiff.__table__,
+        ContextCurrent.__table__, EndpointOperation.__table__, AuditEvent.__table__,
+    )
+    async with engine.begin() as connection:
+        await connection.execute(text("PRAGMA foreign_keys=ON"))
+        await connection.run_sync(lambda sync: Device.metadata.create_all(sync, tables=tables))
+    provider = async_sessionmaker(engine, expire_on_commit=False)
+    async with provider() as session:
+        client = ServiceClient(id=uuid4(), client_identifier="helpdesk-facade", display_name="Helpdesk facade")
+        device = Device(id=uuid4(), device_identifier="facade-device", display_name="Facade device")
+        session.add_all((client, device))
+        await session.flush()
+        session.add(
+            DeviceCredential(
+                id=uuid4(), device_id=device.id, credential_identifier="facade-device-credential",
+                token_digest=device_token_digest(_DEVICE_TOKEN, _DEVICE_PEPPER), pending_token_digest=None,
+                rotation_overlap_expires_at=None, expires_at=None, revoked_at=None,
+            )
+        )
+        await session.commit()
+
+    credential = ServiceCredential(
+        id=uuid4(), service_client_id=client.id, credential_identifier="b" * 32,
+        token_prefix="svc_" + "b" * 32, secret_digest="test-only-digest",
+        scopes=["devices.read", "operations.create", "operations.read"], expires_at=None, revoked_at=None,
+    )
+    principal = ServicePrincipal(client=client, credential=credential)
+
+    async def load_test_principal(*_args):
+        return principal
+
+    monkeypatch.setattr("endpoint_server.auth.scopes._load_service_principal", load_test_principal)
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    settings = Settings(
+        database_url=f"sqlite+aiosqlite:///{database_path.as_posix()}", public_base_url="https://endpoint.sosnadmin.local",
+        device_token_pepper=_DEVICE_PEPPER, service_token_pepper=_SERVICE_PEPPER, session_secret=b"facade-session",
+        allowed_agent_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), allowed_admin_cidrs=(),
+        trusted_proxy_cidrs=(ipaddress.ip_network("127.0.0.0/8"),), artifact_root=artifacts,
+        endpoint_operations_api_enabled=True,
+    )
+    port = _free_port()
+    server, task = await _start(create_app(settings, provider), port)
+    adapter = ExternalEndpointHttpAdapter(
+        base_url=f"http://127.0.0.1:{port}", service_token="test-only-service-token", ca_file="",
+        timeout_seconds=2, allow_insecure_test_url=True, correlation_id_factory=lambda: "facade-correlation",
+    )
+    session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    ticket_id = str(uuid4())
+    try:
+        async with session_factory() as session:
+            session.add(
+                Ticket(
+                    ticket_id=ticket_id,
+                    device_id="helpdesk-local-device",
+                    title="Endpoint acceptance",
+                    description="Endpoint facade acceptance",
+                    status="in_progress",
+                    requester_id="acceptance-requester",
+                )
+            )
+            await session.commit()
+
+        mapping = await EndpointDeviceReferenceService(adapter, session_factory).assign_verified_mapping(
+            ticket_id=ticket_id, endpoint_device_ref=str(device.id)
+        )
+        assert mapping.status == "resolved"
+        facade = EndpointDiagnosticOperationService(
+            access_service=_FacadeAccess(),
+            device_resolver=EndpointDeviceReferenceService(adapter, session_factory),
+            store=SqlAlchemyEndpointDiagnosticOperationStore(session_factory),
+        )
+        actor = SimpleNamespace(actor_id="support-acceptance", actor_role="support")
+        request = EndpointDiagnosticOperationRequest(ticket_id=ticket_id, idempotency_key="facade-caller-key-0001")
+        local_operation = await facade.create(actor=actor, request=request)
+        assert await facade.create(actor=actor, request=request) == local_operation
+
+        clock = [datetime.now(UTC) + timedelta(minutes=1)]
+        reconciler = EndpointOperationReconciler(
+            endpoint_port=adapter,
+            store=SqlAlchemyEndpointOperationReconcileStore(session_factory),
+            mode="external",
+            diagnostic_execution_mode="endpoint",
+            owner="facade-acceptance",
+            now=lambda: clock[0],
+        )
+        assert await reconciler.reconcile_once(limit=1) == 1
+        async with websockets.connect(
+            f"ws://127.0.0.1:{port}/agent/v1/connect",
+            additional_headers={"Authorization": f"Bearer {_DEVICE_TOKEN}", "X-Forwarded-Proto": "https", "X-Forwarded-For": "127.0.0.1"},
+        ) as websocket:
+            await websocket.send(json.dumps(_agent_hello(str(device.id))))
+            assert json.loads(await websocket.recv())["kind"] == "gateway_hello"
+            await _complete_next_command(websocket, device_id=str(device.id), sequence=2)
+
+        clock[0] += timedelta(seconds=10)
+        assert await reconciler.reconcile_once(limit=1) == 1
+        assert await reconciler.reconcile_once(limit=1) == 0
+        async with session_factory() as session:
+            evidence = list(
+                (await session.execute(
+                    select(DiagnosticEvidence).where(
+                        DiagnosticEvidence.ticket_id == ticket_id,
+                        DiagnosticEvidence.source_type == "endpoint_platform",
+                    )
+                )).scalars()
+            )
+        assert len(evidence) == 1
+        assert evidence[0].source_id is not None
+        assert evidence[0].normalized_payload["processes"][0]["name"] == "acceptance-safe-process"
     finally:
         await _stop(server, task)
         await engine.dispose()

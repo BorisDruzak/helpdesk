@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.db.models import EndpointOperationLink, Operation
 from app.services.endpoint_operation_reconciler import (
     EndpointOperationReconciler,
+    EndpointOperationReconcilerRunner,
     EndpointReconcileClaim,
     SqlAlchemyEndpointOperationReconcileStore,
     _REMOTE_TO_LOCAL,
@@ -263,6 +264,31 @@ async def test_nonretryable_unavailable_is_terminal_and_does_not_publish_without
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_ui_publication_failure_does_not_undo_committed_claim() -> None:
+    now = datetime(2026, 8, 17, tzinfo=timezone.utc)
+    store = _ClaimStore(claims=[_claim()], committed=[])
+
+    async def fail_publication(_operation_id: str) -> None:
+        raise RuntimeError("UI unavailable")
+
+    reconciler = EndpointOperationReconciler(
+        endpoint_port=_Port(EndpointUnavailable()),
+        store=store,
+        mode="external",
+        diagnostic_execution_mode="endpoint",
+        owner="test-worker",
+        now=lambda: now,
+        random=lambda: 0.0,
+        publish_after_commit=fail_publication,
+    )
+
+    assert await reconciler.reconcile_once(limit=1) == 1
+    assert len(store.committed) == 1
+    assert store.committed[0]["operation_status"] == "queued"
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_success_persists_only_validated_safe_snapshot_and_remote_ref() -> None:
     now = datetime(2026, 8, 17, tzinfo=timezone.utc)
     claim = _claim()
@@ -328,3 +354,29 @@ async def test_one_unexpected_claim_failure_does_not_stop_following_claims() -> 
     reconciler = EndpointOperationReconciler(endpoint_port=FlakyPort(), store=store, mode="external", diagnostic_execution_mode="endpoint", owner="test", now=lambda: now, random=lambda: 0.0)
     assert await reconciler.reconcile_once(limit=2) == 2
     assert [value["claim"].operation_id for value in store.committed] == [second.operation_id]
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_runner_survives_unexpected_reconcile_failure() -> None:
+    completed = asyncio.Event()
+
+    class FlakyReconciler:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def reconcile_once(self, *, limit: int) -> int:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("unexpected")
+            completed.set()
+            return 0
+
+    reconciler = FlakyReconciler()
+    runner = EndpointOperationReconcilerRunner(
+        reconciler, interval_seconds=0.01, batch_size=1
+    )
+    runner.start()
+    await asyncio.wait_for(completed.wait(), timeout=1)
+    await runner.stop()
+    assert reconciler.calls >= 2

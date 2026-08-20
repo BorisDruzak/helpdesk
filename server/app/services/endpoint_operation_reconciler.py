@@ -509,7 +509,12 @@ class EndpointOperationReconcilerRunner:
 
     async def _run(self) -> None:
         while not self._stop.is_set():
-            await self._reconciler.reconcile_once(limit=self._batch_size)
+            try:
+                await self._reconciler.reconcile_once(limit=self._batch_size)
+            except Exception:
+                # This runner is a lifecycle loop: a transient unexpected
+                # failure must not turn off future reconciliation attempts.
+                pass
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self._interval_seconds)
             except TimeoutError:
