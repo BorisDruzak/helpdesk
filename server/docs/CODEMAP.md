@@ -89,9 +89,13 @@
   `PUT /api/admin/tickets/{ticket_id}/endpoint-device-mapping` path reads the
   exact provider device through `EndpointPort` outside a DB transaction before
   persisting the frozen `endpoint_device_snapshot_v1`; it never derives a
-  mapping from `Ticket.device_id`, hostname, IP, or MAC. Revision `135` adds
-  the ticket fields plus `endpoint_operation_links`; revision `137` adds
-  actor-scoped caller idempotency fields and their partial unique index.
+  mapping from `Ticket.device_id`, hostname, IP, or MAC. Its strict
+  `endpoint_device_mapping_request_v1` body rejects drift, and replacements
+  require the exact previous ref plus a safe reason under a row lock. Created
+  and replaced mappings are committed with an actor audit event; a replay of
+  the same ref makes no write. Revision `135` adds the ticket fields plus
+  `endpoint_operation_links`; revision `137` adds actor-scoped caller
+  idempotency fields and their partial unique index.
   `server/app/repos/endpoint_operation_links_repo.py` contains only exact link
   lookup/create persistence and performs no HTTP, DeviceOutbox, tool, or
   WebSocket work.

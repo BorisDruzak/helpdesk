@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import uuid
 
 from aiohttp import web
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.db import get_session
@@ -24,7 +25,10 @@ from app.db.models import (
 )
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.diagnostics_repo import DiagnosticRepo
-from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
+from app.services.endpoint_device_reference_service import (
+    EndpointDeviceMappingRequestV1,
+    EndpointDeviceReferenceService,
+)
 from app.services.endpoint_diagnostic_operation_service import (
     EndpointDiagnosticOperationService,
     SqlAlchemyEndpointDiagnosticOperationStore,
@@ -1103,15 +1107,27 @@ async def handle_admin_ticket_endpoint_device_mapping(request: web.Request) -> w
         payload = await request.json()
     except Exception:
         payload = None
-    endpoint_device_ref = payload.get("endpoint_device_ref") if isinstance(payload, dict) else None
-    if not ticket_id or not isinstance(endpoint_device_ref, str):
+    try:
+        mapping_request = EndpointDeviceMappingRequestV1.model_validate(payload)
+    except ValidationError:
+        mapping_request = None
+    if not ticket_id or mapping_request is None:
         return web.json_response(
             {"status": "error", "error_code": "ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID"}, status=400
         )
     endpoint_port = DomainPortContainer.from_config().endpoint
     resolution = await EndpointDeviceReferenceService(
         endpoint_port, get_session_maker
-    ).assign_verified_mapping(ticket_id=ticket_id, endpoint_device_ref=endpoint_device_ref)
+    ).assign_verified_mapping(
+        ticket_id=ticket_id,
+        endpoint_device_ref=mapping_request.endpoint_device_ref,
+        replace=mapping_request.replace,
+        expected_previous_ref=mapping_request.expected_previous_ref,
+        reason=mapping_request.reason,
+        actor_id=str(getattr(request.get("auth_context"), "actor_id", "admin")),
+        actor_role=str(getattr(request.get("auth_context"), "actor_role", "admin")),
+        request_correlation=request.headers.get("X-Correlation-ID"),
+    )
     if resolution.status != "resolved":
         status = 503 if resolution.code == "ENDPOINT_UNAVAILABLE" else 409
         return web.json_response(
