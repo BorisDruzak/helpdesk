@@ -161,7 +161,7 @@ class EndpointOperationCreateRequest(_ImmutableEndpointDTO):
     schema_version: Literal["endpoint_operation_create_v1"] = "endpoint_operation_create_v1"
     capability: Literal["context.diagnostic.collect"] = "context.diagnostic.collect"
     parameters: EndpointDiagnosticParameters
-    correlation: EndpointOperationCorrelation
+    correlation: EndpointOperationCorrelation | None = None
 
 
 class EndpointOperationProjection(_ImmutableEndpointDTO):
@@ -181,7 +181,7 @@ class EndpointOperationProjection(_ImmutableEndpointDTO):
     created_at: AwareDatetime
     deadline_at: AwareDatetime | None
     completed_at: AwareDatetime | None
-    correlation: EndpointOperationCorrelation
+    correlation: EndpointOperationCorrelation | None = None
     result_available: bool = False
     safe_result: "EndpointDiagnosticResultProjection | None" = None
     warning_codes: tuple[SafeEndpointCode, ...] = ()

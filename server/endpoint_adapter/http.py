@@ -14,6 +14,12 @@ from uuid import uuid4
 import aiohttp
 from pydantic import BaseModel, ValidationError
 
+from .wire import (
+    DeviceCapabilitiesWireV1,
+    DeviceSummaryWireV1,
+    OperationResponseWireV1,
+)
+
 try:
     from domain_ports.endpoint import (
         EndpointAvailability,
@@ -70,23 +76,6 @@ _HTTP_FAILURES: dict[int, type[BaseModel]] = {
     404: EndpointNotFound,
     409: EndpointConflict,
 }
-_DEVICE_KEYS = frozenset({"device", "display_name", "retired", "last_seen_at"})
-_CAPABILITIES_KEYS = frozenset({"device", "items"})
-_OPERATION_KEYS = frozenset(
-    {
-        "operation",
-        "device",
-        "capability",
-        "status",
-        "created_at",
-        "deadline_at",
-        "completed_at",
-        "correlation",
-        "result_available",
-        "safe_result",
-        "warning_codes",
-    }
-)
 
 
 def _new_correlation_id() -> str:
@@ -223,12 +212,9 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                         return EndpointInvalidProjection()
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
             return _TRANSPORT_UNAVAILABLE
-        if (
-            not isinstance(envelope, Mapping)
-            or set(envelope) != {"data", "correlation_id"}
-            or envelope.get("correlation_id") != correlation_id
-            or not isinstance(envelope.get("data"), Mapping)
-        ):
+        if response.headers.get("X-Correlation-ID") != correlation_id:
+            return EndpointInvalidProjection()
+        if not isinstance(envelope, Mapping) or set(envelope) != {"data"} or not isinstance(envelope.get("data"), Mapping):
             return EndpointInvalidProjection()
         return dict(envelope["data"])
 
@@ -258,32 +244,36 @@ class ExternalEndpointHttpAdapter(EndpointPort):
         return EndpointAvailability(status="available", code="endpoint_external")
 
     async def read_device(self, device: EndpointDeviceRef) -> EndpointDeviceOutcome:
-        result = self._parse_projection(
-            await self._request(
+        payload = await self._request(
                 "GET",
                 f"/api/v1/devices/{_path_ref(device.external_id)}",
                 expected_statuses=frozenset({200}),
-            ),
-            model=EndpointDeviceProjection,
-            expected_keys=_DEVICE_KEYS,
-            add_source=True,
-        )
-        if isinstance(result, EndpointDeviceProjection) and result.device != device:
+            )
+        if not isinstance(payload, Mapping):
+            return payload  # type: ignore[return-value]
+        try:
+            wire = DeviceSummaryWireV1.model_validate(payload)
+            result = EndpointDeviceProjection(device=EndpointDeviceRef(external_id=str(wire.device_id)), display_name=wire.display_name, retired=wire.retired, last_seen_at=wire.last_seen_at)
+        except ValidationError:
+            return EndpointInvalidProjection()
+        if result.device != device:
             return EndpointInvalidProjection()
         return result  # type: ignore[return-value]
 
     async def list_capabilities(self, device: EndpointDeviceRef) -> EndpointCapabilitiesOutcome:
-        result = self._parse_projection(
-            await self._request(
+        payload = await self._request(
                 "GET",
                 f"/api/v1/devices/{_path_ref(device.external_id)}/capabilities",
                 expected_statuses=frozenset({200}),
-            ),
-            model=EndpointCapabilitiesProjection,
-            expected_keys=_CAPABILITIES_KEYS,
-            add_source=True,
-        )
-        if isinstance(result, EndpointCapabilitiesProjection) and result.device != device:
+            )
+        if not isinstance(payload, Mapping):
+            return payload  # type: ignore[return-value]
+        try:
+            wire = DeviceCapabilitiesWireV1.model_validate(payload)
+            result = EndpointCapabilitiesProjection(device=EndpointDeviceRef(external_id=str(wire.device_id)), items=tuple(item.model_dump() for item in wire.capabilities))
+        except ValidationError:
+            return EndpointInvalidProjection()
+        if result.device != device:
             return EndpointInvalidProjection()
         return result  # type: ignore[return-value]
 
@@ -294,33 +284,58 @@ class ExternalEndpointHttpAdapter(EndpointPort):
         *,
         idempotency_key: OpaqueEndpointRef,
     ) -> EndpointOperationCreateOutcome:
-        result = self._parse_projection(
-            await self._request(
+        payload = await self._request(
                 "POST",
                 f"/api/v1/devices/{_path_ref(device.external_id)}/operations",
                 expected_statuses=frozenset({200, 201}),
-                body=request.model_dump(mode="json"),
+                body={"schema_version": request.schema_version, "capability": request.capability, "parameters": request.parameters.model_dump(mode="json")},
                 extra_headers={"Idempotency-Key": idempotency_key},
-            ),
-            model=EndpointOperationProjection,
-            expected_keys=_OPERATION_KEYS,
-        )
-        if isinstance(result, EndpointOperationProjection) and (
-            result.device != device or result.correlation != request.correlation
-        ):
+            )
+        result = self._operation_projection(payload, correlation=request.correlation)
+        if isinstance(result, EndpointOperationProjection) and result.device != device:
             return EndpointInvalidProjection()
         return result  # type: ignore[return-value]
 
     async def read_operation(self, operation: EndpointOperationRef) -> EndpointOperationReadOutcome:
-        result = self._parse_projection(
-            await self._request(
+        payload = await self._request(
                 "GET",
                 f"/api/v1/operations/{_path_ref(operation.external_id)}",
                 expected_statuses=frozenset({200}),
-            ),
-            model=EndpointOperationProjection,
-            expected_keys=_OPERATION_KEYS,
-        )
+            )
+        result = self._operation_projection(payload, correlation=None)
         if isinstance(result, EndpointOperationProjection) and result.operation != operation:
             return EndpointInvalidProjection()
         return result  # type: ignore[return-value]
+
+    @staticmethod
+    def _operation_projection(payload: Mapping[str, object] | BaseModel, *, correlation: object | None) -> EndpointOperationProjection | BaseModel:
+        if not isinstance(payload, Mapping):
+            return payload
+        try:
+            wire = OperationResponseWireV1.model_validate(payload)
+            if wire.operation.status == "succeeded" and wire.result is None:
+                return EndpointInvalidProjection()
+            if wire.operation.result_available != (wire.result is not None):
+                return EndpointInvalidProjection()
+            return EndpointOperationProjection(
+                operation=EndpointOperationRef(external_id=str(wire.operation.operation_id)),
+                device=EndpointDeviceRef(external_id=str(wire.operation.device_id)),
+                capability=wire.operation.capability,
+                status=wire.operation.status,
+                created_at=wire.operation.created_at,
+                deadline_at=wire.operation.deadline_at,
+                completed_at=wire.operation.completed_at,
+                correlation=correlation,
+                result_available=wire.operation.result_available,
+                safe_result=None if wire.result is None else {
+                    "profile": wire.result.profile,
+                    "collected_at": wire.result.collected_at,
+                    "reason": wire.result.reason,
+                    "warnings": tuple(wire.result.warnings),
+                    "processes": tuple(item.model_dump() for item in wire.result.processes),
+                    "log_excerpt": wire.result.log_excerpt,
+                },
+                warning_codes=tuple(wire.operation.warnings),
+            )
+        except ValidationError:
+            return EndpointInvalidProjection()
