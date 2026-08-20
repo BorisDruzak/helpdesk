@@ -39,7 +39,6 @@ def remote_install_command(profile: RemoteProfile, commit: str, remote_archive: 
             f"sudo chmod -R a-w {release}",
             f"sudo ln -sfn {release} {profile.root}",
             "sudo systemctl daemon-reload",
-            "sudo systemctl reset-failed helpdesk-migrate.service || true",
             "sudo systemctl start helpdesk-migrate.service",
             "sudo systemctl restart helpdesk-server.service helpdesk-control.service",
             "sudo systemctl is-active helpdesk-server.service helpdesk-control.service",
