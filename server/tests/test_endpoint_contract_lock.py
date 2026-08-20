@@ -43,6 +43,10 @@ def test_validator_accepts_only_matching_provider_head_and_openapi_bytes(
     }
     lock.write_text(json.dumps(lock_data), encoding="utf-8")
 
+    # A Windows checkout can materialize the same committed text with CRLF.
+    # The immutable lock must describe the provider's Git blob, not local EOLs.
+    openapi.write_bytes(raw_openapi.replace(b"\n", b"\r\n"))
+
     completed = subprocess.run(
         (
             sys.executable,

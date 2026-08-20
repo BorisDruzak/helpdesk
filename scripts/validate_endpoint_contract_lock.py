@@ -69,22 +69,44 @@ def _provider_head(provider_root: Path) -> str:
         _fail(f"provider checkout is unavailable: {error.__class__.__name__}")
 
 
+def _provider_blob(*, provider_root: Path, revision: str, relative_path: Path) -> bytes:
+    """Read the canonical Git bytes so checkout EOL conversion cannot alter a lock."""
+    try:
+        return subprocess.run(
+            (
+                "git",
+                "-C",
+                str(provider_root),
+                "show",
+                f"{revision}:{relative_path.as_posix()}",
+            ),
+            check=True,
+            capture_output=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        _fail(f"locked Endpoint OpenAPI is unavailable: {error.__class__.__name__}")
+
+
 def validate(*, lock_path: Path, provider_root: Path) -> None:
     """Reject a provider checkout that differs from its exact consumer lock."""
     lock = _load_lock(lock_path)
-    if _provider_head(provider_root) != lock["provider_commit"].lower():
+    provider_head = _provider_head(provider_root)
+    if provider_head != lock["provider_commit"].lower():
         _fail("provider checkout HEAD does not match Endpoint contract lock")
 
     relative_openapi = Path(lock["openapi_path"])
     if relative_openapi.is_absolute() or ".." in relative_openapi.parts:
         _fail("Endpoint contract lock OpenAPI path must be relative and contained")
-    openapi_path = (provider_root / relative_openapi).resolve()
-    if provider_root.resolve() not in openapi_path.parents:
+    candidate_openapi_path = (provider_root / relative_openapi).resolve()
+    if provider_root.resolve() not in candidate_openapi_path.parents:
         _fail("Endpoint contract lock OpenAPI path escapes provider root")
-    try:
-        actual_digest = hashlib.sha256(openapi_path.read_bytes()).hexdigest()
-    except OSError as error:
-        _fail(f"locked Endpoint OpenAPI is unavailable: {error.__class__.__name__}")
+    actual_digest = hashlib.sha256(
+        _provider_blob(
+            provider_root=provider_root,
+            revision=provider_head,
+            relative_path=relative_openapi,
+        )
+    ).hexdigest()
     if actual_digest != lock["openapi_sha256"].lower():
         _fail("provider OpenAPI digest does not match Endpoint contract lock")
 
