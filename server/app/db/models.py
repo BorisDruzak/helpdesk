@@ -3325,6 +3325,8 @@ class EndpointOperationLink(Base):
         String(128), nullable=False, server_default="context.diagnostic.collect"
     )
     create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    caller_actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    caller_idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     correlation_ref: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     remote_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="create_pending")
     diagnostic_session_id: Mapped[Optional[str]] = mapped_column(
@@ -3371,6 +3373,15 @@ class EndpointOperationLink(Base):
         sa.CheckConstraint("attempt_count >= 0", name="ck_endpoint_operation_links_attempt_count"),
         Index("ix_endpoint_operation_links_ready", "remote_status", "next_attempt_at"),
         Index("ix_endpoint_operation_links_lease_until", "lease_until"),
+        Index(
+            "uq_endpoint_operation_links_caller_key",
+            "caller_actor_id",
+            "caller_idempotency_key",
+            unique=True,
+            postgresql_where=sa.text(
+                "caller_actor_id IS NOT NULL AND caller_idempotency_key IS NOT NULL"
+            ),
+        ),
     )
 
 

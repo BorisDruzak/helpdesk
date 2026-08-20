@@ -40,6 +40,17 @@ class EndpointOperationLinksRepo:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_caller_idempotency_key(
+        self, *, actor_id: str, key: str
+    ) -> EndpointOperationLink | None:
+        result = await self.session.execute(
+            select(EndpointOperationLink).where(
+                EndpointOperationLink.caller_actor_id == actor_id,
+                EndpointOperationLink.caller_idempotency_key == key,
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_endpoint_operation_ref(self, ref: str) -> EndpointOperationLink | None:
         result = await self.session.execute(
             select(EndpointOperationLink).where(EndpointOperationLink.endpoint_operation_ref == ref)
@@ -52,6 +63,8 @@ class EndpointOperationLinksRepo:
         operation_id: str,
         endpoint_device_ref: str,
         create_idempotency_key: str,
+        caller_actor_id: str | None = None,
+        caller_idempotency_key: str | None = None,
         correlation_ref: str | None = None,
         next_attempt_at: datetime,
         diagnostic_session_id: str | None = None,
@@ -61,6 +74,8 @@ class EndpointOperationLinksRepo:
 
         device_ref = EndpointDeviceRef(external_id=endpoint_device_ref).external_id
         idempotency_key = _OPAQUE_ENDPOINT_REF.validate_python(create_idempotency_key)
+        if bool(caller_actor_id) != bool(caller_idempotency_key):
+            raise ValueError("caller idempotency identity must be complete")
         if next_attempt_at.tzinfo is None or next_attempt_at.utcoffset() is None:
             raise ValueError("next_attempt_at must be timezone-aware")
         values = {
@@ -69,6 +84,8 @@ class EndpointOperationLinksRepo:
             "endpoint_device_ref": device_ref,
             "capability_code": "context.diagnostic.collect",
             "create_idempotency_key": idempotency_key,
+            "caller_actor_id": caller_actor_id,
+            "caller_idempotency_key": caller_idempotency_key,
             "correlation_ref": correlation_ref,
             "remote_status": "create_pending",
             "diagnostic_session_id": diagnostic_session_id,
@@ -85,7 +102,10 @@ class EndpointOperationLinksRepo:
             async with self.session.begin_nested():
                 created = (await self.session.execute(statement)).scalar_one_or_none()
         except IntegrityError as exc:
-            if self._constraint_name(exc) != "uq_endpoint_operation_links_operation_id":
+            if self._constraint_name(exc) not in {
+                "uq_endpoint_operation_links_operation_id",
+                "uq_endpoint_operation_links_caller_key",
+            }:
                 raise
             created = None
         if created is not None:
@@ -93,12 +113,19 @@ class EndpointOperationLinksRepo:
 
         existing_by_operation = await self.get_by_operation_id(operation_id)
         existing_by_key = await self.get_by_idempotency_key(idempotency_key)
-        for existing in (existing_by_operation, existing_by_key):
+        existing_by_caller_key = None
+        if caller_actor_id and caller_idempotency_key:
+            existing_by_caller_key = await self.get_by_caller_idempotency_key(
+                actor_id=caller_actor_id, key=caller_idempotency_key
+            )
+        for existing in (existing_by_operation, existing_by_key, existing_by_caller_key):
             if existing is not None and self._matches_immutable_identity(
                 existing,
                 operation_id=operation_id,
                 endpoint_device_ref=device_ref,
                 create_idempotency_key=idempotency_key,
+                caller_actor_id=caller_actor_id,
+                caller_idempotency_key=caller_idempotency_key,
             ):
                 return existing
         raise EndpointOperationLinkConflict(
@@ -112,12 +139,16 @@ class EndpointOperationLinksRepo:
         operation_id: str,
         endpoint_device_ref: str,
         create_idempotency_key: str,
+        caller_actor_id: str | None,
+        caller_idempotency_key: str | None,
     ) -> bool:
         return (
             link.operation_id == operation_id
             and link.endpoint_device_ref == endpoint_device_ref
             and link.capability_code == "context.diagnostic.collect"
             and link.create_idempotency_key == create_idempotency_key
+            and link.caller_actor_id == caller_actor_id
+            and link.caller_idempotency_key == caller_idempotency_key
         )
 
     @staticmethod

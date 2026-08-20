@@ -12,6 +12,9 @@ MIGRATION_PATH = SERVER_ROOT / "app" / "db" / "migrations" / "versions" / "20260
 CORRELATION_MIGRATION_PATH = (
     SERVER_ROOT / "app" / "db" / "migrations" / "versions" / "20260817_136_endpoint_operation_correlation_ref.py"
 )
+CALLER_IDEMPOTENCY_MIGRATION_PATH = (
+    SERVER_ROOT / "app" / "db" / "migrations" / "versions" / "20260820_137_endpoint_caller_idempotency.py"
+)
 
 
 @pytest.mark.no_db
@@ -116,5 +119,45 @@ def test_endpoint_operation_correlation_migration_is_forward_only_and_additive(m
     assert isinstance(column.type, sa.String)
     assert column.type.length == 128
     assert column.nullable is True
+    with pytest.raises(RuntimeError, match="forward-only"):
+        module.downgrade()
+
+
+@pytest.mark.no_db
+def test_endpoint_caller_idempotency_migration_is_actor_scoped_and_forward_only(monkeypatch):
+    spec = importlib.util.spec_from_file_location(
+        "endpoint_caller_idempotency_migration", CALLER_IDEMPOTENCY_MIGRATION_PATH
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.columns: list[tuple[str, sa.Column]] = []
+            self.indexes: list[tuple[str, str, tuple[str, ...], dict]] = []
+
+        def add_column(self, table_name: str, column: sa.Column) -> None:
+            self.columns.append((table_name, column))
+
+        def create_index(self, name: str, table_name: str, columns: list[str], **kwargs) -> None:
+            self.indexes.append((name, table_name, tuple(columns), kwargs))
+
+    recorder = _Recorder()
+    monkeypatch.setattr(module, "op", recorder)
+    module.upgrade()
+
+    assert module.revision == "137"
+    assert module.down_revision == "136"
+    assert [(table, column.name) for table, column in recorder.columns] == [
+        ("endpoint_operation_links", "caller_actor_id"),
+        ("endpoint_operation_links", "caller_idempotency_key"),
+    ]
+    assert recorder.indexes[0][:3] == (
+        "uq_endpoint_operation_links_caller_key",
+        "endpoint_operation_links",
+        ("caller_actor_id", "caller_idempotency_key"),
+    )
+    assert recorder.indexes[0][3]["unique"] is True
     with pytest.raises(RuntimeError, match="forward-only"):
         module.downgrade()

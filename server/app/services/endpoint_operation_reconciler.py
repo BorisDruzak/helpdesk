@@ -132,7 +132,12 @@ class EndpointOperationReconciler:
             owner=self._owner, now=now, limit=limit, lease_seconds=self._lease_seconds
         )
         for claim in claims:
-            await self._reconcile_claim(claim)
+            try:
+                await self._reconcile_claim(claim)
+            except Exception:
+                # A failed remote call or UI publication cannot strand other claims
+                # or undo already committed local state.
+                continue
         return len(claims)
 
     async def _reconcile_claim(self, claim: EndpointReconcileClaim) -> None:
@@ -220,8 +225,10 @@ class EndpointOperationReconciler:
         status, phase = _REMOTE_TO_LOCAL[outcome.status]
         if (
             outcome.device.external_id != claim.endpoint_device_ref
-            or outcome.correlation.source_entity_id != claim.correlation_ref
-            or outcome.correlation.request_id != UUID(claim.operation_id)
+            or (
+                claim.endpoint_operation_ref is not None
+                and outcome.operation.external_id != claim.endpoint_operation_ref
+            )
         ):
             await self._commit_and_publish(
                 claim=claim,

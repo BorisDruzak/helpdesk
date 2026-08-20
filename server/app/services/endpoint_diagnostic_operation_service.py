@@ -101,12 +101,12 @@ def validate_endpoint_operation_idempotency_key(value: str) -> str:
 
 
 def deterministic_endpoint_operation_id(
-    *, ticket_id: str, endpoint_device_ref: str, idempotency_key: str
+    *, actor_id: str, ticket_id: str, endpoint_device_ref: str, idempotency_key: str
 ) -> str:
     return str(
         uuid.uuid5(
             uuid.NAMESPACE_URL,
-            f"helpdesk:{ticket_id}:{endpoint_device_ref}:{ENDPOINT_DIAGNOSTIC_CAPABILITY}:{idempotency_key}",
+            f"helpdesk:{actor_id}:{ticket_id}:{endpoint_device_ref}:{ENDPOINT_DIAGNOSTIC_CAPABILITY}:{idempotency_key}",
         )
     )
 
@@ -149,7 +149,11 @@ class EndpointDiagnosticOperationService:
             raise EndpointDiagnosticOperationUnavailable(
                 getattr(resolution, "code", None) or "ENDPOINT_DEVICE_MAPPING_MISSING"
             )
+        actor_id = str(getattr(actor, "actor_id", ""))
+        if not actor_id:
+            raise EndpointDiagnosticOperationUnavailable("ENDPOINT_ACTOR_MISSING")
         operation_id = deterministic_endpoint_operation_id(
+            actor_id=actor_id,
             ticket_id=request.ticket_id,
             endpoint_device_ref=resolution.device_ref,
             idempotency_key=key,
@@ -169,10 +173,11 @@ class EndpointDiagnosticOperationService:
         created = await self._store.create_pending(
             operation_id=operation_id,
             ticket_id=request.ticket_id,
-            actor_id=str(getattr(actor, "actor_id", "")),
+            actor_id=actor_id,
             actor_role=str(getattr(actor, "actor_role", "")),
             endpoint_device_ref=resolution.device_ref,
             idempotency_key=remote_endpoint_idempotency_key(operation_id),
+            caller_idempotency_key=key,
             trace_id=self._new_trace_id(),
             created_at=now,
         )
@@ -300,6 +305,8 @@ class SqlAlchemyEndpointDiagnosticOperationStore:
                         endpoint_device_ref=values["endpoint_device_ref"],
                         create_idempotency_key=values["idempotency_key"],
                         correlation_ref=endpoint_operation_correlation_ref(operation.operation_id),
+                        caller_actor_id=values["actor_id"],
+                        caller_idempotency_key=values.get("caller_idempotency_key"),
                         next_attempt_at=values["created_at"],
                         diagnostic_session_id=diagnostic_session.id,
                         diagnostic_step_id=diagnostic_step.id,

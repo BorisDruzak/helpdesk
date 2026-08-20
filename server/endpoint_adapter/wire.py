@@ -67,4 +67,3 @@ class DiagnosticResultWireV1(_Wire):
 class OperationResponseWireV1(_Wire):
     operation: OperationWireV1
     result: DiagnosticResultWireV1 | None
-
