@@ -24,3 +24,18 @@ def test_production_dependencies_and_runtime_data_root_are_declared() -> None:
     assert "PC_CLIENT_SERVER_DATA_ROOT=/var/lib/helpdesk" in environment
     assert "PC_CLIENT_DISABLE_LEGACY_RUNTIME_MIGRATION=true" in environment
     assert "HELPDESK_CONTROL_LIFECYCLE_ENABLED=false" in environment
+
+
+def test_host_bootstrap_preserves_isolation_and_requires_root_owned_env() -> None:
+    bootstrap = (ROOT / "install_helpdesk_host.sh").read_text(encoding="utf-8")
+
+    assert "id -u" in bootstrap
+    assert "/etc/helpdesk/helpdesk.env" in bootstrap
+    assert "useradd --system" in bootstrap
+    assert "/opt/helpdesk/releases" in bootstrap
+    assert "/var/lib/helpdesk" in bootstrap
+    assert "helpdesk-server.service" in bootstrap
+    assert "helpdesk-control.service" in bootstrap
+    assert "helpdesk-migrate.service" in bootstrap
+    assert "/etc/nginx/sites-available/helpdesk" in bootstrap
+    assert "endpoint-platform" not in bootstrap

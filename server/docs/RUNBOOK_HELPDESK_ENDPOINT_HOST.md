@@ -13,6 +13,10 @@ are not a deployment source.
 
 ## Release and lifecycle
 
+For a new/rebuilt host, install the root-only environment first and then run
+`sudo deploy/helpdesk/install_helpdesk_host.sh` from a reviewed release. The
+bootstrap intentionally does not create database credentials or copy data.
+
 From the local repository, deploy committed code with:
 
 ```powershell
