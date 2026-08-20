@@ -150,6 +150,7 @@ def test_remote_statuses_have_the_exact_local_operation_and_phase_projection() -
     }
 
 
+@pytest.mark.no_db
 def test_endpoint_services_have_no_legacy_agent_runtime_imports() -> None:
     services = Path(__file__).parents[1] / "app" / "services"
     forbidden = {
