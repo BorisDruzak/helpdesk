@@ -63,14 +63,29 @@ jobs:
               handle.write(f"commit={lock['provider_commit']}\n")
           PY
 
+      - name: Verify locked Endpoint provider is readable with GITHUB_TOKEN
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENDPOINT_REPOSITORY: ${{ steps.endpoint-lock.outputs.repository }}
+          ENDPOINT_COMMIT: ${{ steps.endpoint-lock.outputs.commit }}
+        shell: bash
+        run: |
+          if ! gh api \
+            "repos/${ENDPOINT_REPOSITORY}/commits/${ENDPOINT_COMMIT}" \
+            --silent >/dev/null; then
+            echo "::error::The locked Endpoint provider is not readable by this workflow's GITHUB_TOKEN. Configure cross-repository read access or run the locked acceptance locally; no secret, fallback, or copied provider source is permitted."
+            exit 1
+          fi
+
       - name: Checkout locked Endpoint provider
         uses: actions/checkout@v4
         with:
           repository: ${{ steps.endpoint-lock.outputs.repository }}
           ref: ${{ steps.endpoint-lock.outputs.commit }}
           path: endpoint-platform
+          token: ${{ github.token }}
           # This intentionally uses the ordinary job GITHUB_TOKEN. A private
-          # provider inaccessible to it fails here rather than using a secret,
+          # provider inaccessible to it fails rather than using a secret,
           # fake server, cached checkout, or copied source.
 
       - name: Install Helpdesk and Endpoint test dependencies
