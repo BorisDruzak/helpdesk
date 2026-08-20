@@ -20,8 +20,6 @@ from app.services.endpoint_operation_reconciler import (
 )
 from domain_ports.endpoint import (
     EndpointDeviceRef,
-    EndpointOperationCorrelation,
-    EndpointOperationCreateRequest,
     EndpointOperationProjection,
     EndpointOperationRef,
     EndpointDiagnosticResultProjection,
@@ -39,7 +37,7 @@ class _ClaimStore:
     committed: list[dict]
 
     async def claim_ready(self, *, owner: str, now: datetime, limit: int, lease_seconds: int):
-        return self.claims[:limit]
+        return [self.claims.pop(0)] if self.claims and limit == 1 else []
 
     async def commit(self, **values):
         self.committed.append(values)

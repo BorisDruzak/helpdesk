@@ -31,7 +31,6 @@ from domain_ports.endpoint import (
 from app.services.endpoint_diagnostic_operation_service import (
     ENDPOINT_DIAGNOSTIC_CAPABILITY,
     ENDPOINT_DIAGNOSTIC_REASON,
-    endpoint_operation_correlation_ref,
 )
 from app.db.models import DiagnosticEvidence, DiagnosticSession, DiagnosticStep, EndpointOperationLink, Operation
 
@@ -127,18 +126,27 @@ class EndpointOperationReconciler:
     async def reconcile_once(self, *, limit: int) -> int:
         if not self.enabled or limit < 1:
             return 0
-        now = self._aware_now()
-        claims = await self._store.claim_ready(
-            owner=self._owner, now=now, limit=limit, lease_seconds=self._lease_seconds
-        )
-        for claim in claims:
+        processed = 0
+        for _ in range(limit):
+            # Claim exactly one record immediately before its remote call so a
+            # queued batch cannot consume another record's lease.
+            claims = await self._store.claim_ready(
+                owner=self._owner,
+                now=self._aware_now(),
+                limit=1,
+                lease_seconds=self._lease_seconds,
+            )
+            if not claims:
+                break
+            claim = claims[0]
             try:
                 await self._reconcile_claim(claim)
             except Exception:
                 # A failed remote call or UI publication cannot strand other claims
                 # or undo already committed local state.
-                continue
-        return len(claims)
+                pass
+            processed += 1
+        return processed
 
     async def _reconcile_claim(self, claim: EndpointReconcileClaim) -> None:
         # There is intentionally no database session/transaction across this await.
