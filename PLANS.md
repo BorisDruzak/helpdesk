@@ -446,7 +446,7 @@ Work:
 
 **Goal:** execute real domain actions to discover new bugs after known P0/P1 remediation and live-tooling hardening.
 
-**Canonical stand origin:** `https://192.168.100.17:9443`
+**Historical stand origin for this archived phase:** `https://192.168.100.17:9443`
 
 Rule: new bugs found in this phase are not fixed immediately inside the bug-hunt wave. First create or update a bug card, assign priority/layer, link it from this plan or a registry, then route it into the next remediation wave.
 

@@ -268,17 +268,16 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 **Подгрузка .env:** Alembic сам не читает `server/.env`. Для запуска миграций с теми же настройками, что и сервер, используйте скрипт `server/scripts/run_migrations.py` (подгружает `server/.env` и вызывает alembic). Пример: из каталога `server` — `python scripts/run_migrations.py upgrade head` или `python scripts/run_migrations.py current`.
 
-### Миграции на удалённом хосте (PostgreSQL на удалённой шаре)
+### Миграции на production Helpdesk host
 
-- Миграции выполняются **на Linux-хосте**, где развёрнут код (например `/var/chat_bot/pc_client`), так как именно там настроен доступ к БД.
-- **Один раз** на удалённом хосте нужно создать `server/.env` с `DATABASE_URL=postgresql+asyncpg://user:password@host:port/dbname`. Файл в репозиторий не коммитится (см. `.gitignore`). Можно скопировать с рабочей машины или создать вручную; шаблон — `server/.env.example`.
-- **С Windows** миграции на удалённом хосте запускаются так (после deploy):
+- Helpdesk работает отдельно от Endpoint Platform на `osn_admin@192.168.100.19`. Его база, роль PostgreSQL, пользователь ОС и runtime-каталоги не разделяются с Endpoint.
+- Production-конфигурация хранится только в `/etc/helpdesk/helpdesk.env` с правами `root:root` и `0600`; её значения не коммитятся и не выводятся.
+- Новые релизы выполняются из Windows только через `python scripts/deploy_helpdesk_release.py --commit <commit>`: скрипт создаёт immutable release в `/opt/helpdesk/releases`, переключает `/opt/helpdesk/current` и запускает миграцию до перезапуска сервисов.
+- Для проверки схемы после deploy:
   ```text
-  python scripts/run_remote_migrations.py              # upgrade head
   python scripts/run_remote_migrations.py current
-  python scripts/run_remote_migrations.py upgrade head
   ```
-  Скрипт по SSH выполняет на хосте `server/venv/bin/python server/scripts/run_migrations.py ...`; `run_migrations.py` подгружает `server/.env` и запускает alembic.
+  Скрипт запускает `server/scripts/run_migrations.py` внутри текущего Helpdesk release. Обычный production deploy выполняет `upgrade head` сам; не применяйте ручные миграции к Endpoint database.
 
 ---
 

@@ -234,7 +234,7 @@ These are the places where a small-looking edit often creates serious bugs.
 | Auth -> inventory/provisioning | Device identity changes can duplicate devices, invalidate tokens or strand pending requests | Verify token binding, archived-device behavior and fingerprint mismatch handling |
 | DB model -> repos/tests | A migration or column semantic change can pass import checks but fail live DB flows | Run relevant DB-backed pytest and migration checks |
 | Agent update -> launcher/runtime/UI | Scheduled update is not complete until launcher apply and later handshake report | Check `AGENT_UPDATE_WORKFLOW`, `SELF_UPDATE`, server update API docs and GUI state |
-| Control-plane -> server lifecycle | Main HTTP server and external control-plane are separate services | Use `scripts/manage_remote_stack.py`; verify status/logs/smoke and stop server after checks |
+| Control-plane -> server lifecycle | Main HTTP server and external control-plane are separate Helpdesk system services on the Endpoint host | Use `scripts/manage_remote_stack.py`; verify status/logs/smoke. Their service account and filesystem remain separate from Endpoint Platform. |
 
 ## Examples
 
