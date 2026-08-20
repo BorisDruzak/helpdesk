@@ -323,4 +323,3 @@ Stop implementation and report evidence rather than weakening a boundary if any 
 ## Plan Self-Review
 
 The tasks cover provider contract/correlation, immutable lock and CI checkout, strict adapter projections, verified mapping/readiness, migration-137 actor idempotency, claimed reconciliation and UI failure isolation, true cross-repo acceptance, documentation and provider-first merge sequencing. The deliberately excluded production and legacy paths remain excluded. Each task has concrete files, interfaces, RED/GREEN checks, and an atomic commit boundary.
-
