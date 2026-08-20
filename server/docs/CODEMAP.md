@@ -85,14 +85,16 @@
   `server/tests/test_endpoint_port_contracts.py`.
 - `Ticket.endpoint_device_ref` and `endpoint_device_snapshot_json` are nullable
   server-owned Endpoint mapping fields. `server/app/services/endpoint_device_reference_service.py`
-  accepts only an exact opaque legacy candidate, reads it through `EndpointPort`
-  outside the database session, and persists a frozen `endpoint_device_snapshot_v1`
-  only when the external reference matches exactly; it has no client-input,
-  hostname/IP/MAC lookup, or legacy fallback path. Revision `135` adds those
-  ticket fields plus `endpoint_operation_links`, the safe local facade-to-external
-  operation link table. `server/app/repos/endpoint_operation_links_repo.py`
-  contains only exact link lookup/create persistence and performs no HTTP,
-  DeviceOutbox, tool, or WebSocket work.
+  accepts only a previously verified mapping for readiness. The admin-only
+  `PUT /api/admin/tickets/{ticket_id}/endpoint-device-mapping` path reads the
+  exact provider device through `EndpointPort` outside a DB transaction before
+  persisting the frozen `endpoint_device_snapshot_v1`; it never derives a
+  mapping from `Ticket.device_id`, hostname, IP, or MAC. Revision `135` adds
+  the ticket fields plus `endpoint_operation_links`; revision `137` adds
+  actor-scoped caller idempotency fields and their partial unique index.
+  `server/app/repos/endpoint_operation_links_repo.py` contains only exact link
+  lookup/create persistence and performs no HTTP, DeviceOutbox, tool, or
+  WebSocket work.
 
 ## 2026-08-10 RegistryPort Helpdesk read cutover (PR-8)
 
