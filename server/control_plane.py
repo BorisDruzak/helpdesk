@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,8 +36,8 @@ from runtime_control import (
     update_last_server_action,
 )
 
-CONTROL_HOST = "0.0.0.0"
-CONTROL_PORT = 8667
+CONTROL_HOST = (os.getenv("CONTROL_HOST", "0.0.0.0") or "0.0.0.0").strip()
+CONTROL_PORT = int(os.getenv("CONTROL_PORT", "8667") or "8667")
 CONTROL_API_PREFIX = "/api/control"
 STATE_KEY = web.AppKey("control_state", SimpleNamespace)
 STARTED_AT_KEY = web.AppKey("control_started_at", str)
