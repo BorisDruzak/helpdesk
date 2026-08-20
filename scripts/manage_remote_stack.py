@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage remote pc_client services over SSH via the canonical runtime stack CLI."""
+"""Manage the Helpdesk system services on its dedicated deployment host."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ DEFAULT_REMOTE = RemoteProfile.from_environment().remote
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("action", choices=["start", "stop", "restart", "status", "smoke", "logs"])
-    parser.add_argument("target", choices=["server", "agent", "control", "all"])
+    parser.add_argument("target", choices=["server", "control", "all"])
     parser.add_argument("--lines", type=int, default=80, help="Used by logs")
     parser.add_argument("--follow", action="store_true", help="Used by logs: follow output until interrupted")
     parser.add_argument("--levels", default="", help="Used by logs: comma-separated levels")
     parser.add_argument("--contains", default="", help="Used by logs: substring search")
-    parser.add_argument("--json", action="store_true", help="Return machine-readable JSON where supported")
+    parser.add_argument("--json", action="store_true", help="Return machine-readable output where supported")
     parser.add_argument("--remote", default=RemoteProfile.from_environment().remote)
-    parser.add_argument("--base-url", default="", help="Used by smoke: override remote smoke BASE_URL")
+    parser.add_argument("--base-url", default="", help="Used by smoke: override Helpdesk base URL")
     parser.add_argument("--insecure-tls", action="store_true", help="Used by smoke: allow self-signed HTTPS certs")
     return parser.parse_args()
 
@@ -35,28 +35,33 @@ def ssh_base_command() -> list[str]:
 
 
 def build_remote_command(args: argparse.Namespace) -> str:
-    command = [
-        shlex.quote(RemoteProfile.from_environment().server_python),
-        "scripts/runtime_stack.py",
-        shlex.quote(args.action),
-        shlex.quote(args.target),
-    ]
+    units = {
+        "server": ["helpdesk-server.service"],
+        "control": ["helpdesk-control.service"],
+        "all": ["helpdesk-server.service", "helpdesk-control.service"],
+    }[args.target]
+    quoted_units = " ".join(shlex.quote(unit) for unit in units)
+
+    if args.action in {"start", "stop", "restart"}:
+        return f"sudo systemctl {args.action} {quoted_units}"
+    if args.action == "status":
+        return f"sudo systemctl status {quoted_units} --no-pager"
     if args.action == "logs":
-        command.extend(["--lines", shlex.quote(str(args.lines))])
+        command = ["sudo", "journalctl"]
+        for unit in units:
+            command.extend(["-u", unit])
+        command.extend(["-n", str(max(1, args.lines)), "--no-pager"])
         if args.follow:
-            command.append("--follow")
-        if args.levels:
-            command.extend(["--levels", shlex.quote(args.levels)])
-        if args.contains:
-            command.extend(["--contains", shlex.quote(args.contains)])
+            command.append("-f")
+        return " ".join(shlex.quote(item) for item in command)
     if args.action == "smoke":
-        if args.base_url:
-            command.extend(["--base-url", shlex.quote(args.base_url)])
+        base_url = (args.base_url or "http://127.0.0.1:8080").rstrip("/")
+        curl_args = ["curl", "--fail", "--silent", "--show-error"]
         if args.insecure_tls:
-            command.append("--insecure-tls")
-    if args.json:
-        command.append("--json")
-    return f"cd {shlex.quote(RemoteProfile.from_environment().root)} && {' '.join(command)}"
+            curl_args.append("--insecure")
+        curl_args.append(f"{base_url}/api/health")
+        return " ".join(shlex.quote(item) for item in curl_args)
+    raise ValueError(f"Unsupported action: {args.action}")
 
 
 def main() -> None:

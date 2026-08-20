@@ -20,8 +20,8 @@ SERVER_UNIT = "pc-client-server"
 AGENT_UNIT = "pc-client-agent"
 CONTROL_UNIT = "pc-client-control"
 CONTROL_STATE_FILE = SERVER_DATA_ROOT / "control_plane_state.json"
-DEFAULT_ADMIN_ORIGIN = "http://192.168.100.17:8666"
-DEFAULT_REMOTE_SMOKE_BASE_URL = "http://192.168.100.17:8666"
+DEFAULT_ADMIN_ORIGIN = "http://192.168.100.19:8080"
+DEFAULT_REMOTE_SMOKE_BASE_URL = "http://192.168.100.19:8080"
 
 SYSTEMD_TARGETS = {"server", "agent", "control"}
 ALL_TARGETS = (*SYSTEMD_TARGETS, "all")
