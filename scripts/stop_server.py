@@ -9,7 +9,12 @@ import time
 from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parent.parent
-RUN_DIR = WORKSPACE / '.run'
+RUN_DIR = Path(
+    os.getenv(
+        "HELPDESK_RUNTIME_DIR",
+        str(WORKSPACE / ".run" if os.name == "nt" else "/var/lib/helpdesk/run"),
+    )
+)
 PID_FILE = RUN_DIR / 'server.pid'
 DEFAULT_SERVER_PORT = 8666
 
