@@ -240,7 +240,9 @@ async def test_adapter_maps_remote_statuses_to_typed_outcomes(
     expected_type: type[object],
 ) -> None:
     async def device(_request: web.Request) -> web.Response:
-        return web.json_response({}, status=http_status)
+        return web.json_response(
+            {}, status=http_status, headers={"X-Correlation-ID": "http-correlation"}
+        )
 
     app = web.Application()
     app.router.add_get("/api/v1/devices/{device_id}", device)
@@ -250,6 +252,25 @@ async def test_adapter_maps_remote_statuses_to_typed_outcomes(
         result = await _adapter(server).read_device(EndpointDeviceRef(external_id="device-1"))
 
         assert isinstance(result, expected_type)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_error_response_with_mismatched_correlation_header() -> None:
+    async def device(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {}, status=404, headers={"X-Correlation-ID": "different-correlation"}
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/devices/{device_id}", device)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_device(EndpointDeviceRef(external_id="device-1"))
+
+        assert isinstance(result, EndpointInvalidProjection)
     finally:
         await server.close()
 
@@ -274,7 +295,7 @@ async def test_adapter_rejects_bad_envelope_and_never_uses_redirect_target() -> 
     try:
         result = await _adapter(server).read_device(EndpointDeviceRef(external_id="device-1"))
 
-        assert isinstance(result, EndpointUnavailable)
+        assert isinstance(result, EndpointInvalidProjection)
         assert received_redirect_target is False
     finally:
         await server.close()

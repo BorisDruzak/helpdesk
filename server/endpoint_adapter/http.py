@@ -201,6 +201,8 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                     allow_redirects=False,
                     ssl=ssl_context,
                 ) as response:
+                    if response.headers.get("X-Correlation-ID") != correlation_id:
+                        return EndpointInvalidProjection()
                     if response.status in _HTTP_FAILURES:
                         return _HTTP_FAILURES[response.status]()
                     if response.status == 422:
@@ -213,8 +215,6 @@ class ExternalEndpointHttpAdapter(EndpointPort):
                         return EndpointInvalidProjection()
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError):
             return _TRANSPORT_UNAVAILABLE
-        if response.headers.get("X-Correlation-ID") != correlation_id:
-            return EndpointInvalidProjection()
         if not isinstance(envelope, Mapping) or set(envelope) != {"data"} or not isinstance(envelope.get("data"), Mapping):
             return EndpointInvalidProjection()
         return dict(envelope["data"])
