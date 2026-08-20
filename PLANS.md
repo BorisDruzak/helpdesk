@@ -2,6 +2,27 @@
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
+## 2026-08-20 Helpdesk co-hosting on Endpoint Platform production host
+
+- **Status:** approved architecture; implementation has not started.
+- **Goal:** deploy Helpdesk as an independent production service on
+  `osn_admin@192.168.100.19`, next to (but isolated from) Endpoint Platform.
+- **Confirmed decisions:** create a fresh Helpdesk PostgreSQL database and only
+  a new administrator; migrate no Helpdesk data; do not register or preserve
+  legacy agents; agents will use a future replacement auth/connection method.
+  Keep Helpdesk and Endpoint as separate repositories, databases, service
+  users, systemd units, release trees, runtime directories, and Nginx vhosts.
+- **Endpoint contract:** use only the existing HTTPS Endpoint Operations API
+  with an explicitly enabled feature and a separate scoped service identity.
+  No direct Endpoint import or database access is permitted.
+- **Bootstrap constraint:** the initial IP-only access is temporary and
+  network-restricted. The final production gate requires a DNS name, trusted
+  TLS certificate, `REQUIRE_HTTPS=true`, and `REQUIRE_WSS=true`; insecure
+  transport is never the steady-state design.
+- **Next steps:** review
+  `docs/superpowers/specs/2026-08-20-helpdesk-endpoint-cohosting-design.md`,
+  then create and execute the implementation plan in small verified commits.
+
 ## 2026-08-17 Helpdesk Endpoint Integration v1
 
 - **Status:** implementation completed locally and merged into
