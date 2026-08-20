@@ -4,7 +4,7 @@
 
 ## 2026-08-20 Helpdesk co-hosting on Endpoint Platform production host
 
-- **Status:** approved architecture; implementation has not started.
+- **Status:** clean Helpdesk baseline deployed and running on 2026-08-20.
 - **Goal:** deploy Helpdesk as an independent production service on
   `osn_admin@192.168.100.19`, next to (but isolated from) Endpoint Platform.
 - **Confirmed decisions:** create a fresh Helpdesk PostgreSQL database and only
@@ -19,9 +19,20 @@
   network-restricted. The final production gate requires a DNS name, trusted
   TLS certificate, `REQUIRE_HTTPS=true`, and `REQUIRE_WSS=true`; insecure
   transport is never the steady-state design.
-- **Next steps:** review
-  `docs/superpowers/specs/2026-08-20-helpdesk-endpoint-cohosting-design.md`,
-  then create and execute the implementation plan in small verified commits.
+- **Deployment record:** immutable release
+  `436e1cb00acf19c4457141536ee7fd4461533737` is active at
+  `/opt/helpdesk/current`; Alembic revision is `136`. The dedicated
+  `helpdesk-server.service` and `helpdesk-control.service` are enabled and
+  active, bind only to loopback, and are exposed through the restricted
+  temporary IP bootstrap at `http://192.168.100.19:8080`. The fresh database
+  has no UI users or devices; no legacy Helpdesk data or agents were copied.
+- **Verification record:** focused deployment tests (19 passed), documentation
+  link check, Helpdesk API/Nginx smoke (200), Nginx syntax, service enablement
+  and Endpoint service health passed. `verify_workspace.py` did not complete
+  in the available local run and is not counted as a passing gate.
+- **Remaining gates:** create the initial administrator, obtain the separate
+  Endpoint service credential and acceptance, then complete FQDN/TLS/secure
+  cookie cutover and the new agent connection/auth rollout.
 
 ## 2026-08-17 Helpdesk Endpoint Integration v1
 
