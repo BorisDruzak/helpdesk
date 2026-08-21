@@ -32,8 +32,8 @@ create Endpoint credentials, parse an external reference, or use Endpoint
 correlation for authorization. There is no cross-service database foreign key.
 The Endpoint Agent must not receive `ticket_id` or any other Helpdesk entity.
 `X-Correlation-ID` is a transport-only tracing header: Helpdesk requires the
-Endpoint response to echo it exactly, never places it in a JSON envelope, and
-never uses it for authorization. It never reaches a Gateway WSS command. The
+Endpoint response to echo it exactly, never places it in a JSON envelope,
+remote Endpoint operation, or Gateway WSS command, and never uses it for authorization. The
 durable Endpoint idempotency key is exactly
 `helpdesk-endpoint-operation:<local-operation-id>`; the browser caller key is
 stored only with the actor that supplied it and never leaves Helpdesk.
@@ -82,6 +82,31 @@ the WSS/evidence flow. The Helpdesk side uses its independently migrated
 temporary PostgreSQL database. SQLite is not an acceptance backend for either
 side of this contract.
 
+## Release-gate evidence
+
+The immutable provider lock names `BorisDruzak/endpoint_platform` at published
+Endpoint mainline merge `54fe6b975b7e8c4dff067d01c847be1da4eb7a81`. Validation
+requires that exact Git root and HEAD, a clean non-ignored checkout, a
+provider-owned relative OpenAPI path, and a SHA-256 over the OpenAPI Git blob
+bytes. It rejects alternate repositories, feature tips, dirty files, and
+checkout line-ending differences that do not match the committed blob.
+
+The Helpdesk endpoint-acceptance workflow runs on pull requests and pushes to
+`codex/helpdesk-process-model`, and manually. It records the exact Helpdesk
+and Endpoint commits, the OpenAPI digest, JUnit XML, and the fact that it uses
+a real provider app, real Gateway WSS, and a protocol-compatible Gateway WSS
+test client without production changes.
+
+The vertical acceptance protects the following invariants: Helpdesk keeps the
+original ticket status; terminal reconciliation creates one safe evidence row
+from one remote operation; the local operation, diagnostic step and last
+active diagnostic session complete; and no Helpdesk `DeviceOutbox`, legacy
+WebSocket, or `ToolService` dispatch is used. The Gateway payload excludes
+Helpdesk-private data. The forward-only migration rehearsal starts at revision
+134, preserves representative local data through revision 137, verifies the
+new local constraints/indexes and a clean `head` upgrade, and writes its
+machine-readable report under `artifacts/migration/`.
+
 ## Local facade and lifecycle
 
 For a browser request Helpdesk authorizes ticket/diagnostic access locally,
@@ -92,8 +117,9 @@ reference once bound, last safe status, retry/lease data, and evidence marker.
 No HTTP call occurs inside that transaction.
 
 A worker then creates or reads the Endpoint operation with the same idempotency
-key. It may safely recover a crash after remote creation but before local
-binding. Endpoint state projects to the existing Helpdesk lifecycle:
+key. The local opaque correlation reference never crosses the HTTP boundary. It
+may safely recover a crash after remote creation but before local binding.
+Endpoint state projects to the existing Helpdesk lifecycle:
 
 | Endpoint state | Helpdesk `Operation` / diagnostic step |
 | --- | --- |

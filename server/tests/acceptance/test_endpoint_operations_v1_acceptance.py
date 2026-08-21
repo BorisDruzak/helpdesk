@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import aiohttp
 import asyncpg
@@ -29,7 +29,16 @@ from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import DiagnosticEvidence, Ticket
+from app.db.models import (
+    DeviceOutbox,
+    DiagnosticEvidence,
+    DiagnosticSession,
+    DiagnosticStep,
+    EndpointOperationLink,
+    Operation,
+    Ticket,
+)
+from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 from app.services.endpoint_diagnostic_operation_service import (
     EndpointDiagnosticOperationRequest,
@@ -72,6 +81,7 @@ from endpoint_server.config import Settings  # noqa: E402
 from endpoint_server.db.models import (  # noqa: E402
     Device,
     DeviceCredential,
+    EndpointOperation,
     ServiceClient,
 )
 from endpoint_server.enrollment.credentials import device_token_digest  # noqa: E402
@@ -246,7 +256,20 @@ async def _complete_next_command(websocket, *, device_id: str, sequence: int) ->
         received = json.loads(await websocket.recv())
         if received["kind"] == "command":
             command = received["payload"]
-            assert "helpdesk" not in json.dumps(command, sort_keys=True).lower()
+            serialized_command = json.dumps(command, sort_keys=True).lower()
+            forbidden_command_content = (
+                "helpdesk",
+                "ticket",
+                "requester",
+                "actor",
+                "queue",
+                "diagnostic_session",
+                "caller_idempotency_key",
+                "service credential",
+                "service_credential",
+                "authorization",
+            )
+            assert not any(value in serialized_command for value in forbidden_command_content)
             diagnostic = DeviceContextDiagnosticV1.model_validate(
                 {
                     "schema_version": "device_context_v1",
@@ -344,6 +367,14 @@ async def test_real_endpoint_provider_adapter_and_gateway_wss_acceptance(
             device_response = await http.get(f"{base_url}/api/v1/devices/{device.id}", headers=headers)
             assert device_response.status == 200
             assert device_response.headers["X-Correlation-ID"] == "route-correlation"
+            invalid_correlation = "invalid correlation value"
+            invalid_response = await http.get(
+                f"{base_url}/api/v1/devices/{device.id}",
+                headers={"Authorization": f"Bearer {service_token}", "X-Correlation-ID": invalid_correlation},
+            )
+            assert invalid_response.status == 422
+            assert invalid_response.headers.get("X-Correlation-ID") != invalid_correlation
+            assert invalid_correlation not in await invalid_response.text()
             capabilities_response = await http.get(f"{base_url}/api/v1/devices/{device.id}/capabilities", headers=headers)
             assert capabilities_response.status == 200
             create_headers = headers | {"Idempotency-Key": "route-idempotency-0001"}
@@ -407,7 +438,7 @@ class _FacadeAccess:
 @pytest.mark.cross_repo_acceptance
 @pytest.mark.db_cleanup("observer_diagnostics")
 async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
-    tmp_path: Path, test_database_admin_url: str, test_engine
+    tmp_path: Path, test_database_admin_url: str, test_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Full durable Helpdesk facade → provider → WSS → evidence vertical slice."""
 
@@ -449,6 +480,18 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
     )
     session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
     ticket_id = str(uuid4())
+    original_ticket_status = "in_progress"
+
+    async def _legacy_dispatch_called(*_args, **_kwargs) -> None:
+        raise AssertionError("Endpoint diagnostics must not use a Helpdesk legacy dispatch path")
+
+    from tools.service import ToolService
+    from websocket import protocol as websocket_protocol
+
+    monkeypatch.setattr(ToolService, "run_tool", _legacy_dispatch_called)
+    monkeypatch.setattr(websocket_protocol, "send_ws_command", _legacy_dispatch_called)
+    monkeypatch.setattr(websocket_protocol, "enqueue_command_async", _legacy_dispatch_called)
+    monkeypatch.setattr(DeviceOutboxRepo, "enqueue_command", _legacy_dispatch_called)
     try:
         async with session_factory() as session:
             session.add(
@@ -457,7 +500,7 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
                     device_id="helpdesk-local-device",
                     title="Endpoint acceptance",
                     description="Endpoint facade acceptance",
-                    status="in_progress",
+                    status=original_ticket_status,
                     requester_id="acceptance-requester",
                 )
             )
@@ -499,6 +542,17 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
         assert await reconciler.reconcile_once(limit=1) == 1
         assert await reconciler.reconcile_once(limit=1) == 0
         async with session_factory() as session:
+            ticket = await session.get(Ticket, ticket_id)
+            operation = await session.get(Operation, local_operation.operation_id)
+            link = (
+                await session.execute(
+                    select(EndpointOperationLink).where(
+                        EndpointOperationLink.operation_id == local_operation.operation_id
+                    )
+                )
+            ).scalar_one()
+            diagnostic_step = await session.get(DiagnosticStep, link.diagnostic_step_id)
+            diagnostic_session = await session.get(DiagnosticSession, link.diagnostic_session_id)
             evidence = list(
                 (await session.execute(
                     select(DiagnosticEvidence).where(
@@ -507,8 +561,39 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
                     )
                 )).scalars()
             )
+            outbox_rows = list(
+                (await session.execute(
+                    select(DeviceOutbox).where(
+                        DeviceOutbox.device_id == "helpdesk-local-device",
+                        DeviceOutbox.operation_id == local_operation.operation_id,
+                    )
+                )).scalars()
+            )
+
+        async with provider() as session:
+            remote_operations = list(
+                (await session.execute(
+                    select(EndpointOperation).where(
+                        EndpointOperation.requested_by_service_client_id == client.id,
+                        EndpointOperation.idempotency_key == link.create_idempotency_key,
+                    )
+                )).scalars()
+            )
         assert len(evidence) == 1
-        assert evidence[0].source_id is not None
+        assert ticket is not None and ticket.status == original_ticket_status
+        assert operation is not None and operation.status == "succeeded"
+        assert diagnostic_step is not None and diagnostic_step.status == "completed"
+        assert diagnostic_session is not None and diagnostic_session.status == "completed"
+        assert link.endpoint_operation_ref is not None
+        assert link.safe_result_snapshot_json is not None
+        assert link.last_error_code is None
+        assert not outbox_rows
+        assert len(remote_operations) == 1
+        assert remote_operations[0].id == UUID(link.endpoint_operation_ref)
+        assert remote_operations[0].correlation is None
+        assert evidence[0].source_type == "endpoint_platform"
+        assert evidence[0].source_id == link.endpoint_operation_ref
+        assert evidence[0].normalized_payload == link.safe_result_snapshot_json
         assert evidence[0].normalized_payload["processes"][0]["name"] == "acceptance-safe-process"
     finally:
         await _stop(server, task)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
+import logging
 import re
 from typing import Any, Literal
 
@@ -28,6 +29,9 @@ from domain_ports.endpoint import (
     EndpointUnavailable,
     OpaqueEndpointRef,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class _ImmutableEndpointDeviceDTO(BaseModel):
@@ -84,6 +88,52 @@ class EndpointDeviceReferenceResolution(_ImmutableEndpointDeviceDTO):
     persisted: bool = False
 
 
+async def record_rejected_endpoint_device_mapping(
+    *,
+    session_factory: Callable[[], Any],
+    ticket_id: str,
+    requested_endpoint_device_ref: str | None,
+    replace: bool,
+    reason_code: str,
+    actor_id: str,
+    actor_role: str,
+    request_correlation: str | None,
+) -> None:
+    """Persist a best-effort safe audit for a rejected admin mapping attempt."""
+
+    safe_requested_ref = _safe_endpoint_ref(requested_endpoint_device_ref)
+    safe_correlation = request_correlation if _safe_correlation(request_correlation) else None
+    try:
+        async with session_factory() as session:
+            ticket = await session.get(Ticket, ticket_id)
+            current_ref = _safe_endpoint_ref(
+                getattr(ticket, "endpoint_device_ref", None) if ticket is not None else None
+            )
+            after_json: dict[str, str | bool | None] = {
+                "requested_endpoint_device_ref": safe_requested_ref,
+                "replace": replace is True,
+                "reason_code": reason_code,
+            }
+            if safe_correlation is not None:
+                after_json["request_correlation"] = safe_correlation
+            session.add(
+                TicketAdminAudit(
+                    entity_type="endpoint_device_mapping",
+                    entity_id=ticket_id,
+                    action="rejected",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    before_json={"endpoint_device_ref": current_ref},
+                    after_json=after_json,
+                    trace_id=None,
+                )
+            )
+            await session.flush()
+            await session.commit()
+    except Exception:
+        _LOGGER.warning("endpoint_device_mapping_rejected_audit_failed")
+
+
 class EndpointDeviceReferenceService:
     """Resolve a verified mapping; never derive one from legacy device metadata."""
 
@@ -120,18 +170,72 @@ class EndpointDeviceReferenceService:
         try:
             device = EndpointDeviceRef(external_id=endpoint_device_ref)
         except ValidationError:
+            await self._record_rejected(
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=None,
+                replace=replace,
+                reason_code="ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                request_correlation=None,
+            )
             return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
 
         outcome = await self._endpoint_port.read_device(device)
         if isinstance(outcome, EndpointNotFound):
+            await self._record_rejected(
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=device.external_id,
+                replace=replace,
+                reason_code="ENDPOINT_DEVICE_NOT_FOUND",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                request_correlation=request_correlation,
+            )
             return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
         if isinstance(outcome, EndpointUnavailable):
+            await self._record_rejected(
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=device.external_id,
+                replace=replace,
+                reason_code="ENDPOINT_UNAVAILABLE",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                request_correlation=request_correlation,
+            )
             return self._unresolved("ENDPOINT_UNAVAILABLE")
         if not isinstance(outcome, EndpointDeviceProjection):
+            await self._record_rejected(
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=device.external_id,
+                replace=replace,
+                reason_code="ENDPOINT_DEVICE_MAPPING_INVALID",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                request_correlation=request_correlation,
+            )
             return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
         if outcome.device.external_id != device.external_id:
+            await self._record_rejected(
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=device.external_id,
+                replace=replace,
+                reason_code="ENDPOINT_DEVICE_MAPPING_EXACT_ID_MISMATCH",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                request_correlation=request_correlation,
+            )
             return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
         if outcome.retired:
+            await self._record_rejected(
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=device.external_id,
+                replace=replace,
+                reason_code="ENDPOINT_DEVICE_RETIRED",
+                actor_id=actor_id,
+                actor_role=actor_role,
+                request_correlation=request_correlation,
+            )
             return self._unresolved("ENDPOINT_DEVICE_RETIRED")
 
         snapshot = EndpointDeviceSnapshotV1(
@@ -145,6 +249,15 @@ class EndpointDeviceReferenceService:
         async with self._session_factory() as session:
             ticket = await session.get(Ticket, ticket_id, with_for_update=True)
             if ticket is None:
+                await self._record_rejected(
+                    ticket_id=ticket_id,
+                    requested_endpoint_device_ref=device.external_id,
+                    replace=replace,
+                    reason_code="ENDPOINT_TICKET_NOT_FOUND",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    request_correlation=request_correlation,
+                )
                 return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
             existing = getattr(ticket, "endpoint_device_ref", None)
             if existing == device.external_id:
@@ -154,12 +267,48 @@ class EndpointDeviceReferenceService:
                     persisted=False,
                 )
             if existing is None and replace:
+                await self._record_rejected(
+                    ticket_id=ticket_id,
+                    requested_endpoint_device_ref=device.external_id,
+                    replace=replace,
+                    reason_code="ENDPOINT_DEVICE_MAPPING_REPLACE_NOT_ALLOWED",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    request_correlation=request_correlation,
+                )
                 return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
-            if existing is not None and (
-                not replace
-                or expected_previous_ref != existing
-                or reason is None
-            ):
+            if existing is not None and not replace:
+                await self._record_rejected(
+                    ticket_id=ticket_id,
+                    requested_endpoint_device_ref=device.external_id,
+                    replace=replace,
+                    reason_code="ENDPOINT_DEVICE_MAPPING_REPLACE_REQUIRED",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    request_correlation=request_correlation,
+                )
+                return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
+            if existing is not None and expected_previous_ref != existing:
+                await self._record_rejected(
+                    ticket_id=ticket_id,
+                    requested_endpoint_device_ref=device.external_id,
+                    replace=replace,
+                    reason_code="ENDPOINT_DEVICE_MAPPING_PREVIOUS_REF_MISMATCH",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    request_correlation=request_correlation,
+                )
+                return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
+            if existing is not None and reason is None:
+                await self._record_rejected(
+                    ticket_id=ticket_id,
+                    requested_endpoint_device_ref=device.external_id,
+                    replace=replace,
+                    reason_code="ENDPOINT_DEVICE_MAPPING_REPLACEMENT_REASON_REQUIRED",
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    request_correlation=request_correlation,
+                )
                 return self._unresolved("ENDPOINT_DEVICE_MAPPING_INVALID")
             ticket.endpoint_device_ref = device.external_id
             ticket.endpoint_device_snapshot_json = snapshot.model_dump(mode="json")
@@ -214,6 +363,19 @@ class EndpointDeviceReferenceService:
         ],
     ) -> EndpointDeviceReferenceResolution:
         return EndpointDeviceReferenceResolution(status="unresolved", code=code)
+
+    async def _record_rejected(self, **kwargs: Any) -> None:
+        await record_rejected_endpoint_device_mapping(
+            session_factory=self._session_factory,
+            **kwargs,
+        )
+
+
+def _safe_endpoint_ref(value: object) -> str | None:
+    try:
+        return EndpointDeviceRef(external_id=value).external_id
+    except ValidationError:
+        return None
 
 
 def _safe_correlation(value: str | None) -> bool:
