@@ -265,8 +265,7 @@ async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -
     assert processed == 1
     assert len(port.create_calls) == 1
     assert port.create_calls[0][2] == "helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111"
-    assert port.create_calls[0][1].correlation is not None
-    assert port.create_calls[0][1].correlation.source_entity_id != "ticket-1"
+    assert port.create_calls[0][1].correlation is None
     assert store.committed == [
         {
             "claim": _claim(),

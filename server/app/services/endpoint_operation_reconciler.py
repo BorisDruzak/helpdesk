@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from sqlalchemy import or_, select
 
@@ -20,7 +20,6 @@ from domain_ports.endpoint import (
     EndpointForbidden,
     EndpointInvalidProjection,
     EndpointNotFound,
-    EndpointOperationCorrelation,
     EndpointOperationCreateRequest,
     EndpointOperationProjection,
     EndpointOperationRef,
@@ -214,10 +213,6 @@ class EndpointOperationReconciler:
                 return
             request = EndpointOperationCreateRequest(
                 parameters=EndpointDiagnosticParameters(reason=ENDPOINT_DIAGNOSTIC_REASON),
-                correlation=EndpointOperationCorrelation(
-                    source_entity_id=claim.correlation_ref or "",
-                    request_id=UUID(claim.operation_id),
-                ),
             )
             outcome = await self._endpoint_port.create_operation(
                 EndpointDeviceRef(external_id=claim.endpoint_device_ref),
