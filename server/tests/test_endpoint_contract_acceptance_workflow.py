@@ -22,6 +22,8 @@ def test_endpoint_contract_acceptance_runs_on_helpdesk_mainline_with_evidence() 
         "codex/helpdesk-process-model",
         "group: endpoint-contract-${{ github.ref }}",
         "cancel-in-progress: true",
+        "TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/pc_support_test_endpoint_ci",
+        "TEST_DATABASE_ADMIN_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres",
         "server/tests/test_endpoint_contract_lock.py",
         "server/tests/test_endpoint_http_adapter.py",
         "server/tests/test_endpoint_operation_reconciler.py",

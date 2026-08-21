@@ -19,6 +19,9 @@ permissions:
 jobs:
   cross-repository-acceptance:
     runs-on: ubuntu-latest
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/pc_support_test_endpoint_ci
+      TEST_DATABASE_ADMIN_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
     services:
       postgres:
         image: postgres:16
@@ -111,7 +114,6 @@ jobs:
       - name: Run true provider, Gateway WSS, and Helpdesk evidence acceptance
         env:
           ENDPOINT_PLATFORM_REPO: ${{ github.workspace }}/endpoint-platform
-          TEST_DATABASE_ADMIN_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
         run: |
           python -m pytest \
             server/tests/acceptance/test_endpoint_operations_v1_acceptance.py \
