@@ -21,6 +21,7 @@ _REQUIRED_KEYS = frozenset(
     }
 )
 _SHA256_LENGTH = 64
+EXPECTED_PROVIDER_REPOSITORY = "BorisDruzak/endpoint_platform"
 
 
 def _fail(message: str) -> NoReturn:
@@ -38,6 +39,8 @@ def _load_lock(path: Path) -> dict[str, str]:
         _fail("Endpoint contract lock has an unsupported schema version")
     if not all(isinstance(item, str) and item for item in value.values()):
         _fail("Endpoint contract lock fields must be non-empty strings")
+    if value["provider_repository"] != EXPECTED_PROVIDER_REPOSITORY:
+        _fail("Endpoint contract lock provider repository is unexpected")
     if len(value["provider_commit"]) != 40 or any(
         char not in "0123456789abcdef" for char in value["provider_commit"].lower()
     ):
@@ -59,6 +62,21 @@ def _provider_head(provider_root: Path) -> str:
         ).stdout.strip()
         if Path(top_level).resolve() != provider_root.resolve():
             _fail("provider root must be the Git checkout root")
+        working_tree_status = subprocess.run(
+            (
+                "git",
+                "-C",
+                str(provider_root),
+                "status",
+                "--porcelain",
+                "--untracked-files=all",
+            ),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        if working_tree_status:
+            _fail("provider checkout must be clean")
         return subprocess.run(
             ("git", "-C", str(provider_root), "rev-parse", "HEAD"),
             check=True,
