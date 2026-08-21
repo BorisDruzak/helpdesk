@@ -44,8 +44,9 @@ async def _insert_representative_legacy_rows(database_url: str) -> dict[str, str
     try:
         await connection.execute(
             """
-            INSERT INTO tickets (ticket_id, device_id, title, description, status, requester_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO tickets (
+                ticket_id, device_id, title, description, status, requester_id, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, now(), now())
             """,
             ticket_id,
             "legacy-device-0001",
