@@ -37,7 +37,7 @@ def test_endpoint_contract_acceptance_runs_on_helpdesk_mainline_with_evidence() 
         '"provider_app": "real"',
         '"gateway_wss": "real"',
         '"agent_client": "protocol_test_client"',
-        '"production_changed": false',
+        '"production_changed": False',
     ):
         assert required in workflow
 

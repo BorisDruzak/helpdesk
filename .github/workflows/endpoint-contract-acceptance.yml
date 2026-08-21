@@ -139,7 +139,7 @@ jobs:
               "provider_app": "real",
               "gateway_wss": "real",
               "agent_client": "protocol_test_client",
-              "production_changed": false,
+              "production_changed": False,
           }
           output = Path("artifacts/acceptance-summary.json")
           output.parent.mkdir(parents=True, exist_ok=True)
