@@ -62,3 +62,12 @@ def test_endpoint_cutover_surface_has_no_legacy_agent_runtime_imports():
 def test_ws_ui_route_registration_remains_present():
     routes = (ROOT / "server" / "routes.py").read_text(encoding="utf-8")
     assert "web.get('/ws_ui', websocket_ui_handler)" in routes
+
+
+def test_endpoint_diagnostic_canary_runbook_preserves_forward_only_rollback_guards():
+    runbook = (ROOT / "docs" / "runbooks" / "ENDPOINT_DIAGNOSTIC_CANARY.md").read_text(
+        encoding="utf-8"
+    )
+    assert "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint" in runbook
+    assert "Do not perform database downgrade" in runbook
+    assert "duplicate evidence" in runbook.lower()
