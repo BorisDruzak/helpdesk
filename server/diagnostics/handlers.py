@@ -28,6 +28,7 @@ from app.repos.diagnostics_repo import DiagnosticRepo
 from app.services.endpoint_device_reference_service import (
     EndpointDeviceMappingRequestV1,
     EndpointDeviceReferenceService,
+    record_rejected_endpoint_device_mapping,
 )
 from app.services.endpoint_diagnostic_operation_service import (
     EndpointDiagnosticOperationService,
@@ -1112,6 +1113,17 @@ async def handle_admin_ticket_endpoint_device_mapping(request: web.Request) -> w
     except ValidationError:
         mapping_request = None
     if not ticket_id or mapping_request is None:
+        if ticket_id:
+            await record_rejected_endpoint_device_mapping(
+                session_factory=get_session_maker,
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=None,
+                replace=False,
+                reason_code="ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID",
+                actor_id=str(getattr(request.get("auth_context"), "actor_id", "admin")),
+                actor_role=str(getattr(request.get("auth_context"), "actor_role", "admin")),
+                request_correlation=None,
+            )
         return web.json_response(
             {"status": "error", "error_code": "ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID"}, status=400
         )
