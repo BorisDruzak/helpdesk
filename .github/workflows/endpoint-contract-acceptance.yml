@@ -105,6 +105,7 @@ jobs:
             server/tests/test_endpoint_operation_reconciler.py \
             server/tests/test_endpoint_diagnostic_provider.py \
             server/tests/test_endpoint_diagnostic_cutover_guards.py \
+            server/tests/migration/test_endpoint_integration_upgrade_rehearsal.py \
             -q --tb=short
 
       - name: Run true provider, Gateway WSS, and Helpdesk evidence acceptance
@@ -151,4 +152,5 @@ jobs:
           path: |
             artifacts/endpoint-contract-acceptance.xml
             artifacts/acceptance-summary.json
+            artifacts/migration/endpoint-integration-rehearsal.json
           if-no-files-found: error
