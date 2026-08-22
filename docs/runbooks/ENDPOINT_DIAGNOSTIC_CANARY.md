@@ -26,6 +26,19 @@ Before starting, record the deployed Endpoint and Helpdesk commits and verify:
 - A dedicated test ticket and an observation owner are assigned. The ticket is
   not a customer-impacting incident.
 
+Validate the protected canary manifest before changing any deployment flag:
+
+```text
+python scripts/canary/endpoint_diagnostic_canary.py preflight \
+  --manifest <protected-evidence-root>/manifest.json \
+  --environment staging
+```
+
+This command is validation-only. It accepts no token or credential argument,
+rejects production, raw idempotency keys and secret-like fields, and performs
+no operation creation. The mutable-stage approval variables are checked only
+when a reviewed operator flow explicitly requests that gate.
+
 ## Stage 1 — TLS and read-only provider smoke
 
 Set Endpoint `ENDPOINT_OPERATIONS_API_ENABLED=true`. Set Helpdesk
