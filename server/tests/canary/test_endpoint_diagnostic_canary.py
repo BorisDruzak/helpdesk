@@ -1,0 +1,88 @@
+"""Fail-closed contracts for the Endpoint diagnostic canary orchestrator."""
+
+from __future__ import annotations
+
+import copy
+
+import pytest
+
+from scripts.canary.endpoint_diagnostic_canary import CanaryManifestError, validate_manifest
+
+
+def _manifest() -> dict[str, object]:
+    return {
+        "schema_version": "endpoint_diagnostic_canary_v1",
+        "environment": {
+            "environment_id": "endpoint-helpdesk-staging",
+            "environment_class": "staging",
+            "change_id": "CHG-ALT-101",
+            "observation_owner": "staging-owner",
+        },
+        "revisions": {
+            "endpoint_repository": "BorisDruzak/endpoint_platform",
+            "endpoint_commit": "a" * 40,
+            "helpdesk_repository": "BorisDruzak/helpdesk",
+            "helpdesk_commit": "b" * 40,
+            "endpoint_database_revision": "0011_gateway_wss",
+            "helpdesk_database_revision": "137",
+            "agent_source_revision": "a" * 40,
+            "agent_version": "3.1.99",
+        },
+        "targets": {
+            "endpoint_origin": "https://endpoint-staging.sosnadmin.local",
+            "helpdesk_origin": "https://helpdesk-staging.sosnadmin.local",
+            "agent_host_safe_label": "alt-canary-70",
+            "endpoint_device_id": "00000000-0000-4000-8000-000000000701",
+            "helpdesk_ticket_id": "ticket-staging-701",
+        },
+        "baseline": {"ticket_status": "open", "helpdesk_operation_count": 0, "endpoint_operation_count": 0, "evidence_count": 0, "device_outbox_count": 0, "recorded_at": "2026-08-23T00:00:00Z"},
+        "execution": {"canary_id": "canary-701", "caller_idempotency_key_hash": "c" * 64, "local_operation_id": None, "remote_operation_id": None, "started_at": None, "completed_at": None, "final_status": "not_started"},
+        "rollback": {"started_at": None, "completed_at": None, "final_endpoint_api_mode": "disabled", "final_helpdesk_port_mode": "unavailable", "final_helpdesk_execution_mode": "legacy"},
+        "result": {"success": False, "stop_reason": None, "production_changed": False},
+    }
+
+
+def test_manifest_accepts_staging_dry_run_without_any_mutation_authority() -> None:
+    result = validate_manifest(_manifest(), environment="staging", apply=False, env={})
+
+    assert result["environment_class"] == "staging"
+    assert result["apply"] is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        (("environment", "environment_class"), "production"),
+        (("execution", "caller_idempotency_key_hash"), "not-a-hash"),
+        (("result", "production_changed"), True),
+    ],
+)
+def test_manifest_rejects_unsafe_environment_or_execution_values(
+    field: tuple[str, str], value: object
+) -> None:
+    manifest = copy.deepcopy(_manifest())
+    manifest[field[0]][field[1]] = value  # type: ignore[index]
+
+    with pytest.raises(CanaryManifestError):
+        validate_manifest(manifest, environment="staging", apply=False, env={})
+
+
+def test_apply_requires_exact_environment_approval_and_does_not_accept_secrets() -> None:
+    manifest = _manifest()
+    env = {
+        "CANARY_APPROVED": "true",
+        "CANARY_ENVIRONMENT": "staging",
+        "CANARY_CHANGE_ID": "CHG-ALT-101",
+        "CANARY_ENDPOINT_HOST": "endpoint-staging.sosnadmin.local",
+        "CANARY_HELPDESK_HOST": "helpdesk-staging.sosnadmin.local",
+        "CANARY_AGENT_HOST": "alt-canary-70",
+        "CANARY_ENDPOINT_DEVICE_ID": "00000000-0000-4000-8000-000000000701",
+        "CANARY_HELPDESK_TICKET_ID": "ticket-staging-701",
+        "CANARY_EVIDENCE_ROOT": "/var/lib/helpdesk/canary-evidence",
+    }
+
+    assert validate_manifest(manifest, environment="staging", apply=True, env=env)["apply"] is True
+
+    manifest["service_token"] = "forbidden"
+    with pytest.raises(CanaryManifestError, match="forbidden"):
+        validate_manifest(manifest, environment="staging", apply=False, env={})
