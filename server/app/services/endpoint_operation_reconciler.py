@@ -506,6 +506,10 @@ class SqlAlchemyEndpointOperationReconcileStore:
                         state_changed = True
                     if link.diagnostic_session_id:
                         diagnostic_session = await session.get(DiagnosticSession, link.diagnostic_session_id, with_for_update=True)
+                        # Runtime sessions intentionally disable autoflush.  Persist the
+                        # terminal step state before checking whether anything remains
+                        # active in this session.
+                        await session.flush()
                         active_step = (
                             await session.execute(
                                 select(DiagnosticStep.id).where(
