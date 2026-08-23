@@ -38,10 +38,12 @@
 - `server/app/services/endpoint_diagnostic_operation_service.py` creates the
   ticket-facing Endpoint diagnostic facade with a deterministic local operation
   id. `server/app/services/endpoint_operation_reconciler.py` claims durable
-  links, calls only `EndpointPort` outside database transactions, and projects
-  safe terminal results into diagnostic evidence. `server/server.py` starts
-  its runner only for `ENDPOINT_PORT_MODE=external` together with
-  `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint`, then stops it during shutdown.
+  links, calls only `EndpointPort` outside database transactions, projects
+  safe terminal results into diagnostic evidence, and idempotently completes an
+  already-terminal linked diagnostic session without another remote call.
+  `server/server.py` starts its runner only for `ENDPOINT_PORT_MODE=external`
+  together with `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint`, then stops it
+  during shutdown.
   Its only post-commit notification is a reloaded local operation through the
   Helpdesk UI publisher, never an agent command dispatch.
 - `server/diagnostics/providers/endpoint_platform.py` exposes only
