@@ -95,6 +95,8 @@ class EndpointOperationReconcileStore(Protocol):
         next_attempt_at: datetime,
     ) -> bool: ...
 
+    async def complete_terminal_diagnostic_sessions(self, *, limit: int) -> int: ...
+
 
 def endpoint_retry_delay_seconds(attempt_count: int, *, random: Callable[[], float]) -> float:
     """Bounded 2/5/15/30/60 second retry schedule with one-sided <=10% jitter."""
@@ -156,6 +158,7 @@ class EndpointOperationReconciler:
             except Exception as error:
                 await self._record_unexpected_claim_failure(claim, error)
             processed += 1
+        await self._store.complete_terminal_diagnostic_sessions(limit=limit)
         return processed
 
     async def _record_unexpected_claim_failure(
@@ -565,6 +568,82 @@ class SqlAlchemyEndpointOperationReconcileStore:
                 operation.error_message = None
                 await session.flush()
                 return True
+
+    async def complete_terminal_diagnostic_sessions(self, *, limit: int) -> int:
+        """Close sessions whose successful Endpoint operation was already persisted.
+
+        This makes completion idempotent after a process interruption between the
+        operation state update and the session lifecycle update.  It never calls
+        Endpoint, changes an operation, or creates evidence.
+        """
+
+        if limit < 1:
+            return 0
+        active_step_exists = (
+            select(DiagnosticStep.id)
+            .where(
+                DiagnosticStep.session_id == DiagnosticSession.id,
+                DiagnosticStep.status.in_(("pending", "running")),
+            )
+            .exists()
+        )
+        success_evidence_exists = (
+            select(DiagnosticEvidence.id)
+            .where(
+                DiagnosticEvidence.ticket_id == Operation.ticket_id,
+                DiagnosticEvidence.source_type == "endpoint_platform",
+                DiagnosticEvidence.source_id == EndpointOperationLink.endpoint_operation_ref,
+                DiagnosticEvidence.kind == "diagnostic_result",
+                DiagnosticEvidence.status == "succeeded",
+            )
+            .exists()
+        )
+        async with self._session_factory() as session:
+            async with session.begin():
+                session_ids = list(
+                    (
+                        await session.execute(
+                            select(DiagnosticSession.id)
+                            .join(
+                                EndpointOperationLink,
+                                EndpointOperationLink.diagnostic_session_id == DiagnosticSession.id,
+                            )
+                            .join(
+                                Operation,
+                                Operation.operation_id == EndpointOperationLink.operation_id,
+                            )
+                            .where(
+                                DiagnosticSession.status.in_(("draft", "running")),
+                                Operation.status == "succeeded",
+                                EndpointOperationLink.remote_status == "succeeded",
+                                EndpointOperationLink.endpoint_operation_ref.is_not(None),
+                                EndpointOperationLink.safe_result_snapshot_json.is_not(None),
+                                ~active_step_exists,
+                                success_evidence_exists,
+                            )
+                            .distinct()
+                            .order_by(DiagnosticSession.id.asc())
+                            .limit(limit)
+                        )
+                    ).scalars().all()
+                )
+                completed = 0
+                for session_id in session_ids:
+                    diagnostic_session = await session.get(
+                        DiagnosticSession,
+                        session_id,
+                        with_for_update=True,
+                    )
+                    if (
+                        diagnostic_session is None
+                        or diagnostic_session.status not in {"draft", "running"}
+                    ):
+                        continue
+                    diagnostic_session.status = "completed"
+                    diagnostic_session.finished_at = datetime.now(timezone.utc)
+                    completed += 1
+                await session.flush()
+                return completed
 
 
 def _validated_safe_success_snapshot(outcome: EndpointOperationProjection) -> dict[str, Any] | None:
