@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import ast
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import EndpointOperationLink, Operation
+from app.db.models import (
+    DiagnosticEvidence,
+    DiagnosticSession,
+    DiagnosticStep,
+    EndpointOperationLink,
+    Operation,
+    Ticket,
+)
 from app.services.endpoint_operation_reconciler import (
     EndpointOperationReconciler,
     EndpointOperationReconcilerRunner,
@@ -37,6 +45,7 @@ class _ClaimStore:
     claims: list[EndpointReconcileClaim]
     committed: list[dict]
     unexpected_failures: list[dict]
+    terminal_session_repair_limits: list[int] = field(default_factory=list)
 
     async def claim_ready(self, *, owner: str, now: datetime, limit: int, lease_seconds: int):
         return [self.claims.pop(0)] if self.claims and limit == 1 else []
@@ -48,6 +57,10 @@ class _ClaimStore:
     async def record_unexpected_failure(self, **values):
         self.unexpected_failures.append(values)
         return True
+
+    async def complete_terminal_diagnostic_sessions(self, *, limit: int) -> int:
+        self.terminal_session_repair_limits.append(limit)
+        return 0
 
 
 class _Port:
@@ -187,6 +200,221 @@ async def test_sql_store_records_unexpected_failure_only_for_live_claim(test_eng
     assert operation.error_code == "endpoint_reconcile_unexpected"
 
 
+@pytest.mark.asyncio
+async def test_sql_store_persists_completed_session_with_autoflush_disabled(test_engine) -> None:
+    """The production sessionmaker must not leave the operation session draft."""
+
+    now = datetime(2026, 8, 23, tzinfo=timezone.utc)
+    operation_id = "78787878-7878-7878-7878-787878787878"
+    ticket_id = "89898989-8989-8989-8989-898989898989"
+    session_id = "abababab-abab-abab-abab-abababababab"
+    step_id = "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False, autoflush=False)
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="local-ticket-device",
+                title="Endpoint diagnostic",
+                description="Endpoint diagnostic",
+                status="queued",
+                requester_id="test-requester",
+            )
+        )
+        await session.flush()
+        operation = Operation(
+            operation_id=operation_id,
+            device_id="local-ticket-device",
+            ticket_id=ticket_id,
+            kind="endpoint_operation",
+            actor_role="system",
+            trace_id="efefefef-efef-efef-efef-efefefefefef",
+            status="queued",
+            phase="endpoint_create_pending",
+            queued_at=now,
+        )
+        diagnostic_session = DiagnosticSession(
+            id=session_id,
+            ticket_id=ticket_id,
+            status="draft",
+            trigger_source="endpoint_platform",
+        )
+        step = DiagnosticStep(
+            id=step_id,
+            session_id=session_id,
+            ticket_id=ticket_id,
+            step_type="endpoint_operation",
+            capability_id="context.diagnostic.collect",
+            operation_id=operation_id,
+            status="pending",
+        )
+        session.add_all((operation, diagnostic_session))
+        await session.flush()
+        session.add(step)
+        await session.flush()
+        link = EndpointOperationLink(
+            link_id="dededede-dede-dede-dede-dededededede",
+            operation_id=operation_id,
+            endpoint_device_ref="endpoint-device-1",
+            capability_code="context.diagnostic.collect",
+            create_idempotency_key="helpdesk-endpoint-operation:db-session-complete",
+            correlation_ref=endpoint_operation_correlation_ref(operation_id),
+            remote_status="create_pending",
+            attempt_count=0,
+            next_attempt_at=now,
+            diagnostic_session_id=session_id,
+            diagnostic_step_id=step_id,
+        )
+        session.add(link)
+        await session.commit()
+
+    store = SqlAlchemyEndpointOperationReconcileStore(session_maker)
+    claim = (await store.claim_ready(owner="worker-a", now=now, limit=1, lease_seconds=30))[0]
+    safe_result = EndpointDiagnosticResultProjection(
+        collected_at=now,
+        processes=(EndpointDiagnosticProcessProjection(name="safe-process", state="running"),),
+    ).model_dump(mode="json")
+
+    assert await store.commit(
+        claim=claim,
+        endpoint_operation_ref="endpoint-operation-db-session-complete",
+        remote_status="succeeded",
+        operation_status="succeeded",
+        phase="endpoint_succeeded",
+        error_code=None,
+        safe_result_snapshot=safe_result,
+        next_attempt_at=now,
+    )
+
+    async with session_maker() as session:
+        persisted_session = await session.get(DiagnosticSession, session_id)
+        persisted_step = await session.get(DiagnosticStep, step_id)
+        evidence = await session.scalar(
+            select(DiagnosticEvidence).where(
+                DiagnosticEvidence.ticket_id == ticket_id,
+                DiagnosticEvidence.source_type == "endpoint_platform",
+            )
+        )
+
+    assert persisted_session is not None and persisted_session.status == "completed"
+    assert persisted_step is not None and persisted_step.status == "completed"
+    assert evidence is not None
+
+
+@pytest.mark.asyncio
+async def test_sql_store_completes_previously_terminal_diagnostic_session(test_engine) -> None:
+    """A completed operation repairs only its unfinished linked session."""
+
+    now = datetime(2026, 8, 23, tzinfo=timezone.utc)
+    operation_id = "78787878-7878-7878-7878-787878787879"
+    ticket_id = "89898989-8989-8989-8989-898989898990"
+    session_id = "abababab-abab-abab-abab-abababababac"
+    step_id = "cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdce"
+    remote_ref = "endpoint-operation-complete-repair"
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False, autoflush=False)
+
+    async with session_maker() as session:
+        session.add(
+            Ticket(
+                ticket_id=ticket_id,
+                device_id="local-ticket-device",
+                title="Endpoint diagnostic",
+                description="Endpoint diagnostic",
+                status="queued",
+                requester_id="test-requester",
+            )
+        )
+        await session.flush()
+        operation = Operation(
+            operation_id=operation_id,
+            device_id="local-ticket-device",
+            ticket_id=ticket_id,
+            kind="endpoint_operation",
+            actor_role="system",
+            trace_id="efefefef-efef-efef-efef-efefefefeff0",
+            status="succeeded",
+            phase="endpoint_succeeded",
+            queued_at=now,
+            finished_at=now,
+        )
+        diagnostic_session = DiagnosticSession(
+            id=session_id,
+            ticket_id=ticket_id,
+            status="draft",
+            trigger_source="endpoint_platform",
+        )
+        step = DiagnosticStep(
+            id=step_id,
+            session_id=session_id,
+            ticket_id=ticket_id,
+            step_type="endpoint_operation",
+            capability_id="context.diagnostic.collect",
+            operation_id=operation_id,
+            status="completed",
+            finished_at=now,
+        )
+        session.add_all((operation, diagnostic_session))
+        await session.flush()
+        session.add(step)
+        await session.flush()
+        session.add_all(
+            (
+                EndpointOperationLink(
+                    link_id="dededede-dede-dede-dede-dedededededf",
+                    operation_id=operation_id,
+                    endpoint_device_ref="endpoint-device-1",
+                    endpoint_operation_ref=remote_ref,
+                    capability_code="context.diagnostic.collect",
+                    create_idempotency_key="helpdesk-endpoint-operation:db-session-repair",
+                    correlation_ref=endpoint_operation_correlation_ref(operation_id),
+                    remote_status="succeeded",
+                    safe_result_snapshot_json={"kind": "safe_system_probe", "ok": True},
+                    attempt_count=0,
+                    next_attempt_at=now,
+                    diagnostic_session_id=session_id,
+                    diagnostic_step_id=step_id,
+                ),
+                DiagnosticEvidence(
+                    id="edededed-eded-eded-eded-edededededed",
+                    ticket_id=ticket_id,
+                    session_id=session_id,
+                    step_id=step_id,
+                    source_type="endpoint_platform",
+                    source_id=remote_ref,
+                    provider_id="endpoint_platform",
+                    capability_id="context.diagnostic.collect",
+                    kind="diagnostic_result",
+                    domain="diagnostics",
+                    perspective="endpoint_platform",
+                    title="Endpoint diagnostic collection",
+                    summary="Endpoint diagnostic collection completed",
+                    status="succeeded",
+                    normalized_payload={"kind": "safe_system_probe", "ok": True},
+                    redaction_level="endpoint_safe_projection",
+                    tags=[],
+                ),
+            )
+        )
+        await session.commit()
+
+    store = SqlAlchemyEndpointOperationReconcileStore(session_maker)
+    assert await store.complete_terminal_diagnostic_sessions(limit=1) == 1
+
+    async with session_maker() as session:
+        diagnostic_session = await session.get(DiagnosticSession, session_id)
+        evidence = (
+            await session.execute(
+                select(DiagnosticEvidence).where(DiagnosticEvidence.ticket_id == ticket_id)
+            )
+        ).scalars().all()
+
+    assert diagnostic_session is not None
+    assert diagnostic_session.status == "completed"
+    assert diagnostic_session.finished_at is not None
+    assert len(evidence) == 1
+
+
 def test_retry_delay_has_bounded_jitter_and_caps_at_five_minutes() -> None:
     assert endpoint_retry_delay_seconds(0, random=lambda: 0.0) == 2.0
     assert endpoint_retry_delay_seconds(4, random=lambda: 1.0) == 66.0
@@ -263,6 +491,7 @@ async def test_reconcile_unavailable_schedules_retry_without_legacy_dispatch() -
     processed = await reconciler.reconcile_once(limit=1)
 
     assert processed == 1
+    assert store.terminal_session_repair_limits == [1]
     assert len(port.create_calls) == 1
     assert port.create_calls[0][2] == "helpdesk-endpoint-operation:11111111-1111-1111-1111-111111111111"
     assert port.create_calls[0][1].correlation is None
