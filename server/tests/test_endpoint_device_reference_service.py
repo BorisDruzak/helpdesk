@@ -485,18 +485,58 @@ async def test_admin_mapping_handler_rejects_schema_drift_before_provider_access
         "status": "error",
         "error_code": "ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID",
     }
-    assert rejected == [
-        {
-            "session_factory": handlers.get_session_maker,
-            "ticket_id": "ticket-1",
-            "requested_endpoint_device_ref": None,
-            "replace": False,
-            "reason_code": "ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID",
-            "actor_id": "admin-42",
-            "actor_role": "admin",
-            "request_correlation": None,
-        }
-    ]
+    assert len(rejected) == 1
+    recorded = rejected[0]
+    assert callable(recorded.pop("session_factory"))
+    assert recorded == {
+        "ticket_id": "ticket-1",
+        "requested_endpoint_device_ref": None,
+        "replace": False,
+        "reason_code": "ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID",
+        "actor_id": "admin-42",
+        "actor_role": "admin",
+        "request_correlation": None,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
+async def test_admin_mapping_handler_uses_resolved_sessionmaker_for_verified_mapping(monkeypatch):
+    """A real admin mapping must persist instead of treating get_session_maker as a session."""
+
+    import diagnostics.handlers as handlers
+
+    ticket = _ticket()
+    sessions = _SessionFactory(ticket)
+    endpoint_port = _EndpointPort(sessions, _device_projection())
+
+    class _Ports:
+        endpoint = endpoint_port
+
+    monkeypatch.setattr(handlers, "get_session_maker", lambda: sessions)
+    monkeypatch.setattr(handlers, "DomainPortContainer", type("_Container", (), {"from_config": classmethod(lambda cls: _Ports())}))
+
+    response = await handlers.handle_admin_ticket_endpoint_device_mapping(
+        _MappingHandlerRequest(
+            actor_role="admin",
+            payload={
+                "schema_version": "endpoint_device_mapping_request_v1",
+                "endpoint_device_ref": "legacy-device",
+                "replace": False,
+                "expected_previous_ref": None,
+                "reason": None,
+            },
+        )
+    )
+
+    assert response.status == 200
+    assert json.loads(response.text) == {
+        "status": "ok",
+        "ticket_id": "ticket-1",
+        "endpoint_device_ref": "legacy-device",
+        "verified": True,
+    }
+    assert ticket.endpoint_device_ref == "legacy-device"
 
 
 @pytest.mark.asyncio

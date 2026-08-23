@@ -93,7 +93,7 @@ def _build_endpoint_platform_provider(ticket_id: str) -> tuple[object, EndpointP
     """Compose the local facade from typed endpoint dependencies only."""
 
     endpoint_port = DomainPortContainer.from_config().endpoint
-    session_factory = get_session_maker
+    session_factory = get_session_maker()
     operation_service = EndpointDiagnosticOperationService(
         access_service=_HandlerVerifiedEndpointAccess(ticket_id=ticket_id),
         device_resolver=EndpointDeviceReferenceService(endpoint_port, session_factory),
@@ -138,7 +138,7 @@ async def _endpoint_device_ref_for_readiness(*, ticket_id: str, endpoint_port: o
 
     if endpoint_port is None:
         return None
-    resolution = await EndpointDeviceReferenceService(endpoint_port, get_session_maker).resolve_ticket(ticket_id)
+    resolution = await EndpointDeviceReferenceService(endpoint_port, get_session_maker()).resolve_ticket(ticket_id)
     return resolution.device_ref if resolution.status == "resolved" else None
 
 
@@ -1115,7 +1115,7 @@ async def handle_admin_ticket_endpoint_device_mapping(request: web.Request) -> w
     if not ticket_id or mapping_request is None:
         if ticket_id:
             await record_rejected_endpoint_device_mapping(
-                session_factory=get_session_maker,
+                session_factory=lambda: get_session_maker()(),
                 ticket_id=ticket_id,
                 requested_endpoint_device_ref=None,
                 replace=False,
@@ -1129,7 +1129,7 @@ async def handle_admin_ticket_endpoint_device_mapping(request: web.Request) -> w
         )
     endpoint_port = DomainPortContainer.from_config().endpoint
     resolution = await EndpointDeviceReferenceService(
-        endpoint_port, get_session_maker
+        endpoint_port, get_session_maker()
     ).assign_verified_mapping(
         ticket_id=ticket_id,
         endpoint_device_ref=mapping_request.endpoint_device_ref,
