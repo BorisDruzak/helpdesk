@@ -1,7 +1,7 @@
 # Real ALT Headless Agent Staging Canary v1 — R3 acceptance
 
-**Status:** accepted after rollback  
-**Environment:** isolated staging only  
+**Status:** accepted after rollback
+**Environment:** isolated staging only
 **Date:** 2026-08-23
 
 This record is intentionally redacted. It contains no passwords, tokens,
