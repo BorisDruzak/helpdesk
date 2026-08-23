@@ -249,7 +249,9 @@ async def test_sql_store_persists_completed_session_with_autoflush_disabled(test
             operation_id=operation_id,
             status="pending",
         )
-        session.add_all((operation, diagnostic_session, step))
+        session.add_all((operation, diagnostic_session))
+        await session.flush()
+        session.add(step)
         await session.flush()
         link = EndpointOperationLink(
             link_id="dededede-dede-dede-dede-dededededede",
@@ -324,38 +326,37 @@ async def test_sql_store_completes_previously_terminal_diagnostic_session(test_e
             )
         )
         await session.flush()
-        session.add_all(
-            (
-                Operation(
-                    operation_id=operation_id,
-                    device_id="local-ticket-device",
-                    ticket_id=ticket_id,
-                    kind="endpoint_operation",
-                    actor_role="system",
-                    trace_id="efefefef-efef-efef-efef-efefefefeff0",
-                    status="succeeded",
-                    phase="endpoint_succeeded",
-                    queued_at=now,
-                    finished_at=now,
-                ),
-                DiagnosticSession(
-                    id=session_id,
-                    ticket_id=ticket_id,
-                    status="draft",
-                    trigger_source="endpoint_platform",
-                ),
-                DiagnosticStep(
-                    id=step_id,
-                    session_id=session_id,
-                    ticket_id=ticket_id,
-                    step_type="endpoint_operation",
-                    capability_id="context.diagnostic.collect",
-                    operation_id=operation_id,
-                    status="completed",
-                    finished_at=now,
-                ),
-            )
+        operation = Operation(
+            operation_id=operation_id,
+            device_id="local-ticket-device",
+            ticket_id=ticket_id,
+            kind="endpoint_operation",
+            actor_role="system",
+            trace_id="efefefef-efef-efef-efef-efefefefeff0",
+            status="succeeded",
+            phase="endpoint_succeeded",
+            queued_at=now,
+            finished_at=now,
         )
+        diagnostic_session = DiagnosticSession(
+            id=session_id,
+            ticket_id=ticket_id,
+            status="draft",
+            trigger_source="endpoint_platform",
+        )
+        step = DiagnosticStep(
+            id=step_id,
+            session_id=session_id,
+            ticket_id=ticket_id,
+            step_type="endpoint_operation",
+            capability_id="context.diagnostic.collect",
+            operation_id=operation_id,
+            status="completed",
+            finished_at=now,
+        )
+        session.add_all((operation, diagnostic_session))
+        await session.flush()
+        session.add(step)
         await session.flush()
         session.add_all(
             (
