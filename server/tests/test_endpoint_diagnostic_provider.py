@@ -136,6 +136,9 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
     async def fake_get_session():
         yield _HandlerSession(ticket)
 
+    def fake_get_session_maker():
+        return fake_get_session
+
     class _ProviderConfigService:
         def __init__(self, _session) -> None:
             pass
@@ -159,7 +162,7 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
 
     monkeypatch.setattr(handlers.config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(handlers, "get_session", fake_get_session)
-    monkeypatch.setattr(handlers, "get_session_maker", fake_get_session)
+    monkeypatch.setattr(handlers, "get_session_maker", fake_get_session_maker)
     monkeypatch.setattr(handlers, "DiagnosticProviderConfigService", _ProviderConfigService)
     monkeypatch.setattr(handlers, "RemoteAccessRepo", _RemoteAccessRepo)
     monkeypatch.setattr(handlers, "RuntimeAuditCapabilityExecutionObserver", _NoopExecutionObserver)
