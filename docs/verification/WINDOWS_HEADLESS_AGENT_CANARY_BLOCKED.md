@@ -10,11 +10,17 @@ Date: 2026-08-24
 - It reports Windows 11 Enterprise LTSC, build `26100`, 64-bit.
 - `EndpointAgent` is absent.
 - `EndpointAgentUpdater` is absent.
+- The designated Helpdesk test host exposes active, enabled
+  `endpoint-staging.service` and `helpdesk-staging.service` units under
+  separate service accounts.
 
 ## Missing prerequisites
 
 - A protected technical staging-proof document matching the exact Endpoint and
   Helpdesk origins, database revisions, dedicated device, and dedicated ticket.
+- The deployed release identities and database revisions could not be read by
+  the approved non-privileged diagnostic account; no configuration or secret
+  file was opened to bypass that boundary.
 - An immutable Windows MSI was built locally for `3.2.16` and passed local
   service-table inspection. It is not yet an approved merge-SHA release or a
   published staging artifact, so it must not be installed on the VM.
