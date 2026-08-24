@@ -75,20 +75,25 @@ exactly one succeeded local operation, one succeeded Endpoint operation with a
 safe result, and one succeeded `endpoint_platform` evidence item. It prints
 only the two safe IDs. `rollback-check` consumes an exact read-only proof JSON
 and never changes configuration. `report` repeats the strict verification and
-writes a checksum-protected, redacted JSON and Markdown package only under an
-existing protected local evidence root:
+writes the complete checksum-protected, redacted JSON evidence package only
+under an existing protected local evidence root. It requires an explicit
+`evidence-input.json` with every required safe artifact; partial packages, raw
+logs/results, process command lines, secrets, and personal ticket fields fail
+closed:
 
 ```text
 python scripts/canary/endpoint_diagnostic_canary.py report \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --windows-preflight <protected-evidence-root>/preflight-windows-agent.json \
+  --evidence-input <protected-evidence-root>/evidence-input.json \
   --evidence-root <protected-evidence-root>
 ```
 
-The package deliberately omits ticket IDs, service origins, credentials,
-authorization material, raw results, and raw overview payloads. None of these
-commands edits deployment configuration.
+The package contains the fixed artifact list plus `SHA256SUMS`, verified
+immediately after writing. Its summary deliberately omits ticket IDs, service
+origins, credentials, authorization material, raw results, and raw overview
+payloads. None of these commands edits deployment configuration.
 
 For rollback validation, provide `rollback-check` an independently collected
 proof with the staging class, final Endpoint API/Helpdesk modes, confirmation

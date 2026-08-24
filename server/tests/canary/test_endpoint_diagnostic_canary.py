@@ -439,19 +439,58 @@ def test_rollback_check_requires_an_exact_read_only_proof() -> None:
         run_command("rollback-check", manifest=_windows_manifest(), apply=False, env={}, rollback_proof=proof)
 
 
-def test_report_writer_creates_only_redacted_checksums(tmp_path) -> None:
+def _complete_evidence_input() -> dict[str, object]:
+    return {
+        name: {"status": "recorded"}
+        for name in (
+            "preflight-environment", "preflight-endpoint", "preflight-helpdesk",
+            "preflight-windows-agent", "msi-build", "msi-installation",
+            "service-state-before", "mapping", "execution", "endpoint-operation",
+            "gateway-delivery", "agent-completion", "helpdesk-operation",
+            "diagnostic-evidence", "invariants", "repeat-reconciliation", "rollback",
+            "post-rollback-smoke",
+        )
+    }
+
+
+def test_report_writer_creates_a_complete_redacted_evidence_package(tmp_path) -> None:
     package = write_redacted_report(
         manifest=_windows_manifest(),
         verification={"status": "verified", "local_operation_id": "local-701", "evidence_id": "evidence-701"},
         evidence_root=tmp_path,
+        evidence_input=_complete_evidence_input(),
     )
 
     package_path = tmp_path / "canary-report-canary-701"
-    report = (package_path / "report.json").read_text(encoding="utf-8")
-    checksums = (package_path / "checksums.json").read_text(encoding="utf-8")
-    assert package == {"package": "canary-report-canary-701", "files": ["report.json", "report.md", "checksums.json"]}
-    assert '"helpdesk_ticket_id"' not in report
-    assert "ticket-staging-701" not in report
-    assert "endpoint-staging.sosnadmin.local" not in report
-    assert "report.json" in checksums
-    assert "report.md" in checksums
+    checksums = (package_path / "SHA256SUMS").read_text(encoding="utf-8")
+    expected_files = {
+        "manifest.json", "preflight-environment.json", "preflight-endpoint.json",
+        "preflight-helpdesk.json", "preflight-windows-agent.json", "msi-build.json",
+        "msi-installation.json", "service-state-before.json", "mapping.json",
+        "execution.json", "endpoint-operation.json", "gateway-delivery.json",
+        "agent-completion.json", "helpdesk-operation.json", "diagnostic-evidence.json",
+        "invariants.json", "repeat-reconciliation.json", "rollback.json",
+        "post-rollback-smoke.json", "summary.json", "SHA256SUMS",
+    }
+    assert package == {"package": "canary-report-canary-701", "files": sorted(expected_files)}
+    assert {path.name for path in package_path.iterdir()} == expected_files
+    assert len(checksums.splitlines()) == len(expected_files) - 1
+    recorded = {name: digest for digest, name in (line.split("  ", 1) for line in checksums.splitlines())}
+    for path in package_path.glob("*.json"):
+        assert recorded[path.name] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert "ticket-staging-701" not in (package_path / "summary.json").read_text(encoding="utf-8")
+
+
+def test_report_writer_rejects_missing_or_sensitive_evidence_input(tmp_path) -> None:
+    arguments = {
+        "manifest": _windows_manifest(),
+        "verification": {"status": "verified", "local_operation_id": "local-701", "evidence_id": "evidence-701"},
+        "evidence_root": tmp_path,
+    }
+
+    with pytest.raises(CanaryManifestError, match="evidence input"):
+        write_redacted_report(**arguments, evidence_input={})
+    evidence = _complete_evidence_input()
+    evidence["gateway-delivery"] = {"raw_log": "forbidden"}
+    with pytest.raises(CanaryManifestError, match="forbidden"):
+        write_redacted_report(**arguments, evidence_input=evidence)

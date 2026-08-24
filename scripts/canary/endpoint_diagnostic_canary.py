@@ -52,6 +52,13 @@ _WINDOWS_PREFLIGHT_KEYS = frozenset({
     "safe_status", "network", "completion_proof",
 })
 _SAFE_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_EVIDENCE_INPUT_NAMES = (
+    "preflight-environment", "preflight-endpoint", "preflight-helpdesk",
+    "preflight-windows-agent", "msi-build", "msi-installation", "service-state-before",
+    "mapping", "execution", "endpoint-operation", "gateway-delivery", "agent-completion",
+    "helpdesk-operation", "diagnostic-evidence", "invariants", "repeat-reconciliation",
+    "rollback", "post-rollback-smoke",
+)
 
 
 @dataclass(frozen=True)
@@ -407,40 +414,70 @@ def _redacted_report(manifest: Mapping[str, Any], verification: Mapping[str, obj
     return report
 
 
+def _verify_sha256_sums(package: Path, artifact_files: Sequence[Path]) -> None:
+    """Reject a package unless its written checksum manifest exactly verifies."""
+    try:
+        lines = (package / "SHA256SUMS").read_text(encoding="ascii").splitlines()
+    except OSError as error:
+        raise CanaryManifestError("evidence package checksum manifest is unreadable") from error
+    expected = {
+        line.partition("  ")[2]: line.partition("  ")[0]
+        for line in lines
+        if line.count("  ") == 1 and _SHA256.fullmatch(line.partition("  ")[0])
+    }
+    actual = {path.name: sha256(path.read_bytes()).hexdigest() for path in artifact_files}
+    if expected != actual:
+        raise CanaryManifestError("evidence package checksum verification failed")
+
+
 def write_redacted_report(
     *, manifest: Mapping[str, Any], verification: Mapping[str, object], evidence_root: Path,
+    evidence_input: Mapping[str, object],
 ) -> dict[str, object]:
-    """Create an immutable-name, secret-free local evidence package under a protected root."""
+    """Create a complete, immutable-name, secret-free local evidence package."""
+    try:
+        reject_sensitive_values(manifest)
+    except CanaryEvidenceError as error:
+        raise CanaryManifestError("forbidden manifest in evidence package") from error
     report = _redacted_report(manifest, verification)
     if not evidence_root.is_absolute() or not evidence_root.is_dir() or evidence_root.is_symlink():
         raise CanaryManifestError("evidence root must be an existing non-reparse absolute directory")
+    if set(evidence_input) != set(_EVIDENCE_INPUT_NAMES):
+        raise CanaryManifestError("evidence input must contain every required redacted artifact")
+    validated_input: dict[str, Mapping[str, Any]] = {}
+    for name in _EVIDENCE_INPUT_NAMES:
+        item = evidence_input[name]
+        if not isinstance(item, Mapping):
+            raise CanaryManifestError(f"evidence input {name} must be an object")
+        try:
+            reject_sensitive_values(item)
+        except CanaryEvidenceError as error:
+            raise CanaryManifestError(f"forbidden evidence input {name}") from error
+        validated_input[name] = item
     canary_id = report["canary_id"]
     if not isinstance(canary_id, str) or not _SAFE_LABEL.fullmatch(canary_id):
         raise CanaryManifestError("canary ID is not a safe evidence package label")
     package = evidence_root / f"canary-report-{canary_id}"
     if package.exists():
         raise CanaryManifestError("evidence package already exists")
-    package.mkdir()
-    json_path = package / "report.json"
-    markdown_path = package / "report.md"
-    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
-    markdown_path.write_text(
-        "# Endpoint diagnostic canary report\n\n"
-        f"- Status: `{report['status']}`\n"
-        f"- Canary: `{report['canary_id']}`\n"
-        f"- Agent platform/version: `{report['agent']['platform']}` / `{report['agent']['version']}`\n"
-        f"- Local operation: `{report['verification']['local_operation_id']}`\n"
-        f"- Evidence: `{report['verification']['evidence_id']}`\n",
-        encoding="utf-8", newline="\n",
-    )
-    checksums = {
-        path.name: sha256(path.read_bytes()).hexdigest()
-        for path in (json_path, markdown_path)
-    }
-    (package / "checksums.json").write_text(
-        json.dumps(checksums, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
-    )
-    return {"package": package.name, "files": ["report.json", "report.md", "checksums.json"]}
+    package.mkdir(mode=0o700)
+    artifacts: dict[str, Mapping[str, Any]] = {"manifest": manifest, **validated_input, "summary": report}
+    try:
+        for name, payload in artifacts.items():
+            (package / f"{name}.json").write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+            )
+        artifact_files = sorted(path for path in package.iterdir() if path.is_file())
+        sums = "".join(
+            f"{sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+            for path in artifact_files
+        )
+        (package / "SHA256SUMS").write_text(sums, encoding="ascii", newline="\n")
+        _verify_sha256_sums(package, artifact_files)
+    except OSError as error:
+        raise CanaryManifestError("could not write protected evidence package") from error
+    files = sorted(path.name for path in package.iterdir() if path.is_file())
+    return {"package": package.name, "files": files}
 
 
 def run_command(
@@ -527,6 +564,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--windows-preflight", type=Path, help="redacted installed Windows-agent preflight JSON")
         if name == "report":
             command.add_argument("--evidence-root", type=Path, help="existing protected local directory for redacted report")
+            command.add_argument("--evidence-input", type=Path, help="complete redacted evidence-input JSON")
     return parser
 
 
@@ -543,9 +581,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             windows_preflight=windows_preflight,
         )
         if args.command == "report":
-            if args.evidence_root is None:
-                raise CanaryManifestError("report requires --evidence-root")
-            result = {**result, **write_redacted_report(manifest=manifest, verification=result, evidence_root=args.evidence_root)}
+            if args.evidence_root is None or args.evidence_input is None:
+                raise CanaryManifestError("report requires --evidence-root and --evidence-input")
+            evidence_input = json.loads(args.evidence_input.read_text(encoding="utf-8"))
+            result = {**result, **write_redacted_report(
+                manifest=manifest, verification=result, evidence_root=args.evidence_root,
+                evidence_input=evidence_input,
+            )}
     except (OSError, json.JSONDecodeError, CanaryManifestError) as error:
         print(f"canary preflight failed: {error}", file=sys.stderr)
         return 2
