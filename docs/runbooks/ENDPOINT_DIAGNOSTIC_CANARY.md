@@ -95,6 +95,16 @@ immediately after writing. Its summary deliberately omits ticket IDs, service
 origins, credentials, authorization material, raw results, and raw overview
 payloads. None of these commands edits deployment configuration.
 
+The required `evidence-input.json` object has exactly these keys (each value is
+a redacted JSON object): `preflight-environment`, `preflight-endpoint`,
+`preflight-helpdesk`, `preflight-windows-agent`, `msi-build`,
+`msi-installation`, `service-state-before`, `mapping`, `execution`,
+`endpoint-operation`, `gateway-delivery`, `agent-completion`,
+`helpdesk-operation`, `diagnostic-evidence`, `invariants`,
+`repeat-reconciliation`, `rollback`, and `post-rollback-smoke`. The report
+adds `manifest.json` and `summary.json`, hashes every JSON file into
+`SHA256SUMS`, and verifies that manifest before returning success.
+
 For rollback validation, provide `rollback-check` an independently collected
 proof with the staging class, final Endpoint API/Helpdesk modes, confirmation
 that new operations are blocked and terminal evidence remains, and
