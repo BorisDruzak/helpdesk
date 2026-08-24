@@ -16,8 +16,9 @@ Date: 2026-08-24
 - A protected technical staging-proof document matching the exact Endpoint and
   Helpdesk origins, database revisions, dedicated device, and dedicated ticket.
 - A recorded VM snapshot or other approved recovery point.
-- An immutable, approved Windows MSI built from the Endpoint merge SHA and its
-  verified SHA-256.
+- An immutable Windows MSI was built locally for `3.2.16` and passed local
+  service-table inspection. It is not yet an approved merge-SHA release or a
+  published staging artifact, so it must not be installed on the VM.
 - Installed service facts required by the read-only Windows preflight
   validator: `EndpointAgent` running as LocalService and
   `EndpointAgentUpdater` stopped and demand-start as LocalSystem.
