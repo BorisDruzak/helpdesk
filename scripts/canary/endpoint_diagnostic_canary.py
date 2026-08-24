@@ -229,6 +229,60 @@ def _operation_id(response: Mapping[str, Any]) -> str:
     return value
 
 
+def _overview_items(overview: Mapping[str, Any], *, key: str) -> list[Mapping[str, Any]]:
+    value = overview.get(key)
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise CanaryManifestError(f"diagnostics overview {key} is invalid")
+    if not all(isinstance(item, Mapping) for item in value):
+        raise CanaryManifestError(f"diagnostics overview {key} is invalid")
+    return list(value)
+
+
+def _canary_overview(overview: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]], list[Mapping[str, Any]]]:
+    local_operations = [
+        item for item in _overview_items(overview, key="latest_operations")
+        if item.get("kind") == "endpoint_operation"
+    ]
+    endpoint_operations = _overview_items(overview, key="endpoint_operations")
+    evidence = [
+        item for item in _overview_items(overview, key="latest_evidence")
+        if item.get("source_type") == "endpoint_platform"
+    ]
+    return local_operations, endpoint_operations, evidence
+
+
+def _observe_overview(overview: Mapping[str, Any]) -> dict[str, object]:
+    local_operations, endpoint_operations, evidence = _canary_overview(overview)
+    return {
+        "status": "observed",
+        "local_operation_count": len(local_operations),
+        "endpoint_operation_count": len(endpoint_operations),
+        "evidence_count": len(evidence),
+    }
+
+
+def _verify_overview(overview: Mapping[str, Any]) -> dict[str, object]:
+    local_operations, endpoint_operations, evidence = _canary_overview(overview)
+    if len(local_operations) != 1 or len(endpoint_operations) != 1 or len(evidence) != 1:
+        raise CanaryManifestError("canary overview must contain exactly one operation and one evidence item")
+    local_operation = local_operations[0]
+    endpoint_operation = endpoint_operations[0]
+    evidence_item = evidence[0]
+    local_operation_id = _operation_id(local_operation)
+    if (
+        local_operation.get("status") != "succeeded"
+        or endpoint_operation.get("operation_id") != local_operation_id
+        or endpoint_operation.get("status") != "succeeded"
+        or endpoint_operation.get("result_available") is not True
+        or evidence_item.get("status") != "succeeded"
+    ):
+        raise CanaryManifestError("canary operation did not reach the required terminal state")
+    evidence_id = evidence_item.get("id")
+    if not isinstance(evidence_id, str) or not evidence_id:
+        raise CanaryManifestError("canary evidence ID is invalid")
+    return {"status": "verified", "local_operation_id": local_operation_id, "evidence_id": evidence_id}
+
+
 def run_command(
     command: str, *, manifest: Mapping[str, Any], apply: bool, env: Mapping[str, str],
     staging_proof: Mapping[str, Any] | None = None, adapter: CanaryHttpAdapter | None = None,
@@ -272,6 +326,10 @@ def run_command(
         method="GET", url=_helpdesk_route(manifest, f"/api/tickets/{ticket_id}/diagnostics/overview"),
         payload=None, headers={"X-Correlation-ID": canary_id},
     )
+    if command == "observe":
+        return _observe_overview(response)
+    if command == "verify":
+        return _verify_overview(response)
     return {"status": "observed", "command": command, "overview_present": bool(response)}
 
 

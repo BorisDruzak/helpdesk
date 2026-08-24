@@ -278,3 +278,46 @@ def test_execute_uses_one_hashed_idempotency_key_and_never_includes_ticket_in_pa
     assert calls[0]["url"].endswith("/api/tickets/ticket-staging-701/diagnostics/capabilities/context.diagnostic.collect/run")
     assert calls[0]["payload"] == {"params": {}}
     assert calls[0]["headers"] == {"X-Idempotency-Key": key, "X-Correlation-ID": "canary-701"}
+
+
+def _succeeded_overview() -> dict[str, object]:
+    return {
+        "latest_operations": [{"operation_id": "local-701", "kind": "endpoint_operation", "status": "succeeded"}],
+        "endpoint_operations": [{"operation_id": "local-701", "status": "succeeded", "result_available": True}],
+        "latest_evidence": [{"id": "evidence-701", "source_type": "endpoint_platform", "status": "succeeded"}],
+    }
+
+
+def test_observe_returns_only_safe_summary_and_verify_requires_exactly_once_terminal_projection() -> None:
+    manifest = _windows_manifest()
+    adapter = CanaryHttpAdapter(request=lambda **_: _succeeded_overview())
+
+    observed = run_command("observe", manifest=manifest, apply=False, env={}, adapter=adapter)
+    verified = run_command("verify", manifest=manifest, apply=False, env={}, adapter=adapter)
+
+    assert observed == {
+        "status": "observed",
+        "local_operation_count": 1,
+        "endpoint_operation_count": 1,
+        "evidence_count": 1,
+    }
+    assert verified == {"status": "verified", "local_operation_id": "local-701", "evidence_id": "evidence-701"}
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: value["latest_operations"].append({"operation_id": "duplicate", "kind": "endpoint_operation", "status": "succeeded"}),
+        lambda value: value["endpoint_operations"][0].update(status="running"),
+        lambda value: value["endpoint_operations"][0].update(result_available=False),
+        lambda value: value["latest_evidence"].append({"id": "duplicate", "source_type": "endpoint_platform", "status": "succeeded"}),
+        lambda value: value["latest_evidence"][0].update(source_type="legacy_agent"),
+    ],
+)
+def test_verify_rejects_duplicate_or_nonterminal_overview(mutate) -> None:
+    overview = _succeeded_overview()
+    mutate(overview)
+    adapter = CanaryHttpAdapter(request=lambda **_: overview)
+
+    with pytest.raises(CanaryManifestError):
+        run_command("verify", manifest=_windows_manifest(), apply=False, env={}, adapter=adapter)
