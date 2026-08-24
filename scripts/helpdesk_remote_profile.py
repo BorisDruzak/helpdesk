@@ -34,6 +34,7 @@ class RemoteProfile:
     migrate_service: str
     server_service: str
     control_service: str | None
+    release_venv_path: str
 
     @classmethod
     def from_environment(cls, environment: Mapping[str, str] | None = None) -> "RemoteProfile":
@@ -48,4 +49,5 @@ class RemoteProfile:
             migrate_service=_value(values, "HELPDESK_MIGRATE_SERVICE", "helpdesk-migrate.service"),
             server_service=_value(values, "HELPDESK_SERVER_SERVICE", "helpdesk-server.service"),
             control_service=_optional_value(values, "HELPDESK_CONTROL_SERVICE", "helpdesk-control.service"),
+            release_venv_path=_value(values, "HELPDESK_RELEASE_VENV_PATH", "server/venv").strip("/"),
         )

@@ -35,6 +35,7 @@ def test_remote_install_command_supports_isolated_staging_service_profile() -> N
             "HELPDESK_MIGRATE_SERVICE": "helpdesk-staging-migrate.service",
             "HELPDESK_SERVER_SERVICE": "helpdesk-staging.service",
             "HELPDESK_CONTROL_SERVICE": "",
+            "HELPDESK_RELEASE_VENV_PATH": "venv",
         }
     )
 
@@ -44,3 +45,5 @@ def test_remote_install_command_supports_isolated_staging_service_profile() -> N
     assert "sudo systemctl start helpdesk-staging-migrate.service" in command
     assert "sudo systemctl restart helpdesk-staging.service" in command
     assert "helpdesk-control.service" not in command
+    assert "sudo python3 -m venv /opt/helpdesk-staging/releases/helpdesk-abc123/venv" in command
+    assert "helpdesk-abc123/venv/bin/pip install" in command

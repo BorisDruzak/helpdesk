@@ -29,7 +29,9 @@ Preflight показывает текущий `HEAD`, проверяет `artifa
 - Для изолированного staging Helpdesk тот же скрипт получает только профильные
   переменные `HELPDESK_REMOTE`, `HELPDESK_REMOTE_ROOT`, `HELPDESK_ENV_FILE`,
   `HELPDESK_MIGRATE_SERVICE`, `HELPDESK_SERVER_SERVICE` и, при отсутствии
-  control-plane, пустую `HELPDESK_CONTROL_SERVICE`. Это сохраняет immutable
+  control-plane, пустую `HELPDESK_CONTROL_SERVICE`. Если staging-unit ожидает
+  venv вне `server/`, задаётся `HELPDESK_RELEASE_VENV_PATH`.
+  Это сохраняет immutable
   release и не допускает использования production-путей или systemd-юнитов.
 
 ## Рекомендуемый поток

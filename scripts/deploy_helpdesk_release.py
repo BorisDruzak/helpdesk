@@ -24,6 +24,7 @@ def release_path(profile: RemoteProfile, commit: str) -> str:
 def remote_install_command(profile: RemoteProfile, commit: str, remote_archive: str) -> str:
     release = release_path(profile, commit)
     deployment_root = Path(profile.root).parent.as_posix()
+    release_venv = f"{release}/{profile.release_venv_path}"
     runtime_services = " ".join(
         service for service in (profile.server_service, profile.control_service) if service
     )
@@ -36,8 +37,8 @@ def remote_install_command(profile: RemoteProfile, commit: str, remote_archive: 
             f"sudo mkdir {release}",
             f"sudo tar -xf {remote_archive} -C {release} --strip-components=1",
             f"sudo rm -f {remote_archive}",
-            f"sudo python3 -m venv {release}/server/venv",
-            f"sudo {release}/server/venv/bin/pip install --disable-pip-version-check --no-input -r {release}/server/requirements.txt",
+            f"sudo python3 -m venv {release_venv}",
+            f"sudo {release_venv}/bin/pip install --disable-pip-version-check --no-input -r {release}/server/requirements.txt",
             f"sudo chown -R root:root {release}",
             f"sudo chmod -R a-w {release}",
             f"sudo ln -sfn {release} {profile.root}",
