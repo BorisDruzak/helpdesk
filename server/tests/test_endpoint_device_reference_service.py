@@ -126,6 +126,25 @@ async def test_admin_mapping_persists_only_exact_verified_device_ref_after_port_
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
+async def test_admin_mapping_backfills_missing_snapshot_for_existing_exact_ref():
+    from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
+
+    ticket = _ticket(endpoint_device_ref="legacy-device")
+    sessions = _SessionFactory(ticket)
+    port = _EndpointPort(sessions, _device_projection())
+
+    result = await EndpointDeviceReferenceService(port, sessions).assign_verified_mapping(
+        ticket_id="ticket-1", endpoint_device_ref="legacy-device"
+    )
+
+    assert result.status == "resolved"
+    assert result.persisted is True
+    assert ticket.endpoint_device_snapshot_json["device_ref"] == "legacy-device"
+    assert sessions.sessions[0].commit_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.no_db
 async def test_resolver_preserves_existing_validated_endpoint_ref_without_port_lookup():
     from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 

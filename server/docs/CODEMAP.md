@@ -95,7 +95,8 @@
   `endpoint_device_mapping_request_v1` body rejects drift, and replacements
   require the exact previous ref plus a safe reason under a row lock. Created
   and replaced mappings are committed with an actor audit event; a replay of
-  the same ref makes no write. Revision `135` adds the ticket fields plus
+  the same ref makes no write only when its frozen snapshot is valid, otherwise
+  it backfills that snapshot with an actor audit event. Revision `135` adds the ticket fields plus
   `endpoint_operation_links`; revision `137` adds actor-scoped caller
   idempotency fields and their partial unique index.
   `server/app/repos/endpoint_operation_links_repo.py` contains only exact link

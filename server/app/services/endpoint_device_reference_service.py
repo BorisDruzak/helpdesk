@@ -261,10 +261,31 @@ class EndpointDeviceReferenceService:
                 return self._unresolved("ENDPOINT_DEVICE_MAPPING_MISSING")
             existing = getattr(ticket, "endpoint_device_ref", None)
             if existing == device.external_id:
+                if self._validated_existing(ticket).status == "resolved":
+                    return EndpointDeviceReferenceResolution(
+                        status="resolved",
+                        device_ref=device.external_id,
+                        persisted=False,
+                    )
+                ticket.endpoint_device_snapshot_json = snapshot.model_dump(mode="json")
+                session.add(
+                    TicketAdminAudit(
+                        entity_type="endpoint_device_mapping",
+                        entity_id=ticket_id,
+                        action="backfilled",
+                        actor_id=actor_id,
+                        actor_role=actor_role,
+                        before_json={"endpoint_device_ref": existing},
+                        after_json={"endpoint_device_ref": device.external_id},
+                        trace_id=None,
+                    )
+                )
+                await session.flush()
+                await session.commit()
                 return EndpointDeviceReferenceResolution(
                     status="resolved",
                     device_ref=device.external_id,
-                    persisted=False,
+                    persisted=True,
                 )
             if existing is None and replace:
                 await self._record_rejected(
