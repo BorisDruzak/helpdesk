@@ -38,9 +38,10 @@ _APPLY_ENVIRONMENT_KEYS = frozenset({
 })
 _STAGING_PROOF_KEYS = frozenset({
     "schema_version", "environment_class", "endpoint_host", "helpdesk_host", "agent_host_safe_label",
-    "dedicated_windows_vm", "snapshot_or_recovery_point", "production_identifiers",
+    "dedicated_windows_vm", "production_identifiers",
     "endpoint_database_revision", "helpdesk_database_revision",
 })
+_OPTIONAL_STAGING_PROOF_KEYS = frozenset({"snapshot_or_recovery_point"})
 
 
 @dataclass(frozen=True)
@@ -118,7 +119,11 @@ def _validate_v2_agent(manifest: Mapping[str, Any], *, targets: Mapping[str, Any
 
 
 def _validate_staging_proof(manifest: Mapping[str, Any], *, staging_proof: Mapping[str, Any] | None) -> None:
-    if staging_proof is None or set(staging_proof) != _STAGING_PROOF_KEYS:
+    if (
+        staging_proof is None
+        or not _STAGING_PROOF_KEYS.issubset(staging_proof)
+        or set(staging_proof) - _STAGING_PROOF_KEYS - _OPTIONAL_STAGING_PROOF_KEYS
+    ):
         raise CanaryManifestError("technical staging proof is required")
     if staging_proof.get("schema_version") != "windows_canary_staging_proof_v1":
         raise CanaryManifestError("technical staging proof schema is invalid")
@@ -137,8 +142,6 @@ def _validate_staging_proof(manifest: Mapping[str, Any], *, staging_proof: Mappi
         raise CanaryManifestError("technical staging proof does not match manifest")
     if staging_proof.get("dedicated_windows_vm") is not True:
         raise CanaryManifestError("technical staging proof requires a dedicated Windows VM")
-    if not isinstance(staging_proof.get("snapshot_or_recovery_point"), str) or not staging_proof["snapshot_or_recovery_point"].strip():
-        raise CanaryManifestError("technical staging proof requires a recovery point")
     if staging_proof.get("production_identifiers") != []:
         raise CanaryManifestError("technical staging proof contains production identifiers")
 

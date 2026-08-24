@@ -54,9 +54,9 @@ python scripts/canary/endpoint_diagnostic_canary.py map \
 ```
 
 The proof is fail-closed: it must match both origins, the device-safe label,
-and both DB revisions, state that the Windows VM is dedicated, identify a
-snapshot or approved recovery point, and contain an empty production-identifier
-list. A VM ID is not used by the tooling. The `map` stage calls only the
+and both DB revisions, state that the Windows VM is dedicated, and contain an
+empty production-identifier list. A VM ID and snapshot are not used by the
+tooling. The `map` stage calls only the
 existing admin mapping route; `execute` calls only the existing support
 diagnostic route with one caller idempotency key whose SHA-256 is already in
 the manifest. The raw key and authorization value are never printed.
@@ -146,6 +146,6 @@ Stop the canary and begin the rollback procedure if any of these occurs:
   timeout.
 - The dedicated Windows VM lacks `EndpointAgent` or `EndpointAgentUpdater`,
   or the service facts do not meet the immutable MSI boundary.
-- A technical staging proof, snapshot/recovery point, or non-production
-  evidence cannot be produced. Record `WINDOWS_CANARY_BLOCKED` instead of
+- A technical staging proof or non-production evidence cannot be produced.
+  Record `WINDOWS_CANARY_BLOCKED` instead of
   attempting enrollment, MSI installation, mapping, or execution.

@@ -213,6 +213,15 @@ def test_apply_requires_matching_windows_identity_and_technical_staging_proof() 
         validate_manifest(manifest, environment="staging", apply=True, env=environment, staging_proof=proof)
 
 
+def test_apply_accepts_staging_proof_without_snapshot() -> None:
+    proof = _staging_proof()
+    proof.pop("snapshot_or_recovery_point")
+
+    assert validate_manifest(
+        _windows_manifest(), environment="staging", apply=True, env=_apply_environment(), staging_proof=proof
+    )["apply"] is True
+
+
 def test_map_dry_run_does_not_call_route_and_apply_uses_only_existing_admin_route() -> None:
     manifest = _windows_manifest()
     calls: list[dict[str, object]] = []
