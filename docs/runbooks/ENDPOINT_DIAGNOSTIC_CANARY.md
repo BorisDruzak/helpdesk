@@ -31,12 +31,18 @@ Validate the protected canary manifest before changing any deployment flag:
 ```text
 python scripts/canary/endpoint_diagnostic_canary.py preflight \
   --manifest <protected-evidence-root>/manifest.json \
-  --environment staging
+  --environment staging \
+  --windows-preflight <protected-evidence-root>/preflight-windows-agent.json
 ```
 
 This command is validation-only. It accepts no token or credential argument,
 rejects production, raw idempotency keys and secret-like fields, and performs
-no operation creation.
+no operation creation.  The Windows preflight projection is mandatory for a
+Windows manifest: it must prove the installed service/updater identity,
+immutable selector version and source revision, MSI version and SHA-256,
+protected ACLs, strict TLS, Gateway WSS and the bounded diagnostic capability.
+The tool rejects a missing, mismatched or secret-bearing projection before any
+mutable canary command can run.
 
 For a Windows agent canary, use manifest schema
 `endpoint_diagnostic_canary_v2`. Its `agent` identity must name
@@ -50,7 +56,8 @@ python scripts/canary/endpoint_diagnostic_canary.py map \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --apply \
-  --staging-proof <protected-evidence-root>/staging-proof.json
+  --staging-proof <protected-evidence-root>/staging-proof.json \
+  --windows-preflight <protected-evidence-root>/preflight-windows-agent.json
 ```
 
 The proof is fail-closed: it must match both origins, the device-safe label,
@@ -62,7 +69,8 @@ diagnostic route with one caller idempotency key whose SHA-256 is already in
 the manifest. The raw key and authorization value are never printed.
 
 Without `--apply`, `map` and `execute` return a dry-run result and make no
-HTTP request. `observe` reads only a count-only overview. `verify` requires
+HTTP request; they do not require a Windows preflight projection.  Every
+non-dry Windows stage requires that projection. `observe` reads only a count-only overview. `verify` requires
 exactly one succeeded local operation, one succeeded Endpoint operation with a
 safe result, and one succeeded `endpoint_platform` evidence item. It prints
 only the two safe IDs. `rollback-check` consumes an exact read-only proof JSON
@@ -74,6 +82,7 @@ existing protected local evidence root:
 python scripts/canary/endpoint_diagnostic_canary.py report \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
+  --windows-preflight <protected-evidence-root>/preflight-windows-agent.json \
   --evidence-root <protected-evidence-root>
 ```
 

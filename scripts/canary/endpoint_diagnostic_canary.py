@@ -47,6 +47,10 @@ _ROLLBACK_PROOF_KEYS = frozenset({
     "helpdesk_execution_mode", "new_operations_blocked", "terminal_evidence_preserved",
     "database_downgrade_performed",
 })
+_WINDOWS_PREFLIGHT_KEYS = frozenset({
+    "schema_version", "agent", "services", "runtime", "msi", "acl",
+    "safe_status", "network", "completion_proof",
+})
 _SAFE_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
@@ -223,6 +227,74 @@ def validate_manifest(
     return {"environment_class": "staging", "apply": apply, "endpoint_host": endpoint_host, "helpdesk_host": helpdesk_host, "platform": platform}
 
 
+def _validate_windows_preflight(
+    manifest: Mapping[str, Any], *, windows_preflight: Mapping[str, Any] | None
+) -> str:
+    """Require the bounded installed-agent projection before a Windows canary stage."""
+    if windows_preflight is None or set(windows_preflight) != _WINDOWS_PREFLIGHT_KEYS:
+        raise CanaryManifestError("Windows preflight proof is required")
+    try:
+        reject_sensitive_values(windows_preflight)
+    except CanaryEvidenceError as error:
+        raise CanaryManifestError("Windows preflight proof contains forbidden evidence") from error
+    if windows_preflight.get("schema_version") != "windows_agent_preflight_v1":
+        raise CanaryManifestError("Windows preflight proof schema is invalid")
+    manifest_agent = _mapping(manifest.get("agent"), name="agent")
+    agent = _mapping(windows_preflight.get("agent"), name="Windows preflight agent")
+    if (
+        agent.get("platform") != "windows_amd64"
+        or agent.get("version") != manifest_agent.get("version")
+        or agent.get("source_revision") != manifest_agent.get("source_revision")
+    ):
+        raise CanaryManifestError("Windows preflight agent identity does not match manifest")
+    services = _mapping(windows_preflight.get("services"), name="Windows preflight services")
+    agent_service = _mapping(services.get("agent"), name="Windows preflight agent service")
+    updater_service = _mapping(services.get("updater"), name="Windows preflight updater service")
+    if (
+        agent_service.get("name") != "EndpointAgent"
+        or agent_service.get("start_mode") != "Automatic"
+        or agent_service.get("state") != "Running"
+        or agent_service.get("account") != "NT AUTHORITY\\LocalService"
+        or agent_service.get("pid_present") is not True
+        or updater_service.get("name") != "EndpointAgentUpdater"
+        or updater_service.get("start_mode") != "Manual"
+        or updater_service.get("state") != "Stopped"
+        or updater_service.get("account") != "LocalSystem"
+    ):
+        raise CanaryManifestError("Windows preflight service boundary is invalid")
+    runtime = _mapping(windows_preflight.get("runtime"), name="Windows preflight runtime")
+    if (
+        runtime.get("selector_version") != manifest_agent.get("version")
+        or runtime.get("selector_source_revision") != manifest_agent.get("source_revision")
+        or runtime.get("http_fallback") is not False
+        or runtime.get("helpdesk_reference") is not False
+    ):
+        raise CanaryManifestError("Windows preflight immutable runtime is invalid")
+    msi = _mapping(windows_preflight.get("msi"), name="Windows preflight MSI")
+    if (
+        msi.get("version") != manifest_agent.get("version")
+        or msi.get("sha256") != manifest_agent.get("package_sha256")
+    ):
+        raise CanaryManifestError("Windows preflight MSI identity does not match manifest")
+    acl = _mapping(windows_preflight.get("acl"), name="Windows preflight ACL")
+    if (
+        acl.get("data_root_protected") is not True
+        or acl.get("ordinary_user_read") is not False
+        or acl.get("protected_file_reparse") is not False
+    ):
+        raise CanaryManifestError("Windows preflight ACL boundary is invalid")
+    network = _mapping(windows_preflight.get("network"), name="Windows preflight network")
+    if (
+        network.get("strict_tls") is not True
+        or network.get("hostname_valid") is not True
+        or network.get("gateway_wss") is not True
+        or network.get("redirected") is not False
+        or network.get("capability") != "context.diagnostic.collect"
+    ):
+        raise CanaryManifestError("Windows preflight network boundary is invalid")
+    return "READY"
+
+
 def _helpdesk_route(manifest: Mapping[str, Any], path: str) -> str:
     targets = _mapping(manifest["targets"], name="targets")
     return f"https://{_https_host(targets.get('helpdesk_origin'), name='helpdesk_origin')}{path}"
@@ -374,22 +446,29 @@ def write_redacted_report(
 def run_command(
     command: str, *, manifest: Mapping[str, Any], apply: bool, env: Mapping[str, str],
     staging_proof: Mapping[str, Any] | None = None, rollback_proof: Mapping[str, Any] | None = None,
-    adapter: CanaryHttpAdapter | None = None,
+    windows_preflight: Mapping[str, Any] | None = None, adapter: CanaryHttpAdapter | None = None,
 ) -> dict[str, object]:
     """Run exactly one bounded canary stage through existing Helpdesk routes."""
     validation = validate_manifest(manifest, environment="staging", apply=apply, env=env, staging_proof=staging_proof)
     if command == "preflight":
-        return {"status": "preflight_ready", **validation}
+        windows_preflight_status = (
+            _validate_windows_preflight(manifest, windows_preflight=windows_preflight)
+            if validation["platform"] == "windows_amd64"
+            else None
+        )
+        return {"status": "preflight_ready", **validation, "windows_preflight": windows_preflight_status}
     if command not in {"map", "execute", "observe", "verify", "rollback-check", "report"}:
         raise CanaryManifestError("unsupported canary command")
     if command == "rollback-check":
         _validate_rollback_proof(manifest, rollback_proof=rollback_proof)
         return {"status": "rollback_verified"}
+    if command in {"map", "execute"} and not apply:
+        return {"status": "dry_run", "command": command}
+    if validation["platform"] == "windows_amd64":
+        _validate_windows_preflight(manifest, windows_preflight=windows_preflight)
     targets = _mapping(manifest["targets"], name="targets")
     ticket_id = _required_string(targets, "helpdesk_ticket_id")
     canary_id = _required_string(_mapping(manifest["execution"], name="execution"), "canary_id")
-    if command in {"map", "execute"} and not apply:
-        return {"status": "dry_run", "command": command}
     client = adapter or CanaryHttpAdapter(authorization=env.get("CANARY_HELPDESK_AUTHORIZATION"))
     if command == "map":
         response = client.call(
@@ -445,6 +524,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--apply", action="store_true", help="validate mutable-stage authority only")
         command.add_argument("--staging-proof", type=Path, help="protected technical staging-proof JSON for --apply")
         command.add_argument("--rollback-proof", type=Path, help="read-only rollback-proof JSON for rollback-check")
+        command.add_argument("--windows-preflight", type=Path, help="redacted installed Windows-agent preflight JSON")
         if name == "report":
             command.add_argument("--evidence-root", type=Path, help="existing protected local directory for redacted report")
     return parser
@@ -456,9 +536,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         staging_proof = json.loads(args.staging_proof.read_text(encoding="utf-8")) if args.staging_proof else None
         rollback_proof = json.loads(args.rollback_proof.read_text(encoding="utf-8")) if args.rollback_proof else None
+        windows_preflight = json.loads(args.windows_preflight.read_text(encoding="utf-8")) if args.windows_preflight else None
         result = run_command(
             args.command, manifest=manifest, apply=args.apply, env=os.environ,
             staging_proof=staging_proof, rollback_proof=rollback_proof,
+            windows_preflight=windows_preflight,
         )
         if args.command == "report":
             if args.evidence_root is None:
