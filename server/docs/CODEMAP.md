@@ -38,10 +38,12 @@
 - `server/app/services/endpoint_diagnostic_operation_service.py` creates the
   ticket-facing Endpoint diagnostic facade with a deterministic local operation
   id. `server/app/services/endpoint_operation_reconciler.py` claims durable
-  links, calls only `EndpointPort` outside database transactions, and projects
-  safe terminal results into diagnostic evidence. `server/server.py` starts
-  its runner only for `ENDPOINT_PORT_MODE=external` together with
-  `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint`, then stops it during shutdown.
+  links, calls only `EndpointPort` outside database transactions, projects
+  safe terminal results into diagnostic evidence, and idempotently completes an
+  already-terminal linked diagnostic session without another remote call.
+  `server/server.py` starts its runner only for `ENDPOINT_PORT_MODE=external`
+  together with `ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=endpoint`, then stops it
+  during shutdown.
   Its only post-commit notification is a reloaded local operation through the
   Helpdesk UI publisher, never an agent command dispatch.
 - `server/diagnostics/providers/endpoint_platform.py` exposes only
@@ -85,14 +87,20 @@
   `server/tests/test_endpoint_port_contracts.py`.
 - `Ticket.endpoint_device_ref` and `endpoint_device_snapshot_json` are nullable
   server-owned Endpoint mapping fields. `server/app/services/endpoint_device_reference_service.py`
-  accepts only an exact opaque legacy candidate, reads it through `EndpointPort`
-  outside the database session, and persists a frozen `endpoint_device_snapshot_v1`
-  only when the external reference matches exactly; it has no client-input,
-  hostname/IP/MAC lookup, or legacy fallback path. Revision `135` adds those
-  ticket fields plus `endpoint_operation_links`, the safe local facade-to-external
-  operation link table. `server/app/repos/endpoint_operation_links_repo.py`
-  contains only exact link lookup/create persistence and performs no HTTP,
-  DeviceOutbox, tool, or WebSocket work.
+  accepts only a previously verified mapping for readiness. The admin-only
+  `PUT /api/admin/tickets/{ticket_id}/endpoint-device-mapping` path reads the
+  exact provider device through `EndpointPort` outside a DB transaction before
+  persisting the frozen `endpoint_device_snapshot_v1`; it never derives a
+  mapping from `Ticket.device_id`, hostname, IP, or MAC. Its strict
+  `endpoint_device_mapping_request_v1` body rejects drift, and replacements
+  require the exact previous ref plus a safe reason under a row lock. Created
+  and replaced mappings are committed with an actor audit event; a replay of
+  the same ref makes no write. Revision `135` adds the ticket fields plus
+  `endpoint_operation_links`; revision `137` adds actor-scoped caller
+  idempotency fields and their partial unique index.
+  `server/app/repos/endpoint_operation_links_repo.py` contains only exact link
+  lookup/create persistence and performs no HTTP, DeviceOutbox, tool, or
+  WebSocket work.
 
 ## 2026-08-10 RegistryPort Helpdesk read cutover (PR-8)
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import uuid
 
 from aiohttp import web
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.db import get_session
@@ -24,7 +25,11 @@ from app.db.models import (
 )
 from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.diagnostics_repo import DiagnosticRepo
-from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
+from app.services.endpoint_device_reference_service import (
+    EndpointDeviceMappingRequestV1,
+    EndpointDeviceReferenceService,
+    record_rejected_endpoint_device_mapping,
+)
 from app.services.endpoint_diagnostic_operation_service import (
     EndpointDiagnosticOperationService,
     SqlAlchemyEndpointDiagnosticOperationStore,
@@ -88,10 +93,11 @@ def _build_endpoint_platform_provider(ticket_id: str) -> tuple[object, EndpointP
     """Compose the local facade from typed endpoint dependencies only."""
 
     endpoint_port = DomainPortContainer.from_config().endpoint
+    session_factory = get_session_maker()
     operation_service = EndpointDiagnosticOperationService(
         access_service=_HandlerVerifiedEndpointAccess(ticket_id=ticket_id),
-        device_resolver=EndpointDeviceReferenceService(endpoint_port, get_session),
-        store=SqlAlchemyEndpointDiagnosticOperationStore(get_session_maker),
+        device_resolver=EndpointDeviceReferenceService(endpoint_port, session_factory),
+        store=SqlAlchemyEndpointDiagnosticOperationStore(session_factory),
     )
     return endpoint_port, EndpointPlatformDiagnosticProvider(operation_service=operation_service)
 
@@ -125,6 +131,15 @@ def _stored_endpoint_device_ref(ticket: Ticket) -> str | None:
 
     value = getattr(ticket, "endpoint_device_ref", None)
     return value if isinstance(value, str) and value else None
+
+
+async def _endpoint_device_ref_for_readiness(*, ticket_id: str, endpoint_port: object | None) -> str | None:
+    """Verify the stored server-owned mapping before Endpoint capability readiness."""
+
+    if endpoint_port is None:
+        return None
+    resolution = await EndpointDeviceReferenceService(endpoint_port, get_session_maker()).resolve_ticket(ticket_id)
+    return resolution.device_ref if resolution.status == "resolved" else None
 
 
 def _capability_payload(capability):
@@ -848,6 +863,9 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         )
     device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
     runtime = _build_diagnostic_runtime(state=state, ticket_id=ticket_id)
+    endpoint_device_ref = await _endpoint_device_ref_for_readiness(
+        ticket_id=ticket_id, endpoint_port=runtime.endpoint_port
+    )
     registry = runtime.registry
     readiness_service = CapabilityReadinessService(state=state)
     capabilities = await registry.list_capabilities(device_id=device_id)
@@ -888,7 +906,7 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         remote_assist=_remote_assist_context(active_remote_assist_session),
         endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
         endpoint_port=runtime.endpoint_port,
-        endpoint_device_ref=_stored_endpoint_device_ref(ticket),
+        endpoint_device_ref=endpoint_device_ref,
     )
     capability_items = []
     for capability in capabilities:
@@ -972,6 +990,9 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         )
     device_id = str(getattr(ticket, "device_id", "") or "").strip() or None
     runtime = _build_diagnostic_runtime(state=state, ticket_id=ticket_id)
+    endpoint_device_ref = await _endpoint_device_ref_for_readiness(
+        ticket_id=ticket_id, endpoint_port=runtime.endpoint_port
+    )
     registry = runtime.registry
     capability = await registry.resolve_capability(capability_id, device_id=device_id)
     readiness = None
@@ -1011,7 +1032,7 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
             remote_assist=_remote_assist_context(active_remote_assist_session),
             endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
             endpoint_port=runtime.endpoint_port,
-            endpoint_device_ref=_stored_endpoint_device_ref(ticket),
+            endpoint_device_ref=endpoint_device_ref,
         )
         readiness = await CapabilityReadinessService(state=state).get_readiness(capability, readiness_context)
         params = _with_provider_runtime_params(params, capability, persisted_maps)
@@ -1076,6 +1097,62 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
     elif result.get("status") == "error":
         status = 400
     return web.json_response(result, status=status)
+
+
+@require_auth("admin")
+async def handle_admin_ticket_endpoint_device_mapping(request: web.Request) -> web.Response:
+    """Admin-only exact provider-id mapping, verified before it is persisted."""
+
+    ticket_id = str(request.match_info.get("ticket_id") or "").strip()
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = None
+    try:
+        mapping_request = EndpointDeviceMappingRequestV1.model_validate(payload)
+    except ValidationError:
+        mapping_request = None
+    if not ticket_id or mapping_request is None:
+        if ticket_id:
+            await record_rejected_endpoint_device_mapping(
+                session_factory=lambda: get_session_maker()(),
+                ticket_id=ticket_id,
+                requested_endpoint_device_ref=None,
+                replace=False,
+                reason_code="ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID",
+                actor_id=str(getattr(request.get("auth_context"), "actor_id", "admin")),
+                actor_role=str(getattr(request.get("auth_context"), "actor_role", "admin")),
+                request_correlation=None,
+            )
+        return web.json_response(
+            {"status": "error", "error_code": "ENDPOINT_DEVICE_MAPPING_REQUEST_INVALID"}, status=400
+        )
+    endpoint_port = DomainPortContainer.from_config().endpoint
+    resolution = await EndpointDeviceReferenceService(
+        endpoint_port, get_session_maker()
+    ).assign_verified_mapping(
+        ticket_id=ticket_id,
+        endpoint_device_ref=mapping_request.endpoint_device_ref,
+        replace=mapping_request.replace,
+        expected_previous_ref=mapping_request.expected_previous_ref,
+        reason=mapping_request.reason,
+        actor_id=str(getattr(request.get("auth_context"), "actor_id", "admin")),
+        actor_role=str(getattr(request.get("auth_context"), "actor_role", "admin")),
+        request_correlation=request.headers.get("X-Correlation-ID"),
+    )
+    if resolution.status != "resolved":
+        status = 503 if resolution.code == "ENDPOINT_UNAVAILABLE" else 409
+        return web.json_response(
+            {"status": "error", "error_code": resolution.code}, status=status
+        )
+    return web.json_response(
+        {
+            "status": "ok",
+            "ticket_id": ticket_id,
+            "endpoint_device_ref": resolution.device_ref,
+            "verified": True,
+        }
+    )
 
 
 @require_auth("admin", "support", "auditor")

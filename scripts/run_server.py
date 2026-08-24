@@ -11,17 +11,12 @@ import sys
 from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parent.parent
-
-
-def resolve_run_dir() -> Path:
-    """Keep mutable runtime state outside immutable production releases."""
-    data_root = os.getenv("PC_CLIENT_SERVER_DATA_ROOT", "").strip()
-    if data_root:
-        return Path(data_root) / "run"
-    return WORKSPACE / ".run"
-
-
-RUN_DIR = resolve_run_dir()
+RUN_DIR = Path(
+    os.getenv(
+        "HELPDESK_RUNTIME_DIR",
+        str(WORKSPACE / ".run" if os.name == "nt" else "/var/lib/helpdesk/run"),
+    )
+)
 PID_FILE = RUN_DIR / "server.pid"
 
 

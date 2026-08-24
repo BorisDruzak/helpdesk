@@ -76,6 +76,8 @@ def _link(*, operation_id: str = "operation-1", key: str = "endpoint-create-key-
             "create_idempotency_key": key,
             "endpoint_device_ref": device,
             "capability_code": "context.diagnostic.collect",
+            "caller_actor_id": None,
+            "caller_idempotency_key": None,
         },
     )()
 

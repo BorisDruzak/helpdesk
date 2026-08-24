@@ -100,6 +100,9 @@ class _HandlerSession:
         self.calls += 1
         return _HandlerResult(self.ticket if self.calls == 1 else None)
 
+    async def get(self, _model, ticket_id):
+        return self.ticket if ticket_id == self.ticket.ticket_id else None
+
 
 class _HandlerRequest(dict):
     def __init__(self, *, payload: object, auth_context) -> None:
@@ -133,6 +136,9 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
     async def fake_get_session():
         yield _HandlerSession(ticket)
 
+    def fake_get_session_maker():
+        return fake_get_session
+
     class _ProviderConfigService:
         def __init__(self, _session) -> None:
             pass
@@ -156,6 +162,7 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
 
     monkeypatch.setattr(handlers.config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(handlers, "get_session", fake_get_session)
+    monkeypatch.setattr(handlers, "get_session_maker", fake_get_session_maker)
     monkeypatch.setattr(handlers, "DiagnosticProviderConfigService", _ProviderConfigService)
     monkeypatch.setattr(handlers, "RemoteAccessRepo", _RemoteAccessRepo)
     monkeypatch.setattr(handlers, "RuntimeAuditCapabilityExecutionObserver", _NoopExecutionObserver)
@@ -177,18 +184,15 @@ def _handler_auth_context():
     return SimpleNamespace(actor_id="support-1", actor_role="support")
 
 
-def test_endpoint_provider_composition_uses_context_managed_session_for_device_resolution(monkeypatch):
+def test_endpoint_provider_composition_uses_initialized_session_factory(monkeypatch):
     import diagnostics.handlers as handlers
 
     endpoint_port = object()
     captured = {}
-
-    @asynccontextmanager
-    async def fake_get_session():
-        yield object()
+    initialized_session_factory = object()
 
     def fake_get_session_maker():
-        return object()
+        return initialized_session_factory
 
     class _Container:
         endpoint = endpoint_port
@@ -211,7 +215,6 @@ def test_endpoint_provider_composition_uses_context_managed_session_for_device_r
         "from_config",
         lambda: _Container(),
     )
-    monkeypatch.setattr(handlers, "get_session", fake_get_session)
     monkeypatch.setattr(handlers, "get_session_maker", fake_get_session_maker)
     monkeypatch.setattr(handlers, "EndpointDeviceReferenceService", _DeviceResolver)
     monkeypatch.setattr(handlers, "SqlAlchemyEndpointDiagnosticOperationStore", _OperationStore)
@@ -221,8 +224,20 @@ def test_endpoint_provider_composition_uses_context_managed_session_for_device_r
 
     assert returned_port is endpoint_port
     assert captured["device_port"] is endpoint_port
-    assert captured["device_session_factory"] is fake_get_session
-    assert captured["store_session_factory"] is fake_get_session_maker
+    assert captured["device_session_factory"] is initialized_session_factory
+    assert captured["store_session_factory"] is initialized_session_factory
+
+
+def _verified_endpoint_snapshot(device_ref: str) -> dict[str, object]:
+    return {
+        "schema_version": "endpoint_device_snapshot_v1",
+        "device_ref": device_ref,
+        "display_name": "Endpoint device",
+        "retired": False,
+        "last_seen_at": "2026-08-17T00:00:00+00:00",
+        "captured_at": "2026-08-17T00:00:00+00:00",
+        "source": "endpoint_platform",
+}
 
 
 def test_endpoint_capability_descriptor_is_exact_and_mode_gated():
@@ -447,6 +462,7 @@ async def test_endpoint_handler_returns_queued_202_without_legacy_dispatch(monke
         ticket_id="ticket-1",
         device_id="legacy-device-1",
         endpoint_device_ref="endpoint-device-1",
+        endpoint_device_snapshot_json=_verified_endpoint_snapshot("endpoint-device-1"),
         observer_root_trace_id=None,
     )
     operation_service = _OperationService()

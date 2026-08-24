@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from sqlalchemy import or_, select
 
@@ -19,7 +20,6 @@ from domain_ports.endpoint import (
     EndpointForbidden,
     EndpointInvalidProjection,
     EndpointNotFound,
-    EndpointOperationCorrelation,
     EndpointOperationCreateRequest,
     EndpointOperationProjection,
     EndpointOperationRef,
@@ -49,6 +49,9 @@ _REMOTE_TO_LOCAL: dict[str, tuple[str, str]] = {
     "expired": ("timed_out", "endpoint_expired"),
 }
 _LOCAL_PROGRESS = {"queued": 0, "sent": 1, "accepted": 2, "running": 3}
+_LOGGER = logging.getLogger(__name__)
+
+__all__ = ("endpoint_operation_correlation_ref",)
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,16 @@ class EndpointOperationReconcileStore(Protocol):
         safe_result_snapshot: dict[str, Any] | None,
         next_attempt_at: datetime,
     ) -> bool: ...
+
+    async def record_unexpected_failure(
+        self,
+        *,
+        claim: EndpointReconcileClaim,
+        error_code: str,
+        next_attempt_at: datetime,
+    ) -> bool: ...
+
+    async def complete_terminal_diagnostic_sessions(self, *, limit: int) -> int: ...
 
 
 def endpoint_retry_delay_seconds(attempt_count: int, *, random: Callable[[], float]) -> float:
@@ -127,13 +140,64 @@ class EndpointOperationReconciler:
     async def reconcile_once(self, *, limit: int) -> int:
         if not self.enabled or limit < 1:
             return 0
-        now = self._aware_now()
-        claims = await self._store.claim_ready(
-            owner=self._owner, now=now, limit=limit, lease_seconds=self._lease_seconds
+        processed = 0
+        for _ in range(limit):
+            # Claim exactly one record immediately before its remote call so a
+            # queued batch cannot consume another record's lease.
+            claims = await self._store.claim_ready(
+                owner=self._owner,
+                now=self._aware_now(),
+                limit=1,
+                lease_seconds=self._lease_seconds,
+            )
+            if not claims:
+                break
+            claim = claims[0]
+            try:
+                await self._reconcile_claim(claim)
+            except Exception as error:
+                await self._record_unexpected_claim_failure(claim, error)
+            processed += 1
+        await self._store.complete_terminal_diagnostic_sessions(limit=limit)
+        return processed
+
+    async def _record_unexpected_claim_failure(
+        self,
+        claim: EndpointReconcileClaim,
+        error: Exception,
+    ) -> None:
+        retry_seconds = endpoint_retry_delay_seconds(
+            claim.attempt_count,
+            random=self._random,
         )
-        for claim in claims:
-            await self._reconcile_claim(claim)
-        return len(claims)
+        next_attempt_at = self._aware_now() + timedelta(seconds=retry_seconds)
+        try:
+            changed = await self._store.record_unexpected_failure(
+                claim=claim,
+                error_code="endpoint_reconcile_unexpected",
+                next_attempt_at=next_attempt_at,
+            )
+        except Exception as record_error:
+            _LOGGER.error(
+                "endpoint_reconcile_claim_failure_record_failed",
+                extra={
+                    "endpoint_operation_id": claim.operation_id,
+                    "attempt": claim.attempt_count + 1,
+                    "owner": self._owner,
+                    "error_type": type(record_error).__name__,
+                },
+            )
+            return
+        _LOGGER.warning(
+            "endpoint_reconcile_claim_failed" if changed else "endpoint_reconcile_claim_stale",
+            extra={
+                "endpoint_operation_id": claim.operation_id,
+                "attempt": claim.attempt_count + 1,
+                "owner": self._owner,
+                "retry_seconds": retry_seconds,
+                "error_type": type(error).__name__,
+            },
+        )
 
     async def _reconcile_claim(self, claim: EndpointReconcileClaim) -> None:
         # There is intentionally no database session/transaction across this await.
@@ -152,10 +216,6 @@ class EndpointOperationReconciler:
                 return
             request = EndpointOperationCreateRequest(
                 parameters=EndpointDiagnosticParameters(reason=ENDPOINT_DIAGNOSTIC_REASON),
-                correlation=EndpointOperationCorrelation(
-                    source_entity_id=claim.correlation_ref or "",
-                    request_id=UUID(claim.operation_id),
-                ),
             )
             outcome = await self._endpoint_port.create_operation(
                 EndpointDeviceRef(external_id=claim.endpoint_device_ref),
@@ -220,8 +280,10 @@ class EndpointOperationReconciler:
         status, phase = _REMOTE_TO_LOCAL[outcome.status]
         if (
             outcome.device.external_id != claim.endpoint_device_ref
-            or outcome.correlation.source_entity_id != claim.correlation_ref
-            or outcome.correlation.request_id != UUID(claim.operation_id)
+            or (
+                claim.endpoint_operation_ref is not None
+                and outcome.operation.external_id != claim.endpoint_operation_ref
+            )
         ):
             await self._commit_and_publish(
                 claim=claim,
@@ -251,7 +313,17 @@ class EndpointOperationReconciler:
         if committed is not False and self._publish_after_commit is not None:
             published = self._publish_after_commit(values["claim"].operation_id)
             if published is not None:
-                await published
+                try:
+                    await published
+                except Exception as error:
+                    _LOGGER.warning(
+                        "endpoint_reconcile_ui_publish_failed",
+                        extra={
+                            "endpoint_operation_id": values["claim"].operation_id,
+                            "owner": self._owner,
+                            "error_type": type(error).__name__,
+                        },
+                    )
 
     def _aware_now(self) -> datetime:
         value = self._now()
@@ -437,6 +509,10 @@ class SqlAlchemyEndpointOperationReconcileStore:
                         state_changed = True
                     if link.diagnostic_session_id:
                         diagnostic_session = await session.get(DiagnosticSession, link.diagnostic_session_id, with_for_update=True)
+                        # Runtime sessions intentionally disable autoflush.  Persist the
+                        # terminal step state before checking whether anything remains
+                        # active in this session.
+                        await session.flush()
                         active_step = (
                             await session.execute(
                                 select(DiagnosticStep.id).where(
@@ -455,6 +531,119 @@ class SqlAlchemyEndpointOperationReconcileStore:
                             state_changed = True
                 await session.flush()
                 return state_changed
+
+    async def record_unexpected_failure(
+        self,
+        *,
+        claim: EndpointReconcileClaim,
+        error_code: str,
+        next_attempt_at: datetime,
+    ) -> bool:
+        """Persist one safe retry state only while this worker still owns its lease."""
+        async with self._session_factory() as session:
+            async with session.begin():
+                link = (
+                    await session.execute(
+                        select(EndpointOperationLink)
+                        .where(EndpointOperationLink.operation_id == claim.operation_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                operation = await session.get(Operation, claim.operation_id, with_for_update=True)
+                if (
+                    link is None
+                    or operation is None
+                    or operation.status in _TERMINAL_LOCAL
+                    or link.remote_status in _TERMINAL_REMOTE
+                    or link.lease_owner != claim.lease_token
+                ):
+                    return False
+                link.last_error_code = error_code
+                link.attempt_count += 1
+                link.next_attempt_at = next_attempt_at
+                link.last_synced_at = datetime.now(timezone.utc)
+                link.lease_owner = None
+                link.lease_until = None
+                operation.error_code = error_code
+                operation.error_message = None
+                await session.flush()
+                return True
+
+    async def complete_terminal_diagnostic_sessions(self, *, limit: int) -> int:
+        """Close sessions whose successful Endpoint operation was already persisted.
+
+        This makes completion idempotent after a process interruption between the
+        operation state update and the session lifecycle update.  It never calls
+        Endpoint, changes an operation, or creates evidence.
+        """
+
+        if limit < 1:
+            return 0
+        active_step_exists = (
+            select(DiagnosticStep.id)
+            .where(
+                DiagnosticStep.session_id == DiagnosticSession.id,
+                DiagnosticStep.status.in_(("pending", "running")),
+            )
+            .exists()
+        )
+        success_evidence_exists = (
+            select(DiagnosticEvidence.id)
+            .where(
+                DiagnosticEvidence.ticket_id == Operation.ticket_id,
+                DiagnosticEvidence.source_type == "endpoint_platform",
+                DiagnosticEvidence.source_id == EndpointOperationLink.endpoint_operation_ref,
+                DiagnosticEvidence.kind == "diagnostic_result",
+                DiagnosticEvidence.status == "succeeded",
+            )
+            .exists()
+        )
+        async with self._session_factory() as session:
+            async with session.begin():
+                session_ids = list(
+                    (
+                        await session.execute(
+                            select(DiagnosticSession.id)
+                            .join(
+                                EndpointOperationLink,
+                                EndpointOperationLink.diagnostic_session_id == DiagnosticSession.id,
+                            )
+                            .join(
+                                Operation,
+                                Operation.operation_id == EndpointOperationLink.operation_id,
+                            )
+                            .where(
+                                DiagnosticSession.status.in_(("draft", "running")),
+                                Operation.status == "succeeded",
+                                EndpointOperationLink.remote_status == "succeeded",
+                                EndpointOperationLink.endpoint_operation_ref.is_not(None),
+                                EndpointOperationLink.safe_result_snapshot_json.is_not(None),
+                                ~active_step_exists,
+                                success_evidence_exists,
+                            )
+                            .distinct()
+                            .order_by(DiagnosticSession.id.asc())
+                            .limit(limit)
+                        )
+                    ).scalars().all()
+                )
+                completed = 0
+                for session_id in session_ids:
+                    diagnostic_session = await session.get(
+                        DiagnosticSession,
+                        session_id,
+                        with_for_update=True,
+                    )
+                    if (
+                        diagnostic_session is None
+                        or diagnostic_session.status not in {"draft", "running"}
+                    ):
+                        continue
+                    diagnostic_session.status = "completed"
+                    diagnostic_session.finished_at = datetime.now(timezone.utc)
+                    completed += 1
+                await session.flush()
+                return completed
 
 
 def _validated_safe_success_snapshot(outcome: EndpointOperationProjection) -> dict[str, Any] | None:
@@ -491,8 +680,18 @@ class EndpointOperationReconcilerRunner:
 
     async def _run(self) -> None:
         while not self._stop.is_set():
-            await self._reconciler.reconcile_once(limit=self._batch_size)
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self._interval_seconds)
+                await self._reconciler.reconcile_once(limit=self._batch_size)
+            except Exception as error:
+                # This runner is a lifecycle loop: a transient unexpected
+                # failure must not turn off future reconciliation attempts.
+                _LOGGER.error(
+                    "endpoint_reconcile_runner_failed",
+                    extra={"error_type": type(error).__name__},
+                )
+            try:
+                await asyncio.wait_for(
+                    self._stop.wait(), timeout=max(0.1, float(self._interval_seconds))
+                )
             except TimeoutError:
                 continue
