@@ -1,4 +1,9 @@
-from scripts.deploy_helpdesk_release import WORKSPACE, release_path, remote_install_command
+from scripts.deploy_helpdesk_release import (
+    WORKSPACE,
+    _ssh_base,
+    release_path,
+    remote_install_command,
+)
 from scripts.helpdesk_remote_profile import RemoteProfile
 
 
@@ -47,3 +52,9 @@ def test_remote_install_command_supports_isolated_staging_service_profile() -> N
     assert "helpdesk-control.service" not in command
     assert "sudo python3 -m venv /opt/helpdesk-staging/releases/helpdesk-abc123/venv" in command
     assert "helpdesk-abc123/venv/bin/pip install" in command
+
+
+def test_ssh_base_adds_tty_only_for_explicit_interactive_profile() -> None:
+    profile = RemoteProfile.from_environment({"HELPDESK_SSH_TTY": "true"})
+
+    assert _ssh_base(profile)[:2] == ["ssh", "-tt"]
