@@ -72,6 +72,8 @@ def _git_commit(commit: str | None) -> str:
 
 def _ssh_base(profile: RemoteProfile) -> list[str]:
     command = ["ssh"]
+    if profile.ssh_tty:
+        command.append("-tt")
     if profile.ssh_key.exists():
         command.extend(["-i", str(profile.ssh_key)])
     return command

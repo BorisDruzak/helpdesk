@@ -24,12 +24,17 @@ def _optional_value(environment: Mapping[str, str], name: str, default: str | No
     return value or None
 
 
+def _enabled(environment: Mapping[str, str], name: str) -> bool:
+    return str(environment.get(name) or "").strip().casefold() in {"1", "true", "yes"}
+
+
 @dataclass(frozen=True)
 class RemoteProfile:
     remote: str
     root: str
     server_python: str
     ssh_key: Path
+    ssh_tty: bool
     environment_file: str
     migrate_service: str
     server_service: str
@@ -45,6 +50,7 @@ class RemoteProfile:
             root=root,
             server_python=_value(values, "HELPDESK_REMOTE_SERVER_PYTHON", f"{root}/server/venv/bin/python"),
             ssh_key=Path(_value(values, "HELPDESK_SSH_KEY", str(DEFAULT_SSH_KEY))),
+            ssh_tty=_enabled(values, "HELPDESK_SSH_TTY"),
             environment_file=_value(values, "HELPDESK_ENV_FILE", "/etc/helpdesk/helpdesk.env"),
             migrate_service=_value(values, "HELPDESK_MIGRATE_SERVICE", "helpdesk-migrate.service"),
             server_service=_value(values, "HELPDESK_SERVER_SERVICE", "helpdesk-server.service"),
