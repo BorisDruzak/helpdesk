@@ -86,3 +86,45 @@ def test_apply_requires_exact_environment_approval_and_does_not_accept_secrets()
     manifest["service_token"] = "forbidden"
     with pytest.raises(CanaryManifestError, match="forbidden"):
         validate_manifest(manifest, environment="staging", apply=False, env={})
+
+
+def test_windows_v2_manifest_accepts_only_the_strict_schema() -> None:
+    manifest = _manifest()
+    manifest["schema_version"] = "endpoint_diagnostic_canary_v2"
+    manifest["agent"] = {
+        "platform": "windows_amd64",
+        "host_safe_label": "alt-canary-70",
+        "device_id": "00000000-0000-4000-8000-000000000701",
+        "service_name": "EndpointAgent",
+        "updater_service_name": "EndpointAgentUpdater",
+        "source_revision": "a" * 40,
+        "version": "3.2.16",
+        "package_name": "endpoint-agent-3.2.16.msi",
+        "package_sha256": "d" * 64,
+    }
+    manifest["environment"]["production_changed"] = False
+
+    result = validate_manifest(manifest, environment="staging", apply=False, env={})
+
+    assert result["platform"] == "windows_amd64"
+
+
+def test_windows_v2_manifest_rejects_unknown_agent_field() -> None:
+    manifest = _manifest()
+    manifest["schema_version"] = "endpoint_diagnostic_canary_v2"
+    manifest["agent"] = {
+        "platform": "windows_amd64",
+        "host_safe_label": "alt-canary-70",
+        "device_id": "00000000-0000-4000-8000-000000000701",
+        "service_name": "EndpointAgent",
+        "updater_service_name": "EndpointAgentUpdater",
+        "source_revision": "a" * 40,
+        "version": "3.2.16",
+        "package_name": "endpoint-agent-3.2.16.msi",
+        "package_sha256": "d" * 64,
+        "credential": "forbidden",
+    }
+    manifest["environment"]["production_changed"] = False
+
+    with pytest.raises(CanaryManifestError, match="forbidden|schema"):
+        validate_manifest(manifest, environment="staging", apply=False, env={})

@@ -21,6 +21,11 @@ class CanaryManifestError(ValueError):
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _REQUIRED_TOP_LEVEL = frozenset({"schema_version", "environment", "revisions", "targets", "baseline", "execution", "rollback", "result"})
+_V2_TOP_LEVEL = _REQUIRED_TOP_LEVEL | frozenset({"agent"})
+_V2_AGENT_KEYS = frozenset({
+    "platform", "host_safe_label", "device_id", "service_name", "updater_service_name",
+    "source_revision", "version", "package_name", "package_sha256",
+})
 _APPLY_ENVIRONMENT_KEYS = frozenset({
     "CANARY_APPROVED", "CANARY_ENVIRONMENT", "CANARY_CHANGE_ID", "CANARY_ENDPOINT_HOST",
     "CANARY_HELPDESK_HOST", "CANARY_AGENT_HOST", "CANARY_ENDPOINT_DEVICE_ID",
@@ -50,6 +55,28 @@ def _required_string(section: Mapping[str, Any], key: str) -> str:
     return value
 
 
+def _validate_v2_agent(manifest: Mapping[str, Any], *, targets: Mapping[str, Any]) -> str:
+    agent = _mapping(manifest.get("agent"), name="agent")
+    if set(agent) != _V2_AGENT_KEYS:
+        raise CanaryManifestError("agent schema is invalid")
+    if agent.get("platform") != "windows_amd64":
+        raise CanaryManifestError("Windows agent platform is invalid")
+    if agent.get("service_name") != "EndpointAgent":
+        raise CanaryManifestError("Windows service name is invalid")
+    if agent.get("updater_service_name") != "EndpointAgentUpdater":
+        raise CanaryManifestError("Windows updater service name is invalid")
+    for key in ("host_safe_label", "device_id", "source_revision", "version", "package_name"):
+        _required_string(agent, key)
+    package_sha256 = agent.get("package_sha256")
+    if not isinstance(package_sha256, str) or not _SHA256.fullmatch(package_sha256):
+        raise CanaryManifestError("Windows package SHA-256 is invalid")
+    if agent["device_id"] != targets.get("endpoint_device_id"):
+        raise CanaryManifestError("Windows device does not match target")
+    if agent["host_safe_label"] != targets.get("agent_host_safe_label"):
+        raise CanaryManifestError("Windows host does not match target")
+    return "windows_amd64"
+
+
 def validate_manifest(
     manifest: Mapping[str, Any], *, environment: str, apply: bool, env: Mapping[str, str]
 ) -> dict[str, object]:
@@ -58,10 +85,15 @@ def validate_manifest(
         reject_sensitive_values(manifest)
     except CanaryEvidenceError as error:
         raise CanaryManifestError(str(error)) from error
-    if set(manifest) != _REQUIRED_TOP_LEVEL:
-        raise CanaryManifestError("manifest top-level schema is invalid")
-    if manifest.get("schema_version") != "endpoint_diagnostic_canary_v1":
+    schema_version = manifest.get("schema_version")
+    if schema_version == "endpoint_diagnostic_canary_v1":
+        expected_top_level = _REQUIRED_TOP_LEVEL
+    elif schema_version == "endpoint_diagnostic_canary_v2":
+        expected_top_level = _V2_TOP_LEVEL
+    else:
         raise CanaryManifestError("unsupported manifest schema")
+    if set(manifest) != expected_top_level:
+        raise CanaryManifestError("manifest top-level schema is invalid")
     if environment != "staging":
         raise CanaryManifestError("only staging environment is permitted")
     environment_data = _mapping(manifest["environment"], name="environment")
@@ -70,6 +102,8 @@ def validate_manifest(
     result = _mapping(manifest["result"], name="result")
     if environment_data.get("environment_class") != "staging":
         raise CanaryManifestError("manifest is not staging")
+    if schema_version == "endpoint_diagnostic_canary_v2" and environment_data.get("production_changed") is not False:
+        raise CanaryManifestError("manifest must state production_changed=false")
     if result.get("production_changed") is not False:
         raise CanaryManifestError("manifest must state production_changed=false")
     idempotency_hash = execution.get("caller_idempotency_key_hash")
@@ -81,6 +115,9 @@ def validate_manifest(
     agent_host = _required_string(targets, "agent_host_safe_label")
     device_id = _required_string(targets, "endpoint_device_id")
     ticket_id = _required_string(targets, "helpdesk_ticket_id")
+    platform = "linux_amd64"
+    if schema_version == "endpoint_diagnostic_canary_v2":
+        platform = _validate_v2_agent(manifest, targets=targets)
     if apply:
         missing = [key for key in _APPLY_ENVIRONMENT_KEYS if not env.get(key)]
         if missing:
@@ -93,7 +130,7 @@ def validate_manifest(
         }
         if any(env.get(key) != value for key, value in expected.items()):
             raise CanaryManifestError("canary approval variables do not match manifest")
-    return {"environment_class": "staging", "apply": apply, "endpoint_host": endpoint_host, "helpdesk_host": helpdesk_host}
+    return {"environment_class": "staging", "apply": apply, "endpoint_host": endpoint_host, "helpdesk_host": helpdesk_host, "platform": platform}
 
 
 def _parser() -> argparse.ArgumentParser:
