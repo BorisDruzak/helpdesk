@@ -36,8 +36,34 @@ python scripts/canary/endpoint_diagnostic_canary.py preflight \
 
 This command is validation-only. It accepts no token or credential argument,
 rejects production, raw idempotency keys and secret-like fields, and performs
-no operation creation. The mutable-stage approval variables are checked only
-when a reviewed operator flow explicitly requests that gate.
+no operation creation.
+
+For a Windows agent canary, use manifest schema
+`endpoint_diagnostic_canary_v2`. Its `agent` identity must name
+`windows_amd64`, `EndpointAgent`, `EndpointAgentUpdater`, the immutable source
+revision, MSI version, and MSI SHA-256. Before either mutable stage, an
+operator must supply the exact approval variables and a protected technical
+proof JSON:
+
+```text
+python scripts/canary/endpoint_diagnostic_canary.py map \
+  --manifest <protected-evidence-root>/manifest.json \
+  --environment staging \
+  --apply \
+  --staging-proof <protected-evidence-root>/staging-proof.json
+```
+
+The proof is fail-closed: it must match both origins, the device-safe label,
+and both DB revisions, state that the Windows VM is dedicated, identify a
+snapshot or approved recovery point, and contain an empty production-identifier
+list. A VM ID is not used by the tooling. The `map` stage calls only the
+existing admin mapping route; `execute` calls only the existing support
+diagnostic route with one caller idempotency key whose SHA-256 is already in
+the manifest. The raw key and authorization value are never printed.
+
+Without `--apply`, `map` and `execute` return a dry-run result and make no
+HTTP request. `observe`, `verify`, `rollback-check`, and `report` are
+read-only overview stages; none edits deployment configuration.
 
 ## Stage 1 — TLS and read-only provider smoke
 
@@ -118,3 +144,8 @@ Stop the canary and begin the rollback procedure if any of these occurs:
 - Repeated reconciler error.
 - The remote operation does not reach a terminal state within the approved
   timeout.
+- The dedicated Windows VM lacks `EndpointAgent` or `EndpointAgentUpdater`,
+  or the service facts do not meet the immutable MSI boundary.
+- A technical staging proof, snapshot/recovery point, or non-production
+  evidence cannot be produced. Record `WINDOWS_CANARY_BLOCKED` instead of
+  attempting enrollment, MSI installation, mapping, or execution.
