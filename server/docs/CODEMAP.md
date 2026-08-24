@@ -98,7 +98,9 @@
   the same ref makes no write only when its frozen snapshot is valid, otherwise
   it backfills that snapshot with an actor audit event. Revision `135` adds the ticket fields plus
   `endpoint_operation_links`; revision `137` adds actor-scoped caller
-  idempotency fields and their partial unique index.
+  idempotency fields and their partial unique index; revision `138` permits a null legacy `operations.device_id`
+  only for server-originated `endpoint_operation` records and keeps all other
+  operation kinds guarded by a database constraint.
   `server/app/repos/endpoint_operation_links_repo.py` contains only exact link
   lookup/create persistence and performs no HTTP, DeviceOutbox, tool, or
   WebSocket work.

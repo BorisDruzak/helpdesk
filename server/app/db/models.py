@@ -3217,7 +3217,7 @@ class Operation(Base):
     __tablename__ = "operations"
     
     operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    device_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     ticket_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
     job_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     

@@ -34,7 +34,7 @@ class OperationsRepo:
     async def create_operation(
         self,
         operation_id: str,
-        device_id: str,
+        device_id: Optional[str],
         kind: str,
         actor_role: str,
         trace_id: str,
@@ -72,6 +72,8 @@ class OperationsRepo:
         Raises:
             Exception: If database operation fails
         """
+        if device_id is None and kind != "endpoint_operation":
+            raise ValueError("only endpoint_operation may omit a legacy device_id")
         operation = Operation(
             operation_id=operation_id,
             device_id=device_id,

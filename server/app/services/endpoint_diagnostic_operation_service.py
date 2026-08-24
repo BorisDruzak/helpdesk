@@ -262,13 +262,13 @@ class SqlAlchemyEndpointDiagnosticOperationStore:
         self, session: Any, values: dict[str, Any]
     ) -> EndpointDiagnosticOperationStored:
         ticket = await session.get(Ticket, values["ticket_id"], with_for_update=True)
-        legacy_device_id = str(getattr(ticket, "device_id", "") or "")
-        if ticket is None or not legacy_device_id or len(legacy_device_id) > 36:
-            raise EndpointDiagnosticOperationUnavailable("ENDPOINT_LEGACY_DEVICE_MISSING")
+        if ticket is None:
+            raise EndpointDiagnosticOperationUnavailable("ENDPOINT_TICKET_NOT_FOUND")
+        legacy_device_id = getattr(ticket, "device_id", None)
         operations = OperationsRepo(session)
         operation = await operations.create_operation(
                     operation_id=values["operation_id"],
-                    # This is the local Ticket compatibility identifier, never an Endpoint ref.
+                    # Nullable only for the server-originated Endpoint facade operation.
                     device_id=legacy_device_id,
                     ticket_id=values["ticket_id"],
                     kind="endpoint_operation",
