@@ -62,8 +62,30 @@ diagnostic route with one caller idempotency key whose SHA-256 is already in
 the manifest. The raw key and authorization value are never printed.
 
 Without `--apply`, `map` and `execute` return a dry-run result and make no
-HTTP request. `observe`, `verify`, `rollback-check`, and `report` are
-read-only overview stages; none edits deployment configuration.
+HTTP request. `observe` reads only a count-only overview. `verify` requires
+exactly one succeeded local operation, one succeeded Endpoint operation with a
+safe result, and one succeeded `endpoint_platform` evidence item. It prints
+only the two safe IDs. `rollback-check` consumes an exact read-only proof JSON
+and never changes configuration. `report` repeats the strict verification and
+writes a checksum-protected, redacted JSON and Markdown package only under an
+existing protected local evidence root:
+
+```text
+python scripts/canary/endpoint_diagnostic_canary.py report \
+  --manifest <protected-evidence-root>/manifest.json \
+  --environment staging \
+  --evidence-root <protected-evidence-root>
+```
+
+The package deliberately omits ticket IDs, service origins, credentials,
+authorization material, raw results, and raw overview payloads. None of these
+commands edits deployment configuration.
+
+For rollback validation, provide `rollback-check` an independently collected
+proof with the staging class, final Endpoint API/Helpdesk modes, confirmation
+that new operations are blocked and terminal evidence remains, and
+`database_downgrade_performed=false`. Any missing, extra, or mismatched field
+fails closed.
 
 ## Stage 1 — TLS and read-only provider smoke
 

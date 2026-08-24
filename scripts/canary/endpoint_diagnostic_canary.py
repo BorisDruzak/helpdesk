@@ -42,6 +42,12 @@ _STAGING_PROOF_KEYS = frozenset({
     "endpoint_database_revision", "helpdesk_database_revision",
 })
 _OPTIONAL_STAGING_PROOF_KEYS = frozenset({"snapshot_or_recovery_point"})
+_ROLLBACK_PROOF_KEYS = frozenset({
+    "schema_version", "environment_class", "endpoint_operations_api_enabled", "helpdesk_port_mode",
+    "helpdesk_execution_mode", "new_operations_blocked", "terminal_evidence_preserved",
+    "database_downgrade_performed",
+})
+_SAFE_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
 @dataclass(frozen=True)
@@ -283,9 +289,92 @@ def _verify_overview(overview: Mapping[str, Any]) -> dict[str, object]:
     return {"status": "verified", "local_operation_id": local_operation_id, "evidence_id": evidence_id}
 
 
+def _validate_rollback_proof(manifest: Mapping[str, Any], *, rollback_proof: Mapping[str, Any] | None) -> None:
+    if rollback_proof is None or set(rollback_proof) != _ROLLBACK_PROOF_KEYS:
+        raise CanaryManifestError("exact read-only rollback proof is required")
+    rollback = _mapping(manifest["rollback"], name="rollback")
+    expected = {
+        "schema_version": "endpoint_diagnostic_rollback_proof_v1",
+        "environment_class": "staging",
+        "endpoint_operations_api_enabled": rollback.get("final_endpoint_api_mode") != "disabled",
+        "helpdesk_port_mode": rollback.get("final_helpdesk_port_mode"),
+        "helpdesk_execution_mode": rollback.get("final_helpdesk_execution_mode"),
+        "new_operations_blocked": True,
+        "terminal_evidence_preserved": True,
+        "database_downgrade_performed": False,
+    }
+    if any(rollback_proof.get(key) != value for key, value in expected.items()):
+        raise CanaryManifestError("rollback proof does not match the approved final state")
+
+
+def _redacted_report(manifest: Mapping[str, Any], verification: Mapping[str, object]) -> dict[str, object]:
+    agent = _mapping(manifest.get("agent"), name="agent")
+    revisions = _mapping(manifest["revisions"], name="revisions")
+    execution = _mapping(manifest["execution"], name="execution")
+    report = {
+        "schema_version": "endpoint_diagnostic_canary_report_v1",
+        "canary_id": _required_string(execution, "canary_id"),
+        "status": verification.get("status"),
+        "agent": {
+            key: agent[key]
+            for key in ("platform", "host_safe_label", "source_revision", "version", "package_name", "package_sha256")
+        },
+        "revisions": {
+            key: revisions[key]
+            for key in ("endpoint_commit", "helpdesk_commit", "endpoint_database_revision", "helpdesk_database_revision")
+        },
+        "verification": {
+            key: verification[key]
+            for key in ("local_operation_id", "evidence_id")
+        },
+    }
+    try:
+        reject_sensitive_values(report)
+    except CanaryEvidenceError as error:
+        raise CanaryManifestError(str(error)) from error
+    return report
+
+
+def write_redacted_report(
+    *, manifest: Mapping[str, Any], verification: Mapping[str, object], evidence_root: Path,
+) -> dict[str, object]:
+    """Create an immutable-name, secret-free local evidence package under a protected root."""
+    report = _redacted_report(manifest, verification)
+    if not evidence_root.is_absolute() or not evidence_root.is_dir() or evidence_root.is_symlink():
+        raise CanaryManifestError("evidence root must be an existing non-reparse absolute directory")
+    canary_id = report["canary_id"]
+    if not isinstance(canary_id, str) or not _SAFE_LABEL.fullmatch(canary_id):
+        raise CanaryManifestError("canary ID is not a safe evidence package label")
+    package = evidence_root / f"canary-report-{canary_id}"
+    if package.exists():
+        raise CanaryManifestError("evidence package already exists")
+    package.mkdir()
+    json_path = package / "report.json"
+    markdown_path = package / "report.md"
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
+    markdown_path.write_text(
+        "# Endpoint diagnostic canary report\n\n"
+        f"- Status: `{report['status']}`\n"
+        f"- Canary: `{report['canary_id']}`\n"
+        f"- Agent platform/version: `{report['agent']['platform']}` / `{report['agent']['version']}`\n"
+        f"- Local operation: `{report['verification']['local_operation_id']}`\n"
+        f"- Evidence: `{report['verification']['evidence_id']}`\n",
+        encoding="utf-8", newline="\n",
+    )
+    checksums = {
+        path.name: sha256(path.read_bytes()).hexdigest()
+        for path in (json_path, markdown_path)
+    }
+    (package / "checksums.json").write_text(
+        json.dumps(checksums, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
+    return {"package": package.name, "files": ["report.json", "report.md", "checksums.json"]}
+
+
 def run_command(
     command: str, *, manifest: Mapping[str, Any], apply: bool, env: Mapping[str, str],
-    staging_proof: Mapping[str, Any] | None = None, adapter: CanaryHttpAdapter | None = None,
+    staging_proof: Mapping[str, Any] | None = None, rollback_proof: Mapping[str, Any] | None = None,
+    adapter: CanaryHttpAdapter | None = None,
 ) -> dict[str, object]:
     """Run exactly one bounded canary stage through existing Helpdesk routes."""
     validation = validate_manifest(manifest, environment="staging", apply=apply, env=env, staging_proof=staging_proof)
@@ -293,6 +382,9 @@ def run_command(
         return {"status": "preflight_ready", **validation}
     if command not in {"map", "execute", "observe", "verify", "rollback-check", "report"}:
         raise CanaryManifestError("unsupported canary command")
+    if command == "rollback-check":
+        _validate_rollback_proof(manifest, rollback_proof=rollback_proof)
+        return {"status": "rollback_verified"}
     targets = _mapping(manifest["targets"], name="targets")
     ticket_id = _required_string(targets, "helpdesk_ticket_id")
     canary_id = _required_string(_mapping(manifest["execution"], name="execution"), "canary_id")
@@ -330,6 +422,8 @@ def run_command(
         return _observe_overview(response)
     if command == "verify":
         return _verify_overview(response)
+    if command == "report":
+        return _verify_overview(response)
     return {"status": "observed", "command": command, "overview_present": bool(response)}
 
 
@@ -350,6 +444,9 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--environment", required=True)
         command.add_argument("--apply", action="store_true", help="validate mutable-stage authority only")
         command.add_argument("--staging-proof", type=Path, help="protected technical staging-proof JSON for --apply")
+        command.add_argument("--rollback-proof", type=Path, help="read-only rollback-proof JSON for rollback-check")
+        if name == "report":
+            command.add_argument("--evidence-root", type=Path, help="existing protected local directory for redacted report")
     return parser
 
 
@@ -358,7 +455,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         staging_proof = json.loads(args.staging_proof.read_text(encoding="utf-8")) if args.staging_proof else None
-        result = run_command(args.command, manifest=manifest, apply=args.apply, env=os.environ, staging_proof=staging_proof)
+        rollback_proof = json.loads(args.rollback_proof.read_text(encoding="utf-8")) if args.rollback_proof else None
+        result = run_command(
+            args.command, manifest=manifest, apply=args.apply, env=os.environ,
+            staging_proof=staging_proof, rollback_proof=rollback_proof,
+        )
+        if args.command == "report":
+            if args.evidence_root is None:
+                raise CanaryManifestError("report requires --evidence-root")
+            result = {**result, **write_redacted_report(manifest=manifest, verification=result, evidence_root=args.evidence_root)}
     except (OSError, json.JSONDecodeError, CanaryManifestError) as error:
         print(f"canary preflight failed: {error}", file=sys.stderr)
         return 2

@@ -13,6 +13,7 @@ from scripts.canary.endpoint_diagnostic_canary import (
     _parser,
     run_command,
     validate_manifest,
+    write_redacted_report,
 )
 
 
@@ -288,6 +289,19 @@ def _succeeded_overview() -> dict[str, object]:
     }
 
 
+def _rollback_proof() -> dict[str, object]:
+    return {
+        "schema_version": "endpoint_diagnostic_rollback_proof_v1",
+        "environment_class": "staging",
+        "endpoint_operations_api_enabled": False,
+        "helpdesk_port_mode": "unavailable",
+        "helpdesk_execution_mode": "legacy",
+        "new_operations_blocked": True,
+        "terminal_evidence_preserved": True,
+        "database_downgrade_performed": False,
+    }
+
+
 def test_observe_returns_only_safe_summary_and_verify_requires_exactly_once_terminal_projection() -> None:
     manifest = _windows_manifest()
     adapter = CanaryHttpAdapter(request=lambda **_: _succeeded_overview())
@@ -321,3 +335,37 @@ def test_verify_rejects_duplicate_or_nonterminal_overview(mutate) -> None:
 
     with pytest.raises(CanaryManifestError):
         run_command("verify", manifest=_windows_manifest(), apply=False, env={}, adapter=adapter)
+
+
+def test_rollback_check_requires_an_exact_read_only_proof() -> None:
+    result = run_command(
+        "rollback-check",
+        manifest=_windows_manifest(),
+        apply=False,
+        env={},
+        rollback_proof=_rollback_proof(),
+    )
+
+    assert result == {"status": "rollback_verified"}
+    proof = _rollback_proof()
+    proof["endpoint_operations_api_enabled"] = True
+    with pytest.raises(CanaryManifestError, match="rollback"):
+        run_command("rollback-check", manifest=_windows_manifest(), apply=False, env={}, rollback_proof=proof)
+
+
+def test_report_writer_creates_only_redacted_checksums(tmp_path) -> None:
+    package = write_redacted_report(
+        manifest=_windows_manifest(),
+        verification={"status": "verified", "local_operation_id": "local-701", "evidence_id": "evidence-701"},
+        evidence_root=tmp_path,
+    )
+
+    package_path = tmp_path / "canary-report-canary-701"
+    report = (package_path / "report.json").read_text(encoding="utf-8")
+    checksums = (package_path / "checksums.json").read_text(encoding="utf-8")
+    assert package == {"package": "canary-report-canary-701", "files": ["report.json", "report.md", "checksums.json"]}
+    assert '"helpdesk_ticket_id"' not in report
+    assert "ticket-staging-701" not in report
+    assert "endpoint-staging.sosnadmin.local" not in report
+    assert "report.json" in checksums
+    assert "report.md" in checksums
