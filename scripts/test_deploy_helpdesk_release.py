@@ -25,3 +25,22 @@ def test_remote_install_command_uses_immutable_release_and_system_services() -> 
     assert "reset-failed helpdesk-migrate.service" not in command
     assert "sudo systemctl start helpdesk-migrate.service" in command
     assert "sudo systemctl restart helpdesk-server.service helpdesk-control.service" in command
+
+
+def test_remote_install_command_supports_isolated_staging_service_profile() -> None:
+    profile = RemoteProfile.from_environment(
+        {
+            "HELPDESK_REMOTE_ROOT": "/opt/helpdesk-staging/current",
+            "HELPDESK_ENV_FILE": "/etc/helpdesk-staging/helpdesk.env",
+            "HELPDESK_MIGRATE_SERVICE": "helpdesk-staging-migrate.service",
+            "HELPDESK_SERVER_SERVICE": "helpdesk-staging.service",
+            "HELPDESK_CONTROL_SERVICE": "",
+        }
+    )
+
+    command = remote_install_command(profile, "abc123", "/tmp/helpdesk-abc123.tar")
+
+    assert "test -f /etc/helpdesk-staging/helpdesk.env" in command
+    assert "sudo systemctl start helpdesk-staging-migrate.service" in command
+    assert "sudo systemctl restart helpdesk-staging.service" in command
+    assert "helpdesk-control.service" not in command

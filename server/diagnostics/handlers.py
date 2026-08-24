@@ -88,11 +88,10 @@ def _build_endpoint_platform_provider(ticket_id: str) -> tuple[object, EndpointP
     """Compose the local facade from typed endpoint dependencies only."""
 
     endpoint_port = DomainPortContainer.from_config().endpoint
-    session_factory = get_session_maker
     operation_service = EndpointDiagnosticOperationService(
         access_service=_HandlerVerifiedEndpointAccess(ticket_id=ticket_id),
-        device_resolver=EndpointDeviceReferenceService(endpoint_port, session_factory),
-        store=SqlAlchemyEndpointDiagnosticOperationStore(session_factory),
+        device_resolver=EndpointDeviceReferenceService(endpoint_port, get_session),
+        store=SqlAlchemyEndpointDiagnosticOperationStore(get_session_maker),
     )
     return endpoint_port, EndpointPlatformDiagnosticProvider(operation_service=operation_service)
 

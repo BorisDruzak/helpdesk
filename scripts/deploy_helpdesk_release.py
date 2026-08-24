@@ -24,10 +24,13 @@ def release_path(profile: RemoteProfile, commit: str) -> str:
 def remote_install_command(profile: RemoteProfile, commit: str, remote_archive: str) -> str:
     release = release_path(profile, commit)
     deployment_root = Path(profile.root).parent.as_posix()
+    runtime_services = " ".join(
+        service for service in (profile.server_service, profile.control_service) if service
+    )
     return " ; ".join(
         [
             "set -eu",
-            "test -f /etc/helpdesk/helpdesk.env",
+            f"test -f {profile.environment_file}",
             f"test ! -e {release}",
             f"sudo install -d -o root -g root -m 0755 {deployment_root}/releases",
             f"sudo mkdir {release}",
@@ -39,9 +42,9 @@ def remote_install_command(profile: RemoteProfile, commit: str, remote_archive: 
             f"sudo chmod -R a-w {release}",
             f"sudo ln -sfn {release} {profile.root}",
             "sudo systemctl daemon-reload",
-            "sudo systemctl start helpdesk-migrate.service",
-            "sudo systemctl restart helpdesk-server.service helpdesk-control.service",
-            "sudo systemctl is-active helpdesk-server.service helpdesk-control.service",
+            f"sudo systemctl start {profile.migrate_service}",
+            f"sudo systemctl restart {runtime_services}",
+            f"sudo systemctl is-active {runtime_services}",
         ]
     )
 

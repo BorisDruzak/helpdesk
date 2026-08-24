@@ -26,6 +26,11 @@ Preflight показывает текущий `HEAD`, проверяет `artifa
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
 - Helpdesk release не использует отдельный Git remote или рабочую копию на хосте: точный локальный commit передаётся архивом через `scripts/deploy_helpdesk_release.py`.
+- Для изолированного staging Helpdesk тот же скрипт получает только профильные
+  переменные `HELPDESK_REMOTE`, `HELPDESK_REMOTE_ROOT`, `HELPDESK_ENV_FILE`,
+  `HELPDESK_MIGRATE_SERVICE`, `HELPDESK_SERVER_SERVICE` и, при отсутствии
+  control-plane, пустую `HELPDESK_CONTROL_SERVICE`. Это сохраняет immutable
+  release и не допускает использования production-путей или systemd-юнитов.
 
 ## Рекомендуемый поток
 

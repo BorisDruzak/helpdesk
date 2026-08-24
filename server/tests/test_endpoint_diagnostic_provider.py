@@ -177,6 +177,54 @@ def _handler_auth_context():
     return SimpleNamespace(actor_id="support-1", actor_role="support")
 
 
+def test_endpoint_provider_composition_uses_context_managed_session_for_device_resolution(monkeypatch):
+    import diagnostics.handlers as handlers
+
+    endpoint_port = object()
+    captured = {}
+
+    @asynccontextmanager
+    async def fake_get_session():
+        yield object()
+
+    def fake_get_session_maker():
+        return object()
+
+    class _Container:
+        endpoint = endpoint_port
+
+    class _DeviceResolver:
+        def __init__(self, port, session_factory) -> None:
+            captured["device_port"] = port
+            captured["device_session_factory"] = session_factory
+
+    class _OperationStore:
+        def __init__(self, session_factory) -> None:
+            captured["store_session_factory"] = session_factory
+
+    class _OperationService:
+        def __init__(self, **kwargs) -> None:
+            captured["operation_service"] = kwargs
+
+    monkeypatch.setattr(
+        handlers.DomainPortContainer,
+        "from_config",
+        lambda: _Container(),
+    )
+    monkeypatch.setattr(handlers, "get_session", fake_get_session)
+    monkeypatch.setattr(handlers, "get_session_maker", fake_get_session_maker)
+    monkeypatch.setattr(handlers, "EndpointDeviceReferenceService", _DeviceResolver)
+    monkeypatch.setattr(handlers, "SqlAlchemyEndpointDiagnosticOperationStore", _OperationStore)
+    monkeypatch.setattr(handlers, "EndpointDiagnosticOperationService", _OperationService)
+
+    returned_port, _provider = handlers._build_endpoint_platform_provider("ticket-1")
+
+    assert returned_port is endpoint_port
+    assert captured["device_port"] is endpoint_port
+    assert captured["device_session_factory"] is fake_get_session
+    assert captured["store_session_factory"] is fake_get_session_maker
+
+
 def test_endpoint_capability_descriptor_is_exact_and_mode_gated():
     assert list_endpoint_platform_capabilities(execution_mode="legacy") == []
 
