@@ -8,9 +8,12 @@ import os
 import re
 import sys
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 from scripts.canary.evidence_models import CanaryEvidenceError, reject_sensitive_values
 
@@ -30,7 +33,44 @@ _APPLY_ENVIRONMENT_KEYS = frozenset({
     "CANARY_APPROVED", "CANARY_ENVIRONMENT", "CANARY_CHANGE_ID", "CANARY_ENDPOINT_HOST",
     "CANARY_HELPDESK_HOST", "CANARY_AGENT_HOST", "CANARY_ENDPOINT_DEVICE_ID",
     "CANARY_HELPDESK_TICKET_ID", "CANARY_EVIDENCE_ROOT",
+    "CANARY_AGENT_PLATFORM", "CANARY_WINDOWS_SERVICE", "CANARY_WINDOWS_UPDATER_SERVICE",
+    "CANARY_WINDOWS_MSI_VERSION", "CANARY_WINDOWS_MSI_SHA256", "CANARY_WINDOWS_SOURCE_REVISION",
 })
+_STAGING_PROOF_KEYS = frozenset({
+    "schema_version", "environment_class", "endpoint_host", "helpdesk_host", "agent_host_safe_label",
+    "dedicated_windows_vm", "snapshot_or_recovery_point", "production_identifiers",
+    "endpoint_database_revision", "helpdesk_database_revision",
+})
+
+
+@dataclass(frozen=True)
+class CanaryHttpAdapter:
+    """Small transport seam for the existing Helpdesk routes only."""
+
+    request: Any | None = None
+    authorization: str | None = None
+
+    def call(self, *, method: str, url: str, payload: Mapping[str, object] | None, headers: Mapping[str, str]) -> Mapping[str, Any]:
+        if self.request is not None:
+            result = self.request(method=method, url=url, payload=payload, headers=dict(headers))
+            if not isinstance(result, Mapping):
+                raise CanaryManifestError("canary route returned an invalid JSON object")
+            return result
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        request_headers = {"Accept": "application/json", **headers}
+        if body is not None:
+            request_headers["Content-Type"] = "application/json"
+        if self.authorization:
+            request_headers["Authorization"] = self.authorization
+        request = Request(url, data=body, headers=request_headers, method=method)
+        try:
+            with urlopen(request, timeout=15) as response:  # nosec B310: manifest permits HTTPS origins only
+                data = json.loads(response.read().decode("utf-8"))
+        except Exception as error:
+            raise CanaryManifestError(f"canary route request failed: {type(error).__name__}") from error
+        if not isinstance(data, Mapping):
+            raise CanaryManifestError("canary route returned an invalid JSON object")
+        return data
 
 
 def _mapping(value: Any, *, name: str) -> Mapping[str, Any]:
@@ -77,8 +117,35 @@ def _validate_v2_agent(manifest: Mapping[str, Any], *, targets: Mapping[str, Any
     return "windows_amd64"
 
 
+def _validate_staging_proof(manifest: Mapping[str, Any], *, staging_proof: Mapping[str, Any] | None) -> None:
+    if staging_proof is None or set(staging_proof) != _STAGING_PROOF_KEYS:
+        raise CanaryManifestError("technical staging proof is required")
+    if staging_proof.get("schema_version") != "windows_canary_staging_proof_v1":
+        raise CanaryManifestError("technical staging proof schema is invalid")
+    if staging_proof.get("environment_class") != "staging":
+        raise CanaryManifestError("technical staging proof is not staging")
+    targets = _mapping(manifest["targets"], name="targets")
+    revisions = _mapping(manifest["revisions"], name="revisions")
+    exact_values = {
+        "endpoint_host": _https_host(targets.get("endpoint_origin"), name="endpoint_origin"),
+        "helpdesk_host": _https_host(targets.get("helpdesk_origin"), name="helpdesk_origin"),
+        "agent_host_safe_label": targets.get("agent_host_safe_label"),
+        "endpoint_database_revision": revisions.get("endpoint_database_revision"),
+        "helpdesk_database_revision": revisions.get("helpdesk_database_revision"),
+    }
+    if any(staging_proof.get(key) != value for key, value in exact_values.items()):
+        raise CanaryManifestError("technical staging proof does not match manifest")
+    if staging_proof.get("dedicated_windows_vm") is not True:
+        raise CanaryManifestError("technical staging proof requires a dedicated Windows VM")
+    if not isinstance(staging_proof.get("snapshot_or_recovery_point"), str) or not staging_proof["snapshot_or_recovery_point"].strip():
+        raise CanaryManifestError("technical staging proof requires a recovery point")
+    if staging_proof.get("production_identifiers") != []:
+        raise CanaryManifestError("technical staging proof contains production identifiers")
+
+
 def validate_manifest(
-    manifest: Mapping[str, Any], *, environment: str, apply: bool, env: Mapping[str, str]
+    manifest: Mapping[str, Any], *, environment: str, apply: bool, env: Mapping[str, str],
+    staging_proof: Mapping[str, Any] | None = None,
 ) -> dict[str, object]:
     """Validate scope and approval before any canary operation can be issued."""
     try:
@@ -130,7 +197,79 @@ def validate_manifest(
         }
         if any(env.get(key) != value for key, value in expected.items()):
             raise CanaryManifestError("canary approval variables do not match manifest")
+        if schema_version != "endpoint_diagnostic_canary_v2":
+            raise CanaryManifestError("mutable canary requires a Windows v2 manifest")
+        agent = _mapping(manifest["agent"], name="agent")
+        windows_expected = {
+            "CANARY_AGENT_PLATFORM": agent["platform"],
+            "CANARY_WINDOWS_SERVICE": agent["service_name"],
+            "CANARY_WINDOWS_UPDATER_SERVICE": agent["updater_service_name"],
+            "CANARY_WINDOWS_MSI_VERSION": agent["version"],
+            "CANARY_WINDOWS_MSI_SHA256": agent["package_sha256"],
+            "CANARY_WINDOWS_SOURCE_REVISION": agent["source_revision"],
+        }
+        if any(env.get(key) != value for key, value in windows_expected.items()):
+            raise CanaryManifestError("Windows identity variables do not match manifest")
+        _validate_staging_proof(manifest, staging_proof=staging_proof)
     return {"environment_class": "staging", "apply": apply, "endpoint_host": endpoint_host, "helpdesk_host": helpdesk_host, "platform": platform}
+
+
+def _helpdesk_route(manifest: Mapping[str, Any], path: str) -> str:
+    targets = _mapping(manifest["targets"], name="targets")
+    return f"https://{_https_host(targets.get('helpdesk_origin'), name='helpdesk_origin')}{path}"
+
+
+def _operation_id(response: Mapping[str, Any]) -> str:
+    value = response.get("operation_id")
+    if not isinstance(value, str) or not value:
+        raise CanaryManifestError("existing support route did not return a local operation ID")
+    return value
+
+
+def run_command(
+    command: str, *, manifest: Mapping[str, Any], apply: bool, env: Mapping[str, str],
+    staging_proof: Mapping[str, Any] | None = None, adapter: CanaryHttpAdapter | None = None,
+) -> dict[str, object]:
+    """Run exactly one bounded canary stage through existing Helpdesk routes."""
+    validation = validate_manifest(manifest, environment="staging", apply=apply, env=env, staging_proof=staging_proof)
+    if command == "preflight":
+        return {"status": "preflight_ready", **validation}
+    if command not in {"map", "execute", "observe", "verify", "rollback-check", "report"}:
+        raise CanaryManifestError("unsupported canary command")
+    targets = _mapping(manifest["targets"], name="targets")
+    ticket_id = _required_string(targets, "helpdesk_ticket_id")
+    canary_id = _required_string(_mapping(manifest["execution"], name="execution"), "canary_id")
+    if command in {"map", "execute"} and not apply:
+        return {"status": "dry_run", "command": command}
+    client = adapter or CanaryHttpAdapter(authorization=env.get("CANARY_HELPDESK_AUTHORIZATION"))
+    if command == "map":
+        response = client.call(
+            method="PUT",
+            url=_helpdesk_route(manifest, f"/api/admin/tickets/{ticket_id}/endpoint-device-mapping"),
+            payload={"schema_version": "endpoint_device_mapping_request_v1", "endpoint_device_ref": targets["endpoint_device_id"], "replace": False, "expected_previous_ref": None, "reason": None},
+            headers={"X-Correlation-ID": canary_id},
+        )
+        if response.get("status") != "ok" or response.get("verified") is not True:
+            raise CanaryManifestError("existing admin mapping route did not verify the device")
+        return {"status": "mapped"}
+    if command == "execute":
+        key = env.get("CANARY_CALLER_IDEMPOTENCY_KEY", "")
+        execution = _mapping(manifest["execution"], name="execution")
+        if not key or ticket_id in key or sha256(key.encode("utf-8")).hexdigest() != execution.get("caller_idempotency_key_hash"):
+            raise CanaryManifestError("caller idempotency key does not match the manifest hash")
+        response = client.call(
+            method="POST",
+            url=_helpdesk_route(manifest, f"/api/tickets/{ticket_id}/diagnostics/capabilities/context.diagnostic.collect/run"),
+            payload={"params": {}}, headers={"X-Idempotency-Key": key, "X-Correlation-ID": canary_id},
+        )
+        if response.get("status") != "queued" or response.get("execution_target") != "endpoint_operation":
+            raise CanaryManifestError("existing support route did not queue an Endpoint operation")
+        return {"status": "queued", "local_operation_id": _operation_id(response)}
+    response = client.call(
+        method="GET", url=_helpdesk_route(manifest, f"/api/tickets/{ticket_id}/diagnostics/overview"),
+        payload=None, headers={"X-Correlation-ID": canary_id},
+    )
+    return {"status": "observed", "command": command, "overview_present": bool(response)}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -149,6 +288,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--manifest", required=True, type=Path)
         command.add_argument("--environment", required=True)
         command.add_argument("--apply", action="store_true", help="validate mutable-stage authority only")
+        command.add_argument("--staging-proof", type=Path, help="protected technical staging-proof JSON for --apply")
     return parser
 
 
@@ -156,7 +296,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-        result = validate_manifest(manifest, environment=args.environment, apply=args.apply, env=os.environ)
+        staging_proof = json.loads(args.staging_proof.read_text(encoding="utf-8")) if args.staging_proof else None
+        result = run_command(args.command, manifest=manifest, apply=args.apply, env=os.environ, staging_proof=staging_proof)
     except (OSError, json.JSONDecodeError, CanaryManifestError) as error:
         print(f"canary preflight failed: {error}", file=sys.stderr)
         return 2

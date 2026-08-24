@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 
 import pytest
 
 from scripts.canary.endpoint_diagnostic_canary import (
+    CanaryHttpAdapter,
     CanaryManifestError,
     _parser,
+    run_command,
     validate_manifest,
 )
 
@@ -72,20 +75,12 @@ def test_manifest_rejects_unsafe_environment_or_execution_values(
 
 
 def test_apply_requires_exact_environment_approval_and_does_not_accept_secrets() -> None:
-    manifest = _manifest()
-    env = {
-        "CANARY_APPROVED": "true",
-        "CANARY_ENVIRONMENT": "staging",
-        "CANARY_CHANGE_ID": "CHG-ALT-101",
-        "CANARY_ENDPOINT_HOST": "endpoint-staging.sosnadmin.local",
-        "CANARY_HELPDESK_HOST": "helpdesk-staging.sosnadmin.local",
-        "CANARY_AGENT_HOST": "alt-canary-70",
-        "CANARY_ENDPOINT_DEVICE_ID": "00000000-0000-4000-8000-000000000701",
-        "CANARY_HELPDESK_TICKET_ID": "ticket-staging-701",
-        "CANARY_EVIDENCE_ROOT": "/var/lib/helpdesk/canary-evidence",
-    }
+    manifest = _windows_manifest()
+    env = _apply_environment()
 
-    assert validate_manifest(manifest, environment="staging", apply=True, env=env)["apply"] is True
+    assert validate_manifest(
+        manifest, environment="staging", apply=True, env=env, staging_proof=_staging_proof()
+    )["apply"] is True
 
     manifest["service_token"] = "forbidden"
     with pytest.raises(CanaryManifestError, match="forbidden"):
@@ -142,3 +137,135 @@ def test_canary_parser_registers_all_commands_with_dry_run_default() -> None:
 
         assert args.command == command
         assert args.apply is False
+
+
+def _windows_manifest() -> dict[str, object]:
+    manifest = _manifest()
+    manifest["schema_version"] = "endpoint_diagnostic_canary_v2"
+    manifest["environment"]["production_changed"] = False
+    manifest["agent"] = {
+        "platform": "windows_amd64",
+        "host_safe_label": "alt-canary-70",
+        "device_id": "00000000-0000-4000-8000-000000000701",
+        "service_name": "EndpointAgent",
+        "updater_service_name": "EndpointAgentUpdater",
+        "source_revision": "a" * 40,
+        "version": "3.2.16",
+        "package_name": "endpoint-agent-3.2.16.msi",
+        "package_sha256": "d" * 64,
+    }
+    return manifest
+
+
+def _apply_environment() -> dict[str, str]:
+    caller_key = "canary-key-without-ticket-reference"
+    return {
+        "CANARY_APPROVED": "true",
+        "CANARY_ENVIRONMENT": "staging",
+        "CANARY_CHANGE_ID": "CHG-ALT-101",
+        "CANARY_ENDPOINT_HOST": "endpoint-staging.sosnadmin.local",
+        "CANARY_HELPDESK_HOST": "helpdesk-staging.sosnadmin.local",
+        "CANARY_AGENT_HOST": "alt-canary-70",
+        "CANARY_ENDPOINT_DEVICE_ID": "00000000-0000-4000-8000-000000000701",
+        "CANARY_HELPDESK_TICKET_ID": "ticket-staging-701",
+        "CANARY_EVIDENCE_ROOT": "/var/lib/helpdesk/canary-evidence",
+        "CANARY_AGENT_PLATFORM": "windows_amd64",
+        "CANARY_WINDOWS_SERVICE": "EndpointAgent",
+        "CANARY_WINDOWS_UPDATER_SERVICE": "EndpointAgentUpdater",
+        "CANARY_WINDOWS_MSI_VERSION": "3.2.16",
+        "CANARY_WINDOWS_MSI_SHA256": "d" * 64,
+        "CANARY_WINDOWS_SOURCE_REVISION": "a" * 40,
+        "CANARY_CALLER_IDEMPOTENCY_KEY": caller_key,
+    }
+
+
+def _staging_proof() -> dict[str, object]:
+    return {
+        "schema_version": "windows_canary_staging_proof_v1",
+        "environment_class": "staging",
+        "endpoint_host": "endpoint-staging.sosnadmin.local",
+        "helpdesk_host": "helpdesk-staging.sosnadmin.local",
+        "agent_host_safe_label": "alt-canary-70",
+        "dedicated_windows_vm": True,
+        "snapshot_or_recovery_point": "snapshot-staging-701",
+        "production_identifiers": [],
+        "endpoint_database_revision": "0011_gateway_wss",
+        "helpdesk_database_revision": "137",
+    }
+
+
+def test_apply_requires_matching_windows_identity_and_technical_staging_proof() -> None:
+    manifest = _windows_manifest()
+    environment = _apply_environment()
+
+    result = validate_manifest(
+        manifest,
+        environment="staging",
+        apply=True,
+        env=environment,
+        staging_proof=_staging_proof(),
+    )
+
+    assert result["platform"] == "windows_amd64"
+    proof = _staging_proof()
+    proof["dedicated_windows_vm"] = False
+    with pytest.raises(CanaryManifestError, match="dedicated"):
+        validate_manifest(manifest, environment="staging", apply=True, env=environment, staging_proof=proof)
+
+
+def test_map_dry_run_does_not_call_route_and_apply_uses_only_existing_admin_route() -> None:
+    manifest = _windows_manifest()
+    calls: list[dict[str, object]] = []
+    adapter = CanaryHttpAdapter(
+        request=lambda **request: calls.append(request) or {"status": "ok", "verified": True}
+    )
+
+    dry_run = run_command("map", manifest=manifest, apply=False, env={}, adapter=adapter)
+    applied = run_command(
+        "map",
+        manifest=manifest,
+        apply=True,
+        env=_apply_environment(),
+        staging_proof=_staging_proof(),
+        adapter=adapter,
+    )
+
+    assert dry_run["status"] == "dry_run"
+    assert calls == [{
+        "method": "PUT",
+        "url": "https://helpdesk-staging.sosnadmin.local/api/admin/tickets/ticket-staging-701/endpoint-device-mapping",
+        "payload": {
+            "schema_version": "endpoint_device_mapping_request_v1",
+            "endpoint_device_ref": "00000000-0000-4000-8000-000000000701",
+            "replace": False,
+            "expected_previous_ref": None,
+            "reason": None,
+        },
+        "headers": {"X-Correlation-ID": "canary-701"},
+    }]
+    assert applied["status"] == "mapped"
+
+
+def test_execute_uses_one_hashed_idempotency_key_and_never_includes_ticket_in_payload() -> None:
+    manifest = _windows_manifest()
+    key = _apply_environment()["CANARY_CALLER_IDEMPOTENCY_KEY"]
+    manifest["execution"]["caller_idempotency_key_hash"] = hashlib.sha256(key.encode()).hexdigest()
+    calls: list[dict[str, object]] = []
+    adapter = CanaryHttpAdapter(
+        request=lambda **request: calls.append(request) or {"status": "queued", "operation_id": "local-701", "execution_target": "endpoint_operation"}
+    )
+
+    result = run_command(
+        "execute",
+        manifest=manifest,
+        apply=True,
+        env=_apply_environment(),
+        staging_proof=_staging_proof(),
+        adapter=adapter,
+    )
+
+    assert result == {"status": "queued", "local_operation_id": "local-701"}
+    assert calls[0]["method"] == "POST"
+    assert calls[0]["url"].endswith("/api/tickets/ticket-staging-701/diagnostics/capabilities/context.diagnostic.collect/run")
+    assert calls[0]["payload"] == {"params": {}}
+    assert calls[0]["headers"] == {"X-Idempotency-Key": key, "X-Correlation-ID": "canary-701"}
