@@ -31,12 +31,18 @@ Validate the protected canary manifest before changing any deployment flag:
 ```text
 python scripts/canary/endpoint_diagnostic_canary.py preflight \
   --manifest <protected-evidence-root>/manifest.json \
-  --environment staging
+  --environment staging \
+  --windows-preflight <protected-evidence-root>/preflight-windows-agent.json
 ```
 
 This command is validation-only. It accepts no token or credential argument,
 rejects production, raw idempotency keys and secret-like fields, and performs
-no operation creation.
+no operation creation.  The Windows preflight projection is mandatory for a
+Windows manifest: it must prove the installed service/updater identity,
+immutable selector version and source revision, MSI version and SHA-256,
+protected ACLs, strict TLS, Gateway WSS and the bounded diagnostic capability.
+The tool rejects a missing, mismatched or secret-bearing projection before any
+mutable canary command can run.
 
 For a Windows agent canary, use manifest schema
 `endpoint_diagnostic_canary_v2`. Its `agent` identity must name
@@ -50,7 +56,8 @@ python scripts/canary/endpoint_diagnostic_canary.py map \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --apply \
-  --staging-proof <protected-evidence-root>/staging-proof.json
+  --staging-proof <protected-evidence-root>/staging-proof.json \
+  --windows-preflight <protected-evidence-root>/preflight-windows-agent.json
 ```
 
 The proof is fail-closed: it must match both origins, the device-safe label,
@@ -62,24 +69,41 @@ diagnostic route with one caller idempotency key whose SHA-256 is already in
 the manifest. The raw key and authorization value are never printed.
 
 Without `--apply`, `map` and `execute` return a dry-run result and make no
-HTTP request. `observe` reads only a count-only overview. `verify` requires
+HTTP request; they do not require a Windows preflight projection.  Every
+non-dry Windows stage requires that projection. `observe` reads only a count-only overview. `verify` requires
 exactly one succeeded local operation, one succeeded Endpoint operation with a
 safe result, and one succeeded `endpoint_platform` evidence item. It prints
 only the two safe IDs. `rollback-check` consumes an exact read-only proof JSON
 and never changes configuration. `report` repeats the strict verification and
-writes a checksum-protected, redacted JSON and Markdown package only under an
-existing protected local evidence root:
+writes the complete checksum-protected, redacted JSON evidence package only
+under an existing protected local evidence root. It requires an explicit
+`evidence-input.json` with every required safe artifact; partial packages, raw
+logs/results, process command lines, secrets, and personal ticket fields fail
+closed:
 
 ```text
 python scripts/canary/endpoint_diagnostic_canary.py report \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
+  --windows-preflight <protected-evidence-root>/preflight-windows-agent.json \
+  --evidence-input <protected-evidence-root>/evidence-input.json \
   --evidence-root <protected-evidence-root>
 ```
 
-The package deliberately omits ticket IDs, service origins, credentials,
-authorization material, raw results, and raw overview payloads. None of these
-commands edits deployment configuration.
+The package contains the fixed artifact list plus `SHA256SUMS`, verified
+immediately after writing. Its summary deliberately omits ticket IDs, service
+origins, credentials, authorization material, raw results, and raw overview
+payloads. None of these commands edits deployment configuration.
+
+The required `evidence-input.json` object has exactly these keys (each value is
+a redacted JSON object): `preflight-environment`, `preflight-endpoint`,
+`preflight-helpdesk`, `preflight-windows-agent`, `msi-build`,
+`msi-installation`, `service-state-before`, `mapping`, `execution`,
+`endpoint-operation`, `gateway-delivery`, `agent-completion`,
+`helpdesk-operation`, `diagnostic-evidence`, `invariants`,
+`repeat-reconciliation`, `rollback`, and `post-rollback-smoke`. The report
+adds `manifest.json` and `summary.json`, hashes every JSON file into
+`SHA256SUMS`, and verifies that manifest before returning success.
 
 For rollback validation, provide `rollback-check` an independently collected
 proof with the staging class, final Endpoint API/Helpdesk modes, confirmation

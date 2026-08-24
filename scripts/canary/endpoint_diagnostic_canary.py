@@ -47,7 +47,18 @@ _ROLLBACK_PROOF_KEYS = frozenset({
     "helpdesk_execution_mode", "new_operations_blocked", "terminal_evidence_preserved",
     "database_downgrade_performed",
 })
+_WINDOWS_PREFLIGHT_KEYS = frozenset({
+    "schema_version", "agent", "services", "runtime", "msi", "acl",
+    "safe_status", "network", "completion_proof",
+})
 _SAFE_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+_EVIDENCE_INPUT_NAMES = (
+    "preflight-environment", "preflight-endpoint", "preflight-helpdesk",
+    "preflight-windows-agent", "msi-build", "msi-installation", "service-state-before",
+    "mapping", "execution", "endpoint-operation", "gateway-delivery", "agent-completion",
+    "helpdesk-operation", "diagnostic-evidence", "invariants", "repeat-reconciliation",
+    "rollback", "post-rollback-smoke",
+)
 
 
 @dataclass(frozen=True)
@@ -223,6 +234,74 @@ def validate_manifest(
     return {"environment_class": "staging", "apply": apply, "endpoint_host": endpoint_host, "helpdesk_host": helpdesk_host, "platform": platform}
 
 
+def _validate_windows_preflight(
+    manifest: Mapping[str, Any], *, windows_preflight: Mapping[str, Any] | None
+) -> str:
+    """Require the bounded installed-agent projection before a Windows canary stage."""
+    if windows_preflight is None or set(windows_preflight) != _WINDOWS_PREFLIGHT_KEYS:
+        raise CanaryManifestError("Windows preflight proof is required")
+    try:
+        reject_sensitive_values(windows_preflight)
+    except CanaryEvidenceError as error:
+        raise CanaryManifestError("Windows preflight proof contains forbidden evidence") from error
+    if windows_preflight.get("schema_version") != "windows_agent_preflight_v1":
+        raise CanaryManifestError("Windows preflight proof schema is invalid")
+    manifest_agent = _mapping(manifest.get("agent"), name="agent")
+    agent = _mapping(windows_preflight.get("agent"), name="Windows preflight agent")
+    if (
+        agent.get("platform") != "windows_amd64"
+        or agent.get("version") != manifest_agent.get("version")
+        or agent.get("source_revision") != manifest_agent.get("source_revision")
+    ):
+        raise CanaryManifestError("Windows preflight agent identity does not match manifest")
+    services = _mapping(windows_preflight.get("services"), name="Windows preflight services")
+    agent_service = _mapping(services.get("agent"), name="Windows preflight agent service")
+    updater_service = _mapping(services.get("updater"), name="Windows preflight updater service")
+    if (
+        agent_service.get("name") != "EndpointAgent"
+        or agent_service.get("start_mode") != "Automatic"
+        or agent_service.get("state") != "Running"
+        or agent_service.get("account") != "NT AUTHORITY\\LocalService"
+        or agent_service.get("pid_present") is not True
+        or updater_service.get("name") != "EndpointAgentUpdater"
+        or updater_service.get("start_mode") != "Manual"
+        or updater_service.get("state") != "Stopped"
+        or updater_service.get("account") != "LocalSystem"
+    ):
+        raise CanaryManifestError("Windows preflight service boundary is invalid")
+    runtime = _mapping(windows_preflight.get("runtime"), name="Windows preflight runtime")
+    if (
+        runtime.get("selector_version") != manifest_agent.get("version")
+        or runtime.get("selector_source_revision") != manifest_agent.get("source_revision")
+        or runtime.get("http_fallback") is not False
+        or runtime.get("helpdesk_reference") is not False
+    ):
+        raise CanaryManifestError("Windows preflight immutable runtime is invalid")
+    msi = _mapping(windows_preflight.get("msi"), name="Windows preflight MSI")
+    if (
+        msi.get("version") != manifest_agent.get("version")
+        or msi.get("sha256") != manifest_agent.get("package_sha256")
+    ):
+        raise CanaryManifestError("Windows preflight MSI identity does not match manifest")
+    acl = _mapping(windows_preflight.get("acl"), name="Windows preflight ACL")
+    if (
+        acl.get("data_root_protected") is not True
+        or acl.get("ordinary_user_read") is not False
+        or acl.get("protected_file_reparse") is not False
+    ):
+        raise CanaryManifestError("Windows preflight ACL boundary is invalid")
+    network = _mapping(windows_preflight.get("network"), name="Windows preflight network")
+    if (
+        network.get("strict_tls") is not True
+        or network.get("hostname_valid") is not True
+        or network.get("gateway_wss") is not True
+        or network.get("redirected") is not False
+        or network.get("capability") != "context.diagnostic.collect"
+    ):
+        raise CanaryManifestError("Windows preflight network boundary is invalid")
+    return "READY"
+
+
 def _helpdesk_route(manifest: Mapping[str, Any], path: str) -> str:
     targets = _mapping(manifest["targets"], name="targets")
     return f"https://{_https_host(targets.get('helpdesk_origin'), name='helpdesk_origin')}{path}"
@@ -335,61 +414,98 @@ def _redacted_report(manifest: Mapping[str, Any], verification: Mapping[str, obj
     return report
 
 
+def _verify_sha256_sums(package: Path, artifact_files: Sequence[Path]) -> None:
+    """Reject a package unless its written checksum manifest exactly verifies."""
+    try:
+        lines = (package / "SHA256SUMS").read_text(encoding="ascii").splitlines()
+    except OSError as error:
+        raise CanaryManifestError("evidence package checksum manifest is unreadable") from error
+    expected = {
+        line.partition("  ")[2]: line.partition("  ")[0]
+        for line in lines
+        if line.count("  ") == 1 and _SHA256.fullmatch(line.partition("  ")[0])
+    }
+    actual = {path.name: sha256(path.read_bytes()).hexdigest() for path in artifact_files}
+    if expected != actual:
+        raise CanaryManifestError("evidence package checksum verification failed")
+
+
 def write_redacted_report(
     *, manifest: Mapping[str, Any], verification: Mapping[str, object], evidence_root: Path,
+    evidence_input: Mapping[str, object],
 ) -> dict[str, object]:
-    """Create an immutable-name, secret-free local evidence package under a protected root."""
+    """Create a complete, immutable-name, secret-free local evidence package."""
+    try:
+        reject_sensitive_values(manifest)
+    except CanaryEvidenceError as error:
+        raise CanaryManifestError("forbidden manifest in evidence package") from error
     report = _redacted_report(manifest, verification)
     if not evidence_root.is_absolute() or not evidence_root.is_dir() or evidence_root.is_symlink():
         raise CanaryManifestError("evidence root must be an existing non-reparse absolute directory")
+    if set(evidence_input) != set(_EVIDENCE_INPUT_NAMES):
+        raise CanaryManifestError("evidence input must contain every required redacted artifact")
+    validated_input: dict[str, Mapping[str, Any]] = {}
+    for name in _EVIDENCE_INPUT_NAMES:
+        item = evidence_input[name]
+        if not isinstance(item, Mapping):
+            raise CanaryManifestError(f"evidence input {name} must be an object")
+        try:
+            reject_sensitive_values(item)
+        except CanaryEvidenceError as error:
+            raise CanaryManifestError(f"forbidden evidence input {name}") from error
+        validated_input[name] = item
     canary_id = report["canary_id"]
     if not isinstance(canary_id, str) or not _SAFE_LABEL.fullmatch(canary_id):
         raise CanaryManifestError("canary ID is not a safe evidence package label")
     package = evidence_root / f"canary-report-{canary_id}"
     if package.exists():
         raise CanaryManifestError("evidence package already exists")
-    package.mkdir()
-    json_path = package / "report.json"
-    markdown_path = package / "report.md"
-    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
-    markdown_path.write_text(
-        "# Endpoint diagnostic canary report\n\n"
-        f"- Status: `{report['status']}`\n"
-        f"- Canary: `{report['canary_id']}`\n"
-        f"- Agent platform/version: `{report['agent']['platform']}` / `{report['agent']['version']}`\n"
-        f"- Local operation: `{report['verification']['local_operation_id']}`\n"
-        f"- Evidence: `{report['verification']['evidence_id']}`\n",
-        encoding="utf-8", newline="\n",
-    )
-    checksums = {
-        path.name: sha256(path.read_bytes()).hexdigest()
-        for path in (json_path, markdown_path)
-    }
-    (package / "checksums.json").write_text(
-        json.dumps(checksums, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
-    )
-    return {"package": package.name, "files": ["report.json", "report.md", "checksums.json"]}
+    package.mkdir(mode=0o700)
+    artifacts: dict[str, Mapping[str, Any]] = {"manifest": manifest, **validated_input, "summary": report}
+    try:
+        for name, payload in artifacts.items():
+            (package / f"{name}.json").write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+            )
+        artifact_files = sorted(path for path in package.iterdir() if path.is_file())
+        sums = "".join(
+            f"{sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+            for path in artifact_files
+        )
+        (package / "SHA256SUMS").write_text(sums, encoding="ascii", newline="\n")
+        _verify_sha256_sums(package, artifact_files)
+    except OSError as error:
+        raise CanaryManifestError("could not write protected evidence package") from error
+    files = sorted(path.name for path in package.iterdir() if path.is_file())
+    return {"package": package.name, "files": files}
 
 
 def run_command(
     command: str, *, manifest: Mapping[str, Any], apply: bool, env: Mapping[str, str],
     staging_proof: Mapping[str, Any] | None = None, rollback_proof: Mapping[str, Any] | None = None,
-    adapter: CanaryHttpAdapter | None = None,
+    windows_preflight: Mapping[str, Any] | None = None, adapter: CanaryHttpAdapter | None = None,
 ) -> dict[str, object]:
     """Run exactly one bounded canary stage through existing Helpdesk routes."""
     validation = validate_manifest(manifest, environment="staging", apply=apply, env=env, staging_proof=staging_proof)
     if command == "preflight":
-        return {"status": "preflight_ready", **validation}
+        windows_preflight_status = (
+            _validate_windows_preflight(manifest, windows_preflight=windows_preflight)
+            if validation["platform"] == "windows_amd64"
+            else None
+        )
+        return {"status": "preflight_ready", **validation, "windows_preflight": windows_preflight_status}
     if command not in {"map", "execute", "observe", "verify", "rollback-check", "report"}:
         raise CanaryManifestError("unsupported canary command")
     if command == "rollback-check":
         _validate_rollback_proof(manifest, rollback_proof=rollback_proof)
         return {"status": "rollback_verified"}
+    if command in {"map", "execute"} and not apply:
+        return {"status": "dry_run", "command": command}
+    if validation["platform"] == "windows_amd64":
+        _validate_windows_preflight(manifest, windows_preflight=windows_preflight)
     targets = _mapping(manifest["targets"], name="targets")
     ticket_id = _required_string(targets, "helpdesk_ticket_id")
     canary_id = _required_string(_mapping(manifest["execution"], name="execution"), "canary_id")
-    if command in {"map", "execute"} and not apply:
-        return {"status": "dry_run", "command": command}
     client = adapter or CanaryHttpAdapter(authorization=env.get("CANARY_HELPDESK_AUTHORIZATION"))
     if command == "map":
         response = client.call(
@@ -445,8 +561,10 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--apply", action="store_true", help="validate mutable-stage authority only")
         command.add_argument("--staging-proof", type=Path, help="protected technical staging-proof JSON for --apply")
         command.add_argument("--rollback-proof", type=Path, help="read-only rollback-proof JSON for rollback-check")
+        command.add_argument("--windows-preflight", type=Path, help="redacted installed Windows-agent preflight JSON")
         if name == "report":
             command.add_argument("--evidence-root", type=Path, help="existing protected local directory for redacted report")
+            command.add_argument("--evidence-input", type=Path, help="complete redacted evidence-input JSON")
     return parser
 
 
@@ -456,14 +574,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
         staging_proof = json.loads(args.staging_proof.read_text(encoding="utf-8")) if args.staging_proof else None
         rollback_proof = json.loads(args.rollback_proof.read_text(encoding="utf-8")) if args.rollback_proof else None
+        windows_preflight = json.loads(args.windows_preflight.read_text(encoding="utf-8")) if args.windows_preflight else None
         result = run_command(
             args.command, manifest=manifest, apply=args.apply, env=os.environ,
             staging_proof=staging_proof, rollback_proof=rollback_proof,
+            windows_preflight=windows_preflight,
         )
         if args.command == "report":
-            if args.evidence_root is None:
-                raise CanaryManifestError("report requires --evidence-root")
-            result = {**result, **write_redacted_report(manifest=manifest, verification=result, evidence_root=args.evidence_root)}
+            if args.evidence_root is None or args.evidence_input is None:
+                raise CanaryManifestError("report requires --evidence-root and --evidence-input")
+            evidence_input = json.loads(args.evidence_input.read_text(encoding="utf-8"))
+            result = {**result, **write_redacted_report(
+                manifest=manifest, verification=result, evidence_root=args.evidence_root,
+                evidence_input=evidence_input,
+            )}
     except (OSError, json.JSONDecodeError, CanaryManifestError) as error:
         print(f"canary preflight failed: {error}", file=sys.stderr)
         return 2

@@ -17,6 +17,9 @@ from scripts.canary.endpoint_diagnostic_canary import (
 )
 
 
+pytestmark = pytest.mark.no_db
+
+
 def _manifest() -> dict[str, object]:
     return {
         "schema_version": "endpoint_diagnostic_canary_v1",
@@ -237,6 +240,7 @@ def test_map_dry_run_does_not_call_route_and_apply_uses_only_existing_admin_rout
         apply=True,
         env=_apply_environment(),
         staging_proof=_staging_proof(),
+        windows_preflight=_windows_preflight_proof(),
         adapter=adapter,
     )
 
@@ -271,6 +275,7 @@ def test_execute_uses_one_hashed_idempotency_key_and_never_includes_ticket_in_pa
         apply=True,
         env=_apply_environment(),
         staging_proof=_staging_proof(),
+        windows_preflight=_windows_preflight_proof(),
         adapter=adapter,
     )
 
@@ -302,12 +307,90 @@ def _rollback_proof() -> dict[str, object]:
     }
 
 
+def _windows_preflight_proof() -> dict[str, object]:
+    return {
+        "schema_version": "windows_agent_preflight_v1",
+        "agent": {
+            "platform": "windows_amd64",
+            "source_revision": "a" * 40,
+            "version": "3.2.16",
+        },
+        "services": {
+            "agent": {
+                "name": "EndpointAgent",
+                "start_mode": "Automatic",
+                "state": "Running",
+                "account": "NT AUTHORITY\\LocalService",
+                "pid_present": True,
+            },
+            "updater": {
+                "name": "EndpointAgentUpdater",
+                "start_mode": "Manual",
+                "state": "Stopped",
+                "account": "LocalSystem",
+            },
+        },
+        "runtime": {
+            "selector_version": "3.2.16",
+            "selector_source_revision": "a" * 40,
+            "http_fallback": False,
+            "helpdesk_reference": False,
+        },
+        "msi": {"version": "3.2.16", "sha256": "d" * 64},
+        "acl": {
+            "data_root_protected": True,
+            "ordinary_user_read": False,
+            "protected_file_reparse": False,
+        },
+        "network": {
+            "strict_tls": True,
+            "hostname_valid": True,
+            "gateway_wss": True,
+            "redirected": False,
+            "capability": "context.diagnostic.collect",
+        },
+        "safe_status": {},
+        "completion_proof": {},
+    }
+
+
+@pytest.mark.no_db
+def test_preflight_requires_matching_windows_agent_proof() -> None:
+    manifest = _windows_manifest()
+
+    result = run_command(
+        "preflight",
+        manifest=manifest,
+        apply=False,
+        env={},
+        windows_preflight=_windows_preflight_proof(),
+    )
+
+    assert result["windows_preflight"] == "READY"
+    invalid = _windows_preflight_proof()
+    invalid["runtime"]["selector_source_revision"] = "b" * 40  # type: ignore[index]
+    with pytest.raises(CanaryManifestError, match="Windows preflight"):
+        run_command(
+            "preflight",
+            manifest=manifest,
+            apply=False,
+            env={},
+            windows_preflight=invalid,
+        )
+
+
 def test_observe_returns_only_safe_summary_and_verify_requires_exactly_once_terminal_projection() -> None:
     manifest = _windows_manifest()
     adapter = CanaryHttpAdapter(request=lambda **_: _succeeded_overview())
 
-    observed = run_command("observe", manifest=manifest, apply=False, env={}, adapter=adapter)
-    verified = run_command("verify", manifest=manifest, apply=False, env={}, adapter=adapter)
+    observed = run_command(
+        "observe", manifest=manifest, apply=False, env={},
+        windows_preflight=_windows_preflight_proof(), adapter=adapter,
+    )
+    verified = run_command(
+        "verify", manifest=manifest, apply=False, env={},
+        windows_preflight=_windows_preflight_proof(), adapter=adapter,
+    )
 
     assert observed == {
         "status": "observed",
@@ -334,7 +417,10 @@ def test_verify_rejects_duplicate_or_nonterminal_overview(mutate) -> None:
     adapter = CanaryHttpAdapter(request=lambda **_: overview)
 
     with pytest.raises(CanaryManifestError):
-        run_command("verify", manifest=_windows_manifest(), apply=False, env={}, adapter=adapter)
+        run_command(
+            "verify", manifest=_windows_manifest(), apply=False, env={},
+            windows_preflight=_windows_preflight_proof(), adapter=adapter,
+        )
 
 
 def test_rollback_check_requires_an_exact_read_only_proof() -> None:
@@ -353,19 +439,58 @@ def test_rollback_check_requires_an_exact_read_only_proof() -> None:
         run_command("rollback-check", manifest=_windows_manifest(), apply=False, env={}, rollback_proof=proof)
 
 
-def test_report_writer_creates_only_redacted_checksums(tmp_path) -> None:
+def _complete_evidence_input() -> dict[str, object]:
+    return {
+        name: {"status": "recorded"}
+        for name in (
+            "preflight-environment", "preflight-endpoint", "preflight-helpdesk",
+            "preflight-windows-agent", "msi-build", "msi-installation",
+            "service-state-before", "mapping", "execution", "endpoint-operation",
+            "gateway-delivery", "agent-completion", "helpdesk-operation",
+            "diagnostic-evidence", "invariants", "repeat-reconciliation", "rollback",
+            "post-rollback-smoke",
+        )
+    }
+
+
+def test_report_writer_creates_a_complete_redacted_evidence_package(tmp_path) -> None:
     package = write_redacted_report(
         manifest=_windows_manifest(),
         verification={"status": "verified", "local_operation_id": "local-701", "evidence_id": "evidence-701"},
         evidence_root=tmp_path,
+        evidence_input=_complete_evidence_input(),
     )
 
     package_path = tmp_path / "canary-report-canary-701"
-    report = (package_path / "report.json").read_text(encoding="utf-8")
-    checksums = (package_path / "checksums.json").read_text(encoding="utf-8")
-    assert package == {"package": "canary-report-canary-701", "files": ["report.json", "report.md", "checksums.json"]}
-    assert '"helpdesk_ticket_id"' not in report
-    assert "ticket-staging-701" not in report
-    assert "endpoint-staging.sosnadmin.local" not in report
-    assert "report.json" in checksums
-    assert "report.md" in checksums
+    checksums = (package_path / "SHA256SUMS").read_text(encoding="utf-8")
+    expected_files = {
+        "manifest.json", "preflight-environment.json", "preflight-endpoint.json",
+        "preflight-helpdesk.json", "preflight-windows-agent.json", "msi-build.json",
+        "msi-installation.json", "service-state-before.json", "mapping.json",
+        "execution.json", "endpoint-operation.json", "gateway-delivery.json",
+        "agent-completion.json", "helpdesk-operation.json", "diagnostic-evidence.json",
+        "invariants.json", "repeat-reconciliation.json", "rollback.json",
+        "post-rollback-smoke.json", "summary.json", "SHA256SUMS",
+    }
+    assert package == {"package": "canary-report-canary-701", "files": sorted(expected_files)}
+    assert {path.name for path in package_path.iterdir()} == expected_files
+    assert len(checksums.splitlines()) == len(expected_files) - 1
+    recorded = {name: digest for digest, name in (line.split("  ", 1) for line in checksums.splitlines())}
+    for path in package_path.glob("*.json"):
+        assert recorded[path.name] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert "ticket-staging-701" not in (package_path / "summary.json").read_text(encoding="utf-8")
+
+
+def test_report_writer_rejects_missing_or_sensitive_evidence_input(tmp_path) -> None:
+    arguments = {
+        "manifest": _windows_manifest(),
+        "verification": {"status": "verified", "local_operation_id": "local-701", "evidence_id": "evidence-701"},
+        "evidence_root": tmp_path,
+    }
+
+    with pytest.raises(CanaryManifestError, match="evidence input"):
+        write_redacted_report(**arguments, evidence_input={})
+    evidence = _complete_evidence_input()
+    evidence["gateway-delivery"] = {"raw_log": "forbidden"}
+    with pytest.raises(CanaryManifestError, match="forbidden"):
+        write_redacted_report(**arguments, evidence_input=evidence)

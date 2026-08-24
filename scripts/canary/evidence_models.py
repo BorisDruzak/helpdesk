@@ -12,7 +12,9 @@ class CanaryEvidenceError(ValueError):
 
 
 _FORBIDDEN = re.compile(
-    r"(?:authorization|bearer|cookie|csrf|credential|password|private[_.-]?key|secret|token)",
+    r"(?:authorization|bearer|cookie|csrf|credential|password|private[_.-]?key|secret|token|"
+    r"raw[_.-]?logs?|command[_.-]?line|environment[_.-]?dump|raw[_.-]?result|"
+    r"ticket[_.-]?(?:description|body)|requester)",
     re.IGNORECASE,
 )
 
