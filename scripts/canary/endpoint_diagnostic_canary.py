@@ -136,10 +136,19 @@ def validate_manifest(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
-    preflight = subparsers.add_parser("preflight", help="validate only; never issues an operation")
-    preflight.add_argument("--manifest", required=True, type=Path)
-    preflight.add_argument("--environment", required=True)
-    preflight.add_argument("--apply", action="store_true", help="validate mutable-stage authority only")
+    for name, help_text in (
+        ("preflight", "validate only; never issues an operation"),
+        ("map", "validate mapping authority before the existing admin route"),
+        ("execute", "validate execution authority before the existing support route"),
+        ("observe", "read existing operation projections only"),
+        ("verify", "verify existing canary evidence only"),
+        ("rollback-check", "read approved rollback state only"),
+        ("report", "write a redacted summary only"),
+    ):
+        command = subparsers.add_parser(name, help=help_text)
+        command.add_argument("--manifest", required=True, type=Path)
+        command.add_argument("--environment", required=True)
+        command.add_argument("--apply", action="store_true", help="validate mutable-stage authority only")
     return parser
 
 

@@ -6,7 +6,11 @@ import copy
 
 import pytest
 
-from scripts.canary.endpoint_diagnostic_canary import CanaryManifestError, validate_manifest
+from scripts.canary.endpoint_diagnostic_canary import (
+    CanaryManifestError,
+    _parser,
+    validate_manifest,
+)
 
 
 def _manifest() -> dict[str, object]:
@@ -128,3 +132,13 @@ def test_windows_v2_manifest_rejects_unknown_agent_field() -> None:
 
     with pytest.raises(CanaryManifestError, match="forbidden|schema"):
         validate_manifest(manifest, environment="staging", apply=False, env={})
+
+
+def test_canary_parser_registers_all_commands_with_dry_run_default() -> None:
+    parser = _parser()
+
+    for command in ("preflight", "map", "execute", "observe", "verify", "rollback-check", "report"):
+        args = parser.parse_args([command, "--manifest", "fixture.json", "--environment", "staging"])
+
+        assert args.command == command
+        assert args.apply is False
