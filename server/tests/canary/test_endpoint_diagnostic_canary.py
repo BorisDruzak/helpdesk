@@ -382,7 +382,9 @@ def test_preflight_requires_matching_windows_agent_proof() -> None:
 def test_observe_returns_only_safe_summary_and_verify_requires_exactly_once_terminal_projection() -> None:
     manifest = _windows_manifest()
     calls: list[dict[str, object]] = []
-    adapter = CanaryHttpAdapter(request=lambda **request: calls.append(request) or _succeeded_overview())
+    adapter = CanaryHttpAdapter(
+        request=lambda **request: calls.append(request) or {"status": "success", "data": _succeeded_overview()}
+    )
 
     observed = run_command(
         "observe", manifest=manifest, apply=False, env={},

@@ -324,6 +324,14 @@ def _overview_items(overview: Mapping[str, Any], *, key: str) -> list[Mapping[st
     return list(value)
 
 
+def _support_overview_payload(response: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Unwrap the established web-support overview response before verification."""
+    payload = response.get("data")
+    if response.get("status") != "success" or not isinstance(payload, Mapping):
+        raise CanaryManifestError("support diagnostics overview envelope is invalid")
+    return payload
+
+
 def _canary_overview(overview: Mapping[str, Any]) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]], list[Mapping[str, Any]]]:
     local_operations = [
         item for item in _overview_items(overview, key="latest_operations")
@@ -535,6 +543,7 @@ def run_command(
         method="GET", url=_helpdesk_route(manifest, f"/api/web/support/tickets/{ticket_id}/diagnostics/overview"),
         payload=None, headers={"X-Correlation-ID": canary_id},
     )
+    response = _support_overview_payload(response)
     if command == "observe":
         return _observe_overview(response)
     if command == "verify":
