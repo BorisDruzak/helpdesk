@@ -531,7 +531,7 @@ def run_command(
             raise CanaryManifestError("existing support route did not queue an Endpoint operation")
         return {"status": "queued", "local_operation_id": _operation_id(response)}
     response = client.call(
-        method="GET", url=_helpdesk_route(manifest, f"/api/tickets/{ticket_id}/diagnostics/overview"),
+        method="GET", url=_helpdesk_route(manifest, f"/api/web/support/tickets/{ticket_id}/diagnostics/overview"),
         payload=None, headers={"X-Correlation-ID": canary_id},
     )
     if command == "observe":
