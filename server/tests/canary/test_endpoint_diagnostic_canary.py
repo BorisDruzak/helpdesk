@@ -281,7 +281,7 @@ def test_execute_uses_one_hashed_idempotency_key_and_never_includes_ticket_in_pa
 
     assert result == {"status": "queued", "local_operation_id": "local-701"}
     assert calls[0]["method"] == "POST"
-    assert calls[0]["url"].endswith("/api/web/support/tickets/ticket-staging-701/diagnostics/capabilities/context.diagnostic.collect/run")
+    assert calls[0]["url"].endswith("/api/web/support/tickets/ticket-staging-701/diagnostics/capabilities/endpoint.context.diagnostic.collect/run")
     assert calls[0]["payload"] == {"params": {}}
     assert calls[0]["headers"] == {"X-Idempotency-Key": key, "X-Correlation-ID": "canary-701"}
 

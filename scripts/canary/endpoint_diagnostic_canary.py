@@ -23,6 +23,7 @@ class CanaryManifestError(ValueError):
 
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_HELPDESK_ENDPOINT_DIAGNOSTIC_CAPABILITY_ID = "endpoint.context.diagnostic.collect"
 _REQUIRED_TOP_LEVEL = frozenset({"schema_version", "environment", "revisions", "targets", "baseline", "execution", "rollback", "result"})
 _V2_TOP_LEVEL = _REQUIRED_TOP_LEVEL | frozenset({"agent"})
 _V2_AGENT_KEYS = frozenset({
@@ -524,7 +525,7 @@ def run_command(
             raise CanaryManifestError("caller idempotency key does not match the manifest hash")
         response = client.call(
             method="POST",
-            url=_helpdesk_route(manifest, f"/api/web/support/tickets/{ticket_id}/diagnostics/capabilities/context.diagnostic.collect/run"),
+            url=_helpdesk_route(manifest, f"/api/web/support/tickets/{ticket_id}/diagnostics/capabilities/{_HELPDESK_ENDPOINT_DIAGNOSTIC_CAPABILITY_ID}/run"),
             payload={"params": {}}, headers={"X-Idempotency-Key": key, "X-Correlation-ID": canary_id},
         )
         if response.get("status") != "queued" or response.get("execution_target") != "endpoint_operation":
