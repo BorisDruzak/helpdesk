@@ -29,7 +29,7 @@ Before starting, record the deployed Endpoint and Helpdesk commits and verify:
 Validate the protected canary manifest before changing any deployment flag:
 
 ```text
-python scripts/canary/endpoint_diagnostic_canary.py preflight \
+python -m scripts.canary.endpoint_diagnostic_canary preflight \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --windows-preflight <protected-evidence-root>/preflight-windows-agent.json
@@ -59,7 +59,7 @@ operator must supply the exact approval variables and a protected technical
 proof JSON:
 
 ```text
-python scripts/canary/endpoint_diagnostic_canary.py map \
+python -m scripts.canary.endpoint_diagnostic_canary map \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --apply \
@@ -89,7 +89,7 @@ logs/results, process command lines, secrets, and personal ticket fields fail
 closed:
 
 ```text
-python scripts/canary/endpoint_diagnostic_canary.py report \
+python -m scripts.canary.endpoint_diagnostic_canary report \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --windows-preflight <protected-evidence-root>/preflight-windows-agent.json \
