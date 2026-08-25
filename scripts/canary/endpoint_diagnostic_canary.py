@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import ssl
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -13,7 +14,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPSHandler, HTTPRedirectHandler, Request, build_opener
 
 from scripts.canary.evidence_models import CanaryEvidenceError, reject_sensitive_values
 
@@ -68,6 +69,7 @@ class CanaryHttpAdapter:
 
     request: Any | None = None
     authorization: str | None = None
+    ca_file: str | None = None
 
     def call(self, *, method: str, url: str, payload: Mapping[str, object] | None, headers: Mapping[str, str]) -> Mapping[str, Any]:
         if self.request is not None:
@@ -83,13 +85,22 @@ class CanaryHttpAdapter:
             request_headers["Authorization"] = self.authorization
         request = Request(url, data=body, headers=request_headers, method=method)
         try:
-            with urlopen(request, timeout=15) as response:  # nosec B310: manifest permits HTTPS origins only
+            context = ssl.create_default_context(cafile=self.ca_file or None)
+            opener = build_opener(HTTPSHandler(context=context), _NoRedirectHandler())
+            with opener.open(request, timeout=15) as response:  # nosec B310: manifest permits HTTPS origins only
                 data = json.loads(response.read().decode("utf-8"))
         except Exception as error:
             raise CanaryManifestError(f"canary route request failed: {type(error).__name__}") from error
         if not isinstance(data, Mapping):
             raise CanaryManifestError("canary route returned an invalid JSON object")
         return data
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Reject redirects so every canary request stays on its approved origin."""
+
+    def redirect_request(self, *_: object) -> None:
+        return None
 
 
 def _mapping(value: Any, *, name: str) -> Mapping[str, Any]:
@@ -515,7 +526,10 @@ def run_command(
     targets = _mapping(manifest["targets"], name="targets")
     ticket_id = _required_string(targets, "helpdesk_ticket_id")
     canary_id = _required_string(_mapping(manifest["execution"], name="execution"), "canary_id")
-    client = adapter or CanaryHttpAdapter(authorization=env.get("CANARY_HELPDESK_AUTHORIZATION"))
+    client = adapter or CanaryHttpAdapter(
+        authorization=env.get("CANARY_HELPDESK_AUTHORIZATION"),
+        ca_file=env.get("CANARY_HELPDESK_CA_FILE"),
+    )
     if command == "map":
         response = client.call(
             method="PUT",

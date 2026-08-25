@@ -44,6 +44,13 @@ protected ACLs, strict TLS, Gateway WSS and the bounded diagnostic capability.
 The tool rejects a missing, mismatched or secret-bearing projection before any
 mutable canary command can run.
 
+When Helpdesk is served by an internal CA that is not in the system trust
+store, set `CANARY_HELPDESK_CA_FILE` to the readable PEM bundle before a
+networked canary stage. The canary client passes that file to its strict HTTPS
+context and rejects every redirect; it never disables certificate or hostname
+validation. The CA path is process configuration, not manifest or evidence
+content, and must not be printed.
+
 For a Windows agent canary, use manifest schema
 `endpoint_diagnostic_canary_v2`. Its `agent` identity must name
 `windows_amd64`, `EndpointAgent`, `EndpointAgentUpdater`, the immutable source
