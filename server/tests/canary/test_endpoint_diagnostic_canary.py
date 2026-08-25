@@ -281,7 +281,7 @@ def test_execute_uses_one_hashed_idempotency_key_and_never_includes_ticket_in_pa
 
     assert result == {"status": "queued", "local_operation_id": "local-701"}
     assert calls[0]["method"] == "POST"
-    assert calls[0]["url"].endswith("/api/tickets/ticket-staging-701/diagnostics/capabilities/context.diagnostic.collect/run")
+    assert calls[0]["url"].endswith("/api/web/support/tickets/ticket-staging-701/diagnostics/capabilities/endpoint.context.diagnostic.collect/run")
     assert calls[0]["payload"] == {"params": {}}
     assert calls[0]["headers"] == {"X-Idempotency-Key": key, "X-Correlation-ID": "canary-701"}
 
@@ -381,7 +381,10 @@ def test_preflight_requires_matching_windows_agent_proof() -> None:
 
 def test_observe_returns_only_safe_summary_and_verify_requires_exactly_once_terminal_projection() -> None:
     manifest = _windows_manifest()
-    adapter = CanaryHttpAdapter(request=lambda **_: _succeeded_overview())
+    calls: list[dict[str, object]] = []
+    adapter = CanaryHttpAdapter(
+        request=lambda **request: calls.append(request) or {"status": "success", "data": _succeeded_overview()}
+    )
 
     observed = run_command(
         "observe", manifest=manifest, apply=False, env={},
@@ -399,6 +402,8 @@ def test_observe_returns_only_safe_summary_and_verify_requires_exactly_once_term
         "evidence_count": 1,
     }
     assert verified == {"status": "verified", "local_operation_id": "local-701", "evidence_id": "evidence-701"}
+    assert calls[0]["method"] == "GET"
+    assert calls[0]["url"].endswith("/api/web/support/tickets/ticket-staging-701/diagnostics/overview")
 
 
 @pytest.mark.parametrize(
