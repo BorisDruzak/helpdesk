@@ -57,6 +57,11 @@ ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").s
 ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
     os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy") or "legacy"
 ).strip().lower()
+# Endpoint Module Platform is an independent typed boundary.  It must never
+# inherit the diagnostic provider's execution mode or legacy fallback.
+ENDPOINT_MODULE_PORT_MODE = (
+    os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
+).strip().lower()
 
 
 def _bounded_endpoint_external_timeout() -> float:

@@ -18,7 +18,8 @@
 - `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines a future external
   Knowledge API contract. `KnowledgePort` remains unavailable until explicit
   composition and reports `knowledge_unavailable`.
-- `server/domain_ports/knowledge.py`, `registry.py` and `endpoint.py` define the
+- `server/domain_ports/knowledge.py`, `registry.py`, `endpoint.py` and
+  `endpoint_modules.py` define the
   neutral, runtime-checkable dependency-injection protocols. Knowledge request
   and result DTOs are frozen, forbid extra content fields and preserve opaque
   refs exactly, subject to the documented 512-character limit. EndpointPort
@@ -30,6 +31,11 @@
   composes only a complete external Endpoint configuration into the four-route,
   HTTPS-only Operations API v1 transport; it has no Helpdesk database,
   WebSocket or ticket dependencies.
+- `EndpointModulePort` is a separate frozen typed boundary for module catalog,
+  module-version and operation reads. Its default
+  `ENDPOINT_MODULE_PORT_MODE=unavailable` adapter performs no HTTP, database,
+  agent, ToolService or diagnostic-provider work; enabling an adapter is a
+  separate, explicit composition step.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
