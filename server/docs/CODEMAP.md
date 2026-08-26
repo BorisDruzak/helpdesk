@@ -32,12 +32,19 @@
   HTTPS-only Operations API v1 transport; it has no Helpdesk database,
   WebSocket or ticket dependencies.
 - `EndpointModulePort` is a separate frozen typed boundary for module catalog,
-  module-version and operation reads. Its default
+  authoring/version lifecycle and operation reads. Its default
   `ENDPOINT_MODULE_PORT_MODE=unavailable` adapter performs no HTTP, database,
   agent, ToolService or diagnostic-provider work. `external` composes only
   `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
   configuration validates; it maps catalog/version and operation routes into
   safe projections and never retains recipes or dispatches an agent command.
+  `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
+  BFF routes under `/api/web/admin/endpoint-modules` (with `/api/admin`
+  aliases) and `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
+  It authorizes admin/support/auditor actions locally, records safe actor audit
+  data, and queues only a local facade operation. Its resolver reads the
+  already verified ticket mapping and never composes the diagnostic port,
+  `ToolService`, DeviceOutbox or legacy WebSocket.
 - Migrations `139–142` keep module facade work in the established local
   `endpoint_operation_links` lifecycle. Revision `142` adds nullable module
   identity, safe input/snapshot fields and removes the temporary staging

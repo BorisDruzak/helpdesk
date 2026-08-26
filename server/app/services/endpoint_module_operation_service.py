@@ -67,6 +67,23 @@ class EndpointModuleOperationStore(Protocol):
     async def create_pending(self, **values: Any) -> dict[str, Any]: ...
 
 
+class StoredTicketEndpointModuleDeviceResolver:
+    """Read the already verified Helpdesk mapping without importing diagnostic ports."""
+
+    def __init__(self, session_factory: Callable[[], Any]) -> None:
+        self._session_factory = session_factory
+
+    async def resolve_ticket(self, ticket_id: str) -> EndpointDeviceReferenceResolution:
+        async with self._session_factory() as session:
+            ticket = await session.get(Ticket, ticket_id)
+            endpoint_device_ref = getattr(ticket, "endpoint_device_ref", None) if ticket is not None else None
+        if not isinstance(endpoint_device_ref, str) or not endpoint_device_ref.strip():
+            return EndpointDeviceReferenceResolution(
+                status="unresolved", code="ENDPOINT_DEVICE_MAPPING_MISSING"
+            )
+        return EndpointDeviceReferenceResolution(status="resolved", device_ref=endpoint_device_ref)
+
+
 def _validated_idempotency_key(value: str) -> str:
     if not isinstance(value, str) or not _IDEMPOTENCY_KEY.fullmatch(value):
         raise ValueError("endpoint module idempotency key must be 8-128 ASCII safe characters")
