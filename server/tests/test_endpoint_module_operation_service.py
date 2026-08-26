@@ -8,6 +8,7 @@ import pytest
 from app.services.endpoint_module_operation_service import (
     EndpointModuleOperationRequest,
     EndpointModuleOperationService,
+    StoredTicketEndpointModuleDeviceResolver,
 )
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceResolution
 
@@ -76,3 +77,25 @@ async def test_module_facade_creates_one_local_typed_operation_without_dispatchi
     assert store.record["module_version"] == "1.0.0"
     assert store.record["inputs"] == {"target": "example.test"}
     assert not {"recipe", "command", "tool_name", "device_outbox"} & set(store.record)
+
+
+@pytest.mark.asyncio
+async def test_module_device_resolver_uses_only_the_server_owned_ticket_mapping() -> None:
+    class _Session:
+        async def get(self, _model, ticket_id: str):
+            assert ticket_id == "ticket-1"
+            return type("Ticket", (), {"endpoint_device_ref": "endpoint-device-1"})()
+
+    class _Factory:
+        async def __aenter__(self):
+            return _Session()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    resolver = StoredTicketEndpointModuleDeviceResolver(lambda: _Factory())
+
+    result = await resolver.resolve_ticket("ticket-1")
+
+    assert result.status == "resolved"
+    assert result.device_ref == "endpoint-device-1"

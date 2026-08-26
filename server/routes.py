@@ -255,6 +255,7 @@ from static_pages.handlers import (
     handle_help_js,
     handle_admin_modules_workbench_html,
     handle_admin_modules_workbench_js,
+    handle_endpoint_module_workbench_js,
     handle_admin_ticket_forms_builder_html,
     handle_admin_ticket_forms_builder_js,
 )
@@ -410,6 +411,14 @@ from web_api.admin_handlers import (
     handle_web_admin_observer_trace_detail,
     handle_web_admin_observer_traces,
     handle_web_admin_set_module_preferred_version,
+)
+from web_api.endpoint_module_handlers import (
+    handle_endpoint_module_create_version,
+    handle_endpoint_module_deprecate,
+    handle_endpoint_module_publish,
+    handle_endpoint_module_validate,
+    handle_endpoint_module_run,
+    handle_endpoint_modules_list,
 )
 from web_api.admin_inventory_handlers import (
     handle_web_admin_device_inventory,
@@ -738,6 +747,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/admin.js', handle_admin_js),
         web.get('/admin_modules_workbench.html', handle_admin_modules_workbench_html),
         web.get('/admin_modules_workbench.js', handle_admin_modules_workbench_js),
+        web.get('/endpoint_module_workbench.js', handle_endpoint_module_workbench_js),
         web.get('/admin_ticket_forms_builder.html', handle_admin_ticket_forms_builder_html),
         web.get('/admin_ticket_forms_builder.js', handle_admin_ticket_forms_builder_js),
         web.get('/web_shared.js', handle_web_shared_js),
@@ -1015,6 +1025,20 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/playbooks/catalog', handle_web_admin_playbooks_catalog),
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
         web.get('/api/web/admin/modules', handle_web_admin_modules),
+        # Endpoint Recipe modules are a separate typed BFF surface. Legacy
+        # Python-module Workbench routes above remain unchanged.
+        web.get('/api/web/admin/endpoint-modules', handle_endpoint_modules_list),
+        web.post('/api/web/admin/endpoint-modules', handle_endpoint_module_create_version),
+        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/validate', handle_endpoint_module_validate),
+        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/publish', handle_endpoint_module_publish),
+        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/deprecate', handle_endpoint_module_deprecate),
+        web.get('/api/admin/endpoint-modules', handle_endpoint_modules_list),
+        web.post('/api/admin/endpoint-modules', handle_endpoint_module_create_version),
+        web.post('/api/admin/endpoint-modules/{module_key}/{version}/validate', handle_endpoint_module_validate),
+        web.post('/api/admin/endpoint-modules/{module_key}/{version}/publish', handle_endpoint_module_publish),
+        web.post('/api/admin/endpoint-modules/{module_key}/{version}/deprecate', handle_endpoint_module_deprecate),
+        web.post('/api/web/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
+        web.post('/api/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
         web.patch('/api/web/admin/modules/rollout_settings', handle_web_admin_patch_modules_rollout_settings),
         web.patch('/api/web/admin/modules/{module_name}/preferred', handle_web_admin_set_module_preferred_version),
         web.get('/api/web/admin/agent-builds', handle_web_admin_agent_builds),

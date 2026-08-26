@@ -167,6 +167,13 @@ PERMISSION_CATALOG: tuple[PermissionDefinition, ...] = (
         risk="high",
     ),
     PermissionDefinition(
+        "modules.audit",
+        "Аудит Endpoint Recipe модулей",
+        "Просмотр metadata и audit Endpoint Recipe модулей без authoring или execution.",
+        "modules",
+        "Модули и инструменты",
+    ),
+    PermissionDefinition(
         "admin.playbooks.view",
         "Смотреть плейбуки",
         "Просмотр конструктора диагностических плейбуков.",
@@ -446,6 +453,7 @@ ROLE_DEFAULTS: dict[str, frozenset[str]] = {
             "ticket.detail.view",
             "observer.trace.view",
             "control.server.view",
+            "modules.audit",
         }
     ),
     "user": frozenset(

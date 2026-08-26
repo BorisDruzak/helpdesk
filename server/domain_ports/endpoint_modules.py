@@ -123,6 +123,71 @@ class EndpointModuleVersionProjection(_ImmutableEndpointModuleDTO):
     source: Literal["external_authoritative"] = "external_authoritative"
 
 
+class EndpointModuleRecipeInput(_ImmutableEndpointModuleDTO):
+    name: ModuleInputName
+    value_type: Literal["string", "integer"]
+
+
+class EndpointModuleInputBinding(_ImmutableEndpointModuleDTO):
+    kind: Literal["input"]
+    name: ModuleInputName
+
+
+class EndpointModuleLiteralBinding(_ImmutableEndpointModuleDTO):
+    kind: Literal["literal"]
+    value: str | int
+
+
+EndpointModuleParameterBinding: TypeAlias = Annotated[
+    EndpointModuleInputBinding | EndpointModuleLiteralBinding,
+    Field(discriminator="kind"),
+]
+
+
+class EndpointModuleRecipeStep(_ImmutableEndpointModuleDTO):
+    step_id: ModuleInputName
+    capability: Literal["dns.resolve", "network.ping", "tcp.connect"]
+    parameters: dict[ModuleInputName, EndpointModuleParameterBinding] = Field(min_length=1, max_length=3)
+
+
+class EndpointModuleRecipe(_ImmutableEndpointModuleDTO):
+    schema_version: Literal["endpoint_recipe_module_v1"] = "endpoint_recipe_module_v1"
+    module_key: ModuleKey
+    supported_platforms: tuple[Literal["linux_amd64", "windows_amd64"], ...] = Field(min_length=1, max_length=2)
+    inputs: tuple[EndpointModuleRecipeInput, ...] = Field(default=(), max_length=8)
+    steps: tuple[EndpointModuleRecipeStep, ...] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_declarative_names(self) -> "EndpointModuleRecipe":
+        if len(set(self.supported_platforms)) != len(self.supported_platforms):
+            raise ValueError("recipe platforms must be unique")
+        if len({item.name for item in self.inputs}) != len(self.inputs):
+            raise ValueError("recipe input names must be unique")
+        if len({item.step_id for item in self.steps}) != len(self.steps):
+            raise ValueError("recipe step names must be unique")
+        return self
+
+
+class EndpointModuleVersionCreateRequest(_ImmutableEndpointModuleDTO):
+    schema_version: Literal["module_version_create_v1"] = "module_version_create_v1"
+    display_name: ModuleDisplayName
+    version: ModuleVersion
+    recipe: EndpointModuleRecipe
+
+
+class EndpointModuleValidationProjection(_ImmutableEndpointModuleDTO):
+    module_version: EndpointModuleVersionRef
+    status: Literal["succeeded", "failed"]
+    error_codes: tuple[SafeEndpointCode, ...] = Field(max_length=32)
+    warning_codes: tuple[SafeEndpointCode, ...] = Field(max_length=32)
+    completed_at: AwareDatetime
+
+
+class EndpointModuleVersionStateProjection(_ImmutableEndpointModuleDTO):
+    version: EndpointModuleVersionRef
+    state: EndpointModuleVersionState
+
+
 class EndpointModuleOperationRef(_ImmutableEndpointModuleDTO):
     external_id: OpaqueEndpointRef
 
@@ -187,6 +252,9 @@ EndpointModuleReadOutcome: TypeAlias = EndpointModuleDefinitionProjection | Endp
 EndpointModuleVersionReadOutcome: TypeAlias = EndpointModuleVersionProjection | EndpointModuleFailureOutcome
 EndpointModuleOperationCreateOutcome: TypeAlias = EndpointModuleOperationProjection | EndpointModuleFailureOutcome
 EndpointModuleOperationReadOutcome: TypeAlias = EndpointModuleOperationProjection | EndpointModuleFailureOutcome
+EndpointModuleVersionCreateOutcome: TypeAlias = EndpointModuleVersionProjection | EndpointModuleFailureOutcome
+EndpointModuleValidationOutcome: TypeAlias = EndpointModuleValidationProjection | EndpointModuleFailureOutcome
+EndpointModuleVersionStateOutcome: TypeAlias = EndpointModuleVersionStateProjection | EndpointModuleFailureOutcome
 
 
 @runtime_checkable
@@ -201,6 +269,22 @@ class EndpointModulePort(Protocol):
         self,
         version: EndpointModuleVersionRef,
     ) -> EndpointModuleVersionReadOutcome: ...
+
+    async def create_module_version(
+        self, request: EndpointModuleVersionCreateRequest
+    ) -> EndpointModuleVersionCreateOutcome: ...
+
+    async def validate_module_version(
+        self, version: EndpointModuleVersionRef
+    ) -> EndpointModuleValidationOutcome: ...
+
+    async def publish_module_version(
+        self, version: EndpointModuleVersionRef
+    ) -> EndpointModuleVersionStateOutcome: ...
+
+    async def deprecate_module_version(
+        self, version: EndpointModuleVersionRef
+    ) -> EndpointModuleVersionStateOutcome: ...
 
     async def create_operation(
         self,

@@ -32,11 +32,19 @@
   removes the unused second table. The module reconciler remains default-off
   until both external port and explicit `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`
   are set; it stores only safe completed results and creates one idempotent
-  `endpoint.module.recipe` evidence record. Lifecycle startup and BFF/RBAC
-  remain pending.
+  `endpoint.module.recipe` evidence record. The authorized Module Workbench
+  BFF now exposes admin authoring/version lifecycle and support ticket-run
+  routes through that port; it keeps the legacy Workbench separate, gives
+  auditors metadata-only access, and creates the local facade using only the
+  server-owned ticket mapping. The legacy Admin shell now has a separate
+  `Endpoint recipes` subtab that builds only declarative allowlisted recipes
+  and uses only the BFF; it does not expose `user_function_body` or any
+  legacy module API. Real-browser and cross-repository acceptance remain
+  pending.
 - **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
-  wire the Helpdesk reconciler lifecycle, audit/ticket evidence projection,
-  RBAC and browser workbench.
+  execute staged browser and real-agent acceptance for the already-wired
+  Helpdesk reconciler, audit/ticket evidence projection, RBAC and browser
+  workbench.
   Keep legacy paths isolated; no endpoint-native BFF fallback or dual dispatch
   is permitted.
 - **Verification:** Helpdesk Windows acceptance is already in mainline at

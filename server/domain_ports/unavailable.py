@@ -17,6 +17,10 @@ from .endpoint import (
 )
 from .endpoint_modules import (
     EndpointModuleAvailability,
+    EndpointModuleValidationOutcome,
+    EndpointModuleVersionCreateOutcome,
+    EndpointModuleVersionCreateRequest,
+    EndpointModuleVersionStateOutcome,
     EndpointModuleListOutcome,
     EndpointModuleOperationCreateOutcome,
     EndpointModuleOperationCreateRequest,
@@ -256,6 +260,30 @@ class UnavailableEndpointModulePort:
         self,
         version: EndpointModuleVersionRef,
     ) -> EndpointModuleVersionReadOutcome:
+        del version
+        return self._unavailable
+
+    async def create_module_version(
+        self, request: EndpointModuleVersionCreateRequest
+    ) -> EndpointModuleVersionCreateOutcome:
+        del request
+        return self._unavailable
+
+    async def validate_module_version(
+        self, version: EndpointModuleVersionRef
+    ) -> EndpointModuleValidationOutcome:
+        del version
+        return self._unavailable
+
+    async def publish_module_version(
+        self, version: EndpointModuleVersionRef
+    ) -> EndpointModuleVersionStateOutcome:
+        del version
+        return self._unavailable
+
+    async def deprecate_module_version(
+        self, version: EndpointModuleVersionRef
+    ) -> EndpointModuleVersionStateOutcome:
         del version
         return self._unavailable
 

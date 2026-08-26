@@ -7534,7 +7534,9 @@
         }
 
         function syncModulesSubtabButtons() {
-            const visiblePanel = activeModulesSubtab === 'devices' ? 'devices' : 'development';
+            const visiblePanel = ['development', 'endpoint-recipes', 'devices'].includes(activeModulesSubtab)
+                ? activeModulesSubtab
+                : 'development';
             document.querySelectorAll('.modules-subtab-btn').forEach(btn => {
                 const isActive = btn.getAttribute('data-modules-subtab') === activeModulesSubtab;
                 btn.classList.toggle('active', isActive);
@@ -7548,16 +7550,19 @@
         }
 
         function switchModulesSubtab(subtab, options) {
-            const next = ['development', 'list', 'editor', 'devices'].includes(subtab) ? subtab : 'development';
+            const next = ['development', 'list', 'editor', 'endpoint-recipes', 'devices'].includes(subtab) ? subtab : 'development';
             activeModulesSubtab = next;
             window._selectedModulesSubtab = next;
             syncModulesSubtabButtons();
             if (next === 'devices' && selectedDeviceIdTab) {
                 selectDeviceModules(selectedDeviceIdTab, true);
             }
-            const workbenchView = next === 'devices' ? null : next;
+            const workbenchView = ['devices', 'endpoint-recipes'].includes(next) ? null : next;
             if (workbenchView) {
                 window.ModuleWorkbench?.switchView?.(workbenchView, options || {});
+            }
+            if (next === 'endpoint-recipes') {
+                window.EndpointModuleWorkbench?.load?.();
             }
         }
 
@@ -7586,9 +7591,10 @@
             await Promise.all([
                 loadDevicesListModules(),
                 loadModulesList(),
-                window.ModuleWorkbench?.load?.() || Promise.resolve()
+                window.ModuleWorkbench?.load?.() || Promise.resolve(),
+                window.EndpointModuleWorkbench?.load?.() || Promise.resolve()
             ]);
-            if (activeModulesSubtab !== 'devices') {
+            if (!['devices', 'endpoint-recipes'].includes(activeModulesSubtab)) {
                 window.ModuleWorkbench?.switchView?.(activeModulesSubtab);
             }
         }
@@ -8717,12 +8723,7 @@
         // Check authentication on page load
         document.addEventListener('DOMContentLoaded', () => {
             const token = localStorage.getItem(AUTH_TOKEN_KEY);
-            if (token) {
-                // Verify token is still valid by making a test request
-                verifySession(token);
-            } else {
-                redirectToLogin();
-            }
+            verifySession(token);
         });
         
         // Verify token by making a test API request
@@ -8903,6 +8904,30 @@
         }
 
         async function verifySession(token) {
+            if (!token) {
+                try {
+                    const response = await fetch('/api/web/session/me', {
+                        credentials: 'same-origin'
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    const session = payload.data || null;
+                    if (response.ok && payload.status === 'success' && session?.actor_role === 'admin') {
+                        localStorage.setItem(USER_LOGIN_KEY, session.user_login || '');
+                        localStorage.setItem(ROLE_KEY, session.actor_role);
+                        resetAuthSessionState();
+                        showMainContent();
+                        return;
+                    }
+                    if (response.ok && payload.status === 'success' && session) {
+                        redirectToLogin('Для админки нужна роль admin.');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Cookie session verification error:', error);
+                }
+                redirectToLogin();
+                return;
+            }
             try {
                 const response = await fetch('/api/ui_session', {
                     headers: {
