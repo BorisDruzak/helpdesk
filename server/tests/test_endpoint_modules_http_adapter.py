@@ -15,6 +15,11 @@ from domain_ports.endpoint_modules import (
     EndpointModuleInvalidProjection,
     EndpointModuleRef,
     EndpointModuleVersionRef,
+    EndpointModuleVersionCreateRequest,
+    EndpointModuleRecipe,
+    EndpointModuleRecipeInput,
+    EndpointModuleRecipeStep,
+    EndpointModuleInputBinding,
 )
 from endpoint_adapter.modules_http import ExternalEndpointModuleHttpAdapter
 
@@ -119,6 +124,50 @@ async def test_adapter_creates_typed_module_operation_with_device_only_in_path()
             "module_key": "network.basic.check",
             "version": "1.0.0",
             "inputs": {"target": "example.test"},
+        }
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_creates_declarative_version_without_any_local_execution_fields() -> None:
+    received: dict[str, object] = {}
+
+    async def create_version(request: web.Request) -> web.Response:
+        received["path"] = request.path
+        received["body"] = await request.json()
+        return _wire_response({"module_version_id": OPERATION_ID, "state": "draft"}, status=201)
+
+    app = web.Application()
+    app.router.add_post("/api/v1/modules/versions", create_version)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        request = EndpointModuleVersionCreateRequest(
+            display_name="Network basic check", version="1.0.0",
+            recipe=EndpointModuleRecipe(
+                module_key="network.basic.check", supported_platforms=("linux_amd64",),
+                inputs=(EndpointModuleRecipeInput(name="target", value_type="string"),),
+                steps=(EndpointModuleRecipeStep(
+                    step_id="dns", capability="dns.resolve",
+                    parameters={"target": EndpointModuleInputBinding(kind="input", name="target")},
+                ),),
+            ),
+        )
+        result = await _adapter(server).create_module_version(request)
+
+        assert result.version.module.module_key == "network.basic.check"
+        assert received["path"] == "/api/v1/modules/versions"
+        assert received["body"] == {
+            "schema_version": "module_version_create_v1", "display_name": "Network basic check",
+            "version": "1.0.0", "recipe": {
+                "schema_version": "endpoint_recipe_module_v1", "module_key": "network.basic.check",
+                "supported_platforms": ["linux_amd64"],
+                "inputs": [{"name": "target", "value_type": "string"}],
+                "steps": [{"step_id": "dns", "capability": "dns.resolve", "parameters": {
+                    "target": {"kind": "input", "name": "target"},
+                }}],
+            },
         }
     finally:
         await server.close()

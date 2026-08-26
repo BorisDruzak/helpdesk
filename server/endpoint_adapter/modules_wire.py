@@ -35,6 +35,28 @@ class ModuleVersionViewWireV1(_WireModel):
     recipe: dict[str, object]
 
 
+class ModuleVersionCreatedWireV1(_WireModel):
+    module_version_id: UUID
+    state: Literal["draft", "validation_failed", "validated", "lab_accepted", "published", "deprecated", "revoked"]
+
+
+class ModuleVersionStateWireV1(_WireModel):
+    schema_version: Literal["module_version_state_v1"]
+    module_key: str = Field(min_length=3, max_length=128, pattern=r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){1,7}$")
+    version: str = Field(min_length=5, max_length=64, pattern=r"^\d+\.\d+\.\d+$")
+    state: Literal["draft", "validation_failed", "validated", "lab_accepted", "published", "deprecated", "revoked"]
+
+
+class ModuleValidationWireV1(_WireModel):
+    schema_version: Literal["module_validation_run_v1"]
+    module_key: str = Field(min_length=3, max_length=128, pattern=r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){1,7}$")
+    version: str = Field(min_length=5, max_length=64, pattern=r"^\d+\.\d+\.\d+$")
+    status: Literal["succeeded", "failed"]
+    error_codes: tuple[str, ...] = Field(max_length=32)
+    warning_codes: tuple[str, ...] = Field(max_length=32)
+    completed_at: datetime
+
+
 class ModuleOperationCreateWireV1(_WireModel):
     schema_version: Literal["endpoint_module_operation_create_v1"] = "endpoint_module_operation_create_v1"
     module_key: str = Field(min_length=3, max_length=128, pattern=r"^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){1,7}$")
