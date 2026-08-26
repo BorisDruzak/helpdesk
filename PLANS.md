@@ -25,12 +25,15 @@
   separate frozen `EndpointModulePort`, default-false composition and a typed
   HTTPS catalog/version/operation adapter. It does not retain recipes or use
   diagnostics, ToolService, DeviceOutbox, legacy WebSocket or an automatic
-  fallback. Commit `71d4592c` adds the forward-only local
-  `endpoint_module_operation_links` schema for the facade/reconciler; it has
-  not been applied to any database.
+  fallback. Commits `71d4592c`, `4b49fe22` and `73606573` add the forward-only
+  local operation-link schema and nullable-device facade exception; they have
+  not been applied to any database. Commits `5c4cb4c4`, `d62f6a93`,
+  `a557e88c` and `fcc32d30` add the local facade, SQL store/repository and
+  typed lease-based reconciler. Lifecycle startup, evidence/audit projection
+  and BFF/RBAC remain pending.
 - **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
-  create the Helpdesk local module-operation facade, reconciliation, audit and
-  ticket/evidence projection before adding RBAC and the browser workbench.
+  wire the Helpdesk reconciler lifecycle, audit/ticket evidence projection,
+  RBAC and browser workbench.
   Keep legacy paths isolated; no endpoint-native BFF fallback or dual dispatch
   is permitted.
 - **Verification:** Helpdesk Windows acceptance is already in mainline at
