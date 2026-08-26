@@ -5,12 +5,30 @@ from scripts.deploy_helpdesk_release import (
     remote_install_command,
 )
 from scripts.helpdesk_remote_profile import RemoteProfile
+import pytest
 
 
 def test_release_path_is_scoped_to_helpdesk_releases() -> None:
     profile = RemoteProfile.from_environment({})
 
     assert release_path(profile, "abc123") == "/opt/helpdesk/releases/helpdesk-abc123"
+
+
+def test_release_path_accepts_a_distinct_immutable_release_id() -> None:
+    profile = RemoteProfile.from_environment(
+        {"HELPDESK_REMOTE_ROOT": "/opt/helpdesk-staging/current"}
+    )
+
+    assert release_path(profile, "abc123", release_id="abc123-venvfix") == (
+        "/opt/helpdesk-staging/releases/helpdesk-abc123-venvfix"
+    )
+
+
+def test_release_path_rejects_unsafe_release_id() -> None:
+    profile = RemoteProfile.from_environment({})
+
+    with pytest.raises(ValueError, match="release id"):
+        release_path(profile, "abc123", release_id="../mutable")
 
 
 def test_script_bootstraps_workspace_for_direct_python_execution() -> None:
