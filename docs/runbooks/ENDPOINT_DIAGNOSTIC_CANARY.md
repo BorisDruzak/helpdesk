@@ -29,7 +29,7 @@ Before starting, record the deployed Endpoint and Helpdesk commits and verify:
 Validate the protected canary manifest before changing any deployment flag:
 
 ```text
-python scripts/canary/endpoint_diagnostic_canary.py preflight \
+python -m scripts.canary.endpoint_diagnostic_canary preflight \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --windows-preflight <protected-evidence-root>/preflight-windows-agent.json
@@ -44,6 +44,13 @@ protected ACLs, strict TLS, Gateway WSS and the bounded diagnostic capability.
 The tool rejects a missing, mismatched or secret-bearing projection before any
 mutable canary command can run.
 
+When Helpdesk is served by an internal CA that is not in the system trust
+store, set `CANARY_HELPDESK_CA_FILE` to the readable PEM bundle before a
+networked canary stage. The canary client passes that file to its strict HTTPS
+context and rejects every redirect; it never disables certificate or hostname
+validation. The CA path is process configuration, not manifest or evidence
+content, and must not be printed.
+
 For a Windows agent canary, use manifest schema
 `endpoint_diagnostic_canary_v2`. Its `agent` identity must name
 `windows_amd64`, `EndpointAgent`, `EndpointAgentUpdater`, the immutable source
@@ -52,7 +59,7 @@ operator must supply the exact approval variables and a protected technical
 proof JSON:
 
 ```text
-python scripts/canary/endpoint_diagnostic_canary.py map \
+python -m scripts.canary.endpoint_diagnostic_canary map \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --apply \
@@ -82,7 +89,7 @@ logs/results, process command lines, secrets, and personal ticket fields fail
 closed:
 
 ```text
-python scripts/canary/endpoint_diagnostic_canary.py report \
+python -m scripts.canary.endpoint_diagnostic_canary report \
   --manifest <protected-evidence-root>/manifest.json \
   --environment staging \
   --windows-preflight <protected-evidence-root>/preflight-windows-agent.json \

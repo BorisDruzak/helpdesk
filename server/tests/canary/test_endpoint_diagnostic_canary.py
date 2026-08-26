@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+from urllib.error import HTTPError
 
 import pytest
 
@@ -15,9 +16,115 @@ from scripts.canary.endpoint_diagnostic_canary import (
     validate_manifest,
     write_redacted_report,
 )
+import scripts.canary.endpoint_diagnostic_canary as canary_module
 
 
 pytestmark = pytest.mark.no_db
+
+
+class _HttpResponse:
+    def __init__(self, payload: bytes) -> None:
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return self._payload
+
+
+def test_default_canary_http_adapter_uses_explicit_ca_and_rejects_redirects(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Opener:
+        def open(self, request, *, timeout: int):
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            return _HttpResponse(b'{"status": "ok"}')
+
+    def _create_default_context(*, cafile: str | None = None):
+        captured["ca_file"] = cafile
+        return object()
+
+    def _https_handler(*, context: object):
+        captured["ssl_context"] = context
+        return "https-handler"
+
+    def _build_opener(*handlers: object):
+        captured["handlers"] = handlers
+        return _Opener()
+
+    monkeypatch.setattr(canary_module.ssl, "create_default_context", _create_default_context)
+    monkeypatch.setattr(canary_module, "HTTPSHandler", _https_handler)
+    monkeypatch.setattr(canary_module, "build_opener", _build_opener)
+
+    result = CanaryHttpAdapter(
+        authorization="Bearer test",
+        ca_file="/trusted/staging-ca.pem",
+    ).call(
+        method="GET",
+        url="https://helpdesk-staging.sosnadmin.local/api/health",
+        payload=None,
+        headers={},
+    )
+
+    assert result == {"status": "ok"}
+    assert captured["ca_file"] == "/trusted/staging-ca.pem"
+    assert captured["url"] == "https://helpdesk-staging.sosnadmin.local/api/health"
+    assert captured["timeout"] == 15
+    assert any(type(handler).__name__ == "_NoRedirectHandler" for handler in captured["handlers"])
+
+
+def test_default_canary_http_adapter_fails_closed_on_redirect(monkeypatch) -> None:
+    class _RedirectingOpener:
+        def open(self, _request, *, timeout: int):
+            raise HTTPError("https://helpdesk-staging.sosnadmin.local/redirect", 302, "Found", {}, None)
+
+    monkeypatch.setattr(canary_module, "build_opener", lambda *_handlers: _RedirectingOpener())
+
+    with pytest.raises(CanaryManifestError, match="HTTPError"):
+        CanaryHttpAdapter(authorization="Bearer test").call(
+            method="GET",
+            url="https://helpdesk-staging.sosnadmin.local/api/health",
+            payload=None,
+            headers={},
+        )
+
+
+def test_run_command_passes_helpdesk_ca_file_to_default_adapter(monkeypatch) -> None:
+    captured: dict[str, str | None] = {}
+
+    class _Adapter:
+        def __init__(self, *, authorization: str | None, ca_file: str | None) -> None:
+            captured["authorization"] = authorization
+            captured["ca_file"] = ca_file
+
+        def call(self, **_request: object) -> dict[str, object]:
+            return {"status": "success", "data": _succeeded_overview()}
+
+    monkeypatch.setattr(canary_module, "CanaryHttpAdapter", _Adapter)
+    environment = _apply_environment()
+    environment.update(
+        {
+            "CANARY_HELPDESK_AUTHORIZATION": "Bearer test",
+            "CANARY_HELPDESK_CA_FILE": "/trusted/staging-ca.pem",
+        }
+    )
+
+    assert run_command(
+        "observe",
+        manifest=_windows_manifest(),
+        apply=False,
+        env=environment,
+        windows_preflight=_windows_preflight_proof(),
+    )["status"] == "observed"
+    assert captured == {
+        "authorization": "Bearer test",
+        "ca_file": "/trusted/staging-ca.pem",
+    }
 
 
 def _manifest() -> dict[str, object]:

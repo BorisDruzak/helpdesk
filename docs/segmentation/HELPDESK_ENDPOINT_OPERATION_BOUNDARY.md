@@ -2,10 +2,11 @@
 
 ## Status
 
-Approved architectural target for the Helpdesk-side counterpart of Endpoint
-Operations API v1. This document defines the boundary before implementation;
-it does not enable a remote adapter, change a route, run a migration, or alter
-production state.
+Approved and staging-accepted architectural boundary for the Helpdesk-side
+counterpart of Endpoint Operations API v1. The bounded diagnostic slice has
+real-agent acceptance evidence on ALT and Windows after rollback; this does
+not enable any additional capability, change a route, run a migration, or
+alter production state.
 
 ## Purpose
 
@@ -107,6 +108,20 @@ Helpdesk-private data. The forward-only migration rehearsal starts at revision
 new local constraints/indexes and a clean `head` upgrade, and writes its
 machine-readable report under `artifacts/migration/`.
 
+## Cross-platform real-agent acceptance
+
+The bounded `endpoint.context.diagnostic.collect` operation is accepted on the
+dedicated ALT and Windows staging agents. Both runs used the Endpoint
+Operations API and Gateway WSS as the only command transport and confirmed no
+Helpdesk legacy agent, `DeviceOutbox`, or `ToolService` dispatch. The
+redacted records are
+`docs/verification/ALT_HEADLESS_AGENT_CANARY_ACCEPTANCE.md` and
+`docs/verification/WINDOWS_HEADLESS_AGENT_CANARY_ACCEPTANCE.md`.
+
+This acceptance is limited to the existing diagnostic capability and does not
+authorize broad command migration. The next package is typed read-only Endpoint
+capabilities, with its own contract and acceptance evidence.
+
 ## Local facade and lifecycle
 
 For a browser request Helpdesk authorizes ticket/diagnostic access locally,
@@ -179,7 +194,10 @@ reference is available only in authorized advanced service details.
 ## Explicit non-goals
 
 This slice neither migrates all `run_tool` paths nor removes the legacy agent
-runtime. It does not move managed modules, recipes, scheduler, consent, Remote
-Assist, agent update/build/rollout, Registry, Knowledge, device tables, browser
-pairing, or `/ws_ui`; it does not deploy, run a production migration, change
-service credentials, or roll out an agent.
+runtime. It does not complete consent migration, Remote Assist migration,
+legacy agent `/ws` deletion, `DeviceOutbox` deletion, or agent account-session
+deletion. Those components remain until their individual cutover prerequisites
+are accepted. It does not move managed modules, recipes, scheduler, agent
+update/build/rollout, Registry, Knowledge, device tables, browser pairing, or
+`/ws_ui`; it does not deploy, run a production migration, change service
+credentials, or roll out an agent.
