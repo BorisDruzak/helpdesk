@@ -2,10 +2,13 @@
 
 ## 2026-08-26 Endpoint Module Platform v1
 
-- **Status:** Phase 0 audit/documentation is complete. Endpoint PR-EP1 has
-  typed contracts, both policy foundations, bounded agent primitives and a
-  closed runtime registry; server feature flags and capability projection are
-  still in progress. Runtime flags and production state are unchanged.
+- **Status:** Phase 0 audit/documentation is complete. Endpoint PR-EP1 now has
+  typed contracts, independent server/agent policy foundations, bounded agent
+  primitives, a closed runtime registry, default-false feature gates and
+  safe capability discovery projection. Agent allowlists are explicit runtime
+  settings and remain fail-closed when absent. Runtime flags and production
+  state are unchanged; no module operation is yet creatable through this
+  discovery surface.
 - **Goal:** move declarative module ownership/execution to Endpoint while
   retaining the legacy Workbench/runtime until explicitly migrated.
 - **Constraints:** no Endpoint direct browser call, shared DB/FK, DeviceOutbox,
@@ -15,16 +18,19 @@
   Helpdesk is canonical for actors/tickets/facade/evidence. The exact boundary
   is `docs/segmentation/MODULE_PLATFORM_BOUNDARY.md`; legacy classifications
   live in `docs/segmentation/LEGACY_MODULE_MIGRATION_MATRIX.csv`.
-- **Next steps:** finish PR-EP1 server feature flags/capability projection and
-  cross-platform coverage, merge its Endpoint contract, then implement the
-  typed Helpdesk port before any endpoint-native BFF execution path.
+- **Next steps:** finish PR-EP1 cross-platform/command-boundary verification,
+  then create PR-EP2's module registry, recipes, immutable versioning and
+  parent/child operation lifecycle. Implement the typed Helpdesk port only
+  after the Endpoint contract is merged and before any endpoint-native BFF
+  execution path.
 - **Verification:** Helpdesk Windows acceptance is already in mainline at
   `62b734ddf5b65a9978524c1c0af31bdf9ad53d2d`. Endpoint contracts and server
   policy foundations passed `tests/contracts tests/operations` (335 passed,
   4 skipped) before Gateway contract expansion; the refreshed Gateway contract
-  suite passed (280 passed), and the later focused contracts/operations/agent
-  gate passed (98 passed). No Module Platform runtime or canary verification
-  has run yet.
+  suite passed (280 passed). The current EP1 capability/configuration gate
+  passed 391 tests with 1 skipped, and the agent-policy runtime/transport gate
+  passed 49 tests. No Module Platform runtime or canary verification has run
+  yet.
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
