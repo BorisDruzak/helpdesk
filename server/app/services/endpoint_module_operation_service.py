@@ -13,10 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from typing_extensions import Annotated
 
 from app.db.models import Ticket
-from app.repos.endpoint_module_operation_links_repo import (
-    EndpointModuleOperationLinkConflict,
-    EndpointModuleOperationLinksRepo,
-)
+from app.repos.endpoint_operation_links_repo import EndpointOperationLinkConflict, EndpointOperationLinksRepo
 from app.repos.operations_repo import OperationsRepo
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceResolution
 
@@ -155,7 +152,7 @@ class SqlAlchemyEndpointModuleOperationStore:
 
     async def get_by_operation_id(self, operation_id: str) -> dict[str, Any] | None:
         async with self._session_factory() as session:
-            link = await EndpointModuleOperationLinksRepo(session).get_by_operation_id(operation_id)
+            link = await EndpointOperationLinksRepo(session).get_by_operation_id(operation_id)
             if link is None:
                 return None
             operation = await OperationsRepo(session).get_by_operation_id(operation_id)
@@ -164,7 +161,7 @@ class SqlAlchemyEndpointModuleOperationStore:
             return {
                 "operation_id": operation.operation_id, "ticket_id": str(operation.ticket_id),
                 "endpoint_device_ref": link.endpoint_device_ref, "module_key": link.module_key,
-                "module_version": link.module_version, "inputs": dict(link.inputs_snapshot_json or {}),
+                "module_version": link.module_version, "inputs": dict(link.module_inputs_snapshot_json or {}),
                 "status": operation.status, "trace_id": operation.trace_id,
             }
 
@@ -181,7 +178,7 @@ class SqlAlchemyEndpointModuleOperationStore:
                         tool_name="endpoint.module.operation", actor_role=values["actor_role"],
                         trace_id=values["trace_id"], status="queued", phase="endpoint_module_create_pending",
                     )
-                    await EndpointModuleOperationLinksRepo(session).create_pending(
+                    await EndpointOperationLinksRepo(session).create_module_pending(
                         operation_id=operation.operation_id, endpoint_device_ref=values["endpoint_device_ref"],
                         module_key=values["module_key"], module_version=values["module_version"],
                         inputs=values["inputs"], create_idempotency_key=values["idempotency_key"],
@@ -194,7 +191,7 @@ class SqlAlchemyEndpointModuleOperationStore:
                         "module_version": values["module_version"], "inputs": dict(values["inputs"]),
                         "status": operation.status, "trace_id": operation.trace_id,
                     }
-        except EndpointModuleOperationLinkConflict as exc:
+        except EndpointOperationLinkConflict as exc:
             raise EndpointModuleOperationConflict(str(exc)) from exc
         except IntegrityError as exc:
             existing = await self.get_by_operation_id(values["operation_id"])

@@ -38,11 +38,13 @@
   `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
   configuration validates; it maps catalog/version and operation routes into
   safe projections and never retains recipes or dispatches an agent command.
-- Migrations `139–140` reserve the separate Helpdesk-owned
-  `endpoint_module_operation_links` lifecycle/evidence table. It has only a
-  local `operations` FK, opaque Endpoint refs, safe invocation-input snapshot
-  and actor-scoped idempotency; it is forward-only and has not been applied by
-  this source change.
+- Migrations `139–142` keep module facade work in the established local
+  `endpoint_operation_links` lifecycle. Revision `142` adds nullable module
+  identity, safe input/snapshot fields and removes the temporary staging
+  table; no cross-repository FK exists. `EndpointModuleOperationReconciler`
+  calls only the typed port outside its short database transactions, is gated
+  by `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`, and writes exactly one safe
+  `endpoint.module.recipe` evidence item after remote success.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates

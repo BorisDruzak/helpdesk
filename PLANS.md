@@ -27,10 +27,13 @@
   diagnostics, ToolService, DeviceOutbox, legacy WebSocket or an automatic
   fallback. Commits `71d4592c`, `4b49fe22` and `73606573` add the forward-only
   local operation-link schema and nullable-device facade exception; they have
-  not been applied to any database. Commits `5c4cb4c4`, `d62f6a93`,
-  `a557e88c` and `fcc32d30` add the local facade, SQL store/repository and
-  typed lease-based reconciler. Lifecycle startup, evidence/audit projection
-  and BFF/RBAC remain pending.
+  not been applied to any database. Revision `142` unifies that temporary
+  staging schema into the established `EndpointOperationLink` lifecycle and
+  removes the unused second table. The module reconciler remains default-off
+  until both external port and explicit `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`
+  are set; it stores only safe completed results and creates one idempotent
+  `endpoint.module.recipe` evidence record. Lifecycle startup and BFF/RBAC
+  remain pending.
 - **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
   wire the Helpdesk reconciler lifecycle, audit/ticket evidence projection,
   RBAC and browser workbench.

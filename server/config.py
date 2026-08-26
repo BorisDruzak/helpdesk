@@ -62,6 +62,15 @@ ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
 ENDPOINT_MODULE_PORT_MODE = (
     os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
 ).strip().lower()
+# Module operations have a separate cutover from the read-only module port.
+# Keep the established diagnostic execution path intact until the module
+# reconciler has explicit acceptance in a pilot environment.
+ENDPOINT_MODULE_EXECUTION_MODE = (
+    os.getenv("ENDPOINT_MODULE_EXECUTION_MODE", "disabled") or "disabled"
+).strip().lower()
+LEGACY_MODULE_EXECUTION_ENABLED = (
+    os.getenv("LEGACY_MODULE_EXECUTION_ENABLED", "true") or "true"
+).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _bounded_endpoint_external_timeout() -> float:
