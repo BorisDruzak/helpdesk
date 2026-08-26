@@ -2,9 +2,10 @@
 
 ## 2026-08-26 Endpoint Module Platform v1
 
-- **Status:** Phase 0 audit/documentation is complete; Endpoint PR-EP1 contract
-  and server policy foundations are in progress. Runtime flags and production
-  state are unchanged.
+- **Status:** Phase 0 audit/documentation is complete. Endpoint PR-EP1 has
+  typed contracts, both policy foundations, bounded agent primitives and a
+  closed runtime registry; server feature flags and capability projection are
+  still in progress. Runtime flags and production state are unchanged.
 - **Goal:** move declarative module ownership/execution to Endpoint while
   retaining the legacy Workbench/runtime until explicitly migrated.
 - **Constraints:** no Endpoint direct browser call, shared DB/FK, DeviceOutbox,
@@ -14,14 +15,15 @@
   Helpdesk is canonical for actors/tickets/facade/evidence. The exact boundary
   is `docs/segmentation/MODULE_PLATFORM_BOUNDARY.md`; legacy classifications
   live in `docs/segmentation/LEGACY_MODULE_MIGRATION_MATRIX.csv`.
-- **Next steps:** finish PR-EP1 agent primitives and capability projection,
-  merge its Endpoint contract, then implement the typed Helpdesk port before
-  any endpoint-native BFF execution path.
+- **Next steps:** finish PR-EP1 server feature flags/capability projection and
+  cross-platform coverage, merge its Endpoint contract, then implement the
+  typed Helpdesk port before any endpoint-native BFF execution path.
 - **Verification:** Helpdesk Windows acceptance is already in mainline at
   `62b734ddf5b65a9978524c1c0af31bdf9ad53d2d`. Endpoint contracts and server
   policy foundations passed `tests/contracts tests/operations` (335 passed,
   4 skipped) before Gateway contract expansion; the refreshed Gateway contract
-  suite passed (280 passed). No Module Platform runtime or canary verification
+  suite passed (280 passed), and the later focused contracts/operations/agent
+  gate passed (98 passed). No Module Platform runtime or canary verification
   has run yet.
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
