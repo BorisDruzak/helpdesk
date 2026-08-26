@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 from uuid import uuid4
+import logging
 
 from sqlalchemy import or_, select
 
@@ -20,6 +22,9 @@ from domain_ports.endpoint_modules import (
     EndpointModuleVersionRef,
 )
 from app.db.models import DiagnosticEvidence, EndpointOperationLink, Operation
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -199,3 +204,39 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
                         ))
                 await session.flush()
                 return True
+
+
+class EndpointModuleOperationReconcilerRunner:
+    """Lifecycle-owned polling loop, started only by explicit cutover composition."""
+
+    def __init__(
+        self, reconciler: EndpointModuleOperationReconciler, *, interval_seconds: int, batch_size: int
+    ) -> None:
+        self._reconciler = reconciler
+        self._interval_seconds = interval_seconds
+        self._batch_size = batch_size
+        self._stop = asyncio.Event()
+        self._task: asyncio.Task[None] | None = None
+
+    def start(self) -> None:
+        if self._task is None:
+            self._task = asyncio.create_task(self._run(), name="endpoint-module-operation-reconciler")
+
+    async def stop(self) -> None:
+        self._stop.set()
+        if self._task is not None:
+            await self._task
+            self._task = None
+
+    async def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                await self._reconciler.reconcile_once(limit=self._batch_size)
+            except Exception as error:
+                _LOGGER.error("endpoint_module_reconcile_runner_failed", extra={"error_type": type(error).__name__})
+            try:
+                await asyncio.wait_for(
+                    self._stop.wait(), timeout=max(0.1, float(self._interval_seconds))
+                )
+            except TimeoutError:
+                continue
