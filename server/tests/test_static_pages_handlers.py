@@ -73,6 +73,19 @@ async def test_admin_page_serves_html_for_current_shell_version():
 
 @pytest.mark.no_db
 @pytest.mark.asyncio
+async def test_admin_page_exposes_separate_endpoint_recipe_workbench():
+    request = make_mocked_request("GET", f"/admin?_shell={ADMIN_SHELL_VERSION}")
+
+    response = await handle_admin_page(request)
+
+    assert response.status == 200
+    assert 'data-modules-subtab="endpoint-recipes"' in response.text
+    assert 'id="endpoint-module-workbench-host"' in response.text
+    assert "/endpoint_module_workbench.js?v=" in response.text
+
+
+@pytest.mark.no_db
+@pytest.mark.asyncio
 async def test_support_page_redirects_to_versioned_shell(monkeypatch):
     monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", False)
     monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_SUPPORT_ENABLED", False)

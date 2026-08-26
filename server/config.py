@@ -62,6 +62,12 @@ ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
 ENDPOINT_MODULE_PORT_MODE = (
     os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
 ).strip().lower()
+# The legacy Python-module workbench remains authoritative unless a reviewed
+# deployment explicitly selects Endpoint-native recipes.  This flag is
+# declarative only: it cannot enable execution by itself.
+MODULE_WORKBENCH_AUTHORITY = (
+    os.getenv("MODULE_WORKBENCH_AUTHORITY", "legacy") or "legacy"
+).strip().lower()
 # Module operations have a separate cutover from the read-only module port.
 # Keep the established diagnostic execution path intact until the module
 # reconciler has explicit acceptance in a pilot environment.

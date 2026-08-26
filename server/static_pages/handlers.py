@@ -157,6 +157,10 @@ async def handle_admin_modules_workbench_js(request):
     return _text_file_response(BASE_DIR / "admin_modules_workbench.js", "application/javascript", no_cache=True)
 
 
+async def handle_endpoint_module_workbench_js(request):
+    return _text_file_response(BASE_DIR / "endpoint_module_workbench.js", "application/javascript", no_cache=True)
+
+
 async def handle_admin_ticket_forms_builder_html(request):
     return _text_file_response(BASE_DIR / "admin_ticket_forms_builder.html", "text/html", no_cache=True)
 

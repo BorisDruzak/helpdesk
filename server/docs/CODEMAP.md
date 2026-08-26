@@ -41,8 +41,14 @@
   `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
   BFF routes under `/api/web/admin/endpoint-modules` (with `/api/admin`
   aliases) and `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
-  It authorizes admin/support/auditor actions locally, records safe actor audit
-  data, and queues only a local facade operation. Its resolver reads the
+  Catalog rows add only the Endpoint-projected latest version/state when that
+  safe read succeeds; they never expose a recipe source. The legacy Admin
+  shell's `Endpoint recipes` subtab (`admin.html`,
+  `endpoint_module_workbench.js`) calls only that BFF to create declarative
+  allowlisted DNS/ping/TCP recipes and apply lifecycle actions; the existing
+  Python-oriented workbench remains untouched. It authorizes admin/support/auditor
+  actions locally, records safe actor audit data, and queues only a local facade
+  operation. Its resolver reads the
   already verified ticket mapping and never composes the diagnostic port,
   `ToolService`, DeviceOutbox or legacy WebSocket.
 - Migrations `139–142` keep module facade work in the established local

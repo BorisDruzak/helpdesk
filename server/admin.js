@@ -7534,7 +7534,9 @@
         }
 
         function syncModulesSubtabButtons() {
-            const visiblePanel = activeModulesSubtab === 'devices' ? 'devices' : 'development';
+            const visiblePanel = ['development', 'endpoint-recipes', 'devices'].includes(activeModulesSubtab)
+                ? activeModulesSubtab
+                : 'development';
             document.querySelectorAll('.modules-subtab-btn').forEach(btn => {
                 const isActive = btn.getAttribute('data-modules-subtab') === activeModulesSubtab;
                 btn.classList.toggle('active', isActive);
@@ -7548,16 +7550,19 @@
         }
 
         function switchModulesSubtab(subtab, options) {
-            const next = ['development', 'list', 'editor', 'devices'].includes(subtab) ? subtab : 'development';
+            const next = ['development', 'list', 'editor', 'endpoint-recipes', 'devices'].includes(subtab) ? subtab : 'development';
             activeModulesSubtab = next;
             window._selectedModulesSubtab = next;
             syncModulesSubtabButtons();
             if (next === 'devices' && selectedDeviceIdTab) {
                 selectDeviceModules(selectedDeviceIdTab, true);
             }
-            const workbenchView = next === 'devices' ? null : next;
+            const workbenchView = ['devices', 'endpoint-recipes'].includes(next) ? null : next;
             if (workbenchView) {
                 window.ModuleWorkbench?.switchView?.(workbenchView, options || {});
+            }
+            if (next === 'endpoint-recipes') {
+                window.EndpointModuleWorkbench?.load?.();
             }
         }
 
@@ -7586,9 +7591,10 @@
             await Promise.all([
                 loadDevicesListModules(),
                 loadModulesList(),
-                window.ModuleWorkbench?.load?.() || Promise.resolve()
+                window.ModuleWorkbench?.load?.() || Promise.resolve(),
+                window.EndpointModuleWorkbench?.load?.() || Promise.resolve()
             ]);
-            if (activeModulesSubtab !== 'devices') {
+            if (!['devices', 'endpoint-recipes'].includes(activeModulesSubtab)) {
                 window.ModuleWorkbench?.switchView?.(activeModulesSubtab);
             }
         }

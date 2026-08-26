@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from domain_ports.endpoint_modules import (
+    EndpointModuleCatalogProjection,
+    EndpointModuleDefinitionProjection,
     EndpointModuleRecipe,
     EndpointModuleRecipeInput,
     EndpointModuleRecipeStep,
@@ -33,6 +35,22 @@ class _Request(dict):
 
 
 class _Port:
+    async def list_modules(self):
+        return (
+            EndpointModuleCatalogProjection(
+                module=EndpointModuleRef(module_key="network.basic.check"),
+                display_name="Network basic check",
+            ),
+        )
+
+    async def read_module(self, module: EndpointModuleRef):
+        return EndpointModuleDefinitionProjection(
+            module=module,
+            display_name="Network basic check",
+            latest_version=EndpointModuleVersionRef(module=module, version="1.0.0"),
+            latest_state="published",
+        )
+
     async def create_module_version(self, request: EndpointModuleVersionCreateRequest):
         self.request = request
         return EndpointModuleVersionProjection(
@@ -87,6 +105,28 @@ async def test_bff_create_returns_safe_projection_not_recipe_source(monkeypatch:
     assert response.status == 201
     assert response.text == '{"data": {"module_key": "network.basic.check", "version": "1.0.0", "state": "draft"}}'
     assert events[0]["after_json"] == {"module_key": "network.basic.check", "version": "1.0.0", "service_result": {"module_key": "network.basic.check", "version": "1.0.0", "state": "draft"}}
+
+
+@pytest.mark.asyncio
+async def test_bff_list_exposes_safe_latest_version_and_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    import web_api.endpoint_module_handlers as handlers
+
+    @asynccontextmanager
+    async def fake_session():
+        yield object()
+
+    monkeypatch.setattr(handlers, "get_session", fake_session)
+    monkeypatch.setattr(handlers, "can", lambda *_args: _true())
+    request = _Request({})
+    request["auth_context"] = SimpleNamespace(actor_id="admin-1", actor_role="admin")
+
+    response = await handlers.handle_endpoint_modules_list(request)
+
+    assert response.status == 200
+    assert response.text == (
+        '{"data": [{"module_key": "network.basic.check", "display_name": '
+        '"Network basic check", "version": "1.0.0", "state": "published"}]}'
+    )
 
 
 async def _true() -> bool:
