@@ -34,7 +34,7 @@ ModuleDisplayName: TypeAlias = Annotated[
     str,
     StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=128),
 ]
-ModuleStepId: TypeAlias = Annotated[
+ModuleInputName: TypeAlias = Annotated[
     str,
     StringConstraints(
         strict=True,
@@ -45,7 +45,7 @@ ModuleStepId: TypeAlias = Annotated[
     ),
 ]
 ModuleSafeScalar: TypeAlias = Annotated[
-    str | int | bool,
+    str | int | float | bool,
     Field(union_mode="left_to_right"),
 ]
 
@@ -110,6 +110,12 @@ class EndpointModuleDefinitionProjection(_ImmutableEndpointModuleDTO):
     source: Literal["external_authoritative"] = "external_authoritative"
 
 
+class EndpointModuleCatalogProjection(_ImmutableEndpointModuleDTO):
+    module: EndpointModuleRef
+    display_name: ModuleDisplayName
+    source: Literal["external_authoritative"] = "external_authoritative"
+
+
 class EndpointModuleVersionProjection(_ImmutableEndpointModuleDTO):
     version: EndpointModuleVersionRef
     display_name: ModuleDisplayName
@@ -127,11 +133,11 @@ class EndpointModuleOperationCreateRequest(_ImmutableEndpointModuleDTO):
     )
     module_version: EndpointModuleVersionRef
     device_external_id: OpaqueEndpointRef
-    inputs: dict[ModuleStepId, ModuleSafeScalar] = Field(default_factory=dict, max_length=8)
+    inputs: dict[ModuleInputName, ModuleSafeScalar] = Field(default_factory=dict, max_length=8)
 
 
 class EndpointModuleOperationStepProjection(_ImmutableEndpointModuleDTO):
-    step_id: ModuleStepId
+    sequence: int = Field(ge=0, le=7)
     capability: Literal["dns.resolve", "network.ping", "tcp.connect"]
     status: Literal["succeeded", "failed", "canceled", "expired"]
     error_code: SafeEndpointCode | None
@@ -176,7 +182,7 @@ class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):
         return self
 
 
-EndpointModuleListOutcome: TypeAlias = tuple[EndpointModuleDefinitionProjection, ...] | EndpointModuleFailureOutcome
+EndpointModuleListOutcome: TypeAlias = tuple[EndpointModuleCatalogProjection, ...] | EndpointModuleFailureOutcome
 EndpointModuleReadOutcome: TypeAlias = EndpointModuleDefinitionProjection | EndpointModuleFailureOutcome
 EndpointModuleVersionReadOutcome: TypeAlias = EndpointModuleVersionProjection | EndpointModuleFailureOutcome
 EndpointModuleOperationCreateOutcome: TypeAlias = EndpointModuleOperationProjection | EndpointModuleFailureOutcome
