@@ -21,10 +21,16 @@
   Helpdesk is canonical for actors/tickets/facade/evidence. The exact boundary
   is `docs/segmentation/MODULE_PLATFORM_BOUNDARY.md`; legacy classifications
   live in `docs/segmentation/LEGACY_MODULE_MIGRATION_MATRIX.csv`.
-- **Next steps:** complete Endpoint operation read/list and lab-evidence
-  wiring, then implement the typed Helpdesk Endpoint adapter, RBAC/audit,
-  browser workbench and ticket/evidence facade. Keep legacy paths isolated;
-  no endpoint-native BFF fallback or dual dispatch is permitted.
+- **Current Helpdesk boundary:** commits `4f1a82db` and `53e3041b` add a
+  separate frozen `EndpointModulePort`, default-false composition and a typed
+  HTTPS catalog/version/operation adapter. It does not retain recipes or use
+  diagnostics, ToolService, DeviceOutbox, legacy WebSocket or an automatic
+  fallback.
+- **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
+  create the Helpdesk local module-operation facade, reconciliation, audit and
+  ticket/evidence projection before adding RBAC and the browser workbench.
+  Keep legacy paths isolated; no endpoint-native BFF fallback or dual dispatch
+  is permitted.
 - **Verification:** Helpdesk Windows acceptance is already in mainline at
   `62b734ddf5b65a9978524c1c0af31bdf9ad53d2d`. Endpoint contracts and server
   policy foundations passed `tests/contracts tests/operations` (335 passed,
@@ -34,7 +40,9 @@
   passed 49 tests. No Module Platform runtime or canary verification has run
   yet. The current Endpoint module Gateway/operation suites passed 40 tests;
   Gateway child-delivery/result/reconnect coverage passed separately. Full
-  canary and Helpdesk browser verification remain pending.
+  canary and Helpdesk browser verification remain pending. The new Helpdesk
+  port/adapter boundary passed its targeted contract/HTTP suite (46 passed)
+  and `python scripts/verify_workspace.py` completed locally without errors.
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
