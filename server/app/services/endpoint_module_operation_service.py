@@ -9,8 +9,15 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from sqlalchemy.exc import IntegrityError
 from typing_extensions import Annotated
 
+from app.db.models import Ticket
+from app.repos.endpoint_module_operation_links_repo import (
+    EndpointModuleOperationLinkConflict,
+    EndpointModuleOperationLinksRepo,
+)
+from app.repos.operations_repo import OperationsRepo
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceResolution
 
 
@@ -138,3 +145,59 @@ class EndpointModuleOperationService:
         ):
             raise EndpointModuleOperationConflict("endpoint module idempotency key conflicts with immutable identity")
         return EndpointModuleOperationResult(operation_id=operation_id, status=str(existing.get("status") or "queued"), trace_id=str(existing.get("trace_id") or ""))
+
+
+class SqlAlchemyEndpointModuleOperationStore:
+    """Short-transaction store; remote Endpoint calls belong only to the reconciler."""
+
+    def __init__(self, session_factory: Callable[[], Any]) -> None:
+        self._session_factory = session_factory
+
+    async def get_by_operation_id(self, operation_id: str) -> dict[str, Any] | None:
+        async with self._session_factory() as session:
+            link = await EndpointModuleOperationLinksRepo(session).get_by_operation_id(operation_id)
+            if link is None:
+                return None
+            operation = await OperationsRepo(session).get_by_operation_id(operation_id)
+            if operation is None:
+                raise EndpointModuleOperationConflict("module link has no local operation")
+            return {
+                "operation_id": operation.operation_id, "ticket_id": str(operation.ticket_id),
+                "endpoint_device_ref": link.endpoint_device_ref, "module_key": link.module_key,
+                "module_version": link.module_version, "inputs": dict(link.inputs_snapshot_json or {}),
+                "status": operation.status, "trace_id": operation.trace_id,
+            }
+
+    async def create_pending(self, **values: Any) -> dict[str, Any]:
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    ticket = await session.get(Ticket, values["ticket_id"], with_for_update=True)
+                    if ticket is None:
+                        raise EndpointModuleOperationUnavailable("ENDPOINT_TICKET_NOT_FOUND")
+                    operation = await OperationsRepo(session).create_operation(
+                        operation_id=values["operation_id"], device_id=getattr(ticket, "device_id", None),
+                        ticket_id=values["ticket_id"], kind="endpoint_module_operation",
+                        tool_name="endpoint.module.operation", actor_role=values["actor_role"],
+                        trace_id=values["trace_id"], status="queued", phase="endpoint_module_create_pending",
+                    )
+                    await EndpointModuleOperationLinksRepo(session).create_pending(
+                        operation_id=operation.operation_id, endpoint_device_ref=values["endpoint_device_ref"],
+                        module_key=values["module_key"], module_version=values["module_version"],
+                        inputs=values["inputs"], create_idempotency_key=values["idempotency_key"],
+                        caller_actor_id=values["actor_id"], caller_idempotency_key=values["caller_idempotency_key"],
+                        next_attempt_at=values["created_at"],
+                    )
+                    return {
+                        "operation_id": operation.operation_id, "ticket_id": str(operation.ticket_id),
+                        "endpoint_device_ref": values["endpoint_device_ref"], "module_key": values["module_key"],
+                        "module_version": values["module_version"], "inputs": dict(values["inputs"]),
+                        "status": operation.status, "trace_id": operation.trace_id,
+                    }
+        except EndpointModuleOperationLinkConflict as exc:
+            raise EndpointModuleOperationConflict(str(exc)) from exc
+        except IntegrityError as exc:
+            existing = await self.get_by_operation_id(values["operation_id"])
+            if existing is not None:
+                return existing
+            raise EndpointModuleOperationConflict("module operation persistence conflict") from exc
