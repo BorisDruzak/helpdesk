@@ -25,7 +25,9 @@
   separate frozen `EndpointModulePort`, default-false composition and a typed
   HTTPS catalog/version/operation adapter. It does not retain recipes or use
   diagnostics, ToolService, DeviceOutbox, legacy WebSocket or an automatic
-  fallback.
+  fallback. Commit `71d4592c` adds the forward-only local
+  `endpoint_module_operation_links` schema for the facade/reconciler; it has
+  not been applied to any database.
 - **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
   create the Helpdesk local module-operation facade, reconciliation, audit and
   ticket/evidence projection before adding RBAC and the browser workbench.
