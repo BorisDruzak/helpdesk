@@ -8723,12 +8723,7 @@
         // Check authentication on page load
         document.addEventListener('DOMContentLoaded', () => {
             const token = localStorage.getItem(AUTH_TOKEN_KEY);
-            if (token) {
-                // Verify token is still valid by making a test request
-                verifySession(token);
-            } else {
-                redirectToLogin();
-            }
+            verifySession(token);
         });
         
         // Verify token by making a test API request
