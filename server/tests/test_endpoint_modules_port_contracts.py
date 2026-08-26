@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timezone
+from pathlib import Path
+
+import certifi
 
 import pytest
 from pydantic import ValidationError
 
 from domain_ports.endpoint_modules import (
+    EndpointModuleCatalogProjection,
     EndpointModuleDefinitionProjection,
     EndpointModuleOperationCreateRequest,
     EndpointModuleOperationProjection,
@@ -19,6 +23,7 @@ from domain_ports.endpoint_modules import (
     EndpointModuleVersionState,
 )
 from domain_ports.unavailable import UnavailableEndpointModulePort
+from endpoint_adapter.modules_http import ExternalEndpointModuleHttpAdapter
 
 
 pytestmark = pytest.mark.no_db
@@ -27,6 +32,10 @@ pytestmark = pytest.mark.no_db
 def test_module_port_contracts_are_frozen_and_do_not_accept_recipe_or_command_content() -> None:
     module = EndpointModuleRef(module_key="network.basic.check")
     version = EndpointModuleVersionRef(module=module, version="1.0.0")
+    catalog_entry = EndpointModuleCatalogProjection(
+        module=module,
+        display_name="Network basic check",
+    )
     definition = EndpointModuleDefinitionProjection(
         module=module,
         display_name="Network basic check",
@@ -39,6 +48,7 @@ def test_module_port_contracts_are_frozen_and_do_not_accept_recipe_or_command_co
         state="published",
     )
 
+    assert catalog_entry.module == module
     assert definition.latest_state == "published"
     assert version_projection.state == "published"
     with pytest.raises((FrozenInstanceError, TypeError, ValueError)):
@@ -75,7 +85,7 @@ def test_module_operation_projection_exposes_only_bounded_safe_result_and_lifecy
         result_available=True,
         safe_result=(
             EndpointModuleOperationStepProjection(
-                step_id="dns",
+                sequence=0,
                 capability="dns.resolve",
                 status="succeeded",
                 error_code=None,
@@ -85,6 +95,7 @@ def test_module_operation_projection_exposes_only_bounded_safe_result_and_lifecy
     )
 
     assert projection.status == "succeeded"
+    assert projection.safe_result[0].sequence == 0
     assert projection.safe_result[0].safe_values == {"address_count": 1}
     with pytest.raises(ValidationError):
         EndpointModuleOperationProjection(
@@ -138,6 +149,23 @@ def test_module_port_composition_defaults_to_unavailable_and_rejects_unknown_mod
     monkeypatch.setattr(config, "ENDPOINT_MODULE_PORT_MODE", "unexpected")
     with pytest.raises(ValueError, match="ENDPOINT_MODULE_PORT_MODE"):
         DomainPortContainer.from_config()
+
+
+def test_module_port_composition_requires_the_existing_tls_endpoint_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import config
+    from domain_ports import DomainPortContainer
+
+    monkeypatch.setattr(config, "ENDPOINT_MODULE_PORT_MODE", "external")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.example.test")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "test-service-token")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", certifi.where())
+
+    endpoint_modules = DomainPortContainer.from_config().endpoint_modules
+
+    assert Path(certifi.where()).is_file()
+    assert isinstance(endpoint_modules, ExternalEndpointModuleHttpAdapter)
 
 
 def test_module_version_states_are_closed_and_versioned() -> None:

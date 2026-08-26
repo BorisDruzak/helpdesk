@@ -240,9 +240,37 @@ class DomainPortContainer:
 
         if endpoint_modules is None:
             module_mode = _configured_endpoint_module_port_mode()
-            if module_mode != "unavailable":
+            if module_mode == "unavailable":
+                endpoint_modules = UnavailableEndpointModulePort()
+            elif module_mode == "external":
+                base_url, service_token, ca_file, timeout_seconds = (
+                    _configured_endpoint_external_settings()
+                )
+                unavailable_code = _endpoint_external_unavailable_code(
+                    base_url=base_url,
+                    service_token=service_token,
+                    ca_file=ca_file,
+                )
+                if unavailable_code is not None:
+                    endpoint_modules = UnavailableEndpointModulePort(
+                        code=f"endpoint_module_{unavailable_code.removeprefix('endpoint_')}",
+                    )
+                else:
+                    try:
+                        from endpoint_adapter import ExternalEndpointModuleHttpAdapter
+                    except ModuleNotFoundError as exc:
+                        if exc.name != "endpoint_adapter":
+                            raise
+                        from server.endpoint_adapter import ExternalEndpointModuleHttpAdapter
+
+                    endpoint_modules = ExternalEndpointModuleHttpAdapter(
+                        base_url=base_url,
+                        service_token=service_token,
+                        ca_file=ca_file,
+                        timeout_seconds=timeout_seconds,
+                    )
+            else:
                 raise ValueError(f"unsupported ENDPOINT_MODULE_PORT_MODE: {module_mode!r}")
-            endpoint_modules = UnavailableEndpointModulePort()
 
         return cls(
             knowledge=knowledge,

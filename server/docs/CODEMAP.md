@@ -34,8 +34,10 @@
 - `EndpointModulePort` is a separate frozen typed boundary for module catalog,
   module-version and operation reads. Its default
   `ENDPOINT_MODULE_PORT_MODE=unavailable` adapter performs no HTTP, database,
-  agent, ToolService or diagnostic-provider work; enabling an adapter is a
-  separate, explicit composition step.
+  agent, ToolService or diagnostic-provider work. `external` composes only
+  `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
+  configuration validates; it maps catalog/version and operation routes into
+  safe projections and never retains recipes or dispatches an agent command.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates

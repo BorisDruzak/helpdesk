@@ -33,6 +33,7 @@ from .endpoint import (
 )
 from .endpoint_modules import (
     EndpointModuleAvailability,
+    EndpointModuleCatalogProjection,
     EndpointModuleDefinitionProjection,
     EndpointModuleInvalidProjection,
     EndpointModuleNotFound,
@@ -158,6 +159,7 @@ __all__ = (
     "SafeEndpointCode",
     "SafeEndpointText",
     "EndpointModuleAvailability",
+    "EndpointModuleCatalogProjection",
     "EndpointModuleDefinitionProjection",
     "EndpointModuleInvalidProjection",
     "EndpointModuleNotFound",
