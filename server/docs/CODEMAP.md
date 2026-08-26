@@ -38,6 +38,10 @@
   `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
   configuration validates; it maps catalog/version and operation routes into
   safe projections and never retains recipes or dispatches an agent command.
+- Migration `139` reserves the separate Helpdesk-owned
+  `endpoint_module_operation_links` lifecycle/evidence table. It has only a
+  local `operations` FK and opaque Endpoint refs; it is forward-only and has
+  not been applied by this source change.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
