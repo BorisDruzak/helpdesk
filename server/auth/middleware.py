@@ -24,17 +24,10 @@ SERVER_REQUEST_ID_HEADER = "X-Server-Request-ID"
 WEB_AUTH_AUDIT_DEVICE_ID = "00000000-0000-0000-0000-00000000a11d"
 WEB_AUTH_AUDIT_WINDOW_SEC = 60
 _WEB_AUTH_AUDIT_LAST_SEEN: dict[tuple[str, str, str, str], datetime] = {}
-WEB_SESSION_AUTH_PATH_PREFIXES = (
-    "/api/web/",
-    "/api/upload",
-    "/api/artifacts/",
-    "/api/modules/",
-    "/api/admin/tech/",
-    "/api/admin/settings/observer",
-    "/api/ticket_forms/",
-    "/api/registry/options",
-    "/api/notifications",
-)
+# Cookie sessions are browser credentials. They must cover every API route the
+# legacy and React shells can call; unsafe cookie-authenticated requests are
+# gated by the same-origin check below.
+WEB_SESSION_AUTH_PATH_PREFIXES = ("/api/",)
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
 QUERY_TOKEN_ATTEMPT_MAX = 500
 _QUERY_TOKEN_AUTH_ATTEMPTS: deque[dict[str, object]] = deque(maxlen=QUERY_TOKEN_ATTEMPT_MAX)
