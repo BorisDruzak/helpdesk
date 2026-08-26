@@ -57,6 +57,20 @@ ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").s
 ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
     os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy") or "legacy"
 ).strip().lower()
+# Endpoint Module Platform is an independent typed boundary.  It must never
+# inherit the diagnostic provider's execution mode or legacy fallback.
+ENDPOINT_MODULE_PORT_MODE = (
+    os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
+).strip().lower()
+# Module operations have a separate cutover from the read-only module port.
+# Keep the established diagnostic execution path intact until the module
+# reconciler has explicit acceptance in a pilot environment.
+ENDPOINT_MODULE_EXECUTION_MODE = (
+    os.getenv("ENDPOINT_MODULE_EXECUTION_MODE", "disabled") or "disabled"
+).strip().lower()
+LEGACY_MODULE_EXECUTION_ENABLED = (
+    os.getenv("LEGACY_MODULE_EXECUTION_ENABLED", "true") or "true"
+).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _bounded_endpoint_external_timeout() -> float:

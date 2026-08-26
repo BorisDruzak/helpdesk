@@ -1,0 +1,17 @@
+legacy_module,observed_surface,platform,risk,classification,target_v1,manual_rewrite_required,cutover_prerequisite
+system.collect,pc_agent/modules/impl/system.py,Linux+Windows,safe_read,MIGRATE_TO_BUILTIN_PRIMITIVE,context.baseline.collect or context.health.collect,yes,typed context contract accepted
+inventory.collect,pc_agent/modules/impl/inventory.py,Linux+Windows,safe_read,MIGRATE_TO_BUILTIN_PRIMITIVE,Endpoint inventory/context profile,yes,Endpoint inventory scope accepted
+dns.resolve,legacy Workbench template and recipe runner,Linux+Windows,safe_read,MIGRATE_TO_BUILTIN_PRIMITIVE,dns.resolve,no,PR-EP1 primitives accepted
+network.ping,legacy Workbench template,Linux+Windows,safe_read,MIGRATE_TO_BUILTIN_PRIMITIVE,network.ping,no,PR-EP1 primitives and target policy accepted
+tcp.connect,legacy Workbench template and recipe runner,Linux+Windows,safe_read,MIGRATE_TO_BUILTIN_PRIMITIVE,tcp.connect,no,PR-EP1 primitives and target policy accepted
+network_basic,legacy support module,Linux+Windows,safe_read,REWRITE_AS_ENDPOINT_RECIPE,network.basic.check,yes,PR-EP2 recipe validation and lab tests accepted
+network_ping,legacy support package,Linux+Windows,safe_read,REWRITE_AS_ENDPOINT_RECIPE,one-step network.ping recipe,yes,PR-EP2 recipe validation and lab tests accepted
+route.get,legacy support package,Linux+Windows,safe_read,UNRESOLVED,next read-only batch,yes,target contract and policy review
+adapter.list,legacy support package,Linux+Windows,safe_read,UNRESOLVED,next read-only batch,yes,target contract and policy review
+diag.logs.collect,pc_agent/modules/impl/diag_logs.py,Linux+Windows,sensitive_read,DEFER_CONSENT_REQUIRED + DEFER_ARTIFACT_REQUIRED,none,yes,consent and artifact contracts accepted
+screen.collect,pc_agent/modules/impl/screen.py,Linux+Windows,sensitive_read,DEFER_CONSENT_REQUIRED,Remote Assist boundary,yes,Remote Assist policy and consent acceptance
+input,pc_agent/modules/impl/input.py,Linux+Windows,write,DEFER_WRITE_OPERATION,Remote Assist boundary,yes,write-operation/consent acceptance
+presence.collect,pc_agent/modules/impl/presence.py,Linux+Windows,privacy_sensitive,LEGACY_ONLY,Endpoint presence domain,yes,presence-domain contract accepted
+agent_recipe_runner,pc_agent/modules_packages/agent_recipe_runner,Linux+Windows,arbitrary_recipe,LEGACY_ONLY,none,yes,never automatically imported
+remote_assist_runtime,pc_agent/modules_packages/remote_assist_runtime,Linux+Windows,remote_assist,DEFER_REMOTE_ASSIST,Remote Assist platform,yes,separate consent/runtime package
+vendor_python_modules,Workbench ZIP and user_function_body,Linux+Windows,unknown,LEGACY_ONLY,Endpoint Signed Extension Runtime v2,yes,separate signed-extension design and acceptance

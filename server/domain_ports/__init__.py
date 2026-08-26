@@ -31,6 +31,23 @@ from .endpoint import (
     SafeEndpointCode,
     SafeEndpointText,
 )
+from .endpoint_modules import (
+    EndpointModuleAvailability,
+    EndpointModuleCatalogProjection,
+    EndpointModuleDefinitionProjection,
+    EndpointModuleInvalidProjection,
+    EndpointModuleNotFound,
+    EndpointModuleOperationCreateRequest,
+    EndpointModuleOperationProjection,
+    EndpointModuleOperationRef,
+    EndpointModuleOperationStepProjection,
+    EndpointModulePort,
+    EndpointModuleRef,
+    EndpointModuleUnavailable,
+    EndpointModuleVersionProjection,
+    EndpointModuleVersionRef,
+    EndpointModuleVersionState,
+)
 from .knowledge import (
     KnowledgeAvailability,
     KnowledgeAvailabilityOutcome,
@@ -104,7 +121,12 @@ from .registry_contracts import (
     TicketParticipantProjection,
     requester_persistence_values,
 )
-from .unavailable import UnavailableEndpointPort, UnavailableKnowledgePort, UnavailableRegistryPort
+from .unavailable import (
+    UnavailableEndpointModulePort,
+    UnavailableEndpointPort,
+    UnavailableKnowledgePort,
+    UnavailableRegistryPort,
+)
 
 __all__ = (
     "DomainPortContainer",
@@ -136,6 +158,21 @@ __all__ = (
     "OpaqueEndpointRef",
     "SafeEndpointCode",
     "SafeEndpointText",
+    "EndpointModuleAvailability",
+    "EndpointModuleCatalogProjection",
+    "EndpointModuleDefinitionProjection",
+    "EndpointModuleInvalidProjection",
+    "EndpointModuleNotFound",
+    "EndpointModuleOperationCreateRequest",
+    "EndpointModuleOperationProjection",
+    "EndpointModuleOperationRef",
+    "EndpointModuleOperationStepProjection",
+    "EndpointModulePort",
+    "EndpointModuleRef",
+    "EndpointModuleUnavailable",
+    "EndpointModuleVersionProjection",
+    "EndpointModuleVersionRef",
+    "EndpointModuleVersionState",
     "KnowledgeAvailability",
     "KnowledgeAvailabilityOutcome",
     "KnowledgeFeedbackOutcome",
@@ -207,6 +244,7 @@ __all__ = (
     "TicketParticipantProjection",
     "requester_persistence_values",
     "UnavailableEndpointPort",
+    "UnavailableEndpointModulePort",
     "UnavailableKnowledgePort",
     "UnavailableRegistryPort",
 )

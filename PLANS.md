@@ -1,5 +1,57 @@
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
+## 2026-08-26 Endpoint Module Platform v1
+
+- **Status:** Endpoint EP1 is complete locally: typed contracts, independent
+  server/agent policy foundations, bounded agent primitives, a closed runtime
+  registry, default-false feature gates and safe capability discovery
+  projection. EP2 is now executable locally behind its default-false Endpoint
+  gate: immutable published recipe versions expand only on Endpoint into
+  durable parent/child operations; Gateway WSS delivers one typed primitive at
+  a time, accepts safe typed child results, stops on failure, and expires every
+  pending child at the parent deadline. HTTP pull never materializes these
+  commands. No production flag, migration, deployment, or Helpdesk-native
+  execution path has been enabled.
+- **Goal:** move declarative module ownership/execution to Endpoint while
+  retaining the legacy Workbench/runtime until explicitly migrated.
+- **Constraints:** no Endpoint direct browser call, shared DB/FK, DeviceOutbox,
+  ToolService, legacy WebSocket, dual dispatch, automatic fallback, arbitrary
+  code, or production deployment.
+- **Decisions:** Endpoint is canonical for recipe/module lifecycle and commands;
+  Helpdesk is canonical for actors/tickets/facade/evidence. The exact boundary
+  is `docs/segmentation/MODULE_PLATFORM_BOUNDARY.md`; legacy classifications
+  live in `docs/segmentation/LEGACY_MODULE_MIGRATION_MATRIX.csv`.
+- **Current Helpdesk boundary:** commits `4f1a82db` and `53e3041b` add a
+  separate frozen `EndpointModulePort`, default-false composition and a typed
+  HTTPS catalog/version/operation adapter. It does not retain recipes or use
+  diagnostics, ToolService, DeviceOutbox, legacy WebSocket or an automatic
+  fallback. Commits `71d4592c`, `4b49fe22` and `73606573` add the forward-only
+  local operation-link schema and nullable-device facade exception; they have
+  not been applied to any database. Revision `142` unifies that temporary
+  staging schema into the established `EndpointOperationLink` lifecycle and
+  removes the unused second table. The module reconciler remains default-off
+  until both external port and explicit `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`
+  are set; it stores only safe completed results and creates one idempotent
+  `endpoint.module.recipe` evidence record. Lifecycle startup and BFF/RBAC
+  remain pending.
+- **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
+  wire the Helpdesk reconciler lifecycle, audit/ticket evidence projection,
+  RBAC and browser workbench.
+  Keep legacy paths isolated; no endpoint-native BFF fallback or dual dispatch
+  is permitted.
+- **Verification:** Helpdesk Windows acceptance is already in mainline at
+  `62b734ddf5b65a9978524c1c0af31bdf9ad53d2d`. Endpoint contracts and server
+  policy foundations passed `tests/contracts tests/operations` (335 passed,
+  4 skipped) before Gateway contract expansion; the refreshed Gateway contract
+  suite passed (280 passed). The current EP1 capability/configuration gate
+  passed 391 tests with 1 skipped, and the agent-policy runtime/transport gate
+  passed 49 tests. No Module Platform runtime or canary verification has run
+  yet. The current Endpoint module Gateway/operation suites passed 40 tests;
+  Gateway child-delivery/result/reconnect coverage passed separately. Full
+  canary and Helpdesk browser verification remain pending. The new Helpdesk
+  port/adapter boundary passed its targeted contract/HTTP suite (46 passed)
+  and `python scripts/verify_workspace.py` completed locally without errors.
+
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
 ## 2026-08-26 Endpoint Operations cross-platform real-agent acceptance
