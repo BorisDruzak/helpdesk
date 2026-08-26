@@ -19,6 +19,9 @@ from .modules_wire import (
     ModuleOperationDetailWireV1,
     ModuleOperationWireV1,
     ModuleSummaryWireV1,
+    ModuleValidationWireV1,
+    ModuleVersionCreatedWireV1,
+    ModuleVersionStateWireV1,
     ModuleVersionViewWireV1,
 )
 
@@ -41,6 +44,12 @@ try:
         EndpointModuleRef,
         EndpointModuleUnavailable,
         EndpointModuleVersionProjection,
+        EndpointModuleValidationOutcome,
+        EndpointModuleValidationProjection,
+        EndpointModuleVersionCreateOutcome,
+        EndpointModuleVersionCreateRequest,
+        EndpointModuleVersionStateOutcome,
+        EndpointModuleVersionStateProjection,
         EndpointModuleVersionReadOutcome,
         EndpointModuleVersionRef,
     )
@@ -67,6 +76,12 @@ except ModuleNotFoundError as exc:
         EndpointModuleRef,
         EndpointModuleUnavailable,
         EndpointModuleVersionProjection,
+        EndpointModuleValidationOutcome,
+        EndpointModuleValidationProjection,
+        EndpointModuleVersionCreateOutcome,
+        EndpointModuleVersionCreateRequest,
+        EndpointModuleVersionStateOutcome,
+        EndpointModuleVersionStateProjection,
         EndpointModuleVersionReadOutcome,
         EndpointModuleVersionRef,
     )
@@ -245,6 +260,70 @@ class ExternalEndpointModuleHttpAdapter(EndpointModulePort):
         if isinstance(result, EndpointModuleVersionProjection) and result.version != version:
             return EndpointModuleInvalidProjection()
         return result
+
+    async def create_module_version(
+        self, request: EndpointModuleVersionCreateRequest
+    ) -> EndpointModuleVersionCreateOutcome:
+        payload = await self._request(
+            "POST", "/api/v1/modules/versions", expected_statuses=frozenset({201}),
+            body=request.model_dump(mode="json"),
+        )
+        if isinstance(payload, (EndpointModuleUnavailable, EndpointModuleInvalidProjection, EndpointModuleNotFound)):
+            return payload
+        try:
+            wire = ModuleVersionCreatedWireV1.model_validate(payload)
+            return EndpointModuleVersionProjection(
+                version=EndpointModuleVersionRef(
+                    module=EndpointModuleRef(module_key=request.recipe.module_key), version=request.version,
+                ),
+                display_name=request.display_name,
+                state=wire.state,
+            )
+        except ValidationError:
+            return EndpointModuleInvalidProjection()
+
+    async def validate_module_version(
+        self, version: EndpointModuleVersionRef
+    ) -> EndpointModuleValidationOutcome:
+        payload = await self._request(
+            "POST", f"/api/v1/modules/{_path_ref(version.module.module_key)}/versions/{_path_ref(version.version)}/validate",
+            expected_statuses=frozenset({200}),
+        )
+        if isinstance(payload, (EndpointModuleUnavailable, EndpointModuleInvalidProjection, EndpointModuleNotFound)):
+            return payload
+        try:
+            wire = ModuleValidationWireV1.model_validate(payload)
+            if wire.module_key != version.module.module_key or wire.version != version.version:
+                return EndpointModuleInvalidProjection()
+            return EndpointModuleValidationProjection(
+                module_version=version, status=wire.status, error_codes=wire.error_codes,
+                warning_codes=wire.warning_codes, completed_at=wire.completed_at,
+            )
+        except ValidationError:
+            return EndpointModuleInvalidProjection()
+
+    async def publish_module_version(self, version: EndpointModuleVersionRef) -> EndpointModuleVersionStateOutcome:
+        return await self._transition_module_version(version, "publish")
+
+    async def deprecate_module_version(self, version: EndpointModuleVersionRef) -> EndpointModuleVersionStateOutcome:
+        return await self._transition_module_version(version, "deprecate")
+
+    async def _transition_module_version(
+        self, version: EndpointModuleVersionRef, action: str
+    ) -> EndpointModuleVersionStateOutcome:
+        payload = await self._request(
+            "POST", f"/api/v1/modules/{_path_ref(version.module.module_key)}/versions/{_path_ref(version.version)}/{action}",
+            expected_statuses=frozenset({200}),
+        )
+        if isinstance(payload, (EndpointModuleUnavailable, EndpointModuleInvalidProjection, EndpointModuleNotFound)):
+            return payload
+        try:
+            wire = ModuleVersionStateWireV1.model_validate(payload)
+            if wire.module_key != version.module.module_key or wire.version != version.version:
+                return EndpointModuleInvalidProjection()
+            return EndpointModuleVersionStateProjection(version=version, state=wire.state)
+        except ValidationError:
+            return EndpointModuleInvalidProjection()
 
     async def create_operation(
         self,
