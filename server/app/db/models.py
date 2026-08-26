@@ -3401,7 +3401,10 @@ class EndpointModuleOperationLink(Base):
     endpoint_device_ref: Mapped[str] = mapped_column(Text, nullable=False)
     module_key: Mapped[str] = mapped_column(String(128), nullable=False)
     module_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    inputs_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    caller_actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    caller_idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     remote_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="create_pending")
     safe_result_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     last_error_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
@@ -3431,6 +3434,15 @@ class EndpointModuleOperationLink(Base):
         ),
         Index("ix_endpoint_module_operation_links_ready", "remote_status", "next_attempt_at"),
         Index("ix_endpoint_module_operation_links_lease_until", "lease_until"),
+        Index(
+            "uq_endpoint_module_operation_links_caller_key",
+            "caller_actor_id",
+            "caller_idempotency_key",
+            unique=True,
+            postgresql_where=sa.text(
+                "caller_actor_id IS NOT NULL AND caller_idempotency_key IS NOT NULL"
+            ),
+        ),
     )
 
 
