@@ -15,6 +15,19 @@ from .endpoint import (
     OpaqueEndpointRef,
     SafeEndpointCode,
 )
+from .endpoint_modules import (
+    EndpointModuleAvailability,
+    EndpointModuleListOutcome,
+    EndpointModuleOperationCreateOutcome,
+    EndpointModuleOperationCreateRequest,
+    EndpointModuleOperationReadOutcome,
+    EndpointModuleOperationRef,
+    EndpointModuleReadOutcome,
+    EndpointModuleRef,
+    EndpointModuleUnavailable,
+    EndpointModuleVersionReadOutcome,
+    EndpointModuleVersionRef,
+)
 from .knowledge import (
     KnowledgeFeedbackOutcome,
     KnowledgeFeedbackRequest,
@@ -221,5 +234,43 @@ class UnavailableEndpointPort:
         return self._unavailable
 
     async def read_operation(self, operation: EndpointOperationRef) -> EndpointOperationReadOutcome:
+        del operation
+        return self._unavailable
+
+
+class UnavailableEndpointModulePort:
+    def __init__(self, *, code: SafeEndpointCode = "endpoint_module_unavailable") -> None:
+        self._unavailable = EndpointModuleUnavailable(code=code)
+
+    async def availability(self) -> EndpointModuleAvailability:
+        return EndpointModuleAvailability(status="unavailable", code=self._unavailable.code)
+
+    async def list_modules(self) -> EndpointModuleListOutcome:
+        return self._unavailable
+
+    async def read_module(self, module: EndpointModuleRef) -> EndpointModuleReadOutcome:
+        del module
+        return self._unavailable
+
+    async def read_module_version(
+        self,
+        version: EndpointModuleVersionRef,
+    ) -> EndpointModuleVersionReadOutcome:
+        del version
+        return self._unavailable
+
+    async def create_operation(
+        self,
+        request: EndpointModuleOperationCreateRequest,
+        *,
+        idempotency_key: OpaqueEndpointRef,
+    ) -> EndpointModuleOperationCreateOutcome:
+        del request, idempotency_key
+        return self._unavailable
+
+    async def read_operation(
+        self,
+        operation: EndpointModuleOperationRef,
+    ) -> EndpointModuleOperationReadOutcome:
         del operation
         return self._unavailable
