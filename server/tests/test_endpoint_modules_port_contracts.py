@@ -182,7 +182,9 @@ def test_module_execution_flags_default_to_disabled_with_legacy_path_retained(
 
     monkeypatch.delenv("ENDPOINT_MODULE_EXECUTION_MODE", raising=False)
     monkeypatch.delenv("LEGACY_MODULE_EXECUTION_ENABLED", raising=False)
+    monkeypatch.delenv("MODULE_WORKBENCH_AUTHORITY", raising=False)
     loaded = importlib.reload(config)
 
     assert loaded.ENDPOINT_MODULE_EXECUTION_MODE == "disabled"
     assert loaded.LEGACY_MODULE_EXECUTION_ENABLED is True
+    assert loaded.MODULE_WORKBENCH_AUTHORITY == "legacy"

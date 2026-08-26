@@ -649,12 +649,17 @@
                 <div class="modules-page-shell">
                     <div class="modules-subtabs" role="tablist" aria-label="Разделы страницы модулей">
                         <button type="button" class="modules-subtab-btn active" data-modules-subtab="development" role="tab" aria-selected="true">Разработка модулей</button>
+                        <button type="button" class="modules-subtab-btn" data-modules-subtab="endpoint-recipes" role="tab" aria-selected="false">Endpoint recipes</button>
                         <button type="button" class="modules-subtab-btn" data-modules-subtab="list" role="tab" aria-selected="false">Список модулей</button>
                         <button type="button" class="modules-subtab-btn" data-modules-subtab="editor" role="tab" aria-selected="false">Редактор модулей</button>
                         <button type="button" class="modules-subtab-btn" data-modules-subtab="devices" role="tab" aria-selected="false">Модули на устройствах</button>
                     </div>
                     <section class="modules-subtab-panel active" data-modules-subtab-panel="development">
                         <div id="modules-workbench-host"></div>
+                    </section>
+
+                    <section class="modules-subtab-panel" data-modules-subtab-panel="endpoint-recipes" hidden>
+                        <div id="endpoint-module-workbench-host"></div>
                     </section>
 
                     <section class="modules-subtab-panel" data-modules-subtab-panel="list" hidden></section>
@@ -1414,6 +1419,7 @@
     <script src="/web_shared.js?v=20260414a"></script>
     <script src="/admin.js?v=20260419a"></script>
     <script src="/admin_modules_workbench.js?v=20260416a"></script>
+    <script src="/endpoint_module_workbench.js?v=20260826a"></script>
     <script src="/admin_ticket_forms_builder.js?v=20260416d"></script>
 </body>
 </html>

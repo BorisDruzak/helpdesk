@@ -255,6 +255,7 @@ from static_pages.handlers import (
     handle_help_js,
     handle_admin_modules_workbench_html,
     handle_admin_modules_workbench_js,
+    handle_endpoint_module_workbench_js,
     handle_admin_ticket_forms_builder_html,
     handle_admin_ticket_forms_builder_js,
 )
@@ -746,6 +747,7 @@ def setup_routes(app: web.Application) -> None:
         web.get('/admin.js', handle_admin_js),
         web.get('/admin_modules_workbench.html', handle_admin_modules_workbench_html),
         web.get('/admin_modules_workbench.js', handle_admin_modules_workbench_js),
+        web.get('/endpoint_module_workbench.js', handle_endpoint_module_workbench_js),
         web.get('/admin_ticket_forms_builder.html', handle_admin_ticket_forms_builder_html),
         web.get('/admin_ticket_forms_builder.js', handle_admin_ticket_forms_builder_js),
         web.get('/web_shared.js', handle_web_shared_js),

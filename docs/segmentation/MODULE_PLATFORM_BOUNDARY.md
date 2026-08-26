@@ -30,13 +30,20 @@ never cross this boundary.
 `server/domain_ports/endpoint_modules.py` will define frozen, `extra=forbid`,
 bounded/versioned DTOs and these operations:
 
-`list_modules`, `read_module`, `create_module`, `create_module_version`,
-`validate_module_version`, `publish_module_version`, `deprecate_module_version`,
-`check_module_compatibility`, `create_module_operation`, and `read_operation`.
+`availability`, `list_modules`, `read_module`, `read_module_version`,
+`create_module_version`, `validate_module_version`, `publish_module_version`,
+`deprecate_module_version`, `create_operation`, and `read_operation`.
 
 `server/endpoint_adapter/modules_http.py` implements exactly those methods
 over HTTPS. It is not a generic proxy and has no Helpdesk database, WebSocket,
 ticket, or browser-session dependency.
+
+The legacy Admin shell exposes this boundary in a distinct `Endpoint recipes`
+subtab. Its declarative form can compose only the current allowlisted
+`dns.resolve`, `network.ping` and `tcp.connect` steps with fixed safe literals
+and named inputs. It never renders a source-code field and calls only the
+Helpdesk BFF `/api/web/admin/endpoint-modules`; it does not call Endpoint from
+the browser or reuse a legacy module endpoint.
 
 ## Execution boundary
 

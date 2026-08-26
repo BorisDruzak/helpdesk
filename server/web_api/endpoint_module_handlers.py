@@ -90,7 +90,21 @@ async def handle_endpoint_modules_list(request: web.Request) -> web.Response:
         return denied
     result = await _port(request).list_modules()
     if isinstance(result, tuple):
-        return web.json_response({"data": [{"module_key": item.module.module_key, "display_name": item.display_name} for item in result]})
+        data: list[dict[str, object]] = []
+        port = _port(request)
+        for item in result:
+            projection: dict[str, object] = {
+                "module_key": item.module.module_key,
+                "display_name": item.display_name,
+            }
+            definition = await port.read_module(item.module)
+            if not isinstance(definition, EndpointModuleFailureOutcome):
+                projection.update(
+                    version=definition.latest_version.version,
+                    state=definition.latest_state.value,
+                )
+            data.append(projection)
+        return web.json_response({"data": data})
     return _failure(result)
 
 
