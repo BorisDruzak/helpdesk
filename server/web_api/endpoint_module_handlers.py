@@ -11,12 +11,12 @@ from access_control.service import can
 from app.db import get_session
 from app.db.engine import get_session_maker
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
-from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 from app.services.endpoint_module_operation_service import (
     EndpointModuleOperationError,
     EndpointModuleOperationRequest,
     EndpointModuleOperationService,
     SqlAlchemyEndpointModuleOperationStore,
+    StoredTicketEndpointModuleDeviceResolver,
 )
 from auth.middleware import ensure_server_request_id, require_auth
 from domain_ports.container import DomainPortContainer
@@ -182,10 +182,9 @@ async def handle_endpoint_module_run(request: web.Request) -> web.Response:
         return _failure(version)
     if version.state.value != "published":
         return web.json_response({"status": "error", "error_code": "ENDPOINT_MODULE_NOT_PUBLISHED"}, status=409)
-    ports = DomainPortContainer.from_config()
     service = EndpointModuleOperationService(
         access_service=_VerifiedTicketAccess(ticket.ticket_id),
-        device_resolver=EndpointDeviceReferenceService(ports.endpoint, get_session_maker()),
+        device_resolver=StoredTicketEndpointModuleDeviceResolver(get_session_maker()),
         store=SqlAlchemyEndpointModuleOperationStore(get_session_maker()),
     )
     try:

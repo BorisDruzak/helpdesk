@@ -32,7 +32,11 @@
   removes the unused second table. The module reconciler remains default-off
   until both external port and explicit `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`
   are set; it stores only safe completed results and creates one idempotent
-  `endpoint.module.recipe` evidence record. Lifecycle startup and BFF/RBAC
+  `endpoint.module.recipe` evidence record. The authorized Module Workbench
+  BFF now exposes admin authoring/version lifecycle and support ticket-run
+  routes through that port; it keeps the legacy Workbench separate, gives
+  auditors metadata-only access, and creates the local facade using only the
+  server-owned ticket mapping. Browser UI templates and cross-repo acceptance
   remain pending.
 - **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
   wire the Helpdesk reconciler lifecycle, audit/ticket evidence projection,
