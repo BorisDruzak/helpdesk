@@ -20,6 +20,43 @@
 
 ---
 
+## Current State — 2026-08-27
+
+- Phase-0 design and legacy migration matrix are present in both repositories;
+  the matrix keeps legacy source out of Endpoint recipes.
+- Endpoint integration source is at `23dca1e` and the Helpdesk HD2 integration
+  source is at `0be9bb97`. Both worktrees are clean before this plan update.
+- Endpoint verification passed locally: contracts, operations, gateway, modules,
+  architecture, packaging and agent runtime/primitives/windows suites reported
+  `928 passed, 8 skipped`; generated contract artifacts, compilation and
+  `git diff --check` also passed.
+- Helpdesk `python scripts/verify_workspace.py` passed. The typed port, BFF,
+  facade/reconciler, safe evidence model and distinct Endpoint Recipe Workbench
+  are implemented and documented in `server/docs/CODEMAP.md`.
+- The real cross-repository acceptance is still required. Its Windows runner
+  cannot currently complete fresh Helpdesk migrations over the staging SSH
+  tunnel: the subprocess remains at the first schema-introspection query before
+  any Alembic revision is recorded. The temporary test database was removed;
+  no production system was touched.
+- ALT staging package `endpoint-agent-3.2.30-alt1` has been signed using a
+  test-only RPM identity and its signature verified. Installation and recipe
+  canary remain gated on the real cross-repository acceptance and staging
+  release alignment.
+
+## Next Steps
+
+1. Add `server/tests/acceptance/test_endpoint_module_platform_v1.py` using the
+   real Endpoint factory, PostgreSQL, catalog, recipe engine, Gateway WSS,
+   protocol-compatible client and Helpdesk reconciler; it must assert all
+   required no-legacy and exactly-once counts.
+2. Run that test from a DB-compatible runner that does not use the stalled
+   Windows Alembic-over-tunnel path, then record only redacted evidence.
+3. Align approved staging releases, execute one ALT and one Windows
+   `network.basic.check@1.0.0-canary` run, prove rollback, and keep production
+   unchanged.
+
+---
+
 ### Task 1: Preserve Phase 0 audit evidence
 
 **Files:**
