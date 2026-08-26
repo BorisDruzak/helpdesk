@@ -19,7 +19,7 @@ from domain_ports.endpoint_modules import (
     EndpointModuleRef,
     EndpointModuleVersionRef,
 )
-from app.db.models import EndpointModuleOperationLink, Operation
+from app.db.models import DiagnosticEvidence, EndpointOperationLink, Operation
 
 
 @dataclass(frozen=True)
@@ -45,17 +45,19 @@ class EndpointModuleOperationReconciler:
 
     def __init__(
         self, *, endpoint_port: EndpointModulePort, store: EndpointModuleOperationReconcileStore,
-        mode: str, owner: str, now: Callable[[], datetime] | None = None, lease_seconds: int = 30,
+        mode: str, execution_mode: str, owner: str, now: Callable[[], datetime] | None = None,
+        lease_seconds: int = 30,
     ) -> None:
         self._endpoint_port = endpoint_port
         self._store = store
         self._mode = mode
+        self._execution_mode = execution_mode
         self._owner = owner
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._lease_seconds = lease_seconds
 
     async def reconcile_once(self, *, limit: int) -> int:
-        if self._mode != "external" or limit < 1:
+        if self._mode != "external" or self._execution_mode != "endpoint" or limit < 1:
             return 0
         claims = await self._store.claim_ready(
             owner=self._owner, now=self._aware_now(), limit=limit, lease_seconds=self._lease_seconds,
@@ -114,14 +116,15 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
         async with self._session_factory() as session:
             async with session.begin():
                 rows = list((await session.execute(
-                    select(EndpointModuleOperationLink, Operation)
-                    .join(Operation, Operation.operation_id == EndpointModuleOperationLink.operation_id)
+                    select(EndpointOperationLink, Operation)
+                    .join(Operation, Operation.operation_id == EndpointOperationLink.operation_id)
                     .where(
-                        EndpointModuleOperationLink.remote_status.notin_(("succeeded", "failed", "canceled", "expired")),
-                        EndpointModuleOperationLink.next_attempt_at <= now,
-                        or_(EndpointModuleOperationLink.lease_until.is_(None), EndpointModuleOperationLink.lease_until <= now),
+                        EndpointOperationLink.capability_code == "endpoint.module.recipe",
+                        EndpointOperationLink.remote_status.notin_(("succeeded", "failed", "canceled", "expired")),
+                        EndpointOperationLink.next_attempt_at <= now,
+                        or_(EndpointOperationLink.lease_until.is_(None), EndpointOperationLink.lease_until <= now),
                         Operation.status.notin_(("succeeded", "failed", "timed_out", "canceled")),
-                    ).order_by(EndpointModuleOperationLink.next_attempt_at.asc(), EndpointModuleOperationLink.link_id.asc())
+                    ).order_by(EndpointOperationLink.next_attempt_at.asc(), EndpointOperationLink.link_id.asc())
                     .limit(limit).with_for_update(skip_locked=True)
                 )).all())
                 claims = []
@@ -132,7 +135,7 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
                     claims.append(EndpointModuleReconcileClaim(
                         operation_id=operation.operation_id, endpoint_device_ref=link.endpoint_device_ref,
                         endpoint_operation_ref=link.endpoint_operation_ref, module_key=link.module_key,
-                        module_version=link.module_version, inputs=dict(link.inputs_snapshot_json or {}),
+                        module_version=link.module_version, inputs=dict(link.module_inputs_snapshot_json or {}),
                         create_idempotency_key=link.create_idempotency_key, attempt_count=link.attempt_count,
                         lease_token=token,
                     ))
@@ -144,8 +147,8 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
         next_attempt_at: datetime) -> bool:
         async with self._session_factory() as session:
             async with session.begin():
-                link = (await session.execute(select(EndpointModuleOperationLink)
-                    .where(EndpointModuleOperationLink.operation_id == claim.operation_id).with_for_update()
+                link = (await session.execute(select(EndpointOperationLink)
+                    .where(EndpointOperationLink.operation_id == claim.operation_id).with_for_update()
                 )).scalar_one_or_none()
                 operation = await session.get(Operation, claim.operation_id, with_for_update=True)
                 if link is None or operation is None or link.lease_owner != claim.lease_token:
@@ -154,6 +157,8 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
                     if link.endpoint_operation_ref not in (None, endpoint_operation_ref):
                         return False
                     link.endpoint_operation_ref = endpoint_operation_ref
+                if safe_result_snapshot is not None and remote_status != "succeeded":
+                    raise ValueError("module safe result may be stored only for succeeded operations")
                 link.remote_status = remote_status
                 link.safe_result_snapshot_json = safe_result_snapshot
                 link.last_error_code = error_code
@@ -166,5 +171,31 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
                 operation.error_code = error_code
                 if operation.status in {"succeeded", "failed", "timed_out", "canceled"}:
                     operation.finished_at = datetime.now(timezone.utc)
+                if (
+                    remote_status == "succeeded" and safe_result_snapshot is not None
+                    and link.endpoint_operation_ref and operation.ticket_id
+                ):
+                    evidence = (await session.execute(
+                        select(DiagnosticEvidence).where(
+                            DiagnosticEvidence.ticket_id == operation.ticket_id,
+                            DiagnosticEvidence.source_type == "endpoint_platform",
+                            DiagnosticEvidence.source_id == link.endpoint_operation_ref,
+                            DiagnosticEvidence.kind == "endpoint.module.recipe",
+                        )
+                    )).scalar_one_or_none()
+                    if evidence is None:
+                        session.add(DiagnosticEvidence(
+                            id=str(uuid4()), ticket_id=operation.ticket_id, session_id=None, step_id=None,
+                            source_type="endpoint_platform", source_id=link.endpoint_operation_ref,
+                            provider_id="endpoint_platform", capability_id="endpoint.module.recipe",
+                            kind="endpoint.module.recipe", domain="diagnostics",
+                            perspective="endpoint_platform", title="Endpoint module recipe",
+                            summary=f"Endpoint module {link.module_key}@{link.module_version} completed",
+                            status="succeeded", normalized_payload={
+                                "module_key": link.module_key, "module_version": link.module_version,
+                                "result": safe_result_snapshot,
+                            }, raw_ref=None, artifact_refs=[], trace_id=operation.trace_id,
+                            redaction_level="endpoint_safe_projection", tags=[], passport_eligible=False,
+                        ))
                 await session.flush()
                 return True

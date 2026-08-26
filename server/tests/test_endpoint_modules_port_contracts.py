@@ -172,3 +172,17 @@ def test_module_version_states_are_closed_and_versioned() -> None:
     assert EndpointModuleVersionState("published") == "published"
     with pytest.raises(ValueError):
         EndpointModuleVersionState("unknown")
+
+
+def test_module_execution_flags_default_to_disabled_with_legacy_path_retained(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib
+    import config
+
+    monkeypatch.delenv("ENDPOINT_MODULE_EXECUTION_MODE", raising=False)
+    monkeypatch.delenv("LEGACY_MODULE_EXECUTION_ENABLED", raising=False)
+    loaded = importlib.reload(config)
+
+    assert loaded.ENDPOINT_MODULE_EXECUTION_MODE == "disabled"
+    assert loaded.LEGACY_MODULE_EXECUTION_ENABLED is True

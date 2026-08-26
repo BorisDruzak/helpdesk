@@ -3324,6 +3324,11 @@ class EndpointOperationLink(Base):
     capability_code: Mapped[str] = mapped_column(
         String(128), nullable=False, server_default="context.diagnostic.collect"
     )
+    module_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    module_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    module_spec_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    module_inputs_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    safe_module_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     caller_actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     caller_idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
@@ -3362,7 +3367,8 @@ class EndpointOperationLink(Base):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "capability_code = 'context.diagnostic.collect'",
+            "(capability_code = 'context.diagnostic.collect' AND module_key IS NULL AND module_version IS NULL) "
+            "OR (capability_code = 'endpoint.module.recipe' AND module_key IS NOT NULL AND module_version IS NOT NULL)",
             name="ck_endpoint_operation_links_capability_code",
         ),
         sa.CheckConstraint(
@@ -3375,67 +3381,6 @@ class EndpointOperationLink(Base):
         Index("ix_endpoint_operation_links_lease_until", "lease_until"),
         Index(
             "uq_endpoint_operation_links_caller_key",
-            "caller_actor_id",
-            "caller_idempotency_key",
-            unique=True,
-            postgresql_where=sa.text(
-                "caller_actor_id IS NOT NULL AND caller_idempotency_key IS NOT NULL"
-            ),
-        ),
-    )
-
-
-class EndpointModuleOperationLink(Base):
-    """Helpdesk-owned correlation and safe evidence for one Endpoint module operation."""
-
-    __tablename__ = "endpoint_module_operation_links"
-
-    link_id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    operation_id: Mapped[str] = mapped_column(
-        String(36),
-        sa.ForeignKey("operations.operation_id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
-    )
-    endpoint_operation_ref: Mapped[Optional[str]] = mapped_column(Text, nullable=True, unique=True)
-    endpoint_device_ref: Mapped[str] = mapped_column(Text, nullable=False)
-    module_key: Mapped[str] = mapped_column(String(128), nullable=False)
-    module_version: Mapped[str] = mapped_column(String(64), nullable=False)
-    inputs_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
-    caller_actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    caller_idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    remote_status: Mapped[str] = mapped_column(String(32), nullable=False, server_default="create_pending")
-    safe_result_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    last_error_code: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
-    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    next_attempt_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
-    lease_owner: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    lease_until: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    last_synced_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc),
-        server_default=sa.text("now()"),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc), server_default=sa.text("now()"),
-    )
-
-    __table_args__ = (
-        sa.CheckConstraint(
-            "remote_status IN ('create_pending', 'queued', 'delivered', 'acknowledged', 'running', "
-            "'succeeded', 'failed', 'canceled', 'expired')",
-            name="ck_endpoint_module_operation_links_remote_status",
-        ),
-        sa.CheckConstraint(
-            "attempt_count >= 0",
-            name="ck_endpoint_module_operation_links_attempt_count",
-        ),
-        Index("ix_endpoint_module_operation_links_ready", "remote_status", "next_attempt_at"),
-        Index("ix_endpoint_module_operation_links_lease_until", "lease_until"),
-        Index(
-            "uq_endpoint_module_operation_links_caller_key",
             "caller_actor_id",
             "caller_idempotency_key",
             unique=True,

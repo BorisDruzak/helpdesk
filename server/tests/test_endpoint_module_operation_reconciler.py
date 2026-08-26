@@ -56,7 +56,7 @@ async def test_reconciler_creates_remote_typed_operation_outside_local_store() -
     )
     store = _Store(claim)
     reconciler = EndpointModuleOperationReconciler(
-        endpoint_port=_Port(), store=store, mode="external", owner="test-owner",
+        endpoint_port=_Port(), store=store, mode="external", execution_mode="endpoint", owner="test-owner",
         now=lambda: datetime(2026, 8, 26, tzinfo=timezone.utc),
     )
 
@@ -64,3 +64,19 @@ async def test_reconciler_creates_remote_typed_operation_outside_local_store() -
     assert store.committed is not None
     assert store.committed["endpoint_operation_ref"] == "remote-operation-1"
     assert store.committed["remote_status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_reconciler_is_fail_closed_until_endpoint_execution_is_enabled() -> None:
+    claim = EndpointModuleReconcileClaim(
+        operation_id="local-operation-1", endpoint_device_ref="endpoint-device-1",
+        endpoint_operation_ref=None, module_key="network.basic.check", module_version="1.0.0",
+        inputs={"target": "example.test"}, create_idempotency_key="remote-module-key",
+    )
+    store = _Store(claim)
+    reconciler = EndpointModuleOperationReconciler(
+        endpoint_port=_Port(), store=store, mode="external", execution_mode="disabled", owner="test-owner",
+    )
+
+    assert await reconciler.reconcile_once(limit=1) == 0
+    assert store.committed is None
