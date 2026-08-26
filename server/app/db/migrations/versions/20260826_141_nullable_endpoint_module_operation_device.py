@@ -21,7 +21,7 @@ def upgrade() -> None:
         type_="check",
     )
     op.create_check_constraint(
-        "ck_operations_device_id_required_except_endpoint_facade_operation",
+        "ck_operations_device_id_required_except_endpoint_facade",
         "operations",
         "kind IN ('endpoint_operation', 'endpoint_module_operation') OR device_id IS NOT NULL",
     )
