@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 import sys
 import tempfile
@@ -16,13 +17,22 @@ if str(WORKSPACE) not in sys.path:
 from scripts.helpdesk_remote_profile import RemoteProfile
 
 
-def release_path(profile: RemoteProfile, commit: str) -> str:
+def release_path(profile: RemoteProfile, commit: str, *, release_id: str | None = None) -> str:
     deployment_root = Path(profile.root).parent.as_posix()
-    return f"{deployment_root}/releases/helpdesk-{commit}"
+    identifier = release_id or commit
+    if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z._-]*", identifier):
+        raise ValueError("release id must contain only letters, digits, dots, underscores, and hyphens")
+    return f"{deployment_root}/releases/helpdesk-{identifier}"
 
 
-def remote_install_command(profile: RemoteProfile, commit: str, remote_archive: str) -> str:
-    release = release_path(profile, commit)
+def remote_install_command(
+    profile: RemoteProfile,
+    commit: str,
+    remote_archive: str,
+    *,
+    release_id: str | None = None,
+) -> str:
+    release = release_path(profile, commit, release_id=release_id)
     deployment_root = Path(profile.root).parent.as_posix()
     release_venv = f"{release}/{profile.release_venv_path}"
     runtime_services = " ".join(
@@ -54,6 +64,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--commit", help="Committed Git revision to deploy (defaults to HEAD).")
     parser.add_argument("--remote", help="SSH destination override.")
+    parser.add_argument(
+        "--release-id",
+        help="Optional immutable release identifier; use for a retry of an existing commit.",
+    )
     return parser.parse_args()
 
 
@@ -91,7 +105,9 @@ def main() -> None:
     profile = RemoteProfile.from_environment()
     remote = args.remote or profile.remote
     commit = _git_commit(args.commit)
-    archive_name = f"helpdesk-{commit}.tar"
+    release_id = args.release_id or commit
+    release_path(profile, commit, release_id=release_id)
+    archive_name = f"helpdesk-{release_id}.tar"
     remote_archive = f"/tmp/{archive_name}"
 
     with tempfile.TemporaryDirectory(prefix="helpdesk_release_") as temp_dir:
@@ -104,7 +120,11 @@ def main() -> None:
         subprocess.run([*_scp_base(profile), str(local_archive), f"{remote}:{remote_archive}"], cwd=WORKSPACE, check=True)
 
     subprocess.run(
-        [*_ssh_base(profile), remote, remote_install_command(profile, commit, remote_archive)],
+        [
+            *_ssh_base(profile),
+            remote,
+            remote_install_command(profile, commit, remote_archive, release_id=release_id),
+        ],
         cwd=WORKSPACE,
         check=True,
     )
