@@ -2,6 +2,30 @@
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
+## 2026-08-26 Endpoint Operations cross-platform real-agent acceptance
+
+- **Status:** ALT and Windows real-agent staging canaries are accepted after
+  rollback; the canonical Windows record is
+  `docs/verification/WINDOWS_HEADLESS_AGENT_CANARY_ACCEPTANCE.md`.
+- **Accepted transport boundary:** Endpoint Operations transport is accepted
+  cross-platform for the bounded `context.diagnostic.collect` slice. The
+  command reached agents only through the Endpoint Gateway WSS path; Helpdesk
+  performed no legacy agent, `DeviceOutbox`, or `ToolService` dispatch.
+- **Runtime facts:** the successful Windows diagnostic ran against Helpdesk
+  `80ed96e79fad1fad80093c8107b44a9ba0addfe1`; post-canary strict-CA tooling is
+  `b338b5886b1069bffc92edf4990b090fda5987c3`. Both canaries are staging-only
+  evidence and do not authorize a production change.
+- **Retained components:** the legacy agent runtime, legacy `/ws`,
+  `DeviceOutbox`, and agent account-session paths remain. Their deletion is
+  explicitly deferred until their individual cutover prerequisites are met.
+- **Not completed:** consent migration, Remote Assist migration, legacy agent
+  `/ws` deletion, `DeviceOutbox` deletion, and agent account-session deletion.
+- **Next package:** typed read-only Endpoint capabilities; do not expand the
+  operation/command scope before its separate contract and acceptance evidence.
+- **Operator action:** encrypted off-host archive of the Windows protected
+  evidence is pending. Record its archive SHA-256 outside Git before claiming
+  evidence archival complete.
+
 ## 2026-08-20 Helpdesk co-hosting on Endpoint Platform production host
 
 - **Status:** clean Helpdesk baseline deployed and running on 2026-08-20.

@@ -105,6 +105,21 @@
   lookup/create persistence and performs no HTTP, DeviceOutbox, tool, or
   WebSocket work.
 
+## 2026-08-26 Endpoint Operations cross-platform acceptance
+
+- The ALT and Windows real-agent staging canaries are accepted after rollback.
+  They confirm that the bounded `endpoint.context.diagnostic.collect` slice
+  uses the Endpoint Operations API and Gateway WSS command path across both
+  platforms, with no Helpdesk legacy agent, `DeviceOutbox`, or
+  `ToolService` dispatch. The redacted records are
+  `docs/verification/ALT_HEADLESS_AGENT_CANARY_ACCEPTANCE.md` and
+  `docs/verification/WINDOWS_HEADLESS_AGENT_CANARY_ACCEPTANCE.md`.
+- This is acceptance evidence for the existing bounded transport only. The
+  legacy agent runtime, legacy `/ws`, `DeviceOutbox`, consent paths, Remote
+  Assist, and agent account-session lifecycle remain active ownership areas;
+  none is deleted or migrated by this acceptance. The next scoped work is
+  typed read-only Endpoint capabilities.
+
 ## 2026-08-10 RegistryPort Helpdesk read cutover (PR-8)
 
 - `server/tickets/ticket_context.py` builds verified immutable requester

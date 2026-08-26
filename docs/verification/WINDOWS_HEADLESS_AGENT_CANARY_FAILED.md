@@ -1,5 +1,10 @@
 # Windows Headless Agent Canary — failed
 
+> Historical / superseded record.
+>
+> Canonical final result:
+> `docs/verification/WINDOWS_HEADLESS_AGENT_CANARY_ACCEPTANCE.md`
+
 Status: `WINDOWS_CANARY_FAILED`
 
 Date: 2026-08-24
