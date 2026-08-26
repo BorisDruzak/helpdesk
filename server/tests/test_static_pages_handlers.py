@@ -85,6 +85,15 @@ async def test_admin_page_exposes_separate_endpoint_recipe_workbench():
 
 
 @pytest.mark.no_db
+def test_legacy_admin_shell_bootstraps_admin_cookie_session():
+    admin_script = (Path(__file__).resolve().parents[1] / "admin.js").read_text(encoding="utf-8")
+    effective_verify_session = admin_script.rsplit("async function verifySession(token)", 1)[1]
+
+    assert "'/api/web/session/me'" in effective_verify_session
+    assert "credentials: 'same-origin'" in effective_verify_session
+
+
+@pytest.mark.no_db
 @pytest.mark.asyncio
 async def test_support_page_redirects_to_versioned_shell(monkeypatch):
     monkeypatch.setattr(static_handlers_module, "WEBAPP_CUTOVER_LOGIN_ENABLED", False)

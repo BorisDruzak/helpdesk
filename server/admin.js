@@ -8909,6 +8909,30 @@
         }
 
         async function verifySession(token) {
+            if (!token) {
+                try {
+                    const response = await fetch('/api/web/session/me', {
+                        credentials: 'same-origin'
+                    });
+                    const payload = await response.json().catch(() => ({}));
+                    const session = payload.data || null;
+                    if (response.ok && payload.status === 'success' && session?.actor_role === 'admin') {
+                        localStorage.setItem(USER_LOGIN_KEY, session.user_login || '');
+                        localStorage.setItem(ROLE_KEY, session.actor_role);
+                        resetAuthSessionState();
+                        showMainContent();
+                        return;
+                    }
+                    if (response.ok && payload.status === 'success' && session) {
+                        redirectToLogin('Для админки нужна роль admin.');
+                        return;
+                    }
+                } catch (error) {
+                    console.error('Cookie session verification error:', error);
+                }
+                redirectToLogin();
+                return;
+            }
             try {
                 const response = await fetch('/api/ui_session', {
                     headers: {
