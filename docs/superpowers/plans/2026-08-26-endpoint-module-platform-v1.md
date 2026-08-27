@@ -39,6 +39,11 @@
   facade and its one-evidence projection. Its Windows runner remains unsuitable
   for fresh Helpdesk migrations over the staging SSH tunnel because it stalls at
   initial schema introspection; no production system was touched.
+- The dedicated Module Recipe acceptance now also passed on that runner
+  (`1 passed`). It created, validated, lab-tested, accepted and published a
+  three-step recipe through the real Endpoint factory, then proved Helpdesk's
+  typed facade/reconciler produced one safe evidence item without legacy
+  transports or `DeviceOutbox` rows.
 - ALT staging package `endpoint-agent-3.2.30-alt1` has been signed using a
   test-only RPM identity, verified by RPM and installed on the ALT test agent;
   the service is active. The module-recipe canary remains gated on its dedicated
@@ -46,13 +51,7 @@
 
 ## Next Steps
 
-1. Add `server/tests/acceptance/test_endpoint_module_platform_v1.py` using the
-   real Endpoint factory, PostgreSQL, catalog, recipe engine, Gateway WSS,
-   protocol-compatible client and Helpdesk reconciler; it must assert all
-   required no-legacy and exactly-once counts.
-2. Run that test from a DB-compatible runner that does not use the stalled
-   Windows Alembic-over-tunnel path, then record only redacted evidence.
-3. Align approved staging releases, execute one ALT and one Windows
+1. Align approved staging releases, execute one ALT and one Windows
    `network.basic.check@1.0.0-canary` run, prove rollback, and keep production
    unchanged.
 
