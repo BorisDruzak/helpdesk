@@ -48,6 +48,12 @@
   test-only RPM identity, verified by RPM and installed on the ALT test agent;
   the service is active. The module-recipe canary remains gated on its dedicated
   acceptance test and staging release alignment.
+- The documented Helpdesk staging quick deploy was preflighted for commit
+  `397610f0`, but stopped before creating a release or changing a service:
+  the available staging SSH principal lacks a current `sudo` credential. The
+  transferred release archive was removed. A staging Module Recipe canary and
+  rollback therefore remain unexecuted rather than being inferred from local
+  acceptance evidence.
 
 ## Next Steps
 
