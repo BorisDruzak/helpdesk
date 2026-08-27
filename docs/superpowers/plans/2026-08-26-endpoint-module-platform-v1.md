@@ -33,15 +33,16 @@
 - Helpdesk `python scripts/verify_workspace.py` passed. The typed port, BFF,
   facade/reconciler, safe evidence model and distinct Endpoint Recipe Workbench
   are implemented and documented in `server/docs/CODEMAP.md`.
-- The real cross-repository acceptance is still required. Its Windows runner
-  cannot currently complete fresh Helpdesk migrations over the staging SSH
-  tunnel: the subprocess remains at the first schema-introspection query before
-  any Alembic revision is recorded. The temporary test database was removed;
-  no production system was touched.
+- The existing real Endpoint Operations cross-repository acceptance passed on a
+  DB-compatible staging runner (`2 passed`): it validated the exact provider
+  lock, the real Endpoint factory/PostgreSQL/Gateway WSS path, the Helpdesk
+  facade and its one-evidence projection. Its Windows runner remains unsuitable
+  for fresh Helpdesk migrations over the staging SSH tunnel because it stalls at
+  initial schema introspection; no production system was touched.
 - ALT staging package `endpoint-agent-3.2.30-alt1` has been signed using a
-  test-only RPM identity and its signature verified. Installation and recipe
-  canary remain gated on the real cross-repository acceptance and staging
-  release alignment.
+  test-only RPM identity, verified by RPM and installed on the ALT test agent;
+  the service is active. The module-recipe canary remains gated on its dedicated
+  acceptance test and staging release alignment.
 
 ## Next Steps
 
