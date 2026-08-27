@@ -78,6 +78,20 @@ def _configured_endpoint_external_settings() -> tuple[str, str, str, float]:
     )
 
 
+def _configured_endpoint_module_external_settings() -> tuple[str, str, str, float]:
+    try:
+        import config
+    except ModuleNotFoundError:  # Package import from the repository root.
+        from server import config  # type: ignore[no-redef]
+
+    return (
+        str(config.ENDPOINT_EXTERNAL_BASE_URL or ""),
+        str(config.ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN or ""),
+        str(config.ENDPOINT_EXTERNAL_CA_FILE or ""),
+        float(config.ENDPOINT_EXTERNAL_TIMEOUT_SECONDS),
+    )
+
+
 def _endpoint_external_unavailable_code(
     *,
     base_url: str,
@@ -244,7 +258,7 @@ class DomainPortContainer:
                 endpoint_modules = UnavailableEndpointModulePort()
             elif module_mode == "external":
                 base_url, service_token, ca_file, timeout_seconds = (
-                    _configured_endpoint_external_settings()
+                    _configured_endpoint_module_external_settings()
                 )
                 unavailable_code = _endpoint_external_unavailable_code(
                     base_url=base_url,

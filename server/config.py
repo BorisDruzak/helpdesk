@@ -62,6 +62,11 @@ ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
 ENDPOINT_MODULE_PORT_MODE = (
     os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
 ).strip().lower()
+# Module Platform credentials are deliberately separate from diagnostic access.
+# A module-only service client must not inherit the diagnostic client's scopes.
+ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN = os.getenv(
+    "ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN", ""
+) or ""
 # The legacy Python-module workbench remains authoritative unless a reviewed
 # deployment explicitly selects Endpoint-native recipes.  This flag is
 # declarative only: it cannot enable execution by itself.
