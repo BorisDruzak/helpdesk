@@ -20,6 +20,49 @@
 
 ---
 
+## Current State — 2026-08-27
+
+- Phase-0 design and legacy migration matrix are present in both repositories;
+  the matrix keeps legacy source out of Endpoint recipes.
+- Endpoint integration source is at `23dca1e` and the Helpdesk HD2 integration
+  source is at `0be9bb97`. Both worktrees are clean before this plan update.
+- Endpoint verification passed locally: contracts, operations, gateway, modules,
+  architecture, packaging and agent runtime/primitives/windows suites reported
+  `928 passed, 8 skipped`; generated contract artifacts, compilation and
+  `git diff --check` also passed.
+- Helpdesk `python scripts/verify_workspace.py` passed. The typed port, BFF,
+  facade/reconciler, safe evidence model and distinct Endpoint Recipe Workbench
+  are implemented and documented in `server/docs/CODEMAP.md`.
+- The existing real Endpoint Operations cross-repository acceptance passed on a
+  DB-compatible staging runner (`2 passed`): it validated the exact provider
+  lock, the real Endpoint factory/PostgreSQL/Gateway WSS path, the Helpdesk
+  facade and its one-evidence projection. Its Windows runner remains unsuitable
+  for fresh Helpdesk migrations over the staging SSH tunnel because it stalls at
+  initial schema introspection; no production system was touched.
+- The dedicated Module Recipe acceptance now also passed on that runner
+  (`1 passed`). It created, validated, lab-tested, accepted and published a
+  three-step recipe through the real Endpoint factory, then proved Helpdesk's
+  typed facade/reconciler produced one safe evidence item without legacy
+  transports or `DeviceOutbox` rows.
+- ALT staging package `endpoint-agent-3.2.30-alt1` has been signed using a
+  test-only RPM identity, verified by RPM and installed on the ALT test agent;
+  the service is active. The module-recipe canary remains gated on its dedicated
+  acceptance test and staging release alignment.
+- The documented Helpdesk staging quick deploy was preflighted for commit
+  `397610f0`, but stopped before creating a release or changing a service:
+  the available staging SSH principal lacks a current `sudo` credential. The
+  transferred release archive was removed. A staging Module Recipe canary and
+  rollback therefore remain unexecuted rather than being inferred from local
+  acceptance evidence.
+
+## Next Steps
+
+1. Align approved staging releases, execute one ALT and one Windows
+   `network.basic.check@1.0.0-canary` run, prove rollback, and keep production
+   unchanged.
+
+---
+
 ### Task 1: Preserve Phase 0 audit evidence
 
 **Files:**

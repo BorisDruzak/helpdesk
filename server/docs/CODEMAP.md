@@ -55,9 +55,10 @@
   `endpoint_operation_links` lifecycle. Revision `142` adds nullable module
   identity, safe input/snapshot fields and removes the temporary staging
   table; no cross-repository FK exists. `EndpointModuleOperationReconciler`
-  calls only the typed port outside its short database transactions, is gated
-  by `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`, and writes exactly one safe
-  `endpoint.module.recipe` evidence item after remote success.
+  claims one durable link immediately before each typed-port call, records
+  bounded secret-free retries, rejects stale or regressive terminal commits,
+  is gated by `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`, and writes exactly
+  one safe `endpoint.module.recipe` evidence item after remote success.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates

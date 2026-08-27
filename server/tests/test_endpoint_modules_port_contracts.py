@@ -151,7 +151,7 @@ def test_module_port_composition_defaults_to_unavailable_and_rejects_unknown_mod
         DomainPortContainer.from_config()
 
 
-def test_module_port_composition_requires_the_existing_tls_endpoint_settings(
+def test_module_port_composition_uses_its_dedicated_service_credential(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import config
@@ -159,13 +159,20 @@ def test_module_port_composition_requires_the_existing_tls_endpoint_settings(
 
     monkeypatch.setattr(config, "ENDPOINT_MODULE_PORT_MODE", "external")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.example.test")
-    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "test-service-token")
+    monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "diagnostic-service-token")
+    monkeypatch.setattr(
+        config,
+        "ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN",
+        "module-service-token",
+        raising=False,
+    )
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", certifi.where())
 
     endpoint_modules = DomainPortContainer.from_config().endpoint_modules
 
     assert Path(certifi.where()).is_file()
     assert isinstance(endpoint_modules, ExternalEndpointModuleHttpAdapter)
+    assert endpoint_modules._service_token == "module-service-token"
 
 
 def test_module_version_states_are_closed_and_versioned() -> None:

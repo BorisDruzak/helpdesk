@@ -13,18 +13,40 @@ import logging
 from sqlalchemy import or_, select
 
 from domain_ports.endpoint_modules import (
-    EndpointModuleInvalidProjection,
     EndpointModuleOperationCreateRequest,
     EndpointModuleOperationProjection,
     EndpointModuleOperationRef,
     EndpointModulePort,
     EndpointModuleRef,
+    EndpointModuleUnavailable,
     EndpointModuleVersionRef,
 )
 from app.db.models import DiagnosticEvidence, EndpointOperationLink, Operation
 
 
 _LOGGER = logging.getLogger(__name__)
+_TERMINAL_REMOTE_STATUSES = frozenset({"succeeded", "failed", "canceled", "expired"})
+_TERMINAL_LOCAL_STATUSES = frozenset({"succeeded", "failed", "timed_out", "canceled"})
+_REMOTE_PROGRESS = {"create_pending": 0, "queued": 1, "delivered": 2, "acknowledged": 3, "running": 4}
+_REMOTE_TO_LOCAL = {
+    "create_pending": ("queued", "endpoint_module_create_pending"),
+    "queued": ("queued", "endpoint_module_queued"),
+    "delivered": ("sent", "endpoint_module_delivered"),
+    "acknowledged": ("accepted", "endpoint_module_acknowledged"),
+    "running": ("running", "endpoint_module_running"),
+    "succeeded": ("succeeded", "endpoint_module_succeeded"),
+    "failed": ("failed", "endpoint_module_failed"),
+    "canceled": ("canceled", "endpoint_module_canceled"),
+    "expired": ("timed_out", "endpoint_module_expired"),
+}
+
+
+def _retry_delay_seconds(attempt_count: int) -> float:
+    """Bound retries without holding an expired lease across remote I/O."""
+
+    schedule = (2, 5, 15, 30, 60)
+    index = max(attempt_count, 0)
+    return float(schedule[index] if index < len(schedule) else min(300, 60 * 2 ** (index - 4)))
 
 
 @dataclass(frozen=True)
@@ -36,6 +58,7 @@ class EndpointModuleReconcileClaim:
     module_version: str
     inputs: dict[str, str | int]
     create_idempotency_key: str
+    remote_status: str = "create_pending"
     attempt_count: int = 0
     lease_token: str = ""
 
@@ -64,12 +87,48 @@ class EndpointModuleOperationReconciler:
     async def reconcile_once(self, *, limit: int) -> int:
         if self._mode != "external" or self._execution_mode != "endpoint" or limit < 1:
             return 0
-        claims = await self._store.claim_ready(
-            owner=self._owner, now=self._aware_now(), limit=limit, lease_seconds=self._lease_seconds,
+        processed = 0
+        for _ in range(limit):
+            claims = await self._store.claim_ready(
+                owner=self._owner, now=self._aware_now(), limit=1, lease_seconds=self._lease_seconds,
+            )
+            if not claims:
+                break
+            claim = claims[0]
+            try:
+                await self._reconcile(claim)
+            except Exception as error:
+                await self._record_unexpected_failure(claim, error)
+            processed += 1
+        return processed
+
+    async def _record_unexpected_failure(self, claim: EndpointModuleReconcileClaim, error: Exception) -> None:
+        now = self._aware_now()
+        retry_seconds = _retry_delay_seconds(claim.attempt_count)
+        try:
+            changed = await self._store.commit(
+                claim=claim,
+                endpoint_operation_ref=claim.endpoint_operation_ref,
+                remote_status=claim.remote_status,
+                safe_result_snapshot=None,
+                error_code="endpoint_module_reconcile_unexpected",
+                next_attempt_at=now + timedelta(seconds=retry_seconds),
+            )
+        except Exception as commit_error:
+            _LOGGER.error(
+                "endpoint_module_reconcile_failure_record_failed",
+                extra={"operation_id": claim.operation_id, "error_type": type(commit_error).__name__},
+            )
+            return
+        _LOGGER.warning(
+            "endpoint_module_reconcile_unexpected" if changed else "endpoint_module_reconcile_stale",
+            extra={
+                "operation_id": claim.operation_id,
+                "attempt": claim.attempt_count + 1,
+                "retry_seconds": retry_seconds,
+                "error_type": type(error).__name__,
+            },
         )
-        for claim in claims:
-            await self._reconcile(claim)
-        return len(claims)
 
     async def _reconcile(self, claim: EndpointModuleReconcileClaim) -> None:
         if claim.endpoint_operation_ref:
@@ -92,15 +151,23 @@ class EndpointModuleOperationReconciler:
             )
             return
         error_code = getattr(outcome, "code", "endpoint_module_invalid_projection")
+        retryable = isinstance(outcome, EndpointModuleUnavailable) and outcome.retryable
         await self._store.commit(
-            claim=claim, endpoint_operation_ref=None, remote_status="failed"
-            if isinstance(outcome, EndpointModuleInvalidProjection) else "create_pending",
-            safe_result_snapshot=None, error_code=error_code, next_attempt_at=self._aware_now(),
+            claim=claim,
+            endpoint_operation_ref=claim.endpoint_operation_ref,
+            remote_status=claim.remote_status if retryable else "failed",
+            safe_result_snapshot=None,
+            error_code=error_code,
+            next_attempt_at=(
+                self._aware_now() + timedelta(seconds=_retry_delay_seconds(claim.attempt_count))
+                if retryable
+                else self._aware_now()
+            ),
         )
 
     @staticmethod
     def _safe_snapshot(outcome: EndpointModuleOperationProjection) -> dict[str, object] | None:
-        if not outcome.result_available:
+        if outcome.status != "succeeded" or not outcome.result_available:
             return None
         return {"steps": [step.model_dump(mode="json") for step in outcome.safe_result]}
 
@@ -141,7 +208,8 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
                         operation_id=operation.operation_id, endpoint_device_ref=link.endpoint_device_ref,
                         endpoint_operation_ref=link.endpoint_operation_ref, module_key=link.module_key,
                         module_version=link.module_version, inputs=dict(link.module_inputs_snapshot_json or {}),
-                        create_idempotency_key=link.create_idempotency_key, attempt_count=link.attempt_count,
+                        create_idempotency_key=link.create_idempotency_key, remote_status=link.remote_status,
+                        attempt_count=link.attempt_count,
                         lease_token=token,
                     ))
                 await session.flush()
@@ -156,7 +224,19 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
                     .where(EndpointOperationLink.operation_id == claim.operation_id).with_for_update()
                 )).scalar_one_or_none()
                 operation = await session.get(Operation, claim.operation_id, with_for_update=True)
-                if link is None or operation is None or link.lease_owner != claim.lease_token:
+                if (
+                    link is None
+                    or operation is None
+                    or link.lease_owner != claim.lease_token
+                    or link.remote_status in _TERMINAL_REMOTE_STATUSES
+                    or operation.status in _TERMINAL_LOCAL_STATUSES
+                ):
+                    return False
+                if (
+                    remote_status in _REMOTE_PROGRESS
+                    and link.remote_status in _REMOTE_PROGRESS
+                    and _REMOTE_PROGRESS[remote_status] < _REMOTE_PROGRESS[link.remote_status]
+                ):
                     return False
                 if endpoint_operation_ref is not None:
                     if link.endpoint_operation_ref not in (None, endpoint_operation_ref):
@@ -171,8 +251,9 @@ class SqlAlchemyEndpointModuleOperationReconcileStore:
                 link.last_synced_at = datetime.now(timezone.utc)
                 link.lease_owner = None
                 link.lease_until = None
-                operation.status = {"queued": "queued", "delivered": "sent", "acknowledged": "accepted", "running": "running", "succeeded": "succeeded", "failed": "failed", "canceled": "canceled", "expired": "timed_out"}[remote_status]
-                operation.phase = f"endpoint_module_{remote_status}"
+                if error_code is not None and remote_status == claim.remote_status:
+                    link.attempt_count += 1
+                operation.status, operation.phase = _REMOTE_TO_LOCAL[remote_status]
                 operation.error_code = error_code
                 if operation.status in {"succeeded", "failed", "timed_out", "canceled"}:
                     operation.finished_at = datetime.now(timezone.utc)
