@@ -1,5 +1,36 @@
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
+## 2026-08-27 Module Platform Canary Closure v1
+
+- **Goal:** close the staging-only Module Platform canary: merge the 15 Endpoint
+  canary fixes into Endpoint `main`, harden Helpdesk reconciliation, deploy both
+  mainlines, run one published ticket recipe, prove the exact cross-repository
+  invariants, then restore flags and revoke the scoped service credential.
+- **Scope:** Endpoint and Helpdesk staging only (`192.168.101.118`), with the
+  designated ALT and Windows agents. Production `192.168.100.19` is excluded.
+- **Constraints:** no direct Endpoint operation creation from the acceptance
+  runner, no shared database/FK, no DeviceOutbox, ToolService, legacy WebSocket,
+  dual dispatch, fallback, raw credential, or raw agent-output evidence.
+- **Decisions:** retain newly deployed mainline releases after closure; rollback
+  restores only temporary module flags and access. Credential revocation is
+  verified before the root-only token file is removed. Evidence is redacted and
+  copied from staging to the operator workstation outside Git.
+- **Current State:** Endpoint `main` is now `59b1e7e` after a conflict-free
+  merge of exactly 15 canary commits; full CI passed `1970 passed, 36 skipped`.
+  Helpdesk lease/retry/monotonicity hardening and its focused suite (`30
+  passed`) are ready, and the exact provider lock now pins that Endpoint SHA.
+  Local real-provider acceptance is fail-closed by its stale Windows
+  `example.test` DB-tunnel setting and moves to isolated staging rather than
+  using a fallback.
+- **Next Steps:** merge Helpdesk hardening into its default mainline, deploy
+  both verified SHAs to staging, then run the one ticket recipe and close the
+  rollback, credential, backup, and acceptance-document gates.
+- **Verification:** required commands and evidence schema are in
+  `docs/superpowers/plans/2026-08-27-module-platform-canary-closure-v1.md`.
+- **Handoff:** do not claim closure until the repeated reconciliation has zero
+  delta, credential revocation is proven, and the off-host manifest digest is
+  recorded in the final Helpdesk document.
+
 ## 2026-08-26 Endpoint Module Platform v1
 
 - **Status:** Endpoint EP1 is complete locally: typed contracts, independent
