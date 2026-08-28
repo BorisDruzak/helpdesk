@@ -7,6 +7,7 @@ from aiohttp.test_utils import TestServer
 import pytest
 
 from domain_ports.endpoint_modules import (
+    EndpointModuleCapabilityCatalog,
     EndpointModuleDefinitionProjection,
     EndpointModuleOperationCreateRequest,
     EndpointModuleOperationProjection,
@@ -49,6 +50,104 @@ def _wire_response(data: object, *, status: int = 200) -> web.Response:
     )
 
 
+def _catalog_wire() -> dict[str, object]:
+    return {
+        "schema_version": "endpoint_module_capability_catalog_v1",
+        "items": [
+            {
+                "capability": "dns.resolve",
+                "parameter_schema_version": "dns_resolve_parameters_v1",
+                "result_schema_version": "dns_resolve_result_v1",
+                "platforms": ["linux_amd64", "windows_amd64"],
+                "minimum_agent_version": "3.2.27",
+                "risk": "safe_read",
+                "consent_required": False,
+                "feature_flag": "endpoint_network_primitives_enabled",
+                "policy": "network_target_policy",
+                "parameters": [
+                    {"name": "target", "value_type": "string", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": None, "maximum": None, "default_literal": None, "secret": False},
+                    {"name": "family", "value_type": "enum", "required": True, "allowed_sources": ["input", "literal"], "enum_values": ["any", "ipv4", "ipv6"], "minimum": None, "maximum": None, "default_literal": None, "secret": False},
+                ],
+            },
+            {
+                "capability": "network.ping",
+                "parameter_schema_version": "network_ping_parameters_v1",
+                "result_schema_version": "network_ping_result_v1",
+                "platforms": ["linux_amd64", "windows_amd64"],
+                "minimum_agent_version": "3.2.27",
+                "risk": "safe_read",
+                "consent_required": False,
+                "feature_flag": "endpoint_network_primitives_enabled",
+                "policy": "network_target_policy",
+                "parameters": [
+                    {"name": "target", "value_type": "string", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": None, "maximum": None, "default_literal": None, "secret": False},
+                    {"name": "count", "value_type": "integer", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": 1, "maximum": 5, "default_literal": None, "secret": False},
+                    {"name": "timeout_ms", "value_type": "integer", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": 100, "maximum": 5_000, "default_literal": None, "secret": False},
+                ],
+            },
+            {
+                "capability": "tcp.connect",
+                "parameter_schema_version": "tcp_connect_parameters_v1",
+                "result_schema_version": "tcp_connect_result_v1",
+                "platforms": ["linux_amd64", "windows_amd64"],
+                "minimum_agent_version": "3.2.27",
+                "risk": "safe_read",
+                "consent_required": False,
+                "feature_flag": "endpoint_network_primitives_enabled",
+                "policy": "network_target_policy",
+                "parameters": [
+                    {"name": "target", "value_type": "string", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": None, "maximum": None, "default_literal": None, "secret": False},
+                    {"name": "port", "value_type": "integer", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": 1, "maximum": 65_535, "default_literal": None, "secret": False},
+                    {"name": "timeout_ms", "value_type": "integer", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": 100, "maximum": 10_000, "default_literal": None, "secret": False},
+                ],
+            },
+            {
+                "capability": "route.get",
+                "parameter_schema_version": "route_get_parameters_v1",
+                "result_schema_version": "route_get_result_v1",
+                "platforms": ["linux_amd64", "windows_amd64"],
+                "minimum_agent_version": "3.2.29",
+                "risk": "safe_read",
+                "consent_required": False,
+                "feature_flag": "endpoint_read_only_primitives_enabled",
+                "policy": "network_target_policy",
+                "parameters": [
+                    {"name": "target", "value_type": "string", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": None, "maximum": None, "default_literal": None, "secret": False},
+                    {"name": "port", "value_type": "integer", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": 1, "maximum": 65_535, "default_literal": None, "secret": False},
+                    {"name": "family", "value_type": "enum", "required": True, "allowed_sources": ["input", "literal"], "enum_values": ["any", "ipv4", "ipv6"], "minimum": None, "maximum": None, "default_literal": None, "secret": False},
+                    {"name": "timeout_ms", "value_type": "integer", "required": True, "allowed_sources": ["input", "literal"], "enum_values": None, "minimum": 100, "maximum": 5_000, "default_literal": None, "secret": False},
+                ],
+            },
+            {
+                "capability": "adapter.list",
+                "parameter_schema_version": "adapter_list_parameters_v1",
+                "result_schema_version": "adapter_list_result_v1",
+                "platforms": ["linux_amd64", "windows_amd64"],
+                "minimum_agent_version": "3.2.29",
+                "risk": "safe_read",
+                "consent_required": False,
+                "feature_flag": "endpoint_read_only_primitives_enabled",
+                "policy": "none",
+                "parameters": [],
+            },
+            {
+                "capability": "system.service_status",
+                "parameter_schema_version": "service_status_parameters_v1",
+                "result_schema_version": "service_status_result_v1",
+                "platforms": ["linux_amd64", "windows_amd64"],
+                "minimum_agent_version": "3.2.29",
+                "risk": "safe_read",
+                "consent_required": False,
+                "feature_flag": "endpoint_read_only_primitives_enabled",
+                "policy": "none",
+                "parameters": [
+                    {"name": "service_key", "value_type": "enum", "required": True, "allowed_sources": ["literal"], "enum_values": ["endpoint_agent", "endpoint_agent_updater"], "minimum": None, "maximum": None, "default_literal": None, "secret": False},
+                ],
+            },
+        ],
+    }
+
+
 @pytest.mark.asyncio
 async def test_adapter_lists_catalog_from_the_single_typed_route_without_query_parameters() -> None:
     received: dict[str, object] = {}
@@ -75,17 +174,69 @@ async def test_adapter_lists_catalog_from_the_single_typed_route_without_query_p
 
 
 @pytest.mark.asyncio
-async def test_adapter_fails_closed_for_recipe_capability_catalog_until_mapping_exists() -> None:
-    adapter = ExternalEndpointModuleHttpAdapter(
-        base_url="https://endpoint.example.test",
-        service_token="test-service-token",
-        ca_file="",
-        timeout_seconds=1,
-    )
+async def test_adapter_lists_recipe_capabilities_from_only_fixed_get_route_without_query_parameters() -> None:
+    received: dict[str, object] = {}
 
-    result = await adapter.list_recipe_capabilities()
+    async def list_capabilities(request: web.Request) -> web.Response:
+        received["method"] = request.method
+        received["path"] = request.path
+        received["query"] = dict(request.query)
+        return _wire_response(_catalog_wire())
 
-    assert isinstance(result, EndpointModuleUnavailable)
+    app = web.Application()
+    app.router.add_get("/api/v1/module-capabilities", list_capabilities)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).list_recipe_capabilities()
+
+        assert isinstance(result, EndpointModuleCapabilityCatalog)
+        assert [item.capability for item in result.items] == [
+            "dns.resolve", "network.ping", "tcp.connect", "route.get", "adapter.list", "system.service_status",
+        ]
+        assert received == {"method": "GET", "path": "/api/v1/module-capabilities", "query": {}}
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_catalog_with_undeclared_provider_content() -> None:
+    catalog = _catalog_wire()
+    catalog["items"][0]["handler_path"] = "endpoint.providers.dns.resolve"  # type: ignore[index]
+
+    async def list_capabilities(_request: web.Request) -> web.Response:
+        return _wire_response(catalog)
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-capabilities", list_capabilities)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        assert isinstance(
+            await _adapter(server).list_recipe_capabilities(), EndpointModuleInvalidProjection
+        )
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_catalog_with_unreleased_metadata_mutation() -> None:
+    catalog = _catalog_wire()
+    catalog["items"][1]["parameters"][2]["maximum"] = 9_999  # type: ignore[index]
+
+    async def list_capabilities(_request: web.Request) -> web.Response:
+        return _wire_response(catalog)
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-capabilities", list_capabilities)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        assert isinstance(
+            await _adapter(server).list_recipe_capabilities(), EndpointModuleInvalidProjection
+        )
+    finally:
+        await server.close()
 
 
 @pytest.mark.asyncio
