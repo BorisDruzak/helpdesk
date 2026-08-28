@@ -42,8 +42,13 @@
   `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
   BFF routes under `/api/web/admin/endpoint-modules` (with `/api/admin`
   aliases) and `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
-  Catalog rows add only the Endpoint-projected latest version/state when that
-  safe read succeeds; they never expose a recipe source. The legacy Admin
+  `GET /api/web/admin/endpoint-modules/capabilities` is intentionally web-only
+  (no `/api/admin` alias): it permits the module read/audit roles, calls only
+  `EndpointModulePort.list_recipe_capabilities()`, returns the typed
+  `{data: catalog.model_dump(mode="json")}` authoring projection, and fails
+  closed with the typed unavailable/invalid-projection mapping. Catalog rows
+  add only the Endpoint-projected latest version/state when that safe read
+  succeeds; they never expose a recipe source. The legacy Admin
   shell's `Endpoint recipes` subtab (`admin.html`,
   `endpoint_module_workbench.js`) calls only that BFF to create declarative
   allowlisted DNS/ping/TCP recipes and apply lifecycle actions; the existing

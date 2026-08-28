@@ -46,8 +46,10 @@ class _Request(dict):
 class _Port:
     def __init__(self) -> None:
         self.catalog: object = _capability_catalog()
+        self.list_recipe_capabilities_calls = 0
 
     async def list_recipe_capabilities(self):
+        self.list_recipe_capabilities_calls += 1
         return self.catalog
 
     async def list_modules(self):
@@ -181,6 +183,7 @@ async def catalog_bff_client(monkeypatch: pytest.MonkeyPatch):
 
     permissions: set[str] = set()
     port = _Port()
+    actor = {"role": "admin"}
 
     @asynccontextmanager
     async def fake_session():
@@ -193,7 +196,7 @@ async def catalog_bff_client(monkeypatch: pytest.MonkeyPatch):
     async def auth_context_middleware(request: web.Request, handler):
         request["auth_context"] = AuthContext(
             actor_id="admin-1",
-            actor_role="admin",
+            actor_role=actor["role"],
             auth_type=AuthType.UI_TOKEN,
             token="test-token",
         )
@@ -205,12 +208,12 @@ async def catalog_bff_client(monkeypatch: pytest.MonkeyPatch):
     app = web.Application(middlewares=[auth_context_middleware])
     setup_routes(app)
     async with TestClient(TestServer(app)) as client:
-        yield client, permissions, port
+        yield client, permissions, port, actor
 
 
 @pytest.mark.asyncio
 async def test_catalog_bff_requires_modules_read_permission(catalog_bff_client) -> None:
-    client, _permissions, _port = catalog_bff_client
+    client, _permissions, _port, _actor = catalog_bff_client
 
     response = await client.get("/api/web/admin/endpoint-modules/capabilities")
 
@@ -224,7 +227,7 @@ async def test_catalog_bff_requires_modules_read_permission(catalog_bff_client) 
 
 @pytest.mark.asyncio
 async def test_catalog_bff_exposes_only_catalog_dto_fields(catalog_bff_client) -> None:
-    client, permissions, port = catalog_bff_client
+    client, permissions, port, _actor = catalog_bff_client
     permissions.add("modules.audit")
 
     response = await client.get("/api/web/admin/endpoint-modules/capabilities")
@@ -235,6 +238,19 @@ async def test_catalog_bff_exposes_only_catalog_dto_fields(catalog_bff_client) -
     assert '"recipe"' not in text
     assert '"command"' not in text
     assert '"handler_path"' not in text
+
+
+@pytest.mark.asyncio
+async def test_catalog_bff_allows_auditor_with_modules_audit_permission(catalog_bff_client) -> None:
+    client, permissions, port, actor = catalog_bff_client
+    actor["role"] = "auditor"
+    permissions.add("modules.audit")
+
+    response = await client.get("/api/web/admin/endpoint-modules/capabilities")
+
+    assert response.status == 200
+    assert await response.json() == {"data": _capability_catalog().model_dump(mode="json")}
+    assert port.list_recipe_capabilities_calls == 1
 
 
 @pytest.mark.asyncio
@@ -251,7 +267,7 @@ async def test_catalog_bff_preserves_typed_failure_mapping(
     expected_status: int,
     expected_code: str,
 ) -> None:
-    client, permissions, port = catalog_bff_client
+    client, permissions, port, _actor = catalog_bff_client
     permissions.add("admin.modules.view")
     port.catalog = outcome
 
