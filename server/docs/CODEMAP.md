@@ -36,20 +36,26 @@
   `ENDPOINT_MODULE_PORT_MODE=unavailable` adapter performs no HTTP, database,
   agent, ToolService or diagnostic-provider work. `external` composes only
   `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
-  configuration validates; it maps catalog/version and operation routes into
-  bounded safe projections, preserves the exact typed child-result schema
-  discriminator for the six released capabilities, and never retains recipes
-  or dispatches an agent command.
+  configuration validates. `integration/endpoint_contract.lock.json` pins the
+  provider repository, exact commit and OpenAPI digest; the catalog transport
+  is only the fixed `GET /api/v1/module-capabilities` request and rejects a
+  missing or mismatched `X-Correlation-ID`. It maps catalog/version and
+  operation routes into bounded safe projections, preserves the exact typed
+  child-result schema discriminator for the six released capabilities, and
+  never retains recipes or dispatches an agent command.
   `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
-  BFF routes under `/api/web/admin/endpoint-modules` (with `/api/admin`
-  aliases) and `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
+  BFF routes under `/api/web/admin/endpoint-modules`; the list/lifecycle routes
+  retain `/api/admin` aliases, while the catalog does not. The ticket operation
+  route is `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
   `GET /api/web/admin/endpoint-modules/capabilities` is intentionally web-only
   (no `/api/admin` alias): it permits the module read/audit roles, calls only
   `EndpointModulePort.list_recipe_capabilities()`, returns the typed
   `{data: catalog.model_dump(mode="json")}` authoring projection, and fails
   closed with the typed unavailable/invalid-projection mapping. Catalog rows
   add only the Endpoint-projected latest version/state when that safe read
-  succeeds; they never expose a recipe source. The legacy Admin
+  succeeds; they never expose a recipe source, proxy a browser request to
+  Endpoint, or construct ToolService, DeviceOutbox or legacy-WebSocket
+  dispatch. The legacy Admin
   shell's `Endpoint recipes` subtab (`admin.html`,
   `endpoint_module_workbench.js`) calls only that BFF to create declarative
   allowlisted DNS/ping/TCP recipes and apply lifecycle actions; the existing

@@ -6,9 +6,20 @@
 - **Scope:** Helpdesk PR-HD1 (`codex/module-capability-projections-v2`), PR-HD2 (`codex/module-workbench-capability-catalog-v2`) and PR-HD3 (`codex/legacy-module-freeze-v1`). Endpoint Platform is read-only in this session; production is excluded.
 - **Constraints:** Browser calls only Helpdesk BFF. No shared database/FK, DeviceOutbox, ToolService, Helpdesk WebSocket, legacy fallback, dual dispatch, raw service name, raw result, code, command, path, URL or credential may cross this boundary.
 - **Decisions:** Closure PR #23 merged as `4fc93772`; all three Helpdesk branches start at that SHA. HD1/HD2 wait for Endpoint PR-EP1/EP2 contract merge SHA and an updated immutable lock. HD3 implementation/freeze waits for successful ALT and Windows canaries.
-- **Current State:** Closure CI and post-merge local verification passed. Endpoint `origin/main` is `684dab2`; required EP v2 branches/PRs do not exist remotely, so a v2 catalog cannot be locked or consumed.
-- **Next Steps:** record the Endpoint contract SHA/OpenAPI digest after its merge; then execute `docs/superpowers/plans/2026-08-28-helpdesk-capability-projections-v2.md` before HD2, real acceptance, canaries and HD3.
-- **Handoff:** do not create a catalog mock, hardcode v2 capabilities, or enable endpoint execution while the Endpoint v2 contract is absent.
+- **Current State:** HD1 is implemented locally against the immutable provider
+  lock: `integration/endpoint_contract.lock.json` pins Endpoint
+  `81c618447498f19ddcf5aced6cc393aff800e4ab` and its OpenAPI digest. The
+  fixed `GET /api/v1/module-capabilities` adapter accepts only the six locked,
+  fail-closed DTO descriptors and the authenticated typed BFF is web-only
+  (there is deliberately no `/api/admin/endpoint-modules/capabilities` alias).
+  Its closed result projector writes `endpoint_module_result_snapshot_v2` while
+  retaining existing v1 snapshots and historical evidence unchanged.
+- **Next Steps:** execute HD2 against the typed BFF, followed by real
+  acceptance, canaries and HD3. Do not enable endpoint execution before those
+  separate gates.
+- **Handoff:** preserve the fixed catalog route and provider lock; do not add a
+  generic proxy, browser-to-Endpoint call, catalog mock, hardcoded capability
+  authority, ToolService/DeviceOutbox/legacy-WebSocket fallback or dual dispatch.
 
 ## 2026-08-27 Module Platform Canary Closure v1
 

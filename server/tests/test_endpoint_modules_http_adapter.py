@@ -200,6 +200,35 @@ async def test_adapter_lists_recipe_capabilities_from_only_fixed_get_route_witho
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "response_correlation",
+    [None, "different-module-http-correlation"],
+    ids=["missing", "mismatched"],
+)
+async def test_adapter_rejects_catalog_without_matching_correlation_id(
+    response_correlation: str | None,
+) -> None:
+    async def list_capabilities(_request: web.Request) -> web.Response:
+        headers = (
+            {"X-Correlation-ID": response_correlation}
+            if response_correlation is not None
+            else {}
+        )
+        return web.json_response({"data": _catalog_wire()}, headers=headers)
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-capabilities", list_capabilities)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).list_recipe_capabilities()
+
+        assert isinstance(result, EndpointModuleInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 async def test_adapter_rejects_catalog_with_undeclared_provider_content() -> None:
     catalog = _catalog_wire()
     catalog["items"][0]["handler_path"] = "endpoint.providers.dns.resolve"  # type: ignore[index]
