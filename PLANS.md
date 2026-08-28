@@ -1,5 +1,15 @@
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
+## 2026-08-28 Endpoint Read-only Capability Batch v2 — Helpdesk
+
+- **Goal:** consume the Endpoint-owned versioned capability catalog through a fail-closed typed port, project only bounded capability-specific evidence, replace the Endpoint Recipe Workbench allowlist with the catalog, and freeze fully replaced legacy network-module rollouts only after real ALT and Windows acceptance.
+- **Scope:** Helpdesk PR-HD1 (`codex/module-capability-projections-v2`), PR-HD2 (`codex/module-workbench-capability-catalog-v2`) and PR-HD3 (`codex/legacy-module-freeze-v1`). Endpoint Platform is read-only in this session; production is excluded.
+- **Constraints:** Browser calls only Helpdesk BFF. No shared database/FK, DeviceOutbox, ToolService, Helpdesk WebSocket, legacy fallback, dual dispatch, raw service name, raw result, code, command, path, URL or credential may cross this boundary.
+- **Decisions:** Closure PR #23 merged as `4fc93772`; all three Helpdesk branches start at that SHA. HD1/HD2 wait for Endpoint PR-EP1/EP2 contract merge SHA and an updated immutable lock. HD3 implementation/freeze waits for successful ALT and Windows canaries.
+- **Current State:** Closure CI and post-merge local verification passed. Endpoint `origin/main` is `684dab2`; required EP v2 branches/PRs do not exist remotely, so a v2 catalog cannot be locked or consumed.
+- **Next Steps:** record the Endpoint contract SHA/OpenAPI digest after its merge; then execute `docs/superpowers/plans/2026-08-28-helpdesk-capability-projections-v2.md` before HD2, real acceptance, canaries and HD3.
+- **Handoff:** do not create a catalog mock, hardcode v2 capabilities, or enable endpoint execution while the Endpoint v2 contract is absent.
+
 ## 2026-08-27 Module Platform Canary Closure v1
 
 - **Goal:** close the staging-only Module Platform canary: merge the 15 Endpoint
