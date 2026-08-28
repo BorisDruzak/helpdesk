@@ -9,6 +9,7 @@ from app.services.endpoint_module_operation_reconciler import (
     EndpointModuleReconcileClaim,
     EndpointModuleOperationReconciler,
 )
+from app.services import endpoint_module_result_projector
 from app.services.endpoint_module_result_projector import (
     EndpointModuleResultProjectionError,
     EndpointModuleResultSnapshotV2,
@@ -162,6 +163,7 @@ class _SucceededOperationPort:
             deadline_at=now,
             completed_at=now,
             result_available=True,
+            expected_step_count=1,
             safe_result=(step,),
         )
 
@@ -203,6 +205,7 @@ class _TerminalReplayPort:
             deadline_at=now,
             completed_at=now,
             result_available=True,
+            expected_step_count=1,
             safe_result=(
                 EndpointModuleOperationStepProjection(
                     sequence=0,
@@ -433,6 +436,22 @@ def test_projector_rejects_unknown_capability_or_schema() -> None:
 
     with pytest.raises(EndpointModuleResultProjectionError):
         project_module_result("dns.resolve", {"schema_version": "unknown_v1"})
+
+
+def test_result_projector_registry_is_private_immutable_and_has_exact_capabilities() -> None:
+    registry = endpoint_module_result_projector._PROJECTORS
+
+    assert set(registry) == {
+        "dns.resolve",
+        "network.ping",
+        "tcp.connect",
+        "route.get",
+        "adapter.list",
+        "system.service_status",
+    }
+    assert "PROJECTORS" not in endpoint_module_result_projector.__all__
+    with pytest.raises(TypeError):
+        registry["dns.resolve"] = lambda _result: {}  # type: ignore[index]
 
 
 def test_projector_rejects_capability_schema_mismatch() -> None:

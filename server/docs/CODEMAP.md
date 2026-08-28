@@ -79,8 +79,11 @@
   `endpoint_module_result_snapshot_v2` with exact DNS, ping (`loss`, `min`,
   `avg`, `max`), TCP (`latency`), route, adapter (`count`) or service summaries.
   A replayed terminal create persists its remote reference and is reread through
-  the detail route before local success; incomplete succeeded child sets fail
-  closed. The projector rejects unknown/mismatched schemas and excludes adapter
+  the detail route before local success; succeeded detail projections require
+  the provider-authoritative `expected_step_count` and exact zero-based child
+  sequences, so incomplete, duplicate, gapped or reordered child sets fail
+  closed. The private immutable projector registry limits capabilities; the
+  projector rejects unknown/mismatched schemas and excludes adapter
   rows, MAC/SSID data and raw OS service details. Existing
   unversioned v1 snapshots and historical evidence remain unchanged and
   readable; no migration or destructive rewrite is performed.

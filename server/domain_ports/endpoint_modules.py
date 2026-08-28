@@ -99,6 +99,10 @@ _RELEASED_MODULE_CAPABILITY_SIGNATURES = {
 
 MAX_MODULE_OPERATION_STEPS = 8
 MAX_MODULE_SAFE_VALUES = 8
+ExpectedModuleOperationStepCount: TypeAlias = Annotated[
+    int,
+    Field(strict=True, ge=1, le=MAX_MODULE_OPERATION_STEPS),
+]
 
 
 class _ImmutableEndpointModuleDTO(BaseModel):
@@ -403,6 +407,7 @@ class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):
     deadline_at: AwareDatetime | None
     completed_at: AwareDatetime | None
     result_available: bool = False
+    expected_step_count: ExpectedModuleOperationStepCount | None = None
     safe_result: tuple[EndpointModuleOperationStepProjection, ...] = ()
     warning_codes: tuple[SafeEndpointCode, ...] = ()
 
@@ -416,6 +421,16 @@ class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):
             raise ValueError("module result_available must match safe result presence")
         if self.safe_result and self.status not in {"succeeded", "failed", "canceled", "expired"}:
             raise ValueError("module safe result requires terminal operation status")
+        if self.status == "succeeded" and self.result_available:
+            if self.expected_step_count is None:
+                raise ValueError(
+                    "succeeded module operation results require provider expected_step_count"
+                )
+            sequences = [step.sequence for step in self.safe_result]
+            if sequences != list(range(self.expected_step_count)):
+                raise ValueError(
+                    "succeeded module operation steps must match expected provider sequence"
+                )
         if self.deadline_at is not None and self.deadline_at < self.created_at:
             raise ValueError("module operation deadline cannot precede creation")
         if self.completed_at is not None and self.completed_at < self.created_at:

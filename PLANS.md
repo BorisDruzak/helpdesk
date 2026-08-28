@@ -8,7 +8,10 @@
 - **Decisions:** Closure PR #23 merged as `4fc93772`; all three Helpdesk branches start at that SHA. HD1/HD2 wait for Endpoint PR-EP1/EP2 contract merge SHA and an updated immutable lock. HD3 implementation/freeze waits for successful ALT and Windows canaries.
 - **Current State:** HD1 is implemented locally against the immutable provider
   lock: `integration/endpoint_contract.lock.json` pins Endpoint
-  `81c618447498f19ddcf5aced6cc393aff800e4ab` and its OpenAPI digest. The
+  `64f400741f023c272e38d7bfcf39430d05e3de2e` and OpenAPI digest
+  `5d27a1ebeb7abe670a4f7160a0075ad893f88cbbc94b52b2458107f13be6c735`.
+  Succeeded operation-detail projections require the provider-authoritative
+  `expected_step_count` and complete zero-based child sequences. The
   fixed `GET /api/v1/module-capabilities` adapter accepts only the six locked,
   fail-closed DTO descriptors and the authenticated typed BFF is web-only
   (there is deliberately no `/api/admin/endpoint-modules/capabilities` alias).

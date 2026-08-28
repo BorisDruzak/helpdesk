@@ -194,12 +194,17 @@ class ModuleOperationStepWireV1(_WireModel):
 
 
 class ModuleOperationDetailWireV1(ModuleOperationWireV1):
+    expected_step_count: int = Field(strict=True, ge=1, le=8)
     steps: tuple[ModuleOperationStepWireV1, ...] = Field(min_length=1, max_length=8)
 
     @model_validator(mode="after")
     def validate_succeeded_step_results(self) -> "ModuleOperationDetailWireV1":
         if self.status != "succeeded":
             return self
+        if len(self.steps) != self.expected_step_count or [
+            step.sequence for step in self.steps
+        ] != list(range(self.expected_step_count)):
+            raise ValueError("succeeded module operation steps must match expected provider sequence")
         for step in self.steps:
             if (
                 step.status != "succeeded"

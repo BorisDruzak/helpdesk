@@ -418,6 +418,7 @@ async def test_adapter_reads_module_operation_detail_without_gateway_dispatch() 
                 "created_at": now,
                 "deadline_at": now,
                 "completed_at": None,
+                "expected_step_count": 1,
                 "steps": [
                     {
                         "sequence": 0,
@@ -463,9 +464,10 @@ async def test_adapter_preserves_typed_ping_result_without_compatibility_scalars
                 "created_at": now,
                 "deadline_at": now,
                 "completed_at": now,
+                "expected_step_count": 1,
                 "steps": [
                     {
-                        "sequence": 1,
+                        "sequence": 0,
                         "capability": "network.ping",
                         "status": "succeeded",
                         "error_code": None,
@@ -536,6 +538,7 @@ async def test_adapter_rejects_succeeded_parent_when_any_step_lacks_result(
                 "created_at": now,
                 "deadline_at": now,
                 "completed_at": now,
+                "expected_step_count": 2,
                 "steps": [
                     {
                         "sequence": 0,
@@ -677,6 +680,7 @@ async def test_adapter_preserves_typed_results_without_compatibility_scalars(
                 "created_at": now,
                 "deadline_at": now,
                 "completed_at": now,
+                "expected_step_count": 1,
                 "steps": [
                     {
                         "sequence": 0,
@@ -778,6 +782,72 @@ async def test_adapter_rejects_module_step_result_with_unknown_content() -> None
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("expected_step_count", "sequences"),
+    (
+        (2, (0,)),  # truncated tail
+        (3, (0, 2, 3)),  # internal gap
+        (2, (0, 0)),  # duplicate
+        (2, (1, 0)),  # out of order and missing prefix
+    ),
+)
+async def test_adapter_rejects_succeeded_operation_with_incomplete_provider_sequence(
+    expected_step_count: int,
+    sequences: tuple[int, ...],
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+
+    def step(sequence: int) -> dict[str, object]:
+        return {
+            "sequence": sequence,
+            "capability": "dns.resolve",
+            "status": "succeeded",
+            "error_code": None,
+            "safe_result": {
+                "schema_version": "dns_resolve_result_v1",
+                "target": "example.test",
+                "canonical_name": "example.test",
+                "addresses": [{"family": "ipv4", "address": "192.0.2.10"}],
+                "address_count": 1,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": now,
+            },
+        }
+
+    async def read_operation(_request: web.Request) -> web.Response:
+        return _wire_response(
+            {
+                "schema_version": "endpoint_module_operation_v1",
+                "operation_id": OPERATION_ID,
+                "device_id": DEVICE_ID,
+                "module_key": "network.basic.check",
+                "version": "1.0.0",
+                "status": "succeeded",
+                "created_at": now,
+                "deadline_at": now,
+                "completed_at": now,
+                "expected_step_count": expected_step_count,
+                "steps": [step(sequence) for sequence in sequences],
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-operations/{operation_id}", read_operation)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        assert isinstance(
+            await _adapter(server).read_operation(
+                EndpointModuleOperationRef(external_id=OPERATION_ID)
+            ),
+            EndpointModuleInvalidProjection,
+        )
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 async def test_adapter_rejects_capability_result_schema_mismatch() -> None:
     now = datetime.now(timezone.utc).isoformat()
 
@@ -793,6 +863,7 @@ async def test_adapter_rejects_capability_result_schema_mismatch() -> None:
                 "created_at": now,
                 "deadline_at": now,
                 "completed_at": now,
+                "expected_step_count": 1,
                 "steps": [
                     {
                         "sequence": 0,

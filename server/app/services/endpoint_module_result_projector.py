@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 import ipaddress
 import re
+from types import MappingProxyType
 from typing import Annotated, Literal, TypeAlias, TypeVar
 
 from pydantic import (
@@ -479,14 +480,16 @@ def _project_service_status(result: Mapping[str, object]) -> dict[str, object | 
 
 _Projector: TypeAlias = Callable[[Mapping[str, object]], dict[str, object | None]]
 
-PROJECTORS: Mapping[str, _Projector] = {
-    "dns.resolve": _project_dns_resolve,
-    "network.ping": _project_network_ping,
-    "tcp.connect": _project_tcp_connect,
-    "route.get": _project_route_get,
-    "adapter.list": _project_adapter_list,
-    "system.service_status": _project_service_status,
-}
+_PROJECTORS: Mapping[str, _Projector] = MappingProxyType(
+    {
+        "dns.resolve": _project_dns_resolve,
+        "network.ping": _project_network_ping,
+        "tcp.connect": _project_tcp_connect,
+        "route.get": _project_route_get,
+        "adapter.list": _project_adapter_list,
+        "system.service_status": _project_service_status,
+    }
+)
 
 
 def project_module_result(
@@ -495,7 +498,7 @@ def project_module_result(
 ) -> dict[str, object | None]:
     """Validate one closed Endpoint result schema and return its safe summary."""
 
-    projector = PROJECTORS.get(capability)
+    projector = _PROJECTORS.get(capability)
     if projector is None:
         raise EndpointModuleResultProjectionError("unsupported Endpoint module capability")
     try:
@@ -510,6 +513,5 @@ __all__ = [
     "EndpointModuleResultProjectionError",
     "EndpointModuleResultSnapshotV2",
     "EndpointModuleResultStepSnapshotV2",
-    "PROJECTORS",
     "project_module_result",
 ]

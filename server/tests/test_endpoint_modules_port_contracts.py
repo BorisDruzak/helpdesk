@@ -337,6 +337,7 @@ def test_module_operation_projection_exposes_only_bounded_safe_result_and_lifecy
         deadline_at=now,
         completed_at=now,
         result_available=True,
+        expected_step_count=1,
         safe_result=(
             EndpointModuleOperationStepProjection(
                 sequence=0,
@@ -362,6 +363,74 @@ def test_module_operation_projection_exposes_only_bounded_safe_result_and_lifecy
             completed_at=None,
             result_available=True,
             safe_result=(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("expected_step_count", "sequences"),
+    (
+        (2, (0,)),  # truncated tail
+        (3, (0, 2, 3)),  # internal gap
+        (2, (0, 0)),  # duplicate
+        (2, (1, 0)),  # out of order and missing prefix
+    ),
+)
+def test_succeeded_module_operation_requires_complete_provider_step_sequence(
+    expected_step_count: int,
+    sequences: tuple[int, ...],
+) -> None:
+    module = EndpointModuleRef(module_key="network.basic.check")
+    version = EndpointModuleVersionRef(module=module, version="1.0.0")
+    now = datetime.now(timezone.utc)
+
+    with pytest.raises(ValidationError):
+        EndpointModuleOperationProjection(
+            operation=EndpointModuleOperationRef(external_id="module-operation-1"),
+            module_version=version,
+            device_external_id="endpoint-device-1",
+            status="succeeded",
+            created_at=now,
+            deadline_at=now,
+            completed_at=now,
+            result_available=True,
+            expected_step_count=expected_step_count,
+            safe_result=tuple(
+                EndpointModuleOperationStepProjection(
+                    sequence=sequence,
+                    capability="dns.resolve",
+                    status="succeeded",
+                    error_code=None,
+                    safe_values={"address_count": 1},
+                )
+                for sequence in sequences
+            ),
+        )
+
+
+def test_succeeded_module_operation_with_results_requires_provider_step_count() -> None:
+    module = EndpointModuleRef(module_key="network.basic.check")
+    version = EndpointModuleVersionRef(module=module, version="1.0.0")
+    now = datetime.now(timezone.utc)
+
+    with pytest.raises(ValidationError):
+        EndpointModuleOperationProjection(
+            operation=EndpointModuleOperationRef(external_id="module-operation-1"),
+            module_version=version,
+            device_external_id="endpoint-device-1",
+            status="succeeded",
+            created_at=now,
+            deadline_at=now,
+            completed_at=now,
+            result_available=True,
+            safe_result=(
+                EndpointModuleOperationStepProjection(
+                    sequence=0,
+                    capability="dns.resolve",
+                    status="succeeded",
+                    error_code=None,
+                    safe_values={"address_count": 1},
+                ),
+            ),
         )
 
 

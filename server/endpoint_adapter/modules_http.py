@@ -463,6 +463,7 @@ class ExternalEndpointModuleHttpAdapter(EndpointModulePort):
                 deadline_at=wire.deadline_at,
                 completed_at=wire.completed_at,
                 result_available=bool(safe_steps),
+                expected_step_count=wire.expected_step_count,
                 safe_result=safe_steps,
             )
         except ValidationError:
