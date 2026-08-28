@@ -11,6 +11,7 @@ from uuid import uuid4
 import logging
 
 from sqlalchemy import or_, select
+from pydantic import ValidationError
 
 from domain_ports.endpoint_modules import (
     EndpointModuleOperationCreateRequest,
@@ -23,6 +24,11 @@ from domain_ports.endpoint_modules import (
     EndpointModuleVersionRef,
 )
 from app.db.models import DiagnosticEvidence, EndpointOperationLink, Operation
+from app.services.endpoint_module_result_projector import (
+    EndpointModuleResultProjectionError,
+    EndpointModuleResultSnapshotV2,
+    project_module_result,
+)
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,9 +151,21 @@ class EndpointModuleOperationReconciler:
                 ), idempotency_key=claim.create_idempotency_key,
             )
         if isinstance(outcome, EndpointModuleOperationProjection):
+            try:
+                safe_result_snapshot = self._safe_snapshot(outcome)
+            except EndpointModuleResultProjectionError:
+                await self._store.commit(
+                    claim=claim,
+                    endpoint_operation_ref=outcome.operation.external_id,
+                    remote_status="failed",
+                    safe_result_snapshot=None,
+                    error_code="endpoint_module_invalid_projection",
+                    next_attempt_at=self._aware_now(),
+                )
+                return
             await self._store.commit(
                 claim=claim, endpoint_operation_ref=outcome.operation.external_id,
-                remote_status=outcome.status, safe_result_snapshot=self._safe_snapshot(outcome),
+                remote_status=outcome.status, safe_result_snapshot=safe_result_snapshot,
                 error_code=None, next_attempt_at=self._aware_now(),
             )
             return
@@ -179,7 +197,39 @@ class EndpointModuleOperationReconciler:
     def _safe_snapshot(outcome: EndpointModuleOperationProjection) -> dict[str, object] | None:
         if outcome.status != "succeeded" or not outcome.result_available:
             return None
-        return {"steps": [step.model_dump(mode="json") for step in outcome.safe_result]}
+        projected_steps: list[dict[str, object]] = []
+        for step in outcome.safe_result:
+            if (
+                step.status != "succeeded"
+                or step.error_code is not None
+                or step.safe_result is None
+                or step.safe_result.get("status") != step.status
+                or step.safe_result.get("error_code") != step.error_code
+            ):
+                raise EndpointModuleResultProjectionError(
+                    "module child result does not match its terminal step"
+                )
+            projected_steps.append(
+                {
+                    "sequence": step.sequence,
+                    "capability": step.capability,
+                    "status": step.status,
+                    "error_code": step.error_code,
+                    "summary": project_module_result(step.capability, step.safe_result),
+                }
+            )
+        try:
+            snapshot = EndpointModuleResultSnapshotV2.model_validate(
+                {
+                    "schema_version": "endpoint_module_result_snapshot_v2",
+                    "steps": projected_steps,
+                }
+            )
+        except ValidationError as error:
+            raise EndpointModuleResultProjectionError(
+                "invalid Endpoint module result snapshot"
+            ) from error
+        return snapshot.model_dump(mode="json")
 
     def _aware_now(self) -> datetime:
         now = self._now()

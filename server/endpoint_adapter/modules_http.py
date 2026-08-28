@@ -116,6 +116,8 @@ _NETWORK_PING_SAFE_VALUE_KEYS = (
 
 
 def _safe_step_values(capability: str, safe_result: Mapping[str, object] | None) -> dict[str, object]:
+    if capability in {"route.get", "adapter.list", "system.service_status"}:
+        return {}
     scalar_values = {
         key: value
         for key, value in (safe_result or {}).items()
@@ -463,6 +465,7 @@ class ExternalEndpointModuleHttpAdapter(EndpointModulePort):
                     status=step.status,
                     error_code=step.error_code,
                     safe_values=_safe_step_values(step.capability, step.safe_result),
+                    safe_result=dict(step.safe_result),
                 )
                 for step in wire.steps
                 if step.safe_result is not None

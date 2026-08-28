@@ -369,10 +369,20 @@ class EndpointModuleOperationCreateRequest(_ImmutableEndpointModuleDTO):
 
 class EndpointModuleOperationStepProjection(_ImmutableEndpointModuleDTO):
     sequence: int = Field(ge=0, le=7)
-    capability: Literal["dns.resolve", "network.ping", "tcp.connect"]
+    capability: EndpointModuleCapability
     status: Literal["succeeded", "failed", "canceled", "expired"]
     error_code: SafeEndpointCode | None
     safe_values: dict[SafeEndpointCode, ModuleSafeScalar] = Field(default_factory=dict, max_length=8)
+    safe_result: dict[str, object] | None = Field(default=None, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_safe_result_identity(self) -> "EndpointModuleOperationStepProjection":
+        if self.safe_result is None:
+            return self
+        schema_version = self.safe_result.get("schema_version")
+        if not isinstance(schema_version, str) or not schema_version:
+            raise ValueError("module step safe result requires a schema discriminator")
+        return self
 
 
 class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):

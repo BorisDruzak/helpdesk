@@ -478,6 +478,121 @@ async def test_adapter_bounds_network_ping_safe_values_before_port_projection() 
             "max_ms": 3.3,
             "reachable": True,
         }
+        assert result.safe_result[0].safe_result == {
+            "schema_version": "network_ping_result_v1",
+            "target": "helpdesk-staging.sosnadmin.local",
+            "resolved_ip": "192.0.2.10",
+            "transmitted": 4,
+            "received": 4,
+            "packet_loss_percent": 0.0,
+            "min_ms": 1.1,
+            "avg_ms": 2.2,
+            "max_ms": 3.3,
+            "reachable": True,
+            "status": "succeeded",
+            "collected_at": now,
+        }
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("capability", "safe_result"),
+    [
+        (
+            "route.get",
+            {
+                "schema_version": "route_get_result_v1",
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "family": "ipv4",
+                "port": 443,
+                "source_ip": "192.0.2.20",
+                "interface_name": "Ethernet 1",
+                "strategy": "udp_socket_inference",
+                "status": "succeeded",
+                "error_code": None,
+            },
+        ),
+        (
+            "adapter.list",
+            {
+                "schema_version": "adapter_list_result_v1",
+                "adapters": [
+                    {
+                        "name": "Ethernet 1",
+                        "state": "up",
+                        "kind": "ethernet",
+                        "primary": True,
+                        "ipv4_addresses": ["192.0.2.20"],
+                        "ipv6_addresses": [],
+                        "mtu": 1500,
+                        "speed_mbps": 1000,
+                    }
+                ],
+                "adapter_count": 1,
+                "up_count": 1,
+                "status": "succeeded",
+                "error_code": None,
+            },
+        ),
+        (
+            "system.service_status",
+            {
+                "schema_version": "service_status_result_v1",
+                "service_key": "endpoint_agent",
+                "installed": True,
+                "state": "running",
+                "start_mode": "automatic",
+                "status": "succeeded",
+                "error_code": None,
+            },
+        ),
+    ],
+)
+async def test_adapter_preserves_typed_read_only_result_schemas(
+    capability: str,
+    safe_result: dict[str, object],
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    typed_result = {**safe_result, "collected_at": now}
+
+    async def read_operation(_request: web.Request) -> web.Response:
+        return _wire_response(
+            {
+                "schema_version": "endpoint_module_operation_v1",
+                "operation_id": OPERATION_ID,
+                "device_id": DEVICE_ID,
+                "module_key": "network.basic.check",
+                "version": "1.0.0",
+                "status": "succeeded",
+                "created_at": now,
+                "deadline_at": now,
+                "completed_at": now,
+                "steps": [
+                    {
+                        "sequence": 0,
+                        "capability": capability,
+                        "status": "succeeded",
+                        "error_code": None,
+                        "safe_result": typed_result,
+                    }
+                ],
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-operations/{operation_id}", read_operation)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_operation(
+            EndpointModuleOperationRef(external_id=OPERATION_ID)
+        )
+
+        assert isinstance(result, EndpointModuleOperationProjection)
+        assert result.safe_result[0].safe_result == typed_result
     finally:
         await server.close()
 
@@ -534,6 +649,57 @@ async def test_adapter_rejects_module_step_result_with_unknown_content() -> None
                             "status": "succeeded",
                             "collected_at": now,
                             "raw_output": "must not cross the boundary",
+                        },
+                    }
+                ],
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-operations/{operation_id}", read_operation)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_operation(
+            EndpointModuleOperationRef(external_id=OPERATION_ID)
+        )
+
+        assert isinstance(result, EndpointModuleInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_rejects_capability_result_schema_mismatch() -> None:
+    now = datetime.now(timezone.utc).isoformat()
+
+    async def read_operation(_request: web.Request) -> web.Response:
+        return _wire_response(
+            {
+                "schema_version": "endpoint_module_operation_v1",
+                "operation_id": OPERATION_ID,
+                "device_id": DEVICE_ID,
+                "module_key": "network.basic.check",
+                "version": "1.0.0",
+                "status": "succeeded",
+                "created_at": now,
+                "deadline_at": now,
+                "completed_at": now,
+                "steps": [
+                    {
+                        "sequence": 0,
+                        "capability": "dns.resolve",
+                        "status": "succeeded",
+                        "error_code": None,
+                        "safe_result": {
+                            "schema_version": "tcp_connect_result_v1",
+                            "target": "example.test",
+                            "resolved_ip": "192.0.2.10",
+                            "port": 443,
+                            "reachable": True,
+                            "latency_ms": 1.0,
+                            "status": "succeeded",
+                            "collected_at": now,
                         },
                     }
                 ],

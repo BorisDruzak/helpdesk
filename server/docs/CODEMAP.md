@@ -37,8 +37,9 @@
   agent, ToolService or diagnostic-provider work. `external` composes only
   `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
   configuration validates; it maps catalog/version and operation routes into
-  bounded safe projections (including the capability-specific ping summary)
-  and never retains recipes or dispatches an agent command.
+  bounded safe projections, preserves the exact typed child-result schema
+  discriminator for the six released capabilities, and never retains recipes
+  or dispatches an agent command.
   `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
   BFF routes under `/api/web/admin/endpoint-modules` (with `/api/admin`
   aliases) and `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
@@ -66,7 +67,14 @@
   created parent when its first detail projection is invalid), rejects stale or
   regressive terminal commits,
   is gated by `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`, and writes exactly
-  one safe `endpoint.module.recipe` evidence item after remote success.
+  one safe `endpoint.module.recipe` evidence item only after remote parent
+  success. `server/app/services/endpoint_module_result_projector.py` validates
+  the closed capability/schema registry and writes
+  `endpoint_module_result_snapshot_v2` with exact DNS, ping, TCP, route,
+  adapter or service summaries; it fails closed on unknown/mismatched schemas
+  and excludes adapter rows, MAC/SSID data and raw OS service details. Existing
+  unversioned v1 snapshots and historical evidence remain unchanged and
+  readable; no migration or destructive rewrite is performed.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates
