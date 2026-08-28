@@ -130,7 +130,7 @@ class _NetworkPingResult(_ResultModel):
     schema_version: Literal["network_ping_result_v1"]
     target: _NetworkTarget
     resolved_ip: Annotated[str, Field(strict=True, min_length=2, max_length=45)] | None
-    transmitted: Annotated[StrictInt, Field(ge=1, le=5)]
+    transmitted: Annotated[StrictInt, Field(ge=0, le=5)]
     received: Annotated[StrictInt, Field(ge=0, le=5)]
     packet_loss_percent: Annotated[float, Field(strict=True, ge=0, le=100)]
     min_ms: _Latency | None
@@ -184,10 +184,8 @@ class _TcpConnectResult(_ResultModel):
 
     @model_validator(mode="after")
     def validate_reachability(self) -> "_TcpConnectResult":
-        if self.reachable and (self.resolved_ip is None or self.latency_ms is None):
-            raise ValueError("reachable TCP result must contain resolved_ip and latency_ms")
-        if not self.reachable and self.latency_ms is not None:
-            raise ValueError("unreachable TCP result must not contain latency_ms")
+        if self.reachable != (self.latency_ms is not None):
+            raise ValueError("TCP reachability must match latency presence")
         return self
 
 
@@ -284,10 +282,10 @@ class _DnsSummary(_StrictModel):
 class _PingSummary(_StrictModel):
     target: _NetworkTarget
     resolved_ip: Annotated[str, Field(strict=True, min_length=2, max_length=45)] | None
-    packet_loss_percent: Annotated[float, Field(strict=True, ge=0, le=100)]
-    min_ms: _Latency | None
-    avg_ms: _Latency | None
-    max_ms: _Latency | None
+    loss: Annotated[float, Field(strict=True, ge=0, le=100)]
+    min: _Latency | None
+    avg: _Latency | None
+    max: _Latency | None
     reachable: StrictBool
 
 
@@ -296,7 +294,7 @@ class _TcpSummary(_StrictModel):
     resolved_ip: Annotated[str, Field(strict=True, min_length=2, max_length=45)] | None
     port: Annotated[StrictInt, Field(ge=1, le=65_535)]
     reachable: StrictBool
-    latency_ms: _Latency | None
+    latency: _Latency | None
 
 
 class _RouteSummary(_StrictModel):
@@ -310,7 +308,7 @@ class _RouteSummary(_StrictModel):
 
 
 class _AdapterSummary(_StrictModel):
-    adapter_count: Annotated[StrictInt, Field(ge=0, le=32)]
+    count: Annotated[StrictInt, Field(ge=0, le=32)]
     up_count: Annotated[StrictInt, Field(ge=0, le=32)]
     primary_name: _InterfaceName | None
     primary_ipv4: Annotated[str, Field(strict=True, min_length=2, max_length=45)] | None
@@ -419,10 +417,10 @@ def _project_network_ping(result: Mapping[str, object]) -> dict[str, object | No
     return {
         "target": value.target,
         "resolved_ip": value.resolved_ip,
-        "packet_loss_percent": value.packet_loss_percent,
-        "min_ms": value.min_ms,
-        "avg_ms": value.avg_ms,
-        "max_ms": value.max_ms,
+        "loss": value.packet_loss_percent,
+        "min": value.min_ms,
+        "avg": value.avg_ms,
+        "max": value.max_ms,
         "reachable": value.reachable,
     }
 
@@ -434,7 +432,7 @@ def _project_tcp_connect(result: Mapping[str, object]) -> dict[str, object | Non
         "resolved_ip": value.resolved_ip,
         "port": value.port,
         "reachable": value.reachable,
-        "latency_ms": value.latency_ms,
+        "latency": value.latency_ms,
     }
 
 
@@ -455,7 +453,7 @@ def _project_adapter_list(result: Mapping[str, object]) -> dict[str, object | No
     value = _validated(_AdapterListResult, result)
     primary = next((item for item in value.adapters if item.primary), None)
     return {
-        "adapter_count": value.adapter_count,
+        "count": value.adapter_count,
         "up_count": value.up_count,
         "primary_name": primary.name if primary is not None else None,
         "primary_ipv4": (

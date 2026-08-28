@@ -104,34 +104,6 @@ def _path_ref(value: str) -> str:
     return quote(value, safe="")
 
 
-_NETWORK_PING_SAFE_VALUE_KEYS = (
-    "target",
-    "resolved_ip",
-    "packet_loss_percent",
-    "min_ms",
-    "avg_ms",
-    "max_ms",
-    "reachable",
-)
-
-
-def _safe_step_values(capability: str, safe_result: Mapping[str, object] | None) -> dict[str, object]:
-    if capability in {"route.get", "adapter.list", "system.service_status"}:
-        return {}
-    scalar_values = {
-        key: value
-        for key, value in (safe_result or {}).items()
-        if key != "schema_version" and isinstance(value, (str, int, float, bool))
-    }
-    if capability != "network.ping":
-        return scalar_values
-    return {
-        key: scalar_values[key]
-        for key in _NETWORK_PING_SAFE_VALUE_KEYS
-        if key in scalar_values
-    }
-
-
 def _catalog_projection_from_wire(
     wire: ModuleCapabilityCatalogWireV1,
 ) -> EndpointModuleCapabilityCatalog:
@@ -458,18 +430,26 @@ class ExternalEndpointModuleHttpAdapter(EndpointModulePort):
             wire = ModuleOperationDetailWireV1.model_validate(payload)
             if str(wire.operation_id) != operation.external_id:
                 return EndpointModuleInvalidProjection()
+            projected_steps = (
+                wire.steps
+                if wire.status == "succeeded"
+                else tuple(
+                    step
+                    for step in wire.steps
+                    if step.safe_result is not None
+                    and step.status in {"succeeded", "failed", "canceled", "expired"}
+                )
+            )
             safe_steps = tuple(
                 EndpointModuleOperationStepProjection(
                     sequence=step.sequence,
                     capability=step.capability,
                     status=step.status,
                     error_code=step.error_code,
-                    safe_values=_safe_step_values(step.capability, step.safe_result),
                     safe_result=dict(step.safe_result),
                 )
-                for step in wire.steps
+                for step in projected_steps
                 if step.safe_result is not None
-                and step.status in {"succeeded", "failed", "canceled", "expired"}
             )
             return EndpointModuleOperationProjection(
                 operation=EndpointModuleOperationRef(external_id=str(wire.operation_id)),

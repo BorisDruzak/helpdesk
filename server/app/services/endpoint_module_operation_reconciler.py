@@ -138,6 +138,7 @@ class EndpointModuleOperationReconciler:
         )
 
     async def _reconcile(self, claim: EndpointModuleReconcileClaim) -> None:
+        created = claim.endpoint_operation_ref is None
         if claim.endpoint_operation_ref:
             outcome = await self._endpoint_port.read_operation(
                 EndpointModuleOperationRef(external_id=claim.endpoint_operation_ref)
@@ -151,6 +152,19 @@ class EndpointModuleOperationReconciler:
                 ), idempotency_key=claim.create_idempotency_key,
             )
         if isinstance(outcome, EndpointModuleOperationProjection):
+            if created and outcome.status == "succeeded" and not outcome.result_available:
+                # A replayed create can return only the terminal parent summary.
+                # Persist its durable identity first, then require the detail GET
+                # path to validate every child before terminalizing locally.
+                await self._store.commit(
+                    claim=claim,
+                    endpoint_operation_ref=outcome.operation.external_id,
+                    remote_status=claim.remote_status,
+                    safe_result_snapshot=None,
+                    error_code=None,
+                    next_attempt_at=self._aware_now(),
+                )
+                return
             try:
                 safe_result_snapshot = self._safe_snapshot(outcome)
             except EndpointModuleResultProjectionError:
@@ -195,8 +209,12 @@ class EndpointModuleOperationReconciler:
 
     @staticmethod
     def _safe_snapshot(outcome: EndpointModuleOperationProjection) -> dict[str, object] | None:
-        if outcome.status != "succeeded" or not outcome.result_available:
+        if outcome.status != "succeeded":
             return None
+        if not outcome.result_available:
+            raise EndpointModuleResultProjectionError(
+                "succeeded module operation requires complete child results"
+            )
         projected_steps: list[dict[str, object]] = []
         for step in outcome.safe_result:
             if (

@@ -195,3 +195,18 @@ class ModuleOperationStepWireV1(_WireModel):
 
 class ModuleOperationDetailWireV1(ModuleOperationWireV1):
     steps: tuple[ModuleOperationStepWireV1, ...] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_succeeded_step_results(self) -> "ModuleOperationDetailWireV1":
+        if self.status != "succeeded":
+            return self
+        for step in self.steps:
+            if (
+                step.status != "succeeded"
+                or step.error_code is not None
+                or step.safe_result is None
+                or step.safe_result.get("status") != "succeeded"
+                or step.safe_result.get("error_code") is not None
+            ):
+                raise ValueError("succeeded module operation requires every child result")
+        return self

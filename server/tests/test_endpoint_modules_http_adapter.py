@@ -419,7 +419,7 @@ async def test_adapter_reads_module_operation_detail_without_gateway_dispatch() 
 
 
 @pytest.mark.asyncio
-async def test_adapter_bounds_network_ping_safe_values_before_port_projection() -> None:
+async def test_adapter_preserves_typed_ping_result_without_compatibility_scalars() -> None:
     now = datetime.now(timezone.utc).isoformat()
 
     async def read_operation(_request: web.Request) -> web.Response:
@@ -469,15 +469,7 @@ async def test_adapter_bounds_network_ping_safe_values_before_port_projection() 
         )
 
         assert isinstance(result, EndpointModuleOperationProjection)
-        assert result.safe_result[0].safe_values == {
-            "target": "helpdesk-staging.sosnadmin.local",
-            "resolved_ip": "192.0.2.10",
-            "packet_loss_percent": 0.0,
-            "min_ms": 1.1,
-            "avg_ms": 2.2,
-            "max_ms": 3.3,
-            "reachable": True,
-        }
+        assert result.safe_result[0].safe_values == {}
         assert result.safe_result[0].safe_result == {
             "schema_version": "network_ping_result_v1",
             "target": "helpdesk-staging.sosnadmin.local",
@@ -497,9 +489,95 @@ async def test_adapter_bounds_network_ping_safe_values_before_port_projection() 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("invalid_step_status", ["succeeded", "running"])
+async def test_adapter_rejects_succeeded_parent_when_any_step_lacks_result(
+    invalid_step_status: str,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+
+    async def read_operation(_request: web.Request) -> web.Response:
+        return _wire_response(
+            {
+                "schema_version": "endpoint_module_operation_v1",
+                "operation_id": OPERATION_ID,
+                "device_id": DEVICE_ID,
+                "module_key": "network.basic.check",
+                "version": "1.0.0",
+                "status": "succeeded",
+                "created_at": now,
+                "deadline_at": now,
+                "completed_at": now,
+                "steps": [
+                    {
+                        "sequence": 0,
+                        "capability": "dns.resolve",
+                        "status": "succeeded",
+                        "error_code": None,
+                        "safe_result": {
+                            "schema_version": "dns_resolve_result_v1",
+                            "target": "example.test",
+                            "canonical_name": "example.test",
+                            "addresses": [{"family": "ipv4", "address": "192.0.2.10"}],
+                            "address_count": 1,
+                            "status": "succeeded",
+                            "error_code": None,
+                            "collected_at": now,
+                        },
+                    },
+                    {
+                        "sequence": 1,
+                        "capability": "network.ping",
+                        "status": invalid_step_status,
+                        "error_code": None,
+                        "safe_result": None,
+                    },
+                ],
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-operations/{operation_id}", read_operation)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_operation(
+            EndpointModuleOperationRef(external_id=OPERATION_ID)
+        )
+
+        assert isinstance(result, EndpointModuleInvalidProjection)
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("capability", "safe_result"),
     [
+        (
+            "dns.resolve",
+            {
+                "schema_version": "dns_resolve_result_v1",
+                "target": "example.test",
+                "canonical_name": "example.test",
+                "addresses": [{"family": "ipv4", "address": "192.0.2.10"}],
+                "address_count": 1,
+                "status": "succeeded",
+                "error_code": None,
+            },
+        ),
+        (
+            "tcp.connect",
+            {
+                "schema_version": "tcp_connect_result_v1",
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "port": 443,
+                "reachable": True,
+                "latency_ms": 4.25,
+                "status": "succeeded",
+                "error_code": None,
+            },
+        ),
         (
             "route.get",
             {
@@ -551,7 +629,7 @@ async def test_adapter_bounds_network_ping_safe_values_before_port_projection() 
         ),
     ],
 )
-async def test_adapter_preserves_typed_read_only_result_schemas(
+async def test_adapter_preserves_typed_results_without_compatibility_scalars(
     capability: str,
     safe_result: dict[str, object],
 ) -> None:
@@ -592,6 +670,7 @@ async def test_adapter_preserves_typed_read_only_result_schemas(
         )
 
         assert isinstance(result, EndpointModuleOperationProjection)
+        assert result.safe_result[0].safe_values == {}
         assert result.safe_result[0].safe_result == typed_result
     finally:
         await server.close()

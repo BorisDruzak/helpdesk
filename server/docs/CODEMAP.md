@@ -70,9 +70,12 @@
   one safe `endpoint.module.recipe` evidence item only after remote parent
   success. `server/app/services/endpoint_module_result_projector.py` validates
   the closed capability/schema registry and writes
-  `endpoint_module_result_snapshot_v2` with exact DNS, ping, TCP, route,
-  adapter or service summaries; it fails closed on unknown/mismatched schemas
-  and excludes adapter rows, MAC/SSID data and raw OS service details. Existing
+  `endpoint_module_result_snapshot_v2` with exact DNS, ping (`loss`, `min`,
+  `avg`, `max`), TCP (`latency`), route, adapter (`count`) or service summaries.
+  A replayed terminal create persists its remote reference and is reread through
+  the detail route before local success; incomplete succeeded child sets fail
+  closed. The projector rejects unknown/mismatched schemas and excludes adapter
+  rows, MAC/SSID data and raw OS service details. Existing
   unversioned v1 snapshots and historical evidence remain unchanged and
   readable; no migration or destructive rewrite is performed.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
