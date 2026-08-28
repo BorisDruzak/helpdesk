@@ -20,3 +20,9 @@
 ## Concern
 
 This is local typed-HTTP coverage only; provider, Gateway WSS, real-agent, staging-canary, and production acceptance remain separate gates.
+
+## Review fix round 1
+
+- Corrected the OpenAPI SHA-256 to the raw Git blob digest `800a09225daea050cd1cc34fdc224354d8b6769096daab115923c049b1ddd3c4`; the prior digest was checkout-line-ending-sensitive.
+- Verified the corrected lock against `C:\Users\admin-2\.codex\worktrees\98c9\endpoint` at `64f400741f023c272e38d7bfcf39430d05e3de2e` with `ENDPOINT_PLATFORM_REPO` set: `python scripts/validate_endpoint_contract_lock.py --lock integration/endpoint_contract.lock.json --provider-root $env:ENDPOINT_PLATFORM_REPO` passed.
+- Focused suite: `python -m pytest server/tests/test_endpoint_contract_lock.py server/tests/test_endpoint_contract_acceptance_workflow.py -q --tb=short` — `10 passed in 7.53s`; acceptance collection against the same provider found 2 tests.

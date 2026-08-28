@@ -9,7 +9,7 @@
 - **Current State:** HD1 is implemented locally against the immutable provider
   lock: `integration/endpoint_contract.lock.json` pins Endpoint
   `64f400741f023c272e38d7bfcf39430d05e3de2e` and OpenAPI digest
-  `5d27a1ebeb7abe670a4f7160a0075ad893f88cbbc94b52b2458107f13be6c735`.
+  `800a09225daea050cd1cc34fdc224354d8b6769096daab115923c049b1ddd3c4`.
   Succeeded operation-detail projections require the provider-authoritative
   `expected_step_count` and complete zero-based child sequences. The
   fixed `GET /api/v1/module-capabilities` adapter accepts only the six locked,
