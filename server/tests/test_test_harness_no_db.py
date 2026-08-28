@@ -623,7 +623,7 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 168
+    assert len(full_tables) == 169
     assert full_tables[:4] == (
         "observer_integrity_check_runs",
         "observer_integrity_events",
