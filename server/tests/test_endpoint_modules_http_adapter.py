@@ -253,6 +253,70 @@ async def test_adapter_reads_module_operation_detail_without_gateway_dispatch() 
 
 
 @pytest.mark.asyncio
+async def test_adapter_bounds_network_ping_safe_values_before_port_projection() -> None:
+    now = datetime.now(timezone.utc).isoformat()
+
+    async def read_operation(_request: web.Request) -> web.Response:
+        return _wire_response(
+            {
+                "schema_version": "endpoint_module_operation_v1",
+                "operation_id": OPERATION_ID,
+                "device_id": DEVICE_ID,
+                "module_key": "network.canary.check",
+                "version": "1.0.0",
+                "status": "succeeded",
+                "created_at": now,
+                "deadline_at": now,
+                "completed_at": now,
+                "steps": [
+                    {
+                        "sequence": 1,
+                        "capability": "network.ping",
+                        "status": "succeeded",
+                        "error_code": None,
+                        "safe_result": {
+                            "schema_version": "network_ping_result_v1",
+                            "target": "helpdesk-staging.sosnadmin.local",
+                            "resolved_ip": "192.0.2.10",
+                            "transmitted": 4,
+                            "received": 4,
+                            "packet_loss_percent": 0.0,
+                            "min_ms": 1.1,
+                            "avg_ms": 2.2,
+                            "max_ms": 3.3,
+                            "reachable": True,
+                            "status": "succeeded",
+                            "collected_at": now,
+                        },
+                    }
+                ],
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/api/v1/module-operations/{operation_id}", read_operation)
+    server = TestServer(app)
+    await server.start_server()
+    try:
+        result = await _adapter(server).read_operation(
+            EndpointModuleOperationRef(external_id=OPERATION_ID)
+        )
+
+        assert isinstance(result, EndpointModuleOperationProjection)
+        assert result.safe_result[0].safe_values == {
+            "target": "helpdesk-staging.sosnadmin.local",
+            "resolved_ip": "192.0.2.10",
+            "packet_loss_percent": 0.0,
+            "min_ms": 1.1,
+            "avg_ms": 2.2,
+            "max_ms": 3.3,
+            "reachable": True,
+        }
+    finally:
+        await server.close()
+
+
+@pytest.mark.asyncio
 async def test_adapter_preserves_remote_not_found_as_a_typed_module_outcome() -> None:
     async def read_module(_request: web.Request) -> web.Response:
         return web.json_response(

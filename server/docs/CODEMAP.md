@@ -37,7 +37,8 @@
   agent, ToolService or diagnostic-provider work. `external` composes only
   `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
   configuration validates; it maps catalog/version and operation routes into
-  safe projections and never retains recipes or dispatches an agent command.
+  bounded safe projections (including the capability-specific ping summary)
+  and never retains recipes or dispatches an agent command.
   `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
   BFF routes under `/api/web/admin/endpoint-modules` (with `/api/admin`
   aliases) and `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
