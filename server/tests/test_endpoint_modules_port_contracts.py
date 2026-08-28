@@ -10,6 +10,9 @@ import pytest
 from pydantic import ValidationError
 
 from domain_ports.endpoint_modules import (
+    EndpointModuleCapabilityCatalog,
+    EndpointModuleCapabilityDescriptor,
+    EndpointModuleCapabilityParameterDescriptor,
     EndpointModuleCatalogProjection,
     EndpointModuleDefinitionProjection,
     EndpointModuleOperationCreateRequest,
@@ -27,6 +30,123 @@ from endpoint_adapter.modules_http import ExternalEndpointModuleHttpAdapter
 
 
 pytestmark = pytest.mark.no_db
+
+
+def _catalog_descriptor(
+    capability: str,
+    *,
+    parameters: tuple[EndpointModuleCapabilityParameterDescriptor, ...] = (),
+) -> EndpointModuleCapabilityDescriptor:
+    return EndpointModuleCapabilityDescriptor(
+        capability=capability,
+        parameter_schema_version=f"{capability.replace('.', '_')}_parameters_v1",
+        result_schema_version=f"{capability.replace('.', '_')}_result_v1",
+        platforms=("linux_amd64", "windows_amd64"),
+        minimum_agent_version="3.2.29",
+        risk="safe_read",
+        consent_required=False,
+        feature_flag="endpoint_read_only_primitives_enabled",
+        policy="none",
+        parameters=parameters,
+    )
+
+
+def test_module_capability_catalog_is_closed_immutable_and_preserves_public_metadata() -> None:
+    catalog = EndpointModuleCapabilityCatalog(
+        schema_version="endpoint_module_capability_catalog_v1",
+        items=(
+            _catalog_descriptor("dns.resolve"),
+            _catalog_descriptor("network.ping"),
+            _catalog_descriptor("tcp.connect"),
+            _catalog_descriptor("route.get"),
+            _catalog_descriptor("adapter.list"),
+            _catalog_descriptor("system.service_status"),
+        ),
+    )
+
+    assert [item.capability for item in catalog.items] == [
+        "dns.resolve",
+        "network.ping",
+        "tcp.connect",
+        "route.get",
+        "adapter.list",
+        "system.service_status",
+    ]
+    assert catalog.items[0].risk == "safe_read"
+    with pytest.raises((FrozenInstanceError, TypeError, ValueError)):
+        catalog.items = ()  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        EndpointModuleCapabilityCatalog(
+            schema_version="endpoint_module_capability_catalog_v1",
+            items=catalog.items[:5],
+        )
+    with pytest.raises(ValidationError):
+        EndpointModuleCapabilityCatalog(
+            schema_version="endpoint_module_capability_catalog_v1",
+            items=(*catalog.items[:5], catalog.items[4]),
+        )
+    with pytest.raises(ValidationError):
+        _catalog_descriptor("network.trace")
+
+
+def test_module_capability_parameter_descriptor_is_fail_closed() -> None:
+    parameter = EndpointModuleCapabilityParameterDescriptor(
+        name="timeout_ms",
+        value_type="integer",
+        required=True,
+        allowed_sources=("input", "literal"),
+        enum_values=None,
+        minimum=100,
+        maximum=5_000,
+        default_literal=None,
+        secret=False,
+    )
+
+    assert parameter.minimum == 100
+    assert parameter.secret is False
+    with pytest.raises((FrozenInstanceError, TypeError, ValueError)):
+        parameter.minimum = 1  # type: ignore[misc]
+    with pytest.raises(ValidationError):
+        EndpointModuleCapabilityParameterDescriptor(
+            name="service_key",
+            value_type="enum",
+            required=True,
+            allowed_sources=("literal",),
+            enum_values=("endpoint_agent",),
+            minimum=1,
+            maximum=None,
+            default_literal=None,
+            secret=False,
+        )
+    with pytest.raises(ValidationError):
+        EndpointModuleCapabilityParameterDescriptor(
+            name="family",
+            value_type="enum",
+            required=True,
+            allowed_sources=("literal", "literal"),
+            enum_values=("any", "ipv4", "ipv6"),
+            minimum=None,
+            maximum=None,
+            default_literal="ipv5",
+            secret=False,
+        )
+    with pytest.raises(ValidationError):
+        EndpointModuleCapabilityParameterDescriptor(
+            name="target",
+            value_type="string",
+            required=True,
+            allowed_sources=("input",),
+            enum_values=None,
+            minimum=None,
+            maximum=None,
+            default_literal=None,
+            secret=True,
+        )
+
+
+@pytest.mark.asyncio
+async def test_unavailable_port_rejects_catalog() -> None:
+    assert (await UnavailableEndpointModulePort().list_recipe_capabilities()).status == "unavailable"
 
 
 def test_module_port_contracts_are_frozen_and_do_not_accept_recipe_or_command_content() -> None:

@@ -17,6 +17,7 @@ from .endpoint import (
 )
 from .endpoint_modules import (
     EndpointModuleAvailability,
+    EndpointModuleCapabilityCatalogOutcome,
     EndpointModuleValidationOutcome,
     EndpointModuleVersionCreateOutcome,
     EndpointModuleVersionCreateRequest,
@@ -248,6 +249,9 @@ class UnavailableEndpointModulePort:
 
     async def availability(self) -> EndpointModuleAvailability:
         return EndpointModuleAvailability(status="unavailable", code=self._unavailable.code)
+
+    async def list_recipe_capabilities(self) -> EndpointModuleCapabilityCatalogOutcome:
+        return self._unavailable
 
     async def list_modules(self) -> EndpointModuleListOutcome:
         return self._unavailable
