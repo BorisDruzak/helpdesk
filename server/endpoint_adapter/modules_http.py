@@ -95,6 +95,32 @@ def _path_ref(value: str) -> str:
     return quote(value, safe="")
 
 
+_NETWORK_PING_SAFE_VALUE_KEYS = (
+    "target",
+    "resolved_ip",
+    "packet_loss_percent",
+    "min_ms",
+    "avg_ms",
+    "max_ms",
+    "reachable",
+)
+
+
+def _safe_step_values(capability: str, safe_result: Mapping[str, object] | None) -> dict[str, object]:
+    scalar_values = {
+        key: value
+        for key, value in (safe_result or {}).items()
+        if key != "schema_version" and isinstance(value, (str, int, float, bool))
+    }
+    if capability != "network.ping":
+        return scalar_values
+    return {
+        key: scalar_values[key]
+        for key in _NETWORK_PING_SAFE_VALUE_KEYS
+        if key in scalar_values
+    }
+
+
 class ExternalEndpointModuleHttpAdapter(EndpointModulePort):
     """Typed HTTPS-only Module Platform client with no Helpdesk dependencies."""
 
@@ -372,11 +398,7 @@ class ExternalEndpointModuleHttpAdapter(EndpointModulePort):
                     capability=step.capability,
                     status=step.status,
                     error_code=step.error_code,
-                    safe_values={
-                        key: value
-                        for key, value in (step.safe_result or {}).items()
-                        if key != "schema_version" and isinstance(value, (str, int, float, bool))
-                    },
+                    safe_values=_safe_step_values(step.capability, step.safe_result),
                 )
                 for step in wire.steps
                 if step.safe_result is not None
