@@ -65,6 +65,38 @@ EndpointModuleCapabilityPolicy: TypeAlias = Literal["network_target_policy", "no
 EndpointModuleCapabilityParameterType: TypeAlias = Literal["string", "integer", "enum"]
 EndpointModuleCapabilityParameterSource: TypeAlias = Literal["input", "literal"]
 
+_RELEASED_MODULE_CAPABILITY_SIGNATURES = {
+    "dns.resolve": (
+        "dns_resolve_parameters_v1", "dns_resolve_result_v1", ("linux_amd64", "windows_amd64"), "3.2.27",
+        "safe_read", False, "endpoint_network_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("family", "enum", True, ("input", "literal"), ("any", "ipv4", "ipv6"), None, None, None, False)),
+    ),
+    "network.ping": (
+        "network_ping_parameters_v1", "network_ping_result_v1", ("linux_amd64", "windows_amd64"), "3.2.27",
+        "safe_read", False, "endpoint_network_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("count", "integer", True, ("input", "literal"), None, 1, 5, None, False), ("timeout_ms", "integer", True, ("input", "literal"), None, 100, 5000, None, False)),
+    ),
+    "tcp.connect": (
+        "tcp_connect_parameters_v1", "tcp_connect_result_v1", ("linux_amd64", "windows_amd64"), "3.2.27",
+        "safe_read", False, "endpoint_network_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("port", "integer", True, ("input", "literal"), None, 1, 65535, None, False), ("timeout_ms", "integer", True, ("input", "literal"), None, 100, 10000, None, False)),
+    ),
+    "route.get": (
+        "route_get_parameters_v1", "route_get_result_v1", ("linux_amd64", "windows_amd64"), "3.2.29",
+        "safe_read", False, "endpoint_read_only_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("port", "integer", True, ("input", "literal"), None, 1, 65535, None, False), ("family", "enum", True, ("input", "literal"), ("any", "ipv4", "ipv6"), None, None, None, False), ("timeout_ms", "integer", True, ("input", "literal"), None, 100, 5000, None, False)),
+    ),
+    "adapter.list": (
+        "adapter_list_parameters_v1", "adapter_list_result_v1", ("linux_amd64", "windows_amd64"), "3.2.29",
+        "safe_read", False, "endpoint_read_only_primitives_enabled", "none", (),
+    ),
+    "system.service_status": (
+        "service_status_parameters_v1", "service_status_result_v1", ("linux_amd64", "windows_amd64"), "3.2.29",
+        "safe_read", False, "endpoint_read_only_primitives_enabled", "none",
+        (("service_key", "enum", True, ("literal",), ("endpoint_agent", "endpoint_agent_updater"), None, None, None, False),),
+    ),
+}
+
 MAX_MODULE_OPERATION_STEPS = 8
 MAX_MODULE_SAFE_VALUES = 8
 
@@ -200,6 +232,32 @@ class EndpointModuleCapabilityDescriptor(_ImmutableEndpointModuleDTO):
             raise ValueError("capability platforms must be unique")
         if len({parameter.name for parameter in self.parameters}) != len(self.parameters):
             raise ValueError("capability parameter names must be unique")
+        signature = (
+            self.parameter_schema_version,
+            self.result_schema_version,
+            self.platforms,
+            self.minimum_agent_version,
+            self.risk,
+            self.consent_required,
+            self.feature_flag,
+            self.policy,
+            tuple(
+                (
+                    parameter.name,
+                    parameter.value_type,
+                    parameter.required,
+                    parameter.allowed_sources,
+                    parameter.enum_values,
+                    parameter.minimum,
+                    parameter.maximum,
+                    parameter.default_literal,
+                    parameter.secret,
+                )
+                for parameter in self.parameters
+            ),
+        )
+        if signature != _RELEASED_MODULE_CAPABILITY_SIGNATURES[self.capability]:
+            raise ValueError("capability metadata must match the released Endpoint catalog")
         return self
 
 

@@ -28,6 +28,7 @@ from .modules_wire import (
 try:
     from domain_ports.endpoint_modules import (
         EndpointModuleAvailability,
+        EndpointModuleCapabilityCatalogOutcome,
         EndpointModuleCatalogProjection,
         EndpointModuleDefinitionProjection,
         EndpointModuleInvalidProjection,
@@ -60,6 +61,7 @@ except ModuleNotFoundError as exc:
     from server.domain_ports.endpoint import OpaqueEndpointRef
     from server.domain_ports.endpoint_modules import (
         EndpointModuleAvailability,
+        EndpointModuleCapabilityCatalogOutcome,
         EndpointModuleCatalogProjection,
         EndpointModuleDefinitionProjection,
         EndpointModuleInvalidProjection,
@@ -149,6 +151,9 @@ class ExternalEndpointModuleHttpAdapter(EndpointModulePort):
         return parsed.scheme == "http" or bool(
             self._ca_file and Path(self._ca_file).is_file() and self._ssl_context()
         )
+
+    async def list_recipe_capabilities(self) -> EndpointModuleCapabilityCatalogOutcome:
+        return EndpointModuleUnavailable()
 
     def _parsed_base_url(self) -> Any | None:
         try:

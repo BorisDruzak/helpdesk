@@ -20,6 +20,7 @@ from domain_ports.endpoint_modules import (
     EndpointModuleRecipeInput,
     EndpointModuleRecipeStep,
     EndpointModuleInputBinding,
+    EndpointModuleUnavailable,
 )
 from endpoint_adapter.modules_http import ExternalEndpointModuleHttpAdapter
 
@@ -71,6 +72,20 @@ async def test_adapter_lists_catalog_from_the_single_typed_route_without_query_p
         assert received == {"path": "/api/v1/modules", "query": {}}
     finally:
         await server.close()
+
+
+@pytest.mark.asyncio
+async def test_adapter_fails_closed_for_recipe_capability_catalog_until_mapping_exists() -> None:
+    adapter = ExternalEndpointModuleHttpAdapter(
+        base_url="https://endpoint.example.test",
+        service_token="test-service-token",
+        ca_file="",
+        timeout_seconds=1,
+    )
+
+    result = await adapter.list_recipe_capabilities()
+
+    assert isinstance(result, EndpointModuleUnavailable)
 
 
 @pytest.mark.asyncio
