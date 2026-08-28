@@ -10,6 +10,7 @@ from app.services.endpoint_module_operation_reconciler import (
     EndpointModuleOperationReconciler,
 )
 from domain_ports.endpoint_modules import (
+    EndpointModuleInvalidProjection,
     EndpointModuleOperationProjection,
     EndpointModuleOperationRef,
     EndpointModuleOperationStepProjection,
@@ -120,6 +121,15 @@ class _FailedOperationPort:
         raise AssertionError("create path must not read before the remote ref exists")
 
 
+class _InvalidReadPort:
+    async def create_operation(self, _request, *, idempotency_key: str):
+        raise AssertionError("existing remote operation must be read, not created")
+
+    async def read_operation(self, operation):
+        assert operation.external_id == "remote-operation-1"
+        return EndpointModuleInvalidProjection()
+
+
 @pytest.mark.asyncio
 async def test_reconciler_creates_remote_typed_operation_outside_local_store() -> None:
     claim = EndpointModuleReconcileClaim(
@@ -214,3 +224,44 @@ async def test_reconciler_never_projects_failed_remote_step_values_as_safe_evide
     assert await reconciler.reconcile_once(limit=1) == 1
     assert store.commits[0]["remote_status"] == "failed"
     assert store.commits[0]["safe_result_snapshot"] is None
+
+
+@pytest.mark.asyncio
+async def test_reconciler_retries_one_invalid_read_after_remote_parent_exists() -> None:
+    now = datetime(2026, 8, 28, tzinfo=timezone.utc)
+    claim = EndpointModuleReconcileClaim(
+        operation_id="local-operation-1", endpoint_device_ref="endpoint-device-1",
+        endpoint_operation_ref="remote-operation-1", module_key="network.basic.check", module_version="1.0.0",
+        inputs={"target": "example.test"}, create_idempotency_key="remote-module-key", remote_status="queued",
+    )
+    store = _OneAtATimeStore([claim])
+    reconciler = EndpointModuleOperationReconciler(
+        endpoint_port=_InvalidReadPort(), store=store, mode="external", execution_mode="endpoint", owner="test-owner",
+        now=lambda: now,
+    )
+
+    assert await reconciler.reconcile_once(limit=1) == 1
+    assert store.commits[0]["endpoint_operation_ref"] == "remote-operation-1"
+    assert store.commits[0]["remote_status"] == "queued"
+    assert store.commits[0]["error_code"] == "endpoint_module_invalid_projection"
+    assert store.commits[0]["next_attempt_at"] == datetime(2026, 8, 28, 0, 0, 2, tzinfo=timezone.utc)
+
+
+@pytest.mark.asyncio
+async def test_reconciler_fails_closed_after_the_retry_for_an_invalid_read() -> None:
+    now = datetime(2026, 8, 28, tzinfo=timezone.utc)
+    claim = EndpointModuleReconcileClaim(
+        operation_id="local-operation-1", endpoint_device_ref="endpoint-device-1",
+        endpoint_operation_ref="remote-operation-1", module_key="network.basic.check", module_version="1.0.0",
+        inputs={"target": "example.test"}, create_idempotency_key="remote-module-key", remote_status="queued",
+        attempt_count=1,
+    )
+    store = _OneAtATimeStore([claim])
+    reconciler = EndpointModuleOperationReconciler(
+        endpoint_port=_InvalidReadPort(), store=store, mode="external", execution_mode="endpoint", owner="test-owner",
+        now=lambda: now,
+    )
+
+    assert await reconciler.reconcile_once(limit=1) == 1
+    assert store.commits[0]["remote_status"] == "failed"
+    assert store.commits[0]["next_attempt_at"] == now

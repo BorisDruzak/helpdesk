@@ -18,6 +18,7 @@ from domain_ports.endpoint_modules import (
     EndpointModuleOperationRef,
     EndpointModulePort,
     EndpointModuleRef,
+    EndpointModuleInvalidProjection,
     EndpointModuleUnavailable,
     EndpointModuleVersionRef,
 )
@@ -152,6 +153,15 @@ class EndpointModuleOperationReconciler:
             return
         error_code = getattr(outcome, "code", "endpoint_module_invalid_projection")
         retryable = isinstance(outcome, EndpointModuleUnavailable) and outcome.retryable
+        if (
+            isinstance(outcome, EndpointModuleInvalidProjection)
+            and claim.endpoint_operation_ref is not None
+            and claim.attempt_count == 0
+        ):
+            # A parent that Endpoint already accepted can be observed during its
+            # terminal projection boundary. Preserve the durable reference for
+            # one delayed reread; a repeated invalid payload still fails closed.
+            retryable = True
         await self._store.commit(
             claim=claim,
             endpoint_operation_ref=claim.endpoint_operation_ref,

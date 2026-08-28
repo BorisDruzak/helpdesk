@@ -56,7 +56,9 @@
   identity, safe input/snapshot fields and removes the temporary staging
   table; no cross-repository FK exists. `EndpointModuleOperationReconciler`
   claims one durable link immediately before each typed-port call, records
-  bounded secret-free retries, rejects stale or regressive terminal commits,
+  bounded secret-free retries (including one delayed reread of an already
+  created parent when its first detail projection is invalid), rejects stale or
+  regressive terminal commits,
   is gated by `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`, and writes exactly
   one safe `endpoint.module.recipe` evidence item after remote success.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
