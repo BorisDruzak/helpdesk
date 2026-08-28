@@ -413,6 +413,7 @@ from web_api.admin_handlers import (
     handle_web_admin_set_module_preferred_version,
 )
 from web_api.endpoint_module_handlers import (
+    handle_endpoint_module_capabilities,
     handle_endpoint_module_create_version,
     handle_endpoint_module_deprecate,
     handle_endpoint_module_publish,
@@ -1028,6 +1029,7 @@ def setup_routes(app: web.Application) -> None:
         # Endpoint Recipe modules are a separate typed BFF surface. Legacy
         # Python-module Workbench routes above remain unchanged.
         web.get('/api/web/admin/endpoint-modules', handle_endpoint_modules_list),
+        web.get('/api/web/admin/endpoint-modules/capabilities', handle_endpoint_module_capabilities),
         web.post('/api/web/admin/endpoint-modules', handle_endpoint_module_create_version),
         web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/validate', handle_endpoint_module_validate),
         web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/publish', handle_endpoint_module_publish),
