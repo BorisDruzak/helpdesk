@@ -39,10 +39,12 @@
 - **Current State:** Endpoint `main` is now `59b1e7e` after a conflict-free
   merge of exactly 15 canary commits; full CI passed `1970 passed, 36 skipped`.
   Helpdesk lease/retry/monotonicity hardening and its focused suite (`30
-  passed`) are ready, and the exact provider lock now pins that Endpoint SHA.
-  Local real-provider acceptance is fail-closed by its stale Windows
-  `example.test` DB-tunnel setting and moves to isolated staging rather than
-  using a fallback.
+  passed`) are ready. At the time of this historical canary record, its
+  provider lock pinned that Endpoint SHA; it is not the current shared
+  `integration/endpoint_contract.lock.json` value, which is recorded in the
+  2026-08-28 HD1 state above. Local real-provider acceptance is fail-closed by
+  its stale Windows `example.test` DB-tunnel setting and moves to isolated
+  staging rather than using a fallback.
 - **Next Steps:** merge Helpdesk hardening into its default mainline, deploy
   both verified SHAs to staging, then run the one ticket recipe and close the
   rollback, credential, backup, and acceptance-document gates.
