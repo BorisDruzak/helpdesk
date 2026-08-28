@@ -1,6 +1,6 @@
 # Helpdesk Read-only Capability Batch v2 Design
 
-**Status:** approved sequence; implementation waits for the Endpoint v2 contract merge SHA.
+**Status:** approved and implemented; the Endpoint v2 contract merge SHA and OpenAPI digest are pinned.
 
 ## Ownership and flow
 
