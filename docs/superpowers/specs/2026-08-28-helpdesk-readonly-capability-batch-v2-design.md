@@ -1,6 +1,6 @@
 # Helpdesk Read-only Capability Batch v2 Design
 
-**Status:** approved and implemented; the Endpoint v2 contract merge SHA and OpenAPI digest are pinned.
+**Status:** approved and implemented; the Endpoint v2 contract merge SHA and OpenAPI digest are pinned. Cross-repository acceptance and Windows/ALT staging canaries remain pending release gates.
 
 ## Ownership and flow
 
