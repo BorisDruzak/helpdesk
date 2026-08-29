@@ -181,3 +181,16 @@ def test_audit_accepts_new_web_api_cleanup_profiles(tmp_path, capsys):
     assert "Invalid profiles" not in output
     assert "web_support=1" in output
     assert "registration=1" in output
+
+
+def test_current_server_suite_has_no_unclassified_db_cleanup_files():
+    audit = importlib.import_module("scripts.audit_db_cleanup_profiles")
+    workspace = Path(__file__).resolve().parents[1]
+
+    missing = [
+        record.file.name
+        for record in audit.audit_tests(workspace / "server" / "tests")
+        if record.needs_profile
+    ]
+
+    assert missing == []

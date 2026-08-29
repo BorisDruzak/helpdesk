@@ -28,6 +28,9 @@ from registry_adapter import LocalRegistryAdapter
 from app.db.models import RegistryPerson
 
 
+pytestmark = pytest.mark.db_cleanup("registry_access")
+
+
 class _Result:
     def __init__(self, *, scalar: object | None = None, rows: list[object] | None = None) -> None:
         self._scalar = scalar
