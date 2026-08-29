@@ -1226,7 +1226,7 @@ def test_flaky_summary_allows_registry_match_without_clean_green(tmp_path):
                         "node_id": "webapp/tests/requester-workspace.spec.ts::*",
                         "owner": "webapp",
                         "reason": "documented fixture retry while live gate remains separate",
-                        "expires": "2026-07-31",
+                        "expires": "2099-07-31",
                     }
                 ],
             }
