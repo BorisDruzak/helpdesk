@@ -40,8 +40,9 @@ The full local CI runner executes these same layers. It is an important final re
 python scripts/run_ci_suite.py
 ```
 
-The runner is sequential by default. For server DB/WS runtime measurements or an explicit CI-speed check, use bounded
-layer-level parallelism instead of `pytest-xdist`:
+The runner is sequential by default. The temporary-workspace full-CI wrapper always uses bounded layer-level
+parallelism with two workers. For a direct server DB/WS runtime measurement or an explicit CI-speed check, use the
+same bounded mode instead of `pytest-xdist`:
 
 ```powershell
 python scripts/run_ci_suite.py --parallel --max-workers 2
@@ -136,7 +137,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 
 `scripts/run_ci_suite.py` uses:
 
-- 45 minutes per server pytest layer.
+- 2 hours per server pytest layer. This leaves enough time for the measured isolated staging PostgreSQL profiles while retaining the separate idle timeout and fixture-timing budget gates.
 - The configured idle timeout for all CI steps, including server and pc_agent pytest layers.
 - `-vv --durations=80` for each server layer and `pc_agent_pytest`.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
