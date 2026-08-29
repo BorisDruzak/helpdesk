@@ -136,6 +136,22 @@ def test_inventory_audit_accepts_owned_server_db_and_agent_ws_files(tmp_path):
     assert records["test_migration_schema_contract.py"].issues == ()
 
 
+def test_inventory_audit_allows_the_explicit_manual_cross_repo_wss_suites():
+    audit = importlib.import_module("scripts.audit_test_inventory")
+    workspace = Path(__file__).resolve().parents[1]
+    acceptance_dir = workspace / "server" / "tests" / "acceptance"
+
+    report = audit.audit_paths(
+        [
+            acceptance_dir / "test_endpoint_module_platform_v1.py",
+            acceptance_dir / "test_endpoint_operations_v1_acceptance.py",
+        ],
+        workspace=workspace,
+    )
+
+    assert report.issues == ()
+
+
 def test_inventory_audit_uses_workspace_suite_catalog_for_server_db_ownership(tmp_path):
     audit = importlib.import_module("scripts.audit_test_inventory")
     tests_dir = tmp_path / "server" / "tests"
