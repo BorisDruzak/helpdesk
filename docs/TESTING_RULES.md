@@ -137,7 +137,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 
 `scripts/run_ci_suite.py` uses:
 
-- 2 hours per server pytest layer. This leaves enough time for the measured isolated staging PostgreSQL profiles while retaining the separate idle timeout and fixture-timing budget gates.
+- 4 hours per server pytest layer. Measured isolated staging PostgreSQL profiles can exceed the former two-hour limit; the separate idle timeout and fixture-timing budget gates remain active.
 - The configured idle timeout for all CI steps, including server and pc_agent pytest layers.
 - `-vv --durations=80` for each server layer and `pc_agent_pytest`.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
