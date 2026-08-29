@@ -38,8 +38,6 @@ if not _endpoint_root_value:
         allow_module_level=True,
     )
 
-import uvicorn
-
 from app.db.models import (
     DeviceOutbox,
     DiagnosticEvidence,
@@ -75,6 +73,8 @@ try:
     )
 except ValueError as error:
     raise RuntimeError("cross-repository Endpoint provider lock validation failed") from error
+
+import uvicorn
 if str(_ENDPOINT_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENDPOINT_ROOT))
 
