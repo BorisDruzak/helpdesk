@@ -8,6 +8,12 @@ import pytest
 from scripts import run_ci_suite
 
 
+def test_server_pytest_timeout_allows_the_measured_full_db_layer_budget() -> None:
+    args = run_ci_suite.parse_args([])
+
+    assert args.server_pytest_timeout == 2 * 60 * 60
+
+
 def test_run_and_capture_times_out_and_writes_partial_log(tmp_path):
     log_path = tmp_path / "ci-step.log"
     started = time.monotonic()
@@ -459,18 +465,18 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert timeout_by_step["webapp_unit_tests"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
     assert timeout_by_step["webapp_fixture_e2e"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
-    assert timeout_by_step["test_inventory_audit"] == 45 * 60
-    assert timeout_by_step["db_cleanup_profile_audit"] == 45 * 60
-    assert timeout_by_step["fixture_builder_audit"] == 45 * 60
-    assert timeout_by_step["active_risk_audit"] == 45 * 60
-    assert timeout_by_step["observer_contamination_audit"] == 45 * 60
-    assert timeout_by_step["branch_coverage_audit"] == 45 * 60
-    assert timeout_by_step["mutation_smoke"] == 45 * 60
-    assert timeout_by_step["scripts_pytest_no_db"] == 45 * 60
-    assert timeout_by_step["server_pytest_no_db"] == 45 * 60
-    assert timeout_by_step["migration_schema"] == 45 * 60
-    assert timeout_by_step["server_pytest_db_web_api"] == 45 * 60
-    assert timeout_by_step["server_pytest_agent_ws"] == 45 * 60
+    assert timeout_by_step["test_inventory_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["db_cleanup_profile_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["fixture_builder_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["active_risk_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["observer_contamination_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["branch_coverage_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["mutation_smoke"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["migration_schema"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
 
     summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["evidence_layers"]["webapp_fixture_e2e"] == {
