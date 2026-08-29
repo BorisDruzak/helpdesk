@@ -9,13 +9,19 @@ def _write_test(tests_dir: Path, name: str, content: str) -> Path:
     return path
 
 
+def test_audit_rejects_retired_knowledge_cleanup_profile():
+    audit = importlib.import_module("scripts.audit_db_cleanup_profiles")
+
+    assert "knowledge" not in audit.KNOWN_PROFILES
+
+
 def test_audit_tests_detects_profiles_no_db_agent_ws_and_missing(tmp_path):
     audit = importlib.import_module("scripts.audit_db_cleanup_profiles")
     tests_dir = tmp_path / "server" / "tests"
     _write_test(
         tests_dir,
-        "test_knowledge_api.py",
-        'import pytest\n\npytestmark = pytest.mark.db_cleanup("knowledge")\n',
+        "test_web_api.py",
+        'import pytest\n\npytestmark = pytest.mark.db_cleanup("full")\n',
     )
     _write_test(
         tests_dir,
@@ -27,8 +33,8 @@ def test_audit_tests_detects_profiles_no_db_agent_ws_and_missing(tmp_path):
 
     records = {record.file.name: record for record in audit.audit_tests(tests_dir)}
 
-    assert records["test_knowledge_api.py"].explicit_profile == "knowledge"
-    assert records["test_knowledge_api.py"].inferred_layer == "knowledge"
+    assert records["test_web_api.py"].explicit_profile == "full"
+    assert records["test_web_api.py"].inferred_layer == "web_api"
     assert records["test_policy_math.py"].no_db is True
     assert records["test_policy_math.py"].needs_profile is False
     assert records["test_agent_ws_flow.py"].likely_agent_ws is True
@@ -106,17 +112,17 @@ def test_pytestmark_list_preserves_explicit_profile_and_infers_registry_layer(tm
 def test_audit_file_accepts_utf8_bom(tmp_path):
     audit = importlib.import_module("scripts.audit_db_cleanup_profiles")
     tests_dir = tmp_path / "server" / "tests"
-    path = tests_dir / "test_support_knowledge_provider.py"
+    path = tests_dir / "test_ticket_api.py"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "\ufeffimport pytest\n\npytestmark = pytest.mark.db_cleanup(\"knowledge\")\n",
+        "\ufeffimport pytest\n\npytestmark = pytest.mark.db_cleanup(\"tickets\")\n",
         encoding="utf-8",
     )
 
     (record,) = audit.audit_tests(tests_dir)
 
     assert record.parse_error is None
-    assert record.explicit_profile == "knowledge"
+    assert record.explicit_profile == "tickets"
 
 
 def test_audit_treats_all_function_level_no_db_tests_as_no_db(tmp_path):
