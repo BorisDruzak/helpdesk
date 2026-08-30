@@ -2325,7 +2325,7 @@ async def test_client_light(test_app_light):
 
 
 @pytest_asyncio.fixture
-async def test_agent(tmp_path, test_client):
+async def test_agent(tmp_path, test_client, test_engine):
     """Запускает WSAgent in-process с временным SQLite."""
     setup_timing_started = _test_timing_start()
     setup_timing_recorded = False
@@ -2466,22 +2466,41 @@ async def test_agent(tmp_path, test_client):
             agent_task = asyncio.create_task(agent.run())
 
             from loguru import logger
+            from app.repos.registry_repo import RegistryRepo
 
             state = test_client.app["state"]
+            registration_session_maker = async_sessionmaker(
+                test_engine,
+                expire_on_commit=False,
+                autocommit=False,
+                autoflush=False,
+            )
             max_wait = 10
             waited = 0
             while waited < max_wait:
+                registration_persisted = False
+                async with registration_session_maker() as registration_session:
+                    registration_persisted = (
+                        await RegistryRepo(registration_session).get_asset_by_device_id(agent.device_id)
+                    ) is not None
                 if (
                     agent._agent_ws
                     and not agent._agent_ws.closed
                     and state.get_agent(agent.device_id)
+                    and registration_persisted
                 ):
-                    logger.info(f"Agent connected and registered with test server after {waited:.1f}s")
+                    logger.info(
+                        "Agent connected and registration persisted with test server "
+                        f"after {waited:.1f}s"
+                    )
                     break
                 await asyncio.sleep(0.5)
                 waited += 0.5
             else:
-                logger.warning(f"Agent did not connect within {max_wait}s, continuing test")
+                raise TimeoutError(
+                    f"Agent {agent.device_id} did not complete persisted registration "
+                    f"within {max_wait}s"
+                )
 
             _record_test_timing("test_agent", "setup", setup_timing_started)
             setup_timing_recorded = True
