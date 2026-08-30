@@ -8,10 +8,10 @@ import pytest
 from scripts import run_ci_suite
 
 
-def test_server_pytest_timeout_allows_the_measured_isolated_db_layer_budget() -> None:
+def test_server_pytest_timeout_allows_the_measured_parallel_db_layer_budget() -> None:
     args = run_ci_suite.parse_args([])
 
-    assert args.server_pytest_timeout == 4 * 60 * 60
+    assert args.server_pytest_timeout == 8 * 60 * 60
 
 
 def test_run_and_capture_times_out_and_writes_partial_log(tmp_path):
