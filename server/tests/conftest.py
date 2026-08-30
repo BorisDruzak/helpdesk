@@ -2403,6 +2403,8 @@ async def test_agent(tmp_path, test_client):
             config.server.api_url = test_api_url
             return config
 
+        test_machine_id = str(uuid.uuid4())
+
         with patch.dict(
             os.environ,
             {
@@ -2410,6 +2412,10 @@ async def test_agent(tmp_path, test_client):
                 "PC_AGENT_API_URL": test_api_url,
                 "PC_AGENT_UI_PORT": "0",
                 "PC_AGENT_DATA_DIR": str(tmp_path),
+                # The full CI runs agent-backed layers in separate processes
+                # against one test database.  Never reuse this Windows host's
+                # machine identity across those synthetic agents.
+                "PC_AGENT_MACHINE_ID": test_machine_id,
             },
         ), patch.object(ConfigLoader, "load", patched_load):
             loader = ConfigLoader()
