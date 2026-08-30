@@ -2461,11 +2461,16 @@ async def test_agent(tmp_path, test_client):
 
             from loguru import logger
 
+            state = test_client.app["state"]
             max_wait = 10
             waited = 0
             while waited < max_wait:
-                if agent._agent_ws and not agent._agent_ws.closed:
-                    logger.info(f"Agent connected to test server after {waited:.1f}s")
+                if (
+                    agent._agent_ws
+                    and not agent._agent_ws.closed
+                    and state.get_agent(agent.device_id)
+                ):
+                    logger.info(f"Agent connected and registered with test server after {waited:.1f}s")
                     break
                 await asyncio.sleep(0.5)
                 waited += 0.5
