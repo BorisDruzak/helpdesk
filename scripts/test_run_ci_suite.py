@@ -465,15 +465,15 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert timeout_by_step["webapp_unit_tests"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
     assert timeout_by_step["webapp_fixture_e2e"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
-    assert timeout_by_step["test_inventory_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["db_cleanup_profile_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["fixture_builder_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["active_risk_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["observer_contamination_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["branch_coverage_audit"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["mutation_smoke"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
-    assert timeout_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["test_inventory_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["db_cleanup_profile_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["fixture_builder_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["active_risk_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["observer_contamination_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["branch_coverage_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["mutation_smoke"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
     assert timeout_by_step["migration_schema"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
     assert timeout_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
     assert timeout_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS

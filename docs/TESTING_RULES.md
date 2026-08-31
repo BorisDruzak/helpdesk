@@ -137,7 +137,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 
 `scripts/run_ci_suite.py` uses:
 
-- 8 hours per server pytest layer. Measured parallel isolated staging PostgreSQL profiles can exceed the former four-hour limit; the separate idle timeout and fixture-timing budget gates remain active.
+- 8 hours per DB-backed or agent-WS server pytest layer. Measured parallel isolated staging PostgreSQL profiles can exceed the former four-hour limit; the separate idle timeout and fixture-timing budget gates remain active. Audits, mutation smoke, script pytest and the no-DB server layer retain their 45-minute fail-fast ceiling.
 - The configured idle timeout for all CI steps, including server and pc_agent pytest layers.
 - `-vv --durations=80` for each server layer and `pc_agent_pytest`.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.

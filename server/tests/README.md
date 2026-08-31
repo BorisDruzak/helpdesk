@@ -31,7 +31,7 @@ The `agent_ws` marker is applied automatically to tests that request the `test_a
 
 CI sets `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for every server pytest layer. When a test runs longer than that value, the harness prints all Python thread stacks into the pytest log so the next timeout shows the stuck test and call stacks instead of only the final process timeout.
 
-The default server pytest step timeout is eight hours per layer. If a layer approaches that value, use `--durations=80` to split or optimize the slow tests before increasing the timeout again.
+The default DB-backed or agent-WS server pytest step timeout is eight hours per layer. The no-DB server layer retains a 45-minute fail-fast ceiling. If a DB-backed layer approaches eight hours, use `--durations=80` to split or optimize it before increasing the timeout again.
 
 ## Markers
 
