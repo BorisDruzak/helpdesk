@@ -327,28 +327,22 @@
     },
     {
       "key": "knowledge_platform",
-      "owner": "knowledge",
+      "owner": "external_knowledge_port",
       "priority": "critical",
       "critical_invariants": [
-        "acl_before_retrieval",
-        "versioned_publish",
-        "binding_integrity",
-        "analytics_redaction"
+        "no_local_lookup_or_fallback",
+        "external_port_fail_closed",
+        "historical_projection_redaction",
+        "external_contract_documented"
       ],
       "automated_layers": [
         {
-          "kind": "service_api_db",
+          "kind": "boundary_contract",
           "test_refs": [
-            "server/tests/test_knowledge_access_service.py",
-            "server/tests/test_knowledge_visibility.py",
-            "server/tests/test_knowledge_ask.py"
-          ]
-        },
-        {
-          "kind": "fixture_ui",
-          "test_refs": [
-            "webapp/src/features/knowledge/support-workspace-page.test.tsx",
-            "webapp/src/pages/kb/search-page.test.tsx"
+            "server/tests/test_knowledge_routes_removed.py",
+            "server/tests/test_support_knowledge_boundary.py",
+            "server/tests/test_ticket_knowledge_boundary.py",
+            "server/tests/test_segmentation_docs.py"
           ]
         }
       ],
