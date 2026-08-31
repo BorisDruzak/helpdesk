@@ -1,5 +1,29 @@
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
+## 2026-08-28 Endpoint Read-only Capability Batch v2 — Helpdesk
+
+- **Goal:** consume the Endpoint-owned versioned capability catalog through a fail-closed typed port, project only bounded capability-specific evidence, replace the Endpoint Recipe Workbench allowlist with the catalog, and freeze fully replaced legacy network-module rollouts only after real ALT and Windows acceptance.
+- **Scope:** Helpdesk PR-HD1 (`codex/module-capability-projections-v2`), PR-HD2 (`codex/module-workbench-capability-catalog-v2`) and PR-HD3 (`codex/legacy-module-freeze-v1`). Endpoint Platform is read-only in this session; production is excluded.
+- **Constraints:** Browser calls only Helpdesk BFF. No shared database/FK, DeviceOutbox, ToolService, Helpdesk WebSocket, legacy fallback, dual dispatch, raw service name, raw result, code, command, path, URL or credential may cross this boundary.
+- **Decisions:** Closure PR #23 merged as `4fc93772`; all three Helpdesk branches start at that SHA. HD1/HD2 wait for Endpoint PR-EP1/EP2 contract merge SHA and an updated immutable lock. HD3 implementation/freeze waits for successful ALT and Windows canaries.
+- **Current State:** HD1 is implemented locally against the immutable provider
+  lock: `integration/endpoint_contract.lock.json` pins Endpoint
+  `dcd2d5287fa53b7ae61d582344d231d7384599c9` and OpenAPI digest
+  `dce611029f974a0442d0f04b7d4f54fa805b1e73f9831edf0f1f8c955a4a74b5`.
+  Succeeded operation-detail projections require the provider-authoritative
+  `expected_step_count` and complete zero-based child sequences. The
+  fixed `GET /api/v1/module-capabilities` adapter accepts only the six locked,
+  fail-closed DTO descriptors and the authenticated typed BFF is web-only
+  (there is deliberately no `/api/admin/endpoint-modules/capabilities` alias).
+  Its closed result projector writes `endpoint_module_result_snapshot_v2` while
+  retaining existing v1 snapshots and historical evidence unchanged.
+- **Next Steps:** execute HD2 against the typed BFF, followed by real
+  acceptance, canaries and HD3. Do not enable endpoint execution before those
+  separate gates.
+- **Handoff:** preserve the fixed catalog route and provider lock; do not add a
+  generic proxy, browser-to-Endpoint call, catalog mock, hardcoded capability
+  authority, ToolService/DeviceOutbox/legacy-WebSocket fallback or dual dispatch.
+
 ## 2026-08-27 Module Platform Canary Closure v1
 
 - **Goal:** close the staging-only Module Platform canary: merge the 15 Endpoint
@@ -18,10 +42,12 @@
 - **Current State:** Endpoint `main` is now `59b1e7e` after a conflict-free
   merge of exactly 15 canary commits; full CI passed `1970 passed, 36 skipped`.
   Helpdesk lease/retry/monotonicity hardening and its focused suite (`30
-  passed`) are ready, and the exact provider lock now pins that Endpoint SHA.
-  Local real-provider acceptance is fail-closed by its stale Windows
-  `example.test` DB-tunnel setting and moves to isolated staging rather than
-  using a fallback.
+  passed`) are ready. At the time of this historical canary record, its
+  provider lock pinned that Endpoint SHA; it is not the current shared
+  `integration/endpoint_contract.lock.json` value, which is recorded in the
+  2026-08-28 HD1 state above. Local real-provider acceptance is fail-closed by
+  its stale Windows `example.test` DB-tunnel setting and moves to isolated
+  staging rather than using a fallback.
 - **Next Steps:** merge Helpdesk hardening into its default mainline, deploy
   both verified SHAs to staging, then run the one ticket recipe and close the
   rollback, credential, backup, and acceptance-document gates.

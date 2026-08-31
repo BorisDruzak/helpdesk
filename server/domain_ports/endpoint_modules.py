@@ -48,9 +48,61 @@ ModuleSafeScalar: TypeAlias = Annotated[
     str | int | float | bool,
     Field(union_mode="left_to_right"),
 ]
+EndpointModuleCapability: TypeAlias = Literal[
+    "dns.resolve",
+    "network.ping",
+    "tcp.connect",
+    "route.get",
+    "adapter.list",
+    "system.service_status",
+]
+EndpointModuleCapabilityPlatform: TypeAlias = Literal["linux_amd64", "windows_amd64"]
+EndpointModuleCapabilityFeatureFlag: TypeAlias = Literal[
+    "endpoint_network_primitives_enabled",
+    "endpoint_read_only_primitives_enabled",
+]
+EndpointModuleCapabilityPolicy: TypeAlias = Literal["network_target_policy", "none"]
+EndpointModuleCapabilityParameterType: TypeAlias = Literal["string", "integer", "enum"]
+EndpointModuleCapabilityParameterSource: TypeAlias = Literal["input", "literal"]
+
+_RELEASED_MODULE_CAPABILITY_SIGNATURES = {
+    "dns.resolve": (
+        "dns_resolve_parameters_v1", "dns_resolve_result_v1", ("linux_amd64", "windows_amd64"), "3.2.27",
+        "safe_read", False, "endpoint_network_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("family", "enum", True, ("input", "literal"), ("any", "ipv4", "ipv6"), None, None, None, False)),
+    ),
+    "network.ping": (
+        "network_ping_parameters_v1", "network_ping_result_v1", ("linux_amd64", "windows_amd64"), "3.2.27",
+        "safe_read", False, "endpoint_network_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("count", "integer", True, ("input", "literal"), None, 1, 5, None, False), ("timeout_ms", "integer", True, ("input", "literal"), None, 100, 5000, None, False)),
+    ),
+    "tcp.connect": (
+        "tcp_connect_parameters_v1", "tcp_connect_result_v1", ("linux_amd64", "windows_amd64"), "3.2.27",
+        "safe_read", False, "endpoint_network_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("port", "integer", True, ("input", "literal"), None, 1, 65535, None, False), ("timeout_ms", "integer", True, ("input", "literal"), None, 100, 10000, None, False)),
+    ),
+    "route.get": (
+        "route_get_parameters_v1", "route_get_result_v1", ("linux_amd64", "windows_amd64"), "3.2.29",
+        "safe_read", False, "endpoint_read_only_primitives_enabled", "network_target_policy",
+        (("target", "string", True, ("input", "literal"), None, None, None, None, False), ("port", "integer", True, ("input", "literal"), None, 1, 65535, None, False), ("family", "enum", True, ("input", "literal"), ("any", "ipv4", "ipv6"), None, None, None, False), ("timeout_ms", "integer", True, ("input", "literal"), None, 100, 5000, None, False)),
+    ),
+    "adapter.list": (
+        "adapter_list_parameters_v1", "adapter_list_result_v1", ("linux_amd64", "windows_amd64"), "3.2.29",
+        "safe_read", False, "endpoint_read_only_primitives_enabled", "none", (),
+    ),
+    "system.service_status": (
+        "service_status_parameters_v1", "service_status_result_v1", ("linux_amd64", "windows_amd64"), "3.2.29",
+        "safe_read", False, "endpoint_read_only_primitives_enabled", "none",
+        (("service_key", "enum", True, ("literal",), ("endpoint_agent", "endpoint_agent_updater"), None, None, None, False),),
+    ),
+}
 
 MAX_MODULE_OPERATION_STEPS = 8
 MAX_MODULE_SAFE_VALUES = 8
+ExpectedModuleOperationStepCount: TypeAlias = Annotated[
+    int,
+    Field(strict=True, ge=1, le=MAX_MODULE_OPERATION_STEPS),
+]
 
 
 class _ImmutableEndpointModuleDTO(BaseModel):
@@ -114,6 +166,124 @@ class EndpointModuleCatalogProjection(_ImmutableEndpointModuleDTO):
     module: EndpointModuleRef
     display_name: ModuleDisplayName
     source: Literal["external_authoritative"] = "external_authoritative"
+
+
+class EndpointModuleCapabilityParameterDescriptor(_ImmutableEndpointModuleDTO):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    name: ModuleInputName
+    value_type: EndpointModuleCapabilityParameterType
+    required: bool
+    allowed_sources: tuple[EndpointModuleCapabilityParameterSource, ...] = Field(
+        min_length=1,
+        max_length=2,
+    )
+    enum_values: tuple[str, ...] | None = Field(max_length=8)
+    minimum: int | None
+    maximum: int | None
+    default_literal: str | int | None
+    secret: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_descriptor_shape(self) -> "EndpointModuleCapabilityParameterDescriptor":
+        if len(set(self.allowed_sources)) != len(self.allowed_sources):
+            raise ValueError("parameter allowed_sources must not contain duplicates")
+        if self.value_type == "enum":
+            if not self.enum_values or len(set(self.enum_values)) != len(self.enum_values):
+                raise ValueError("enum parameter must declare unique enum_values")
+            if self.minimum is not None or self.maximum is not None:
+                raise ValueError("enum parameter must not declare numeric bounds")
+        elif self.enum_values is not None:
+            raise ValueError("only enum parameters may declare enum_values")
+        if self.value_type != "integer" and (
+            self.minimum is not None or self.maximum is not None
+        ):
+            raise ValueError("only integer parameters may declare numeric bounds")
+        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            raise ValueError("parameter minimum must not exceed maximum")
+        if self.default_literal is not None:
+            expected = int if self.value_type == "integer" else str
+            if type(self.default_literal) is not expected:
+                raise ValueError("parameter default_literal type is invalid")
+            if self.value_type == "enum" and self.default_literal not in self.enum_values:
+                raise ValueError("enum default_literal must be declared")
+        return self
+
+
+class EndpointModuleCapabilityDescriptor(_ImmutableEndpointModuleDTO):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    capability: EndpointModuleCapability
+    parameter_schema_version: Annotated[
+        str,
+        StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=128),
+    ]
+    result_schema_version: Annotated[
+        str,
+        StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=128),
+    ]
+    platforms: tuple[EndpointModuleCapabilityPlatform, ...] = Field(min_length=1, max_length=2)
+    minimum_agent_version: ModuleVersion
+    risk: Literal["safe_read"]
+    consent_required: Literal[False]
+    feature_flag: EndpointModuleCapabilityFeatureFlag
+    policy: EndpointModuleCapabilityPolicy
+    parameters: tuple[EndpointModuleCapabilityParameterDescriptor, ...] = Field(max_length=4)
+
+    @model_validator(mode="after")
+    def validate_descriptor_names(self) -> "EndpointModuleCapabilityDescriptor":
+        if len(set(self.platforms)) != len(self.platforms):
+            raise ValueError("capability platforms must be unique")
+        if len({parameter.name for parameter in self.parameters}) != len(self.parameters):
+            raise ValueError("capability parameter names must be unique")
+        signature = (
+            self.parameter_schema_version,
+            self.result_schema_version,
+            self.platforms,
+            self.minimum_agent_version,
+            self.risk,
+            self.consent_required,
+            self.feature_flag,
+            self.policy,
+            tuple(
+                (
+                    parameter.name,
+                    parameter.value_type,
+                    parameter.required,
+                    parameter.allowed_sources,
+                    parameter.enum_values,
+                    parameter.minimum,
+                    parameter.maximum,
+                    parameter.default_literal,
+                    parameter.secret,
+                )
+                for parameter in self.parameters
+            ),
+        )
+        if signature != _RELEASED_MODULE_CAPABILITY_SIGNATURES[self.capability]:
+            raise ValueError("capability metadata must match the released Endpoint catalog")
+        return self
+
+
+class EndpointModuleCapabilityCatalog(_ImmutableEndpointModuleDTO):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["endpoint_module_capability_catalog_v1"]
+    items: tuple[EndpointModuleCapabilityDescriptor, ...] = Field(min_length=6, max_length=6)
+
+    @model_validator(mode="after")
+    def validate_fixed_capabilities(self) -> "EndpointModuleCapabilityCatalog":
+        expected = {
+            "dns.resolve",
+            "network.ping",
+            "tcp.connect",
+            "route.get",
+            "adapter.list",
+            "system.service_status",
+        }
+        if {item.capability for item in self.items} != expected:
+            raise ValueError("catalog must contain each fixed module capability exactly once")
+        return self
 
 
 class EndpointModuleVersionProjection(_ImmutableEndpointModuleDTO):
@@ -203,10 +373,20 @@ class EndpointModuleOperationCreateRequest(_ImmutableEndpointModuleDTO):
 
 class EndpointModuleOperationStepProjection(_ImmutableEndpointModuleDTO):
     sequence: int = Field(ge=0, le=7)
-    capability: Literal["dns.resolve", "network.ping", "tcp.connect"]
+    capability: EndpointModuleCapability
     status: Literal["succeeded", "failed", "canceled", "expired"]
     error_code: SafeEndpointCode | None
     safe_values: dict[SafeEndpointCode, ModuleSafeScalar] = Field(default_factory=dict, max_length=8)
+    safe_result: dict[str, object] | None = Field(default=None, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_safe_result_identity(self) -> "EndpointModuleOperationStepProjection":
+        if self.safe_result is None:
+            return self
+        schema_version = self.safe_result.get("schema_version")
+        if not isinstance(schema_version, str) or not schema_version:
+            raise ValueError("module step safe result requires a schema discriminator")
+        return self
 
 
 class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):
@@ -227,6 +407,7 @@ class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):
     deadline_at: AwareDatetime | None
     completed_at: AwareDatetime | None
     result_available: bool = False
+    expected_step_count: ExpectedModuleOperationStepCount | None = None
     safe_result: tuple[EndpointModuleOperationStepProjection, ...] = ()
     warning_codes: tuple[SafeEndpointCode, ...] = ()
 
@@ -240,6 +421,16 @@ class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):
             raise ValueError("module result_available must match safe result presence")
         if self.safe_result and self.status not in {"succeeded", "failed", "canceled", "expired"}:
             raise ValueError("module safe result requires terminal operation status")
+        if self.status == "succeeded" and self.result_available:
+            if self.expected_step_count is None:
+                raise ValueError(
+                    "succeeded module operation results require provider expected_step_count"
+                )
+            sequences = [step.sequence for step in self.safe_result]
+            if sequences != list(range(self.expected_step_count)):
+                raise ValueError(
+                    "succeeded module operation steps must match expected provider sequence"
+                )
         if self.deadline_at is not None and self.deadline_at < self.created_at:
             raise ValueError("module operation deadline cannot precede creation")
         if self.completed_at is not None and self.completed_at < self.created_at:
@@ -248,6 +439,7 @@ class EndpointModuleOperationProjection(_ImmutableEndpointModuleDTO):
 
 
 EndpointModuleListOutcome: TypeAlias = tuple[EndpointModuleCatalogProjection, ...] | EndpointModuleFailureOutcome
+EndpointModuleCapabilityCatalogOutcome: TypeAlias = EndpointModuleCapabilityCatalog | EndpointModuleFailureOutcome
 EndpointModuleReadOutcome: TypeAlias = EndpointModuleDefinitionProjection | EndpointModuleFailureOutcome
 EndpointModuleVersionReadOutcome: TypeAlias = EndpointModuleVersionProjection | EndpointModuleFailureOutcome
 EndpointModuleOperationCreateOutcome: TypeAlias = EndpointModuleOperationProjection | EndpointModuleFailureOutcome
@@ -260,6 +452,8 @@ EndpointModuleVersionStateOutcome: TypeAlias = EndpointModuleVersionStateProject
 @runtime_checkable
 class EndpointModulePort(Protocol):
     async def availability(self) -> EndpointModuleAvailability: ...
+
+    async def list_recipe_capabilities(self) -> EndpointModuleCapabilityCatalogOutcome: ...
 
     async def list_modules(self) -> EndpointModuleListOutcome: ...
 

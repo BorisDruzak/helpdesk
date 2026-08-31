@@ -87,7 +87,14 @@ class ModuleOperationWireV1(_WireModel):
 
 class ModuleOperationStepWireV1(_WireModel):
     sequence: int = Field(ge=0, le=7)
-    capability: Literal["dns.resolve", "network.ping", "tcp.connect"]
+    capability: Literal[
+        "dns.resolve",
+        "network.ping",
+        "tcp.connect",
+        "route.get",
+        "adapter.list",
+        "system.service_status",
+    ]
     status: Literal[
         "queued",
         "delivered",
@@ -120,9 +127,31 @@ class ModuleOperationStepWireV1(_WireModel):
                 "schema_version", "target", "resolved_ip", "port", "reachable", "latency_ms",
                 "status", "error_code", "collected_at",
             },
+            "route_get_result_v1": {
+                "schema_version", "target", "resolved_ip", "family", "port", "source_ip",
+                "interface_name", "strategy", "status", "error_code", "collected_at",
+            },
+            "adapter_list_result_v1": {
+                "schema_version", "adapters", "adapter_count", "up_count", "status",
+                "error_code", "collected_at",
+            },
+            "service_status_result_v1": {
+                "schema_version", "service_key", "installed", "state", "start_mode", "status",
+                "error_code", "collected_at",
+            },
         }
         if not isinstance(schema_version, str) or schema_version not in allowed_fields:
             raise ValueError("unknown module step result schema")
+        expected_schema = {
+            "dns.resolve": "dns_resolve_result_v1",
+            "network.ping": "network_ping_result_v1",
+            "tcp.connect": "tcp_connect_result_v1",
+            "route.get": "route_get_result_v1",
+            "adapter.list": "adapter_list_result_v1",
+            "system.service_status": "service_status_result_v1",
+        }[self.capability]
+        if schema_version != expected_schema:
+            raise ValueError("module capability and result schema must match")
         if not set(self.safe_result).issubset(allowed_fields[schema_version]):
             raise ValueError("unknown module step result fields")
         for key, value in self.safe_result.items():
@@ -136,10 +165,53 @@ class ModuleOperationStepWireV1(_WireModel):
                     for item in value
                 ):
                     raise ValueError("invalid module DNS address")
+            elif key == "adapters":
+                adapter_fields = {
+                    "name", "state", "kind", "primary", "ipv4_addresses", "ipv6_addresses",
+                    "mtu", "speed_mbps",
+                }
+                if not isinstance(value, list) or len(value) > 32:
+                    raise ValueError("invalid module adapter rows")
+                for item in value:
+                    if not isinstance(item, Mapping) or set(item) != adapter_fields:
+                        raise ValueError("invalid module adapter row")
+                    for address_key in ("ipv4_addresses", "ipv6_addresses"):
+                        addresses = item[address_key]
+                        if (
+                            not isinstance(addresses, list)
+                            or len(addresses) > 4
+                            or any(not isinstance(address, str) for address in addresses)
+                        ):
+                            raise ValueError("invalid module adapter addresses")
+                    if any(
+                        not isinstance(item[field], (str, int, bool))
+                        for field in adapter_fields - {"ipv4_addresses", "ipv6_addresses"}
+                    ):
+                        raise ValueError("invalid module adapter value")
             elif value is not None and not isinstance(value, (str, int, float, bool)):
                 raise ValueError("invalid module safe result value")
         return self
 
 
 class ModuleOperationDetailWireV1(ModuleOperationWireV1):
+    expected_step_count: int = Field(strict=True, ge=1, le=8)
     steps: tuple[ModuleOperationStepWireV1, ...] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_succeeded_step_results(self) -> "ModuleOperationDetailWireV1":
+        if self.status != "succeeded":
+            return self
+        if len(self.steps) != self.expected_step_count or [
+            step.sequence for step in self.steps
+        ] != list(range(self.expected_step_count)):
+            raise ValueError("succeeded module operation steps must match expected provider sequence")
+        for step in self.steps:
+            if (
+                step.status != "succeeded"
+                or step.error_code is not None
+                or step.safe_result is None
+                or step.safe_result.get("status") != "succeeded"
+                or step.safe_result.get("error_code") is not None
+            ):
+                raise ValueError("succeeded module operation requires every child result")
+        return self

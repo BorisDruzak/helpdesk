@@ -1,7 +1,7 @@
 {
   "schema_version": "endpoint_contract_lock_v1",
   "provider_repository": "BorisDruzak/endpoint_platform",
-  "provider_commit": "59b1e7ecd9a9aceb806ae6d93a2b8f0c563413a2",
+  "provider_commit": "dcd2d5287fa53b7ae61d582344d231d7384599c9",
   "openapi_path": "contracts/openapi/endpoint-platform-v1.yaml",
-  "openapi_sha256": "5f75687d10aac7718327a529cdf4fdd069e6dcda6a7ad5be3d98f20bf4a0ee66"
+  "openapi_sha256": "dce611029f974a0442d0f04b7d4f54fa805b1e73f9831edf0f1f8c955a4a74b5"
 }

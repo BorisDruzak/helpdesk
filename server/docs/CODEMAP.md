@@ -36,14 +36,29 @@
   `ENDPOINT_MODULE_PORT_MODE=unavailable` adapter performs no HTTP, database,
   agent, ToolService or diagnostic-provider work. `external` composes only
   `server/endpoint_adapter/modules_http.py` after the existing Endpoint TLS
-  configuration validates; it maps catalog/version and operation routes into
-  bounded safe projections (including the capability-specific ping summary)
-  and never retains recipes or dispatches an agent command.
+  configuration validates. `integration/endpoint_contract.lock.json` pins the
+  provider repository, exact commit and OpenAPI digest; the catalog transport
+  is only the fixed `GET /api/v1/module-capabilities` request and rejects a
+  missing or mismatched `X-Correlation-ID`. It maps catalog/version and
+  operation routes into bounded safe projections. The external Helpdesk
+  service credential needs Endpoint scope `modules.read` for catalog reads in
+  addition to its module-operation scopes; absence fails closed.
+  The port preserves the exact typed child-result schema discriminator for the
+  six released capabilities, never retains recipes, and never runs a
+  browser-to-Endpoint proxy or agent dispatch.
   `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
-  BFF routes under `/api/web/admin/endpoint-modules` (with `/api/admin`
-  aliases) and `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
-  Catalog rows add only the Endpoint-projected latest version/state when that
-  safe read succeeds; they never expose a recipe source. The legacy Admin
+  BFF routes under `/api/web/admin/endpoint-modules`; the list/lifecycle routes
+  retain `/api/admin` aliases, while the catalog does not. The ticket operation
+  route is `/api/web/support/tickets/{ticket_id}/endpoint-modules/.../run`.
+  `GET /api/web/admin/endpoint-modules/capabilities` is intentionally web-only
+  (no `/api/admin` alias): it permits the module read/audit roles, calls only
+  `EndpointModulePort.list_recipe_capabilities()`, returns the typed
+  `{data: catalog.model_dump(mode="json")}` authoring projection, and fails
+  closed with the typed unavailable/invalid-projection mapping. Catalog rows
+  add only the Endpoint-projected latest version/state when that safe read
+  succeeds; they never expose a recipe source, proxy a browser request to
+  Endpoint, or construct ToolService, DeviceOutbox or legacy-WebSocket
+  dispatch. The legacy Admin
   shell's `Endpoint recipes` subtab (`admin.html`,
   `endpoint_module_workbench.js`) calls only that BFF to create declarative
   allowlisted DNS/ping/TCP recipes and apply lifecycle actions; the existing
@@ -61,7 +76,20 @@
   created parent when its first detail projection is invalid), rejects stale or
   regressive terminal commits,
   is gated by `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`, and writes exactly
-  one safe `endpoint.module.recipe` evidence item after remote success.
+  one safe `endpoint.module.recipe` evidence item only after remote parent
+  success. `server/app/services/endpoint_module_result_projector.py` validates
+  the closed capability/schema registry and writes
+  `endpoint_module_result_snapshot_v2` with exact DNS, ping (`loss`, `min`,
+  `avg`, `max`), TCP (`latency`), route, adapter (`count`) or service summaries.
+  A replayed terminal create persists its remote reference and is reread through
+  the detail route before local success; succeeded detail projections require
+  the provider-authoritative `expected_step_count` and exact zero-based child
+  sequences, so incomplete, duplicate, gapped or reordered child sets fail
+  closed. The private immutable projector registry limits capabilities; the
+  projector rejects unknown/mismatched schemas and excludes adapter
+  rows, MAC/SSID data and raw OS service details. Existing
+  unversioned v1 snapshots and historical evidence remain unchanged and
+  readable; no migration or destructive rewrite is performed.
 - `server/domain_ports/unavailable.py` contains side-effect-free unavailable
   adapters with no DB or HTTP work.
   `server/domain_ports/container.py::DomainPortContainer.from_config()` creates

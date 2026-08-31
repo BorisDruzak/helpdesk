@@ -9,11 +9,19 @@ from app.services.endpoint_module_operation_reconciler import (
     EndpointModuleReconcileClaim,
     EndpointModuleOperationReconciler,
 )
+from app.services import endpoint_module_result_projector
+from app.services.endpoint_module_result_projector import (
+    EndpointModuleResultProjectionError,
+    EndpointModuleResultSnapshotV2,
+    project_module_result,
+)
 from domain_ports.endpoint_modules import (
     EndpointModuleInvalidProjection,
+    EndpointModuleRef,
     EndpointModuleOperationProjection,
     EndpointModuleOperationRef,
     EndpointModuleOperationStepProjection,
+    EndpointModuleVersionRef,
 )
 
 
@@ -130,6 +138,130 @@ class _InvalidReadPort:
         return EndpointModuleInvalidProjection()
 
 
+class _SucceededOperationPort:
+    def __init__(self, *, capability: str, safe_result: dict[str, object]) -> None:
+        self._capability = capability
+        self._safe_result = safe_result
+
+    async def create_operation(self, request, *, idempotency_key: str):
+        now = datetime(2026, 8, 28, tzinfo=timezone.utc)
+        assert idempotency_key == "remote-module-key"
+        step = EndpointModuleOperationStepProjection(
+            sequence=0,
+            capability=self._capability,
+            status="succeeded",
+            error_code=None,
+            safe_values={},
+            safe_result=self._safe_result,
+        )
+        return EndpointModuleOperationProjection(
+            operation=EndpointModuleOperationRef(external_id="remote-operation-1"),
+            module_version=request.module_version,
+            device_external_id=request.device_external_id,
+            status="succeeded",
+            created_at=now,
+            deadline_at=now,
+            completed_at=now,
+            result_available=True,
+            expected_step_count=1,
+            safe_result=(step,),
+        )
+
+    async def read_operation(self, _operation):
+        raise AssertionError("create path must not read before the remote ref exists")
+
+
+class _TerminalReplayPort:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def create_operation(self, request, *, idempotency_key: str):
+        now = datetime(2026, 8, 29, tzinfo=timezone.utc)
+        assert idempotency_key == "remote-module-key"
+        self.calls.append("create")
+        return EndpointModuleOperationProjection(
+            operation=EndpointModuleOperationRef(external_id="remote-operation-1"),
+            module_version=request.module_version,
+            device_external_id=request.device_external_id,
+            status="succeeded",
+            created_at=now,
+            deadline_at=now,
+            completed_at=now,
+        )
+
+    async def read_operation(self, operation):
+        now = datetime(2026, 8, 29, tzinfo=timezone.utc)
+        assert operation.external_id == "remote-operation-1"
+        self.calls.append("read")
+        return EndpointModuleOperationProjection(
+            operation=operation,
+            module_version=EndpointModuleVersionRef(
+                module=EndpointModuleRef(module_key="network.basic.check"),
+                version="1.0.0",
+            ),
+            device_external_id="endpoint-device-1",
+            status="succeeded",
+            created_at=now,
+            deadline_at=now,
+            completed_at=now,
+            result_available=True,
+            expected_step_count=1,
+            safe_result=(
+                EndpointModuleOperationStepProjection(
+                    sequence=0,
+                    capability="dns.resolve",
+                    status="succeeded",
+                    error_code=None,
+                    safe_result={
+                        "schema_version": "dns_resolve_result_v1",
+                        "target": "example.test",
+                        "canonical_name": "example.test",
+                        "addresses": [{"family": "ipv4", "address": "192.0.2.10"}],
+                        "address_count": 1,
+                        "status": "succeeded",
+                        "error_code": None,
+                        "collected_at": "2026-08-29T00:00:00Z",
+                    },
+                ),
+            ),
+        )
+
+
+class _ReplayStore:
+    def __init__(self, claim: EndpointModuleReconcileClaim) -> None:
+        self._claims = [claim]
+        self.commits: list[dict[str, object]] = []
+
+    async def claim_ready(self, *, limit: int, **_kwargs: object) -> list[EndpointModuleReconcileClaim]:
+        assert limit == 1
+        if not self._claims:
+            return []
+        return [self._claims.pop(0)]
+
+    async def commit(self, **values: object) -> bool:
+        self.commits.append(values)
+        if len(self.commits) == 1:
+            claim = values["claim"]
+            assert isinstance(claim, EndpointModuleReconcileClaim)
+            endpoint_operation_ref = values["endpoint_operation_ref"]
+            remote_status = values["remote_status"]
+            assert isinstance(endpoint_operation_ref, str)
+            assert isinstance(remote_status, str)
+            self._claims.append(
+                EndpointModuleReconcileClaim(
+                    operation_id=claim.operation_id,
+                    endpoint_device_ref=claim.endpoint_device_ref,
+                    endpoint_operation_ref=endpoint_operation_ref,
+                    module_key=claim.module_key,
+                    module_version=claim.module_version,
+                    inputs=claim.inputs,
+                    create_idempotency_key=claim.create_idempotency_key,
+                    remote_status=remote_status,
+                )
+            )
+        return True
+
+
 @pytest.mark.asyncio
 async def test_reconciler_creates_remote_typed_operation_outside_local_store() -> None:
     claim = EndpointModuleReconcileClaim(
@@ -147,6 +279,37 @@ async def test_reconciler_creates_remote_typed_operation_outside_local_store() -
     assert store.committed is not None
     assert store.committed["endpoint_operation_ref"] == "remote-operation-1"
     assert store.committed["remote_status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_terminal_create_replay_persists_ref_then_reads_detail_before_success() -> None:
+    claim = EndpointModuleReconcileClaim(
+        operation_id="local-operation-1",
+        endpoint_device_ref="endpoint-device-1",
+        endpoint_operation_ref=None,
+        module_key="network.basic.check",
+        module_version="1.0.0",
+        inputs={"target": "example.test"},
+        create_idempotency_key="remote-module-key",
+    )
+    store = _ReplayStore(claim)
+    port = _TerminalReplayPort()
+    reconciler = EndpointModuleOperationReconciler(
+        endpoint_port=port,
+        store=store,
+        mode="external",
+        execution_mode="endpoint",
+        owner="test-owner",
+        now=lambda: datetime(2026, 8, 29, tzinfo=timezone.utc),
+    )
+
+    assert await reconciler.reconcile_once(limit=2) == 2
+    assert port.calls == ["create", "read"]
+    assert store.commits[0]["endpoint_operation_ref"] == "remote-operation-1"
+    assert store.commits[0]["remote_status"] == "create_pending"
+    assert store.commits[0]["safe_result_snapshot"] is None
+    assert store.commits[1]["remote_status"] == "succeeded"
+    assert store.commits[1]["safe_result_snapshot"] is not None
 
 
 @pytest.mark.asyncio
@@ -265,3 +428,448 @@ async def test_reconciler_fails_closed_after_the_retry_for_an_invalid_read() -> 
     assert await reconciler.reconcile_once(limit=1) == 1
     assert store.commits[0]["remote_status"] == "failed"
     assert store.commits[0]["next_attempt_at"] == now
+
+
+def test_projector_rejects_unknown_capability_or_schema() -> None:
+    with pytest.raises(EndpointModuleResultProjectionError):
+        project_module_result("unknown", {"schema_version": "unknown_v1"})
+
+    with pytest.raises(EndpointModuleResultProjectionError):
+        project_module_result("dns.resolve", {"schema_version": "unknown_v1"})
+
+
+def test_result_projector_registry_is_private_immutable_and_has_exact_capabilities() -> None:
+    registry = endpoint_module_result_projector._PROJECTORS
+
+    assert set(registry) == {
+        "dns.resolve",
+        "network.ping",
+        "tcp.connect",
+        "route.get",
+        "adapter.list",
+        "system.service_status",
+    }
+    assert "PROJECTORS" not in endpoint_module_result_projector.__all__
+    with pytest.raises(TypeError):
+        registry["dns.resolve"] = lambda _result: {}  # type: ignore[index]
+
+
+def test_projector_rejects_capability_schema_mismatch() -> None:
+    with pytest.raises(EndpointModuleResultProjectionError):
+        project_module_result(
+            "dns.resolve",
+            {
+                "schema_version": "network_ping_result_v1",
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "transmitted": 1,
+                "received": 1,
+                "packet_loss_percent": 0.0,
+                "min_ms": 1.0,
+                "avg_ms": 1.0,
+                "max_ms": 1.0,
+                "reachable": True,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    ("capability", "result", "expected"),
+    [
+        (
+            "dns.resolve",
+            {
+                "schema_version": "dns_resolve_result_v1",
+                "target": "example.test",
+                "canonical_name": "edge.example.test",
+                "addresses": [
+                    {"family": "ipv6", "address": "2001:db8::10"},
+                    {"family": "ipv4", "address": "192.0.2.10"},
+                ],
+                "address_count": 2,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+            {
+                "target": "example.test",
+                "canonical_name": "edge.example.test",
+                "address_count": 2,
+                "first_ipv4": "192.0.2.10",
+                "first_ipv6": "2001:db8::10",
+            },
+        ),
+        (
+            "network.ping",
+            {
+                "schema_version": "network_ping_result_v1",
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "transmitted": 2,
+                "received": 2,
+                "packet_loss_percent": 0.0,
+                "min_ms": 1.0,
+                "avg_ms": 1.5,
+                "max_ms": 2.0,
+                "reachable": True,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+            {
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "loss": 0.0,
+                "min": 1.0,
+                "avg": 1.5,
+                "max": 2.0,
+                "reachable": True,
+            },
+        ),
+        (
+            "tcp.connect",
+            {
+                "schema_version": "tcp_connect_result_v1",
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "port": 443,
+                "reachable": True,
+                "latency_ms": 4.25,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+            {
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "port": 443,
+                "reachable": True,
+                "latency": 4.25,
+            },
+        ),
+        (
+            "route.get",
+            {
+                "schema_version": "route_get_result_v1",
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "family": "ipv4",
+                "port": 443,
+                "source_ip": "192.0.2.20",
+                "interface_name": "Ethernet 1",
+                "strategy": "udp_socket_inference",
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+            {
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "family": "ipv4",
+                "port": 443,
+                "source_ip": "192.0.2.20",
+                "interface_name": "Ethernet 1",
+                "strategy": "udp_socket_inference",
+            },
+        ),
+        (
+            "adapter.list",
+            {
+                "schema_version": "adapter_list_result_v1",
+                "adapters": [
+                    {
+                        "name": "Wi-Fi",
+                        "state": "up",
+                        "kind": "wifi",
+                        "primary": True,
+                        "ipv4_addresses": ["192.0.2.20"],
+                        "ipv6_addresses": ["2001:db8::20"],
+                        "mtu": 1500,
+                        "speed_mbps": 866,
+                    },
+                    {
+                        "name": "Corp Tunnel",
+                        "state": "down",
+                        "kind": "tunnel",
+                        "primary": False,
+                        "ipv4_addresses": [],
+                        "ipv6_addresses": [],
+                        "mtu": 1400,
+                        "speed_mbps": 0,
+                    },
+                ],
+                "adapter_count": 2,
+                "up_count": 1,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+            {
+                "count": 2,
+                "up_count": 1,
+                "primary_name": "Wi-Fi",
+                "primary_ipv4": "192.0.2.20",
+                "has_ipv6": True,
+                "has_wifi": True,
+                "has_tunnel": True,
+            },
+        ),
+        (
+            "system.service_status",
+            {
+                "schema_version": "service_status_result_v1",
+                "service_key": "endpoint_agent",
+                "installed": True,
+                "state": "running",
+                "start_mode": "automatic",
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+            {
+                "service_key": "endpoint_agent",
+                "installed": True,
+                "state": "running",
+                "start_mode": "automatic",
+            },
+        ),
+    ],
+)
+def test_projector_emits_only_capability_specific_safe_summary(
+    capability: str,
+    result: dict[str, object],
+    expected: dict[str, object],
+) -> None:
+    assert project_module_result(capability, result) == expected
+
+
+def test_projector_accepts_provider_valid_zero_transmission_ping() -> None:
+    assert project_module_result(
+        "network.ping",
+        {
+            "schema_version": "network_ping_result_v1",
+            "target": "example.test",
+            "resolved_ip": None,
+            "transmitted": 0,
+            "received": 0,
+            "packet_loss_percent": 0.0,
+            "min_ms": None,
+            "avg_ms": None,
+            "max_ms": None,
+            "reachable": False,
+            "status": "succeeded",
+            "error_code": None,
+            "collected_at": "2026-08-29T00:00:00Z",
+        },
+    ) == {
+        "target": "example.test",
+        "resolved_ip": None,
+        "loss": 0.0,
+        "min": None,
+        "avg": None,
+        "max": None,
+        "reachable": False,
+    }
+
+
+def test_projector_accepts_provider_valid_reachable_tcp_without_resolved_ip() -> None:
+    assert project_module_result(
+        "tcp.connect",
+        {
+            "schema_version": "tcp_connect_result_v1",
+            "target": "example.test",
+            "resolved_ip": None,
+            "port": 443,
+            "reachable": True,
+            "latency_ms": 4.25,
+            "status": "succeeded",
+            "error_code": None,
+            "collected_at": "2026-08-29T00:00:00Z",
+        },
+    ) == {
+        "target": "example.test",
+        "resolved_ip": None,
+        "port": 443,
+        "reachable": True,
+        "latency": 4.25,
+    }
+
+
+def test_projector_rejects_adapter_privacy_fields() -> None:
+    with pytest.raises(EndpointModuleResultProjectionError):
+        project_module_result(
+            "adapter.list",
+            {
+                "schema_version": "adapter_list_result_v1",
+                "adapters": [
+                    {
+                        "name": "Wi-Fi",
+                        "state": "up",
+                        "kind": "wifi",
+                        "primary": True,
+                        "ipv4_addresses": ["192.0.2.20"],
+                        "ipv6_addresses": [],
+                        "mtu": 1500,
+                        "speed_mbps": 866,
+                        "mac_address": "00:11:22:33:44:55",
+                        "ssid": "private-network",
+                    }
+                ],
+                "adapter_count": 1,
+                "up_count": 1,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+        )
+
+    with pytest.raises(EndpointModuleResultProjectionError):
+        project_module_result(
+            "system.service_status",
+            {
+                "schema_version": "service_status_result_v1",
+                "service_key": "endpoint_agent",
+                "installed": True,
+                "state": "running",
+                "start_mode": "automatic",
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+                "binary_path": "C:\\private\\agent.exe",
+            },
+        )
+
+
+def test_typed_child_result_preserves_schema_identity_on_port_projection() -> None:
+    typed_result = {
+        "schema_version": "dns_resolve_result_v1",
+        "target": "example.test",
+        "canonical_name": "edge.example.test",
+        "addresses": [{"family": "ipv4", "address": "192.0.2.10"}],
+        "address_count": 1,
+        "status": "succeeded",
+        "error_code": None,
+        "collected_at": "2026-08-28T00:00:00Z",
+    }
+
+    step = EndpointModuleOperationStepProjection(
+        sequence=0,
+        capability="dns.resolve",
+        status="succeeded",
+        error_code=None,
+        safe_result=typed_result,
+    )
+
+    assert step.safe_result == typed_result
+
+
+def test_typed_child_result_requires_schema_identity() -> None:
+    with pytest.raises(ValueError):
+        EndpointModuleOperationStepProjection(
+            sequence=0,
+            capability="dns.resolve",
+            status="succeeded",
+            error_code=None,
+            safe_result={"target": "example.test"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_reconciler_persists_validated_result_snapshot_v2() -> None:
+    claim = EndpointModuleReconcileClaim(
+        operation_id="local-operation-1",
+        endpoint_device_ref="endpoint-device-1",
+        endpoint_operation_ref=None,
+        module_key="network.basic.check",
+        module_version="1.0.0",
+        inputs={"target": "example.test"},
+        create_idempotency_key="remote-module-key",
+    )
+    store = _OneAtATimeStore([claim])
+    reconciler = EndpointModuleOperationReconciler(
+        endpoint_port=_SucceededOperationPort(
+            capability="dns.resolve",
+            safe_result={
+                "schema_version": "dns_resolve_result_v1",
+                "target": "example.test",
+                "canonical_name": "edge.example.test",
+                "addresses": [
+                    {"family": "ipv4", "address": "192.0.2.10"},
+                    {"family": "ipv6", "address": "2001:db8::10"},
+                ],
+                "address_count": 2,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+        ),
+        store=store,
+        mode="external",
+        execution_mode="endpoint",
+        owner="test-owner",
+        now=lambda: datetime(2026, 8, 28, tzinfo=timezone.utc),
+    )
+
+    assert await reconciler.reconcile_once(limit=1) == 1
+    snapshot = store.commits[0]["safe_result_snapshot"]
+    assert EndpointModuleResultSnapshotV2.model_validate(snapshot).model_dump(mode="json") == {
+        "schema_version": "endpoint_module_result_snapshot_v2",
+        "steps": [
+            {
+                "sequence": 0,
+                "capability": "dns.resolve",
+                "status": "succeeded",
+                "error_code": None,
+                "summary": {
+                    "target": "example.test",
+                    "canonical_name": "edge.example.test",
+                    "address_count": 2,
+                    "first_ipv4": "192.0.2.10",
+                    "first_ipv6": "2001:db8::10",
+                },
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_reconciler_fails_closed_on_mismatched_typed_child_result() -> None:
+    claim = EndpointModuleReconcileClaim(
+        operation_id="local-operation-1",
+        endpoint_device_ref="endpoint-device-1",
+        endpoint_operation_ref=None,
+        module_key="network.basic.check",
+        module_version="1.0.0",
+        inputs={"target": "example.test"},
+        create_idempotency_key="remote-module-key",
+    )
+    store = _OneAtATimeStore([claim])
+    reconciler = EndpointModuleOperationReconciler(
+        endpoint_port=_SucceededOperationPort(
+            capability="dns.resolve",
+            safe_result={
+                "schema_version": "tcp_connect_result_v1",
+                "target": "example.test",
+                "resolved_ip": "192.0.2.10",
+                "port": 443,
+                "reachable": True,
+                "latency_ms": 1.0,
+                "status": "succeeded",
+                "error_code": None,
+                "collected_at": "2026-08-28T00:00:00Z",
+            },
+        ),
+        store=store,
+        mode="external",
+        execution_mode="endpoint",
+        owner="test-owner",
+        now=lambda: datetime(2026, 8, 28, tzinfo=timezone.utc),
+    )
+
+    assert await reconciler.reconcile_once(limit=1) == 1
+    assert store.commits[0]["remote_status"] == "failed"
+    assert store.commits[0]["safe_result_snapshot"] is None
+    assert store.commits[0]["error_code"] == "endpoint_module_invalid_projection"

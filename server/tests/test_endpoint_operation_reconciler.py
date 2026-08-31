@@ -18,6 +18,10 @@ from app.db.models import (
     Operation,
     Ticket,
 )
+from app.repos.endpoint_operation_links_repo import EndpointOperationLinksRepo
+from app.services.endpoint_module_operation_reconciler import (
+    SqlAlchemyEndpointModuleOperationReconcileStore,
+)
 from app.services.endpoint_operation_reconciler import (
     EndpointOperationReconciler,
     EndpointOperationReconcilerRunner,
@@ -413,6 +417,75 @@ async def test_sql_store_completes_previously_terminal_diagnostic_session(test_e
     assert diagnostic_session.status == "completed"
     assert diagnostic_session.finished_at is not None
     assert len(evidence) == 1
+
+
+@pytest.mark.asyncio
+async def test_module_reconcile_keeps_historical_unversioned_v1_snapshot_readable_and_unchanged(
+    test_engine,
+) -> None:
+    """The v2 module worker must leave completed v1 module evidence as history."""
+
+    now = datetime(2026, 8, 29, tzinfo=timezone.utc)
+    operation_id = "71717171-7171-7171-7171-717171717171"
+    legacy_snapshot = {
+        "steps": [
+            {
+                "sequence": 0,
+                "capability": "dns.resolve",
+                "status": "succeeded",
+                "error_code": None,
+                "safe_values": {"target": "legacy.example.test"},
+            }
+        ]
+    }
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+
+    async with session_maker() as session:
+        session.add(
+            Operation(
+                operation_id=operation_id,
+                device_id="local-ticket-device",
+                ticket_id="81818181-8181-8181-8181-818181818181",
+                kind="endpoint_module_operation",
+                actor_role="system",
+                trace_id="91919191-9191-9191-9191-919191919191",
+                status="succeeded",
+                phase="endpoint_module_succeeded",
+                queued_at=now,
+                finished_at=now,
+            )
+        )
+        await session.flush()
+        session.add(
+            EndpointOperationLink(
+                link_id="a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1",
+                operation_id=operation_id,
+                endpoint_device_ref="endpoint-device-1",
+                capability_code="endpoint.module.recipe",
+                module_key="network.basic.check",
+                module_version="1.0.0",
+                module_inputs_snapshot_json={"target": "legacy.example.test"},
+                create_idempotency_key="helpdesk-module-operation:historical-v1",
+                remote_status="succeeded",
+                safe_result_snapshot_json=legacy_snapshot,
+                attempt_count=0,
+                next_attempt_at=now,
+            )
+        )
+        await session.commit()
+
+    async with session_maker() as session:
+        stored = await EndpointOperationLinksRepo(session).get_by_operation_id(operation_id)
+        assert stored is not None
+        assert stored.safe_result_snapshot_json == legacy_snapshot
+
+    store = SqlAlchemyEndpointModuleOperationReconcileStore(session_maker)
+    assert await store.claim_ready(owner="module-v2", now=now, limit=1, lease_seconds=30) == []
+
+    async with session_maker() as session:
+        stored = await EndpointOperationLinksRepo(session).get_by_operation_id(operation_id)
+        assert stored is not None
+        assert stored.safe_result_snapshot_json == legacy_snapshot
 
 
 def test_retry_delay_has_bounded_jitter_and_caps_at_five_minutes() -> None:

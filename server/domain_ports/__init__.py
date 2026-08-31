@@ -33,6 +33,10 @@ from .endpoint import (
 )
 from .endpoint_modules import (
     EndpointModuleAvailability,
+    EndpointModuleCapabilityCatalog,
+    EndpointModuleCapabilityCatalogOutcome,
+    EndpointModuleCapabilityDescriptor,
+    EndpointModuleCapabilityParameterDescriptor,
     EndpointModuleCatalogProjection,
     EndpointModuleDefinitionProjection,
     EndpointModuleInvalidProjection,
@@ -159,6 +163,10 @@ __all__ = (
     "SafeEndpointCode",
     "SafeEndpointText",
     "EndpointModuleAvailability",
+    "EndpointModuleCapabilityCatalog",
+    "EndpointModuleCapabilityCatalogOutcome",
+    "EndpointModuleCapabilityDescriptor",
+    "EndpointModuleCapabilityParameterDescriptor",
     "EndpointModuleCatalogProjection",
     "EndpointModuleDefinitionProjection",
     "EndpointModuleInvalidProjection",

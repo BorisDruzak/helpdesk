@@ -53,6 +53,9 @@ from endpoint_server.enrollment.credentials import device_token_digest
 from endpoint_server.main import create_app
 
 
+pytestmark = pytest.mark.manual
+
+
 _MODULE_KEY = "network.basic.check"
 _MODULE_VERSION = "1.0.0"
 
@@ -192,7 +195,7 @@ async def test_module_recipe_real_provider_wss_and_helpdesk_evidence(
     owner_token = await _issue_token(provider, client_id=owner.id, identifier="c" * 32,
         scopes=("modules.read", "modules.write", "modules.validate", "modules.publish", "module_operations.create", "module_operations.read"))
     helpdesk_token = await _issue_token(provider, client_id=helpdesk.id, identifier="d" * 32,
-        scopes=("module_operations.create", "module_operations.read"))
+        scopes=("modules.read", "module_operations.create", "module_operations.read"))
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     settings = Settings(database_url=provider_database.database_url, public_base_url="https://endpoint.sosnadmin.local",
@@ -234,6 +237,11 @@ async def test_module_recipe_real_provider_wss_and_helpdesk_evidence(
 
         adapter = ExternalEndpointModuleHttpAdapter(base_url=base_url, service_token=helpdesk_token, ca_file="",
             timeout_seconds=2, allow_insecure_test_url=True, correlation_id_factory=lambda: "module-helpdesk")
+        capability_catalog = await adapter.list_recipe_capabilities()
+        assert capability_catalog.schema_version == "endpoint_module_capability_catalog_v1"
+        assert {item.capability for item in capability_catalog.items} == {
+            "adapter.list", "dns.resolve", "network.ping", "route.get", "system.service_status", "tcp.connect",
+        }
         session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
         ticket_id = str(uuid4())
         async with session_factory() as session:

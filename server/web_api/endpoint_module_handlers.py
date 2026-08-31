@@ -21,6 +21,7 @@ from app.services.endpoint_module_operation_service import (
 from auth.middleware import ensure_server_request_id, require_auth
 from domain_ports.container import DomainPortContainer
 from domain_ports.endpoint_modules import (
+    EndpointModuleCapabilityCatalog,
     EndpointModuleFailureOutcome,
     EndpointModuleRef,
     EndpointModuleVersionCreateRequest,
@@ -60,6 +61,14 @@ async def _one_of_permissions(request: web.Request, *codes: str) -> web.Response
 def _failure(value: EndpointModuleFailureOutcome) -> web.Response:
     status = 404 if value.status == "not_found" else 503 if value.status == "unavailable" else 502
     return web.json_response({"status": "error", "error_code": value.code}, status=status)
+
+
+def _catalog_response_or_failure(
+    value: EndpointModuleCapabilityCatalog | EndpointModuleFailureOutcome,
+) -> web.Response:
+    if isinstance(value, EndpointModuleFailureOutcome):
+        return _failure(value)
+    return web.json_response({"data": value.model_dump(mode="json")})
 
 
 def _safe_version(value: object) -> dict[str, object]:
@@ -106,6 +115,14 @@ async def handle_endpoint_modules_list(request: web.Request) -> web.Response:
             data.append(projection)
         return web.json_response({"data": data})
     return _failure(result)
+
+
+@require_auth("admin", "auditor")
+async def handle_endpoint_module_capabilities(request: web.Request) -> web.Response:
+    denied = await _one_of_permissions(request, "admin.modules.view", "modules.audit")
+    if denied:
+        return denied
+    return _catalog_response_or_failure(await _port(request).list_recipe_capabilities())
 
 
 @require_auth("admin")
