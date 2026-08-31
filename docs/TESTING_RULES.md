@@ -62,6 +62,13 @@ On Windows, parallel DB/WS mode is guarded against child pytest processes owning
 For CI, prefer leaving the configured local tunnel port free so the runner owns the tunnel lifecycle; reusing an
 already-open tunnel is a compatibility path and the runner cannot keep that external process alive.
 
+`run_ci_in_temp_workspace.py` always enables the stricter parent-owned policy for a full gate. It accepts either an
+explicit `TEST_DATABASE_ADMIN_URL` supplied by the protected runner environment, or a parent-owned tunnel configured
+with `PC_CLIENT_TEST_DB_SSH_TARGET` (and the associated runtime-only tunnel settings). It rejects an already-open
+external tunnel instead of silently depending on it, starts the owned tunnel before the migration layer, and closes it
+when the gate ends. Configure those values in the approved secret channel or runner profile; never put connection
+credentials in a command line, repository file, or CI artifact.
+
 Parallel layer output is intentionally high-level in the terminal; detailed pytest output remains in each
 `artifacts/ci/<sha>/logs/<layer>.log`. `summary.json` preserves the `steps` list and adds `parallel_enabled`,
 `max_workers`, and `parallel_groups` metadata. When `--parallel-measurements` is supplied, the runner reads a prior
