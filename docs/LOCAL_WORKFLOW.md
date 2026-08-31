@@ -158,7 +158,7 @@ Stand-specific remote defaults are profile/env driven, with the current stand ke
 For the Tech Panel business marker on a self-signed HTTPS stand, run `scripts/business_smoke.py` with `--require-https --require-secure-cookie --insecure-tls` or set `BUSINESS_SMOKE_INSECURE_TLS=true`; the marker still must not include the smoke password or session cookie value.
 
 `manage_remote_stack.py status server` и `scripts/runtime_stack.py status server` теперь дополнительно показывают `external_listener`, если порт `8666` занят не тем процессом, который считает своим systemd-unit. Для `start server` и `stop server` canonical runtime сначала вычищает stray `server.py` из этого workspace, чтобы ручной запуск в shell не ломал transient-unit.
-`scripts/run_server.py` и `scripts/run_control_plane.py` считаются единственными canonical wrappers для server/control-plane runtime: они прокидывают repo root в import path/PYTHONPATH, чтобы sibling-пакет `shared/*` был доступен и на Linux, и в локальных repro.
+`scripts/run_server.py` и `scripts/run_control_plane.py` считаются единственными canonical wrappers для server/control-plane runtime: они прокидывают repo root в import path/PYTHONPATH, чтобы sibling-пакет `shared/*` был доступен и на Linux, и в локальных repro. `scripts/run_server.py` и `scripts/stop_server.py` используют один PID directory: явный `HELPDESK_RUNTIME_DIR` имеет приоритет, иначе это `PC_CLIENT_SERVER_DATA_ROOT/run` (и только без обоих значений сохраняется platform default).
 
 13. Если менялся GUI сервера, дополнительно проверить:
 
