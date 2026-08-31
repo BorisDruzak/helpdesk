@@ -48,7 +48,7 @@ server-originated событие `ticket_events.event_type = "tool_call_result"`
    объединённые из `command_result.data.artifacts` и таблицы `artifacts`.
 3. `operations.result_event_id` должен ссылаться на это событие.
 
-Эта связка нужна, чтобы ticket timeline, `ticket.html` и скачивание артефактов показывали
+Эта связка нужна, чтобы ticket timeline, React ticket detail и скачивание артефактов показывали
 не только факт запуска (`tool_call_started`), но и фактический результат выполнения.
 
 ### Инвариант 1: Любой command_result завершает операцию

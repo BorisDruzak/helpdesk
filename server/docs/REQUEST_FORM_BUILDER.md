@@ -8,8 +8,7 @@ The local Knowledge suggestion integration is removed. A future external Knowled
 
 ## Канонические поверхности
 
-- Legacy shell: вкладка `Конструктор форм` в `/admin`, файлы `server/admin_ticket_forms_builder.html` и `server/admin_ticket_forms_builder.js`.
-- Новый typed workspace: панель `Конструктор форм заявок` в `/app/admin`, файлы `webapp/src/features/forms-builder/forms-builder-panel.tsx` и `webapp/src/features/forms-builder/api.ts`.
+- Typed workspace: панель `Конструктор форм заявок` в `/app/admin`, файлы `webapp/src/features/forms-builder/forms-builder-panel.tsx` и `webapp/src/features/forms-builder/api.ts`.
 - Новый typed boundary для React-панели: `GET /api/web/admin/forms/current`, `POST /api/web/admin/forms/save`, `POST /api/web/admin/forms/route-preview` и `POST /api/web/admin/forms/process-preview`.
 - Доменный pack-registry остаётся общим: `GET /api/ticket_forms/current`, `GET /public_api/ticket_forms/current`, `POST /api/ticket_forms/packs/save`, `PATCH /api/ticket_forms/packs/{pack_key}/{version}/preferred`.
 
@@ -148,10 +147,10 @@ The local Knowledge suggestion integration is removed. A future external Knowled
 
 ## Где используется этот контракт
 
-- UI администратора: `server/admin_ticket_forms_builder.html`, `server/admin_ticket_forms_builder.js`, `server/admin.html`, `webapp/src/features/forms-builder/forms-builder-panel.tsx`
+- UI администратора: `webapp/src/features/forms-builder/forms-builder-panel.tsx`
 - Серверная валидация и default pack: `server/tickets/form_catalog.py`
 - HTTP API pack registry: `server/tickets/form_pack_handlers.py`, typed web boundary `server/web_api/admin_handlers.py`
-- Публичная форма: `server/help.html`, `server/help.js`
+- Публичная форма: `webapp/src/pages/help/index.tsx`
 - Агентский диалог создания тикета: `pc_agent/ui_gui/chat_panel.py`
 ## 2026-05-11 lifecycle and business preflight
 

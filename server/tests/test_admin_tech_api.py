@@ -437,6 +437,15 @@ async def test_tech_lifecycle_and_agent_audit_feed(test_client):
     assert isinstance(lifecycle.get("milestone_rail"), list)
     assert lifecycle["timeline"] and lifecycle["timeline"][0].get("links")
     assert lifecycle["timeline"][0].get("device_id") == device_id
+    assert lifecycle["timeline"][0]["links"] == [
+        {"rel": "ticket", "label": "Тикет", "href": f"/app/tickets/{ticket_id}"},
+        {"rel": "device", "label": "Устройство", "href": f"/app/admin/device-operations/{device_id}"},
+        {
+            "rel": "operation",
+            "label": "Операция 00000000…",
+            "href": "/app/admin/operations/00000000-0000-0000-0000-000000000301",
+        },
+    ]
 
     audit_resp = await test_client.get(
         "/api/admin/tech/agents/audit?limit=10",

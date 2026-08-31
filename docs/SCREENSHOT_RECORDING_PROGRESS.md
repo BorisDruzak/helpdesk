@@ -106,14 +106,14 @@
 
 | Шаг | Действие | Статус |
 |-----|----------|--------|
-| 6.1 | В ленте событий ticket.html при `tool_call_result` с `artifacts` — рендер карточек артефактов | ✅ |
+| 6.1 | В React-ленте тикета при `tool_call_result` с `artifacts` — рендер карточек артефактов | ✅ |
 | 6.2 | Для `kind=screenshot` или `mime=image/*`: загрузка через fetch (Bearer) и отображение в `<img>` | ✅ |
 | 6.3 | Для `kind=screen_recording` или `mime=video/mp4`: `<video controls preload="metadata">` с тем же fetch | ✅ |
 | 6.4 | Сервер при сохранении `tool_call_result` в ticket_events передаёт в payload поле `artifacts` из command_result.data | ✅ |
 
 **DoD:** Скриншоты и видео отображаются в тикете; воспроизведение и перемотка работают. Авторизация — через перехват fetch (Bearer из localStorage).
 
-**Файлы:** `server/websocket/agent_handler.py` (добавлено `artifacts` в result_payload), `server/ticket.html` (стили `.artifact-cards`, `.artifact-card`; функции `renderArtifactsInEvent`, `loadArtifactMedia`, определение image/video по kind/mime).
+**Файлы:** `server/websocket/agent_handler.py` (добавлено `artifacts` в result_payload), `webapp/src/pages/tickets/detail-page.tsx` (normalization, image/video selection and artifact URLs).
 
 ---
 
@@ -167,7 +167,7 @@
 
 ### 403 при скачивании артефакта: в БД нет ticket_id (fallback по ticket_events)
 
-**Симптом:** В интерфейсе `ticket.html?ticket_id=...` скриншоты не отображаются: `GET /api/artifacts/{artifact_id}/download` возвращает **403 Forbidden**. В таблице `artifacts` у записей поле `ticket_id` = null (артефакт не привязан к тикету при upload).
+**Симптом:** В React ticket detail скриншоты не отображаются: `GET /api/artifacts/{artifact_id}/download` возвращает **403 Forbidden**. В таблице `artifacts` у записей поле `ticket_id` = null (артефакт не привязан к тикету при upload).
 
 **Причина:** Для UI-токена доступ разрешён, если у артефакта задан `artifact.ticket_id` и тикет существует, либо если в запросе передан `?ticket_id=...` и тикет содержит этот артефакт в событиях (`tool_call_result` с `payload.artifacts[].artifact_id`). Проверка «тикет содержит артефакт» делалась через `get_events(..., limit=500)` и обход в Python — при большом числе событий или иной структуре payload проверка могла не срабатывать.
 
