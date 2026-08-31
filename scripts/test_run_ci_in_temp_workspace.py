@@ -51,4 +51,11 @@ def test_temp_workspace_runs_full_ci_with_bounded_parallel_workers(
     module.main()
 
     ci_command = next(command for command in commands if command[1].endswith("run_ci_suite.py"))
-    assert ci_command[-5:] == ["--commit", "deadbeef", "--parallel", "--max-workers", "2"]
+    assert ci_command[-6:] == [
+        "--commit",
+        "deadbeef",
+        "--parallel",
+        "--max-workers",
+        "2",
+        "--require-parent-owned-db-tunnel",
+    ]

@@ -83,6 +83,7 @@ def main() -> None:
                 "--parallel",
                 "--max-workers",
                 "2",
+                "--require-parent-owned-db-tunnel",
             ],
             cwd=checkout_dir,
         )
