@@ -102,11 +102,11 @@ def test_inventory_audit_accepts_owned_server_db_and_agent_ws_files(tmp_path):
     tests_dir = tmp_path / "server" / "tests"
     _write_test(
         tests_dir,
-        "test_knowledge_api.py",
+        "test_web_api.py",
         (
             "import pytest\n\n"
-            "pytestmark = pytest.mark.db_cleanup('knowledge')\n\n"
-            "async def test_knowledge_flow(test_client, test_engine):\n"
+            "pytestmark = pytest.mark.db_cleanup('full')\n\n"
+            "async def test_web_flow(test_client, test_engine):\n"
             "    pass\n"
         ),
     )
@@ -128,12 +128,28 @@ def test_inventory_audit_accepts_owned_server_db_and_agent_ws_files(tmp_path):
 
     records = {record.file.name: record for record in audit.audit_paths([tests_dir], workspace=tmp_path).records}
 
-    assert records["test_knowledge_api.py"].suite == "server_pytest_db_knowledge"
+    assert records["test_web_api.py"].suite == "server_pytest_db_web_api"
     assert records["test_operation_retry.py"].suite == "server_pytest_agent_ws"
     assert records["test_migration_schema_contract.py"].suite == "migration_schema"
-    assert records["test_knowledge_api.py"].issues == ()
+    assert records["test_web_api.py"].issues == ()
     assert records["test_operation_retry.py"].issues == ()
     assert records["test_migration_schema_contract.py"].issues == ()
+
+
+def test_inventory_audit_allows_the_explicit_manual_cross_repo_wss_suites():
+    audit = importlib.import_module("scripts.audit_test_inventory")
+    workspace = Path(__file__).resolve().parents[1]
+    acceptance_dir = workspace / "server" / "tests" / "acceptance"
+
+    report = audit.audit_paths(
+        [
+            acceptance_dir / "test_endpoint_module_platform_v1.py",
+            acceptance_dir / "test_endpoint_operations_v1_acceptance.py",
+        ],
+        workspace=workspace,
+    )
+
+    assert report.issues == ()
 
 
 def test_inventory_audit_uses_workspace_suite_catalog_for_server_db_ownership(tmp_path):
@@ -143,9 +159,9 @@ def test_inventory_audit_uses_workspace_suite_catalog_for_server_db_ownership(tm
     (tmp_path / "quality" / "test_suites.toml").write_text(
         """
 [[suites]]
-name = "server_pytest_db_knowledge"
+name = "server_pytest_db_custom"
 runner = "pytest"
-server_db_api_patterns = ["test_custom_knowledge_*.py"]
+server_db_api_patterns = ["test_custom_api_*.py"]
 
 [[suites]]
 name = "server_pytest_db_web_api"
@@ -157,19 +173,19 @@ server_db_api_catch_all = true
     )
     _write_test(
         tests_dir,
-        "test_custom_knowledge_contract.py",
+        "test_custom_api_contract.py",
         (
             "import pytest\n\n"
-            "pytestmark = pytest.mark.db_cleanup('knowledge')\n\n"
-            "async def test_custom_contract(test_client, test_engine):\n"
+            "pytestmark = pytest.mark.db_cleanup('full')\n\n"
+            "async def test_custom_api_contract(test_client, test_engine):\n"
             "    pass\n"
         ),
     )
 
     records = {record.file.name: record for record in audit.audit_paths([tests_dir], workspace=tmp_path).records}
 
-    assert records["test_custom_knowledge_contract.py"].suite == "server_pytest_db_knowledge"
-    assert records["test_custom_knowledge_contract.py"].issues == ()
+    assert records["test_custom_api_contract.py"].suite == "server_pytest_db_custom"
+    assert records["test_custom_api_contract.py"].issues == ()
 
 
 def test_inventory_audit_strict_mode_fails_only_for_inventory_issues(tmp_path, capsys):

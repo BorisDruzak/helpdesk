@@ -1,10 +1,10 @@
 {
   "schema": "pc_client.observer_known_contamination.v1",
-  "last_reviewed": "2026-06-24",
+  "last_reviewed": "2026-08-29",
   "contaminations": [
     {
       "id": "obs-p1-device-outbox-135",
-      "status": "active",
+      "status": "retired",
       "source_phase": "P1",
       "owner_zone": "observer",
       "linked_issue": "TD-011",
@@ -12,7 +12,7 @@
       "entity_id": "135",
       "suppression_scope": "observer_integrity",
       "reason": "Historical P1 malformed/reconnect probe contamination; not current OBS1 evidence.",
-      "notes": "Narrow suppression for device_outbox.id=135 only.",
+      "notes": "Retired on 2026-08-29 after staging review found no matching outbox, suppression, or integrity event.",
       "created_at": "2026-06-24T00:00:00+00:00",
       "expires_at": "2026-07-24T00:00:00+00:00",
       "review_status": "reviewed",
@@ -20,7 +20,7 @@
     },
     {
       "id": "obs-p0-phantom-malformed-rows",
-      "status": "active",
+      "status": "retired",
       "source_phase": "P0",
       "owner_zone": "observer",
       "linked_issue": "TD-011",
@@ -28,7 +28,7 @@
       "entity_id": "p0:phantom_malformed_rows",
       "suppression_scope": "observer_integrity",
       "reason": "Historical P0 phantom/malformed rows listed in PLANS.md.",
-      "notes": "Stable dedupe-key suppression for pre-OBS1 historical baseline only.",
+      "notes": "Retired on 2026-08-29 after staging review found no matching suppression or integrity event.",
       "created_at": "2026-06-24T00:00:00+00:00",
       "expires_at": "2026-07-24T00:00:00+00:00",
       "review_status": "reviewed",
@@ -36,7 +36,7 @@
     },
     {
       "id": "obs-p6-historical-agent-offline-active",
-      "status": "active",
+      "status": "retired",
       "source_phase": "P6",
       "owner_zone": "observer",
       "linked_issue": "TD-011",
@@ -44,7 +44,7 @@
       "entity_id": "p6:historical_non_p6_agent_offline_active",
       "suppression_scope": "observer_integrity",
       "reason": "Historical non-P6 agent_offline_active tasks are excluded from OBS1 current baseline.",
-      "notes": "Stable dedupe-key suppression for historical non-P6 agent-offline baseline only.",
+      "notes": "Retired on 2026-08-29 after staging review found no matching suppression or integrity event.",
       "created_at": "2026-06-24T00:00:00+00:00",
       "expires_at": "2026-07-24T00:00:00+00:00",
       "review_status": "reviewed",

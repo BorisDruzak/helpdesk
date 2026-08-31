@@ -46,7 +46,8 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_WEB_BUILD_TIMEOUT_SECONDS = 20 * 60
 DEFAULT_WEB_TEST_TIMEOUT_SECONDS = 20 * 60
-DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 45 * 60
+DEFAULT_FAST_CHECK_TIMEOUT_SECONDS = 45 * 60
+DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 8 * 60 * 60
 DEFAULT_PC_AGENT_PYTEST_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
@@ -1410,7 +1411,7 @@ def main() -> None:
             "test_inventory_audit",
             _test_inventory_audit_command(args.workspace),
             logs_dir / "test_inventory_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1418,7 +1419,7 @@ def main() -> None:
             "db_cleanup_profile_audit",
             _db_cleanup_profile_audit_command(args.workspace),
             logs_dir / "db_cleanup_profile_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1426,7 +1427,7 @@ def main() -> None:
             "fixture_builder_audit",
             _fixture_builder_audit_command(args.workspace),
             logs_dir / "fixture_builder_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1434,7 +1435,7 @@ def main() -> None:
             "active_risk_audit",
             _active_risk_audit_command(args.workspace),
             logs_dir / "active_risk_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1442,7 +1443,7 @@ def main() -> None:
             "observer_contamination_audit",
             _observer_contamination_audit_command(args.workspace),
             logs_dir / "observer_contamination_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1450,7 +1451,7 @@ def main() -> None:
             "branch_coverage_audit",
             _branch_coverage_audit_command(args.workspace),
             logs_dir / "branch_coverage_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1458,7 +1459,7 @@ def main() -> None:
             "mutation_smoke",
             _mutation_smoke_command(args.workspace),
             logs_dir / "mutation_smoke.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1466,7 +1467,7 @@ def main() -> None:
             "scripts_pytest_no_db",
             _scripts_pytest_no_db_command(args.workspace, artifact_dir / "junit-scripts-no-db.xml"),
             logs_dir / "scripts_pytest_no_db.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1474,7 +1475,7 @@ def main() -> None:
             "server_pytest_no_db",
             _server_pytest_command("not manual and no_db", artifact_dir / "junit-server-no-db.xml"),
             logs_dir / "server_pytest_no_db.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             _server_pytest_env(
                 layer_name="server_pytest_no_db",

@@ -7,7 +7,21 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
+from scripts.helpdesk_remote_profile import RemoteProfile
 import scripts.run_observer_canary_suite as suite
+
+
+def test_observer_canary_uses_shared_helpdesk_remote_profile() -> None:
+    profile = RemoteProfile.from_environment()
+
+    assert suite.DEFAULT_REMOTE == profile.remote
+    assert suite.DEFAULT_KEY == profile.ssh_key
+    assert suite.REMOTE_ROOT == profile.root
+    assert suite.REMOTE_SERVER_PYTHON == profile.server_python
+
+
+def test_observer_canary_workspace_follows_script_location() -> None:
+    assert suite.WORKSPACE == Path(suite.__file__).resolve().parents[1]
 
 
 def test_build_canary_module_payload_contains_expected_tools() -> None:
