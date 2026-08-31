@@ -18,8 +18,7 @@
 - `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines a future external
   Knowledge API contract. `KnowledgePort` remains unavailable until explicit
   composition and reports `knowledge_unavailable`.
-- `server/domain_ports/knowledge.py`, `registry.py`, `endpoint.py` and
-  `endpoint_modules.py` define the
+- `server/domain_ports/knowledge.py`, `registry.py`, `endpoint.py` define the
   neutral, runtime-checkable dependency-injection protocols. Knowledge request
   and result DTOs are frozen, forbid extra content fields and preserve opaque
   refs exactly, subject to the documented 512-character limit. EndpointPort
