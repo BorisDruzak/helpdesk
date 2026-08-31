@@ -1,5 +1,59 @@
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
+## 2026-08-31 Staging secure admin-session access
+
+- **Goal:** make the isolated Helpdesk staging admin login usable through the
+  approved HTTPS origin without weakening the `httpOnly; Secure` session
+  cookie, and prevent direct HTTP access from misleading future operators.
+- **Scope:** only `osn-admin@192.168.101.118` staging. Production and the
+  Endpoint repository are excluded.
+- **Status:** `root-cause-confirmed` (auth/account-session + deployment
+  configuration).
+- **Evidence:** the staging login endpoint accepted the account and created a
+  UI session, while browser access through `http://192.168.101.118:8666`
+  returned to the login form. The TLS listener presents a certificate for
+  `helpdesk-staging.sosnadmin.local`; the hostname resolves to the staging
+  host and the same login page opens there with no browser console errors.
+  The direct `:8666` listener remains externally reachable even though the
+  versioned deployment template requires loopback application binding behind
+  Nginx.
+- **Root cause:** a secure cookie cannot be persisted by a browser on the
+  direct HTTP origin. This is not a credential failure and must not be
+  “fixed” by disabling secure cookies.
+- **Fix policy:** keep secure cookies enabled; publish the HTTPS FQDN as the
+  sole admin origin, bind the application port to loopback, and have the
+  staging Nginx vhost redirect HTTP to the FQDN. Apply the environment/unit/
+  Nginx change only through the reviewed staging release procedure, then
+  verify a fresh browser login and the absence of an external `:8666`
+  listener. Root privilege is currently required for those staging resources.
+- **Blocking impact:** this blocks the real locked Endpoint acceptance and
+  ALT/Windows staging canaries because the required admin browser session
+  cannot be established safely through the current direct HTTP endpoint.
+- **Latest verification:** the administrator successfully opened the legacy
+  admin workspace through the HTTPS FQDN. The Endpoint Recipes screen then
+  returned the fail-closed state
+  `endpoint_module_external_service_token_missing`; no Endpoint recipe
+  operation was created and no canary was started.
+- **Next steps:** obtain approved staging-operator execution for the
+  environment/systemd/Nginx change and the temporary scoped Endpoint module
+  credential/feature configuration, run the browser login regression through
+  the HTTPS FQDN, then resume the locked acceptance and canary sequence.
+
+## 2026-08-31 Product webapp staging cutover
+
+- **Goal:** serve the product React `/app/admin` route from the immutable
+  Helpdesk staging release, keeping `?legacy=1` only as a rollback escape.
+- **Status:** `implementation-verified-locally`; the release archive now builds
+  the bundle from an exact Git commit snapshot and packages it under
+  `webapp/dist`, so dirty local files cannot diverge from the released server
+  source.
+- **Verification:** archive-layout regression plus exact-commit/dirty-worktree
+  regression passed; static cutover handlers passed.
+- **Remaining gate:** commit, push and reviewed staging deployment through
+  `scripts/deploy_helpdesk_release.py`, followed by the configured cutover
+  flags and a browser check at `/app/admin`. Deployment needs the approved
+  staging-operator privilege; no manual staging patch is permitted.
+
 ## 2026-08-28 Endpoint Read-only Capability Batch v2 — Helpdesk
 
 - **Goal:** consume the Endpoint-owned versioned capability catalog through a fail-closed typed port, project only bounded capability-specific evidence, replace the Endpoint Recipe Workbench allowlist with the catalog, and freeze fully replaced legacy network-module rollouts only after real ALT and Windows acceptance.

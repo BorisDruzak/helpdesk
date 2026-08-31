@@ -8,6 +8,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import tarfile
 from pathlib import Path
 
 WORKSPACE = Path(__file__).resolve().parents[1]
@@ -58,6 +59,55 @@ def remote_install_command(
             f"sudo systemctl is-active {runtime_services}",
         ]
     )
+
+
+def append_webapp_bundle_to_release_archive(
+    release_archive: Path,
+    bundle_dir: Path,
+    release_prefix: str,
+) -> None:
+    index_path = bundle_dir / "index.html"
+    assets_dir = bundle_dir / "assets"
+    if not index_path.is_file() or not assets_dir.is_dir() or not any(path.is_file() for path in assets_dir.rglob("*")):
+        raise RuntimeError("webapp bundle is incomplete: expected index.html and at least one asset")
+    with tarfile.open(release_archive, "a") as archive:
+        archive.add(bundle_dir, arcname=f"{release_prefix}/webapp/dist")
+
+
+def build_webapp_bundle_into_release_archive(
+    workspace: Path,
+    commit: str,
+    release_archive: Path,
+    release_prefix: str,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="helpdesk_webapp_bundle_") as temp_dir:
+        temp_root = Path(temp_dir)
+        source_archive = temp_root / "release-source.tar"
+        source_workspace = temp_root / "workspace"
+        bundle_dir = temp_root / "webapp-dist"
+        bundle_archive = temp_root / "webapp-dist.tar.gz"
+        subprocess.run(
+            ["git", "archive", "--format=tar", "-o", str(source_archive), commit],
+            cwd=workspace,
+            check=True,
+        )
+        with tarfile.open(source_archive) as archive:
+            archive.extractall(source_workspace, filter="data")
+        subprocess.run(
+            [
+                sys.executable,
+                str(source_workspace / "scripts" / "build_webapp_bundle.py"),
+                "--workspace",
+                str(source_workspace),
+                "--output-dir",
+                str(bundle_dir),
+                "--archive",
+                str(bundle_archive),
+            ],
+            cwd=source_workspace,
+            check=True,
+        )
+        append_webapp_bundle_to_release_archive(release_archive, bundle_dir, release_prefix)
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,11 +162,13 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="helpdesk_release_") as temp_dir:
         local_archive = Path(temp_dir) / archive_name
+        release_prefix = f"helpdesk-{commit}"
         subprocess.run(
-            ["git", "archive", "--format=tar", f"--prefix=helpdesk-{commit}/", "-o", str(local_archive), commit],
+            ["git", "archive", "--format=tar", f"--prefix={release_prefix}/", "-o", str(local_archive), commit],
             cwd=WORKSPACE,
             check=True,
         )
+        build_webapp_bundle_into_release_archive(WORKSPACE, commit, local_archive, release_prefix)
         subprocess.run([*_scp_base(profile), str(local_archive), f"{remote}:{remote_archive}"], cwd=WORKSPACE, check=True)
 
     subprocess.run(
