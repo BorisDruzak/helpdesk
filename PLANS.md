@@ -1,5 +1,23 @@
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
+## 2026-08-31 Fixture-builder release-gate baseline
+
+- **Goal:** restore a truthful, executable critical-behavior fixture pack so
+  the full CI release gate can validate its test references.
+- **Scope:** Helpdesk test-data pack and its audit regression only; no runtime,
+  route, database, Endpoint Platform, staging, or production change.
+- **Root cause:** `critical_behavior_v1.json` still named five tests from the
+  retired local Knowledge runtime and UI. The strict fixture audit failed on
+  base `2d355954`, proving the defect predates the immutable webapp release.
+- **Decision:** keep the product webapp release as separate PR #26 and replace
+  the stale references with the current external-Knowledge boundary contract
+  tests. The pack therefore validates fail-closed external-port behavior,
+  removal of local lookup/fallback, and documented redacted historical
+  projections instead of claiming a removed local Knowledge UI.
+- **Verification:** targeted audit regression and strict fixture audit are
+  green. Re-run the full isolated CI on the release PR after this separate
+  baseline PR merges.
+
 ## 2026-08-28 Endpoint Read-only Capability Batch v2 — Helpdesk
 
 - **Goal:** consume the Endpoint-owned versioned capability catalog through a fail-closed typed port, project only bounded capability-specific evidence, replace the Endpoint Recipe Workbench allowlist with the catalog, and freeze fully replaced legacy network-module rollouts only after real ALT and Windows acceptance.
