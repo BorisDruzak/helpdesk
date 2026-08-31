@@ -1255,6 +1255,46 @@ def test_windows_parallel_tunnel_uses_existing_port_without_owning_it(monkeypatc
     tunnel.close()
 
 
+def test_windows_parallel_tunnel_rejects_external_tunnel_when_parent_ownership_required(monkeypatch):
+    monkeypatch.setattr(run_ci_suite.os, "name", "nt")
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_SSH_TARGET", "ci@example")
+    monkeypatch.setattr(run_ci_suite, "_is_tcp_port_open", lambda host, port: True)
+
+    with pytest.raises(RuntimeError, match="requires a parent-owned DB tunnel"):
+        run_ci_suite._prepare_windows_parallel_db_tunnel(require_parent_owned=True)
+
+
+def test_windows_parallel_tunnel_requires_explicit_runtime_target_when_parent_ownership_required(monkeypatch):
+    monkeypatch.setattr(run_ci_suite.os, "name", "nt")
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_SSH_TARGET", "")
+    monkeypatch.setattr(run_ci_suite, "_is_tcp_port_open", lambda host, port: False)
+    monkeypatch.setattr(
+        run_ci_suite.subprocess,
+        "Popen",
+        lambda *args, **kwargs: pytest.fail("missing runtime target must fail before starting ssh"),
+    )
+
+    with pytest.raises(RuntimeError, match="PC_CLIENT_TEST_DB_SSH_TARGET"):
+        run_ci_suite._prepare_windows_parallel_db_tunnel(require_parent_owned=True)
+
+
+def test_windows_parallel_tunnel_requires_runtime_target_before_starting_ssh(monkeypatch):
+    monkeypatch.setattr(run_ci_suite.os, "name", "nt")
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.delenv("PC_CLIENT_TEST_DB_SSH_TARGET", raising=False)
+    monkeypatch.setattr(run_ci_suite, "_is_tcp_port_open", lambda host, port: False)
+    monkeypatch.setattr(
+        run_ci_suite.subprocess,
+        "Popen",
+        lambda *args, **kwargs: pytest.fail("missing runtime target must fail before starting ssh"),
+    )
+
+    with pytest.raises(RuntimeError, match="PC_CLIENT_TEST_DB_SSH_TARGET"):
+        run_ci_suite._prepare_windows_parallel_db_tunnel()
+
+
 def test_windows_parallel_tunnel_starts_ssh_from_env_defaults(monkeypatch):
     class FakeProcess:
         stderr = None
