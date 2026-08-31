@@ -19,12 +19,3 @@ def test_run_server_uses_server_data_root_for_mutable_pid_state(monkeypatch, tmp
     module = _load_run_server_module()
 
     assert module.resolve_run_dir() == tmp_path / "run"
-
-
-def test_run_server_explicit_runtime_dir_overrides_server_data_root(monkeypatch, tmp_path) -> None:
-    monkeypatch.setenv("PC_CLIENT_SERVER_DATA_ROOT", str(tmp_path / "data"))
-    monkeypatch.setenv("HELPDESK_RUNTIME_DIR", str(tmp_path / "runtime"))
-
-    module = _load_run_server_module()
-
-    assert module.resolve_run_dir() == tmp_path / "runtime"

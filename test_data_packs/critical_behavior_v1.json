@@ -330,31 +330,43 @@
       "owner": "knowledge",
       "priority": "critical",
       "critical_invariants": [
-        "external_only_boundary",
-        "fail_closed_unavailable",
-        "no_local_knowledge_routes",
-        "legacy_metadata_redaction"
+        "acl_before_retrieval",
+        "versioned_publish",
+        "binding_integrity",
+        "analytics_redaction"
       ],
       "automated_layers": [
         {
-          "kind": "boundary_no_db",
+          "kind": "service_api_db",
           "test_refs": [
-            "server/tests/test_knowledge_routes_removed.py",
-            "server/tests/test_support_knowledge_boundary.py",
-            "server/tests/test_ticket_knowledge_boundary.py"
+            "server/tests/test_knowledge_access_service.py",
+            "server/tests/test_knowledge_visibility.py",
+            "server/tests/test_knowledge_ask.py"
+          ]
+        },
+        {
+          "kind": "fixture_ui",
+          "test_refs": [
+            "webapp/src/features/knowledge/support-workspace-page.test.tsx",
+            "webapp/src/pages/kb/search-page.test.tsx"
           ]
         }
       ],
       "live_scenarios": [
         {
-          "key": "support_external_knowledge_unavailable_boundary",
-          "surface": "support",
+          "key": "requester_support_admin_search_visibility",
+          "surface": "requester",
           "data_refs": {
             "users": [
-              "support_test"
+              "requester_a_completed_profile_windows_agent",
+              "requester_f_restricted_department",
+              "support_test",
+              "admin_test"
             ],
-            "tickets": [
-              "support_ticket_external_knowledge_unavailable"
+            "knowledge": [
+              "public_requester_article",
+              "department_restricted_article",
+              "support_only_article"
             ]
           },
           "required_evidence": [
@@ -371,8 +383,8 @@
             "cleanup"
           ],
           "expected_outcomes": [
-            "local Knowledge routes remain unavailable",
-            "support projection reports the external Knowledge boundary without local fallback"
+            "requester cannot see restricted or support-only content",
+            "support/admin projections remain role-safe"
           ]
         }
       ]

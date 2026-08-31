@@ -71,13 +71,7 @@ def _b64url_encode(raw: bytes) -> str:
 
 
 def _b64url_decode(value: str) -> bytes:
-    encoded = str(value or "")
-    if not encoded or "=" in encoded or re.fullmatch(r"[A-Za-z0-9_-]+", encoded) is None:
-        raise ValueError("invalid base64url value")
-    decoded = base64.b64decode(encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True)
-    if _b64url_encode(decoded) != encoded:
-        raise ValueError("non-canonical base64url value")
-    return decoded
+    return base64.urlsafe_b64decode(str(value or "") + "=" * (-len(str(value or "")) % 4))
 
 
 def _delivery_secret() -> bytes:

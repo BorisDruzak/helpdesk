@@ -14,9 +14,6 @@ import websockets
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-
-pytestmark = pytest.mark.manual
-
 from app.db.models import DeviceOutbox, DiagnosticEvidence, EndpointOperationLink, Operation, Ticket
 from app.services.endpoint_module_operation_reconciler import (
     EndpointModuleOperationReconciler,

@@ -51,12 +51,7 @@ async def _approved_binding(session, device_id: str) -> dict:
         display_name="Registered Owner",
         profile={"full_name": "Registered Owner", "email": "owner@example.test", "user_confirmed": True},
     )
-    approved = await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
-    # Ticket creation reads Registry through an independent connection, as the
-    # deployed request boundary does. Persist the registration before a test
-    # exercises that boundary so the real adapter can observe it.
-    await session.commit()
-    return approved
+    return await service.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
 
 
 @pytest.mark.asyncio

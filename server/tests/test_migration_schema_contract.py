@@ -471,8 +471,7 @@ def test_clone_upgrade_from_133_retires_only_historical_knowledge_ai_schema(
     asyncio.run(_protected_knowledge_retirement_tables_are_selectable(migration_clone_database_url))
 
     _run_alembic_upgrade_to_revision(migration_clone_database_url, "head")
-    head = asyncio.run(_catalog_tables(migration_clone_database_url))
-    assert head - after == {"endpoint_operation_links"}
+    assert asyncio.run(_catalog_tables(migration_clone_database_url)) == after
 
 
 def _format_schema_audit_failure(report: audit_db_cleanup_schema.SchemaAuditReport) -> str:

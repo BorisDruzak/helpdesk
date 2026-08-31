@@ -69,7 +69,7 @@ def test_require_green_ci_artifact_rejects_affected_or_selected_gate_summary(tmp
             "gate_mode": "affected",
             "full_merge_gate_required": True,
             "full_merge_gate_satisfied": False,
-            "effective_layers": ["verify_workspace", "server_pytest_db_tickets"],
+            "effective_layers": ["verify_workspace", "server_pytest_db_knowledge"],
         },
     )
 

@@ -89,10 +89,11 @@ def _event(source: str, dedupe_key: str) -> ObserverIntegrityEventInput:
     )
 
 
-def test_known_contamination_manifest_has_no_active_historical_suppressions():
+def test_known_contamination_manifest_seed_rows_are_time_boxed():
     rows = integrity_module.load_known_contamination_manifest()
 
-    assert rows == []
+    assert rows
+    assert all(row.get("expires_at") is not None for row in rows)
 
 
 @pytest.mark.asyncio

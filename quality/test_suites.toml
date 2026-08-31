@@ -120,6 +120,26 @@ database = "isolated-postgres-no-template"
 description = "Fresh PostgreSQL Alembic migration gate: empty DB upgrade, exact heads, idempotent upgrade, schema/cleanup catalog diff, required constraints/indexes/defaults, and smoke DML."
 
 [[suites]]
+name = "server_pytest_db_knowledge"
+runner = "pytest"
+marker_expression = "not manual and not no_db and not agent_ws"
+junit = "junit-server-db-knowledge.xml"
+database = "isolated-postgres"
+server_db_api_patterns = [
+  "test_knowledge_*.py",
+  "test_support_knowledge_provider.py",
+]
+server_source_prefixes = [
+  "server/knowledge/",
+  "server/customer_history/",
+  "server/web_api/knowledge",
+  "content_packs/knowledge/",
+]
+parallel_group = "server-db"
+parallel_order = 3
+description = "Knowledge, customer-history, and Knowledge web API DB/API tests."
+
+[[suites]]
 name = "server_pytest_db_tickets"
 runner = "pytest"
 marker_expression = "not manual and not no_db and not agent_ws"
@@ -227,9 +247,6 @@ marker_expression = "not manual and not no_db and not agent_ws"
 junit = "junit-server-db-web-api.xml"
 database = "isolated-postgres"
 server_db_api_catch_all = true
-server_source_prefixes = [
-  "server/customer_history/",
-]
 parallel_group = "server-db"
 parallel_order = 1
 description = "DB/API catch-all for server tests not owned by a narrower DB/API domain layer."

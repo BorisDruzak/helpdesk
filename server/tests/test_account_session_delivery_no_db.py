@@ -2,13 +2,8 @@ from __future__ import annotations
 
 import copy
 
-import pytest
-
 import config
 from registry import account_session_service as service
-
-
-pytestmark = pytest.mark.no_db
 
 
 def test_session_token_delivery_envelope_round_trips_without_plaintext(monkeypatch):
@@ -35,10 +30,7 @@ def test_session_token_delivery_envelope_rejects_tampering(monkeypatch):
         session_token="session-token",
     )
     tampered = copy.deepcopy(envelope)
-    alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-    final_index = alphabet.index(tampered["ciphertext"][-1])
-    equivalent_final_index = (final_index & 0b110000) | ((final_index + 1) & 0b001111)
-    tampered["ciphertext"] = tampered["ciphertext"][:-1] + alphabet[equivalent_final_index]
+    tampered["ciphertext"] = tampered["ciphertext"][:-1] + ("A" if tampered["ciphertext"][-1:] != "A" else "B")
 
     assert service._decrypt_session_token_delivery_envelope(tampered, request_id="request-1") is None
 

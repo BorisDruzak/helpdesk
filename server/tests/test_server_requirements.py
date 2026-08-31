@@ -1,10 +1,5 @@
 from pathlib import Path
 
-import pytest
-
-
-pytestmark = pytest.mark.no_db
-
 
 def test_server_requirements_include_database_engine_runtime_logger() -> None:
     requirements = {

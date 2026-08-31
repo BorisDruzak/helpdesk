@@ -15,23 +15,24 @@
 `scripts/run_ci_suite.py` runs server pytest in domain layers so one slow group does not hide the rest of the signal:
 
 1. `server_pytest_no_db`: `python -m pytest server/tests -m "not manual and no_db" -vv --durations=80`
-2. `server_pytest_db_tickets`
-3. `server_pytest_db_observer_diagnostics`
-4. `server_pytest_db_agent_runtime`
-5. `server_pytest_db_web_api`
-6. `server_pytest_agent_ws`: `python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80`
+2. `server_pytest_db_knowledge`
+3. `server_pytest_db_tickets`
+4. `server_pytest_db_observer_diagnostics`
+5. `server_pytest_db_agent_runtime`
+6. `server_pytest_db_web_api`
+7. `server_pytest_agent_ws`: `python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80`
 
 Run one layer with:
 
 ```powershell
-python scripts/run_ci_suite.py --layer server_pytest_db_tickets
+python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
 ```
 
 The `agent_ws` marker is applied automatically to tests that request the `test_agent` fixture. Do not add it by hand unless a test starts the same in-process agent/runtime path without that fixture.
 
 CI sets `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for every server pytest layer. When a test runs longer than that value, the harness prints all Python thread stacks into the pytest log so the next timeout shows the stuck test and call stacks instead of only the final process timeout.
 
-The default server pytest step timeout is eight hours per layer. If a layer approaches that value, use `--durations=80` to split or optimize the slow tests before increasing the timeout again.
+The default server pytest step timeout is 45 minutes per layer. If a layer approaches that value, split or optimize the slow tests before increasing the timeout again.
 
 ## Markers
 

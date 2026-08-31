@@ -1,10 +1,5 @@
 from pathlib import Path
 
-import pytest
-
-
-pytestmark = pytest.mark.no_db
-
 
 COMMANDS_API = Path("server/docs/REGISTRY_PLATFORM_COMMANDS_V1.md")
 

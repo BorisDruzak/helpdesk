@@ -15,9 +15,6 @@ from domain_ports.endpoint import (
 )
 
 
-pytestmark = pytest.mark.db_cleanup("full")
-
-
 class _Session:
     def __init__(self, factory: "_SessionFactory", ticket: SimpleNamespace) -> None:
         self._factory = factory

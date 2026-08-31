@@ -23,20 +23,11 @@ from uuid import UUID, uuid4
 import aiohttp
 import asyncpg
 import pytest
+import uvicorn
 import websockets
 from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker
-
-
-pytestmark = pytest.mark.manual
-
-_endpoint_root_value = os.environ.get("ENDPOINT_PLATFORM_REPO")
-if not _endpoint_root_value:
-    pytest.skip(
-        "cross-repository acceptance requires ENDPOINT_PLATFORM_REPO",
-        allow_module_level=True,
-    )
 
 from app.db.models import (
     DeviceOutbox,
@@ -63,6 +54,12 @@ from endpoint_adapter.http import ExternalEndpointHttpAdapter
 from scripts.validate_endpoint_contract_lock import validate as validate_contract_lock
 
 
+_endpoint_root_value = os.environ.get("ENDPOINT_PLATFORM_REPO")
+if not _endpoint_root_value:
+    pytest.skip(
+        "cross-repository acceptance requires ENDPOINT_PLATFORM_REPO",
+        allow_module_level=True,
+    )
 _ENDPOINT_ROOT = Path(_endpoint_root_value).resolve()
 try:
     validate_contract_lock(
@@ -73,8 +70,6 @@ try:
     )
 except ValueError as error:
     raise RuntimeError("cross-repository Endpoint provider lock validation failed") from error
-
-import uvicorn
 if str(_ENDPOINT_ROOT) not in sys.path:
     sys.path.insert(0, str(_ENDPOINT_ROOT))
 

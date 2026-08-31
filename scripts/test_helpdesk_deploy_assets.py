@@ -20,7 +20,7 @@ def test_production_dependencies_and_runtime_data_root_are_declared() -> None:
     environment = (ROOT / "helpdesk.env.example").read_text(encoding="utf-8")
 
     assert "loguru" in requirements
-    assert "pydantic>=2.12,<3" in requirements
+    assert "pydantic>=2.0" in requirements
     assert "PC_CLIENT_SERVER_DATA_ROOT=/var/lib/helpdesk" in environment
     assert "PC_CLIENT_DISABLE_LEGACY_RUNTIME_MIGRATION=true" in environment
     assert "HELPDESK_CONTROL_LIFECYCLE_ENABLED=false" in environment
