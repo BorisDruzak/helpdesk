@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import copy
 
+import pytest
+
 import config
 from registry import account_session_service as service
+
+
+pytestmark = pytest.mark.no_db
 
 
 def test_session_token_delivery_envelope_round_trips_without_plaintext(monkeypatch):

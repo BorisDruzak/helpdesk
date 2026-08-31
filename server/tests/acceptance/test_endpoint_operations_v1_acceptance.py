@@ -29,6 +29,9 @@ from sqlalchemy import select
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+
+pytestmark = pytest.mark.manual
+
 from app.db.models import (
     DeviceOutbox,
     DiagnosticEvidence,

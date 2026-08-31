@@ -21,16 +21,18 @@ from urllib.parse import urlencode
 import aiohttp
 from yarl import URL
 
-WORKSPACE = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
+WORKSPACE = Path(__file__).resolve().parents[1]
 if str(WORKSPACE) not in sys.path:
     sys.path.insert(0, str(WORKSPACE))
 
-from scripts.manage_remote_stack import (  # noqa: E402
-    DEFAULT_KEY,
-    DEFAULT_REMOTE,
-    REMOTE_ROOT,
-    REMOTE_SERVER_PYTHON,
-)
+from scripts.helpdesk_remote_profile import RemoteProfile  # noqa: E402
+
+
+REMOTE_PROFILE = RemoteProfile.from_environment()
+DEFAULT_KEY = REMOTE_PROFILE.ssh_key
+DEFAULT_REMOTE = REMOTE_PROFILE.remote
+REMOTE_ROOT = REMOTE_PROFILE.root
+REMOTE_SERVER_PYTHON = REMOTE_PROFILE.server_python
 
 
 DEFAULT_BASE_URL = "https://example.test:9443"
