@@ -28,3 +28,4 @@ def test_ci_requirements_include_cross_repository_acceptance_websocket_client() 
     }
 
     assert "websockets" in requirements
+    assert "uvicorn" in requirements
