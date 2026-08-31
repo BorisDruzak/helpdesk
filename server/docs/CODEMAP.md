@@ -40,9 +40,12 @@
   provider repository, exact commit and OpenAPI digest; the catalog transport
   is only the fixed `GET /api/v1/module-capabilities` request and rejects a
   missing or mismatched `X-Correlation-ID`. It maps catalog/version and
-  operation routes into bounded safe projections, preserves the exact typed
-  child-result schema discriminator for the six released capabilities, and
-  never retains recipes or dispatches an agent command.
+  operation routes into bounded safe projections. The external Helpdesk
+  service credential needs Endpoint scope `modules.read` for catalog reads in
+  addition to its module-operation scopes; absence fails closed.
+  The port preserves the exact typed child-result schema discriminator for the
+  six released capabilities, never retains recipes, and never runs a
+  browser-to-Endpoint proxy or agent dispatch.
   `web_api/endpoint_module_handlers.py` exposes the authenticated Helpdesk
   BFF routes under `/api/web/admin/endpoint-modules`; the list/lifecycle routes
   retain `/api/admin` aliases, while the catalog does not. The ticket operation

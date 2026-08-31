@@ -192,7 +192,7 @@ async def test_module_recipe_real_provider_wss_and_helpdesk_evidence(
     owner_token = await _issue_token(provider, client_id=owner.id, identifier="c" * 32,
         scopes=("modules.read", "modules.write", "modules.validate", "modules.publish", "module_operations.create", "module_operations.read"))
     helpdesk_token = await _issue_token(provider, client_id=helpdesk.id, identifier="d" * 32,
-        scopes=("module_operations.create", "module_operations.read"))
+        scopes=("modules.read", "module_operations.create", "module_operations.read"))
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     settings = Settings(database_url=provider_database.database_url, public_base_url="https://endpoint.sosnadmin.local",
