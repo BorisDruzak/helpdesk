@@ -1,10 +1,11 @@
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import Device, DeviceRegistrationClaim
+from app.db.models import Device, DeviceRegistrationClaim, RegistryAsset
 from app.repos.registry_repo import RegistryRepo
 from registry.service import RegistryIngestionService
 
@@ -54,6 +55,38 @@ async def test_registry_ingests_agent_handshake_as_unverified_pc_asset(test_engi
     assert stored.source == "agent"
     assert stored.status == "unverified"
     assert stored.discovery_payload["os"] == "Windows 11"
+
+
+@pytest.mark.asyncio
+async def test_registry_agent_asset_upsert_is_safe_for_concurrent_handshakes(test_engine):
+    """Two handshakes for one device converge on one registry asset."""
+    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    device_id = "00000000-0000-4000-8000-000000000201"
+
+    async def upsert_from_handshake() -> str:
+        async with session_maker.begin() as session:
+            asset = await RegistryIngestionService(session).ingest_agent_handshake(
+                device_id=device_id,
+                hostname="RACE-201",
+                os_name="Windows 11",
+                agent_version="1.0.0",
+                metadata={"source": "handshake"},
+            )
+            return asset.asset_id
+
+    first_asset_id, second_asset_id = await asyncio.gather(
+        upsert_from_handshake(),
+        upsert_from_handshake(),
+    )
+
+    async with session_maker() as session:
+        assets = (
+            await session.execute(select(RegistryAsset).where(RegistryAsset.device_id == device_id))
+        ).scalars().all()
+
+    assert first_asset_id == second_asset_id
+    assert len(assets) == 1
+    assert assets[0].device_id == device_id
 
 
 @pytest.mark.asyncio
