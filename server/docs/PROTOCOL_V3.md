@@ -100,6 +100,7 @@ Handshake `client_kind` defaults to `agent_runtime`. Only `agent_runtime` update
 
 - Команды к агенту доставляются через таблицу **device_outbox** (pending → sent → delivered/failed).
 - `request_id` в команде используется как **command_id** (единый идентификатор команды).
+- Агент подтверждает валидную команду `command_ack.status="accepted"`, а непосредственно перед фактическим исполнением — вторым `command_ack.status="running"` с тем же `request_id` и correlation context. Сервер переводит операцию `sent|queued → accepted`, затем `accepted|sent|queued → running`; cached, recovered и pre-cancelled команды не публикуют `running`. Терминальный `command_result` остаётся durable и единственным путём завершения.
 - DeviceOutboxSender периодически опрашивает pending команды и отправляет их подключённым агентам; при получении `command_result` команда помечается как delivered (или failed при ошибке).
 - Drain order is no longer pure FIFO: `cancel_operation` идёт первым, затем agent update / control-health команды, затем обычный FIFO по `created_at`.
 - Для sync transport-path `send_ws_command(..., wait_for_result=True)` waiter теперь хранится в state-level runtime registry по `command_id`, а не в metadata текущего websocket, и регистрируется до wake-up dispatch, поэтому reconnect и быстрый `command_result` не должны терять ожидание.

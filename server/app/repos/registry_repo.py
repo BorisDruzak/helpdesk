@@ -5,6 +5,7 @@ from typing import Any, Iterable
 import uuid
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -218,33 +219,41 @@ class RegistryRepo:
         metadata: dict[str, Any],
     ) -> RegistryAsset:
         now = datetime.now(timezone.utc)
-        row = await self.get_asset_by_device_id(device_id)
         payload = dict(metadata or {})
         if os_name is not None:
             payload["os"] = os_name
         if agent_version is not None:
             payload["agent_version"] = agent_version
         name = hostname or device_id
-        if row is None:
-            row = RegistryAsset(
-                asset_id=_new_id(),
-                asset_type="pc",
-                name=name,
-                hostname=hostname,
-                device_id=device_id,
-                source="agent",
-                status="unverified",
-                discovery_payload=payload,
-                last_seen_at=now,
+        statement = pg_insert(RegistryAsset).values(
+            asset_id=_new_id(),
+            asset_type="pc",
+            name=name,
+            hostname=hostname,
+            device_id=device_id,
+            source="agent",
+            status="unverified",
+            discovery_payload=payload,
+            last_seen_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        statement = statement.on_conflict_do_update(
+            index_elements=[RegistryAsset.device_id],
+            set_={
+                "name": func.coalesce(RegistryAsset.name, statement.excluded.name),
+                "hostname": func.coalesce(statement.excluded.hostname, RegistryAsset.hostname),
+                "discovery_payload": RegistryAsset.discovery_payload.op("||")(statement.excluded.discovery_payload),
+                "last_seen_at": statement.excluded.last_seen_at,
+                "updated_at": statement.excluded.updated_at,
+            },
+        ).returning(RegistryAsset)
+        return (
+            await self.session.scalars(
+                statement,
+                execution_options={"populate_existing": True},
             )
-            self.session.add(row)
-        else:
-            row.name = row.name or name
-            row.hostname = hostname or row.hostname
-            row.discovery_payload = {**(row.discovery_payload or {}), **payload}
-            row.last_seen_at = now
-        await self.session.flush()
-        return row
+        ).one()
 
     async def link_asset_to_person_location(
         self,

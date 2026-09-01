@@ -346,6 +346,41 @@ async def test_command_ack_updates_operation_without_runtime_agent_entry(test_cl
 
 
 @pytest.mark.asyncio
+async def test_command_ack_running_updates_accepted_operation(test_client, monkeypatch):
+    monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
+    monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)
+    operation_id = "33333333-3333-4333-8333-333333333333"
+
+    async with get_session() as session:
+        await _create_sent_operation(session, operation_id=operation_id)
+        await OperationService(session).mark_accepted(operation_id, expected_statuses=["sent"])
+        await session.commit()
+
+    ctx = AgentConnectionContext(
+        ws=SimpleNamespace(),
+        request=SimpleNamespace(),
+        state=SimpleNamespace(get_agent=lambda _agent_id: None),
+        agent_id="device-lifecycle-1",
+    )
+
+    await CommandAckService().handle(
+        {
+            "type": "command_ack",
+            "request_id": operation_id,
+            "payload": {"status": "running"},
+        },
+        ctx,
+    )
+
+    async with get_session() as session:
+        operation = await session.get(Operation, operation_id)
+
+    assert operation is not None
+    assert operation.status == "running"
+    assert operation.started_at is not None
+
+
+@pytest.mark.asyncio
 async def test_cancel_operation_success_reconciles_target_outbox(test_client, monkeypatch):
     monkeypatch.setattr(agent_services, "DB_AVAILABLE", True)
     monkeypatch.setattr(agent_services, "ENABLE_DB_PERSISTENCE", True)

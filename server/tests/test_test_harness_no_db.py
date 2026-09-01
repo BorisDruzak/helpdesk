@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 import inspect
+import uuid
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +25,15 @@ test_harness = _load_test_harness()
 
 
 pytestmark = pytest.mark.no_db
+
+
+def test_agent_ws_machine_identity_is_unique_for_each_data_root():
+    first = test_harness._agent_ws_machine_identity(Path("C:/Temp/agent-ws-one"))
+    second = test_harness._agent_ws_machine_identity(Path("C:/Temp/agent-ws-two"))
+
+    assert first != second
+    assert str(uuid.UUID(first)) == first
+    assert str(uuid.UUID(second)) == second
 
 
 @pytest.mark.asyncio
