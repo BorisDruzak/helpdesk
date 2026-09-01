@@ -83,6 +83,9 @@ async def _seed_operation_consent(session, *, login: str, expires_delta: timedel
         profile={"full_name": f"Requester {login}", "email": login, "login": login, "user_confirmed": True},
     )
     approved = await registration.approve_claim(claim["registration"]["claim_id"], reviewed_by="admin")
+    # Ticket creation reads Registry through an independent session, mirroring
+    # the request boundary after the registration approval has been persisted.
+    await session.commit()
     account = await AccountSessionService(session).create_confirmed_binding_session(
         device_id=device_id,
         binding_id=approved["binding"]["binding_id"],
