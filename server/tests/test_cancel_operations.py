@@ -27,10 +27,13 @@ async def test_cancel_running_operation(test_client, test_agent, test_engine):
         device_id=device_id,
         ticket_id=ticket_id,
         tool_name=TEST_SLOW_ECHO_TOOL,
-        params={"message": "hi", "delay": 2},
+        # The server must first persist accepted -> running before the cancel
+        # request is issued.  Keep the synthetic tool active long enough for
+        # that round trip on a real PostgreSQL-backed test server.
+        params={"message": "hi", "delay": 5},
     )
 
-    await wait_for_operation_status(test_engine, operation_id, ["accepted", "running"], timeout=5)
+    await wait_for_operation_status(test_engine, operation_id, ["running"], timeout=5)
 
     cancel_resp = await test_client.post(
         f"/api/operations/{operation_id}/cancel",
@@ -43,6 +46,8 @@ async def test_cancel_running_operation(test_client, test_agent, test_engine):
 
     target_status = await wait_for_operation_terminal(test_engine, operation_id, timeout=10)
     assert target_status == "canceled"
+    cancel_status = await wait_for_operation_terminal(test_engine, cancel_operation_id, timeout=10)
+    assert cancel_status == "succeeded"
 
     session_maker = async_sessionmaker(test_engine)
     async with session_maker() as session:
@@ -76,10 +81,10 @@ async def test_cancel_idempotent(test_client, test_agent, test_engine):
         device_id=device_id,
         ticket_id=ticket_id,
         tool_name=TEST_SLOW_ECHO_TOOL,
-        params={"message": "hi", "delay": 2},
+        params={"message": "hi", "delay": 5},
     )
 
-    await wait_for_operation_status(test_engine, operation_id, ["accepted", "running"], timeout=5)
+    await wait_for_operation_status(test_engine, operation_id, ["running"], timeout=5)
 
     cancel_resp1 = await test_client.post(
         f"/api/operations/{operation_id}/cancel",
@@ -158,10 +163,10 @@ async def test_cancel_request_race(test_client, test_agent, test_engine):
         device_id=device_id,
         ticket_id=ticket_id,
         tool_name=TEST_SLOW_ECHO_TOOL,
-        params={"message": "hi", "delay": 2},
+        params={"message": "hi", "delay": 5},
     )
 
-    await wait_for_operation_status(test_engine, operation_id, ["accepted", "running"], timeout=5)
+    await wait_for_operation_status(test_engine, operation_id, ["running"], timeout=5)
 
     async def cancel_request():
         resp = await test_client.post(

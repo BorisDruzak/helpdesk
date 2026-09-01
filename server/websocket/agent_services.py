@@ -135,6 +135,11 @@ class CommandAckService:
                         operation_id=operation_id,
                         expected_statuses=["sent", "queued"],
                     )
+                elif ack_status == "running":
+                    await op_service.mark_running(
+                        operation_id=operation_id,
+                        expected_statuses=["accepted", "sent", "queued"],
+                    )
                 elif ack_status == "rejected":
                     await op_service.mark_failed(
                         operation_id=operation_id,

@@ -361,6 +361,16 @@ Reconnect/runtime note:
 
 `remote_assist.request` is a Protocol V3 command delivered through the normal server device outbox after canonical `UserConsentRequest` approval. Maria Agent must handle it without blocking the WS loop: when `consent_status=approved` is present, the Qt UI treats the user consent as already decided and calls the backend approve HTTP API only for the technical signaling token. Agent GUI approval before the command is done through `/api/registry/agent/consents*` with the same `consent_id` and active requester account session. The WebRTC signaling itself does not run over `/ws`; after technical approval the agent connects to `/ws/remote-assist/{session_id}?role=agent&token=...` with a short-lived role token from the backend. For `mode=elevated_admin`, Protocol V3 never grants hidden administrative access by itself. Approved file-transfer sessions use a separate WebRTC data channel named `file-transfer`; file bytes stay peer-to-peer, while signaling may relay only sanitized `file.transfer` / `file.error` audit envelopes.
 
+### Command lifecycle acknowledgements (command_ack)
+
+After envelope validation the agent sends `command_ack` with `status="accepted"`.
+Immediately before it invokes a non-cached command it sends a second
+`command_ack` with `status="running"`, using the same `request_id`, trace and
+ticket context. The server uses that transition to distinguish active work from
+queued work and allows a running operation to be cancelled. Cached, recovered
+and pre-cancelled commands do not emit `running`, because they do not begin a
+new execution. Terminal delivery remains the durable `command_result` flow.
+
 ### Command Result (command_result)
 
 Terminal `command_result` payloads are durable on the agent until the server
