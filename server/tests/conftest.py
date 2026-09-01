@@ -73,6 +73,7 @@ _WINDOWS_TEST_DB_TUNNEL_OWNED = False
 _SHARED_TEST_DB_TERMINATE_UNAVAILABLE = False
 _AGENT_WS_FIXTURES = {"test_agent"}
 _TEST_TIMING_WRITE_FAILED = False
+_AGENT_WS_IDENTITY_NAMESPACE = uuid.UUID("cd754a2b-5fd4-46ae-b7f0-20b3b7bdf0a4")
 
 
 class TestDbTemplateConfigError(RuntimeError):
@@ -291,6 +292,11 @@ def _clear_agent_runtime_modules() -> None:
     for mod_name in list(sys.modules.keys()):
         if mod_name in exact or mod_name.startswith(prefixes):
             sys.modules.pop(mod_name, None)
+
+
+def _agent_ws_machine_identity(data_root: Path) -> str:
+    """Return a deterministic synthetic machine identity for one in-process agent."""
+    return str(uuid.uuid5(_AGENT_WS_IDENTITY_NAMESPACE, str(data_root.resolve())))
 
 
 def _snapshot_agent_shadowed_modules() -> dict[str, object]:
@@ -2410,6 +2416,7 @@ async def test_agent(tmp_path, test_client):
                 "PC_AGENT_API_URL": test_api_url,
                 "PC_AGENT_UI_PORT": "0",
                 "PC_AGENT_DATA_DIR": str(tmp_path),
+                "PC_AGENT_MACHINE_ID": _agent_ws_machine_identity(tmp_path),
             },
         ), patch.object(ConfigLoader, "load", patched_load):
             loader = ConfigLoader()
