@@ -440,6 +440,15 @@ async def test_tech_lifecycle_and_agent_audit_feed(test_client):
     assert lifecycle["timeline"][0]["links"] == [
         {"rel": "ticket", "label": "Тикет", "href": f"/app/tickets/{ticket_id}"},
         {"rel": "device", "label": "Устройство", "href": f"/app/admin/device-operations/{device_id}"},
+    ]
+    related_operation = next(
+        item
+        for item in lifecycle["related_operations"]
+        if item["operation_id"] == "00000000-0000-0000-0000-000000000301"
+    )
+    assert related_operation["links"] == [
+        {"rel": "ticket", "label": "Тикет", "href": f"/app/tickets/{ticket_id}"},
+        {"rel": "device", "label": "Устройство", "href": f"/app/admin/device-operations/{device_id}"},
         {
             "rel": "operation",
             "label": "Операция 00000000…",
