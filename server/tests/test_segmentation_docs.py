@@ -140,7 +140,7 @@ def test_server_codemap_limits_knowledge_to_external_boundary_and_history() -> N
         "- `server/docs/KNOWLEDGE_PLATFORM_API_V1.md` defines a future external",
         "  Knowledge API contract. `KnowledgePort` remains unavailable until explicit",
         "  composition and reports `knowledge_unavailable`.",
-        "- `server/domain_ports/knowledge.py`, `registry.py` and `endpoint.py` define the",
+        "- `server/domain_ports/knowledge.py`, `registry.py`, `endpoint.py` define the",
         "  neutral, runtime-checkable dependency-injection protocols. Knowledge request",
         "  adapters with no DB or HTTP work.",
         "  fresh adapters from the fail-closed `server/config.py::KNOWLEDGE_PORT_MODE`",

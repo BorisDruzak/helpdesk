@@ -38,7 +38,7 @@ async def test_endpoint_operation_can_be_created_without_legacy_device_id():
 
 @pytest.mark.asyncio
 async def test_non_endpoint_operation_cannot_omit_legacy_device_id():
-    with pytest.raises(ValueError, match="only endpoint_operation"):
+    with pytest.raises(ValueError, match="only Endpoint facade operations"):
         await OperationsRepo(_Session()).create_operation(
             operation_id="00000000-0000-0000-0000-000000000140",
             device_id=None,

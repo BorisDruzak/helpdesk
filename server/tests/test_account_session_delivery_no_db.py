@@ -27,7 +27,15 @@ def test_session_token_delivery_envelope_round_trips_without_plaintext(monkeypat
     assert service._decrypt_session_token_delivery_envelope(envelope, request_id="request-2") is None
 
 
-def test_session_token_delivery_envelope_rejects_tampering(monkeypatch):
+def _mutate_b64url_payload(value: str) -> str:
+    """Change a significant Base64URL sextet, not trailing padding bits."""
+
+    assert value
+    return ("A" if value[0] != "A" else "B") + value[1:]
+
+
+@pytest.mark.parametrize("field", ("nonce", "ciphertext", "tag"))
+def test_session_token_delivery_envelope_rejects_binary_field_tampering(monkeypatch, field):
     monkeypatch.setattr(config, "ACCOUNT_SESSION_DELIVERY_SECRET", "unit-delivery-secret")
     envelope = service._build_session_token_delivery_envelope(
         request_id="request-1",
@@ -35,7 +43,24 @@ def test_session_token_delivery_envelope_rejects_tampering(monkeypatch):
         session_token="session-token",
     )
     tampered = copy.deepcopy(envelope)
-    tampered["ciphertext"] = tampered["ciphertext"][:-1] + ("A" if tampered["ciphertext"][-1:] != "A" else "B")
+    tampered[field] = _mutate_b64url_payload(tampered[field])
+
+    assert service._decrypt_session_token_delivery_envelope(tampered, request_id="request-1") is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("session_id", "session-2"), ("token_hash", "0" * 64)),
+)
+def test_session_token_delivery_envelope_rejects_signed_metadata_tampering(monkeypatch, field, value):
+    monkeypatch.setattr(config, "ACCOUNT_SESSION_DELIVERY_SECRET", "unit-delivery-secret")
+    envelope = service._build_session_token_delivery_envelope(
+        request_id="request-1",
+        session_id="session-1",
+        session_token="session-token",
+    )
+    tampered = copy.deepcopy(envelope)
+    tampered[field] = value
 
     assert service._decrypt_session_token_delivery_envelope(tampered, request_id="request-1") is None
 
