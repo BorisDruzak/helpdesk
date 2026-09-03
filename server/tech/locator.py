@@ -84,7 +84,7 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
         _safe_link("Approval Center", f"/app/support/approvals?ticket_id={quote(ticket.ticket_id)}", "approval_center"),
     ]
     if ticket.device_id:
-        links.append(_safe_link("Device Operations", f"/app/admin/device-operations/{ticket.device_id}", "device_operations"))
+        links.append(_safe_link("Device card", f"/app/admin/device?device={ticket.device_id}", "device_card"))
     return {
         "kind": "ticket",
         "id": ticket.ticket_id,
@@ -136,7 +136,7 @@ def _device_match(request: web.Request, device: Device, *, failed_count: int, st
             "outbox_backlog": outbox_backlog > 0,
         },
         "links": [
-            _safe_link("Device Operations", f"/app/admin/device-operations/{device.device_id}", "device_operations"),
+            _safe_link("Device card", f"/app/admin/device?device={device.device_id}", "device_card"),
             _safe_link("Inventory", f"/app/admin/inventory?device_id={quote(device.device_id)}", "inventory"),
             _safe_link("Observer", f"/app/admin/observer?device_id={quote(device.device_id)}", "observer"),
         ],
@@ -159,7 +159,7 @@ def _operation_match(operation: Operation) -> dict[str, Any]:
     if operation.ticket_id:
         links.insert(0, _safe_link("Открыть тикет", f"/app/tickets/{operation.ticket_id}", "ticket"))
     if operation.device_id:
-        links.append(_safe_link("Device Operations", f"/app/admin/device-operations/{operation.device_id}", "device_operations"))
+        links.append(_safe_link("Device card", f"/app/admin/device?device={operation.device_id}", "device_card"))
     return {
         "kind": "operation",
         "id": operation.operation_id,

@@ -530,7 +530,7 @@ function BaselineDeviceList({ devices }: { devices: TechProblemDevice[] }) {
     <div className="space-y-3">
       {devices.map((device) => (
         <div className="grid gap-3 rounded-lg border border-border px-4 py-3 text-sm md:grid-cols-[minmax(150px,1fr)_minmax(140px,0.8fr)_120px_minmax(150px,0.8fr)]" key={device.device_id}>
-          <SafeLink href={device.href ?? `/app/admin/device-operations/${device.device_id}`}>{device.device_id}</SafeLink>
+          <SafeLink href={device.href ?? `/app/admin/device?device=${device.device_id}`}>{device.device_id}</SafeLink>
           <span className="text-slate-700">{device.hostname ?? "hostname unknown"}</span>
           <span className="font-semibold text-slate-950">{device.agent_version ?? "unknown"}</span>
           <span className="text-xs text-slate-500">{formatDateTime(device.last_seen_at)}</span>
@@ -564,7 +564,7 @@ function AgentsTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
           {agents.problem_devices.length ? (
             agents.problem_devices.map((device) => (
               <div className="rounded-lg border border-border px-4 py-3" key={device.device_id}>
-                <SafeLink href={device.href ?? `/app/admin/device-operations/${device.device_id}`}>{device.device_id}</SafeLink>
+                <SafeLink href={device.href ?? `/app/admin/device?device=${device.device_id}`}>{device.device_id}</SafeLink>
                 <p className="mt-2 text-sm text-slate-600">
                   {device.hostname ?? "hostname unknown"} · {device.status ?? "warning"} · {(device.reasons ?? []).join(", ") || "requires attention"}
                 </p>
@@ -605,7 +605,7 @@ function OperationsTable({ items }: { items: TechStuckOperation[] }) {
       {items.map((operation) => (
         <div className="grid min-w-[820px] grid-cols-[minmax(180px,1fr)_minmax(150px,0.8fr)_minmax(150px,0.8fr)_100px_130px] gap-3 border-t border-border px-4 py-3 text-sm" key={operation.operation_id}>
           <SafeLink href={`/app/admin/operations/${operation.operation_id}`}>{operation.operation_id}</SafeLink>
-          <SafeLink href={operation.device_id ? `/app/admin/device-operations/${operation.device_id}` : null}>{operation.device_id ?? "нет device"}</SafeLink>
+          <SafeLink href={operation.device_id ? `/app/admin/device?device=${operation.device_id}` : null}>{operation.device_id ?? "нет device"}</SafeLink>
           <SafeLink href={operation.ticket_id ? `/app/tickets/${operation.ticket_id}` : null}>{operation.ticket_id ? String(operation.ticket_id) : "нет ticket"}</SafeLink>
           <Badge tone={toneForStatus(operation.status)}>{operation.status ?? "unknown"}</Badge>
           <span className="text-xs text-slate-500">{formatDateTime(operation.queued_at)}</span>

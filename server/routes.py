@@ -385,7 +385,6 @@ from web_api.observer_integrity_handlers import (
     handle_web_admin_observer_integrity,
     handle_web_admin_observer_integrity_scan,
 )
-from web_api.device_operations_handlers import handle_web_admin_device_operations
 from web_api.policy_health_handlers import (
     handle_web_admin_policy_health,
     handle_web_admin_policy_health_detail,
@@ -749,8 +748,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/device-tokens', handle_web_admin_device_tokens_list),
         web.get('/api/web/admin/devices/{device_id}/tokens', handle_web_admin_device_tokens),
         web.post('/api/web/admin/devices/{device_id}/tokens/revoke', handle_web_admin_device_token_revoke),
-        web.get('/api/web/admin/device-operations/{device_id}', handle_web_admin_device_operations),
-        web.get('/api/web/admin/device-operations', handle_web_admin_device_operations),
         web.get('/api/web/admin/connection_policy', handle_admin_connection_policy_get),
         web.patch('/api/web/admin/connection_policy', handle_admin_connection_policy_patch),
         web.get('/api/web/admin/connection_requests', handle_admin_connection_requests_list),

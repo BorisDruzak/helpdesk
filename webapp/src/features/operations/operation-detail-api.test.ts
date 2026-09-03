@@ -31,7 +31,7 @@ describe("fetchOperationDetail", () => {
 
     expect(fetchMock).toHaveBeenCalledWith("/api/web/admin/operations/op-1", { credentials: "same-origin" });
     expect(payload.operation.operation_id).toBe("op-1");
-    expect(payload.links.device_operations).toBe("/app/admin/device-operations/device-1");
+    expect(payload.links.device_operations).toBe("/app/admin/device?device=device-1");
     expect(payload.links.ticket).toBe("/app/tickets/ticket-1");
     expect(payload.links.observer).toBe("/app/admin/observer?trace_id=trace-1");
   });

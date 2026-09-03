@@ -380,15 +380,6 @@ export function AdminInventoryPage() {
     });
   }
 
-  function openDeviceOperations() {
-    if (!selectedDevice) {
-      return;
-    }
-    startTransition(() => {
-      navigate(`/app/admin/device-operations/${encodeURIComponent(selectedDevice.device_id)}`);
-    });
-  }
-
   return (
     <section className="space-y-5">
       <PageHeading
@@ -416,11 +407,11 @@ export function AdminInventoryPage() {
             <Button
               disabled={!selectedDevice}
               leadingIcon={<MonitorCog className="h-4 w-4" />}
-              onClick={openDeviceOperations}
+              onClick={openDeviceCard}
               size="sm"
               variant="outline"
             >
-              Операции устройства
+              Карточка устройства
             </Button>
           </>
         }
@@ -621,7 +612,6 @@ export function AdminInventoryPage() {
           onCleanupPreview={() => cleanupMutation.mutate(false)}
           onCleanupApply={() => cleanupMutation.mutate(true)}
           onOpenDeviceCard={openDeviceCard}
-          onOpenDeviceOperations={openDeviceOperations}
           onOpenPlaybooks={() => navigate("/app/admin/playbooks")}
           request={activePanel === "requests" ? selectedRequest : null}
           restoreBusy={restoreDeviceMutation.isPending}
@@ -1161,7 +1151,6 @@ function AgentDetailsPanel({
   onCleanupApply,
   onCleanupPreview,
   onOpenDeviceCard,
-  onOpenDeviceOperations,
   onOpenPlaybooks,
   onRestore,
   request,
@@ -1177,7 +1166,6 @@ function AgentDetailsPanel({
   onCleanupApply: () => void;
   onCleanupPreview: () => void;
   onOpenDeviceCard: () => void;
-  onOpenDeviceOperations: () => void;
   onOpenPlaybooks: () => void;
   onRestore: () => void;
   request: AdminConnectionRequestItem | null;
@@ -1322,7 +1310,7 @@ function AgentDetailsPanel({
                 className="w-full justify-start"
                 disabled={device.is_deleted}
                 leadingIcon={<MonitorCog className="h-4 w-4" />}
-                onClick={onOpenDeviceOperations}
+                onClick={onOpenDeviceCard}
                 size="sm"
                 variant="outline"
               >

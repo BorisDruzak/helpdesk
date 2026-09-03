@@ -614,7 +614,7 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
                         "last_seen_at": _iso(last_seen_at),
                         "agent_version": agent_version,
                         "reasons": reasons or ["requires attention"],
-                        "href": f"/app/admin/device-operations/{device_id}",
+                        "href": f"/app/admin/device?device={device_id}",
                     }
                 )
             if min_version:
@@ -636,7 +636,7 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
                                     "last_seen_at": _iso(last_seen_at),
                                     "agent_version": agent_version,
                                     "reasons": ["below baseline"],
-                                    "href": f"/app/admin/device-operations/{device_id}",
+                                    "href": f"/app/admin/device?device={device_id}",
                                 }
                             )
     except SQLAlchemyError:
@@ -790,7 +790,7 @@ def _links() -> dict[str, Any]:
     return {
         "observer": "/app/admin/observer",
         "inventory": "/app/admin/inventory",
-        "device_operations": "/app/admin/device-operations",
+        "device_operations": "/app/admin/device",
         "command_center": "/app/support",
         "approval_center": "/app/support/approvals",
         "logs": "/app/admin/tech?tab=logs",

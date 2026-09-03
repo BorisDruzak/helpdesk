@@ -80,10 +80,6 @@ export const AdminDevicePage = lazy(() =>
   import("../../pages/admin/device-page").then((module) => ({ default: module.AdminDevicePage })),
 );
 
-export const AdminDeviceOperationsPage = lazy(() =>
-  import("../../pages/admin/device-operations-page").then((module) => ({ default: module.AdminDeviceOperationsPage })),
-);
-
 export const AdminOperationDetailPage = lazy(() =>
   import("../../pages/admin/operation-detail-page").then((module) => ({ default: module.AdminOperationDetailPage })),
 );

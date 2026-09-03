@@ -90,13 +90,13 @@ export function AdminDevicePage() {
                 leadingIcon={<ArrowUpRight className="h-4 w-4" />}
                 onClick={() => {
                   startTransition(() => {
-                    navigate(`/app/admin/device-operations/${encodeURIComponent(selectedDevice.device_id)}`);
+                    navigate(`/app/admin/device?device=${encodeURIComponent(selectedDevice.device_id)}`);
                   });
                 }}
                 size="sm"
                 variant="outline"
               >
-                Операции устройства
+                Карточка устройства
               </Button>
             ) : null}
             <Select

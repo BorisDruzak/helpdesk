@@ -445,7 +445,7 @@ def _lifecycle_links(
             {
                 "rel": "device",
                 "label": "Устройство",
-                "href": f"/app/admin/device-operations/{device_id}",
+                "href": f"/app/admin/device?device={device_id}",
             }
         )
     if operation_id:

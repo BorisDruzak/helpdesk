@@ -318,7 +318,7 @@ class ApprovalConsentCenterService:
                 ApprovalConsentAction(
                     key="open_device_operations",
                     label="Открыть устройство",
-                    href=f"/app/admin/device-operations/{operation.device_id}",
+                    href=f"/app/admin/device?device={operation.device_id}",
                     enabled=True,
                 )
             )
