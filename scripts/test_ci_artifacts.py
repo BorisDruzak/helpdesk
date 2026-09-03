@@ -1,8 +1,10 @@
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
 
+import scripts.ci_artifacts as ci_artifacts
 from scripts.ci_artifacts import require_green_ci_artifact, require_live_release_summary
 
 
@@ -18,6 +20,76 @@ def write_live_summary(workspace: Path, payload: dict[str, object]) -> Path:
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(payload), encoding="utf-8")
     return summary_path
+
+
+def git(workspace: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=workspace,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout.strip()
+
+
+def initialize_repository(workspace: Path) -> None:
+    git(workspace, "init")
+    git(workspace, "config", "user.email", "tests@example.invalid")
+    git(workspace, "config", "user.name", "CI artifact tests")
+    (workspace / "base.txt").write_text("base\n", encoding="utf-8")
+    git(workspace, "add", "base.txt")
+    git(workspace, "commit", "-m", "base")
+
+
+def green_full_summary(commit: str) -> dict[str, object]:
+    return {
+        "commit": commit,
+        "status": "green",
+        "gate_mode": "full",
+        "parallel_enabled": True,
+        "full_merge_gate_satisfied": True,
+        "requested_layers": [],
+    }
+
+
+def test_resolve_green_ci_artifact_reuses_tree_identical_merge_parent(tmp_path: Path) -> None:
+    initialize_repository(tmp_path)
+    git(tmp_path, "checkout", "-b", "source")
+    (tmp_path / "source.txt").write_text("source\n", encoding="utf-8")
+    git(tmp_path, "add", "source.txt")
+    git(tmp_path, "commit", "-m", "source")
+    source_commit = git(tmp_path, "rev-parse", "HEAD")
+    source_summary = write_summary(tmp_path, source_commit, green_full_summary(source_commit))
+    git(tmp_path, "checkout", "master")
+    git(tmp_path, "merge", "--no-ff", "source", "-m", "merge source")
+    merge_commit = git(tmp_path, "rev-parse", "HEAD")
+
+    summary_path, artifact_commit, reused = ci_artifacts.resolve_green_ci_artifact(tmp_path, merge_commit)
+
+    assert summary_path == source_summary
+    assert artifact_commit == source_commit
+    assert reused is True
+
+
+def test_resolve_green_ci_artifact_rejects_tree_different_merge(tmp_path: Path) -> None:
+    initialize_repository(tmp_path)
+    git(tmp_path, "checkout", "-b", "source")
+    (tmp_path / "source.txt").write_text("source\n", encoding="utf-8")
+    git(tmp_path, "add", "source.txt")
+    git(tmp_path, "commit", "-m", "source")
+    source_commit = git(tmp_path, "rev-parse", "HEAD")
+    write_summary(tmp_path, source_commit, green_full_summary(source_commit))
+    git(tmp_path, "checkout", "master")
+    (tmp_path / "base-only.txt").write_text("base only\n", encoding="utf-8")
+    git(tmp_path, "add", "base-only.txt")
+    git(tmp_path, "commit", "-m", "base change")
+    git(tmp_path, "merge", "--no-ff", "source", "-m", "merge source")
+    merge_commit = git(tmp_path, "rev-parse", "HEAD")
+
+    with pytest.raises(SystemExit, match="Missing:"):
+        ci_artifacts.resolve_green_ci_artifact(tmp_path, merge_commit)
 
 
 def test_require_green_ci_artifact_accepts_exact_green_commit(tmp_path: Path) -> None:

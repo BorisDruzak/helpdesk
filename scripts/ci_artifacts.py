@@ -103,15 +103,37 @@ def _is_full_merge_gate_summary(summary: dict[str, Any]) -> bool:
     return True
 
 
-def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
-    summary_path = summary_path_for_commit(workspace, commit)
-    if not summary_path.exists():
-        raise SystemExit(
-            "Green CI artifact is required before deploy/release. "
-            f"Missing: {summary_path}\n"
-            "Release workflow: use targeted tests and --gate quick while iterating; "
-            "run `python scripts/run_ci_suite.py` only after the release candidate commit is frozen."
-        )
+def _git_output(workspace: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=workspace,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    return completed.stdout.strip()
+
+
+def _tree_identical_merge_source(workspace: Path, commit: str) -> str | None:
+    try:
+        parents = _git_output(workspace, "show", "-s", "--format=%P", commit).split()
+        if len(parents) != 2:
+            return None
+        source_commit = parents[1]
+        candidate_tree = _git_output(workspace, "rev-parse", f"{commit}^{{tree}}")
+        source_tree = _git_output(workspace, "rev-parse", f"{source_commit}^{{tree}}")
+    except subprocess.CalledProcessError:
+        return None
+    return source_commit if candidate_tree == source_tree else None
+
+
+def _require_green_full_summary(
+    summary_path: Path,
+    commit: str,
+    *,
+    require_parallel: bool = False,
+) -> None:
     summary = load_summary(summary_path)
     artifact_commit = str(summary.get("commit", "")).strip()
     if artifact_commit != commit:
@@ -136,6 +158,12 @@ def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
             "Affected-suite and --layer runs are fast PR evidence only. "
             "Run `python scripts/run_ci_suite.py` for the frozen commit before full release/deploy."
         )
+    if require_parallel and summary.get("parallel_enabled") is not True:
+        raise SystemExit(
+            "Reused full CI artifact must have parallel_enabled=true. "
+            f"{summary_path} reports parallel_enabled={summary.get('parallel_enabled')!r}.\n"
+            "Run full CI for the frozen target commit before full release/deploy."
+        )
     shared_db_logs = shared_db_fallback_logs(summary_path, summary)
     if shared_db_logs:
         offenders = "\n".join(f"  {step_name}: {log_path}" for step_name, log_path in shared_db_logs)
@@ -145,6 +173,32 @@ def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
             "Set TEST_DATABASE_ADMIN_URL so DB/WS layers use isolated pc_support_test_<runid> databases, "
             "then rerun full CI for the frozen commit."
         )
+
+
+def resolve_green_ci_artifact(workspace: Path, commit: str) -> tuple[Path, str, bool]:
+    """Resolve an exact or safely reusable full CI artifact for a release commit."""
+    summary_path = summary_path_for_commit(workspace, commit)
+    if summary_path.exists():
+        _require_green_full_summary(summary_path, commit)
+        return summary_path, commit, False
+
+    source_commit = _tree_identical_merge_source(workspace, commit)
+    if source_commit:
+        source_summary_path = summary_path_for_commit(workspace, source_commit)
+        if source_summary_path.exists():
+            _require_green_full_summary(source_summary_path, source_commit, require_parallel=True)
+            return source_summary_path, source_commit, True
+
+    raise SystemExit(
+        "Green CI artifact is required before deploy/release. "
+        f"Missing: {summary_path}\n"
+        "Release workflow: use targeted tests and --gate quick while iterating; "
+        "run `python scripts/run_ci_suite.py` only after the release candidate commit is frozen."
+    )
+
+
+def require_green_ci_artifact(workspace: Path, commit: str) -> Path:
+    summary_path, _artifact_commit, _reused = resolve_green_ci_artifact(workspace, commit)
     return summary_path
 
 

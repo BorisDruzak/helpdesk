@@ -57,8 +57,9 @@ def test_main_checks_exact_ci_and_bundle_for_clean_candidate(monkeypatch: pytest
     monkeypatch.setattr(preflight, "git_status_short", lambda workspace: [])
     monkeypatch.setattr(
         preflight,
-        "require_green_ci_artifact",
-        lambda workspace, commit: recorded.append(("ci", workspace, commit, None, None, None)) or workspace / "summary.json",
+        "resolve_green_ci_artifact",
+        lambda workspace, commit: recorded.append(("ci", workspace, commit, None, None, None))
+        or (workspace / "summary.json", commit, False),
     )
     monkeypatch.setattr(
         preflight,
@@ -89,6 +90,37 @@ def test_main_checks_exact_ci_and_bundle_for_clean_candidate(monkeypatch: pytest
         ("bundle", workspace, "abc123", None, None, None),
         ("live", workspace, "abc123", "stand", None, None),
     ]
+
+
+def test_main_reports_reused_ci_artifact_commit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = Path(r"C:\Users\admin-2\CodexProjects\pc_client")
+    bundle_commits: list[str] = []
+    monkeypatch.setattr(preflight, "parse_args", lambda: make_args())
+    monkeypatch.setattr(preflight, "detect_commit", lambda workspace, commit=None: "merge123")
+    monkeypatch.setattr(preflight, "git_status_short", lambda workspace: [])
+    monkeypatch.setattr(
+        preflight,
+        "resolve_green_ci_artifact",
+        lambda workspace, commit: (workspace / "source-summary.json", "source123", True),
+    )
+    monkeypatch.setattr(
+        preflight,
+        "require_webapp_bundle_artifact",
+        lambda workspace, commit: bundle_commits.append(commit) or workspace / "bundle.tar.gz",
+    )
+    monkeypatch.setattr(
+        preflight,
+        "require_live_release_summary",
+        lambda workspace, commit, environment, **kwargs: workspace / "release-summary.json",
+    )
+
+    preflight.main()
+
+    assert "reused_ci_artifact_commit=source123" in capsys.readouterr().out
+    assert bundle_commits == ["source123"]
 
 
 def test_git_status_short_returns_non_empty_lines(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

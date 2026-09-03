@@ -12,7 +12,7 @@ try:
     from scripts.ci_artifacts import (
         DEFAULT_WORKSPACE,
         detect_commit,
-        require_green_ci_artifact,
+        resolve_green_ci_artifact,
         require_live_release_summary,
         require_webapp_bundle_artifact,
     )
@@ -21,7 +21,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from scripts.ci_artifacts import (
         DEFAULT_WORKSPACE,
         detect_commit,
-        require_green_ci_artifact,
+        resolve_green_ci_artifact,
         require_live_release_summary,
         require_webapp_bundle_artifact,
     )
@@ -116,11 +116,13 @@ def main() -> None:
     if all_dirty_entries and not dirty_entries:
         print("[release-preflight] generated/untracked artifacts are ignored for release-candidate dirtiness.")
 
-    summary_path = require_green_ci_artifact(workspace, commit)
+    summary_path, artifact_commit, reused_artifact = resolve_green_ci_artifact(workspace, commit)
     print(f"[release-preflight] green_ci_artifact={summary_path}")
+    if reused_artifact:
+        print(f"[release-preflight] reused_ci_artifact_commit={artifact_commit}")
 
     if not args.skip_webapp_bundle:
-        bundle_path = require_webapp_bundle_artifact(workspace, commit)
+        bundle_path = require_webapp_bundle_artifact(workspace, artifact_commit)
         print(f"[release-preflight] webapp_bundle={bundle_path}")
 
     live_summary_path = require_live_release_summary(

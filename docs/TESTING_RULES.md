@@ -6,13 +6,13 @@ For Live validation, debugging, Protocol V3, browser/admin UI, local agent GUI, 
 
 ## Always
 
-Run this before committing code or docs:
+Run this for a release/deploy preflight or a broad cross-cutting change:
 
 ```powershell
 python scripts/verify_workspace.py
 ```
 
-Then run the narrowest pytest/browser layer that covers the files you changed.
+For an ordinary change, run the narrowest pytest/browser/build layer that covers the files you changed; `verify_workspace.py` is not a routine commit prerequisite.
 
 ## Server Pytest Layers
 
@@ -153,7 +153,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 - `CI=1` for webapp unit and Playwright fixture E2E layers, so Playwright keeps retry traces instead of running with trace collection effectively disabled; fixture E2E has one CI retry and records first-attempt failures as flaky evidence, not clean green.
 - `quality/flaky_registry.json` is the only allowlist for retry-pass records. `webapp_fixture_e2e` writes `playwright-webapp-fixture-e2e.json`, and `summary.flaky_summary` records `passed_after_retry` node ids, first/final status, worker indexes, previous error and trace/video/log attachments. Unknown or invalid retry-pass records turn the CI summary red instead of being treated as clean green.
 - `summary.evidence_layers.webapp_fixture_e2e` marks Playwright fixture E2E as `mode=fixture_e2e` and `canonical_live_browser=false`; it is CI browser-fixture coverage, not live browser signoff evidence.
-- `summary.gate_mode`, `summary.effective_layers`, `summary.full_merge_gate_required` and `summary.full_merge_gate_satisfied` distinguish full, selected and affected-suite runs. Release/preflight consumers accept only green full merge-gate artifacts.
+- `summary.gate_mode`, `summary.effective_layers`, `summary.full_merge_gate_required` and `summary.full_merge_gate_satisfied` distinguish full, selected and affected-suite runs. Release/preflight consumers accept only green full merge-gate artifacts. An exact artifact is required unless the candidate is a two-parent merge whose second parent has an identical Git tree and a green parallel full artifact; affected-suite and selected artifacts are never reusable as full evidence.
 - `summary.baseline_artifacts` records canonical JUnit XML paths, pytest duration baselines, fixture timing artifacts and fixture E2E retry policy for release/preflight consumers.
 - `quality/test_suites.toml` is the canonical CI/test-suite catalog. The runner fails on layer-order/catalog drift, and the inventory audit uses the same catalog for server DB/API ownership instead of maintaining a second routing table.
 - `fixture-timings-summary.json` includes the default fixture timing budget result: `budget_profile`, `budget_status` and `budget_violations`.
@@ -309,7 +309,7 @@ On Windows default DB-backed pytest, the harness opens the configured SSH tunnel
 
 ## When To Run What
 
-- Docs-only or script metadata: `python scripts/verify_workspace.py` plus the matching `scripts/test_*.py`.
+- Docs-only or script metadata: matching `scripts/test_*.py` and `python scripts/docs_inventory.py --check-links` when links or workflow documentation changed; use `verify_workspace.py` only for release/deploy preflight or broad cross-cutting drift.
 - Server API/handler/repo/schema behavior: server DB/API layer, plus focused files for the touched area.
 - WebSocket, `run_tool`, outbox, in-process agent, UI realtime: server `agent_ws` layer.
 - Agent runtime, launcher, tray, local UI bridge: focused `pc_agent/tests/*`, then live local agent status if runtime behavior changed.

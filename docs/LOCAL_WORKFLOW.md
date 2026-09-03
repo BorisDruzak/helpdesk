@@ -14,15 +14,15 @@
 - Каждый локальный commit публикуется в GitHub `origin` сразу после commit: локальный commit и GitHub push являются одним checkpoint-ом.
 - Для обычного push dev-ветки в GitHub не нужен отдельный строгий secret-scan или full CI artifact; достаточно осознанного staging по текущему `.gitignore`, `git diff --cached` и проектного запрета на логирование сырых токенов.
 - Канонический финальный release-checkpoint: локальные правки -> локальные проверки -> локальный commit -> push в GitHub `origin` -> green CI artifact для коммита -> passing `pc_client.live_release_summary.v1` для exact commit/environment -> deploy на Linux через `--gate full` -> remote start/smoke/browser -> stop -> release-отчёт. Codex запускает full CI/full gate только по явному запросу пользователя; если блок изменений ещё идёт частями, Codex должен напомнить об этом checkpoint-е и уточнить, запускать ли его сейчас.
-- Для быстрой итерации на Linux-стенде использовать явный quick gate: `python scripts/release_server_to_remote.py --gate quick` или `python scripts/deploy_workspace_to_remote.py --gate quick`. Quick gate пропускает только требование green CI artifact текущего commit; он не отменяет локальный commit, `verify_workspace`, релевантные pytest, remote smoke и browser/live проверки по затронутой зоне.
-- Full CI запускается только для frozen release candidate SHA. До freeze использовать targeted tests, `verify_workspace`, релевантный build/typecheck и quick gate/live smoke. После green full CI нельзя делать новый commit до full-gate release: любой новый commit становится новым candidate и требует новый full CI artifact.
+- Для быстрой итерации на Linux-стенде использовать явный quick gate: `python scripts/release_server_to_remote.py --gate quick` или `python scripts/deploy_workspace_to_remote.py --gate quick`. Quick gate пропускает только требование green CI artifact текущего commit; он не отменяет релевантные pytest, remote smoke и browser/live проверки по затронутой зоне.
+- Full CI запускается только по явному запросу для frozen release candidate с новым Git tree. До freeze использовать targeted tests, релевантный build/typecheck и quick gate/live smoke. `verify_workspace.py` — release/deploy preflight, а не обязательный шаг каждой правки или push. GitHub merge, у которого tree полностью совпадает с уже проверенным PR-head, может переиспользовать его green parallel full artifact; preflight выводит исходный commit такого artifact. После green full CI нельзя менять Git tree до full-gate release: любой новый tree требует новый full CI artifact.
 - Перед full CI/full gate выполнять preflight:
 
 ```powershell
 python scripts/release_candidate_preflight.py
 ```
 
-Preflight показывает текущий `HEAD`, проверяет `artifacts/ci/<HEAD>/summary.json`, совпадение `summary.commit == HEAD`, `status == green`, наличие webapp bundle, passing `artifacts/live/release-summary.json` для exact commit/environment и release-relevant dirty workspace. Сгенерированные `artifacts/*` не блокируют preflight. Если artifact отсутствует, это сигнал не запускать full gate: сначала freeze commit, `python scripts/run_ci_suite.py`, полный live behavior pack + `python scripts/build_live_release_summary.py --commit <HEAD> --environment <name> --release-run-id <id> --expected-schema-head <head> --output artifacts/live/release-summary.json`, либо продолжить итерации через `--gate quick`.
+Preflight показывает текущий `HEAD`, проверяет green full CI artifact, наличие webapp bundle, passing `artifacts/live/release-summary.json` для release commit/environment и release-relevant dirty workspace. По умолчанию artifact должен совпадать с `HEAD`; исключение допускается только для двух-parent GitHub merge, где второй parent и merge имеют одинаковый Git tree, а parent artifact имеет `status=green`, полный набор слоёв и `parallel_enabled=true`. В этом исключении webapp bundle берётся из того же source artifact; live release summary по-прежнему относится к deploy commit. Сгенерированные `artifacts/*` не блокируют preflight. Если подходящего artifact нет, это сигнал не запускать full gate: сначала freeze новый tree, `python scripts/run_ci_suite.py`, полный live behavior pack + `python scripts/build_live_release_summary.py --commit <HEAD> --environment <name> --release-run-id <id> --expected-schema-head <head> --output artifacts/live/release-summary.json`, либо продолжить итерации через `--gate quick`.
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
 - Helpdesk release не использует отдельный Git remote или рабочую копию на хосте: точный локальный commit передаётся архивом через `scripts/deploy_helpdesk_release.py`. Скрипт строит `webapp/dist` из временного source snapshot того же commit и добавляет его в этот immutable archive; bundle из незакоммиченной рабочей папки не используется.
@@ -60,13 +60,13 @@ python scripts/bootstrap_web_toolchain.py
 
 4. Если задача длинная или многосоставная, обновить `PLANS.md`.
 
-5. Перед синхронизацией прогнать быстрые проверки:
+5. Выбрать проверку по изменённым путям. Для release/deploy preflight дополнительно прогнать workspace проверку:
 
 ```powershell
 python scripts/verify_workspace.py
 ```
 
-`verify_workspace.py` включает UTF-8/compile checks, module observer guard, AST-проверку границы доменов: active runtime не должен импортировать локальные `knowledge`, `app.repos.knowledge_repo` или Knowledge ORM-модели (исторические Alembic migrations исключены), запрет на tracked local config/secret-файлы (`server/.env`, `db_config.json`), `docs_drift_check.py` и active-doc broken-link check через `docs_inventory.py --check-links`.
+`verify_workspace.py` — широкий release/deploy preflight: UTF-8/compile checks, module observer guard, AST-проверка границы доменов, запрет на tracked local config/secret-файлы и docs checks. Для обычной правки не является обязательным: запускать только релевантный pytest/build/typecheck по изменённым путям.
 Для мини-прода strict-профиль задаётся `APP_ENV=pilot|prod` (legacy `PILOT_STAND_MODE=true` остаётся совместимым): в этом режиме insecure dev defaults, in-memory DB fallback и небезопасные HTTP/WSS/cookie/default-password настройки должны падать на старте, а не превращаться в warning.
 
 6. После локальной проверки сделать локальный commit и сразу отправить его в GitHub `origin`.
@@ -204,7 +204,7 @@ git status --short
 1. Работать только в `C:\Users\admin-2\CodexProjects\pc_client`.
 2. Перед изменениями при необходимости обновить локальную копию через `python scripts/bootstrap_local_workspace.py`.
 3. Вносить правки локально.
-4. Прогнать локальные проверки через `python scripts/verify_workspace.py` и дополнительные тесты по задаче.
+4. Прогнать только проверки по изменённым путям; `python scripts/verify_workspace.py` добавлять для release/deploy preflight или широкой cross-cutting правки.
    Для задач по `webapp/` и frontend release pipeline перед этим сначала выполнить `python scripts/bootstrap_web_toolchain.py`.
 5. Для длинных задач вести `PLANS.md`.
 6. Если задача затрагивает локальный агент, использовать `python scripts/manage_local_agent.py ...` и проверять нужный сценарий на отдельном инстансе.

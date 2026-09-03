@@ -25,6 +25,6 @@ For a non-trivial task, inspect `git status --short`, classify the change as loc
 
 ## Completion
 
-Run `python scripts/verify_workspace.py` plus the narrowest relevant checks. For browser-visible changes, collect browser evidence. For routes, contracts, entrypoints, deployment, or workflow changes, update the matching docs/CODEMAP in the same change.
+Run the narrowest relevant checks for the changed paths. Use `python scripts/verify_workspace.py` for release/deploy preflight or broad cross-cutting changes, not as a routine prerequisite for every commit. For browser-visible changes, collect browser evidence. For routes, contracts, entrypoints, deployment, or workflow changes, update the matching docs/CODEMAP in the same change.
 
 Full CI and the full release gate are release-candidate actions, not routine completion checks.
