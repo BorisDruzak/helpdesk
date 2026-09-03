@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 pytestmark = pytest.mark.manual
 
-from app.db.models import DeviceOutbox, DiagnosticEvidence, EndpointOperationLink, Operation, Ticket
+from app.db.models import DiagnosticEvidence, EndpointOperationLink, Operation, Ticket
 from app.services.endpoint_module_operation_reconciler import (
     EndpointModuleOperationReconciler,
     SqlAlchemyEndpointModuleOperationReconcileStore,
@@ -275,7 +275,6 @@ async def test_module_recipe_real_provider_wss_and_helpdesk_evidence(
             operation = await session.get(Operation, local.operation_id)
             link = (await session.execute(select(EndpointOperationLink).where(EndpointOperationLink.operation_id == local.operation_id))).scalar_one()
             evidence = list((await session.scalars(select(DiagnosticEvidence).where(DiagnosticEvidence.ticket_id == ticket_id))).all())
-            outbox_count = await session.scalar(select(func.count()).select_from(DeviceOutbox).where(DeviceOutbox.operation_id == local.operation_id))
         async with provider() as session:
             remote_count = await session.scalar(select(func.count()).select_from(EndpointOperation).where(
                 EndpointOperation.requested_by_service_client_id == helpdesk.id))
@@ -283,7 +282,7 @@ async def test_module_recipe_real_provider_wss_and_helpdesk_evidence(
         assert operation is not None and operation.status == "succeeded"
         assert link.endpoint_operation_ref is not None and link.safe_result_snapshot_json is not None
         assert len(evidence) == 1 and evidence[0].source_id == link.endpoint_operation_ref
-        assert outbox_count == 0 and remote_count == 1
+        assert remote_count == 1
     finally:
         await _stop(server, task)
         await provider_database.close()

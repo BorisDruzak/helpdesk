@@ -25,7 +25,6 @@ from app.db import get_session, init_db, shutdown_db
 from app.db.models import (
     Device,
     DeviceAccountSession,
-    DeviceOutbox,
     DeviceUserBinding,
     Operation,
     Playbook,
@@ -539,12 +538,6 @@ class PrimaryAgentOnBehalfLiveGate:
                 operations = (
                     await session.execute(select(Operation).where(Operation.playbook_run_id.in_(run_ids)))
                 ).scalars().all()
-            outboxes = []
-            operation_ids = [op.operation_id for op in operations]
-            if operation_ids:
-                outboxes = (
-                    await session.execute(select(DeviceOutbox).where(DeviceOutbox.operation_id.in_(operation_ids)))
-                ).scalars().all()
             return {
                 "ticket_id": ticket.ticket_id,
                 "requester_id": ticket.requester_id,
@@ -574,7 +567,6 @@ class PrimaryAgentOnBehalfLiveGate:
                     for run in matching_runs
                 ],
                 "operation_count": len(operations),
-                "device_outbox_count": len(outboxes),
             }
 
     async def scenario_normal_ticket(self) -> None:
@@ -622,7 +614,6 @@ class PrimaryAgentOnBehalfLiveGate:
         _require(facts["target_agent_status"] == "offline", "offline target evidence was not stored")
         _require(facts["playbook_runs"] == [], "offline target still created a playbook run")
         _require(facts["operation_count"] == 0, "offline target still created operations")
-        _require(facts["device_outbox_count"] == 0, "offline target still enqueued device_outbox")
         _require(facts["diagnostic_skip_events"], "offline target did not write skip event")
         _require(facts["diagnostic_skip_events"][0]["reason"] == "target_agent_offline", "offline skip reason mismatch")
         self.report["scenarios"][REQUIRED_SCENARIOS[2]] = {"status": "passed", **facts}
