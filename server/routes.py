@@ -226,7 +226,6 @@ from static_pages.webapp_assets import (
     handle_webapp_page,
     handle_webapp_public_asset,
 )
-from api.admin import handle_admin_run_tool
 from tickets.admin_config_handlers import (
     handle_admin_queues_list,
     handle_admin_queues_post,
@@ -257,8 +256,6 @@ from tickets.admin_config_handlers import (
     handle_admin_ola_targets_put,
     handle_admin_audit_list,
 )
-from api.protocol import handle_protocol
-from api.commands import handle_send_command, handle_check_functions, handle_smoke_run
 from api.events import handle_get_ticket_events, handle_ticket_messages
 from web_api.endpoint_operation_handlers import (
     handle_web_admin_endpoint_operation_get,
@@ -1283,7 +1280,6 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Admin API
         # ============================================================================
-        web.post('/api/admin/run_tool', handle_admin_run_tool),
         # Stage 10: Admin Users API (feature-flagged: AUTH_UI_DB_USERS_ENABLED)
         web.get('/api/admin/users', handle_admin_users_list),
         web.post('/api/admin/users', handle_admin_users_post),
@@ -1360,14 +1356,10 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Protocol Documentation
         # ============================================================================
-        web.get('/api/protocol', handle_protocol),
         
         # ============================================================================
         # Commands API
         # ============================================================================
-        web.post('/api/send_command', handle_send_command),
-        web.post('/api/check_functions', handle_check_functions),
-        web.post('/api/smoke_run', handle_smoke_run),
         
         # ============================================================================
         # Chat API
