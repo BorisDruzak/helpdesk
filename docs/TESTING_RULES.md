@@ -138,7 +138,7 @@ Use the in-app browser for live UI checks on the canonical stand origin:
 https://example.test:9443
 ```
 
-Route selection must match the changed surface: `/admin` for admin/tech-panel, `/app/*` for React workspaces, and `/app/requester`, `/app/requester/devices`, or `/app/device/*` for web-first requester/web-agent checks.
+Route selection must match the changed surface: `/admin` for admin/tech-panel and `/app/*` for React workspaces, including `/app/requester` and `/app/requester/devices` for requester checks.
 
 ## CI Diagnostics
 
@@ -254,12 +254,12 @@ Profile selection guide:
 | `registry_access` | registry/access/audience/group/user-permission tests. |
 | `policies_config` | policy/config/SLA/OLA/routing/closure/visibility/reporting tests. |
 | `agent_runtime` | agent/device/outbox/module/tool/runtime API tests that do not use the in-process `test_agent` fixture. |
-| `registration` | registration, device binding, browser pairing, and account-session tests that are driven by device/registry parent rows. |
+| `registration` | registration and device-binding tests driven by device/registry parent rows. |
 | `web_support` | broad support/requester web API flows that mix tickets, registry/access, operations/outbox, playbooks, observer traces, and agent update artifacts. |
 
 Do not automatically map mixed `web_api` files to `tickets`. Use `web_support` only when the file is a support/requester web workspace flow and focused validation with `PC_CLIENT_TEST_CLEANUP_AUDIT=1` is green. Keep a file on `full` when it is mixed-domain beyond a documented profile, uses `test_agent`/`agent_ws`, writes through broad web/API flows that are not covered by `web_support`, or is otherwise hard to prove from the existing cleanup profile. If a focused run fails after adding a marker, revert that file to `full` instead of weakening assertions or expanding cleanup behavior in the same pass.
 
-Cleanup profiles may rely on database cascades from parent tables already listed in `FULL_CLEANUP_TABLES`. Runtime child tables such as `device_user_bindings`, `device_account_sessions`, `device_registration_claims`, `device_browser_pairings`, `ticket_approvals`, `ticket_notifications`, and `user_consent_requests` are now explicit full-cleanup tables; if a new runtime table appears, classify it in `quality/db_table_classification.toml` and make the schema audit pass instead of relying on implicit cascade behavior.
+Cleanup profiles may rely on database cascades from parent tables already listed in `FULL_CLEANUP_TABLES`. Runtime child tables such as `device_user_bindings`, `device_registration_claims`, `ticket_approvals`, `ticket_notifications`, and `user_consent_requests` are explicit full-cleanup tables; historical account-session and pairing tables remain only for data retention. If a new runtime table appears, classify it in `quality/db_table_classification.toml` and make the schema audit pass instead of relying on implicit cascade behavior.
 
 To audit current file-level coverage without changing pytest behavior:
 
@@ -299,7 +299,6 @@ python -m pytest server/tests/test_web_support_api.py -vv --durations=40
 python -m pytest server/tests/test_requester_workspace_api.py -vv --durations=40
 python -m pytest server/tests/test_registration_api.py -vv --durations=40
 python -m pytest server/tests/test_p0_workbench_update_contracts.py -vv --durations=40
-python -m pytest server/tests/test_account_session_service.py -vv --durations=40
 python scripts/run_ci_suite.py --layer server_pytest_db_web_api
 ```
 

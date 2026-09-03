@@ -447,7 +447,7 @@ class DevicesRepo:
     ) -> bool:
         """
         Restore a previously archived device record without reviving revoked tokens,
-        account sessions, pending requests, outbox rows, or canceled operations.
+        pending registration requests, outbox rows, or canceled operations.
 
         Returns:
             True when the device exists, False when it was not found.

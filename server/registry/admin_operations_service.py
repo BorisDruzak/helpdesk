@@ -1308,7 +1308,7 @@ class RegistryAdminOperationsService:
         }
         if result.get("entity_type"):
             item["entity_type"] = result.get("entity_type")
-        for key in ("error_code", "error", "message", "affected_sessions"):
+        for key in ("error_code", "error", "message"):
             if key in result:
                 item[key] = result.get(key)
         return item
