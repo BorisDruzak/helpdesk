@@ -625,7 +625,6 @@ async def create_ticket_with_side_effects(
         requester_person_id=requester_person_id,
         requester_binding_id=requester_binding_id,
         requester_registration_status=requester_registration_status,
-        requester_account_session_id=None,
         requester_account_mode=requester_account_mode,
         requester_account_warning=requester_account_warning,
         requester_ref=requester_ref,

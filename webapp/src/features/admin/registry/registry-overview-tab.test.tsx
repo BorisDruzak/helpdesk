@@ -19,7 +19,6 @@ const registryPayload: AdminRegistryPayload = {
     stale_bindings: 0,
     data_quality_issues: 2,
     suggestions: 0,
-    sessions_active: 1,
     ui_users_unlinked: 1,
   },
   assets: [
@@ -44,7 +43,6 @@ const registryPayload: AdminRegistryPayload = {
       active_person_id: null,
       active_person_name: null,
       active_bindings: [],
-      active_sessions_count: 0,
       active_tickets_count: 0,
       pending_claim_count: 0,
       last_claim_at: null,
@@ -77,7 +75,6 @@ const registryPayload: AdminRegistryPayload = {
       active_binding_id: "binding-active",
       active_person_id: "person-owner",
       active_person_name: "Current Owner",
-      active_sessions_count: 1,
       active_tickets_count: 0,
       pending_claim_count: 1,
       last_claim_at: "2026-06-16T08:00:00Z",
@@ -225,7 +222,6 @@ const registryPayload: AdminRegistryPayload = {
       source: "registration_claim",
       confirmed_at: "2026-06-15T08:00:00Z",
       confirmed_by_admin: "admin",
-      active_sessions_count: 0,
     },
   ],
   bindings: [
@@ -256,7 +252,6 @@ const registryPayload: AdminRegistryPayload = {
       confirmed_by_admin: "admin",
     },
   ],
-  account_login_requests: [],
   ui_users: [
     {
       user_login: "orphan-ui",

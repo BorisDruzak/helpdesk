@@ -56,18 +56,6 @@ export const RequesterDevicesPage = lazy(() =>
   import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDevicesPage })),
 );
 
-export const RequesterDeviceLinkPage = lazy(() =>
-  import("../../pages/requester/devices-page").then((module) => ({ default: module.RequesterDeviceLinkPage })),
-);
-
-export const DevicePairingPage = lazy(() =>
-  import("../../pages/device-pairing").then((module) => ({ default: module.DevicePairingPage })),
-);
-
-export const DevicePairCodePage = lazy(() =>
-  import("../../pages/device-pairing").then((module) => ({ default: module.DevicePairCodePage })),
-);
-
 export const SettingsPage = lazy(() =>
   import("../../pages/settings").then((module) => ({ default: module.SettingsPage })),
 );

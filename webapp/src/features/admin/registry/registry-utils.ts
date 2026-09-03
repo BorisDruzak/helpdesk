@@ -282,9 +282,6 @@ export function filterRegistryPayload(value: AdminRegistryPayload, query: string
     bindings: (value.bindings ?? value.active_bindings).filter((binding) =>
       includes(binding.binding_id, binding.device_id, binding.hostname, binding.person_id, binding.person_name, binding.relationship_type, binding.status)
     ),
-    account_login_requests: (value.account_login_requests ?? []).filter((request) =>
-      includes(request.request_id, request.device_id, request.matched_person_id, request.base_binding_id, request.status, String(request.requested_account?.login ?? ""))
-    ),
     ui_users: (value.ui_users ?? []).filter((user) =>
       includes(user.user_login, user.actor_role, user.linked_person_id, user.linked_person_name)
     ),

@@ -363,9 +363,6 @@ export type AdminRegistryPayload = {
     devices_unregistered?: number;
     people_total?: number;
     bindings_active?: number;
-    sessions_active?: number;
-    sessions_other_account?: number;
-    other_account_requests?: number;
     ui_users?: number;
     ui_users_linked?: number;
     ui_users_unlinked?: number;
@@ -398,7 +395,6 @@ export type AdminRegistryPayload = {
     responsible_person_id?: string | null;
     responsible_person_name?: string | null;
     active_bindings?: AdminDeviceUserBinding[];
-    active_sessions_count?: number;
     active_tickets_count?: number;
     pending_claim_count: number;
     last_claim_at: string | null;
@@ -554,7 +550,6 @@ export type AdminRegistryPayload = {
   registration_claims: AdminRegistrationClaim[];
   active_bindings: AdminDeviceUserBinding[];
   bindings?: AdminDeviceUserBinding[];
-  account_login_requests?: AdminAccountLoginRequest[];
   password_reset_requests?: AdminPasswordResetRequest[];
   ui_users?: AdminRegistryUiUser[];
 };
@@ -678,7 +673,6 @@ export type AdminDeviceUserBinding = {
   revoked_at?: string | null;
   revoked_by?: string | null;
   revoke_reason?: string | null;
-  active_sessions_count?: number;
 };
 
 export type AdminRegistryOperationPreview = {
@@ -717,7 +711,6 @@ export type AdminRegistryBulkItem = {
   status: "success" | "error";
   error_code?: string;
   error?: string;
-  affected_sessions?: number;
 };
 
 export type AdminRegistryBulkResponse = {
@@ -773,23 +766,6 @@ export type AdminRegistrationTimelineItem = {
   actor_role: string | null;
   event_at: string | null;
   payload: Record<string, unknown>;
-};
-
-export type AdminAccountLoginRequest = {
-  request_id: string;
-  device_id: string;
-  requested_account: Record<string, unknown>;
-  matched_person_id: string | null;
-  base_binding_id: string | null;
-  base_person_id: string | null;
-  status: string;
-  verification_method: string;
-  reason: string | null;
-  requested_at: string | null;
-  reviewed_by: string | null;
-  reviewed_at: string | null;
-  rejection_reason: string | null;
-  resulting_session_id: string | null;
 };
 
 export type AdminPasswordResetRequest = {
@@ -1075,35 +1051,6 @@ export async function fetchAdminDeviceRegistrationTimeline(deviceId: string): Pr
     credentials: "same-origin"
   });
   return readSuccessResponse(response, "Не удалось загрузить историю регистрации");
-}
-
-export async function fetchAdminAccountLoginRequests(status?: string): Promise<{ items: AdminAccountLoginRequest[] }> {
-  const params = new URLSearchParams();
-  if (status) {
-    params.set("status", status);
-  }
-  const response = await fetch(`/api/web/admin/registry/account-login-requests${params.toString() ? `?${params}` : ""}`, {
-    credentials: "same-origin"
-  });
-  return readSuccessResponse(response, "Не удалось загрузить заявки на вход в другой аккаунт");
-}
-
-export async function approveAdminAccountLoginRequest(requestId: string): Promise<void> {
-  const response = await fetch(`/api/web/admin/registry/account-login-requests/${encodeURIComponent(requestId)}/approve`, {
-    method: "POST",
-    credentials: "same-origin"
-  });
-  await readSuccessResponse(response, "Не удалось подтвердить вход в другой аккаунт");
-}
-
-export async function rejectAdminAccountLoginRequest(requestId: string, reason: string): Promise<void> {
-  const response = await fetch(`/api/web/admin/registry/account-login-requests/${encodeURIComponent(requestId)}/reject`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason })
-  });
-  await readSuccessResponse(response, "Не удалось отклонить вход в другой аккаунт");
 }
 
 export async function fetchAdminPasswordResetRequests(status?: string): Promise<{ items: AdminPasswordResetRequest[] }> {
@@ -1605,7 +1552,6 @@ export function adminRegistryExportUrl(
     | "devices"
     | "people"
     | "bindings"
-    | "sessions"
     | "locations"
     | "departments"
     | "quality"

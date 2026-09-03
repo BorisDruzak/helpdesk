@@ -264,7 +264,6 @@ export type RequesterConsent = {
   device_id?: string | null;
   requester_person_id?: string | null;
   requester_binding_id?: string | null;
-  requester_account_session_id?: string | null;
   requested_by_actor_id?: string | null;
   requested_by_role?: string | null;
   risk_level?: string | null;

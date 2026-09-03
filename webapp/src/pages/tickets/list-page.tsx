@@ -3597,7 +3597,7 @@ export function TicketListPage() {
                       </div>
                     </div>
                   ) : null}
-                  {viewModel.right.context.requester.accountMode || viewModel.right.context.requester.accountSessionId ? (
+                  {viewModel.right.context.requester.accountMode ? (
                     <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Аккаунт обращения</p>
                       {viewModel.right.context.requester.accountMode === "registration_pending" ? (
@@ -3607,7 +3607,6 @@ export function TicketListPage() {
                       ) : null}
                       <dl className="mt-3 grid gap-1 text-xs leading-5 text-slate-300">
                         <ContextInfoRow icon={ShieldCheck} label="Режим" value={viewModel.right.context.requester.accountMode} />
-                        <ContextInfoRow icon={Fingerprint} label="Session" value={viewModel.right.context.requester.accountSessionId} />
                         <ContextInfoRow icon={UserRound} label="Заявленный аккаунт" value={viewModel.right.context.requester.accountDeclaredName} />
                         <ContextInfoRow icon={Fingerprint} label="Логин" value={viewModel.right.context.requester.accountLogin} />
                         <ContextInfoRow icon={Mail} label="Email" value={viewModel.right.context.requester.accountEmail} />

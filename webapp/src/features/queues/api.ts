@@ -66,7 +66,6 @@ export type SupportQueuePayload = {
     assignee_display_name?: string | null;
     requester_display_name: string | null;
     requester_registration_status?: string | null;
-    requester_account_session_id?: string | null;
     requester_account_mode?: string | null;
     requester_account_context?: Record<string, unknown> | null;
     ticket_context?: Record<string, unknown> | null;
@@ -232,7 +231,6 @@ export type SupportTicketDetailPayload = {
     status_reason?: string | null;
     requester_display_name: string | null;
     requester_registration_status?: string | null;
-    requester_account_session_id?: string | null;
     requester_account_mode?: string | null;
     requester_account_context?: Record<string, unknown> | null;
     ticket_context?: Record<string, unknown> | null;

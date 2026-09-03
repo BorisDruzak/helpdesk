@@ -175,7 +175,6 @@ export type SupportWorkspaceContext = {
     location: string;
     sourceLabel: string;
     accountMode: string | null;
-    accountSessionId: string | null;
     accountWarning: string | null;
     accountDeclaredName: string | null;
     accountLogin: string | null;

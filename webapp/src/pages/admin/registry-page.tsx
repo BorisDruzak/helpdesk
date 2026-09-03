@@ -14,7 +14,6 @@ import {
   archiveAdminRegistryDepartment,
   archiveAdminRegistryLocation,
   archiveAdminRegistryPerson,
-  approveAdminAccountLoginRequest,
   approveAdminRegistrationClaim,
   assignAdminRegistryResponsible,
   bindAdminRegistryDevicePerson,
@@ -28,7 +27,6 @@ import {
   createAdminRegistryPerson,
   createAdminRegistryPersonIdentity,
   disableAdminRegistryUiUser,
-  fetchAdminAccountLoginRequests,
   fetchAdminPasswordResetRequests,
   fetchAdminRegistry,
   fetchAdminRegistryAudienceGroupMembers,
@@ -44,7 +42,6 @@ import {
   previewAdminRegistryImport,
   previewAdminRegistryLocationsMerge,
   previewAdminRegistryPeopleMerge,
-  rejectAdminAccountLoginRequest,
   rejectAdminRegistrationClaim,
   revokeAdminDeviceUserBinding,
   transferAdminRegistryDeviceOwner,
@@ -101,7 +98,7 @@ const tabs: Array<{ key: RegistryTabKey; label: string; description: string; p1?
   { key: "access_groups", label: "Группы доступа", description: "Только сводка RBAC-групп. Права и очереди редактируются в отдельном RBAC-редакторе.", p1: true },
   { key: "audience_groups", label: "Аудитории", description: "Группы таргетинга для базы знаний и сервисов. Аудитории не выдают права доступа, а только участвуют в правилах видимости.", p1: true },
   { key: "profile_schema", label: "Схема профиля", description: "Управляемые поля профиля заявителя. Системные поля нельзя удалить, пользовательские поля пишутся только в контролируемый блок.", p1: true },
-  { key: "policies", label: "Политики", description: "Правила регистрации, аккаунт-сессий и видимости тикетов. Перед сохранением используйте предпросмотр.", p1: true },
+  { key: "policies", label: "Политики", description: "Правила регистрации и видимости тикетов. Перед сохранением используйте предпросмотр.", p1: true },
 ];
 
 function PlaceholderTab({ title }: { title: string }) {
@@ -151,12 +148,6 @@ export function AdminRegistryPage() {
   const registryQuery = useQuery({
     queryKey: ["admin-registry"],
     queryFn: fetchAdminRegistry,
-    retry: false,
-    refetchInterval: 15_000,
-  });
-  const accountLoginRequestsQuery = useQuery({
-    queryKey: ["admin-registry-account-login-requests"],
-    queryFn: () => fetchAdminAccountLoginRequests("pending_verification"),
     retry: false,
     refetchInterval: 15_000,
   });
@@ -235,7 +226,6 @@ export function AdminRegistryPage() {
     () => (registry ? filterRegistryPayload(registry, query) : null),
     [query, registry]
   );
-  const pendingLoginRequests = accountLoginRequestsQuery.data?.items ?? registry?.account_login_requests ?? [];
   const pendingPasswordResetRequests = passwordResetRequestsQuery.data?.items ?? registry?.password_reset_requests ?? [];
   const audienceGroups = audienceGroupsQuery.data?.groups ?? [];
   const audienceMembers = audienceMembersQuery.data?.members ?? [];
@@ -517,7 +507,6 @@ export function AdminRegistryPage() {
           {visibleRegistry && tab === "requests" ? (
             <RegistryRequestsTab
               claims={visibleRegistry.registration_claims}
-              loginRequests={pendingLoginRequests}
               registry={visibleRegistry}
               onApproveClaim={(claim: AdminRegistrationClaim, replaceExisting = false, override = false) => {
                 if (override) {
@@ -526,9 +515,7 @@ export function AdminRegistryPage() {
                   mutation.mutate(() => approveAdminRegistrationClaim(claim.claim_id, replaceExisting));
                 }
               }}
-              onApproveLoginRequest={(request) => mutation.mutate(() => approveAdminAccountLoginRequest(request.request_id))}
               onRejectClaim={(claim) => runWithReason("Причина отклонения заявки", "Данные не подтверждены", (reason) => rejectAdminRegistrationClaim(claim.claim_id, reason))}
-              onRejectLoginRequest={(request) => runWithReason("Причина отклонения входа", "Не подтверждено администратором", (reason) => rejectAdminAccountLoginRequest(request.request_id, reason))}
               onSelect={setSelection}
             />
           ) : null}

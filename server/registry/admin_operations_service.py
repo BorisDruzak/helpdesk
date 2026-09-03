@@ -139,7 +139,6 @@ TIMELINE_CANONICAL_EVENT_TYPES = {
     "bulk_device_location_assigned": "bulk_action_applied",
     "bulk_devices_department_assigned": "bulk_action_applied",
     "bulk_people_department_assigned": "bulk_action_applied",
-    "bulk_account_session_revoked": "bulk_action_applied",
 }
 
 
@@ -328,8 +327,6 @@ class RegistryAdminOperationsService:
             synthetic.append({"field": "status", "after": payload.get("status")})
         if "relationship_type" in payload:
             synthetic.append({"field": "relationship_type", "after": payload.get("relationship_type")})
-        if event_type.startswith("account_session_") and payload.get("revoked_at"):
-            synthetic.append({"field": "revoked_at", "after": payload.get("revoked_at")})
         return synthetic
 
     @staticmethod
@@ -2364,9 +2361,6 @@ class RegistryAdminOperationsService:
             elif export_type == "bindings":
                 rows = snapshot.get("bindings") or []
                 columns = ["binding_id", "device_id", "person_id", "relationship_type", "status", "confirmed_at", "valid_from", "valid_to"]
-            elif export_type == "sessions":
-                rows = snapshot.get("account_sessions") or []
-                columns = ["session_id", "device_id", "person_id", "account_mode", "verification_status", "verification_method", "base_binding_id", "created_at", "expires_at", "revoked_at"]
             elif export_type == "quality":
                 rows = snapshot.get("data_quality") or []
                 columns = ["kind", "severity", "object_type", "object_id", "device_id", "person_id", "binding_id", "claim_id", "title", "description"]

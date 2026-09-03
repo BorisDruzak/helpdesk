@@ -2,29 +2,22 @@ import { Check, X } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
-import type { AdminAccountLoginRequest, AdminDeviceUserBinding, AdminRegistrationClaim, AdminRegistryPayload } from "../api";
+import type { AdminDeviceUserBinding, AdminRegistrationClaim, AdminRegistryPayload } from "../api";
 import { formatDateTime, registryStatusLabel, relationshipTypeLabel, statusTone, type RegistrySelection } from "./registry-utils";
 
 type RegistryApprovalContext = Pick<AdminRegistryPayload, "assets" | "people" | "locations" | "departments" | "active_bindings" | "bindings">;
 
 type Props = {
   claims: AdminRegistrationClaim[];
-  loginRequests: AdminAccountLoginRequest[];
   registry: RegistryApprovalContext;
   onApproveClaim: (claim: AdminRegistrationClaim, replaceExisting?: boolean, override?: boolean) => void;
   onRejectClaim: (claim: AdminRegistrationClaim) => void;
-  onApproveLoginRequest: (request: AdminAccountLoginRequest) => void;
-  onRejectLoginRequest: (request: AdminAccountLoginRequest) => void;
   onSelect: (selection: RegistrySelection) => void;
 };
 
 function textValue(value: unknown): string | null {
   const text = String(value ?? "").trim();
   return text || null;
-}
-
-function accountName(request: AdminAccountLoginRequest): string {
-  return String(request.requested_account.display_name ?? request.requested_account.full_name ?? request.requested_account.login ?? "Аккаунт не указан");
 }
 
 const terminalClaimStatuses = new Set(["approved", "rejected", "superseded", "expired"]);
@@ -104,7 +97,7 @@ function ApprovalDiff({ claim, registry }: { claim: AdminRegistrationClaim; regi
   );
 }
 
-export function RegistryRequestsTab({ claims, loginRequests, registry, onApproveClaim, onApproveLoginRequest, onRejectClaim, onRejectLoginRequest, onSelect }: Props) {
+export function RegistryRequestsTab({ claims, registry, onApproveClaim, onRejectClaim, onSelect }: Props) {
   return (
     <div className="space-y-5">
       <section className="overflow-x-auto rounded-lg border border-border">
@@ -137,25 +130,6 @@ export function RegistryRequestsTab({ claims, loginRequests, registry, onApprove
             </div>
           );
         }) : <div className="border-t border-border p-4"><p className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-slate-500">Заявок регистрации нет.</p></div>}
-      </section>
-
-      <section className="overflow-x-auto rounded-lg border border-border">
-        <div className="grid min-w-[960px] grid-cols-[190px_220px_190px_220px_130px_220px] gap-3 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase text-slate-500">
-          <span>ID устройства</span><span>Запрошенный аккаунт</span><span>Базовый владелец</span><span>Причина</span><span>Статус</span><span>Действия</span>
-        </div>
-        {loginRequests.length ? loginRequests.map((request) => (
-          <div className="grid min-w-[960px] grid-cols-[190px_220px_190px_220px_130px_220px] gap-3 border-t border-border px-4 py-3 text-sm" key={request.request_id}>
-            <span className="break-all">{request.device_id}</span>
-            <span>{accountName(request)}</span>
-            <span>{request.base_person_id ?? "Нет данных"}</span>
-            <span>{request.reason ?? String(request.requested_account.reason ?? "Не указана")}</span>
-            <Badge tone={statusTone(request.status)}>{registryStatusLabel(request.status)}</Badge>
-            <div className="flex flex-wrap gap-2">
-              <Button leadingIcon={<Check className="h-4 w-4" />} onClick={() => onApproveLoginRequest(request)} size="sm" title="Разрешить вход в другой аккаунт для этого устройства" variant="outline">Подтвердить</Button>
-              <Button leadingIcon={<X className="h-4 w-4" />} onClick={() => onRejectLoginRequest(request)} size="sm" title="Отклонить вход в другой аккаунт с причиной" variant="ghost">Отклонить</Button>
-            </div>
-          </div>
-        )) : <div className="border-t border-border p-4"><p className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-slate-500">Заявок на вход в другой аккаунт нет.</p></div>}
       </section>
     </div>
   );

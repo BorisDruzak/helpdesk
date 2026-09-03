@@ -120,24 +120,6 @@ const registryPayload: AdminRegistryPayload = {
     },
   ],
   bindings: [],
-  account_login_requests: [
-    {
-      request_id: "login-request-1",
-      device_id: "dev-acc-17",
-      requested_account: { login: "other-user" },
-      matched_person_id: "person-1",
-      base_binding_id: "binding-primary-1",
-      base_person_id: "person-1",
-      status: "pending",
-      verification_method: "admin_review",
-      reason: null,
-      requested_at: null,
-      reviewed_by: null,
-      reviewed_at: null,
-      rejection_reason: null,
-      resulting_session_id: null,
-    },
-  ],
 };
 
 describe("registry utilities", () => {

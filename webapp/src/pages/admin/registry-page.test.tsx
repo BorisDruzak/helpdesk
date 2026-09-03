@@ -144,7 +144,6 @@ const registryPayload = {
   registration_claims: [],
   active_bindings: [],
   bindings: [],
-  account_login_requests: [],
   ui_users: [
     {
       user_login: "ivan@example.test",
@@ -459,7 +458,6 @@ describe("AdminRegistryPage", () => {
         return jsonResponse({
           person: { person_id: "person-1", display_name: "Иван Петров", status: "archived" },
           revoked_bindings: [],
-          revoked_sessions: [],
         });
       }
       if (url === "/api/web/admin/registry/audience-groups") {

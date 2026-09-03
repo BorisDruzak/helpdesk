@@ -851,7 +851,6 @@ async def handle_web_admin_registry_binding_revoke(request: web.Request) -> web.
             events = {}
         if not isinstance(binding, dict):
             binding = {}
-        revoked_sessions = events.get("revoked_sessions")
         canceled_login_requests = events.get("canceled_login_requests")
         await _write_registry_binding_observer_event(
             session,
@@ -864,7 +863,6 @@ async def handle_web_admin_registry_binding_revoke(request: web.Request) -> web.
             payload={
                 "binding_status": binding.get("status"),
                 "reason_present": bool(reason),
-                "revoked_session_count": len(revoked_sessions) if isinstance(revoked_sessions, list) else 0,
                 "canceled_login_request_count": len(canceled_login_requests)
                 if isinstance(canceled_login_requests, list)
                 else 0,
@@ -969,7 +967,6 @@ async def handle_web_admin_registry_device_transfer_owner(request: web.Request) 
                     "new_binding_status": binding.get("status"),
                     "relationship_type": binding.get("relationship_type"),
                     "old_binding_action": old_binding_action,
-                    "revoked_session_count": int(summary.get("revoked_sessions") or 0),
                     "reason_present": bool(reason),
                     "reused_existing_binding": bool(summary.get("reused") or False),
                 },
@@ -1301,7 +1298,6 @@ async def handle_web_admin_registry_person_archive(request: web.Request) -> web.
                     "status": person.status,
                 },
                 "revoked_binding_ids": [row.get("binding_id") for row in revoked_bindings],
-                "revoked_session_ids": [row.get("session_id") for row in revoked_sessions],
                 "disabled_ui_user_logins": [row.get("user_login") for row in disabled_ui_users],
             },
         )

@@ -17,7 +17,6 @@ _CHAT_RETRY_PAYLOAD_FIELDS = (
     "metadata",
     "requester_person_id",
     "requester_binding_id",
-    "requester_account_session_id",
     "requester_account_mode",
 )
 
