@@ -1,7 +1,7 @@
 """
 Централизованное управление состоянием сервера.
 
-ВАЖНО: После миграции Protocol V3 (Phase F) StateManager содержит ТОЛЬКО runtime/эпемерные данные.
+StateManager содержит только runtime/эпемерные данные Helpdesk.
 Все tickets, events, messages теперь хранятся ТОЛЬКО в PostgreSQL (Source of Truth).
 
 Runtime данные (эпемерные, существуют только в памяти):
@@ -25,7 +25,7 @@ class StateManager:
     """
     Централизованный менеджер runtime состояния сервера.
     
-    После миграции Protocol V3:
+    После отделения Endpoint control plane:
     - Source of Truth для tickets/events/messages: PostgreSQL
     - StateManager: ТОЛЬКО runtime/эпемерные данные
     """

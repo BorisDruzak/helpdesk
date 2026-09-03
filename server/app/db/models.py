@@ -24,7 +24,7 @@ from app.db.base import Base
 
 class Ticket(Base):
     """
-    Ticket model for Protocol V3 (расширенная тикетная система).
+    Ticket model for the Helpdesk workflow.
     
     Represents a support ticket bound to a specific device.
     Статусы: canonical ticket status contract from tickets.statuses.CANONICAL_STATUSES.
@@ -451,7 +451,7 @@ sa.event.listen(Ticket, "before_update", _ensure_ticket_requester_id)
 
 class TicketEvent(Base):
     """
-    Ticket event model for Protocol V3.
+    Ticket event model.
     
     Stores all events for tickets with deduplication support.
     Ordered by agent_seq per-ticket.
@@ -1607,7 +1607,7 @@ class TicketChangeLink(Base):
 
 class DeviceEvent(Base):
     """
-    Device event model for Protocol V3.
+    Historical device event model.
     
     Stores events for devices without ticket binding.
     Ordered by device_seq per-device.
