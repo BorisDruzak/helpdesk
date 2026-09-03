@@ -49,7 +49,7 @@ from config import (
 # Этап 7.2: очистка истёкших артефактов
 ARTIFACTS_CLEANUP_INTERVAL_SEC = 3600  # 1 час
 from state_manager import StateManager
-from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, OUTBOX_SENDER_APP_KEY, bind_app_value
+from app_keys import OBSERVER_REFRESH_RUNTIME_APP_KEY, STATE_APP_KEY, bind_app_value
 from routes import setup_routes
 
 # Import database initialization
@@ -57,9 +57,6 @@ from app.db import get_session, init_db, shutdown_db
 from app.db.engine import get_session_maker
 from app.repos.operations_repo import OperationsRepo
 from websocket.ui_publisher import UiPublisherImpl
-
-# Phase C: Import device outbox sender
-from websocket.device_outbox_sender import DeviceOutboxSender, recover_pending_commands
 
 # PR#7: Import operation watchdog
 from app.services.operation_watchdog import get_watchdog
@@ -239,17 +236,6 @@ async def on_startup(app: web.Application):
         try:
             await init_db(DATABASE_URL)
             logger.success("✅ Database initialized successfully")
-            
-            # Phase C: Recover pending commands from device_outbox
-            logger.info("🔄 Recovering pending commands...")
-            await recover_pending_commands(app['state'])
-            
-            # Phase C: Start device outbox sender loop
-            logger.info("🚀 Starting device outbox sender...")
-            sender = DeviceOutboxSender(app['state'], poll_interval=1.0)
-            await sender.start_async()
-            bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
-            logger.success("✅ Device outbox sender started")
             
             # PR#7: Start operation watchdog (Этап 5: set_app для advance_after_terminal при timeout)
             logger.info("⏰ Starting operation watchdog...")
@@ -490,12 +476,6 @@ async def on_cleanup(app: web.Application):
         await app['inventory_refresh_runtime'].stop()
         logger.success("Inventory refresh runtime stopped")
 
-    # Phase C: Stop device outbox sender
-    if 'outbox_sender' in app:
-        logger.info("⏹️ Stopping device outbox sender...")
-        await app['outbox_sender'].stop_async()
-        logger.success("✅ Device outbox sender stopped")
-    
     if ENABLE_DB_PERSISTENCE:
         try:
             await shutdown_db()

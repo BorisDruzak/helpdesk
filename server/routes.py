@@ -221,9 +221,7 @@ from tickets.handlers import (
 )
 from tools.handlers import handle_get_tools, handle_tools_run
 from playbook_handlers import handle_start_playbook_run
-from websocket.agent_handler import websocket_handler
 from websocket.ui_handler import websocket_ui_handler
-from remote_assist.signaling import websocket_remote_assist_handler
 from uploads.handlers import handle_upload, handle_artifact_download
 from static_pages.handlers import (
     handle_index,
@@ -610,16 +608,6 @@ from modules.handlers import (
     handle_get_desired_diff,
     handle_trigger_reconcile
 )
-from remote_assist.handlers import (
-    handle_remote_assist_approve,
-    handle_remote_assist_deny,
-    handle_remote_assist_end,
-    handle_remote_assist_fail,
-    handle_remote_assist_request,
-    handle_remote_assist_status,
-    handle_remote_assist_ticket_sessions,
-    handle_remote_assist_viewer,
-)
 from jobs.handlers import handle_get_job_events, handle_start_job
 from web_api.ai_integration_handlers import handle_ai_integration_mcp_status
 from tech.handlers import (
@@ -711,9 +699,7 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # WebSocket Endpoints
         # ============================================================================
-        web.get('/ws', websocket_handler),
         web.get('/ws_ui', websocket_ui_handler),
-        web.get('/ws/remote-assist/{session_id}', websocket_remote_assist_handler),
         
         # ============================================================================
         # Static Pages
@@ -810,8 +796,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/diagnostics/passport/attach-selected', handle_ticket_diagnostics_passport_attach_selected),
         web.post('/api/web/support/tickets/{ticket_id}/worklogs', handle_web_support_ticket_worklog),
         web.get('/api/web/support/tickets/{ticket_id}/tools', handle_web_support_ticket_tools),
-        web.post('/api/web/support/tickets/{ticket_id}/remote-assist/request', handle_remote_assist_request),
-        web.get('/api/web/support/tickets/{ticket_id}/remote-assist/sessions', handle_remote_assist_ticket_sessions),
         web.get('/api/web/support/tickets/{ticket_id}/playbooks', handle_web_support_ticket_playbooks),
         web.post('/api/web/support/tickets/{ticket_id}/messages', handle_web_support_send_message),
         web.post('/api/web/support/tickets/{ticket_id}/read', handle_ticket_mark_read),
@@ -828,10 +812,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.post('/api/web/support/tickets/{ticket_id}/playbooks/run', handle_web_support_run_playbook),
         web.post('/api/web/support/operations/{operation_id}/cancel', handle_web_support_cancel_operation),
-        web.get('/api/web/remote-assist/{session_id}', handle_remote_assist_status),
-        web.get('/api/web/remote-assist/{session_id}/viewer', handle_remote_assist_viewer),
-        web.post('/api/web/remote-assist/{session_id}/end', handle_remote_assist_end),
-        web.post('/api/web/remote-assist/{session_id}/fail', handle_remote_assist_fail),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
         web.post('/api/web/admin/tickets/purge/preview', handle_web_admin_ticket_purge_preview),
         web.post('/api/web/admin/tickets/purge', handle_web_admin_ticket_purge),
@@ -1305,8 +1285,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/tickets/{ticket_id}', handle_ticket_get),
         web.get('/api/tickets/{ticket_id}/snapshot', handle_ticket_get_snapshot),  # New snapshot endpoint
         web.get('/api/tickets/{ticket_id}/observer', handle_ticket_get_observer_summary),
-        web.post('/api/tickets/{ticket_id}/remote-assist/request', handle_remote_assist_request),
-        web.get('/api/tickets/{ticket_id}/remote-assist/sessions', handle_remote_assist_ticket_sessions),
         web.post('/api/tickets/{ticket_id}/message', handle_ticket_send_message),
         web.post('/api/tickets/{ticket_id}/close', handle_ticket_close),
         web.post('/api/tickets/{ticket_id}/status', handle_ticket_status),
@@ -1368,12 +1346,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/tickets/{ticket_id}/operations/{operation_id}/retry', handle_retry_operation),
         web.post('/api/operations/{operation_id}/approve', handle_approve_consent),
         web.post('/api/operations/{operation_id}/deny', handle_deny_consent),
-        web.get('/api/remote-assist/{session_id}', handle_remote_assist_status),
-        web.post('/api/remote-assist/{session_id}/approve', handle_remote_assist_approve),
-        web.post('/api/remote-assist/{session_id}/deny', handle_remote_assist_deny),
-        web.get('/api/remote-assist/{session_id}/viewer', handle_remote_assist_viewer),
-        web.post('/api/remote-assist/{session_id}/end', handle_remote_assist_end),
-        web.post('/api/remote-assist/{session_id}/fail', handle_remote_assist_fail),
         
         # ============================================================================
         # Tools API

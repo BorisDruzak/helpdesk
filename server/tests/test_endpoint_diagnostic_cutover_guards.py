@@ -64,6 +64,22 @@ def test_ws_ui_route_registration_remains_present():
     assert "web.get('/ws_ui', websocket_ui_handler)" in routes
 
 
+def test_legacy_agent_and_remote_assist_routes_are_not_registered():
+    """Endpoint-only Helpdesk retains browser UI transport, never agent transport."""
+    routes = (ROOT / "server" / "routes.py").read_text(encoding="utf-8")
+
+    assert "web.get('/ws', websocket_handler)" not in routes
+    assert "web.get('/ws/remote-assist/{session_id}'" not in routes
+    assert "/remote-assist/" not in routes
+
+
+def test_server_lifecycle_does_not_start_device_outbox_runtime():
+    source = (ROOT / "server" / "server.py").read_text(encoding="utf-8")
+
+    assert "DeviceOutboxSender" not in source
+    assert "recover_pending_commands" not in source
+
+
 def test_endpoint_diagnostic_canary_runbook_preserves_forward_only_rollback_guards():
     runbook = (ROOT / "docs" / "runbooks" / "ENDPOINT_DIAGNOSTIC_CANARY.md").read_text(
         encoding="utf-8"
