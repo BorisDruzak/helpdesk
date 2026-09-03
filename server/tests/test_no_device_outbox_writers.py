@@ -25,3 +25,7 @@ def test_endpoint_transition_paths_do_not_write_legacy_device_outbox() -> None:
     }
 
     assert offenders == {}
+
+
+def test_legacy_device_outbox_writer_repository_is_physically_removed() -> None:
+    assert not (ROOT / "server" / "app" / "repos" / "device_outbox_repo.py").exists()
