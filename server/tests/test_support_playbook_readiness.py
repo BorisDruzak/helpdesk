@@ -68,7 +68,7 @@ def test_playbook_readiness_does_not_require_agent_toolset_for_non_agent_capabil
         "required_capabilities": [
             {"capability_id": "server.http.request", "execution_target": "server_builtin"},
             {"capability_id": "observer.ticket.summary", "execution_target": "observer_query"},
-            {"capability_id": "endpoint.http.request", "execution_target": "agent_managed_module"},
+            {"capability_id": "endpoint.http.request", "execution_target": "endpoint_operation"},
         ],
         "blocks": [
             {

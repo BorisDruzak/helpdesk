@@ -96,3 +96,30 @@ def test_diagnostic_registry_has_no_agent_recipe_fallback() -> None:
         source = (ROOT / relative_path).read_text(encoding="utf-8-sig")
         assert "AgentRecipe" not in source
         assert "agent_recipe_runner" not in source
+
+
+def test_active_metadata_has_no_legacy_agent_rollout_or_recipe_models() -> None:
+    source = (ROOT / "server" / "app" / "db" / "models.py").read_text(encoding="utf-8-sig")
+
+    for model_name in (
+        "RunnerRolloutPlan",
+        "RunnerRolloutWave",
+        "RunnerRolloutTarget",
+        "RunnerRolloutEvent",
+        "AgentRecipeVersion",
+        "AgentRecipePrimitive",
+        "AgentRecipeTestRun",
+    ):
+        assert f"class {model_name}" not in source
+
+
+def test_readiness_has_no_agent_execution_or_recipe_runner_path() -> None:
+    readiness_source = (ROOT / "server" / "diagnostics" / "readiness.py").read_text(encoding="utf-8-sig")
+    dependencies_source = (ROOT / "server" / "app" / "repos" / "operation_dependencies_repo.py").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert "def _agent_readiness" not in readiness_source
+    assert "def _agent_recipe_readiness" not in readiness_source
+    assert "agent_recipe_runner" not in readiness_source
+    assert "agent_recipe" not in dependencies_source
