@@ -24,7 +24,6 @@ from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos import ModulesRepo, ModuleRolloutRepo
 from config import MODULES_STORAGE_DIR
-from modules.handlers import _get_module_preferred_assignments, _get_module_rollout_settings, _preferred_gate_for_module
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
 from diagnostics.capability_registry import CapabilityRegistry

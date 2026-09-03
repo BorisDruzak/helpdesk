@@ -60,7 +60,6 @@ from diagnostics.profiles import list_profiles, resolve_ticket_profile
 from diagnostics.profile_runner import DiagnosticProfileRunnerService
 from diagnostics.projection import DiagnosticProjectionService
 from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
-from diagnostics.runner_rollout import RunnerRolloutError, RunnerRolloutService, RunnerRolloutStateError
 from diagnostics.serialization import bundle_to_dict, evidence_to_dict, finding_to_dict, session_to_dict, ticket_evidence_to_dict
 from diagnostics.service import DiagnosticOverviewService
 from diagnostics.sessions import DiagnosticSessionService
