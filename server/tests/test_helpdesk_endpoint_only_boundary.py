@@ -64,4 +64,4 @@ def test_helpdesk_ships_only_browser_ui_websocket_transport() -> None:
         if path.name not in {"__init__.py", "subscription_registry.py", "ui_handler.py", "ui_publisher.py"}
     }
 
-    assert legacy_sources == {}
+    assert legacy_sources == set()
