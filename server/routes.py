@@ -395,9 +395,7 @@ from web_api.service_catalog_handlers import (
     handle_web_admin_service_catalog_validate_service,
 )
 from web_api.registry_handlers import (
-    handle_registry_agent_profile,
     handle_registry_options,
-    handle_registry_profile_upsert,
     handle_web_admin_registry_binding_revoke,
     handle_web_admin_registry_audience_group_archive,
     handle_web_admin_registry_audience_group_members,
@@ -773,8 +771,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/playbooks/catalog', handle_web_admin_playbooks_catalog),
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
         web.get('/api/registry/options', handle_registry_options),
-        web.post('/api/registry/profile', handle_registry_profile_upsert),
-        web.post('/api/registry/agent/profile', handle_registry_agent_profile),
         web.get('/api/web/requester/bootstrap', handle_web_requester_bootstrap),
         web.get('/api/web/requester/profile', handle_web_requester_profile),
         web.put('/api/web/requester/profile', handle_web_requester_profile_update),

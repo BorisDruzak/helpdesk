@@ -355,52 +355,6 @@ async def test_archived_registry_person_blocks_existing_ui_session_and_future_lo
 
 
 @pytest.mark.asyncio
-async def test_registry_profile_endpoint_syncs_agent_profile(test_client, test_engine):
-    session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    device_id = str(uuid.uuid4())
-
-    async with session_maker() as session:
-        session.add(
-            Device(
-                device_id=device_id,
-                protocol_version="ws_ticket_v3",
-                agent_version="1.2.0",
-                hostname="PROF-101",
-                os="Windows 11",
-                last_seen_at=datetime.now(timezone.utc),
-                last_handshake_at=datetime.now(timezone.utc),
-                capabilities={},
-                device_metadata={},
-            )
-        )
-        await session.commit()
-
-    response = await test_client.post(
-        "/api/registry/profile",
-        headers=_admin_headers(),
-        json={
-            "device_id": device_id,
-            "requester_id": "agent-profile:sidorov",
-            "display_name": "Сидоров Сергей",
-            "profile": {
-                "full_name": "Сидоров Сергей",
-                "building": "Здание 3",
-                "room": "101",
-                "phone": "555",
-                "department": "ИТ",
-            },
-        },
-    )
-    assert response.status == 200, await response.text()
-    payload = await response.json()
-
-    assert payload["status"] == "success"
-    assert payload["data"]["person"]["display_name"] == "Сидоров Сергей"
-    assert payload["data"]["location"]["building"] == "Здание 3"
-    assert payload["data"]["asset"]["device_id"] == device_id
-
-
-@pytest.mark.asyncio
 async def test_registry_options_available_to_agent_request_forms_without_full_snapshot(test_client, test_engine, monkeypatch):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
