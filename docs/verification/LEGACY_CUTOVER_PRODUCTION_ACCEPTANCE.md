@@ -81,3 +81,14 @@ Record redacted operation IDs, timestamps, and baseline/final row counts here:
 - Rollback command/location verified:
 - Database downgrade was not performed:
 - Full suite exception approved and targeted gates recorded:
+
+## Static-scan allowlist
+
+The static deletion gate may retain only the following historical or negative
+references. None of them is a production import, route, or runtime authority:
+
+- legacy names in the focused cutover guard tests and the audit/deployment
+  scripts, where they are literal forbidden-import or synthetic-diff probes;
+- historical database migrations and their preserved schema metadata;
+- Registry `agent_handshake` snapshot terminology, which is a Registry-domain
+  ingestion contract and not the retired Helpdesk WebSocket transport.

@@ -14,7 +14,7 @@ from typing import Sequence
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCUMENTATION_SUFFIXES = (".md", ".mdc", ".toml")
 DOCUMENTATION_FILES = {"PLANS.md"}
-CODE_PREFIXES = ("server/", "pc_agent/", "webapp/", "mcp_helpdesk_server/", "scripts/")
+CODE_PREFIXES = ("server/", "webapp/", "mcp_helpdesk_server/", "scripts/")
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")

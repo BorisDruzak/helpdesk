@@ -43,7 +43,7 @@ Use repo-local skills when applicable:
 - Keep error handling explicit and observable without leaking secrets.
 - Keep server changes minimal and contract-aware.
 - If public routes, payloads, lifecycle behavior, startup behavior, or deployment-relevant code changes, update relevant docs and CODEMAP in the same change.
-- Helpdesk is not an agent control plane: preserve the Endpoint contract boundary and do not reintroduce local agent transport, DeviceOutbox dispatch, or local endpoint execution.
+- Helpdesk is not an agent control plane: preserve the Endpoint contract boundary and do not reintroduce local agent transport, local delivery dispatch, or local endpoint execution.
 
 ## Verification
 

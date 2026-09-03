@@ -15,7 +15,7 @@ from urllib.parse import unquote, urlparse
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DOC_ROOTS = (Path("docs"), Path("server/docs"), Path("pc_agent/docs"))
+DOC_ROOTS = (Path("docs"), Path("server/docs"))
 EXTRA_DOCS = (Path("AGENTS.md"), Path("PLANS.md"))
 MARKDOWN_SUFFIXES = {".md", ".markdown", ".mdc"}
 ARCHIVE_PARTS = ("archive",)
@@ -105,7 +105,7 @@ def classify_doc(path: Path) -> str:
         return "canonical" if normalized.name == "AGENTS.md" else "plan"
     if parts[:1] == ("docs",) and "plan" in stem:
         return "plan"
-    if normalized.parts[:2] in (("server", "docs"), ("pc_agent", "docs")):
+    if normalized.parts[:2] == ("server", "docs"):
         return "canonical"
     if any(marker in stem for marker in HISTORICAL_NAME_MARKERS):
         return "historical"

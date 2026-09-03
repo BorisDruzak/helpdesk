@@ -201,7 +201,6 @@ from static_pages.handlers import (
     handle_favicon,
     handle_ticket_page,
     handle_ticket_page_by_id,
-    handle_test_simple,
     handle_ws_ui_test,
     handle_public_queue_page,
     handle_public_queue_css,
@@ -1127,6 +1126,5 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Additional HTML Pages
         # ============================================================================
-        web.get('/test_simple', handle_test_simple),
         web.get('/ws_ui_test', handle_ws_ui_test),
     ])

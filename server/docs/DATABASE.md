@@ -50,9 +50,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 **Diagnostic Provider Config (migration 075):** `diagnostic_providers`, `diagnostic_capabilities`, `diagnostic_capability_versions`, `diagnostic_provider_configs`, `diagnostic_provider_credential_refs`, `diagnostic_provider_audit`. Capability descriptors still remain computed from manifests/providers for runtime compatibility, while these tables persist provider configuration lifecycle, credential references, redacted integration config and audit rows for server connectors such as Zabbix. Main entrypoints: `server/app/repos/diagnostic_provider_config_repo.py`, `server/diagnostics/provider_config.py`, and `/api/diagnostics/providers/configs*`.
 
-**Agent Recipe Runtime Dependencies (migration 078):** `operation_dependencies` plus nullable `operations.phase`. These fields model ticket-bound runtime prerequisites such as installing/upgrading the protected `agent_recipe_runner` before a recipe operation can continue. Parent recipe operations keep the existing `operations.status` lifecycle and use phase values like `waiting_dependency`, `installing_dependency`, `sending_run_recipe` and `running_recipe`; dependency rows link to the module install operation created by reconcile.
-
-**Agent Recipe Runner Fleet Rollout (migrations 079-080):** `runner_rollout_plans`, `runner_rollout_waves`, `runner_rollout_targets`, `runner_rollout_events`. These tables model admin-controlled canary/wave rollout and rollback for the protected `agent_recipe_runner` module. They store plan state separately from ticket-bound runtime dependencies, while actual delivery still goes through `device_desired_modules` and `modules.reconcile.reconcile_device`.
+**Historical module-control schema (migrations 078-080):** `operation_dependencies`, nullable `operations.phase`, `runner_rollout_plans`, `runner_rollout_waves`, `runner_rollout_targets`, and `runner_rollout_events` remain intact for rollback and audit only. Helpdesk no longer creates, reconciles, or delivers module operations; Endpoint Platform owns the active module runtime.
 
 **Тикетная система (миграция 018):**  
 **ticket_queues** — очереди (ServiceDesk L1, SysAdmins, Network, 1C, Security).  
@@ -126,8 +124,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **modules** | Реестр загруженных модулей (ZIP): имя, версия, sha256, путь на диске. | `ModulesRepo`: загрузка модуля (сохранение в БД и на диск), список модулей, получение по имени/версии. Modules API upload/download. |
-| **device_modules** | Установленные/активные модули на каждом устройстве. | `DeviceModulesRepo`: установка, активация, синхронизация состояния. Modules API, drift/snapshots. |
+| **modules** | Исторический реестр ZIP-модулей. | Сохранён как schema residue; Helpdesk runtime не загружает, не раздаёт и не изменяет эти записи. |
+| **device_modules** | Исторические сведения об установленных модулях. | Сохранены для audit/rollback; активная модульная поверхность принадлежит Endpoint Platform. |
 
 **modules:** `module_name`, `version` (PK composite), `sha256`, `size`, `storage_path`, `created_at`, `uploaded_by`, `manifest_summary` (JSONB).  
 **device_modules:** `id` (PK), `device_id`, `module_name`, `version`, UNIQUE(device_id, module_name, version), `installed`, `active`, `state`, `installed_at`, `activated_at`, `last_updated_at`, `last_error_code`, `last_error_message`.

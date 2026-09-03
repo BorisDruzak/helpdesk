@@ -37,6 +37,7 @@ def test_legacy_agent_control_routes_are_not_registered() -> None:
         "/api/chat_send",
         "/api/active_chats",
         "/api/job_events",
+        "/test_simple",
         "/api/start_job",
         "/api/modules",
         "/api/modules/ping",
@@ -111,3 +112,9 @@ def test_retired_agent_telemetry_ingest_repository_is_absent() -> None:
     server_root = Path(__file__).resolve().parents[1]
 
     assert not (server_root / "app" / "repos" / "agent_observer_events_repo.py").exists()
+
+
+def test_retired_agent_command_test_page_is_absent() -> None:
+    server_root = Path(__file__).resolve().parents[1]
+
+    assert not (server_root / "test_web_simple.html").exists()

@@ -70,13 +70,6 @@ async def handle_ticket_page_by_id(request):
     raise _retired_shell_redirect(request, _webapp_ticket_target_path(request))
 
 
-async def handle_test_simple(request):
-    html_path = BASE_DIR / "test_web_simple.html"
-    if html_path.exists():
-        return _text_file_response(html_path, "text/html")
-    return web.Response(text="Test page not found", status=404)
-
-
 async def handle_ws_ui_test(request):
     return _text_file_response(BASE_DIR / "ws_ui_test.html", "text/html")
 
