@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from dataclasses import dataclass
-import uuid
 
 from aiohttp import web
 from pydantic import ValidationError
@@ -12,10 +11,6 @@ from app.db import get_session
 from app.db.engine import get_session_maker
 from access_control.service import resolve_effective_access
 from app.db.models import (
-    AgentRecipeVersion,
-    DiagnosticCapability,
-    DiagnosticCapabilityVersion,
-    DiagnosticProvider,
     Device,
     DeviceDesiredModule,
     DeviceModule,
@@ -274,13 +269,7 @@ async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
     )
     device_id = request.query.get("device_id")
     capabilities = await registry.list_capabilities(device_id=device_id)
-    existing_ids = {capability.id for capability in capabilities}
     async with get_session() as session:
-        for recipe in await AgentRecipeRepo(session).list_published_capabilities():
-            descriptor = recipe.descriptor()
-            if descriptor.id not in existing_ids:
-                capabilities.append(descriptor)
-                existing_ids.add(descriptor.id)
         capabilities = await ToolPresentationOverrideService(session).apply_to_capabilities(capabilities)
     return web.json_response(
         {
@@ -355,225 +344,6 @@ async def handle_diagnostics_provider_config_put(request: web.Request) -> web.Re
         provider_config = await service.get_provider_config(provider_id)
         await session.commit()
     return web.json_response({"status": "ok", "provider_config": provider_config})
-
-
-def _primitive_payload(row) -> dict:
-    if isinstance(row, dict):
-        payload = dict(row)
-        primitive_id = str(payload.get("primitive_id") or "")
-        payload.setdefault("presentation_schema", PRIMITIVE_PRESENTATION_SCHEMAS.get(primitive_id, {}))
-        return payload
-    primitive_id = str(row.primitive_id or "")
-    return {
-        "id": row.id,
-        "runner_provider_id": row.runner_provider_id,
-        "runner_version": row.runner_version,
-        "primitive_id": row.primitive_id,
-        "primitive_version": row.primitive_version,
-        "title": row.title,
-        "description": row.description,
-        "platforms": row.platforms_json,
-        "params_schema": row.params_schema,
-        "output_schema": row.output_schema,
-        "output_contract": row.output_contract,
-        "presentation_schema": PRIMITIVE_PRESENTATION_SCHEMAS.get(primitive_id, {}),
-        "safety": row.safety_json,
-        "evidence_defaults": row.evidence_defaults_json,
-        "resource_limits": row.resource_limits_json,
-        "redaction": row.redaction_json,
-    }
-
-
-@require_auth("admin")
-async def handle_agent_recipe_primitives(request: web.Request) -> web.Response:
-    async with get_session() as session:
-        persisted = await AgentRecipeRepo(session).list_primitives()
-    primitives = [_primitive_payload(item) for item in persisted]
-    known = {(item.get("primitive_id"), item.get("primitive_version")) for item in primitives}
-    for item in DEFAULT_AGENT_RECIPE_PRIMITIVES:
-        key = (item.get("primitive_id"), item.get("primitive_version"))
-        if key not in known:
-            primitives.append({"runner_provider_id": "agent_recipe_runner", "runner_version": "1.0.0", **item})
-    return web.json_response({"status": "ok", "primitives": primitives, "count": len(primitives)})
-
-
-@require_auth("admin")
-async def handle_agent_recipes_list(request: web.Request) -> web.Response:
-    async with get_session() as session:
-        recipes = await AgentRecipeRepo(session).list_published_capabilities()
-    return web.json_response(
-        {
-            "status": "ok",
-            "capabilities": [item.descriptor().to_dict() for item in recipes],
-            "count": len(recipes),
-        }
-    )
-
-
-@require_auth("admin")
-async def handle_agent_recipe_create(request: web.Request) -> web.Response:
-    try:
-        payload = await request.json()
-    except Exception:
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
-    canonical_id = str(payload.get("canonical_id") or "").strip()
-    title = str(payload.get("title") or "").strip()
-    primitive_id = str(payload.get("primitive_id") or "").strip()
-    version = str(payload.get("version") or "1.0.0").strip()
-    if not canonical_id or not title or not primitive_id:
-        return web.json_response(
-            {"status": "error", "error_code": "AGENT_RECIPE_INVALID", "error": "canonical_id, title and primitive_id are required"},
-            status=400,
-        )
-    try:
-        platforms = normalize_recipe_platforms(payload.get("platforms") or ["win32"])
-    except AgentRecipeValidationError as exc:
-        return web.json_response({"status": "error", "error_code": "AGENT_RECIPE_INVALID", "error": str(exc)}, status=400)
-
-    evidence_mapping = payload.get("evidence_mapping") if isinstance(payload.get("evidence_mapping"), dict) else {}
-    if not evidence_mapping:
-        evidence_mapping = {
-            "produces_evidence": True,
-            "kind": str(payload.get("evidence_kind") or "endpoint.recipe"),
-            "domain": str(payload.get("domain") or "endpoint"),
-            "perspective": "endpoint",
-            "passport_eligible": bool(payload.get("passport_eligible", True)),
-        }
-    capability_version_id = str(uuid.uuid4())
-    recipe_version_id = str(uuid.uuid4())
-    descriptor = {
-        "id": canonical_id,
-        "title": title,
-        "description": str(payload.get("description") or ""),
-        "provider_id": "agent_recipe_runner",
-        "provider_type": "agent_recipe_runner",
-        "execution_target": "agent_recipe",
-        "platforms": platforms,
-        "tool_kind": "diagnostic",
-        "risk_level": "low",
-        "evidence": evidence_mapping,
-        "presentation_schema": payload.get("presentation_schema")
-        if isinstance(payload.get("presentation_schema"), dict)
-        else COMPOSITE_RECIPE_PRESENTATION_SCHEMA,
-    }
-    auth_context = request.get("auth_context")
-    async with get_session() as session:
-        provider = await session.get(DiagnosticProvider, "agent_recipe_runner")
-        if provider is None:
-            session.add(
-                DiagnosticProvider(
-                    provider_id="agent_recipe_runner",
-                    provider_type="agent_recipe_runner",
-                    title="Agent Recipe Runner",
-                    description="Protected managed module for declarative endpoint diagnostics.",
-                    source="managed_module",
-                    status="available",
-                )
-            )
-            await session.flush()
-        capability = await session.get(DiagnosticCapability, canonical_id)
-        if capability is None:
-            capability = DiagnosticCapability(
-                capability_id=canonical_id,
-                provider_id="agent_recipe_runner",
-                execution_target="agent_recipe",
-                title=title,
-                description=descriptor["description"],
-                status="draft",
-                latest_version=version,
-                descriptor_json=descriptor,
-            )
-            session.add(capability)
-        capability_version = DiagnosticCapabilityVersion(
-            id=capability_version_id,
-            capability_id=canonical_id,
-            version=version,
-            status="draft",
-            descriptor_json=descriptor,
-            params_schema_json=payload.get("params_schema") if isinstance(payload.get("params_schema"), dict) else {},
-            output_schema_json=payload.get("output_schema") if isinstance(payload.get("output_schema"), dict) else {},
-            output_contract_json=payload.get("output_contract") if isinstance(payload.get("output_contract"), dict) else {},
-            safety_json={"read_only": True, "side_effects": False, **(payload.get("safety") if isinstance(payload.get("safety"), dict) else {})},
-            evidence_mapping_json=evidence_mapping,
-            deployment_json={"runner_provider_id": "agent_recipe_runner", "min_runner_version": str(payload.get("min_runner_version") or "1.0.0")},
-            readiness_json={},
-            contract_hash=str(uuid.uuid5(uuid.NAMESPACE_URL, f"{canonical_id}:{version}:{primitive_id}")),
-            created_by=getattr(auth_context, "actor_id", None),
-        )
-        session.add(capability_version)
-        await session.flush()
-        recipe = AgentRecipeVersion(
-            id=recipe_version_id,
-            capability_version_id=capability_version_id,
-            recipe_schema_version=str(payload.get("recipe_schema_version") or "1.0"),
-            runner_provider_id="agent_recipe_runner",
-            min_runner_version=str(payload.get("min_runner_version") or "1.0.0"),
-            primitive_id=primitive_id,
-            primitive_version=str(payload.get("primitive_version") or "1.0"),
-            platforms_json=platforms,
-            platform_variants_json=payload.get("platform_variants") if isinstance(payload.get("platform_variants"), dict) else {},
-            recipe_json=payload.get("recipe") if isinstance(payload.get("recipe"), dict) else {"params": payload.get("params") if isinstance(payload.get("params"), dict) else {}},
-            parameter_bindings_json=payload.get("parameter_bindings") if isinstance(payload.get("parameter_bindings"), dict) else {},
-            resource_limits_json=payload.get("resource_limits") if isinstance(payload.get("resource_limits"), dict) else {"timeout_sec": 10},
-            redaction_json=payload.get("redaction") if isinstance(payload.get("redaction"), dict) else {},
-            validation_status="unknown",
-        )
-        session.add(recipe)
-        await session.commit()
-    return web.json_response(
-        {
-            "status": "ok",
-            "capability_id": canonical_id,
-            "capability_version_id": capability_version_id,
-            "recipe_version_id": recipe_version_id,
-            "capability": descriptor,
-        },
-        status=201,
-    )
-
-
-@require_auth("admin")
-async def handle_agent_recipe_validate(request: web.Request) -> web.Response:
-    recipe_id = str(request.match_info.get("recipe_id") or "").strip()
-    async with get_session() as session:
-        recipe = await session.get(AgentRecipeVersion, recipe_id)
-        if recipe is None:
-            return web.json_response({"status": "error", "error_code": "RECIPE_NOT_FOUND", "error": "Recipe not found"}, status=404)
-        try:
-            normalize_recipe_platforms(recipe.platforms_json)
-        except AgentRecipeValidationError as exc:
-            recipe.validation_status = "failed"
-            await session.commit()
-            return web.json_response({"status": "error", "validation_status": "failed", "error": str(exc)}, status=400)
-        recipe.validation_status = "passed"
-        await session.commit()
-    return web.json_response({"status": "ok", "recipe_version_id": recipe_id, "validation_status": "passed"})
-
-
-@require_auth("admin")
-async def handle_agent_recipe_publish(request: web.Request) -> web.Response:
-    recipe_id = str(request.match_info.get("recipe_id") or "").strip()
-    async with get_session() as session:
-        recipe = await session.get(AgentRecipeVersion, recipe_id)
-        if recipe is None:
-            return web.json_response({"status": "error", "error_code": "RECIPE_NOT_FOUND", "error": "Recipe not found"}, status=404)
-        version = await session.get(DiagnosticCapabilityVersion, recipe.capability_version_id)
-        if version is None:
-            return web.json_response({"status": "error", "error_code": "CAPABILITY_VERSION_NOT_FOUND", "error": "Capability version not found"}, status=404)
-        capability = await session.get(DiagnosticCapability, version.capability_id)
-        if capability is None:
-            return web.json_response({"status": "error", "error_code": "CAPABILITY_NOT_FOUND", "error": "Capability not found"}, status=404)
-        recipe.validation_status = "passed"
-        version.status = "published"
-        version.is_current = True
-        version.published_at = datetime.now(timezone.utc)
-        capability.status = "active"
-        capability.latest_version = version.version
-        capability.descriptor_json = dict(version.descriptor_json or {})
-        await session.commit()
-    return web.json_response({"status": "ok", "capability_id": capability.capability_id, "version_id": version.id, "recipe_version_id": recipe.id})
 
 
 def _auth_actor_label(request: web.Request) -> str:

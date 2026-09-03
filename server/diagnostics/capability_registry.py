@@ -105,8 +105,6 @@ class CapabilityRegistry:
         capabilities.extend(list_server_connector_capabilities())
         capabilities.extend(list_static_capabilities())
         capabilities.extend(list_endpoint_platform_capabilities(execution_mode=endpoint_mode))
-        if not self.endpoint_cutover_only:
-            capabilities.extend(await self._list_persisted_agent_recipes())
         return self._dedupe(capabilities)
 
     def _endpoint_diagnostic_mode(self) -> str:
@@ -144,17 +142,6 @@ class CapabilityRegistry:
                 continue
             descriptors.append(_descriptor_from_tool(raw_tool, default_source=default_source))
         return descriptors
-
-    async def _list_persisted_agent_recipes(self) -> List[CapabilityDescriptor]:
-        try:
-            from app.db import get_session
-            from diagnostics.agent_recipes_repo import AgentRecipeRepo
-
-            async with get_session() as session:
-                recipes = await AgentRecipeRepo(session).list_published_capabilities()
-                return [recipe.descriptor() for recipe in recipes]
-        except Exception:
-            return []
 
     def _dedupe(self, capabilities: Iterable[CapabilityDescriptor]) -> List[CapabilityDescriptor]:
         by_id: Dict[str, CapabilityDescriptor] = {}

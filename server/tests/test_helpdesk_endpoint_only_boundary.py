@@ -74,3 +74,13 @@ def test_support_workspace_has_no_legacy_tool_dispatch_runtime() -> None:
     assert "tools.service" not in _imports(support_handlers)
     assert "handle_web_support_run_tool" not in source
     assert "ToolExecutionService" not in source
+
+
+def test_diagnostic_registry_has_no_agent_recipe_fallback() -> None:
+    for relative_path in (
+        "server/diagnostics/capability_registry.py",
+        "server/diagnostics/handlers.py",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8-sig")
+        assert "AgentRecipe" not in source
+        assert "agent_recipe_runner" not in source
