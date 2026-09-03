@@ -1770,7 +1770,11 @@ async def _timeline_presentation_by_tool(
     service = ToolPresentationOverrideService(session)
     descriptors_by_id: dict[str, Any] = {}
     try:
-        registry = CapabilityRegistry(tool_service=ToolExecutionService(state), state=state)
+        registry = CapabilityRegistry(
+            tool_service=None,
+            state=state,
+            endpoint_cutover_only=True,
+        )
         for descriptor in await registry.list_capabilities(device_id=str(getattr(ticket, "device_id", "") or "") or None):
             if descriptor.id in tool_ids:
                 descriptors_by_id[descriptor.id] = descriptor
