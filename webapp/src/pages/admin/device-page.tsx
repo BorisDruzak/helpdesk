@@ -305,12 +305,12 @@ export function AdminDevicePage() {
                 className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
                 onClick={() => {
                   startTransition(() => {
-                    navigate("/app/admin/modules");
+                    navigate("/app/admin/capabilities");
                   });
                 }}
                 type="button"
               >
-                <span className="font-medium text-slate-900">Модули и preferred versions</span>
+                <span className="font-medium text-slate-900">Возможности Endpoint</span>
                 <ArrowUpRight className="h-4 w-4 text-brand-700" />
               </button>
               <button

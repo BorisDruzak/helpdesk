@@ -161,7 +161,7 @@ export function CapabilityCreateModal({ open, onClose, onCreated }: CapabilityCr
                   key={card.mode}
                   onClick={() => {
                     if (card.mode === "sdk") {
-                      navigate("/app/admin/modules");
+                      navigate("/app/admin/capabilities");
                       onClose();
                       return;
                     }

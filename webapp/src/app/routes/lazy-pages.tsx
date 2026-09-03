@@ -104,10 +104,6 @@ export const AdminInventoryPage = lazy(() =>
   import("../../pages/admin/inventory-page").then((module) => ({ default: module.AdminInventoryPage })),
 );
 
-export const AdminModulesPage = lazy(() =>
-  import("../../pages/admin/modules-page").then((module) => ({ default: module.AdminModulesPage })),
-);
-
 export const AdminObserverPage = lazy(() =>
   import("../../pages/admin/observer-page").then((module) => ({ default: module.AdminObserverPage })),
 );

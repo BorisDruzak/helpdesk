@@ -805,7 +805,7 @@ export function DiagnosticCenterPanel({ ticketId }: DiagnosticCenterPanelProps) 
                     selectedCapability.actions.includes("add_credentials") ? (
                       <a
                         className="inline-flex w-full items-center justify-center gap-2 rounded-pill border border-border bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:border-brand-200 hover:bg-brand-50"
-                        href="/app/admin/modules#diagnostic-provider-configs"
+                        href="/app/admin/capabilities"
                       >
                         <Search className="h-4 w-4" />
                         Настроить provider

@@ -337,15 +337,6 @@ from web_api.admin_handlers import (
     handle_web_admin_observer_trace_detail,
     handle_web_admin_observer_traces,
 )
-from web_api.endpoint_module_handlers import (
-    handle_endpoint_module_capabilities,
-    handle_endpoint_module_create_version,
-    handle_endpoint_module_deprecate,
-    handle_endpoint_module_publish,
-    handle_endpoint_module_validate,
-    handle_endpoint_module_run,
-    handle_endpoint_modules_list,
-)
 from web_api.admin_inventory_handlers import (
     handle_web_admin_device_inventory,
     handle_web_admin_device_inventory_binding,
@@ -793,20 +784,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms', handle_web_admin_helpdesk_model_republish_legacy_forms),
         web.get('/api/web/admin/playbooks/catalog', handle_web_admin_playbooks_catalog),
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
-        # Endpoint Recipe modules are exposed through a typed, Endpoint-owned BFF.
-        web.get('/api/web/admin/endpoint-modules', handle_endpoint_modules_list),
-        web.get('/api/web/admin/endpoint-modules/capabilities', handle_endpoint_module_capabilities),
-        web.post('/api/web/admin/endpoint-modules', handle_endpoint_module_create_version),
-        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/validate', handle_endpoint_module_validate),
-        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/publish', handle_endpoint_module_publish),
-        web.post('/api/web/admin/endpoint-modules/{module_key}/{version}/deprecate', handle_endpoint_module_deprecate),
-        web.get('/api/admin/endpoint-modules', handle_endpoint_modules_list),
-        web.post('/api/admin/endpoint-modules', handle_endpoint_module_create_version),
-        web.post('/api/admin/endpoint-modules/{module_key}/{version}/validate', handle_endpoint_module_validate),
-        web.post('/api/admin/endpoint-modules/{module_key}/{version}/publish', handle_endpoint_module_publish),
-        web.post('/api/admin/endpoint-modules/{module_key}/{version}/deprecate', handle_endpoint_module_deprecate),
-        web.post('/api/web/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
-        web.post('/api/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
         web.get('/api/registry/options', handle_registry_options),
         web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.post('/api/registry/agent/profile', handle_registry_agent_profile),

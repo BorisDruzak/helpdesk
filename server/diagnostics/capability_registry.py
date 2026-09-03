@@ -82,12 +82,10 @@ class CapabilityRegistry:
     def __init__(
         self,
         *,
-        tool_service: Any = None,
         state: Any = None,
         endpoint_diagnostic_execution_mode: str | None = None,
         endpoint_cutover_only: bool = False,
     ) -> None:
-        self.tool_service = tool_service
         self.state = state
         self.endpoint_diagnostic_execution_mode = endpoint_diagnostic_execution_mode
         self.endpoint_cutover_only = endpoint_cutover_only
@@ -95,12 +93,6 @@ class CapabilityRegistry:
     async def list_capabilities(self, *, device_id: Optional[str] = None) -> List[CapabilityDescriptor]:
         capabilities: List[CapabilityDescriptor] = []
         endpoint_mode = self._endpoint_diagnostic_mode()
-        if not self.endpoint_cutover_only and self.tool_service and device_id:
-            device_tools = await self.tool_service.get_tools_list(device_id)
-            capabilities.extend(self._project_tools(device_tools, default_source="builtin"))
-        if not self.endpoint_cutover_only and self.tool_service:
-            server_tools = await self.tool_service.get_tools_from_server(device_id)
-            capabilities.extend(self._project_tools(server_tools, default_source="managed_module"))
         capabilities.extend(list_server_builtin_capabilities())
         capabilities.extend(list_server_connector_capabilities())
         capabilities.extend(list_static_capabilities())

@@ -119,11 +119,11 @@ export function CapabilityCatalogTable({
                     {capability.source === "managed_module" || capability.execution_target === "agent_managed_module" ? (
                       <Button
                         leadingIcon={<ExternalLink className="h-4 w-4" />}
-                        onClick={() => navigate("/app/admin/modules")}
+                        onClick={() => navigate("/app/admin/capabilities")}
                         size="sm"
                         variant="ghost"
                       >
-                        SDK
+                        Endpoint
                       </Button>
                     ) : null}
                   </div>

@@ -57,33 +57,6 @@ ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").s
 ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
     os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint") or "endpoint"
 ).strip().lower()
-# Endpoint Module Platform is an independent typed boundary.  It must never
-# inherit the diagnostic provider's execution mode or legacy fallback.
-ENDPOINT_MODULE_PORT_MODE = (
-    os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
-).strip().lower()
-# Module Platform credentials are deliberately separate from diagnostic access.
-# A module-only service client must not inherit the diagnostic client's scopes.
-ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN = os.getenv(
-    "ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN", ""
-) or ""
-# The legacy Python-module workbench remains authoritative unless a reviewed
-# deployment explicitly selects Endpoint-native recipes.  This flag is
-# declarative only: it cannot enable execution by itself.
-MODULE_WORKBENCH_AUTHORITY = (
-    os.getenv("MODULE_WORKBENCH_AUTHORITY", "legacy") or "legacy"
-).strip().lower()
-# Module operations have a separate cutover from the read-only module port.
-# Keep the established diagnostic execution path intact until the module
-# reconciler has explicit acceptance in a pilot environment.
-ENDPOINT_MODULE_EXECUTION_MODE = (
-    os.getenv("ENDPOINT_MODULE_EXECUTION_MODE", "disabled") or "disabled"
-).strip().lower()
-LEGACY_MODULE_EXECUTION_ENABLED = (
-    os.getenv("LEGACY_MODULE_EXECUTION_ENABLED", "true") or "true"
-).strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _bounded_endpoint_external_timeout() -> float:
     try:
         timeout = float(os.getenv("ENDPOINT_EXTERNAL_TIMEOUT_SECONDS", "2.0") or "2.0")

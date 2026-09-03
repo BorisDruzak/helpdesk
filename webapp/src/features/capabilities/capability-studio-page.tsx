@@ -254,7 +254,7 @@ export function CapabilityStudioPage() {
             >
               Обновить
             </Button>
-            <a href="/app/admin/modules">
+            <a href="/app/admin/capabilities">
               <Button variant="ghost">Документация</Button>
             </a>
           </>

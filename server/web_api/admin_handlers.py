@@ -3007,7 +3007,6 @@ async def _build_admin_playbooks_payload(state: object | None = None) -> AdminPl
     seen_catalog_tools = {str(item.get("tool") or "") for item in block_catalog if item.get("tool")}
     try:
         for capability in await CapabilityRegistry(
-            tool_service=None,
             state=state,
             endpoint_cutover_only=True,
         ).list_capabilities(device_id=None):

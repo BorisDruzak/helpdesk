@@ -380,17 +380,6 @@ export const appNavigation: AppNavItem[] = [
     order: 40,
   },
   {
-    label: "Модули",
-    description: "ZIP/SDK-модули агента",
-    icon: Layers3,
-    section: "admin",
-    workspace: "admin",
-    domainId: "automation",
-    to: "/app/admin/modules",
-    permission: "admin.modules.view",
-    order: 10,
-  },
-  {
     label: "Возможности",
     description: "Диагностика, провайдеры, evidence",
     icon: Layers3,

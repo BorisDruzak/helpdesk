@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.db.models import DeviceOutbox, DiagnosticEvidence, Operation, Ticket
+from app.db.models import DiagnosticEvidence, Operation, Ticket
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.execution_router import CapabilityExecutionRouter
 
@@ -41,8 +41,7 @@ async def test_server_builtin_dns_runner_creates_succeeded_operation_without_out
         await session.commit()
 
     router = CapabilityExecutionRouter(
-        capability_registry=CapabilityRegistry(tool_service=None, state=None),
-        tool_service=None,
+        capability_registry=CapabilityRegistry(state=None),
     )
     result = await router.run_capability(
         ticket_id=ticket_id,
@@ -65,7 +64,6 @@ async def test_server_builtin_dns_runner_creates_succeeded_operation_without_out
 
     async with session_maker() as session:
         operation = await session.scalar(select(Operation).where(Operation.operation_id == result["operation_id"]))
-        outbox_count = await session.scalar(select(func.count(DeviceOutbox.id)))
 
     assert operation is not None
     assert operation.status == "succeeded"
@@ -77,7 +75,6 @@ async def test_server_builtin_dns_runner_creates_succeeded_operation_without_out
     assert operation.started_at is not None
     assert operation.finished_at is not None
     assert operation.result_summary
-    assert outbox_count == 0
 
     repeat = await router.run_capability(
         ticket_id=ticket_id,
@@ -100,10 +97,8 @@ async def test_server_builtin_dns_runner_creates_succeeded_operation_without_out
                 Operation.tool_name == "server.dns.resolve",
             )
         )
-        outbox_count = await session.scalar(select(func.count(DeviceOutbox.id)))
 
     assert operation_count == 1
-    assert outbox_count == 0
 
 
 @pytest.mark.asyncio
@@ -117,8 +112,7 @@ async def test_server_builtin_failure_marks_operation_failed_without_outbox(test
         await session.commit()
 
     router = CapabilityExecutionRouter(
-        capability_registry=CapabilityRegistry(tool_service=None, state=None),
-        tool_service=None,
+        capability_registry=CapabilityRegistry(state=None),
     )
     result = await router.run_capability(
         ticket_id=ticket_id,
@@ -136,13 +130,11 @@ async def test_server_builtin_failure_marks_operation_failed_without_outbox(test
 
     async with session_maker() as session:
         operation = await session.scalar(select(Operation).where(Operation.operation_id == result["operation_id"]))
-        outbox_count = await session.scalar(select(func.count(DeviceOutbox.id)))
 
     assert operation is not None
     assert operation.status == "failed"
     assert operation.error_code == "SERVER_BUILTIN_QUERY_FAILED"
     assert operation.finished_at is not None
-    assert outbox_count == 0
 
 
 @pytest.mark.asyncio
@@ -171,7 +163,6 @@ async def test_server_builtin_capability_api_persists_diagnostic_evidence(test_c
     async with get_session() as session:
         evidence = await session.get(DiagnosticEvidence, payload["diagnostic_evidence_id"])
         operation = await session.scalar(select(Operation).where(Operation.operation_id == payload["operation_id"]))
-        outbox_count = await session.scalar(select(func.count(DeviceOutbox.id)))
 
     assert evidence is not None
     assert evidence.source_type == "operation"
@@ -182,4 +173,3 @@ async def test_server_builtin_capability_api_persists_diagnostic_evidence(test_c
     assert evidence.status == "ok"
     assert operation is not None
     assert operation.status == "succeeded"
-    assert outbox_count == 0

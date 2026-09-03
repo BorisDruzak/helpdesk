@@ -43,8 +43,8 @@ def test_legacy_agent_control_routes_are_not_registered() -> None:
     assert all("remote-assist" not in path for path in paths)
 
 
-def test_endpoint_operation_and_module_bff_routes_remain_registered() -> None:
+def test_endpoint_operation_routes_remain_but_module_authority_is_absent() -> None:
     paths = _registered_paths()
 
     assert "/api/web/support/operations/{operation_id}/cancel" in paths
-    assert "/api/web/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run" in paths
+    assert all("endpoint-modules" not in path for path in paths)

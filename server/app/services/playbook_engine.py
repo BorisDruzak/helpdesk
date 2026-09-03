@@ -75,7 +75,7 @@ async def _resolve_non_agent_capability(state, capability_id: str):
     if not capability_id:
         return None
     try:
-        registry = CapabilityRegistry(tool_service=None, state=state)
+        registry = CapabilityRegistry(state=state)
         capability = await registry.resolve_capability(capability_id, device_id=None)
     except Exception as exc:
         logger.debug(f"[PlaybookEngine] Capability resolve skipped id={capability_id}: {exc}")
@@ -130,8 +130,7 @@ async def _execute_non_agent_capability_step(
     timeout_ms = int(step.timeout_sec * 1000) if step.timeout_sec else None
     observability = RuntimeAuditCapabilityExecutionObserver(state=state)
     router = CapabilityExecutionRouter(
-        capability_registry=CapabilityRegistry(tool_service=None, state=state, endpoint_cutover_only=True),
-        tool_service=None,
+        capability_registry=CapabilityRegistry(state=state, endpoint_cutover_only=True),
         observability=observability,
     )
     result = await router.run_capability(

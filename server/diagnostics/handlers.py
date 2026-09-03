@@ -67,7 +67,6 @@ class _HandlerVerifiedEndpointAccess:
 @dataclass(frozen=True)
 class _DiagnosticRuntime:
     registry: CapabilityRegistry
-    tool_service: object | None
     endpoint_port: object | None
     endpoint_platform_provider: object | None
 
@@ -89,12 +88,10 @@ def _build_diagnostic_runtime(*, state: object, ticket_id: str) -> _DiagnosticRu
     endpoint_port, endpoint_platform_provider = _build_endpoint_platform_provider(ticket_id)
     return _DiagnosticRuntime(
         registry=CapabilityRegistry(
-            tool_service=None,
             state=state,
             endpoint_diagnostic_execution_mode="endpoint",
             endpoint_cutover_only=True,
         ),
-        tool_service=None,
         endpoint_port=endpoint_port,
         endpoint_platform_provider=endpoint_platform_provider,
     )
@@ -262,7 +259,6 @@ def _with_provider_runtime_params(params: dict, capability, persisted_maps) -> d
 async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
     state = request.app.get("state")
     registry = CapabilityRegistry(
-        tool_service=None,
         state=state,
         endpoint_diagnostic_execution_mode="endpoint",
         endpoint_cutover_only=True,
@@ -354,7 +350,6 @@ def _auth_actor_label(request: web.Request) -> str:
 async def _resolve_tool_presentation_descriptor(request: web.Request, session, tool_id: str):
     state = request.app.get("state")
     registry = CapabilityRegistry(
-        tool_service=None,
         state=state,
         endpoint_diagnostic_execution_mode="endpoint",
         endpoint_cutover_only=True,
@@ -762,7 +757,6 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
     observability = RuntimeAuditCapabilityExecutionObserver(state=state)
     router = CapabilityExecutionRouter(
         capability_registry=registry,
-        tool_service=runtime.tool_service,
         endpoint_platform_provider=runtime.endpoint_platform_provider,
         observability=observability,
     )
@@ -984,7 +978,6 @@ async def handle_ticket_diagnostics_manual_evidence(request: web.Request) -> web
         capability_id = "manual.visual_check"
     state = request.app.get("state")
     capability = await CapabilityRegistry(
-        tool_service=None,
         state=state,
         endpoint_diagnostic_execution_mode="endpoint",
         endpoint_cutover_only=True,

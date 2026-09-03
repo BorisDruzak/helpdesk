@@ -247,15 +247,12 @@ def test_endpoint_capability_descriptor_is_exact_and_mode_gated():
 @pytest.mark.asyncio
 async def test_endpoint_router_creates_local_facade_without_legacy_tool_runtime():
     operation_service = _OperationService()
-    tool_service = _BombToolService()
     registry = CapabilityRegistry(
-        tool_service=tool_service,
         endpoint_diagnostic_execution_mode="endpoint",
         endpoint_cutover_only=True,
     )
     router = CapabilityExecutionRouter(
         capability_registry=registry,
-        tool_service=tool_service,
         endpoint_platform_provider=EndpointPlatformDiagnosticProvider(operation_service=operation_service),
     )
 
@@ -352,7 +349,7 @@ def test_endpoint_handler_runtime_composition_does_not_construct_tool_service(mo
 
     runtime = handlers._build_diagnostic_runtime(state=object(), ticket_id="ticket-1")
 
-    assert runtime.tool_service is None
+    assert not hasattr(runtime, "tool_service")
     assert runtime.endpoint_port is marker
     assert runtime.endpoint_platform_provider is marker
     assert runtime.registry.endpoint_diagnostic_execution_mode == "endpoint"

@@ -1654,7 +1654,6 @@ async def _timeline_presentation_by_tool(
     descriptors_by_id: dict[str, Any] = {}
     try:
         registry = CapabilityRegistry(
-            tool_service=None,
             state=state,
             endpoint_cutover_only=True,
         )
@@ -2847,7 +2846,6 @@ async def _playbook_available_tool_names(device_id: str | None, state: object | 
     if not device_id:
         return set()
     registry = CapabilityRegistry(
-        tool_service=None,
         state=state,
         endpoint_diagnostic_execution_mode="endpoint",
         endpoint_cutover_only=True,
@@ -2930,7 +2928,6 @@ async def _build_support_tools_payload(
         )
 
     registry = CapabilityRegistry(
-        tool_service=None,
         state=state,
         endpoint_diagnostic_execution_mode="endpoint",
         endpoint_cutover_only=True,

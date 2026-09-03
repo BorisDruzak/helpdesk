@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import uuid
 from typing import Any, Dict, Optional
 
 from diagnostics.capability_registry import CapabilityRegistry
@@ -31,7 +30,6 @@ class CapabilityExecutionRouter:
         self,
         *,
         capability_registry: CapabilityRegistry,
-        tool_service: Any,
         server_builtin_provider: Any = None,
         server_connector_provider: Any = None,
         observer_provider: Any = None,
@@ -40,7 +38,6 @@ class CapabilityExecutionRouter:
         observability: Any = None,
     ) -> None:
         self.capability_registry = capability_registry
-        self.tool_service = tool_service
         self.server_builtin_provider = server_builtin_provider or ServerBuiltinProvider()
         self.server_connector_provider = server_connector_provider or ServerConnectorProvider()
         self.observer_provider = observer_provider or ObserverCapabilityProvider()
@@ -150,22 +147,12 @@ class CapabilityExecutionRouter:
             return readiness_error
         target = capability.execution_target
         if target in {"agent_builtin", "agent_managed_module"}:
-            result = await self.route_agent_tool(
-                ticket_id=ticket_id,
-                device_id=device_id,
-                capability_id=capability.id,
-                params=params,
-                actor=actor,
-                idempotency_key=idempotency_key,
-            )
-            return self._envelope(
-                capability,
-                result,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
+            return {
+                "status": "error",
+                "error_code": "ENDPOINT_ONLY_CAPABILITY_REQUIRED",
+                "capability_id": capability.id,
+                "execution_target": target,
+            }
         if target == "agent_recipe":
             result = await self.route_agent_recipe(
                 capability,
@@ -276,28 +263,6 @@ class CapabilityExecutionRouter:
             "timeout_ms": timeout_ms,
         }
 
-    async def route_agent_tool(
-        self,
-        *,
-        ticket_id: str,
-        device_id: Optional[str],
-        capability_id: str,
-        params: Dict[str, Any],
-        actor: Any,
-        idempotency_key: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        if not device_id:
-            return {"status": "error", "error_code": "DEVICE_REQUIRED", "message": "Device is required"}
-        return await self.tool_service.run_tool(
-            device_id=device_id,
-            ticket_id=ticket_id,
-            tool_name=capability_id,
-            params=dict(params or {}),
-            call_id=idempotency_key or f"capability-{uuid.uuid4()}",
-            auth_context=actor,
-            wait_for_result=False,
-        )
-
     async def route_server_builtin(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_builtin_provider, capability, **kwargs)
 
@@ -375,23 +340,7 @@ class CapabilityExecutionRouter:
         readiness_status = str(readiness.get("readiness") or "").strip()
         if readiness_status in EXECUTABLE_READINESS:
             return True
-        if (
-            readiness_status == "consent_required"
-            and capability.execution_target in {"agent_builtin", "agent_managed_module"}
-            and "request_consent" in set(readiness.get("actions") or [])
-        ):
-            return True
-        if (
-            capability.execution_target == "agent_recipe"
-            and readiness_status in {"runner_not_installed", "runner_install_required", "runner_outdated", "primitive_not_supported"}
-            and {"install_runner", "upgrade_runner"}.intersection(set(readiness.get("actions") or []))
-        ):
-            return True
-        return (
-            readiness_status == "install_required"
-            and capability.execution_target == "agent_managed_module"
-            and capability.supports_auto_install
-        )
+        return False
 
     def _envelope(
         self,

@@ -11,7 +11,6 @@ import {
   AdminAccessPage,
   AdminFormsPage,
   AdminInventoryPage,
-  AdminModulesPage,
   AdminObserverPage,
   AdminOperationDetailPage,
   AdminPlaybooksPage,
@@ -496,14 +495,6 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminRegistryPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/modules",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminModulesPage />
               </WorkspaceAccessGate>
             )
           },

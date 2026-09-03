@@ -2,7 +2,6 @@ import { useDeferredValue, useEffect, useState, startTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { FormsBuilderPanel } from "../forms-builder/forms-builder-panel";
-import { ModulesPanel } from "../modules/modules-panel";
 import { ObserverQuickPanel } from "../tech/observer-quick-panel";
 import { getSharedWebRealtimeClient } from "../../shared/realtime/client";
 import {
@@ -156,7 +155,7 @@ export function AdminWorkspace() {
           <h1>Рабочее место администрирования</h1>
           <p>
             Тот же единый shell, что и в поддержке: инвентарь слева, активное устройство в центре,
-            раскатка, observer, реестр модулей и конструктор форм в едином операционном интерфейсе.
+            Endpoint-срез, observer и конструктор форм в едином операционном интерфейсе.
           </p>
         </div>
 
@@ -310,7 +309,6 @@ export function AdminWorkspace() {
         </article>
       </section>
 
-      <ModulesPanel />
       <FormsBuilderPanel />
     </section>
   );

@@ -3254,11 +3254,6 @@ class EndpointOperationLink(Base):
     capability_code: Mapped[str] = mapped_column(
         String(128), nullable=False, server_default="context.diagnostic.collect"
     )
-    module_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    module_version: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    module_spec_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    module_inputs_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    safe_module_snapshot_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     create_idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
     caller_actor_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     caller_idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
@@ -3297,8 +3292,7 @@ class EndpointOperationLink(Base):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "(capability_code = 'context.diagnostic.collect' AND module_key IS NULL AND module_version IS NULL) "
-            "OR (capability_code = 'endpoint.module.recipe' AND module_key IS NOT NULL AND module_version IS NOT NULL)",
+            "capability_code = 'context.diagnostic.collect'",
             name="ck_endpoint_operation_links_capability_code",
         ),
         sa.CheckConstraint(

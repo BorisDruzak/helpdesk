@@ -143,7 +143,6 @@ def test_inventory_audit_allows_the_explicit_manual_cross_repo_wss_suites():
 
     report = audit.audit_paths(
         [
-            acceptance_dir / "test_endpoint_module_platform_v1.py",
             acceptance_dir / "test_endpoint_operations_v1_acceptance.py",
         ],
         workspace=workspace,

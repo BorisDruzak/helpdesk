@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[2]
 ENDPOINT_BFF_SOURCES = (
     ROOT / "server" / "web_api" / "endpoint_operation_handlers.py",
     ROOT / "server" / "diagnostics" / "providers" / "endpoint_platform.py",
+    ROOT / "server" / "diagnostics" / "capability_registry.py",
+    ROOT / "server" / "diagnostics" / "execution_router.py",
 )
 FORBIDDEN_IMPORT_PREFIXES = (
     "websocket.protocol",
@@ -74,6 +76,16 @@ def test_support_workspace_has_no_legacy_tool_dispatch_runtime() -> None:
     assert "tools.service" not in _imports(support_handlers)
     assert "handle_web_support_run_tool" not in source
     assert "ToolExecutionService" not in source
+
+
+def test_diagnostic_runtime_has_no_local_agent_tool_execution() -> None:
+    for relative_path in (
+        "server/diagnostics/capability_registry.py",
+        "server/diagnostics/execution_router.py",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8-sig")
+        assert "ToolService" not in source
+        assert ".run_tool(" not in source
 
 
 def test_diagnostic_registry_has_no_agent_recipe_fallback() -> None:

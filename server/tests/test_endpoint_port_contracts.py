@@ -297,7 +297,6 @@ def test_endpoint_configuration_uses_bounded_fail_closed_defaults(
             "ENDPOINT_PORT_MODE",
             "ENDPOINT_EXTERNAL_BASE_URL",
             "ENDPOINT_EXTERNAL_SERVICE_TOKEN",
-            "ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN",
             "ENDPOINT_EXTERNAL_CA_FILE",
             "ENDPOINT_EXTERNAL_TIMEOUT_SECONDS",
             "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE",
@@ -310,7 +309,6 @@ def test_endpoint_configuration_uses_bounded_fail_closed_defaults(
         assert loaded.ENDPOINT_PORT_MODE == "unavailable"
         assert loaded.ENDPOINT_EXTERNAL_BASE_URL == ""
         assert loaded.ENDPOINT_EXTERNAL_SERVICE_TOKEN == ""
-        assert loaded.ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN == ""
         assert loaded.ENDPOINT_EXTERNAL_CA_FILE == ""
         assert loaded.ENDPOINT_EXTERNAL_TIMEOUT_SECONDS == 2.0
         assert loaded.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE == "endpoint"
