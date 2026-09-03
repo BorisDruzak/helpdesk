@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import time
 from typing import Any
 
@@ -30,30 +29,8 @@ PRIVATE_RUNTIME_KEYS = frozenset(
 
 INTEGRATION_TARGETS = frozenset({"server_connector"})
 EXTERNAL_TARGETS = frozenset({"server_connector", "observer_query"})
-SOURCE_BY_TARGET = {
-    "server_builtin": "diagnostic_server_builtin",
-    "server_connector": "diagnostic_server_connector",
-    "observer_query": "diagnostic_observer_query",
-    "manual": "diagnostic_manual",
-}
-
-
 def monotonic_ms() -> int:
     return int(time.monotonic() * 1000)
-
-
-def actor_id(actor: Any) -> str | None:
-    value = getattr(actor, "actor_id", None)
-    return str(value) if value else None
-
-
-def actor_role(actor: Any) -> str | None:
-    value = getattr(actor, "actor_role", None)
-    return str(value) if value else None
-
-
-def audit_source_for_target(execution_target: str | None) -> str:
-    return SOURCE_BY_TARGET.get(str(execution_target or "").strip(), "diagnostic_capability")
 
 
 def capability_audit_required(capability: Any) -> bool:
@@ -223,51 +200,6 @@ class RuntimeAuditCapabilityExecutionObserver:
             evidence_id=evidence_id,
             stage=stage,
         )
-        await self._persist_runtime_audit(
-            device_id=device_id or "server",
-            event_type=event_type,
-            severity=severity,
-            source=audit_source_for_target(getattr(capability, "execution_target", None)),
-            operation_id=str((result or {}).get("operation_id") or "") or None,
-            ticket_id=ticket_id,
-            actor_id=actor_id(actor),
-            actor_role=actor_role(actor),
-            details_json=details,
-        )
-
-    async def _persist_runtime_audit(self, **kwargs: Any) -> None:
-        from app.db import get_session
-        from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
-
-        async with get_session() as session:
-            audit = await AgentRuntimeAuditRepo(session).add(**kwargs)
-            audit_id = audit.id
-            await session.commit()
-        await _maybe_enqueue_runtime_audit_trace(self.state, audit_id)
-
-
-async def _maybe_await(value: Any) -> Any:
-    if inspect.isawaitable(value):
-        return await value
-    return value
-
-
-async def _maybe_enqueue_runtime_audit_trace(state: Any, audit_id: int | None) -> None:
-    if state is None or audit_id is None:
-        return
-    runtime = getattr(state, "observer_refresh_runtime", None)
-    if runtime is None and isinstance(state, dict):
-        runtime = state.get("observer_refresh_runtime")
-    if runtime is None or not hasattr(runtime, "enqueue_trace"):
-        return
-    try:
-        from observer.service import _runtime_audit_trace_id
-
-        trace_id = _runtime_audit_trace_id(audit_id)
-        if trace_id:
-            await _maybe_await(runtime.enqueue_trace(trace_id, delay_sec=0.0))
-    except Exception:
-        return
 
 
 def _finished_event_type(result: dict[str, Any], *, error: BaseException | None = None) -> str:

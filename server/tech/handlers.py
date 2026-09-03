@@ -30,7 +30,6 @@ from domain_ports import (
     RegistryPort,
     RegistryUnavailable,
 )
-from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.observer_settings_repo import ObserverSettingsRepo
 from app.repos.ticket_admin_audit_repo import TicketAdminAuditRepo
 from config import (

@@ -15,13 +15,12 @@ import config
 from auth.context import AuthContext, AuthType
 from auth.service import AuthService
 from app.db import get_session
-from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
+from app.db.models import UiUserAudit
 
 
 WEB_SESSION_COOKIE_NAME = "pc_client_web_session"
 SERVER_REQUEST_ID_KEY = "server_request_id"
 SERVER_REQUEST_ID_HEADER = "X-Server-Request-ID"
-WEB_AUTH_AUDIT_DEVICE_ID = "00000000-0000-0000-0000-00000000a11d"
 WEB_AUTH_AUDIT_WINDOW_SEC = 60
 _WEB_AUTH_AUDIT_LAST_SEEN: dict[tuple[str, str, str, str], datetime] = {}
 # Cookie sessions are browser credentials. They must cover every API route the
@@ -358,15 +357,12 @@ async def _write_web_auth_audit(
     }
     try:
         async with get_session() as session:
-            await AgentRuntimeAuditRepo(session).add(
-                device_id=WEB_AUTH_AUDIT_DEVICE_ID,
-                event_type=event_type,
-                severity=severity,
-                source="web_auth",
+            session.add(UiUserAudit(
+                user_login=str(actor_id or "system")[:100],
+                action=f"web_auth:{event_type}"[:50],
                 actor_id=actor_id,
-                actor_role=actor_role,
                 details_json=details,
-            )
+            ))
             await session.commit()
     except Exception as exc:
         logger.debug(f"[AuthMiddleware] web auth audit write skipped: {exc}")

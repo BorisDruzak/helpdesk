@@ -16,7 +16,6 @@ from app.db.models import (
     DeviceConfig,
     DeviceToolsetSnapshot,
     DeviceEvent,
-    AgentRuntimeAudit,
     PlaybookRun,
 )
 
@@ -471,25 +470,6 @@ class DevicesRepo:
         device.deleted_by = None
         device.delete_reason = None
 
-        self.session.add(
-            AgentRuntimeAudit(
-                device_id=device_id,
-                event_type="device_restored_from_archive",
-                severity="info",
-                source="admin",
-                actor_id=restored_by,
-                actor_role="admin",
-                details_json={
-                    "restore_reason": restore_reason,
-                    "previous_deleted_at": old_deleted_at,
-                    "previous_deleted_by": old_deleted_by,
-                    "previous_delete_reason": old_delete_reason,
-                    "tokens_restored": False,
-                    "sessions_restored": False,
-                },
-                created_at=now,
-            )
-        )
         await self.session.flush()
         logger.info(
             f"[DevicesRepo] Restored archived device record without reviving tokens: device_id={device_id}"

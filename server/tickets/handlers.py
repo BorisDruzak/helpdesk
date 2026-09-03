@@ -23,7 +23,6 @@ from app.repos import (
     ProblemsRepo,
     TicketEventsRepo,
 )
-from app.repos.agent_runtime_audit_repo import AgentRuntimeAuditRepo
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from auth.context import AuthContext, AuthType
 from tickets.assignment_service import (
