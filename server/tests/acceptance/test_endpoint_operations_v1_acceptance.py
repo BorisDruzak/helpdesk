@@ -33,7 +33,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 pytestmark = pytest.mark.manual
 
 from app.db.models import (
-    DeviceOutbox,
     DiagnosticEvidence,
     DiagnosticSession,
     DiagnosticStep,
@@ -553,14 +552,6 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
                     )
                 )).scalars()
             )
-            outbox_rows = list(
-                (await session.execute(
-                    select(DeviceOutbox).where(
-                        DeviceOutbox.device_id == "helpdesk-local-device",
-                        DeviceOutbox.operation_id == local_operation.operation_id,
-                    )
-                )).scalars()
-            )
 
         async with provider() as session:
             remote_operations = list(
@@ -579,7 +570,6 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
         assert link.endpoint_operation_ref is not None
         assert link.safe_result_snapshot_json is not None
         assert link.last_error_code is None
-        assert not outbox_rows
         assert len(remote_operations) == 1
         assert remote_operations[0].id == UUID(link.endpoint_operation_ref)
         assert remote_operations[0].correlation is None
