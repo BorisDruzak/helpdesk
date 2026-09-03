@@ -407,7 +407,6 @@ async def auth_middleware(request: web.Request, handler):
     КРИТИЧНО: No graceful degradation without token → always 401 for unprotected endpoints.
     
     Whitelist:
-    - /api/login
     - /api/health
     
     All other /api/* endpoints require valid token.

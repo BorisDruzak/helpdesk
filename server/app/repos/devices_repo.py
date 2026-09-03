@@ -115,10 +115,9 @@ class DevicesRepo:
     
     async def ensure_device_exists(self, device_id: str) -> Device:
         """
-        Создаёт запись устройства, если её ещё нет (для логина по UUID до первого handshake).
-        Используется при POST /api/login: agent_tokens ссылается на devices, поэтому устройство
-        должно существовать до создания токена.
-        При первом подключении агента upsert_on_handshake обновит запись реальными данными.
+        Создаёт запись устройства, если её ещё нет для административного Registry
+        связывания. Endpoint Platform остаётся единственным владельцем
+        enrollment, token issuance и Gateway handshake.
         
         Args:
             device_id: Device identifier (UUID)

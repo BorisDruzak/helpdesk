@@ -154,16 +154,12 @@ def test_audit_infers_mixed_web_api_cleanup_profile_hints(tmp_path):
     _write_test(tests_dir, "test_web_support_api.py", "def test_support(test_client):\n    pass\n")
     _write_test(tests_dir, "test_requester_workspace_api.py", "def test_requester(test_client):\n    pass\n")
     _write_test(tests_dir, "test_p0_workbench_update_contracts.py", "def test_update(test_client):\n    pass\n")
-    _write_test(tests_dir, "test_registration_api.py", "def test_registration(test_client):\n    pass\n")
-    _write_test(tests_dir, "test_account_session_service.py", "def test_account(test_engine):\n    pass\n")
 
     records = {record.file.name: record for record in audit.audit_tests(tests_dir)}
 
     assert records["test_web_support_api.py"].inferred_layer == "web_support"
     assert records["test_requester_workspace_api.py"].inferred_layer == "web_support"
     assert records["test_p0_workbench_update_contracts.py"].inferred_layer == "web_support"
-    assert records["test_registration_api.py"].inferred_layer == "registration"
-    assert records["test_account_session_service.py"].inferred_layer == "registration"
 
 
 def test_audit_accepts_new_web_api_cleanup_profiles(tmp_path, capsys):
@@ -174,19 +170,12 @@ def test_audit_accepts_new_web_api_cleanup_profiles(tmp_path, capsys):
         "test_web_support_api.py",
         'import pytest\n\npytestmark = pytest.mark.db_cleanup("web_support")\n',
     )
-    _write_test(
-        tests_dir,
-        "test_registration_api.py",
-        'import pytest\n\npytestmark = pytest.mark.db_cleanup("registration")\n',
-    )
-
     exit_code = audit.main(["--tests-dir", str(tests_dir)])
 
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "Invalid profiles" not in output
     assert "web_support=1" in output
-    assert "registration=1" in output
 
 
 def test_current_server_suite_has_no_unclassified_db_cleanup_files():

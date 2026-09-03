@@ -38,7 +38,7 @@ from auth.context import AuthContext, AuthType
 from customer_history.projection_service import CustomerHistoryProjectionService
 from registry.registration_service import RegistrationService
 from routes import setup_routes
-from tests.conftest import TEST_AGENT_PREFIX, TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
+from tests.conftest import TEST_UI_ADMIN_TOKEN, TEST_UI_USER_PREFIX
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 import web_api.requester_handlers as requester_handlers_module
 
@@ -353,13 +353,6 @@ async def test_requester_profile_returns_safe_account_summary_and_devices(test_c
     }
     assert "identities" not in anonymous_payload["data"]
     assert anonymous_payload["data"]["devices"] == []
-
-    agent_denied = await test_client.get(
-        "/api/web/requester/profile",
-        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
-    )
-    assert agent_denied.status == 403
-
 
 @pytest.mark.asyncio
 async def test_archived_requester_identity_is_not_usable_as_profile(test_client, test_engine):
@@ -1756,13 +1749,6 @@ async def test_requester_can_create_ticket_for_owned_device_and_not_foreign_devi
     assert denied.status == 403
     assert denied_payload["error_code"] == "REQUESTER_DEVICE_FORBIDDEN"
 
-    agent_denied = await test_client.get(
-        "/api/web/requester/bootstrap",
-        headers=_headers(f"{TEST_AGENT_PREFIX}{owned_device_id}"),
-    )
-    assert agent_denied.status == 403
-
-
 @pytest.mark.asyncio
 async def test_requester_device_detail_is_owned_only_and_safe(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -1833,13 +1819,6 @@ async def test_requester_device_detail_is_owned_only_and_safe(test_client, test_
     denied_payload = await denied.json()
     assert denied.status == 404, denied_payload
     assert denied_payload["error_code"] == "NOT_FOUND"
-
-    agent_denied = await test_client.get(
-        f"/api/web/requester/devices/{owned_device_id}",
-        headers=_headers(f"{TEST_AGENT_PREFIX}{owned_device_id}"),
-    )
-    assert agent_denied.status == 403
-
 
 @pytest.mark.asyncio
 async def test_requester_can_create_no_device_ticket_and_preview_without_device(test_client, test_engine):
@@ -2268,14 +2247,6 @@ async def test_requester_preview_ticket_accepts_catalog_form_payload(test_client
         event_count = await session.scalar(select(func.count()).select_from(TicketEvent))
     assert ticket_count == 0
     assert event_count == 0
-
-    agent_denied = await test_client.post(
-        "/api/web/requester/tickets/preview",
-        headers=_headers(f"{TEST_AGENT_PREFIX}{device_id}"),
-        json={"service_code": service_code, "offering_code": "laptop_broken", "form_payload": {"summary": "No boot"}},
-    )
-    assert agent_denied.status == 403
-
 
 @pytest.mark.asyncio
 async def test_requester_preview_accepts_public_registry_augmented_pack_version(test_client, test_engine):

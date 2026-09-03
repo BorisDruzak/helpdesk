@@ -57,7 +57,7 @@ runner = "script"
 command = ["python", "scripts/audit_fixture_builders.py", "--strict"]
 database = "none"
 affected_base = true
-description = "Fails the full gate when schema-validated fixture/data packs drift from their JSON Schema builders, source-pack refs, test refs, live evidence requirements, or secret-free contract."
+description = "Fails the full gate when schema-validated fixture/data packs drift from their JSON Schema builders, source-pack refs, test refs, or secret-free contract."
 
 [[suites]]
 name = "active_risk_audit"
@@ -65,7 +65,7 @@ runner = "script"
 command = ["python", "scripts/audit_active_risks.py", "--strict"]
 database = "none"
 affected_base = true
-description = "Fails the full gate when active technical-debt risks lose owner, tests, measurable acceptance criteria, evidence refs, or required archive source coverage."
+description = "Fails the full gate when active cutover risks lose owner, tests, measurable acceptance criteria, or evidence references."
 
 [[suites]]
 name = "observer_contamination_audit"

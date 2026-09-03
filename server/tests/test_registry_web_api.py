@@ -7,7 +7,6 @@ import uuid
 
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceUserBinding,
     RegistryAdminEvent,
     RegistryPerson,
@@ -148,7 +147,6 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
     person_id = str(uuid.uuid4())
     device_id = str(uuid.uuid4())
     binding_id = str(uuid.uuid4())
-    session_id = str(uuid.uuid4())
     user_login = f"archive-user-{uuid.uuid4().hex[:8]}"
     token = f"ui-token-{uuid.uuid4().hex}"
     token_hash = AuthTokensRepo.hash_token(token)
@@ -200,18 +198,6 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
             )
         )
         await session.flush()
-        session.add(
-            DeviceAccountSession(
-                session_id=session_id,
-                device_id=device_id,
-                person_id=person_id,
-                binding_id=binding_id,
-                account_mode="confirmed_binding",
-                verification_status="verified",
-                declared_account={},
-                metadata_json={},
-            )
-        )
         await session.commit()
 
     response = await test_client.post(
@@ -223,14 +209,12 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
     payload = (await response.json())["data"]
     assert payload["person"]["status"] == "archived"
     assert payload["revoked_bindings"][0]["binding_id"] == binding_id
-    assert payload["revoked_sessions"][0]["session_id"] == session_id
     assert payload["disabled_ui_users"][0]["user_login"] == user_login
     assert payload["disabled_ui_users"][0]["revoked_ui_tokens"] == 1
 
     async with session_maker() as session:
         person = await session.get(RegistryPerson, person_id)
         binding = await session.get(DeviceUserBinding, binding_id)
-        account_session = await session.get(DeviceAccountSession, session_id)
         ui_user = await session.get(UiUser, user_login)
         ui_token = await session.get(UiToken, token_hash)
         event = (
@@ -244,12 +228,10 @@ async def test_web_admin_registry_person_archive_revokes_access_and_audits(test_
 
     assert person.status == "archived"
     assert binding.status == "revoked"
-    assert account_session.verification_status == "revoked"
     assert ui_user.is_active is False
     assert ui_token.revoked_at is not None
     assert event.reason == "test archive"
     assert event.payload["revoked_binding_ids"] == [binding_id]
-    assert event.payload["revoked_session_ids"] == [session_id]
     assert event.payload["disabled_ui_user_logins"] == [user_login]
 
 

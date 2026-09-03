@@ -241,38 +241,9 @@ Registry Visibility Foundation quality issues also include `audience_group_empty
 
 ## Smoke Checklist
 
-For the full workflow smoke, deploy the current commit to the Linux stand and run:
-
-```bash
-python scripts/registry_workflow_smoke.py --base-url https://example.test:9443 --insecure-tls
-```
-
-The script issues short-lived admin/agent tokens through `AuthService`, drives admin and agent HTTP APIs, creates unique smoke objects, and verifies the database invariants below without printing raw tokens. It cleans up smoke bindings and leaves audit/history records intact.
-
-1. Create a user.
-2. Add and verify an identity.
-3. Bind the user to an unregistered device.
-4. Confirm `registry_assets` and `device_inventory_bindings` sync.
-5. Add a shared user.
-6. Assign a responsible person.
-7. Transfer owner.
-8. Revoke a binding.
-9. Open the device drawer and check timeline/history.
-10. Open the person drawer and check identities/devices.
-11. Create/edit/archive/merge a location.
-12. Create/edit/archive/merge a department.
-13. Change a safe registration policy value.
-14. Export devices, people, bindings, locations, departments and quality CSV.
-15. Open Quality tab and use fix actions for missing user, stale binding, missing identity and duplicate person.
-
-`scripts/registry_workflow_smoke.py` covers the high-risk operational scenarios:
-
-- Scenario A: create person, add email/windows identities, verify identity, update person, confirm snapshot/drawer identity payload.
-- Scenario B: bind person as `primary_user`, confirm `device_user_bindings`, `registry_assets`, `device_inventory_bindings` and registration event creation.
-- Scenario C: add `shared_user` and `responsible`, confirm primary stays active and agent account-state exposes all relationships.
-- Scenario D: transfer owner, confirm old binding status, new primary and derived asset/inventory state.
-- Scenario E: merge duplicate people and confirm identities, bindings, tickets and derived owner state move to the master.
-- Scenario F: create/assign/merge locations and departments and confirm people/assets/inventory are updated.
+Validate Registry changes with the focused test set below and browser evidence
+for `/app/admin/registry` when a visible surface changed. Helpdesk does not
+issue agent tokens or drive agent HTTP APIs as part of Registry validation.
 
 ## Validation
 

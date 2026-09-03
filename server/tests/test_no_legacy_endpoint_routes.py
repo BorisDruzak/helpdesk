@@ -22,6 +22,15 @@ def test_legacy_agent_control_routes_are_not_registered() -> None:
 
     forbidden = {
         "/ws",
+        "/api/login",
+        "/api/connection_request",
+        "/api/connection_request/status",
+        "/api/admin/connection_policy",
+        "/api/admin/connection_requests",
+        "/api/admin/connection_requests/{device_id}/approve",
+        "/api/admin/connection_requests/{device_id}/reject",
+        "/api/devices/{device_id}/tokens",
+        "/api/devices/{device_id}/tokens/revoke",
         "/api/tools/run",
         "/api/web/support/tickets/{ticket_id}/tools/run",
         "/api/chat_start",

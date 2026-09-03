@@ -159,8 +159,8 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel an
 - `fixture-timings-summary.json` includes the default fixture timing budget result: `budget_profile`, `budget_status` and `budget_violations`.
 - `test_inventory_audit` runs `python scripts/audit_test_inventory.py --strict` before pytest layers and fails on unknown pytest markers, `no_db` tests that request DB/app fixtures, unowned DB/app tests, or direct live/network client calls in non-`manual` PR suites.
 - `db_cleanup_profile_audit` runs `python scripts/audit_db_cleanup_profiles.py --strict` before pytest layers and fails on DB-backed, non-agent-ws server test files without an explicit `db_cleanup` profile.
-- `fixture_builder_audit` runs `python scripts/audit_fixture_builders.py --strict` before branch/mutation gates and fails when `quality/fixture_builders.json` or registered fixture/data packs drift from their JSON Schema builders, source-pack refs, test refs, live evidence requirements, or secret-free contract.
-- `active_risk_audit` runs `python scripts/audit_active_risks.py --strict` before branch/mutation gates and fails when `quality/active_risks.json` loses active-risk owners, linked tests, measurable acceptance criteria, evidence/source refs, or required archive risk coverage.
+- `fixture_builder_audit` runs `python scripts/audit_fixture_builders.py --strict` before branch/mutation gates and fails when `quality/fixture_builders.json` or registered fixture/data packs drift from their JSON Schema builders, source-pack refs, test refs, or secret-free contract.
+- `active_risk_audit` runs `python scripts/audit_active_risks.py --strict` before branch/mutation gates and fails when `quality/active_risks.json` loses cutover-risk owners, linked tests, measurable acceptance criteria, or evidence/source refs.
 - `observer_contamination_audit` runs `python scripts/audit_observer_contamination.py --strict` before branch/mutation gates and fails when `quality/observer_known_contamination.json` contains active Observer suppressions that are indefinite, expired, unowned, unreviewed, broad, or missing evidence.
 - `branch_coverage_audit` runs `python scripts/audit_branch_coverage.py --strict` before pytest layers and fails when `quality/critical_branch_coverage.json` has missing owners, duplicate branch ids, empty branch test refs, or refs to missing pytest nodes.
 - `mutation_smoke` runs `python scripts/run_mutation_smoke.py` before pytest layers. It mutates only a temp workspace copy, then fails on surviving mutants or pytest collection/infrastructure errors for the configured critical pure-logic targets.
@@ -209,7 +209,7 @@ When validating a new opt-in, run focused pytest with timing and cleanup audit, 
 ```powershell
 $env:PC_CLIENT_TEST_TIMING = "1"
 $env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
-python -m pytest server/tests/test_registration_api.py -vv --durations=40
+python -m pytest server/tests/test_web_support_api.py -vv --durations=40
 python scripts/run_ci_suite.py --layer server_pytest_db_web_api
 ```
 
@@ -297,7 +297,6 @@ $env:PC_CLIENT_TEST_TIMING = "1"
 $env:PC_CLIENT_TEST_CLEANUP_AUDIT = "1"
 python -m pytest server/tests/test_web_support_api.py -vv --durations=40
 python -m pytest server/tests/test_requester_workspace_api.py -vv --durations=40
-python -m pytest server/tests/test_registration_api.py -vv --durations=40
 python -m pytest server/tests/test_p0_workbench_update_contracts.py -vv --durations=40
 python scripts/run_ci_suite.py --layer server_pytest_db_web_api
 ```

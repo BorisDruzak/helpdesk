@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceRegistrationEvent,
     DeviceInventoryBinding,
     DeviceUserBinding,
