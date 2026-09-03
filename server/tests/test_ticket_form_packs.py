@@ -1252,7 +1252,7 @@ async def test_create_ticket_stores_diagnostic_consent(test_client, test_engine)
                 "required": True,
                 "granted": True,
                 "scope": "requester_device",
-                "source": "pc_agent_create",
+                "source": "endpoint_bff_create",
             },
         },
         headers={"Authorization": "Bearer test-ui-user:alice"},
@@ -1270,7 +1270,7 @@ async def test_create_ticket_stores_diagnostic_consent(test_client, test_engine)
         "required": True,
         "granted": True,
         "scope": "requester_device",
-        "source": "pc_agent_create",
+        "source": "endpoint_bff_create",
     }
 
 

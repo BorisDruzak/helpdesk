@@ -1,4 +1,4 @@
-"""Pytest configuration and fixtures for Protocol V3 integration tests."""
+"""Pytest configuration and fixtures for Helpdesk integration tests."""
 
 import asyncio
 import faulthandler

@@ -1,3 +1,3 @@
-"""Integration tests for Protocol V3 server."""
+"""Integration tests for Helpdesk server boundaries."""
 
 
