@@ -302,21 +302,12 @@ class CapabilityExecutionRouter:
         return await self._route_query_provider(self.server_builtin_provider, capability, **kwargs)
 
     async def route_agent_recipe(self, capability, **kwargs) -> Dict[str, Any]:
-        from app.db import get_session
-        from diagnostics.recipe_execution_service import RecipeExecutionService
-
-        async with get_session() as session:
-            result = await RecipeExecutionService(session, state=self.capability_registry.state).run_recipe_capability(
-                ticket_id=kwargs["ticket_id"],
-                device_id=kwargs.get("device_id"),
-                capability_id=capability.id,
-                params=kwargs.get("params") or {},
-                actor=kwargs.get("actor"),
-                idempotency_key=kwargs.get("idempotency_key"),
-                timeout_ms=kwargs.get("timeout_ms"),
-            )
-            await session.commit()
-            return result
+        return {
+            "status": "error",
+            "error_code": "ENDPOINT_ONLY_CAPABILITY_REQUIRED",
+            "error": "Helpdesk no longer executes agent recipes.",
+            "capability_id": capability.id,
+        }
 
     async def route_server_connector(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_connector_provider, capability, **kwargs)

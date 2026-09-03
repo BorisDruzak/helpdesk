@@ -41,7 +41,6 @@ from app.db.models import (
     Operation,
     Ticket,
 )
-from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.services.endpoint_device_reference_service import EndpointDeviceReferenceService
 from app.services.endpoint_diagnostic_operation_service import (
     EndpointDiagnosticOperationRequest,
@@ -485,16 +484,6 @@ async def test_helpdesk_facade_to_real_endpoint_gateway_creates_one_evidence(
     ticket_id = str(uuid4())
     original_ticket_status = "in_progress"
 
-    async def _legacy_dispatch_called(*_args, **_kwargs) -> None:
-        raise AssertionError("Endpoint diagnostics must not use a Helpdesk legacy dispatch path")
-
-    from tools.service import ToolService
-    from websocket import protocol as websocket_protocol
-
-    monkeypatch.setattr(ToolService, "run_tool", _legacy_dispatch_called)
-    monkeypatch.setattr(websocket_protocol, "send_ws_command", _legacy_dispatch_called)
-    monkeypatch.setattr(websocket_protocol, "enqueue_command_async", _legacy_dispatch_called)
-    monkeypatch.setattr(DeviceOutboxRepo, "enqueue_command", _legacy_dispatch_called)
     try:
         async with session_factory() as session:
             session.add(

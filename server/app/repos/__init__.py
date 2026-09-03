@@ -4,7 +4,6 @@ Repository layer for database operations.
 from app.repos.job_events_repo import JobEventsRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.device_events_repo import DeviceEventsRepo
-from app.repos.device_outbox_repo import DeviceOutboxRepo
 from app.repos.devices_repo import DevicesRepo
 from app.repos.device_config_repo import DeviceConfigRepo
 from app.repos.toolset_snapshots_repo import ToolsetSnapshotsRepo
@@ -38,7 +37,6 @@ __all__ = [
     "JobEventsRepo",
     "TicketEventsRepo",
     "DeviceEventsRepo",
-    "DeviceOutboxRepo",
     "DevicesRepo",
     "DeviceConfigRepo",
     "ToolsetSnapshotsRepo",

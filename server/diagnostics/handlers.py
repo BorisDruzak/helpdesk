@@ -36,14 +36,6 @@ from app.services.endpoint_diagnostic_operation_service import (
 from auth.middleware import require_auth
 import config
 from diagnostics.capability_registry import CapabilityRegistry
-from diagnostics.agent_recipes import (
-    COMPOSITE_RECIPE_PRESENTATION_SCHEMA,
-    DEFAULT_AGENT_RECIPE_PRIMITIVES,
-    PRIMITIVE_PRESENTATION_SCHEMAS,
-    AgentRecipeValidationError,
-    normalize_recipe_platforms,
-)
-from diagnostics.agent_recipes_repo import AgentRecipeRepo
 from diagnostics.bundle import DiagnosticBundleService
 from diagnostics.execution_router import CapabilityExecutionRouter
 from diagnostics.observability import RuntimeAuditCapabilityExecutionObserver

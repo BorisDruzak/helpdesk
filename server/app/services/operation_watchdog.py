@@ -57,20 +57,6 @@ class OperationWatchdog:
                     limit=100
                 )
 
-                try:
-                    from diagnostics.runtime_dependencies import RuntimeDependencyWorkflow
-
-                    dependency_timeouts = await RuntimeDependencyWorkflow(session, state=(self.app or {}).get("state") if self.app else None).fail_timed_out_dependencies()
-                    if dependency_timeouts:
-                        logger.warning(
-                            f"[OperationWatchdog] Timed out {len(dependency_timeouts)} runtime dependencies"
-                        )
-                        await session.commit()
-                except Exception as dep_timeout_exc:
-                    logger.warning(
-                        f"[OperationWatchdog] Runtime dependency timeout check failed: {dep_timeout_exc}"
-                    )
-                
                 if not expired_ops:
                     return
                 

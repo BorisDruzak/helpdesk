@@ -266,21 +266,9 @@ async def test_catalog_bff_has_no_legacy_admin_alias(catalog_bff_client) -> None
 @pytest.mark.asyncio
 async def test_catalog_bff_does_not_dispatch_legacy_stack(
     catalog_bff_client,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import app.repos.device_outbox_repo as device_outbox_repo
-    import tools.service as tool_service
-    import websocket.protocol as websocket_protocol
-
     client, permissions, port, _actor = catalog_bff_client
     permissions.add("admin.modules.view")
-
-    def _fail(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("catalog BFF must not use legacy agent dispatch")
-
-    monkeypatch.setattr(tool_service, "ToolService", _fail)
-    monkeypatch.setattr(device_outbox_repo, "DeviceOutboxRepo", _fail)
-    monkeypatch.setattr(websocket_protocol, "send_ws_command", _fail)
 
     response = await client.get("/api/web/admin/endpoint-modules/capabilities")
 
