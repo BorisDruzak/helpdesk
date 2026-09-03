@@ -1565,53 +1565,16 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
         parent_ticket_id = getattr(ticket, "parent_ticket_id", None)
         child_tickets = await repo.list_child_tickets(ticket.ticket_id)
 
-        from app.repos.auth_tokens_repo import AuthTokensRepo
-        from app.repos.connection_requests_repo import ConnectionRequestsRepo
         from app.repos.operations_repo import OperationsRepo
 
         operations_repo = OperationsRepo(session)
-        auth_tokens_repo = AuthTokensRepo(session)
-        connection_requests_repo = ConnectionRequestsRepo(session)
 
         recent_operations = await operations_repo.get_recent_operations(
             device_id=ticket.device_id,
             limit=20,
         )
-        recent_update_op = next((op for op in recent_operations if op.kind == "agent_update"), None)
-
         device_repo = DevicesRepo(session)
         device = await device_repo.get_by_device_id(ticket.device_id)
-        device_meta = device.device_metadata if (device and isinstance(device.device_metadata, dict)) else {}
-
-        tokens = await auth_tokens_repo.get_agent_tokens_by_device(ticket.device_id)
-        now = datetime.now(timezone.utc)
-        token_rows = list(tokens or [])
-        active_tokens = [
-            t for t in token_rows
-            if t.revoked_at is None and (t.expires_at is None or t.expires_at > now)
-        ]
-        latest_token = max(token_rows, key=lambda t: t.created_at or datetime.min.replace(tzinfo=timezone.utc), default=None)
-        latest_request = await connection_requests_repo.get_latest_by_device_id(ticket.device_id)
-
-        provisioning_summary = {
-            "token_status": "active" if active_tokens else ("revoked" if token_rows else "missing"),
-            "reprovision_required": len(active_tokens) == 0,
-            "token_issued_at": latest_token.created_at.isoformat() if latest_token and latest_token.created_at else None,
-            "token_last_used_at": latest_token.last_used_at.isoformat() if latest_token and latest_token.last_used_at else None,
-            "token_revoked_at": latest_token.revoked_at.isoformat() if latest_token and latest_token.revoked_at else None,
-            "last_connection_request_status": latest_request.status if latest_request else None,
-            "last_connection_request_at": (
-                latest_request.last_request_at.isoformat() if latest_request and latest_request.last_request_at else None
-            ),
-        }
-        update_summary = {
-            "applied_update_version": device_meta.get("applied_update_version"),
-            "last_update_operation_id": device_meta.get("last_update_operation_id"),
-            "last_update_operation_status": getattr(recent_update_op, "status", None),
-            "last_update_error_code": getattr(recent_update_op, "error_code", None),
-            "last_update_error_message": getattr(recent_update_op, "error_message", None),
-            "last_update_result_summary": getattr(recent_update_op, "result_summary", None),
-        }
 
         notification_repo = NotificationRepo(session)
         unread_count = await notification_repo.unread_count(auth_context.actor_id)
@@ -1657,8 +1620,6 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
                 for op in recent_operations
             ],
             "notification_counters": {"unread": unread_count},
-            "provisioning_summary": provisioning_summary,
-            "update_summary": update_summary,
         }
         payload = await apply_ticket_visibility_payload_async(
             session,

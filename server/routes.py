@@ -5,16 +5,7 @@
 from aiohttp import web
 
 # Import handlers from modules
-from auth.handlers import handle_login, handle_ui_login, handle_ui_session
-from auth.connection_request_handlers import (
-    handle_connection_request,
-    handle_connection_request_status,
-    handle_admin_connection_policy_get,
-    handle_admin_connection_policy_patch,
-    handle_admin_connection_requests_list,
-    handle_admin_connection_request_approve,
-    handle_admin_connection_request_reject,
-)
+from auth.handlers import handle_ui_login, handle_ui_session
 from auth.admin_users_handlers import (
     handle_admin_users_list,
     handle_admin_users_post,
@@ -317,9 +308,6 @@ from web_api.support_handlers import (
 )
 from web_api.admin_handlers import (
     handle_web_admin_bootstrap,
-    handle_web_admin_device_token_revoke,
-    handle_web_admin_device_tokens_list,
-    handle_web_admin_device_tokens,
     handle_web_admin_device_restore,
     handle_web_admin_devices,
     handle_web_admin_devices_cleanup_env_duplicates,
@@ -605,7 +593,6 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         # Authentication API
         # ============================================================================
-        web.post('/api/login', handle_login),
         web.post('/api/ui_login', handle_ui_login),  # UI user login
         web.get('/api/ui_session', handle_ui_session),
         web.post('/api/web/session/login', handle_web_session_login),
@@ -745,14 +732,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/devices/{device_id}/binding/history', handle_web_admin_device_inventory_binding_history),
         web.get('/api/web/admin/devices/{device_id}/inventory/refresh-policy', handle_web_admin_device_inventory_refresh_policy),
         web.put('/api/web/admin/devices/{device_id}/inventory/refresh-policy', handle_web_admin_device_inventory_refresh_policy_update),
-        web.get('/api/web/admin/device-tokens', handle_web_admin_device_tokens_list),
-        web.get('/api/web/admin/devices/{device_id}/tokens', handle_web_admin_device_tokens),
-        web.post('/api/web/admin/devices/{device_id}/tokens/revoke', handle_web_admin_device_token_revoke),
-        web.get('/api/web/admin/connection_policy', handle_admin_connection_policy_get),
-        web.patch('/api/web/admin/connection_policy', handle_admin_connection_policy_patch),
-        web.get('/api/web/admin/connection_requests', handle_admin_connection_requests_list),
-        web.post('/api/web/admin/connection_requests/{device_id}/approve', handle_admin_connection_request_approve),
-        web.post('/api/web/admin/connection_requests/{device_id}/reject', handle_admin_connection_request_reject),
         web.get('/api/web/admin/registry', handle_web_admin_registry),
         web.get('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),
         web.put('/api/web/admin/registry/profile-schema', handle_web_admin_registry_profile_schema),
@@ -1011,10 +990,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/settings/audit', handle_admin_audit_list),
         web.get('/api/web/realtime/bootstrap', handle_web_realtime_bootstrap),
         web.post('/api/users/me/password', handle_users_me_password_post),  # Stage 10: self-service password
-        # Connection request flow (no auth: agent requests token)
-        web.post('/api/connection_request', handle_connection_request),
-        web.get('/api/connection_request/status', handle_connection_request_status),
-
         # ============================================================================
         # Tickets API (static paths before {ticket_id} to avoid "resolution_codes" as ticket_id)
         # ============================================================================
@@ -1128,11 +1103,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/admin/users/{user_login}/password', handle_admin_users_password_post),
         web.post('/api/admin/users/{user_login}/deactivate', handle_admin_users_deactivate_post),
         # Connection request policy and pending requests (admin)
-        web.get('/api/admin/connection_policy', handle_admin_connection_policy_get),
-        web.patch('/api/admin/connection_policy', handle_admin_connection_policy_patch),
-        web.get('/api/admin/connection_requests', handle_admin_connection_requests_list),
-        web.post('/api/admin/connection_requests/{device_id}/approve', handle_admin_connection_request_approve),
-        web.post('/api/admin/connection_requests/{device_id}/reject', handle_admin_connection_request_reject),
         # Stage 9: Admin Config API (feature-flagged)
         web.get('/api/admin/tickets/queues', handle_admin_queues_list),
         web.post('/api/admin/tickets/queues', handle_admin_queues_post),

@@ -1689,51 +1689,6 @@ class AdminDeviceRestorePayload(BaseModel):
     sessions_restored: bool = False
 
 
-class AdminDeviceTokenItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    token_hash: str
-    token_prefix: str | None = None
-    created_at: str | None = None
-    expires_at: str | None = None
-    revoked_at: str | None = None
-    last_used_at: str | None = None
-    is_active: bool
-
-
-class AdminAgentTokenItem(AdminDeviceTokenItem):
-    model_config = ConfigDict(extra="forbid")
-
-    device_id: str
-    hostname: str | None = None
-    online: bool
-
-
-class AdminDeviceTokensSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    total_count: int
-    active_count: int
-    revoked_count: int
-
-
-class AdminDeviceTokensPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    device_id: str
-    summary: AdminDeviceTokensSummary
-    tokens: list[AdminDeviceTokenItem]
-
-
-class AdminAgentTokensPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    query: str
-    status_filter: str
-    summary: AdminDeviceTokensSummary
-    tokens: list[AdminAgentTokenItem]
-
-
 class AdminModulesSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

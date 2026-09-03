@@ -11,7 +11,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import get_session
-from app.db.models import Device, DeviceOutbox, ObserverTrace, Operation, Ticket, TicketApproval
+from app.db.models import Device, ObserverTrace, Operation, Ticket, TicketApproval
 from tech.log_buffer import list_log_records
 
 
@@ -110,18 +110,18 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
     }
 
 
-def _device_match(request: web.Request, device: Device, *, failed_count: int, stuck_count: int, outbox_backlog: int, kind: str = "device") -> dict[str, Any]:
+def _device_match(request: web.Request, device: Device, *, failed_count: int, stuck_count: int, kind: str = "device") -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     stale = bool(device.last_seen_at and device.last_seen_at < now - timedelta(minutes=15))
     online = _is_online(request, device.device_id)
-    severity = "warning" if stale or failed_count or stuck_count or outbox_backlog else "ok"
+    severity = "warning" if stale or failed_count or stuck_count else "ok"
     return {
         "kind": kind,
         "id": device.device_id,
         "title": device.hostname or device.device_id,
         "status": "online" if online else ("offline" if online is False else "unknown"),
         "severity": severity,
-        "reason": "Устройство найдено; проверьте агент, outbox и последние операции.",
+        "reason": "Устройство найдено; проверьте Endpoint и последние операции.",
         "context": {
             "device_id": device.device_id,
             "hostname": device.hostname,
@@ -133,7 +133,6 @@ def _device_match(request: web.Request, device: Device, *, failed_count: int, st
             "stale_agent": stale,
             "failed_operation": failed_count > 0,
             "stuck_operation": stuck_count > 0,
-            "outbox_backlog": outbox_backlog > 0,
         },
         "links": [
             _safe_link("Device card", f"/app/admin/device?device={device.device_id}", "device_card"),
@@ -252,8 +251,6 @@ def _diagnosis_for_matches(matches: list[dict[str, Any]]) -> str | None:
         reasons.append("агент offline")
     if signals.get("stale_agent"):
         reasons.append("агент stale")
-    if signals.get("outbox_backlog"):
-        reasons.append("есть outbox backlog")
     if signals.get("failed_operation"):
         reasons.append("есть failed operation")
     if signals.get("stuck_operation"):
@@ -285,7 +282,7 @@ async def _counts_for_ticket(session: Any, ticket_id: str) -> tuple[int, int]:
     return int(approvals or 0), int(consent or 0)
 
 
-async def _counts_for_device(session: Any, device_id: str) -> tuple[int, int, int]:
+async def _counts_for_device(session: Any, device_id: str) -> tuple[int, int]:
     now = datetime.now(timezone.utc)
     failed = await session.scalar(
         select(func.count()).select_from(Operation).where(and_(Operation.device_id == device_id, Operation.status.in_(list(FAILED_OPERATION_STATUSES))))
@@ -299,10 +296,7 @@ async def _counts_for_device(session: Any, device_id: str) -> tuple[int, int, in
             )
         )
     )
-    outbox = await session.scalar(
-        select(func.count()).select_from(DeviceOutbox).where(and_(DeviceOutbox.device_id == device_id, DeviceOutbox.status.in_(["pending", "sent"])))
-    )
-    return int(failed or 0), int(stuck or 0), int(outbox or 0)
+    return int(failed or 0), int(stuck or 0)
 
 
 async def locate_tech_query(
@@ -354,9 +348,9 @@ async def locate_tech_query(
                     )
                 ).scalars().all()
                 for device in devices:
-                    failed, stuck, outbox = await _counts_for_device(session, device.device_id)
+                    failed, stuck = await _counts_for_device(session, device.device_id)
                     kind = "hostname" if device.hostname and normalized.lower() in device.hostname.lower() else "device"
-                    matches.append(_device_match(request, device, failed_count=failed, stuck_count=stuck, outbox_backlog=outbox, kind=kind))
+                    matches.append(_device_match(request, device, failed_count=failed, stuck_count=stuck, kind=kind))
 
             if (UUID_RE.match(normalized) or broad) and len(matches) < capped_limit:
                 operation = await session.get(Operation, normalized)

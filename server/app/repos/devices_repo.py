@@ -9,7 +9,6 @@ from loguru import logger
 
 from app.db.models import (
     Device,
-    AgentToken,
     DispatchReadyDevice,
     Operation,
     DeviceModule,
@@ -17,7 +16,6 @@ from app.db.models import (
     DeviceConfig,
     DeviceToolsetSnapshot,
     DeviceEvent,
-    ConnectionRequest,
     AgentRuntimeAudit,
     PlaybookRun,
 )
@@ -393,8 +391,8 @@ class DevicesRepo:
         delete_reason: Optional[str] = None,
     ) -> bool:
         """
-        Мягко удаляет устройство: архивирует запись устройства, отзывает токены,
-        гасит активные операции/outbox и сохраняет всю историю для аудита.
+        Мягко удаляет устройство, отменяет локальную facade-историю операций
+        и сохраняет исторические записи для аудита.
         
         Returns:
             True если устройство найдено и архивировано, False если не найдено.
@@ -410,36 +408,6 @@ class DevicesRepo:
         device.deleted_at = now
         device.deleted_by = deleted_by
         device.delete_reason = delete_reason or None
-
-        active_tokens = (
-            await self.session.execute(
-                select(AgentToken).where(
-                    AgentToken.device_id == device_id,
-                    AgentToken.revoked_at.is_(None),
-                )
-            )
-        ).scalars().all()
-        for token in active_tokens:
-            token.revoked_at = now
-
-        pending_requests = (
-            await self.session.execute(
-                select(ConnectionRequest).where(
-                    ConnectionRequest.device_id == device_id,
-                    ConnectionRequest.status == "pending",
-                )
-            )
-        ).scalars().all()
-        for row in pending_requests:
-            row.status = "rejected"
-            row.resolved_at = now
-            meta = row.request_metadata if isinstance(row.request_metadata, dict) else {}
-            meta = dict(meta)
-            meta["archived_by"] = deleted_by or ""
-            meta["archived_at"] = now.isoformat()
-            if delete_reason:
-                meta["archive_reason"] = delete_reason
-            row.request_metadata = meta
 
         active_operations = (
             await self.session.execute(

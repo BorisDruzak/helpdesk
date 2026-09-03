@@ -12,13 +12,8 @@ from sqlalchemy import func, select
 from app.db import get_session
 from app.db.models import RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
 from app.repos.auth_tokens_repo import AuthTokensRepo
-from app.repos.devices_repo import DevicesRepo
 from app.repos.ui_users_repo import DEFAULT_USER_ROLE, VALID_ROLES, UiUsersRepo, normalize_user_login
 from auth.password_service import verify_password
-
-
-class ArchivedDeviceError(Exception):
-    """Raised when token issuance/auth is attempted for an archived device."""
 
 
 class AuthService:
@@ -202,64 +197,6 @@ class AuthService:
         """
         return secrets.token_hex(32)
     
-    async def generate_agent_token(
-        self,
-        device_id: str,
-        expires_hours: Optional[int] = 4320,
-        *,
-        replace_existing: bool = False,
-        max_active_tokens: Optional[int] = None,
-    ) -> str:
-        """
-        Генерирует токен для агента с сохранением в БД.
-        
-        КРИТИЧНО: В БД сохраняется только SHA256 hash, не raw token.
-        Клиент получает raw token для использования.
-        
-        Args:
-            device_id: UUID устройства
-            expires_hours: Срок действия токена в часах (default: 4320 = 180 дней)
-        
-        Returns:
-            Raw token string (для передачи клиенту)
-        """
-        raw_token = self._generate_raw_token()
-        
-        expires_at = None
-        if expires_hours:
-            expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
-        
-        async with get_session() as session:
-            repo = AuthTokensRepo(session)
-            devices_repo = DevicesRepo(session)
-            try:
-                existing_device = await devices_repo.get_by_device_id(device_id, include_deleted=True)
-                if existing_device and existing_device.deleted_at is not None:
-                    raise ArchivedDeviceError("Device is archived and must be restored before reprovision.")
-
-                # agent_tokens.device_id is linked to devices, so we keep a lightweight
-                # placeholder row until the first real handshake fills it with metadata.
-                await devices_repo.ensure_device_exists(device_id)
-                if max_active_tokens is None:
-                    from config import AGENT_TOKEN_MAX_ACTIVE_TOKENS
-                    max_active_tokens = AGENT_TOKEN_MAX_ACTIVE_TOKENS
-                token, _ = await repo.create_agent_token(
-                    token=raw_token,
-                    device_id=device_id,
-                    expires_at=expires_at,
-                    replace_existing=replace_existing,
-                    max_active_tokens=max_active_tokens,
-                )
-                logger.info(
-                    f"[AuthService] Generated agent token: device_id={device_id}. "
-                    f"Placeholder device row is ready and will be enriched on first successful handshake."
-                )
-                return token
-            except ValueError as e:
-                # Active token limit exceeded
-                logger.warning(f"[AuthService] Token limit exceeded: {e}")
-                raise
-    
     async def generate_ui_token(
         self,
         user_login: str,
@@ -348,63 +285,6 @@ class AuthService:
             )
             logger.info(f"[AuthService] Generated public ticket session: ticket_id={ticket_id}")
             return token
-    
-    def generate_token(self, uuid_str: str, login: str) -> str:
-        """
-        Compatibility method for older integrations.
-        
-        Prefer generate_agent_token() for new code.
-        This method still works but uses legacy in-process storage.
-        
-        Args:
-            uuid_str: UUID устройства
-            login: Логин пользователя
-        
-        Returns:
-            Сгенерированный токен
-        """
-        token = f"token-{uuid_str}"
-        
-        # Legacy-only storage (не участвует в production auth path).
-        self._LEGACY_TOKEN_STORE[token] = {
-            "uuid": uuid_str,
-            "user": login,
-            "created_at": time.time()
-        }
-        
-        logger.warning(f"[AuthService] Using legacy generate_token() for device_id={uuid_str}. Use generate_agent_token() instead.")
-        
-        return token
-    
-    async def verify_agent_token(self, token: str) -> Optional[dict]:
-        """
-        Проверяет валидность токена агента через БД.
-        
-        Args:
-            token: Raw token string
-        
-        Returns:
-            Dict с информацией о токене (device_id, created_at) или None
-        """
-        async with get_session() as session:
-            repo = AuthTokensRepo(session)
-            devices_repo = DevicesRepo(session)
-            token_record = await repo.verify_agent_token(token)
-            
-            if token_record:
-                device = await devices_repo.get_by_device_id(token_record.device_id, include_deleted=True)
-                if device and device.deleted_at is not None:
-                    logger.warning(
-                        f"[AuthService] Agent token rejected for archived device: "
-                        f"device_id={token_record.device_id}"
-                    )
-                    return None
-                return {
-                    "device_id": token_record.device_id,
-                    "created_at": token_record.created_at.isoformat(),
-                    "type": "agent"
-                }
-            return None
     
     async def verify_ui_token(self, token: str) -> Optional[dict]:
         """
@@ -503,46 +383,6 @@ class AuthService:
                     "type": "ticket_public",
                 }
             return None
-    
-    def verify_token(self, token: str) -> Optional[dict]:
-        """
-        Compatibility method for older integrations.
-        
-        Prefer verify_agent_token() or verify_ui_token() for new code.
-        This method checks legacy in-process storage only.
-        
-        Args:
-            token: Токен для проверки
-        
-        Returns:
-            Информация о токене если он валиден, иначе None
-        """
-        # Legacy-only in-memory store (internal compatibility path).
-        if token in self._LEGACY_TOKEN_STORE:
-            legacy_data = self._LEGACY_TOKEN_STORE[token]
-            logger.debug(f"[AuthService] Token found in legacy token store: {token[:8]}...")
-            return legacy_data
-        
-        # Fallback to DB требует async; этот метод sync — legacy. Использовать verify_agent_token/verify_ui_token (docs/archive/BOTTLENECKS_AND_RISKS.md Phase 3).
-        logger.warning(
-            "[AuthService] verify_token() called with token not in legacy token store. "
-            "Use async verify_agent_token() or verify_ui_token() instead."
-        )
-        return None
-    
-    async def revoke_agent_token(self, token: str) -> bool:
-        """
-        Отзывает токен агента через БД.
-        
-        Args:
-            token: Raw token string
-        
-        Returns:
-            True если токен был отозван, False если не найден
-        """
-        async with get_session() as session:
-            repo = AuthTokensRepo(session)
-            return await repo.revoke_agent_token(token)
     
     async def revoke_ui_token(self, token: str) -> bool:
         """

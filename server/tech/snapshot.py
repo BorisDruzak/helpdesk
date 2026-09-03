@@ -15,15 +15,10 @@ import config
 from app.db import get_session
 from app.db.models import (
     AgentRuntimeAudit,
-    AgentToken,
-    ConnectionRequest,
     Device,
-    DeviceOutbox,
     Operation,
-    ServerConfig,
 )
 from app.repos.observer_integrity_repo import ObserverIntegrityRepo
-from app.repos.connection_requests_repo import CONNECTION_POLICY_KEY, POLICY_ACCEPT_ALL, POLICY_MANUAL, POLICY_REJECT_ALL
 import auth.middleware as auth_middleware
 from config import OPERATION_ACCEPTED_TIMEOUT, OPERATION_DELIVERY_TIMEOUT, OPERATION_EXECUTION_TIMEOUT
 
@@ -484,36 +479,13 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
 
 
 async def _connection_policy_snapshot(database_reachable: bool) -> dict[str, Any]:
-    mode: str | None = None
-    pending = 0
-    stale = 0
-    if database_reachable:
-        try:
-            now = datetime.now(timezone.utc)
-            async with get_session() as session:
-                row = await session.scalar(select(ServerConfig.value).where(ServerConfig.key == CONNECTION_POLICY_KEY))
-                mode = str(row or POLICY_ACCEPT_ALL)
-                pending = _safe_int(
-                    await session.scalar(select(func.count()).select_from(ConnectionRequest).where(ConnectionRequest.status == "pending"))
-                )
-                stale = _safe_int(
-                    await session.scalar(
-                        select(func.count()).select_from(ConnectionRequest).where(
-                            and_(ConnectionRequest.status == "pending", ConnectionRequest.last_request_at < (now - timedelta(minutes=5)))
-                        )
-                    )
-                )
-        except SQLAlchemyError:
-            mode = None
-    if mode in {POLICY_MANUAL, POLICY_REJECT_ALL, "controlled"}:
-        status = "ok"
-    elif mode == POLICY_ACCEPT_ALL:
-        status = "warning"
-    elif mode:
-        status = "warning"
-    else:
-        status = "unknown"
-    return {"mode": mode, "status": status, "pending_requests": pending, "stale_pending_requests": stale}
+    del database_reachable
+    return {
+        "mode": "endpoint_platform",
+        "status": "unavailable",
+        "pending_requests": 0,
+        "stale_pending_requests": 0,
+    }
 
 
 async def build_security_snapshot(overview: dict[str, Any], config_values: dict[str, Any], database_reachable: bool) -> dict[str, Any]:
@@ -590,9 +562,7 @@ async def _agent_db_enrichment(agent_health: dict[str, Any], config_values: dict
                         Device.deleted_at.is_(None),
                         or_(
                             Device.last_seen_at < stale_cutoff,
-                            ~select(AgentToken.token_hash)
-                            .where(and_(AgentToken.device_id == Device.device_id, AgentToken.revoked_at.is_(None)))
-                            .exists(),
+                            Device.last_seen_at.is_(None),
                         ),
                     )
                 )
@@ -693,9 +663,6 @@ async def build_operations_snapshot(overview: dict[str, Any], database_reachable
                             and_(Operation.status.in_(["failed", "timed_out"]), Operation.finished_at >= (now - timedelta(hours=24)))
                         )
                     )
-                )
-                outbox_backlog = _safe_int(
-                    await session.scalar(select(func.count()).select_from(DeviceOutbox).where(DeviceOutbox.status.in_(["pending", "sent"])))
                 )
                 rows = (
                     await session.execute(

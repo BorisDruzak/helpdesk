@@ -11,8 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from app.db import get_session
-from app.db.models import AgentToken, Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
-from app.repos.auth_tokens_repo import AuthTokensRepo
+from app.db.models import Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
 from app.repos.devices_repo import DevicesRepo
 from app.repos.helpdesk_policy_repo import (
     POLICY_MODELS,
@@ -52,12 +51,9 @@ from tickets.routing_service import (
     find_matching_routing_rule,
 )
 from tickets.smart_views import validate_smart_view_definition
-from tech.runtime_audit import write_agent_runtime_audit
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
     AdminBootstrapPayload,
-    AdminAgentTokenItem,
-    AdminAgentTokensPayload,
     AdminObserverDangerousFlowItem,
     AdminObserverDegradationItem,
     AdminObserverQuickLinks,
@@ -84,9 +80,6 @@ from web_api.dto.admin import (
     AdminDeviceDuplicateWarning,
     AdminDeviceIdentitySummary,
     AdminDeviceRestorePayload,
-    AdminDeviceTokenItem,
-    AdminDeviceTokensPayload,
-    AdminDeviceTokensSummary,
     AdminDevicesFilters,
     AdminModulesPayload,
     AdminModulesRolloutSettingsUpdateRequest,
@@ -3556,155 +3549,6 @@ async def handle_web_admin_devices_cleanup_env_duplicates(request: web.Request):
         kept_device_ids=kept_device_ids,
     )
     return json_model_response(SuccessResponse[AdminDeviceCleanupPayload](data=payload))
-
-
-def _device_token_item(row) -> AdminDeviceTokenItem:
-    revoked_at = getattr(row, "revoked_at", None)
-    expires_at = getattr(row, "expires_at", None)
-    is_expired = bool(expires_at and expires_at <= datetime.now(timezone.utc))
-    return AdminDeviceTokenItem(
-        token_hash=str(getattr(row, "token_hash", "") or ""),
-        token_prefix=str(getattr(row, "token_prefix", "") or "") or None,
-        created_at=_iso(getattr(row, "created_at", None)),
-        expires_at=_iso(expires_at),
-        revoked_at=_iso(revoked_at),
-        last_used_at=_iso(getattr(row, "last_used_at", None)),
-        is_active=revoked_at is None and not is_expired,
-    )
-
-
-def _agent_token_item(row, *, device_id: str, hostname: str | None, online: bool) -> AdminAgentTokenItem:
-    base = _device_token_item(row)
-    return AdminAgentTokenItem(
-        **base.model_dump(),
-        device_id=device_id,
-        hostname=hostname,
-        online=online,
-    )
-
-
-@require_auth("admin")
-async def handle_web_admin_device_tokens_list(request: web.Request):
-    query = str(request.query.get("query", "") or "").strip()
-    status_filter = _normalize_status_filter(request.query.get("status"))
-    state = request.app.get("state")
-
-    async with get_session() as session:
-        devices = await DevicesRepo(session).list_all()
-        token_rows = (
-            await session.execute(
-                select(AgentToken)
-                .where(AgentToken.device_id.in_([str(getattr(device, "device_id", "") or "") for device in devices]))
-                .order_by(AgentToken.created_at.desc())
-            )
-        ).scalars().all()
-
-    tokens_by_device: dict[str, list[AgentToken]] = {}
-    for row in token_rows:
-        tokens_by_device.setdefault(str(row.device_id), []).append(row)
-
-    duplicate_index = _build_duplicate_index(devices, state=state)
-    tokens: list[AdminAgentTokenItem] = []
-    for device in devices:
-        device_id = str(getattr(device, "device_id", "") or "")
-        if not device_id:
-            continue
-        is_online = bool(
-            state is not None
-            and hasattr(state, "is_agent_online")
-            and state.is_agent_online(device_id)
-        )
-        if not _matches_status_filter(online=is_online, status_filter=status_filter):
-            continue
-        item = _build_device_item(device, online=is_online, duplicate_index=duplicate_index)
-        if not _matches_query(item, query):
-            continue
-        for token in tokens_by_device.get(device_id, []):
-            tokens.append(
-                _agent_token_item(
-                    token,
-                    device_id=device_id,
-                    hostname=item.hostname,
-                    online=is_online,
-                )
-            )
-
-    payload = AdminAgentTokensPayload(
-        query=query,
-        status_filter=status_filter,
-        summary=AdminDeviceTokensSummary(
-            total_count=len(tokens),
-            active_count=sum(1 for item in tokens if item.is_active),
-            revoked_count=sum(1 for item in tokens if not item.is_active),
-        ),
-        tokens=tokens,
-    )
-    return json_model_response(SuccessResponse[AdminAgentTokensPayload](data=payload))
-
-
-@require_auth("admin")
-async def handle_web_admin_device_tokens(request: web.Request):
-    device_id = str(request.match_info.get("device_id") or "").strip()
-    if not device_id:
-        return web.json_response(
-            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
-            status=400,
-        )
-    async with get_session() as session:
-        rows = await AuthTokensRepo(session).get_agent_tokens_by_device(device_id)
-    tokens = [_device_token_item(row) for row in rows]
-    payload = AdminDeviceTokensPayload(
-        device_id=device_id,
-        summary=AdminDeviceTokensSummary(
-            total_count=len(tokens),
-            active_count=sum(1 for item in tokens if item.is_active),
-            revoked_count=sum(1 for item in tokens if not item.is_active),
-        ),
-        tokens=tokens,
-    )
-    return json_model_response(SuccessResponse[AdminDeviceTokensPayload](data=payload))
-
-
-@require_auth("admin")
-async def handle_web_admin_device_token_revoke(request: web.Request):
-    device_id = str(request.match_info.get("device_id") or "").strip()
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    token_hash = str(data.get("token_hash") or "").strip()
-    if not device_id or not token_hash:
-        return web.json_response(
-            {"status": "error", "error": "device_id and token_hash are required", "error_code": "VALIDATION_ERROR"},
-            status=400,
-        )
-    async with get_session() as session:
-        repo = AuthTokensRepo(session)
-        revoked = await repo.revoke_agent_token_by_hash(token_hash, device_id=device_id)
-    if not revoked:
-        return web.json_response(
-            {"status": "error", "error": "Token not found or already revoked", "error_code": "TOKEN_NOT_FOUND"},
-            status=404,
-        )
-    auth_context = request.get("auth_context")
-    await write_agent_runtime_audit(
-        device_id=device_id,
-        event_type="agent_token_revoked",
-        severity="warning",
-        source="web_admin_inventory",
-        actor_id=getattr(auth_context, "actor_id", None) if auth_context else None,
-        actor_role=getattr(auth_context, "actor_role", None) if auth_context else None,
-        details_json={"token_hash_prefix": token_hash[:12]},
-    )
-    return json_model_response(
-        SuccessResponse[AdminDeviceTokensPayload](
-            data=AdminDeviceTokensPayload(
-                device_id=device_id,
-                summary=AdminDeviceTokensSummary(total_count=0, active_count=0, revoked_count=0),
-                tokens=[],
-            )
-        )
-    )
 
 
 @require_auth("admin")

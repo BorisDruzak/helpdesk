@@ -3018,76 +3018,6 @@ class ServerRuntimeSnapshot(Base):
     )
 
 
-class DeviceOutbox(Base):
-    """
-    Device outbox model for Protocol V3.
-    
-    Server-side outbox for reliable command delivery to devices.
-    Commands are persisted before sending and lifecycle-tracked.
-    """
-    __tablename__ = "device_outbox"
-    
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    command_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    command: Mapped[str] = mapped_column(Text, nullable=False)
-    params: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    
-    # Lifecycle tracking
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="pending",
-        index=True
-    )  # pending, sent, delivered, failed
-    
-    # Metadata
-    request_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
-    trace_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    operation_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    actor_role: Mapped[str] = mapped_column(String(20), nullable=False, default="user")
-    
-    # Retry tracking
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc)
-    )
-    sent_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True
-    )
-    delivered_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True
-    )
-    failed_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True
-    )
-    
-    # Error tracking
-    error_code: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
-    __table_args__ = (
-        Index("ix_device_outbox_device_id_status", "device_id", "status"),
-        Index("ix_device_outbox_command_id_status", "command_id", "status"),
-        Index("ix_device_outbox_created_at", "created_at"),
-    )
-    
-    def __repr__(self) -> str:
-        return (
-            f"<DeviceOutbox(id={self.id}, device_id={self.device_id!r}, "
-            f"command_id={self.command_id!r}, command={self.command!r}, "
-            f"status={self.status!r})>"
-        )
-
-
 class RemoteAccessSession(Base):
     """Remote Assist session lifecycle bound to a ticket, device and operator."""
 
@@ -4465,51 +4395,6 @@ class DeviceDesiredModule(Base):
         )
 
 
-class AgentToken(Base):
-    """
-    Agent token model for authentication.
-    
-    Stores SHA256 hashes of tokens (not raw tokens) for security.
-    Supports token rotation with grace period.
-    """
-    __tablename__ = "agent_tokens"
-    
-    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)  # SHA256 hash
-    token_prefix: Mapped[str] = mapped_column(String(8), nullable=False)  # First 8 chars for logs
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc)
-    )
-    expires_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    
-    # Token rotation support
-    replaced_by_token_hash: Mapped[Optional[str]] = mapped_column(
-        String(64),
-        nullable=True,
-        # Foreign key to self for rotation tracking
-    )
-    rotated_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    
-    last_used_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    
-    __table_args__ = (
-        Index("ix_agent_tokens_device_id", "device_id"),
-        # Partial index for active tokens (not revoked)
-        Index("ix_agent_tokens_active", "device_id", "revoked_at", postgresql_where=sa.text("revoked_at IS NULL")),
-        Index("ix_agent_tokens_prefix", "token_prefix"),  # For log lookups
-    )
-    
-    def __repr__(self) -> str:
-        return (
-            f"<AgentToken(token_hash={self.token_hash[:16]}..., "
-            f"device_id={self.device_id!r}, revoked_at={self.revoked_at})>"
-        )
-
-
 class UiToken(Base):
     """
     UI token model for authentication.
@@ -4555,45 +4440,6 @@ class UiToken(Base):
             f"user_login={self.user_login!r}, actor_role={self.actor_role!r}, "
             f"revoked_at={self.revoked_at})>"
         )
-
-
-class ConnectionRequest(Base):
-    """
-    Pending or resolved device connection request (agent requests token).
-    status: pending | approved | rejected
-    last_request_at: обновляется при каждом POST от агента; в списке для админки
-    показываются только запросы с last_request_at за последние 30 сек.
-    """
-    __tablename__ = "connection_requests"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    request_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
-    device_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
-    hostname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
-    last_request_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True), nullable=True)
-    request_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
-    poll_secret_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    approved_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    approved_token_delivered_at: Mapped[Optional[datetime]] = mapped_column(
-        TIMESTAMP(timezone=True),
-        nullable=True,
-    )
-
-    def __repr__(self) -> str:
-        return f"<ConnectionRequest(id={self.id}, device_id={self.device_id!r}, status={self.status!r})>"
 
 
 class ServerConfig(Base):

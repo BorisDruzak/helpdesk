@@ -41,8 +41,6 @@ AUTH_WHITELIST = {
     "/api/web/session/password-reset-requests",
     "/api/web/session/me",
     "/api/health",
-    "/api/connection_request",
-    "/api/connection_request/status",
 }
 def _record_query_token_attempt(request: web.Request, *, rejected: bool) -> None:
     _QUERY_TOKEN_AUTH_ATTEMPTS.append(
@@ -290,17 +288,6 @@ async def extract_auth_context(request: web.Request) -> Optional[AuthContext]:
     
     auth_service = AuthService(state)
     
-    if not web_session_token:
-        # Non-web API paths may still use agent tokens.
-        token_info = await auth_service.verify_agent_token(token)
-        if token_info:
-            return AuthContext(
-                actor_id=token_info["device_id"],
-                actor_role="agent",
-                auth_type=AuthType.AGENT_TOKEN,
-                token=token
-            )
-
     # Try UI token
     token_info = await auth_service.verify_ui_token(token)
     if token_info:
@@ -455,9 +442,6 @@ async def auth_middleware(request: web.Request, handler):
         return await handler(request)
     if request.method == "POST" and request.path == "/api/service-catalog/preview":
         return await handler(request)
-    if request.path.startswith("/api/connection_request"):
-        return await handler(request)
-
     web_session_auth = bool(extract_token_from_web_cookie(request))
 
     # Extract and verify token
