@@ -211,11 +211,8 @@ from static_pages.handlers import (
     handle_favicon,
     handle_ticket_page,
     handle_ticket_page_by_id,
-    handle_chat_debug,
-    handle_chat_ws,
     handle_test_simple,
     handle_ws_ui_test,
-    handle_modules_page,
     handle_public_queue_page,
     handle_public_queue_css,
     handle_public_queue_js,
@@ -348,14 +345,11 @@ from web_api.admin_handlers import (
     handle_web_admin_helpdesk_model_republish_legacy_forms,
     handle_web_admin_helpdesk_model_ticket_type_deactivate,
     handle_web_admin_helpdesk_model_ticket_type_rollback,
-    handle_web_admin_modules,
-    handle_web_admin_patch_modules_rollout_settings,
     handle_web_admin_playbooks_catalog,
     handle_web_admin_playbooks_save,
     handle_web_admin_observer_quick,
     handle_web_admin_observer_trace_detail,
     handle_web_admin_observer_traces,
-    handle_web_admin_set_module_preferred_version,
 )
 from web_api.endpoint_module_handlers import (
     handle_endpoint_module_capabilities,
@@ -523,55 +517,6 @@ from web_api.registry_handlers import (
 from web_api.reports_handlers import handle_web_reports_summary
 from web_api.settings_handlers import handle_web_settings_payload, handle_web_settings_workflow_profiles_put
 from web_api.realtime_handlers import handle_web_realtime_bootstrap
-from chat.handlers import (
-    handle_chat_start,
-    handle_chat_raise,
-    handle_chat_send,
-    handle_active_chats,
-    handle_chat_events
-)
-from modules.handlers import (
-    handle_modules_ping,
-    handle_install_module_package,
-    handle_list_installed_modules,
-    handle_activate_module,
-    handle_rollback_module,
-    handle_deactivate_module,
-    handle_smoke_install_and_run,
-    handle_upload_module,
-    handle_create_module,
-    handle_bulk_install_modules,
-    handle_download_module,
-    handle_list_modules,
-    handle_list_modules_workbench,
-    handle_cleanup_missing_modules,
-    handle_get_module_detail,
-    handle_get_module_workbench_detail,
-    handle_get_module_rollout_settings,
-    handle_set_module_preferred_version,
-    handle_patch_module_rollout_settings,
-    handle_get_module_authoring_catalog,
-    handle_validate_module_authoring,
-    handle_publish_module_authoring,
-    handle_save_module_workbench,
-    handle_validate_module_workbench,
-    handle_list_module_live_test_candidates,
-    handle_run_module_live_test,
-    handle_delete_module,
-    handle_get_device_modules,
-    handle_get_device_toolset,
-    handle_install_module,
-    handle_activate_module_new,
-    handle_deactivate_module_new,
-    handle_sync_modules,
-    handle_remove_module_version,
-    handle_remove_module,
-    handle_verify_module,
-    handle_debug_modules,
-    handle_get_desired_diff,
-    handle_trigger_reconcile
-)
-from jobs.handlers import handle_get_job_events, handle_start_job
 from web_api.ai_integration_handlers import handle_ai_integration_mcp_status
 from tech.handlers import (
     handle_observer_settings_get,
@@ -683,7 +628,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/help', handle_help_page),
         web.get('/ticket.html', handle_ticket_page),
         web.get('/ticket/{ticket_id}', handle_ticket_page_by_id),
-        web.get('/modules.html', handle_modules_page),
         
         # ============================================================================
         # Public Queue (Stage 10.2) — без авторизации
@@ -935,9 +879,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/admin/helpdesk-model/request-templates/republish-legacy-forms', handle_web_admin_helpdesk_model_republish_legacy_forms),
         web.get('/api/web/admin/playbooks/catalog', handle_web_admin_playbooks_catalog),
         web.post('/api/web/admin/playbooks/save', handle_web_admin_playbooks_save),
-        web.get('/api/web/admin/modules', handle_web_admin_modules),
-        # Endpoint Recipe modules are a separate typed BFF surface. Legacy
-        # Python-module Workbench routes above remain unchanged.
+        # Endpoint Recipe modules are exposed through a typed, Endpoint-owned BFF.
         web.get('/api/web/admin/endpoint-modules', handle_endpoint_modules_list),
         web.get('/api/web/admin/endpoint-modules/capabilities', handle_endpoint_module_capabilities),
         web.post('/api/web/admin/endpoint-modules', handle_endpoint_module_create_version),
@@ -951,16 +893,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/admin/endpoint-modules/{module_key}/{version}/deprecate', handle_endpoint_module_deprecate),
         web.post('/api/web/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
         web.post('/api/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
-        web.patch('/api/web/admin/modules/rollout_settings', handle_web_admin_patch_modules_rollout_settings),
-        web.patch('/api/web/admin/modules/{module_name}/preferred', handle_web_admin_set_module_preferred_version),
-        web.get('/api/web/admin/modules/workbench', handle_list_modules_workbench),
-        web.get('/api/web/admin/modules/workbench/{module_name}/{version}', handle_get_module_workbench_detail),
-        web.post('/api/web/admin/modules/workbench/authoring/validate', handle_validate_module_authoring),
-        web.post('/api/web/admin/modules/workbench/authoring/publish', handle_publish_module_authoring),
-        web.post('/api/web/admin/modules/workbench/upload', handle_upload_module),
-        web.get('/api/web/admin/modules/workbench/{module_name}/{version}/live_test_candidates', handle_list_module_live_test_candidates),
-        web.post('/api/web/admin/modules/workbench/{module_name}/{version}/live_tests', handle_run_module_live_test),
-        web.delete('/api/web/admin/modules/workbench/{module_name}/{version}', handle_delete_module),
         web.get('/api/registry/options', handle_registry_options),
         web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.post('/api/registry/agent/profile', handle_registry_agent_profile),
@@ -1362,76 +1294,13 @@ def setup_routes(app: web.Application) -> None:
         # ============================================================================
         
         # ============================================================================
-        # Chat API
-        # ============================================================================
-        web.post('/api/chat_start', handle_chat_start),
-        web.post('/api/chat_raise', handle_chat_raise),
-        web.post('/api/chat_send', handle_chat_send),
-        web.get('/api/active_chats', handle_active_chats),
-        web.get('/api/chat_events', handle_chat_events),
-        
-        # ============================================================================
-        # Modules API
-        # ============================================================================
-        # New HTTP download endpoints
-        web.get('/api/modules/ping', handle_modules_ping),
-        web.post('/api/modules/upload', handle_upload_module),
-        web.post('/api/modules/create', handle_create_module),
-        web.get('/api/modules/authoring/catalog', handle_get_module_authoring_catalog),
-        web.post('/api/modules/authoring/validate', handle_validate_module_authoring),
-        web.post('/api/modules/authoring/publish', handle_publish_module_authoring),
-        web.post('/api/modules/workbench/validate', handle_validate_module_workbench),
-        web.post('/api/modules/workbench/save', handle_save_module_workbench),
-        web.post('/api/modules/cleanup_missing', handle_cleanup_missing_modules),
-        web.post('/api/modules/bulk_install', handle_bulk_install_modules),
-        web.get('/api/modules/rollout_settings', handle_get_module_rollout_settings),
-        web.patch('/api/modules/rollout_settings', handle_patch_module_rollout_settings),
-        web.get('/api/modules/workbench', handle_list_modules_workbench),
-        web.get('/api/modules/workbench/{module_name}/{version}', handle_get_module_workbench_detail),
-        web.get('/api/modules/{module_name}/{version}/live_test_candidates', handle_list_module_live_test_candidates),
-        web.post('/api/modules/{module_name}/{version}/live_tests', handle_run_module_live_test),
-        web.get('/api/modules/{module_name}/{version}', handle_get_module_detail),
-        web.get('/api/modules/{module_name}/{version}/download', handle_download_module),
-        web.delete('/api/modules/{module_name}/{version}', handle_delete_module),
-        web.get('/api/modules', handle_list_modules),
-        web.patch('/api/modules/{module_name}/preferred', handle_set_module_preferred_version),
-        web.get('/api/devices/{device_id}/modules', handle_get_device_modules),
-        web.get('/api/devices/{device_id}/toolset', handle_get_device_toolset),
-        web.post('/api/devices/{device_id}/modules/install', handle_install_module),
-        web.post('/api/devices/{device_id}/modules/activate', handle_activate_module_new),
-        web.post('/api/devices/{device_id}/modules/deactivate', handle_deactivate_module_new),
-        web.post('/api/devices/{device_id}/modules/sync', handle_sync_modules),
-        web.post('/api/devices/{device_id}/modules/remove_version', handle_remove_module_version),
-        web.post('/api/devices/{device_id}/modules/remove', handle_remove_module),
-        web.post('/api/devices/{device_id}/modules/verify', handle_verify_module),
-        web.get('/api/devices/{device_id}/modules/debug', handle_debug_modules),
-        web.get('/api/devices/{device_id}/modules/desired_diff', handle_get_desired_diff),
-        web.post('/api/devices/{device_id}/modules/reconcile', handle_trigger_reconcile),
-        
-        # Compatibility endpoints for older clients (planned for removal after migration window)
-        web.post('/api/install_module_package', handle_install_module_package),
-        web.post('/api/list_installed_modules', handle_list_installed_modules),
-        web.post('/api/activate_module', handle_activate_module),
-        web.post('/api/rollback_module', handle_rollback_module),
-        web.post('/api/deactivate_module', handle_deactivate_module),
-        web.post('/api/smoke_install_and_run', handle_smoke_install_and_run),
-        
-        # ============================================================================
         # Playbook API (Этап 4 MVP)
         # ============================================================================
         web.post('/api/playbooks/runs', handle_start_playbook_run),
         
         # ============================================================================
-        # Jobs API
-        # ============================================================================
-        web.get('/api/job_events', handle_get_job_events),
-        web.post('/api/start_job', handle_start_job),
-        
-        # ============================================================================
         # Additional HTML Pages
         # ============================================================================
-        web.get('/chat_debug', handle_chat_debug),
-        web.get('/chat_ws', handle_chat_ws),
         web.get('/test_simple', handle_test_simple),
         web.get('/ws_ui_test', handle_ws_ui_test),
     ])

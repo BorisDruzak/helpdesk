@@ -73,7 +73,7 @@ async def handle_web_support_endpoint_operation_cancel(request: web.Request) -> 
         return _error(
             status=409,
             code="operation_cancel_not_supported",
-            message="Only a queued, delivered Endpoint operation can be canceled",
+            message="Only a queued Endpoint operation can be canceled",
         )
 
     outcome = await DomainPortContainer.from_config().endpoint.cancel_operation(
