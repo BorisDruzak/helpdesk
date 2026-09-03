@@ -112,8 +112,6 @@ async def _execute_non_agent_capability_step(
     context: dict,
     params: dict,
 ):
-    from tools.service import ToolExecutionService
-
     ticket_id = str((context or {}).get("ticket_id") or "").strip()
     actor = _playbook_actor(context)
     readiness_context = ReadinessContext(
@@ -134,8 +132,8 @@ async def _execute_non_agent_capability_step(
     timeout_ms = int(step.timeout_sec * 1000) if step.timeout_sec else None
     observability = RuntimeAuditCapabilityExecutionObserver(state=state)
     router = CapabilityExecutionRouter(
-        capability_registry=CapabilityRegistry(tool_service=None, state=state),
-        tool_service=ToolExecutionService(state),
+        capability_registry=CapabilityRegistry(tool_service=None, state=state, endpoint_cutover_only=True),
+        tool_service=None,
         observability=observability,
     )
     result = await router.run_capability(
