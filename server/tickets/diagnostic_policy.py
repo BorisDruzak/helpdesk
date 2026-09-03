@@ -32,7 +32,7 @@ def normalize_diagnostic_consent_payload(raw: Any) -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
     scope = str(raw.get("scope") or "requester_device").strip() or "requester_device"
-    source = str(raw.get("source") or "pc_agent_create").strip() or "pc_agent_create"
+    source = str(raw.get("source") or "ticket_request").strip() or "ticket_request"
     result: dict[str, Any] = {
         "required": bool(raw.get("required")),
         "granted": bool(raw.get("granted")),

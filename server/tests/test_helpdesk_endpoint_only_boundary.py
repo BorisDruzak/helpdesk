@@ -139,6 +139,7 @@ def test_active_capability_and_playbook_sources_have_no_agent_runtime_fields() -
         "server/playbooks/tool_catalog.py",
         "server/web_api/admin_handlers.py",
         "server/web_api/support_handlers.py",
+        "server/tickets/diagnostic_policy.py",
     ):
         source = (ROOT / relative_path).read_text(encoding="utf-8-sig")
         for legacy_token in (
