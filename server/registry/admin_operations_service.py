@@ -1495,46 +1495,6 @@ class RegistryAdminOperationsService:
             await self._preview_bulk_assign_department(ids, payload, results, changes, target="devices")
         elif operation == "people.assign_department":
             await self._preview_bulk_assign_department(ids, payload, results, changes, target="people")
-        elif operation == "devices.revoke_account_sessions":
-            rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession).where(
-                        DeviceAccountSession.device_id.in_(ids),
-                        DeviceAccountSession.verification_status.in_(["verified", "pending_verification"]),
-                    )
-                )
-            ).scalars().all()
-            for device_id in ids:
-                device_rows = [row for row in rows if row.device_id == device_id]
-                results.append({"id": device_id, "success": True, "affected_sessions": len(device_rows)})
-                changes.extend(
-                    {
-                        "kind": "account_session",
-                        "action": "revoke",
-                        "object_id": row.session_id,
-                        "before": {"verification_status": row.verification_status},
-                        "after": {"verification_status": "revoked", "revoked_at": "now"},
-                        "severity": "destructive",
-                    }
-                    for row in device_rows
-                )
-        elif operation == "account_sessions.revoke":
-            for session_id in ids:
-                row = await self.session.get(DeviceAccountSession, session_id)
-                if row is None:
-                    results.append({"id": session_id, "success": False, "error_code": "NOT_FOUND"})
-                    continue
-                results.append({"id": session_id, "success": True})
-                changes.append(
-                    {
-                        "kind": "account_session",
-                        "action": "revoke",
-                        "object_id": row.session_id,
-                        "before": {"verification_status": row.verification_status},
-                        "after": {"verification_status": "revoked", "revoked_at": "now"},
-                        "severity": "destructive",
-                    }
-                )
         else:
             raise ValueError("unsupported bulk preview operation")
 
