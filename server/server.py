@@ -1,20 +1,4 @@
-"""
-WebSocket сервер для управления удалёнными PC агентами (relay-архитектура).
-
-Этот сервер выступает в роли ретранслятора команд между веб-интерфейсом
-и удалёнными агентами. Сервер НЕ выполняет сбор данных - он только:
-1. Аутентифицирует агентов
-2. Регистрирует подключённые агенты
-3. Пересылает команды от веб-интерфейса к агентам
-4. Возвращает ответы от агентов обратно к веб-интерфейсу
-
-Вся логика сбора данных (SystemCollector, ScreenCollector, etc.)
-выполняется на стороне агента через ws_agent.py и AgentOrchestrator.
-
-РЕСТРУКТУРИЗАЦИЯ: Код разделён на модули для улучшения читаемости и поддержки.
-Архивный legacy runtime-path удалён из активного дерева; источник истины по структуре
-и потокам теперь в CODEMAP/документации рядом с кодом.
-"""
+"""Helpdesk ticket/process facade with Endpoint-owned device operations."""
 
 import sys
 from aiohttp import web
@@ -321,13 +305,6 @@ async def on_startup(app: web.Application):
             app['problem_candidate_scheduler'] = problem_candidate_scheduler
             logger.success("✅ Problem candidate scheduler initialized")
 
-            # Reconcile scheduler: периодически сверяет desired vs actual state модулей
-            from app.services.module_reconcile_scheduler import start_reconcile_scheduler
-            app['reconcile_task'] = asyncio.create_task(
-                start_reconcile_scheduler(app['state'])
-            )
-            logger.success("✅ Module reconcile scheduler started")
-
             from observer.runtime import ObserverRefreshRuntime
 
             observer_refresh_runtime = ObserverRefreshRuntime()
@@ -444,14 +421,6 @@ async def on_cleanup(app: web.Application):
         await app['problem_candidate_scheduler'].stop()
         logger.success("✅ Problem candidate scheduler stopped")
 
-    # Stop reconcile scheduler
-    if 'reconcile_task' in app:
-        app['reconcile_task'].cancel()
-        try:
-            await app['reconcile_task']
-        except Exception:
-            pass
-    
     observer_refresh_runtime = app._state.get(OBSERVER_REFRESH_RUNTIME_APP_KEY)
     if observer_refresh_runtime is not None:
         logger.info("⏹️ Stopping observer refresh runtime...")
@@ -523,8 +492,7 @@ def main():
     
     # Баннер при запуске
     logger.info("=" * 70)
-    logger.info("🚀 PC Agent WebSocket Server (Restructured)")
-    logger.info(f"📡 WebSocket (Agents): ws://{SERVER_HOST}:{SERVER_PORT}/ws")
+    logger.info("🚀 Helpdesk server")
     logger.info(f"📡 WebSocket (UI): ws://{SERVER_HOST}:{SERVER_PORT}/ws_ui")
     logger.info(f"🌐 Web Interface: http://{SERVER_HOST}:{SERVER_PORT}/app")
     logger.info(f"🔧 Admin Panel: http://{SERVER_HOST}:{SERVER_PORT}/app/admin")
@@ -532,7 +500,6 @@ def main():
     logger.info(f"🔧 API: http://{SERVER_HOST}:{SERVER_PORT}/api/")
     logger.info(f"📤 File Upload: http://{SERVER_HOST}:{SERVER_PORT}/api/upload")
     logger.info(f"📂 Uploaded Files: http://{SERVER_HOST}:{SERVER_PORT}/uploads/")
-    logger.info(f"📚 Protocol Docs: http://{SERVER_HOST}:{SERVER_PORT}/api/protocol")
     logger.info("=" * 70)
     
     if ENABLE_DB_PERSISTENCE:
@@ -552,10 +519,9 @@ def main():
     logger.info("   📦 state_manager.py - Управление состоянием")
     logger.info("   📦 routes.py - Регистрация маршрутов")
     logger.info("   📂 auth/ - Аутентификация")
-    logger.info("   📂 agents/ - Управление агентами")
     logger.info("   📂 tickets/ - Система тикетов")
-    logger.info("   📂 tools/ - Инструменты")
-    logger.info("   📂 websocket/ - WebSocket коммуникация")
+    logger.info("   📂 endpoint_adapter/ - Endpoint integration")
+    logger.info("   📂 websocket/ - Browser UI transport")
     logger.info("   📂 uploads/ - Загрузка файлов")
     logger.info("   📂 static_pages/ - HTML страницы")
     logger.info("   📂 api/ - Дополнительные API")
