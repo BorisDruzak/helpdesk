@@ -1,5 +1,4 @@
-import { ExternalLink, FlaskConical, PackageOpen } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { FlaskConical, PackageOpen } from "lucide-react";
 
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -20,8 +19,6 @@ export function CapabilityCatalogTable({
   onOpen,
   onReadiness,
 }: CapabilityCatalogTableProps) {
-  const navigate = useNavigate();
-
   if (isLoading) {
     return (
       <Card>
@@ -116,16 +113,6 @@ export function CapabilityCatalogTable({
                     >
                       Readiness
                     </Button>
-                    {capability.source === "managed_module" || capability.execution_target === "agent_managed_module" ? (
-                      <Button
-                        leadingIcon={<ExternalLink className="h-4 w-4" />}
-                        onClick={() => navigate("/app/admin/capabilities")}
-                        size="sm"
-                        variant="ghost"
-                      >
-                        Endpoint
-                      </Button>
-                    ) : null}
                   </div>
                 </td>
               </tr>

@@ -151,3 +151,24 @@ def test_active_capability_and_playbook_sources_have_no_agent_runtime_fields() -
             "min_agent_version",
         ):
             assert legacy_token not in source
+
+
+def test_capability_webapp_has_no_agent_recipe_or_rollout_surface() -> None:
+    webapp_root = ROOT / "webapp" / "src" / "features" / "capabilities"
+    for path in webapp_root.rglob("*.*"):
+        if path.suffix not in {".ts", ".tsx"} or path.name.endswith(".test.ts") or path.name.endswith(".test.tsx"):
+            continue
+        source = path.read_text(encoding="utf-8-sig")
+        for legacy_token in (
+            "AgentRecipe",
+            "RunnerRollout",
+            "agent_builtin",
+            "agent_managed_module",
+            "agent_recipe",
+            "runner-rollout",
+            "min_runner_version",
+            "install_required_on_agent",
+            "requires_agent_online",
+            "supports_auto_install",
+        ):
+            assert legacy_token not in source
