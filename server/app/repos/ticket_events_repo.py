@@ -30,6 +30,7 @@ from app.db.models import (
 )
 from domain_ports.registry import RequesterRef, RequesterSnapshot, requester_persistence_values
 from tickets.statuses import ACTIVE_OPERATOR_STATUSES, TERMINAL_STATUSES
+from tickets.ticket_context import requester_legacy_scope_clause, requester_neutral_scope_clause
 
 
 IDEMPOTENT_TICKET_EVENT_UNIQUE_CONSTRAINTS = frozenset(
@@ -1309,45 +1310,22 @@ class TicketEventsRepo:
                 stmt = stmt.where(Ticket.assignee_id == filters["assignee_id"])
             if "requester_id" in filters:
                 stmt = stmt.where(Ticket.requester_id == filters["requester_id"])
-            if "requester_account_session_id" in filters:
-                stmt = stmt.where(Ticket.requester_account_session_id == filters["requester_account_session_id"])
-            if "requester_account_mode" in filters:
-                stmt = stmt.where(Ticket.requester_account_mode == filters["requester_account_mode"])
-            if "account_session_access" in filters:
-                access = filters["account_session_access"] or {}
-                mode = str(access.get("account_mode") or "")
-                session_id = str(access.get("session_id") or "")
-                if mode == "confirmed_binding":
-                    clauses = []
-                    if session_id:
-                        clauses.append(Ticket.requester_account_session_id == session_id)
-                    if access.get("binding_id"):
-                        clauses.append(Ticket.requester_binding_id == str(access.get("binding_id")))
-                    if access.get("person_id"):
-                        clauses.append(Ticket.requester_person_id == str(access.get("person_id")))
-                    stmt = stmt.where(or_(*clauses)) if clauses else stmt.where(false())
-                elif mode == "verified_other_account":
-                    stmt = stmt.where(Ticket.requester_account_session_id == session_id)
-                elif mode == "registration_pending":
-                    pending_statuses = [
-                        "self_reported",
-                        "pending_user_confirmation",
-                        "user_confirmed",
-                        "pending_admin_review",
-                        "conflict",
-                        "registration_pending",
-                    ]
-                    clauses = [Ticket.requester_account_session_id == session_id] if session_id else []
-                    if access.get("person_id"):
-                        clauses.append(
-                            and_(
-                                Ticket.requester_person_id == str(access.get("person_id")),
-                                Ticket.requester_registration_status.in_(pending_statuses),
-                            )
-                        )
-                    stmt = stmt.where(or_(*clauses)) if clauses else stmt.where(false())
-                else:
+            if "device_binding_access" in filters:
+                binding = filters["device_binding_access"] or {}
+                person_id = str(binding.get("person_id") or "")
+                binding_id = str(binding.get("binding_id") or "")
+                if not person_id:
                     stmt = stmt.where(false())
+                else:
+                    neutral_scope = requester_neutral_scope_clause(Ticket)
+                    legacy_scope = requester_legacy_scope_clause(Ticket)
+                    clauses = [
+                        and_(neutral_scope, Ticket.requester_external_ref == person_id),
+                        and_(legacy_scope, Ticket.requester_person_id == person_id),
+                    ]
+                    if binding_id:
+                        clauses.append(and_(legacy_scope, Ticket.requester_binding_id == binding_id))
+                    stmt = stmt.where(or_(*clauses))
             if "watching_actor_id" in filters:
                 stmt = stmt.join(TicketWatcher, Ticket.ticket_id == TicketWatcher.ticket_id).where(
                     TicketWatcher.actor_id == filters["watching_actor_id"]

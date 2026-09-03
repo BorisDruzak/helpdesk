@@ -145,24 +145,19 @@ async def _require_agent_ticket_account_access(
     write: bool,
 ) -> web.Response | None:
     from app.repos.ticket_events_repo import TicketEventsRepo
-    from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
+    from tickets.account_access_service import TicketBindingAccessService
 
     ticket = await TicketEventsRepo(session).get_ticket(ticket_id)
     if not ticket:
         return web.json_response({"status": "error", "error": "ticket_not_found"}, status=404)
-    requester_account = requester_account_from_payload(None, query=request.query, headers=request.headers)
-    access = TicketAccountAccessService(session)
-    validation = await access.validate_agent_account_session(
-        device_id=auth_context.actor_id,
-        requester_account=requester_account,
-        require=True,
-    )
+    access = TicketBindingAccessService(session)
+    validation = await access.resolve_agent_binding(device_id=auth_context.actor_id)
     if not validation.get("valid"):
         return _account_session_error_response(validation)
     allowed = (
-        await access.can_send_message(ticket=ticket, account_session=validation.get("session") or {})
+        await access.can_send_message(ticket=ticket, binding=validation.get("binding") or {})
         if write
-        else await access.can_view_ticket(ticket=ticket, account_session=validation.get("session") or {})
+        else await access.can_view_ticket(ticket=ticket, binding=validation.get("binding") or {})
     )
     if not allowed:
         return _account_session_error_response({"error_code": "ACCOUNT_ACCESS_DENIED"})

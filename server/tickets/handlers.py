@@ -30,7 +30,7 @@ from tickets.assignment_service import (
     TicketAssignmentError,
     TicketAssignmentService,
 )
-from tickets.account_access_service import TicketAccountAccessService, requester_account_from_payload
+from tickets.account_access_service import TicketBindingAccessService
 from tickets.create_flow import build_default_priority_payload, create_ticket_with_side_effects
 from tickets.diagnostic_policy import normalize_diagnostic_consent_payload
 from tickets.form_catalog import (
@@ -316,41 +316,31 @@ def _allow_ticket_write(ticket: Any, auth_context: AuthContext) -> bool:
     return _allow_ticket_read(ticket, auth_context) and _can_write(auth_context)
 
 
-def _account_session_error(payload: dict[str, Any], *, status: int = 403) -> web.Response:
+def _device_binding_error(payload: dict[str, Any], *, status: int = 403) -> web.Response:
     return _json_error(
-        "account_session_invalid",
+        "active_device_binding_required",
         status=status,
-        error_code=payload.get("error_code") or "ACCOUNT_SESSION_INVALID",
+        error_code=payload.get("error_code") or "ACTIVE_DEVICE_BINDING_REQUIRED",
         details=payload,
     )
 
 
-async def _validate_agent_ticket_account(
+async def _resolve_agent_ticket_binding(
     request: web.Request,
     session: Any,
     *,
     device_id: str,
 ) -> tuple[dict[str, Any] | None, Optional[web.Response]]:
-    cached = request.get("_validated_account_session")
+    cached = request.get("_resolved_device_binding")
     if isinstance(cached, dict):
         return cached, None
-    body_payload = request.get("_requester_account_payload")
-    requester_account = requester_account_from_payload(
-        body_payload if isinstance(body_payload, dict) else None,
-        query=request.query,
-        headers=request.headers,
-    )
-    access = TicketAccountAccessService(session)
-    validation = await access.validate_agent_account_session(
-        device_id=device_id,
-        requester_account=requester_account,
-        require=True,
-    )
+    access = TicketBindingAccessService(session)
+    validation = await access.resolve_agent_binding(device_id=device_id)
     if not validation.get("valid"):
-        return None, _account_session_error(validation)
-    account_session = validation.get("session") or {}
-    request["_validated_account_session"] = account_session
-    return account_session, None
+        return None, _device_binding_error(validation)
+    binding = validation.get("binding") or {}
+    request["_resolved_device_binding"] = binding
+    return binding, None
 
 
 async def _get_ticket_or_response(
@@ -372,18 +362,18 @@ async def _get_ticket_or_response(
         if not queue_allowed and not assignee_allowed and not queue_less_ticket:
             return None, _json_error("forbidden", status=403), ticket_repo, auth_context
     if auth_context.actor_role == "agent":
-        account_session, account_error = await _validate_agent_ticket_account(
+        binding, binding_error = await _resolve_agent_ticket_binding(
             request,
             session,
             device_id=auth_context.actor_id,
         )
-        if account_error:
-            return None, account_error, ticket_repo, auth_context
-        access = TicketAccountAccessService(session)
+        if binding_error:
+            return None, binding_error, ticket_repo, auth_context
+        access = TicketBindingAccessService(session)
         allowed = (
-            await access.can_send_message(ticket=ticket, account_session=account_session or {})
+            await access.can_send_message(ticket=ticket, binding=binding or {})
             if write
-            else await access.can_view_ticket(ticket=ticket, account_session=account_session or {})
+            else await access.can_view_ticket(ticket=ticket, binding=binding or {})
         )
         if not allowed:
             return None, _json_error("account_access_denied", status=403, error_code="ACCOUNT_ACCESS_DENIED"), ticket_repo, auth_context
@@ -1019,18 +1009,15 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
 
     async with get_session() as session:
         if auth_context.actor_role == "agent":
-            validation = await TicketAccountAccessService(session).validate_agent_account_session(
-                device_id=device_id,
-                requester_account=requester_account,
-                require=True,
-            )
+            access = TicketBindingAccessService(session)
+            validation = await access.resolve_agent_binding(device_id=device_id)
             if not validation.get("valid"):
-                return _account_session_error(validation)
-            if not await TicketAccountAccessService(session).can_create_ticket(
+                return _device_binding_error(validation)
+            if not await access.can_create_ticket(
                 device_id=device_id,
-                account_session=validation.get("session") or {},
+                binding=validation.get("binding") or {},
             ):
-                return _json_error("account_access_denied", status=403, error_code="ACCOUNT_ACCESS_DENIED")
+                return _json_error("device_binding_access_denied", status=403, error_code="DEVICE_BINDING_ACCESS_DENIED")
         extra_custom_fields: dict[str, Any] | None = None
         template_process_fields: dict[str, Any] = {}
         catalog_process_fields: dict[str, Any] = {}
@@ -1106,7 +1093,7 @@ async def handle_tickets_create(request: web.Request) -> web.Response:
             **template_process_fields,
             **catalog_process_fields,
             extra_custom_fields=extra_custom_fields,
-            requester_account=requester_account,
+            requester_account=requester_account if auth_context.actor_role != "agent" else None,
             state=request.app.get("state"),
         )
         await session.commit()
@@ -1154,13 +1141,11 @@ async def handle_tickets_create_preview(request: web.Request) -> web.Response:
 
     async with get_session() as session:
         if auth_context.actor_role == "agent":
-            validation = await TicketAccountAccessService(session).validate_agent_account_session(
-                device_id=auth_context.actor_id,
-                requester_account=data.get("requester_account") if isinstance(data.get("requester_account"), dict) else None,
-                require=True,
+            validation = await TicketBindingAccessService(session).resolve_agent_binding(
+                device_id=auth_context.actor_id
             )
             if not validation.get("valid"):
-                return _account_session_error(validation)
+                return _device_binding_error(validation)
         try:
             catalog_template_key = request_template_key or form_key
             if service_code or offering_code or offering_full_code or catalog_template_key:
@@ -1363,14 +1348,14 @@ async def handle_tickets_list(request: web.Request) -> web.Response:
 
     async with get_session() as session:
         if auth_context.actor_role == "agent":
-            account_session, account_error = await _validate_agent_ticket_account(
+            binding, binding_error = await _resolve_agent_ticket_binding(
                 request,
                 session,
                 device_id=auth_context.actor_id,
             )
-            if account_error:
-                return account_error
-            filters["account_session_access"] = account_session
+            if binding_error:
+                return binding_error
+            filters["device_binding_access"] = binding
         repo = TicketEventsRepo(session)
         tickets = await repo.list_tickets(limit=limit, offset=offset, filters=filters)
         queue_map = await _queue_code_map(session, [getattr(ticket, "queue_id", None) for ticket in tickets])
@@ -1642,7 +1627,6 @@ async def handle_ticket_get_observer_summary(request: web.Request) -> web.Respon
 
 async def handle_ticket_send_message(request: web.Request) -> web.Response:
     data = await _read_json(request)
-    request["_requester_account_payload"] = data
     text = str(data.get("text") or "").strip()
     metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
     try:
@@ -1691,15 +1675,12 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
             "text": text,
             "visibility": visibility,
         }
-        account_session = request.get("_validated_account_session")
-        if isinstance(account_session, dict):
+        binding = request.get("_resolved_device_binding")
+        if isinstance(binding, dict):
             payload.update(
                 {
-                    "requester_account_session_id": account_session.get("session_id"),
-                    "requester_account_mode": account_session.get("account_mode"),
-                    "requester_person_id": account_session.get("person_id"),
-                    "requester_binding_id": account_session.get("binding_id"),
-                    "created_from_other_account": account_session.get("account_mode") == "verified_other_account",
+                    "requester_person_id": binding.get("person_id"),
+                    "requester_binding_id": binding.get("binding_id"),
                 }
             )
         clean_metadata = dict(metadata)
@@ -1806,7 +1787,6 @@ async def handle_ticket_send_message(request: web.Request) -> web.Response:
 
 async def handle_ticket_close(request: web.Request) -> web.Response:
     data = await _read_json(request)
-    request["_requester_account_payload"] = data
     async with get_session() as session:
         ticket, error, _, auth_context = await _get_ticket_or_response(request, session, write=True)
         if error:
@@ -1822,7 +1802,6 @@ async def handle_ticket_status(request: web.Request) -> web.Response:
     data = request.get("_forced_status_payload")
     if data is None:
         data = await _read_json(request)
-    request["_requester_account_payload"] = data
     raw_to_status = str(data.get("to_status") or "").strip()
     to_status, _ = resolve_status(raw_to_status)
     if not to_status:
@@ -2354,7 +2333,6 @@ async def handle_ticket_bind_device(request: web.Request) -> web.Response:
 
 async def handle_ticket_mark_read(request: web.Request) -> web.Response:
     data = await _read_json(request)
-    request["_requester_account_payload"] = data
     try:
         last_read_event_id = int(data.get("last_read_event_id") or 0)
     except (TypeError, ValueError):
@@ -2401,15 +2379,12 @@ async def handle_ticket_mark_read(request: web.Request) -> web.Response:
             "tool_calls_read_count": int(summary.get("tool_calls_read_count") or 0),
             "message_preview": summary.get("message_preview"),
         }
-        account_session = request.get("_validated_account_session")
-        if isinstance(account_session, dict):
+        binding = request.get("_resolved_device_binding")
+        if isinstance(binding, dict):
             payload.update(
                 {
-                    "requester_account_session_id": account_session.get("session_id"),
-                    "requester_account_mode": account_session.get("account_mode"),
-                    "requester_person_id": account_session.get("person_id"),
-                    "requester_binding_id": account_session.get("binding_id"),
-                    "created_from_other_account": account_session.get("account_mode") == "verified_other_account",
+                    "requester_person_id": binding.get("person_id"),
+                    "requester_binding_id": binding.get("binding_id"),
                 }
             )
         result = await repo.add_event(
