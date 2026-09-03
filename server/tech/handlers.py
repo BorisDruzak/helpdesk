@@ -1524,68 +1524,6 @@ async def handle_tech_dismiss_item(request: web.Request) -> web.Response:
     )
 
 
-@require_auth("admin", "support")
-async def handle_tech_agent_action(request: web.Request) -> web.Response:
-    auth_context = request.get("auth_context")
-    device_id = request.match_info["device_id"]
-    data = await request.json()
-    action = str(data.get("action") or "").strip().lower()
-    actor_role = getattr(auth_context, "actor_role", None) or "admin"
-
-    try:
-        if action == "get_status":
-            response = await send_ws_command(
-                state=request.app["state"],
-                device_id=device_id,
-                command="get_status",
-                params={},
-                actor_role=actor_role,
-                timeout=30,
-            )
-        elif action == "get_history":
-            params: dict[str, Any] = {"limit": _parse_query_limit(data.get("limit"), default=20, cap=200)}
-            if data.get("module"):
-                params["module"] = str(data["module"]).strip()
-            response = await send_ws_command(
-                state=request.app["state"],
-                device_id=device_id,
-                command="get_history",
-                params=params,
-                actor_role=actor_role,
-                timeout=30,
-            )
-        elif action == "list_tasks":
-            response = await send_ws_rpc_request(
-                state=request.app["state"],
-                device_id=device_id,
-                method="list_tasks",
-                params={},
-                actor_role=actor_role,
-                timeout=30,
-            )
-        elif action == "refresh_toolset":
-            response = await send_ws_command(
-                state=request.app["state"],
-                device_id=device_id,
-                command="list_tools",
-                params={},
-                actor_role=actor_role,
-                timeout=30,
-            )
-        else:
-            return web.json_response(
-                {"status": "error", "error": f"Unsupported tech action: {action}"},
-                status=400,
-            )
-    except ValueError as exc:
-        return web.json_response({"status": "error", "error": str(exc)}, status=404)
-    except asyncio.TimeoutError:
-        return web.json_response({"status": "error", "error": "Таймаут ожидания ответа от агента"}, status=504)
-
-    payload = response.get("payload") if isinstance(response, dict) and "payload" in response else response
-    return web.json_response({"status": "ok", "action": action, "result": payload})
-
-
 @require_auth("admin", "support", "auditor")
 async def handle_tech_admin_config_audit(request: web.Request) -> web.Response:
     limit = _parse_query_limit(request.query.get("limit"), default=100, cap=500)
@@ -1889,42 +1827,6 @@ def _serialize_agent_audit_item(item: AgentRuntimeAudit) -> dict[str, Any]:
     }
 
 
-async def _load_agent_actions_for_trace(
-    *,
-    request: web.Request,
-    trace_id: str,
-    detail: dict[str, Any],
-    action_limit: int,
-) -> tuple[list[dict[str, Any]], Optional[str]]:
-    device_id = detail.get("trace", {}).get("device_id")
-    if not device_id:
-        return [], None
-    try:
-        operation_source_refs = {
-            str(span.get("source_ref") or "").strip()
-            for span in detail.get("spans", [])
-            if span.get("source_type") == "operation"
-        }
-        params = {
-            "trace_id": trace_id,
-            "ticket_id": detail.get("trace", {}).get("ticket_id"),
-            "limit": action_limit,
-        }
-        if len(operation_source_refs) == 1:
-            params["operation_id"] = next(iter(operation_source_refs))
-        response = await send_ws_rpc_request(
-            state=request.app["state"],
-            device_id=device_id,
-            method="search_action_trace",
-            params=params,
-            actor_role="support",
-            timeout=20,
-        )
-        return [_compact_agent_action_entry(item) for item in _extract_action_trace_entries(response)], None
-    except Exception as exc:
-        return [], str(exc)
-
-
 async def _sync_agent_action_spans_with_timeout(
     *,
     trace_id: str,
@@ -2161,14 +2063,11 @@ async def handle_tech_diagnostics_bundle(request: web.Request) -> web.Response:
         await session.commit()
 
     agent_actions: list[dict[str, Any]] = []
-    agent_actions_error: Optional[str] = None
-    if include_agent_actions and primary_detail:
-        agent_actions, agent_actions_error = await _load_agent_actions_for_trace(
-            request=request,
-            trace_id=primary_detail["trace"]["trace_id"],
-            detail=primary_detail,
-            action_limit=action_limit,
-        )
+    agent_actions_error: Optional[str] = (
+        "Endpoint-owned agent traces are not fetched by Helpdesk."
+        if include_agent_actions and primary_detail
+        else None
+    )
 
     log_filter = (
         filters.query
