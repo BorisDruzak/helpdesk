@@ -238,15 +238,6 @@ MODULES_STORAGE_DIR = _prepare_runtime_dir(
 # Maximum module ZIP size (100MB, no longer limited by JSON)
 MAX_MODULE_SIZE = 100 * 1024 * 1024
 
-# Agent builds storage directory (remote self-update packages)
-AGENT_BUILDS_STORAGE_DIR = _prepare_runtime_dir(
-    "agent_builds",
-    legacy_relative_paths=("data/agent_builds", "agent_builds"),
-)
-
-# Maximum agent build ZIP size (300MB)
-MAX_AGENT_BUILD_SIZE = 300 * 1024 * 1024
-
 # Maximum artifact upload size (200MB) — скриншоты, запись экрана
 ARTIFACT_MAX_BYTES = 200 * 1024 * 1024
 

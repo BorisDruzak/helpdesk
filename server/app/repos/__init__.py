@@ -13,8 +13,6 @@ from app.repos.modules_repo import ModulesRepo
 from app.repos.device_modules_repo import DeviceModulesRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.artifacts_repo import ArtifactsRepo
-from app.repos.agent_builds_repo import AgentBuildsRepo
-from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.module_rollout_repo import ModuleRolloutRepo
 from app.repos.notification_repo import NotificationRepo
 from app.repos.notification_prefs_repo import NotificationPrefsRepo
@@ -46,8 +44,6 @@ __all__ = [
     "DeviceModulesRepo",
     "AuthTokensRepo",
     "ArtifactsRepo",
-    "AgentBuildsRepo",
-    "AgentRolloutRepo",
     "ModuleRolloutRepo",
     "NotificationRepo",
     "NotificationPrefsRepo",

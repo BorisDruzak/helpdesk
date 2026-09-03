@@ -24,7 +24,7 @@ Observer нужен для ответа на вопросы вида:
 
 Ключевой инвариант: observer не дублирует ticket business state и не становится source of truth для helpdesk-логики.
 
-Diagnostic Layer integration: ticket diagnostics may project the ticket `observer_root_trace_id` into `diagnostic_evidence` as `kind=observer.summary`, `domain=observer`, `perspective=observer`, and show it in `GET /api/tickets/{ticket_id}/diagnostics/overview`. `observer.ticket.summary` and `observer.trace.bundle` are server-side `observer_query` capabilities: they expose compact support-facing summaries/evidence previews through the diagnostic capability router while reusing observer overlay services. They are read-only, do not call `ToolExecutionService.run_tool`, and never enqueue DeviceOutbox rows. Raw spans, signatures, bundles and action traces remain owned by observer services and admin/support observer workbenches.
+Diagnostic Layer integration: ticket diagnostics may project the ticket `observer_root_trace_id` into `diagnostic_evidence` as `kind=observer.summary`, `domain=observer`, `perspective=observer`, and show it in `GET /api/tickets/{ticket_id}/diagnostics/overview`. `observer.ticket.summary` and `observer.trace.bundle` are server-side `observer_query` capabilities: they expose compact support-facing summaries/evidence previews through the diagnostic capability router while reusing observer overlay services. They are read-only and never invoke endpoint execution or enqueue DeviceOutbox rows. Raw spans, signatures, bundles and action traces remain owned by observer services and admin/support observer workbenches.
 
 ## 3. Источники данных
 
@@ -232,7 +232,7 @@ New React workspaces:
 
 - `/app/support` должен получать observer capability map через `GET /api/web/support/bootstrap`;
 - `/app/support` должен получать ticket-scoped observer summary внутри typed detail payload `GET /api/web/support/tickets/{ticket_id}`, а не собирать trace drawer из raw legacy ticket endpoints;
-- `/app/support` tool surface должен ходить через typed endpoints `GET /api/web/support/tickets/{ticket_id}/tools` и `POST /api/web/support/tickets/{ticket_id}/tools/run`, а рабочая лента должна показывать `tool_call_started` / `tool_call_result` рядом с observer root trace metadata, чтобы оператор видел traced execution без возврата в legacy `/support`/`/ticket`;
+- `/app/support` diagnostic surface должен ходить через typed Endpoint diagnostic endpoints, а рабочая лента должна показывать Endpoint operation metadata рядом с observer root trace metadata;
 - `/app/support` playbook surface должен ходить через typed endpoints `GET /api/web/support/tickets/{ticket_id}/playbooks` и `POST /api/web/support/tickets/{ticket_id}/playbooks/run`; support UI обязан показывать ticket-scoped playbook run failures (`playbook_run`, `playbook_step_run`, `MODULE_NOT_ON_SERVER`, missing required params) рядом с кнопкой запуска, а не только в raw observer workbench;
 - `/app/support` должен получать live invalidation через typed realtime bridge `GET /api/web/realtime/bootstrap` -> `/ws_ui`, чтобы очередь, карточка тикета и tool timeline обновлялись по `ticket_event_committed` / `operation_updated` без ручного polling-сцепления в feature-коде;
 - `/app/admin` должен получать observer capability map через `GET /api/web/admin/bootstrap`.

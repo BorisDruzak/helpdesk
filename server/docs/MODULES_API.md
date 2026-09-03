@@ -43,19 +43,18 @@ Legacy aliases exist only as compatibility bridges.
 - ticket-scoped capability execution through `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run`
 - admin-safe provider config through `GET /api/diagnostics/providers/configs`, `GET /api/diagnostics/providers/configs/{provider_id}` and `PUT /api/diagnostics/providers/configs/{provider_id}`; the same redacted contract is available to web-session admin clients through `/api/web/admin/diagnostics/providers/configs*`
 - admin-safe presentation override management through `GET|PUT|DELETE /api/web/tool-presentations?tool_id=<capability_id>`
-- routing agent capabilities to existing `ToolExecutionService.run_tool` while routing server connectors, observer queries, remote assist and manual checks through server-side providers
+- routing Endpoint-owned diagnostic capabilities through the Endpoint provider while routing server connectors, observer queries and manual checks through server-side providers
 
 ## Diagnostic capability projection
 
-The first-stage capability registry is an additive service layer over existing modules and tools. It does not rename or replace `run_tool`.
+The capability registry exposes Endpoint-owned and server-side diagnostic providers through a ticket-scoped facade.
 
 Sources:
 
-- agent builtin and managed tools from current tool manifests/snapshots
+- Endpoint-owned diagnostic capabilities from the Endpoint provider
 - server builtin capabilities: `server.dns.resolve`, `server.http.request`
 - server connector capabilities, currently the Zabbix JSON-RPC provider: `zabbix.problems.lookup`, `zabbix.host.health`, `zabbix.item.history`
 - observer query capabilities: `observer.ticket.summary`, `observer.trace.bundle`
-- remote assist session capabilities: `remote_assist.request_view`, `remote_assist.request_control`, `remote_assist.session.summary`
 - manual diagnostic evidence capabilities: `manual.visual_check`, `manual.vendor_response`, `manual.operator_note`, `manual.customer_confirmation`
 
 Capability descriptors include provider id/type, execution target, schemas/contracts, safety flags, deployment metadata, readiness requirements, evidence metadata, artifact metadata and legacy aliases.
@@ -78,7 +77,6 @@ Compatibility rules:
 - old builtin tools default to `agent_builtin` and never require server ZIP install
 - `server_connector` capabilities require `integration_key` and do not enqueue agent commands
 - observer and manual targets never enqueue agent commands
-- remote assist targets route to the existing Remote Assist session service instead of `ToolExecutionService.run_tool`
 
 Capability execution responses are normalized with `execution_target`, `execution_kind`, `provider_id`, `provider_type`, `idempotency_key` and `timeout_ms`. `execution_kind` is `operation` for agent tools, `query` for server connector and observer lookups, `session` for remote assist, and `manual_evidence` for manual checks. The ticket-scoped run endpoint checks readiness before dispatch; blocked capabilities return `409` with `error_code=CAPABILITY_NOT_READY` and a stable `reason_code`. `consent_required` remains executable for agent and remote-assist capabilities when the action is `request_consent`, so existing consent workflows can still be initiated.
 
@@ -92,11 +90,11 @@ When a non-agent capability is executed through `POST /api/tickets/{ticket_id}/d
 - optional `diagnostic_session_capabilities` snapshot when the request passes a valid `session_id`
 - optional passport row only after `selected_for_passport` and `/diagnostics/passport/attach-selected`
 
-Agent-side targets keep their asynchronous `ToolExecutionService.run_tool` behavior and are projected from terminal operation results later. Manual capabilities still persist their own diagnostic evidence in `ManualCapabilityProvider`, so the generic run endpoint does not duplicate them.
+Endpoint-owned capabilities keep their asynchronous execution behavior and are projected from terminal operation results later. Manual capabilities still persist their own diagnostic evidence in `ManualCapabilityProvider`, so the generic run endpoint does not duplicate them.
 
 Zabbix `server_connector` capabilities run on the Maria server through `diagnostics.providers.zabbix_provider.ZabbixProvider`. The provider reads bounded runtime config from diagnostic provider config, calls Zabbix JSON-RPC methods `problem.get`, `host.get` and `history.get`, caps returned problem/history rows, maps outputs to `monitoring.problem`, `monitoring.host_health` and `monitoring.metric_history`, and never returns raw credential material in result payloads. Ticket-scoped capability runs inject persisted integration config, mapping and ready credential refs into the server connector route before dispatch.
 
-Observer `observer_query` capabilities run on the Maria server through `diagnostics.providers.observer_provider.ObserverCapabilityProvider`. `observer.ticket.summary` calls the existing ticket observer summary/root trace service and returns a compact support-facing contract: root trace id, health, trace/signature counts, latest error, top signature, related traces and recent occurrences. `observer.trace.bundle` uses the existing observer overlay trace search/detail/signature/degradation services to return a bounded trace bundle: primary trace, related traces, error occurrences, signatures, degradations, recommended next checks and observer links. Both capabilities map to observer evidence previews and remain read-only query targets; they never call `ToolExecutionService.run_tool` and never enqueue DeviceOutbox rows.
+Observer `observer_query` capabilities run on the Maria server through `diagnostics.providers.observer_provider.ObserverCapabilityProvider`. `observer.ticket.summary` calls the existing ticket observer summary/root trace service and returns a compact support-facing contract: root trace id, health, trace/signature counts, latest error, top signature, related traces and recent occurrences. `observer.trace.bundle` uses the existing observer overlay trace search/detail/signature/degradation services to return a bounded trace bundle: primary trace, related traces, error occurrences, signatures, degradations, recommended next checks and observer links. Both capabilities map to observer evidence previews and remain read-only query targets; they never invoke endpoint execution or enqueue DeviceOutbox rows.
 
 Remote Assist `remote_assist` capabilities are session targets. `remote_assist.request_view` maps to the existing `view_only` consent flow, `remote_assist.request_control` maps to `interactive_control` and requires `remote_assist.control` plus the interactive-control policy flag, and `remote_assist.session.summary` reads ticket sessions without requiring an online device. Requests route through `RemoteAssistService.request_session()`, which creates the canonical `UserConsentRequest`; only approved consent triggers the later `remote_assist.request` agent command. The generic capability router still treats the result as `execution_kind=session`, not as an ordinary tool operation. Session request and summary outputs map to passport-eligible `remote_assist.session` evidence previews.
 
