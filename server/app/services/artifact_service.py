@@ -27,7 +27,7 @@ class ArtifactService:
     Проверка доступа к артефактам для скачивания.
 
     - Агент (AGENT_TOKEN): базово только свои артефакты (artifact.device_id == actor_id);
-      ticket-bound downloads are additionally account-session gated in uploads.handlers.
+      ticket-bound downloads are additionally scoped by active device binding in uploads.handlers.
     - Staff UI: доступ к артефактам, привязанным к существующему тикету.
     - User UI / public ticket token: только свой тикет.
     """

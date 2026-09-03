@@ -356,33 +356,6 @@ class RegistrationService:
                 matched=matched,
             )
 
-    async def _revoke_account_sessions_for_binding(
-        self,
-        binding_id: str,
-        *,
-        revoked_by: str | None,
-        reason: str,
-    ) -> list[dict[str, Any]]:
-        return []
-
-    async def _cancel_account_login_requests_for_binding(
-        self,
-        binding_id: str,
-        *,
-        canceled_by: str | None,
-        reason: str,
-    ) -> list[dict[str, Any]]:
-        return []
-
-    async def _revoke_registration_pending_sessions_for_claim(
-        self,
-        claim_id: str,
-        *,
-        revoked_by: str | None,
-        reason: str,
-    ) -> list[dict[str, Any]]:
-        return []
-
     async def _create_admin_binding(
         self,
         *,
@@ -496,29 +469,7 @@ class RegistrationService:
             actor_role="admin",
             payload={"reason": reason, "status": status},
         )
-        revoked_sessions = await self._revoke_account_sessions_for_binding(
-            binding.binding_id,
-            revoked_by=reviewed_by,
-            reason=f"{event_type}: {reason or status}",
-        )
-        await self._cancel_account_login_requests_for_binding(
-            binding.binding_id,
-            canceled_by=reviewed_by,
-            reason=f"base binding changed: {reason or status}",
-        )
-        if revoked_sessions:
-            await self.repo.append_event(
-                event_type="account_sessions_revoked_due_to_transfer"
-                if status == "transferred"
-                else "account_sessions_revoked_due_to_revoke",
-                binding_id=binding.binding_id,
-                device_id=binding.device_id,
-                person_id=binding.person_id,
-                actor_id=reviewed_by,
-                actor_role="admin",
-                payload={"revoked_session_ids": [row["session_id"] for row in revoked_sessions]},
-            )
-        return revoked_sessions
+        return []
 
     async def bind_person_to_device(
         self,
@@ -558,7 +509,7 @@ class RegistrationService:
                     "inventory_binding": self._inventory_registration_dict(
                         await self.session.get(DeviceInventoryBinding, device.device_id)
                     ),
-                    "events": {"reused_existing_binding": True, "revoked_sessions": []},
+                    "events": {"reused_existing_binding": True},
                 }
 
         active_primary = next((row for row in active_bindings if row.relationship_type == "primary_user"), None)
@@ -653,7 +604,7 @@ class RegistrationService:
                 ),
                 "binding": self._binding_payload(active_primary),
                 "asset": _asset_payload(asset),
-                "legacy_events": {"reused_existing_binding": True, "revoked_sessions": []},
+                "legacy_events": {"reused_existing_binding": True},
             }
         previous_primary_status = active_primary.status if active_primary else None
         if active_primary:
@@ -669,21 +620,14 @@ class RegistrationService:
                     actor_role="admin",
                     payload={"old_binding_action": old_binding_action, "reason": reason},
                 )
-                revoked_sessions = await self._revoke_account_sessions_for_binding(
-                    active_primary.binding_id,
-                    revoked_by=reviewed_by,
-                    reason=f"owner transfer: {reason or old_binding_action}",
-                )
             else:
-                revoked_sessions = await self._retire_binding(
+                await self._retire_binding(
                     active_primary,
                     status=old_binding_action,
                     reviewed_by=reviewed_by,
                     reason=reason or "owner transferred by admin",
                     event_type="binding_transferred" if old_binding_action == "transferred" else "binding_revoked",
                 )
-        else:
-            revoked_sessions = []
 
         _claim, binding = await self._create_admin_binding(
             device=device,
@@ -710,7 +654,6 @@ class RegistrationService:
                 "old_binding_id": active_primary.binding_id if active_primary else None,
                 "old_binding_action": old_binding_action,
                 "reason": reason,
-                "revoked_session_ids": [row["session_id"] for row in revoked_sessions],
                 "changes": [
                     {
                         "field": "primary_person_id",
@@ -721,11 +664,6 @@ class RegistrationService:
                         "field": "old_binding_status",
                         "before": previous_primary_status,
                         "after": old_binding_action if active_primary and old_binding_action != "keep_as_shared" else None,
-                    },
-                    {
-                        "field": "revoked_session_count",
-                        "before": len(revoked_sessions),
-                        "after": 0,
                     },
                 ],
             },
@@ -748,23 +686,19 @@ class RegistrationService:
                 {"id": device.device_id, "entity_type": "inventory_binding", "status": "success"},
             ]
         )
-        operation_items.extend(
-            {"id": row["session_id"], "entity_type": "account_session", "status": "success", "message": "revoked"}
-            for row in revoked_sessions
-        )
         return {
             **self._operation_result(
                 operation="transfer_owner",
                 items=operation_items,
                 events=["binding_transferred"],
-                summary_extra={"revoked_sessions": len(revoked_sessions)},
+                summary_extra={},
             ),
             "binding": self._binding_payload(binding),
             "asset": _asset_payload(await self.registry_repo.get_asset(asset.asset_id)),
             "inventory_binding": self._inventory_registration_dict(
                 await self.session.get(DeviceInventoryBinding, device.device_id)
             ),
-            "legacy_events": {"revoked_sessions": revoked_sessions},
+            "legacy_events": {},
         }
 
     async def preview_transfer_owner(
@@ -786,7 +720,6 @@ class RegistrationService:
 
         changes: list[dict[str, Any]] = []
         warnings: list[str] = []
-        sessions_to_revoke: list[Any] = []
         tickets_preserved = 0
 
         if active_primary and active_primary.person_id == person.person_id:
@@ -880,13 +813,11 @@ class RegistrationService:
             "counts": {
                 "bindings_to_update": 1 if active_primary and active_primary.person_id != person.person_id else 0,
                 "bindings_to_create": 0 if active_primary and active_primary.person_id == person.person_id else 1,
-                "sessions_to_revoke": len(sessions_to_revoke),
                 "tickets_preserved": tickets_preserved,
             },
             "ticket_policy": {
                 "requester_person_id": "preserve_existing_requester",
                 "requester_binding_id": "preserve_existing_binding_reference",
-                "requester_account_session_id": "preserve_existing_session_reference",
             },
             "changes": changes,
             "warnings": warnings,
@@ -1346,11 +1277,6 @@ class RegistrationService:
                 await self._apply_claim_profile_to_person(claim)
                 await self.sync_asset_from_active_binding(existing_for_claim)
                 await self.sync_inventory_from_active_binding(existing_for_claim, profile=claim.profile_snapshot or {})
-                await self._revoke_registration_pending_sessions_for_claim(
-                    claim.claim_id,
-                    revoked_by=reviewed_by,
-                    reason="registration claim approved",
-                )
                 return await self._build_approved_payload(claim, existing_for_claim)
         if claim.status in {"rejected", "superseded", "expired"}:
             raise ValueError("claim cannot be approved")
@@ -1384,11 +1310,6 @@ class RegistrationService:
                 actor_id=reviewed_by,
                 actor_role=actor_role,
                 payload={"reason": "active primary binding already exists for same person"},
-            )
-            await self._revoke_registration_pending_sessions_for_claim(
-                claim.claim_id,
-                revoked_by=reviewed_by,
-                reason="registration claim approved",
             )
             await self.session.flush()
             return await self._build_approved_payload(claim, active_primary)
@@ -1482,11 +1403,6 @@ class RegistrationService:
             actor_role=actor_role,
             payload={"relationship_type": binding.relationship_type},
         )
-        await self._revoke_registration_pending_sessions_for_claim(
-            claim.claim_id,
-            revoked_by=reviewed_by,
-            reason="registration claim approved",
-        )
         await self.session.flush()
         return await self._build_approved_payload(claim, binding)
 
@@ -1531,16 +1447,6 @@ class RegistrationService:
 
     async def revoke_binding(self, binding_id: str, *, revoked_by: str | None = None, reason: str | None = None) -> dict[str, Any]:
         binding = await self.repo.revoke_binding(binding_id, revoked_by=revoked_by, reason=reason)
-        revoked_sessions = await self._revoke_account_sessions_for_binding(
-            binding.binding_id,
-            revoked_by=revoked_by,
-            reason=f"binding revoked: {reason or 'admin revoke'}",
-        )
-        canceled_login_requests = await self._cancel_account_login_requests_for_binding(
-            binding.binding_id,
-            canceled_by=revoked_by,
-            reason=f"base binding changed: {reason or 'admin revoke'}",
-        )
         replacement = await self.repo.get_active_primary_binding(binding.device_id)
         if replacement:
             await self.sync_asset_from_active_binding(replacement)
@@ -1558,26 +1464,12 @@ class RegistrationService:
             person_id=binding.person_id,
             actor_id=revoked_by,
             actor_role="admin",
-            payload={
-                "reason": reason,
-                "revoked_session_ids": [row["session_id"] for row in revoked_sessions],
-                "canceled_login_request_ids": [row["request_id"] for row in canceled_login_requests],
-            },
+            payload={"reason": reason},
         )
-        if revoked_sessions:
-            await self.repo.append_event(
-                event_type="account_sessions_revoked_due_to_revoke",
-                binding_id=binding.binding_id,
-                device_id=binding.device_id,
-                person_id=binding.person_id,
-                actor_id=revoked_by,
-                actor_role="admin",
-                payload={"revoked_session_ids": [row["session_id"] for row in revoked_sessions]},
-            )
         await self.session.flush()
         return {
             "binding": {"binding_id": binding.binding_id, "status": binding.status},
-            "events": {"revoked_sessions": revoked_sessions, "canceled_login_requests": canceled_login_requests},
+            "events": {},
         }
 
     async def sync_asset_from_active_binding(self, binding: Any) -> None:

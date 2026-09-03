@@ -27,7 +27,6 @@ from requester.identity_service import RequesterIdentityResolver
 import uuid
 
 
-WEB_BROWSER_PAIRING_ROLES = ("admin", "support", "user")
 
 
 def _success(data: dict) -> web.Response:

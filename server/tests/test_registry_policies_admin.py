@@ -36,7 +36,6 @@ async def test_registry_policy_api_reads_defaults_and_rejects_invalid_values(tes
     response = await test_client.get("/api/web/admin/registry/policies", headers=ADMIN_HEADERS)
     assert response.status == 200
     payload = await response.json()
-    assert payload["data"]["effective"]["account_sessions"]["verified_other_account_ttl_hours"] == 24
     assert payload["data"]["defaults"]["registration"]["require_admin_confirmation"] is False
     assert payload["data"]["defaults"]["registration"]["auto_approve_first_binding"] is True
     assert payload["data"]["requires_restart"] is False
@@ -49,7 +48,7 @@ async def test_registry_policy_api_reads_defaults_and_rejects_invalid_values(tes
 
     invalid = await test_client.patch(
         "/api/web/admin/registry/policies",
-        json={"reason": "invalid", "policies": {"account_sessions": {"verified_other_account_ttl_hours": -1}}},
+        json={"reason": "invalid", "policies": {"registration": {"stale_after_days": -1}}},
         headers=ADMIN_HEADERS,
     )
     assert invalid.status == 400
