@@ -4412,20 +4412,6 @@ async def _devices_by_id(session, device_ids: list[str]) -> dict[str, Device]:
     return {str(row.device_id): row for row in rows}
 
 
-def _online_device_ids_from_state(state: Any, device_ids: list[str]) -> set[str]:
-    checker = getattr(state, "is_agent_online", None)
-    if not callable(checker):
-        return set()
-    online_ids: set[str] = set()
-    for device_id in sorted({str(value or "").strip() for value in device_ids if str(value or "").strip()}):
-        try:
-            if checker(device_id):
-                online_ids.add(device_id)
-        except Exception:
-            continue
-    return online_ids
-
-
 async def _latest_passports_by_ticket(session, ticket_ids: list[str]) -> dict[str, TicketResolutionPassport]:
     if not ticket_ids:
         return {}
@@ -4615,7 +4601,7 @@ async def handle_web_support_command_center(request: web.Request):
             device_ids = [str(ticket_data.get("device_id") or "") for ticket_data, _item in entries]
             operations_by_ticket = await _latest_operations_by_ticket(session, ticket_ids)
             devices_by_id = await _devices_by_id(session, device_ids)
-            online_device_ids = _online_device_ids_from_state(request.app.get("state"), device_ids)
+            online_device_ids: set[str] = set()
             passports_by_ticket = await _latest_passports_by_ticket(session, ticket_ids)
             approvals_by_ticket = await _approvals_by_ticket(session, ticket_ids)
             diagnostics_by_ticket = await _diagnostics_by_ticket(session, ticket_ids)

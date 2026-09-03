@@ -1655,29 +1655,20 @@ def _device_hostname(device) -> str | None:
     return str(hostname).strip() if hostname else None
 
 
-def _build_duplicate_index(devices: list, *, state) -> dict[str, dict[str, int]]:
+def _build_duplicate_index(devices: list) -> dict[str, dict[str, int]]:
     index: dict[str, dict[str, int]] = {}
     for device in devices:
         hostname = _device_hostname(device)
         if not hostname:
             continue
-        device_id = str(getattr(device, "device_id", "") or "")
         metadata = getattr(device, "device_metadata", None)
         if not isinstance(metadata, dict):
             metadata = {}
         source = str(metadata.get("machine_id_source") or "").strip().lower()
-        online = bool(
-            device_id
-            and state is not None
-            and hasattr(state, "is_agent_online")
-            and state.is_agent_online(device_id)
-        )
         row = index.setdefault(hostname.lower(), {"total": 0, "env_uuid": 0, "stable": 0, "cleanup": 0})
         row["total"] += 1
         if source == "env_uuid":
             row["env_uuid"] += 1
-            if not online:
-                row["cleanup"] += 1
         if source in _STABLE_IDENTITY_SOURCES:
             row["stable"] += 1
     return index
@@ -1704,7 +1695,7 @@ def _build_duplicate_warning(device, *, duplicate_index: dict[str, dict[str, int
                 "её можно безопасно архивировать, если агент оффлайн."
             ),
             duplicate_count=group["total"],
-            cleanup_available=not online,
+            cleanup_available=False,
         )
     if group.get("env_uuid", 0) > 0:
         return AdminDeviceDuplicateWarning(
@@ -1716,7 +1707,7 @@ def _build_duplicate_warning(device, *, duplicate_index: dict[str, dict[str, int
                 "Текущую стабильную запись оставляем, старые оффлайн-записи можно архивировать."
             ),
             duplicate_count=group["total"],
-            cleanup_available=group.get("cleanup", 0) > 0,
+            cleanup_available=False,
         )
     return None
 
@@ -3353,18 +3344,11 @@ async def handle_web_admin_devices(request: web.Request):
         online_count = 0
         active_devices = [device for device in devices if getattr(device, "deleted_at", None) is None]
         archived_count = len(devices) - len(active_devices)
-        duplicate_index = _build_duplicate_index(active_devices, state=state)
+        duplicate_index = _build_duplicate_index(active_devices)
         for device in devices:
             device_id = str(getattr(device, "device_id", "") or "")
             is_deleted = getattr(device, "deleted_at", None) is not None
-            is_online = bool(
-                not is_deleted
-                and
-                device_id
-                and state is not None
-                and hasattr(state, "is_agent_online")
-                and state.is_agent_online(device_id)
-            )
+            is_online = False
             if is_online:
                 online_count += 1
             if not _matches_status_filter(online=is_online, status_filter=status_filter):
@@ -3487,7 +3471,15 @@ async def handle_web_admin_devices_cleanup_env_duplicates(request: web.Request):
             status=400,
         )
 
-    state = request.app.get("state")
+    if apply_cleanup:
+        return web.json_response(
+            {
+                "status": "error",
+                "error": "Проверка live-состояния устройства доступна только через Endpoint Platform",
+                "error_code": "ENDPOINT_CONTROL_PLANE_REQUIRED",
+            },
+            status=409,
+        )
     auth_context = request.get("auth_context")
     actor_id = getattr(auth_context, "actor_id", None) or "admin"
     archived_count = 0
@@ -3507,13 +3499,8 @@ async def handle_web_admin_devices_cleanup_env_duplicates(request: web.Request):
                 if not isinstance(metadata, dict):
                     metadata = {}
                 source = str(metadata.get("machine_id_source") or "").strip().lower()
-                online = bool(
-                    device_id
-                    and state is not None
-                    and hasattr(state, "is_agent_online")
-                    and state.is_agent_online(device_id)
-                )
-                if device_id == keep_device_id or source in _STABLE_IDENTITY_SOURCES or online:
+                online = False
+                if device_id == keep_device_id or source in _STABLE_IDENTITY_SOURCES:
                     kept_device_ids.append(device_id)
                     continue
                 if source != "env_uuid":

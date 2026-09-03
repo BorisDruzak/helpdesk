@@ -55,20 +55,6 @@ def _severity_max(values: list[str]) -> str:
     return max(values, key=lambda value: SEVERITY_RANK.get(value, 2))
 
 
-def _is_online(request: web.Request, device_id: str) -> bool | None:
-    state = request.app.get("state") if hasattr(request, "app") else None
-    checker = getattr(state, "is_agent_online", None)
-    if callable(checker):
-        try:
-            return bool(checker(device_id))
-        except Exception:
-            return None
-    connected = getattr(state, "connected_agents", None)
-    if isinstance(connected, dict):
-        return device_id in connected
-    return None
-
-
 def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: int) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     ticket_open = str(ticket.status) in ACTIVE_TICKET_STATUSES
@@ -113,7 +99,7 @@ def _ticket_match(ticket: Ticket, *, pending_approvals: int, waiting_consent: in
 def _device_match(request: web.Request, device: Device, *, failed_count: int, stuck_count: int, kind: str = "device") -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     stale = bool(device.last_seen_at and device.last_seen_at < now - timedelta(minutes=15))
-    online = _is_online(request, device.device_id)
+    online = None
     severity = "warning" if stale or failed_count or stuck_count else "ok"
     return {
         "kind": kind,

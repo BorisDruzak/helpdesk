@@ -19,20 +19,6 @@ from shared.redaction import redact_sensitive_payload
 DEFAULT_RUNTIME_SNAPSHOT_INTERVAL_SEC = 15
 DEFAULT_RUNTIME_SNAPSHOT_TTL_SEC = 90
 DEFAULT_RUNTIME_SNAPSHOT_RETENTION_SEC = 3600
-RUNTIME_METADATA_ALLOWED_KEYS = {
-    "agent_version",
-    "build_version",
-    "client_kind",
-    "connection_id",
-    "connected_at",
-    "hostname",
-    "install_id",
-    "machine_id",
-    "os",
-    "protocol_version",
-}
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -81,34 +67,6 @@ def _runtime_status_snapshot(app: Any, key: str) -> dict[str, Any] | None:
         return {"status": "error", "error": str(exc)}
 
 
-def _safe_connected_agents(state: Any) -> dict[str, dict[str, Any]]:
-    agents: dict[str, dict[str, Any]] = {}
-    raw_agents = getattr(state, "connected_agents", {}) or {}
-    for device_id, info in raw_agents.items():
-        if not isinstance(info, dict):
-            continue
-        metadata = info.get("metadata") if isinstance(info.get("metadata"), dict) else {}
-        safe_metadata = {
-            key: metadata.get(key)
-            for key in RUNTIME_METADATA_ALLOWED_KEYS
-            if metadata.get(key) is not None
-        }
-        safe = redact_sensitive_payload(
-            {
-                "device_id": str(device_id),
-                "live_ws_state": "online",
-                "connected_at": _iso(info.get("connected_at") or metadata.get("connected_at")),
-                "metadata": safe_metadata,
-                "agent_version": metadata.get("agent_version") or metadata.get("build_version"),
-                "protocol_version": metadata.get("protocol_version"),
-                "client_kind": metadata.get("client_kind"),
-                "connection_id": metadata.get("connection_id"),
-            }
-        )
-        agents[str(device_id)] = {key: value for key, value in safe.items() if value is not None}
-    return agents
-
-
 def build_runtime_snapshot_payload(
     *,
     app: Any,
@@ -117,7 +75,6 @@ def build_runtime_snapshot_payload(
     instance_id: str | None = None,
 ) -> dict[str, Any]:
     state = app.get("state") if hasattr(app, "get") else None
-    connected_agents = _safe_connected_agents(state)
     observer_refresh = _runtime_status_snapshot(app, "observer_refresh_runtime")
     collected_at = _now()
     return {
@@ -131,14 +88,10 @@ def build_runtime_snapshot_payload(
         "service_health": {
             "api": "ok",
             "ui_ws_connections": len(getattr(state, "ui_connections", {}) or {}),
-            "agent_ws_connections": len(connected_agents),
-            "diagnostic_agent_connections": len(getattr(state, "diagnostic_agent_connections", {}) or {}),
             "operation_watchdog": _watchdog_state(app, "operation_watchdog"),
             "ticket_sla_watchdog": _watchdog_state(app, "ticket_sla_watchdog"),
             "ticket_auto_close_watchdog": _watchdog_state(app, "ticket_auto_close_watchdog"),
-            "outbox_sender": "running" if app.get("outbox_sender") else "missing",
         },
-        "connected_agents": connected_agents,
         "runtimes": {
             "observer_refresh_runtime": observer_refresh,
         },

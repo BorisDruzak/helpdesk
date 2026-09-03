@@ -299,7 +299,7 @@ def _ticket_presence_payload(request: web.Request, ticket: Any) -> Dict[str, Any
     presence = state.get_ticket_presence(getattr(ticket, "ticket_id", None))
     return {
         **presence,
-        "agent_online": bool(getattr(state, "is_agent_online", lambda _device_id: False)(getattr(ticket, "device_id", None))),
+        "agent_online": None,
     }
 
 
@@ -1602,7 +1602,7 @@ async def handle_ticket_get_snapshot(request: web.Request) -> web.Response:
                 "os": getattr(device, "os", None),
                 "agent_version": getattr(device, "agent_version", None),
                 "last_seen_at": device.last_seen_at.isoformat() if device and device.last_seen_at else None,
-                "online": request.app["state"].is_agent_online(ticket.device_id),
+                "online": None,
             },
             "latest_operations": [
                 {

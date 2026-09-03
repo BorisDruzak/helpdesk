@@ -261,16 +261,8 @@ class RequesterIdentityResolver:
         return list(result.scalars().all())
 
     def _device_online(self, device_id: str | None, *, state: Any | None = None) -> bool | None:
-        if not device_id:
-            return None
-        runtime_state = state if state is not None else self.state
-        checker = getattr(runtime_state, "is_agent_online", None)
-        if not callable(checker):
-            return None
-        try:
-            return bool(checker(str(device_id)))
-        except Exception:
-            return None
+        del device_id, state
+        return None
 
     async def list_allowed_devices(self, person_id: str | None, *, state: Any | None = None) -> list[dict[str, Any]]:
         devices: list[dict[str, Any]] = []

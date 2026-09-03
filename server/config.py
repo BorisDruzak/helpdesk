@@ -397,7 +397,6 @@ INVENTORY_REFRESH_SCHEDULER_INTERVAL_SEC = int(os.getenv("INVENTORY_REFRESH_SCHE
 # ============================================================================
 # Logging Configuration
 # ============================================================================
-# DEBUG: нужен для диагностики отключений (is_agent_online причины, connected_agents)
 LOG_LEVEL = "DEBUG"
 LOG_FORMAT = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
 

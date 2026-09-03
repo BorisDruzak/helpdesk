@@ -462,8 +462,6 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
         "services": [
             service("api", "API", str(service_health.get("api") or "unknown")),
             service("ws_ui", "UI WebSocket", str(service_health.get("ws_ui") or "unknown")),
-            service("agent_ws", "Agent WebSocket", "ok" if _safe_int(service_health.get("agent_ws_connections")) >= 0 else "unknown"),
-            service("device_dispatch", "Device dispatch", str(service_health.get("device_dispatch") or "unknown")),
             service("operation_watchdog", "Operation watchdog", schedulers["operation_watchdog"]),
             service("ticket_sla_watchdog", "Ticket SLA watchdog", schedulers["ticket_sla_watchdog"]),
             service("ticket_auto_close_watchdog", "Ticket auto-close watchdog", schedulers["ticket_auto_close_watchdog"]),
@@ -471,7 +469,6 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
         ],
         "web_sockets": {
             "ui_connections": _safe_int(service_health.get("ui_ws_connections")),
-            "agent_connections": _safe_int(service_health.get("agent_ws_connections")),
         },
         "schedulers": schedulers,
         "scheduler_details": {},

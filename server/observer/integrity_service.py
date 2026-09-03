@@ -27,10 +27,6 @@ from observer.checks.module_toolset import SOURCE as MODULE_TOOLSET_SOURCE
 from observer.checks.module_toolset import check_module_toolset
 from observer.checks.operation_lifecycle import SOURCE as OPERATION_SOURCE
 from observer.checks.operation_lifecycle import check_operation_lifecycle
-from observer.checks.protocol_integrity import SOURCE as PROTOCOL_SOURCE
-from observer.checks.protocol_integrity import check_protocol_integrity
-from observer.checks.runtime_presence import SOURCE as RUNTIME_SOURCE
-from observer.checks.runtime_presence import check_runtime_presence
 from observer.checks.types import ObserverIntegrityCheckResult
 from observer.checks.web_cabinet import SOURCE as WEB_CABINET_SOURCE
 from observer.checks.web_cabinet import check_web_cabinet
@@ -361,8 +357,6 @@ class ObserverIntegrityService:
                 append_failure_event(source, exc, status="failed")
 
         await collect_checker(OPERATION_SOURCE, lambda: check_operation_lifecycle(self.session, run_id=run_id))
-        await collect_checker(PROTOCOL_SOURCE, lambda: check_protocol_integrity(self.session, run_id=run_id))
-        await collect_checker(RUNTIME_SOURCE, lambda: check_runtime_presence(self.session, state=self.state, run_id=run_id))
         await collect_checker(ACCOUNT_SOURCE, lambda: check_account_boundary(self.session, run_id=run_id))
         await collect_checker(MODULE_TOOLSET_SOURCE, lambda: check_module_toolset(self.session, run_id=run_id))
         await collect_checker(GOVERNANCE_SOURCE, lambda: check_governance(self.session, run_id=run_id))

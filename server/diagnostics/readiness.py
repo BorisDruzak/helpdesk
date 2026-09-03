@@ -231,14 +231,6 @@ class CapabilityReadinessService:
                 [],
                 reason_code="DEVICE_REQUIRED",
             )
-        if capability.requires_agent_online and not self._is_agent_online(context.device_id):
-            return self._status(
-                capability,
-                "agent_offline",
-                "Agent is offline",
-                [],
-                reason_code="AGENT_OFFLINE",
-            )
         if capability.execution_target == "agent_managed_module" and capability.install_required_on_agent:
             module_state = self._module_state(capability, context)
             if module_state in {"installing", "activating"}:
@@ -287,14 +279,6 @@ class CapabilityReadinessService:
                 "Device is required",
                 [],
                 reason_code="DEVICE_REQUIRED",
-            )
-        if capability.requires_agent_online and not self._is_agent_online(context.device_id):
-            return self._status(
-                capability,
-                "agent_offline",
-                "Agent is offline",
-                [],
-                reason_code="AGENT_OFFLINE",
             )
         if not self._platform_supported(capability, context.device_platform):
             return self._status(
@@ -512,11 +496,6 @@ class CapabilityReadinessService:
         if not match:
             return (0, 0, 0)
         return tuple(int(part) for part in match.groups())
-
-    def _is_agent_online(self, device_id: str) -> bool:
-        if self.state and hasattr(self.state, "is_agent_online"):
-            return bool(self.state.is_agent_online(device_id))
-        return True
 
     def _status(
         self,
