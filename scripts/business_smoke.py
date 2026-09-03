@@ -198,7 +198,6 @@ def run_business_smoke(
     create_test_ticket: bool = False,
     run_safe_tool: str | None = None,
     operation_wait_seconds: float = 0.0,
-    check_update_recommendation: bool = False,
 ) -> dict[str, Any]:
     started_at = _now()
     steps: list[dict[str, Any]] = []
@@ -268,14 +267,6 @@ def run_business_smoke(
             steps.append(_step("device_operations_optional", "success", started))
         except HttpStepError as exc:
             fail_fast("device_operations_optional", f"HTTP {exc.status}: {exc}", started)
-
-    if check_update_recommendation and device_id and not failed:
-        started = time.monotonic()
-        try:
-            smoke_client.request("GET", f"/api/web/admin/devices/{urllib.parse.quote(device_id)}/updates")
-            steps.append(_step("update_recommendation", "success", started))
-        except HttpStepError as exc:
-            fail_fast("update_recommendation", f"HTTP {exc.status}: {exc}", started)
 
     if create_test_ticket and not failed:
         started = time.monotonic()
@@ -385,7 +376,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--create-test-ticket", action="store_true")
     parser.add_argument("--run-safe-tool", choices=("endpoint.context.diagnostic.collect",))
     parser.add_argument("--operation-wait-seconds", type=float, default=0.0)
-    parser.add_argument("--check-update-recommendation", action="store_true")
     return parser.parse_args()
 
 
@@ -405,7 +395,6 @@ def main() -> None:
         create_test_ticket=args.create_test_ticket,
         run_safe_tool=args.run_safe_tool,
         operation_wait_seconds=args.operation_wait_seconds,
-        check_update_recommendation=args.check_update_recommendation,
     )
     print(json.dumps({"status": payload["status"], "output": str(args.output)}, ensure_ascii=False))
     if payload["status"] != "success":

@@ -121,7 +121,6 @@ def test_business_smoke_runs_optional_business_acceptance_steps(tmp_path: Path, 
             ("GET", "/api/web/support/approvals"): FakeResponse(200, {"status": "success"}),
             ("GET", "/api/web/admin/tech/snapshot"): FakeResponse(200, {"status": "success"}),
             ("GET", "/api/web/admin/device-operations/device-1"): FakeResponse(200, {"status": "success"}),
-            ("GET", "/api/web/admin/devices/device-1/updates"): FakeResponse(200, {"status": "success", "data": {}}),
             ("POST", "/api/tickets/create"): FakeResponse(200, {"status": "ok", "ticket": {"ticket_id": "ticket-1"}}),
             ("GET", "/api/web/support/tickets/ticket-1/workspace"): FakeResponse(200, {"status": "success", "data": {}}),
             ("POST", "/api/web/support/tickets/ticket-1/diagnostics/capabilities/endpoint.context.diagnostic.collect/run"): FakeResponse(
@@ -152,7 +151,6 @@ def test_business_smoke_runs_optional_business_acceptance_steps(tmp_path: Path, 
         create_test_ticket=True,
         run_safe_tool="endpoint.context.diagnostic.collect",
         operation_wait_seconds=1,
-        check_update_recommendation=True,
     )
 
     payload = json.loads(output.read_text(encoding="utf-8"))
@@ -162,7 +160,6 @@ def test_business_smoke_runs_optional_business_acceptance_steps(tmp_path: Path, 
     assert "support_queue_action" in keys
     assert "safe_tool_endpoint_diagnostic" in keys
     assert "operation_result_check" in keys
-    assert "update_recommendation" in keys
     assert "browser_mixed_content" in keys
     assert "browser_wss" in keys
     assert payload["created_ticket_id"] == "ticket-1"

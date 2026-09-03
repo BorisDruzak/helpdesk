@@ -184,7 +184,7 @@ Security update 2026-06-26:
 - Декоратор `require_auth(*allowed_roles)` проверяет наличие `auth_context` и вхождение `actor_role` в `allowed_roles`. При отсутствии контекста — 401, при недопустимой роли — 403 (`error_code: "FORBIDDEN"`).
 - Browser-pairing web endpoints `POST /api/web/registry/browser-pairings/lookup`, `GET /api/web/registry/browser-pairings/{pairing_id}` and `/login|registration/confirm` accept web-session roles `admin`, `support` and `user`; login confirmation still relies on `BrowserPairingService` to resolve the actor identity and require an active primary/shared/responsible binding for the pairing device. Registration confirmation for a requester-owned device link is separate from requester profile completion; it creates a claim from the resolved `RegistryPerson` when available or from the authenticated web account otherwise, while normal ticket actions remain gated by `REQUESTER_PROFILE_INCOMPLETE`.
 - Для `DELETE /api/devices/{device_id}` допускается только `admin`: support/user/agent не могут архивировать устройства в реестре.
-- Legacy endpoint `POST /api/tools/run` также берёт роль только из `AuthContext`; если запрос пришёл по agent token, `device_id` в body обязан совпадать с `AuthContext.actor_id`, иначе сервер возвращает 403 `DEVICE_CONTEXT_MISMATCH` до metadata/policy/dispatch. Это не даёт agent token запускать diagnostics/tool commands в чужом device context даже при подмене `actor_role` в JSON.
+- Helpdesk does not expose agent command endpoints. Endpoint Platform owns agent authorization and command execution; Helpdesk invokes only its documented diagnostic HTTP boundary.
 
 ### 4.4 Тикетная система (Этапы 3–8) — RBAC
 

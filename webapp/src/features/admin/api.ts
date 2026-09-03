@@ -15,7 +15,6 @@ export type AdminDevicesPayload = {
   summary: {
     visible_count: number;
     online_count: number;
-    rollout_targets: number;
     duplicate_hosts: number;
     cleanup_candidates: number;
     archived_count: number;
@@ -27,13 +26,6 @@ export type AdminDevicesPayload = {
     }>;
     include_archived: boolean;
   };
-  rollout: Array<{
-    target: string;
-    channel: string;
-    version: string;
-    updated_at: string | null;
-    updated_by: string | null;
-  }>;
   devices: Array<{
     device_id: string;
     hostname: string | null;
@@ -47,11 +39,6 @@ export type AdminDevicesPayload = {
     deleted_by: string | null;
     delete_reason: string | null;
     connection_status_label: string;
-    latest_update: {
-      status: string | null;
-      label: string;
-      summary: string | null;
-    };
     identity_summary: {
       machine_id: string;
       install_id: string | null;

@@ -12,7 +12,6 @@ from sqlalchemy import func, select
 
 from app.db import get_session
 from app.db.models import AgentToken, Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
-from app.repos.agent_rollout_repo import AgentRolloutRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.devices_repo import DevicesRepo
 from app.repos.helpdesk_policy_repo import (
@@ -56,7 +55,6 @@ from tickets.smart_views import validate_smart_view_definition
 from tech.runtime_audit import write_agent_runtime_audit
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.admin import (
-    AdminBuildIdentity,
     AdminBootstrapPayload,
     AdminAgentTokenItem,
     AdminAgentTokensPayload,
@@ -89,10 +87,6 @@ from web_api.dto.admin import (
     AdminDeviceTokenItem,
     AdminDeviceTokensPayload,
     AdminDeviceTokensSummary,
-    AdminDeviceUpdateAction,
-    AdminDeviceUpdateRecommendation,
-    AdminDeviceUpdateRunPayload,
-    AdminDeviceUpdateRunRequest,
     AdminDevicesFilters,
     AdminModulesPayload,
     AdminModulesRolloutSettingsUpdateRequest,
@@ -105,8 +99,6 @@ from web_api.dto.admin import (
     AdminModuleVersionItem,
     AdminDevicesPayload,
     AdminDevicesSummary,
-    AdminDeviceUpdateSummary,
-    AdminDeviceUpdatesPayload,
     AdminFilterOption,
     AdminFormsBuilderCapabilities,
     AdminFormsDraftSaveRequest,
@@ -173,7 +165,6 @@ from web_api.dto.admin import (
     AdminPlaybookPayload,
     AdminPlaybookSaveResult,
     AdminScenarioTemplateItem,
-    AdminRolloutAssignment,
 )
 from utils.module_manifest import get_module_manifest, get_module_validation
 from utils.versioning import version_key
@@ -214,30 +205,6 @@ _OS_TYPE_TO_TARGET = {
     "alt linux": "linux_alt_x86_64",
     "linux_alt": "linux_alt_x86_64",
 }
-
-_UPDATE_RECOMMENDATION_SOURCE_LABELS = {
-    "assigned_rollout": "Серверный rollout",
-    "latest_release_fallback": "Последний release build",
-    "none": "Рекомендация отсутствует",
-}
-
-_UPDATE_COMPARISON_LABELS = {
-    "newer_release_available": "Назначена более новая release-версия",
-    "recommended_release_is_older": "Назначен controlled rollback",
-    "same_version": "Устройство уже на рекомендованной версии",
-    "unknown": "Сравнение пока недоступно",
-}
-
-_UPDATE_REASON_LABELS = {
-    "assigned_rollout_newer": "Назначенный rollout новее текущей версии.",
-    "assigned_rollout_older": "Сервер просит откатиться на rollout-версию.",
-    "assigned_rollout_non_release_current": "Текущая сборка не release, сервер выравнивает её по rollout policy.",
-    "assigned_rollout": "Серверный rollout уже назначен для этого target.",
-    "newer_release_available": "Для устройства доступен более новый release build.",
-    "non_release_current_version": "Текущая версия агента не считается release.",
-    "current_version_unknown": "Сервер не получил текущую версию агента.",
-}
-
 
 _OBSERVER_ROOT_KIND_LABELS = {
     "ticket": "Тикет",
@@ -365,13 +332,11 @@ def _empty_devices_payload(*, query: str, status_filter: str, include_archived: 
         summary=AdminDevicesSummary(
             visible_count=0,
             online_count=0,
-            rollout_targets=0,
             duplicate_hosts=0,
             cleanup_candidates=0,
             archived_count=0,
         ),
         filters=AdminDevicesFilters(status_options=STATUS_OPTIONS, include_archived=include_archived),
-        rollout=[],
         devices=[],
     )
 
@@ -1659,28 +1624,12 @@ def _matches_query(item: AdminDeviceItem, query: str) -> bool:
             item.agent_version or "",
             item.target or "",
             item.connection_status_label,
-            item.latest_update.label,
-            item.latest_update.summary or "",
             item.identity_summary.machine_id_source or "",
             item.identity_summary.source_label,
             item.duplicate_warning.title if item.duplicate_warning else "",
         ]
     ).lower()
     return query.lower() in haystack
-
-
-def _build_update_summary(*, online: bool) -> AdminDeviceUpdateSummary:
-    if online:
-        return AdminDeviceUpdateSummary(
-            status="healthy",
-            label="Готово к действиям",
-            summary="Устройство сейчас доступно для rollout и диагностики.",
-        )
-    return AdminDeviceUpdateSummary(
-        status="unknown",
-        label="Ждёт связи",
-        summary="Свежий update-status появится после следующего подключения агента.",
-    )
 
 
 def _identity_source_label(source: str | None) -> str:
@@ -1803,49 +1752,11 @@ def _build_device_item(device, *, online: bool, duplicate_index: dict[str, dict[
         deleted_by=getattr(device, "deleted_by", None),
         delete_reason=getattr(device, "delete_reason", None),
         connection_status_label="Архив" if is_deleted else ("Онлайн" if online else "Оффлайн"),
-        latest_update=_build_update_summary(online=False if is_deleted else online),
         identity_summary=_device_identity_summary(device),
         duplicate_warning=None
         if is_deleted
         else _build_duplicate_warning(device, duplicate_index=duplicate_index, online=online),
     )
-
-
-def _current_agent_version(device) -> str | None:
-    metadata = getattr(device, "device_metadata", None)
-    if not isinstance(metadata, dict):
-        metadata = {}
-    raw = getattr(device, "agent_version", None) or metadata.get("agent_version") or metadata.get("version")
-    value = str(raw or "").strip()
-    return value or None
-
-
-def _rollout_assignment_model(payload: dict | None) -> AdminRolloutAssignment | None:
-    if not payload:
-        return None
-    target = str(payload.get("target") or "").strip()
-    channel = str(payload.get("channel") or "").strip().lower()
-    version = str(payload.get("version") or "").strip()
-    if not target or not channel or not version:
-        return None
-    return AdminRolloutAssignment(
-        target=target,
-        channel=channel,
-        version=version,
-        updated_at=payload.get("updated_at"),
-        updated_by=payload.get("updated_by"),
-    )
-
-
-def _build_identity_model(payload: dict | None) -> AdminBuildIdentity | None:
-    if not payload:
-        return None
-    target = str(payload.get("target") or "").strip()
-    channel = str(payload.get("channel") or "").strip().lower()
-    version = str(payload.get("version") or "").strip()
-    if not target or not channel or not version:
-        return None
-    return AdminBuildIdentity(target=target, channel=channel, version=version)
 
 
 async def _build_admin_observer_quick_payload(
@@ -2243,223 +2154,6 @@ def _build_missing_admin_observer_trace_detail_payload(trace_id: str) -> AdminOb
         spans=[],
         span_links=[],
         error_occurrences=[],
-    )
-
-
-def _build_update_recommendation_summary(
-    *,
-    online: bool,
-    target: str | None,
-    recommended_build: AdminBuildIdentity | None,
-    update_available: bool,
-    comparison: str,
-    source_label: str,
-    reason_label: str | None,
-) -> AdminDeviceUpdateSummary:
-    if not target:
-        return AdminDeviceUpdateSummary(
-            status="target_unknown",
-            label="Не удалось определить target",
-            summary="Сервер не смог подобрать target для этого устройства, поэтому update workflow пока недоступен.",
-        )
-    if not online:
-        return AdminDeviceUpdateSummary(
-            status="offline",
-            label="Ждёт связи",
-            summary="Запуск обновления доступен только когда агент онлайн и может принять команду.",
-        )
-    if not recommended_build:
-        return AdminDeviceUpdateSummary(
-            status="missing_build",
-            label="Нет рекомендуемого build",
-            summary="Для этого target пока нет rollout policy или доступного release build на сервере.",
-        )
-
-    build_label = f"{recommended_build.channel}/{recommended_build.version}"
-    if update_available:
-        if comparison == "recommended_release_is_older":
-            return AdminDeviceUpdateSummary(
-                status="rollback_available",
-                label="Назначен rollback",
-                summary=f"{source_label} рекомендует {build_label}. {reason_label or ''}".strip(),
-            )
-        return AdminDeviceUpdateSummary(
-            status="update_available",
-            label="Доступно обновление",
-            summary=f"{source_label} рекомендует {build_label}. {reason_label or ''}".strip(),
-        )
-
-    return AdminDeviceUpdateSummary(
-        status="up_to_date",
-        label="Актуальная версия",
-        summary=f"Устройство уже синхронизировано с рекомендацией {source_label.lower()} {build_label}.",
-    )
-
-
-async def _build_admin_device_updates_payload(*, device_id: str, state) -> AdminDeviceUpdatesPayload:
-    async with get_session() as session:
-        device = await DevicesRepo(session).get_by_device_id(device_id)
-        if not device:
-            raise LookupError("DEVICE_NOT_FOUND")
-
-        target = _resolve_target_for_device(device)
-        current_version = _current_agent_version(device)
-        recommended_build = None
-        recommendation_source = "none"
-        assignment = None
-        if target:
-            recommended_build, recommendation_source, assignment = await _resolve_recommended_build(session, target=target)
-
-    source_label = _UPDATE_RECOMMENDATION_SOURCE_LABELS.get(
-        recommendation_source,
-        _UPDATE_RECOMMENDATION_SOURCE_LABELS["none"],
-    )
-    current_release_channel = _infer_release_channel(current_version) if current_version else "unknown"
-    current_is_release = _is_release_build(version=current_version, channel=current_release_channel) if current_version else False
-    comparison = "unknown"
-    update_available = False
-    recommended_reason = None
-
-    if recommended_build and current_version:
-        compare_result = compare_versions(recommended_build.version, current_version)
-        version_mismatch = recommended_build.version != current_version
-        if compare_result > 0:
-            comparison = "newer_release_available"
-        elif compare_result < 0:
-            comparison = "recommended_release_is_older"
-        else:
-            comparison = "same_version"
-        if recommendation_source == "assigned_rollout":
-            if compare_result > 0:
-                update_available = True
-                recommended_reason = "assigned_rollout_newer"
-            elif compare_result < 0:
-                update_available = True
-                recommended_reason = "assigned_rollout_older"
-            elif not current_is_release and version_mismatch:
-                update_available = True
-                recommended_reason = "assigned_rollout_non_release_current"
-            else:
-                recommended_reason = "assigned_rollout"
-        elif current_is_release:
-            if compare_result > 0:
-                update_available = True
-                recommended_reason = "newer_release_available"
-        elif version_mismatch:
-            update_available = True
-            recommended_reason = "non_release_current_version"
-    elif recommended_build and not current_version:
-        update_available = True
-        comparison = "unknown"
-        recommended_reason = "assigned_rollout" if recommendation_source == "assigned_rollout" else "current_version_unknown"
-
-    recommended_build_model = _build_identity_model(
-        {
-            "target": getattr(recommended_build, "target", None),
-            "channel": getattr(recommended_build, "channel", None),
-            "version": getattr(recommended_build, "version", None),
-        }
-        if recommended_build
-        else None
-    )
-    assignment_model = _rollout_assignment_model(assignment)
-    online = bool(state is not None and hasattr(state, "is_agent_online") and state.is_agent_online(device_id))
-    reason_label = _UPDATE_REASON_LABELS.get(recommended_reason)
-    summary = _build_update_recommendation_summary(
-        online=online,
-        target=target,
-        recommended_build=recommended_build_model,
-        update_available=update_available,
-        comparison=comparison,
-        source_label=source_label,
-        reason_label=reason_label,
-    )
-    action_enabled = bool(online and target and recommended_build_model)
-    action_label = "Ожидает связи"
-    if action_enabled:
-        action_label = "Запустить обновление" if update_available else "Повторить rollout"
-    elif target and not recommended_build_model:
-        action_label = "Нет build-а"
-
-    hostname = getattr(device, "hostname", None) or device_id
-    return AdminDeviceUpdatesPayload(
-        device_id=device_id,
-        device_label=str(hostname),
-        online=online,
-        target=target,
-        current_version=current_version,
-        release_channel=current_release_channel,
-        is_release=current_is_release,
-        summary=summary,
-        recommendation=AdminDeviceUpdateRecommendation(
-            update_available=update_available,
-            recommendation_source=recommendation_source,
-            recommendation_source_label=source_label,
-            comparison=comparison,
-            comparison_label=_UPDATE_COMPARISON_LABELS.get(comparison, _UPDATE_COMPARISON_LABELS["unknown"]),
-            recommended_reason=recommended_reason,
-            recommended_reason_label=reason_label,
-            recommended_build=recommended_build_model,
-            assigned_rollout=assignment_model,
-        ),
-        action=AdminDeviceUpdateAction(
-            enabled=action_enabled,
-            label=action_label,
-            reason_required=True,
-            endpoint=f"/api/web/admin/devices/{device_id}/updates/run",
-        ),
-    )
-
-
-async def _run_admin_device_update(
-    *,
-    state,
-    auth_context: AuthContext,
-    device_id: str,
-    reason: str,
-    restart_delay_sec: int | None,
-) -> AdminDeviceUpdateRunPayload:
-    update_payload = await _build_admin_device_updates_payload(device_id=device_id, state=state)
-    recommended_build = update_payload.recommendation.recommended_build
-    if not recommended_build:
-        raise AgentUpdateRequestError(
-            status=409,
-            payload={
-                "status": "error",
-                "error": "Для устройства нет рекомендуемого build",
-                "error_code": "RECOMMENDED_BUILD_MISSING",
-                "device_id": device_id,
-            },
-        )
-
-    raw_result = await enqueue_device_agent_update(
-        state=state,
-        auth_context=auth_context,
-        device_id=device_id,
-        target=recommended_build.target,
-        channel=recommended_build.channel,
-        version=recommended_build.version,
-        restart_delay_sec=restart_delay_sec,
-        reason=_sanitize_update_reason(reason),
-    )
-    build = raw_result["build"]
-    build_identity = AdminBuildIdentity(
-        target=str(build.get("target") or ""),
-        channel=str(build.get("channel") or ""),
-        version=str(build.get("version") or ""),
-    )
-    operation_id = str(raw_result["operation_id"])
-    return AdminDeviceUpdateRunPayload(
-        device_id=device_id,
-        operation_id=operation_id,
-        status="queued",
-        message=(
-            f"Операция {operation_id} поставлена в очередь. "
-            f"Агент получит build {build_identity.channel}/{build_identity.version} после доставки команды."
-        ),
-        build_source=str(raw_result.get("build_source") or ""),
-        poll_url=f"/api/operations/{operation_id}",
-        build=build_identity,
     )
 
 
@@ -3661,7 +3355,6 @@ async def handle_web_admin_devices(request: web.Request):
     try:
         async with get_session() as session:
             devices = await DevicesRepo(session).list_all(include_deleted=include_archived)
-            rollout_assignments = await AgentRolloutRepo(session).list_assignments()
 
         typed_devices: list[AdminDeviceItem] = []
         online_count = 0
@@ -3687,30 +3380,17 @@ async def handle_web_admin_devices(request: web.Request):
             if _matches_query(item, query):
                 typed_devices.append(item)
 
-        typed_rollout = [
-            AdminRolloutAssignment(
-                target=str(item.get("target") or ""),
-                channel=str(item.get("channel") or ""),
-                version=str(item.get("version") or ""),
-                updated_at=item.get("updated_at"),
-                updated_by=item.get("updated_by"),
-            )
-            for item in rollout_assignments
-            if item.get("target") and item.get("channel") and item.get("version")
-        ]
         payload = AdminDevicesPayload(
             query=query,
             status_filter=status_filter,
             summary=AdminDevicesSummary(
                 visible_count=len(typed_devices),
                 online_count=online_count,
-                rollout_targets=len(typed_rollout),
                 duplicate_hosts=sum(1 for item in duplicate_index.values() if item.get("total", 0) > 1),
                 cleanup_candidates=sum(item.get("cleanup", 0) for item in duplicate_index.values()),
                 archived_count=archived_count,
             ),
             filters=AdminDevicesFilters(status_options=STATUS_OPTIONS, include_archived=include_archived),
-            rollout=typed_rollout,
             devices=typed_devices,
         )
     except Exception as exc:
@@ -4041,36 +3721,6 @@ async def handle_web_admin_modules(request: web.Request):
         payload = _empty_admin_modules_payload(query=query)
 
     return json_model_response(SuccessResponse[AdminModulesPayload](data=payload))
-
-
-@require_auth("admin")
-async def handle_web_admin_agent_builds(request: web.Request):
-    return await _handle_legacy_list_agent_builds(request)
-
-
-@require_auth("admin")
-async def handle_web_admin_agent_build_upload(request: web.Request):
-    return await _handle_legacy_upload_agent_build(request)
-
-
-@require_auth("admin")
-async def handle_web_admin_agent_build_delete(request: web.Request):
-    return await _handle_legacy_delete_agent_build(request)
-
-
-@require_auth("admin")
-async def handle_web_admin_agent_build_download(request: web.Request):
-    return await _handle_legacy_download_agent_build(request)
-
-
-@require_auth("admin")
-async def handle_web_admin_agent_rollout_policy(request: web.Request):
-    return await _handle_legacy_get_agent_rollout_policy(request)
-
-
-@require_auth("admin")
-async def handle_web_admin_agent_rollout_policy_patch(request: web.Request):
-    return await _handle_legacy_patch_agent_rollout_policy(request)
 
 
 @require_auth("admin")
@@ -5032,100 +4682,3 @@ async def handle_web_admin_set_module_preferred_version(request: web.Request):
         )
 
     return json_model_response(SuccessResponse[AdminModulePreferredVersionActionPayload](data=result))
-
-
-@require_auth("admin")
-async def handle_web_admin_device_updates(request: web.Request):
-    device_id = request.match_info["device_id"]
-    state = request.app.get("state")
-
-    try:
-        payload = await _build_admin_device_updates_payload(device_id=device_id, state=state)
-    except LookupError:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Устройство не найдено",
-                "error_code": "DEVICE_NOT_FOUND",
-                "device_id": device_id,
-            },
-            status=404,
-        )
-    except Exception as exc:
-        logger.error(f"[web_admin_device_updates] Failed to build typed update payload for {device_id}: {exc}")
-        logger.exception(exc)
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Не удалось загрузить update workflow для устройства",
-                "error_code": "ADMIN_DEVICE_UPDATES_FAILED",
-                "device_id": device_id,
-            },
-            status=500,
-        )
-
-    return json_model_response(SuccessResponse[AdminDeviceUpdatesPayload](data=payload))
-
-
-@require_auth("admin")
-async def handle_web_admin_device_update_run(request: web.Request):
-    device_id = request.match_info["device_id"]
-    state = request.app.get("state")
-    auth_context: AuthContext = request["auth_context"]
-
-    try:
-        raw_payload = await request.json()
-        payload = AdminDeviceUpdateRunRequest.model_validate(raw_payload)
-    except (ValidationError, Exception):
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Укажите причину запуска обновления",
-                "error_code": "VALIDATION_ERROR",
-            },
-            status=400,
-        )
-    if not str(payload.reason or "").strip():
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Укажите причину запуска обновления",
-                "error_code": "VALIDATION_ERROR",
-            },
-            status=400,
-        )
-
-    try:
-        result = await _run_admin_device_update(
-            state=state,
-            auth_context=auth_context,
-            device_id=device_id,
-            reason=payload.reason,
-            restart_delay_sec=payload.restart_delay_sec,
-        )
-    except LookupError:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Устройство не найдено",
-                "error_code": "DEVICE_NOT_FOUND",
-                "device_id": device_id,
-            },
-            status=404,
-        )
-    except AgentUpdateRequestError as exc:
-        return web.json_response(exc.payload, status=exc.status)
-    except Exception as exc:
-        logger.error(f"[web_admin_device_update_run] Failed to queue device update for {device_id}: {exc}")
-        logger.exception(exc)
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Не удалось поставить обновление в очередь",
-                "error_code": "ADMIN_DEVICE_UPDATE_RUN_FAILED",
-                "device_id": device_id,
-            },
-            status=500,
-        )
-
-    return json_model_response(SuccessResponse[AdminDeviceUpdateRunPayload](data=result), status=202)

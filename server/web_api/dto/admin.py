@@ -1257,89 +1257,6 @@ class AdminPlaybookSaveResult(BaseModel):
     message: str
 
 
-class AdminRolloutAssignment(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target: str
-    channel: str
-    version: str
-    updated_at: str | None = None
-    updated_by: str | None = None
-
-
-class AdminDeviceUpdateSummary(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    status: str | None = None
-    label: str
-    summary: str | None = None
-
-
-class AdminBuildIdentity(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    target: str
-    channel: str
-    version: str
-
-
-class AdminDeviceUpdateRecommendation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    update_available: bool
-    recommendation_source: str
-    recommendation_source_label: str
-    comparison: str
-    comparison_label: str
-    recommended_reason: str | None = None
-    recommended_reason_label: str | None = None
-    recommended_build: AdminBuildIdentity | None = None
-    assigned_rollout: AdminRolloutAssignment | None = None
-
-
-class AdminDeviceUpdateAction(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    enabled: bool
-    label: str
-    reason_required: bool
-    endpoint: str
-
-
-class AdminDeviceUpdatesPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    device_id: str
-    device_label: str
-    online: bool
-    target: str | None = None
-    current_version: str | None = None
-    release_channel: str
-    is_release: bool
-    summary: AdminDeviceUpdateSummary
-    recommendation: AdminDeviceUpdateRecommendation
-    action: AdminDeviceUpdateAction
-
-
-class AdminDeviceUpdateRunRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str
-    restart_delay_sec: int | None = None
-
-
-class AdminDeviceUpdateRunPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    device_id: str
-    operation_id: str
-    status: str
-    message: str
-    build_source: str
-    poll_url: str
-    build: AdminBuildIdentity
-
-
 class AdminDeviceInventoryHistoryItem(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1709,7 +1626,6 @@ class AdminDeviceItem(BaseModel):
     deleted_by: str | None = None
     delete_reason: str | None = None
     connection_status_label: str
-    latest_update: AdminDeviceUpdateSummary
     identity_summary: AdminDeviceIdentitySummary
     duplicate_warning: AdminDeviceDuplicateWarning | None = None
 
@@ -1719,7 +1635,6 @@ class AdminDevicesSummary(BaseModel):
 
     visible_count: int
     online_count: int
-    rollout_targets: int
     duplicate_hosts: int = 0
     cleanup_candidates: int = 0
     archived_count: int = 0
@@ -1739,7 +1654,6 @@ class AdminDevicesPayload(BaseModel):
     status_filter: str
     summary: AdminDevicesSummary
     filters: AdminDevicesFilters
-    rollout: list[AdminRolloutAssignment]
     devices: list[AdminDeviceItem]
 
 

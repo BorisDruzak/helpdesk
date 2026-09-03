@@ -8,12 +8,6 @@ from auth.context import AuthContext, AuthType
 from routes import setup_routes
 from web_api import admin_handlers
 from web_api.dto.admin import (
-    AdminBuildIdentity,
-    AdminDeviceUpdateAction,
-    AdminDeviceUpdateRecommendation,
-    AdminDeviceUpdateRunPayload,
-    AdminDeviceUpdateSummary,
-    AdminDeviceUpdatesPayload,
     AdminFilterOption,
     AdminFormsBuilderCapabilities,
     AdminFormsFieldItem,
@@ -59,7 +53,6 @@ from web_api.dto.admin import (
     AdminModulesRolloutSettingsUpdateRequest,
     AdminModulesSummary,
     AdminModuleVersionItem,
-    AdminRolloutAssignment,
 )
 
 
@@ -543,10 +536,8 @@ async def test_web_admin_devices_returns_typed_fallback_payload_when_db_is_unava
     assert payload["data"]["status_filter"] == "all"
     assert payload["data"]["summary"]["visible_count"] == 0
     assert payload["data"]["summary"]["online_count"] == 0
-    assert payload["data"]["summary"]["rollout_targets"] == 0
     assert payload["data"]["summary"]["duplicate_hosts"] == 0
     assert payload["data"]["summary"]["cleanup_candidates"] == 0
-    assert payload["data"]["rollout"] == []
     assert payload["data"]["devices"] == []
     assert payload["data"]["filters"]["status_options"][0] == {
         "value": "all",
@@ -1595,157 +1586,13 @@ async def test_web_admin_set_windows_module_preferred_requires_live_test(web_adm
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_web_admin_device_updates_returns_typed_payload(web_admin_client, monkeypatch):
-    async def fake_build_payload(*, device_id: str, state):
-        assert device_id == "device-1"
-        assert state is None
-        return AdminDeviceUpdatesPayload(
-            device_id=device_id,
-            device_label="WS-01",
-            online=True,
-            target="windows_amd64",
-            current_version="3.1.18",
-            release_channel="stable",
-            is_release=True,
-            summary=AdminDeviceUpdateSummary(
-                status="update_available",
-                label="Доступно обновление",
-                summary="Серверный rollout рекомендует stable/3.1.19.",
-            ),
-            recommendation=AdminDeviceUpdateRecommendation(
-                update_available=True,
-                recommendation_source="assigned_rollout",
-                recommendation_source_label="Серверный rollout",
-                comparison="newer_release_available",
-                comparison_label="Назначена более новая release-версия",
-                recommended_reason="assigned_rollout_newer",
-                recommended_reason_label="Назначенный rollout новее текущей версии.",
-                recommended_build=AdminBuildIdentity(
-                    target="windows_amd64",
-                    channel="stable",
-                    version="3.1.19",
-                ),
-                assigned_rollout=AdminRolloutAssignment(
-                    target="windows_amd64",
-                    channel="stable",
-                    version="3.1.19",
-                    updated_at="2026-04-20T12:00:00+05:00",
-                    updated_by="admin",
-                ),
-            ),
-            action=AdminDeviceUpdateAction(
-                enabled=True,
-                label="Запустить обновление",
-                reason_required=True,
-                endpoint="/api/web/admin/devices/device-1/updates/run",
-            ),
-        )
-
-    monkeypatch.setattr(admin_handlers, "_build_admin_device_updates_payload", fake_build_payload)
-
-    response = await web_admin_client.get("/api/web/admin/devices/device-1/updates")
-
-    assert response.status == 200
-    payload = await response.json()
-
-    assert payload["status"] == "success"
-    assert payload["data"]["device_id"] == "device-1"
-    assert payload["data"]["recommendation"]["recommended_build"]["version"] == "3.1.19"
-    assert payload["data"]["action"]["label"] == "Запустить обновление"
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_admin_device_update_run_requires_reason(web_admin_client):
-    response = await web_admin_client.post("/api/web/admin/devices/device-1/updates/run", json={})
-
-    assert response.status == 400
-    payload = await response.json()
-
-    assert payload["status"] == "error"
-    assert payload["error_code"] == "VALIDATION_ERROR"
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_admin_agent_builds_alias_uses_web_auth_boundary(web_admin_client, monkeypatch):
-    async def fake_list_handler(request):
-        assert request["auth_context"].actor_role == "admin"
-        assert request.query.get("limit") == "10"
-        return web.json_response({"status": "ok", "builds": [], "count": 0})
-
-    monkeypatch.setattr(admin_handlers, "_handle_legacy_list_agent_builds", fake_list_handler)
-
-    response = await web_admin_client.get("/api/web/admin/agent-builds?limit=10")
-
-    assert response.status == 200
-    payload = await response.json()
-    assert payload == {"status": "ok", "builds": [], "count": 0}
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_admin_agent_rollout_policy_alias_uses_web_auth_boundary(web_admin_client, monkeypatch):
-    async def fake_patch_handler(request):
-        assert request["auth_context"].actor_role == "admin"
-        data = await request.json()
-        assert data["target"] == "windows_amd64"
-        return web.json_response(
-            {
-                "status": "ok",
-                "target": "windows_amd64",
-                "assignment": {"target": "windows_amd64", "channel": "stable", "version": "3.1.33"},
-            }
-        )
-
-    monkeypatch.setattr(admin_handlers, "_handle_legacy_patch_agent_rollout_policy", fake_patch_handler)
-
-    response = await web_admin_client.patch(
-        "/api/web/admin/agent-updates/rollout-policy",
-        json={"target": "windows_amd64", "channel": "stable", "version": "3.1.33"},
-    )
-
-    assert response.status == 200
-    payload = await response.json()
-    assert payload["assignment"]["version"] == "3.1.33"
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_admin_device_update_run_returns_queued_action_payload(web_admin_client, monkeypatch):
-    async def fake_run_update(*, state, auth_context, device_id: str, reason: str, restart_delay_sec: int | None):
-        assert state is None
-        assert auth_context.actor_role == "admin"
-        assert device_id == "device-1"
-        assert reason == "canary после smoke"
-        assert restart_delay_sec == 5
-        return AdminDeviceUpdateRunPayload(
-            device_id=device_id,
-            operation_id="op-admin-1",
-            status="queued",
-            message="Операция op-admin-1 поставлена в очередь.",
-            build_source="assigned_rollout",
-            poll_url="/api/operations/op-admin-1",
-            build=AdminBuildIdentity(
-                target="windows_amd64",
-                channel="stable",
-                version="3.1.19",
-            ),
-        )
-
-    monkeypatch.setattr(admin_handlers, "_run_admin_device_update", fake_run_update)
-
-    response = await web_admin_client.post(
-        "/api/web/admin/devices/device-1/updates/run",
-        json={"reason": "canary после smoke", "restart_delay_sec": 5},
-    )
-
-    assert response.status == 202
-    payload = await response.json()
-
-    assert payload["status"] == "success"
-    assert payload["data"]["operation_id"] == "op-admin-1"
-    assert payload["data"]["build"]["version"] == "3.1.19"
+async def test_web_admin_legacy_device_update_routes_are_not_registered(web_admin_client):
+    for method, path in [
+        (web_admin_client.get, "/api/web/admin/devices/device-1/updates"),
+        (web_admin_client.post, "/api/web/admin/devices/device-1/updates/run"),
+    ]:
+        response = await method(path)
+        assert response.status == 404
 
 
 @pytest.mark.no_db
