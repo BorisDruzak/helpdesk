@@ -310,5 +310,4 @@ rollback is application rollback plus a tested database restore.
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — UI-аутентификация и защищённые browser-сеансы.
 - [ARTIFACTS_API.md](ARTIFACTS_API.md) — upload/download артефактов, таблица artifacts.
 - [MODULES_API.md](MODULES_API.md) — модули, tables modules, device_modules.
-- [MODULES_DRIFT_AND_SNAPSHOTS.md](MODULES_DRIFT_AND_SNAPSHOTS.md) — device_toolset_snapshots, device_modules.
 - [ENDPOINT_OPERATION_CONTRACT.md](ENDPOINT_OPERATION_CONTRACT.md) — Endpoint operation links and reconciliation.
