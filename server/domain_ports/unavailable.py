@@ -242,6 +242,10 @@ class UnavailableEndpointPort:
         del operation
         return self._unavailable
 
+    async def cancel_operation(self, operation: EndpointOperationRef) -> EndpointOperationReadOutcome:
+        del operation
+        return self._unavailable
+
 
 class UnavailableEndpointModulePort:
     def __init__(self, *, code: SafeEndpointCode = "endpoint_module_unavailable") -> None:

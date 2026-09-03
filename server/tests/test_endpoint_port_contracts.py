@@ -278,6 +278,7 @@ async def test_unavailable_endpoint_port_fails_closed_for_every_operation() -> N
             idempotency_key="stable-idempotency-key",
         ),
         await port.read_operation(operation_ref_type(external_id="endpoint-operation-1")),
+        await port.cancel_operation(operation_ref_type(external_id="endpoint-operation-1")),
     )
 
     assert availability.status == "unavailable"

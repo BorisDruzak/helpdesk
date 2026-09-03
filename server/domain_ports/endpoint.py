@@ -260,3 +260,8 @@ class EndpointPort(Protocol):
         self,
         operation: EndpointOperationRef,
     ) -> EndpointOperationReadOutcome: ...
+
+    async def cancel_operation(
+        self,
+        operation: EndpointOperationRef,
+    ) -> EndpointOperationReadOutcome: ...

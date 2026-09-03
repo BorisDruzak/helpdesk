@@ -313,6 +313,17 @@ class ExternalEndpointHttpAdapter(EndpointPort):
             return EndpointInvalidProjection()
         return result  # type: ignore[return-value]
 
+    async def cancel_operation(self, operation: EndpointOperationRef) -> EndpointOperationReadOutcome:
+        payload = await self._request(
+                "POST",
+                f"/api/v1/operations/{_path_ref(operation.external_id)}/cancel",
+                expected_statuses=frozenset({200}),
+            )
+        result = self._operation_projection(payload, correlation=None)
+        if isinstance(result, EndpointOperationProjection) and result.operation != operation:
+            return EndpointInvalidProjection()
+        return result  # type: ignore[return-value]
+
     @staticmethod
     def _operation_projection(payload: Mapping[str, object] | BaseModel, *, correlation: object | None) -> EndpointOperationProjection | BaseModel:
         if not isinstance(payload, Mapping):
