@@ -364,7 +364,6 @@ async def test_people_merge_leaves_no_live_duplicate_person_references(test_engi
             },
             actor_id="admin",
         )
-        assert result["moved"]["login_requests"] == 1
         await session.commit()
 
     async with session_maker() as session:

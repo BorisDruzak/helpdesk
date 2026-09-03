@@ -1104,8 +1104,6 @@ class RegistryAdminOperationsService:
                 "identities_moved": moved_identities,
                 "identity_conflicts": conflicted_identities,
                 "bindings_moved": len(bindings),
-                "sessions_moved": len(sessions),
-                "login_requests_moved": len(login_requests),
                 "claims_moved": len(claims),
                 "tickets_moved": len(tickets),
                 "assets_moved": len(assets),
@@ -1127,14 +1125,6 @@ class RegistryAdminOperationsService:
             *[
                 {"id": row.binding_id, "entity_type": "binding", "status": "success"}
                 for row in bindings
-            ],
-            *[
-                {"id": row.session_id, "entity_type": "account_session", "status": "success"}
-                for row in sessions
-            ],
-            *[
-                {"id": row.request_id, "entity_type": "account_login_request", "status": "success"}
-                for row in login_requests
             ],
             *[
                 {"id": row.claim_id, "entity_type": "registration_claim", "status": "success"}
@@ -1163,8 +1153,6 @@ class RegistryAdminOperationsService:
                     "identities": moved_identities,
                     "identity_conflicts": conflicted_identities,
                     "bindings": len(bindings),
-                    "sessions": len(sessions),
-                    "login_requests": len(login_requests),
                     "claims": len(claims),
                     "tickets": len(tickets),
                     "assets": len(assets),
@@ -1177,8 +1165,6 @@ class RegistryAdminOperationsService:
                 "identities": moved_identities,
                 "identity_conflicts": conflicted_identities,
                 "bindings": len(bindings),
-                "sessions": len(sessions),
-                "login_requests": len(login_requests),
                 "claims": len(claims),
                 "tickets": len(tickets),
                 "assets": len(assets),
@@ -1209,23 +1195,6 @@ class RegistryAdminOperationsService:
         ]
         identities_to_move = [row for row in duplicate_identities if row not in identity_conflicts]
         bindings = (await self.session.execute(select(DeviceUserBinding).where(DeviceUserBinding.person_id == duplicate_id))).scalars().all()
-        sessions = (
-            await self.session.execute(
-                select(DeviceAccountSession).where(
-                    or_(DeviceAccountSession.person_id == duplicate_id, DeviceAccountSession.base_person_id == duplicate_id)
-                )
-            )
-        ).scalars().all()
-        login_requests = (
-            await self.session.execute(
-                select(DeviceAccountLoginRequest).where(
-                    or_(
-                        DeviceAccountLoginRequest.matched_person_id == duplicate_id,
-                        DeviceAccountLoginRequest.base_person_id == duplicate_id,
-                    )
-                )
-            )
-        ).scalars().all()
         claims = (await self.session.execute(select(DeviceRegistrationClaim).where(DeviceRegistrationClaim.person_id == duplicate_id))).scalars().all()
         tickets = (await self.session.execute(select(Ticket).where(Ticket.requester_person_id == duplicate_id))).scalars().all()
         assets = (await self.session.execute(select(RegistryAsset).where(RegistryAsset.assigned_person_id == duplicate_id))).scalars().all()
@@ -1279,8 +1248,6 @@ class RegistryAdminOperationsService:
         )
         for kind, rows, object_attr in (
             ("binding", bindings, "binding_id"),
-            ("account_session", sessions, "session_id"),
-            ("account_login_request", login_requests, "request_id"),
             ("registration_claim", claims, "claim_id"),
             ("ticket", tickets, "ticket_id"),
             ("registry_asset", assets, "asset_id"),
@@ -1318,8 +1285,6 @@ class RegistryAdminOperationsService:
                 "identities_to_move": len(identities_to_move),
                 "identity_conflicts": len(identity_conflicts),
                 "bindings_to_move": len(bindings),
-                "sessions_to_move": len(sessions),
-                "login_requests_to_move": len(login_requests),
                 "claims_to_move": len(claims),
                 "tickets_to_move": len(tickets),
                 "assets_to_move": len(assets),

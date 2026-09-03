@@ -1967,7 +1967,7 @@ async def test_web_requester_reopen_writes_closure_observer_event(test_client, t
 
 
 @pytest.mark.asyncio
-async def test_web_session_login_writes_account_session_observer_event(
+async def test_web_session_login_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2014,7 +2014,7 @@ async def test_web_session_login_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/login",
                 event_type="login_succeeded",
                 query=request_id,
@@ -2029,7 +2029,7 @@ async def test_web_session_login_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "succeeded"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "login_succeeded"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.attrs_json["route"] == "/api/web/session/login"
@@ -2040,7 +2040,7 @@ async def test_web_session_login_writes_account_session_observer_event(
 
 
 @pytest.mark.asyncio
-async def test_web_session_register_writes_account_session_observer_event(
+async def test_web_session_register_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2079,7 +2079,7 @@ async def test_web_session_register_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/register",
                 event_type="register_succeeded",
                 query=request_id,
@@ -2094,7 +2094,7 @@ async def test_web_session_register_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "succeeded"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "register_succeeded"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.attrs_json["route"] == "/api/web/session/register"
@@ -2106,7 +2106,7 @@ async def test_web_session_register_writes_account_session_observer_event(
 
 
 @pytest.mark.asyncio
-async def test_web_session_logout_writes_account_session_observer_event(
+async def test_web_session_logout_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2147,7 +2147,7 @@ async def test_web_session_logout_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/logout",
                 event_type="logout_succeeded",
                 query=request_id,
@@ -2162,7 +2162,7 @@ async def test_web_session_logout_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "succeeded"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "logout_succeeded"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.attrs_json["route"] == "/api/web/session/logout"
@@ -2175,7 +2175,7 @@ async def test_web_session_logout_writes_account_session_observer_event(
 
 
 @pytest.mark.asyncio
-async def test_web_session_role_mismatch_writes_account_session_observer_event(
+async def test_web_session_role_mismatch_writes_web_session_observer_event(
     test_client,
     test_engine,
     monkeypatch,
@@ -2216,7 +2216,7 @@ async def test_web_session_role_mismatch_writes_account_session_observer_event(
         traces = await ObserverOverlayService(session).search_traces(
             TraceOverlayFilters(
                 root_kind="requester_web",
-                source="account_session",
+                source="web_session",
                 route="/api/web/session/login",
                 event_type="role_mismatch",
                 error_code="ROLE_MISMATCH",
@@ -2232,7 +2232,7 @@ async def test_web_session_role_mismatch_writes_account_session_observer_event(
 
     assert trace is not None
     assert trace.status == "failed"
-    assert trace.attrs_json["source"] == "account_session"
+    assert trace.attrs_json["source"] == "web_session"
     assert trace.attrs_json["event_type"] == "role_mismatch"
     assert trace.attrs_json["actor_role"] == "user"
     assert span.status == "error"
