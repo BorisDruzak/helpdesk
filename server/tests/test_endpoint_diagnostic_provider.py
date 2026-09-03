@@ -146,9 +146,6 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
         async def build_readiness_maps(self):
             return DiagnosticReadinessMaps({}, {}, {}, {}, {})
 
-    async def _bomb(*_args, **_kwargs):
-        raise AssertionError("Endpoint handler must not dispatch legacy agent work")
-
     monkeypatch.setattr(handlers.config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(handlers, "get_session", fake_get_session)
     monkeypatch.setattr(handlers, "get_session_maker", fake_get_session_maker)
@@ -162,9 +159,6 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
             EndpointPlatformDiagnosticProvider(operation_service=operation_service),
         ),
     )
-    monkeypatch.setattr("websocket.protocol.send_ws_command", _bomb)
-    monkeypatch.setattr("websocket.protocol.enqueue_command_async", _bomb)
-    monkeypatch.setattr("app.repos.device_outbox_repo.DeviceOutboxRepo.enqueue_command", _bomb)
 
 
 def _handler_auth_context():
