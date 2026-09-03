@@ -125,7 +125,7 @@ async def test_overview_reads_inventory_quality_before_acquiring_its_database_se
     monkeypatch.setattr(handlers, "get_session", lambda: overview_session)
     monkeypatch.setattr(handlers.DomainPortContainer, "from_config", lambda: _Ports())
     request = SimpleNamespace(
-        app={"state": SimpleNamespace(ui_connections={}, connected_agents={})}
+        app={"state": SimpleNamespace(ui_connections={})}
     )
 
     await _build_overview(request)

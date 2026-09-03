@@ -290,20 +290,6 @@ async def test_delete_device_archives_device_and_preserves_history(test_client):
     device_id = str(uuid.uuid4())
     await _seed_device_with_related_rows(device_id)
 
-    ws = _WsStub()
-    state = test_client.app["state"]
-    state.register_agent(
-        device_id,
-        ws,
-        {
-            "device_id": device_id,
-            "status": "online",
-            "connected_at": datetime.now(timezone.utc).timestamp(),
-        },
-    )
-    state._ws_command_per_device_semaphores = {device_id: object()}
-    state._ws_command_per_device_run_tool_semaphores = {device_id: object()}
-
     response = await test_client.delete(
         f"/api/devices/{device_id}",
         headers=_admin_headers(),
@@ -314,7 +300,7 @@ async def test_delete_device_archives_device_and_preserves_history(test_client):
     payload = await response.json()
     assert payload["status"] == "ok"
     assert payload["device_id"] == device_id
-    assert payload["was_online"] is True
+    assert payload["was_online"] is False
     assert payload["is_deleted"] is True
     assert payload["deleted_by"] == "admin-test"
     assert payload["delete_reason"] == "Дубликат агента"
