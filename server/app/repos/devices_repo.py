@@ -11,8 +11,6 @@ from app.db.models import (
     Device,
     DispatchReadyDevice,
     Operation,
-    DeviceModule,
-    DeviceDesiredModule,
     DeviceConfig,
     DeviceToolsetSnapshot,
     DeviceEvent,

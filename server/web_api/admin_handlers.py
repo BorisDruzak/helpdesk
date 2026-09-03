@@ -20,8 +20,6 @@ from app.repos.helpdesk_policy_repo import (
 )
 from app.repos.ticket_admin_config_repo import TicketAdminConfigRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
-from app.repos import ModulesRepo, ModuleRolloutRepo
-from config import MODULES_STORAGE_DIR
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
 from diagnostics.capability_registry import CapabilityRegistry
@@ -81,15 +79,6 @@ from web_api.dto.admin import (
     AdminDeviceIdentitySummary,
     AdminDeviceRestorePayload,
     AdminDevicesFilters,
-    AdminModulesPayload,
-    AdminModulesRolloutSettingsUpdateRequest,
-    AdminModulesRolloutSettings,
-    AdminModulesSummary,
-    AdminModuleFamilyItem,
-    AdminModulePreferredRolloutSummary,
-    AdminModulePreferredVersionActionPayload,
-    AdminModulePreferredVersionRequest,
-    AdminModuleVersionItem,
     AdminDevicesPayload,
     AdminDevicesSummary,
     AdminFilterOption,
@@ -159,7 +148,6 @@ from web_api.dto.admin import (
     AdminPlaybookSaveResult,
     AdminScenarioTemplateItem,
 )
-from utils.module_manifest import get_module_manifest, get_module_validation
 from utils.versioning import version_key
 from utils.versioning import compare_versions
 

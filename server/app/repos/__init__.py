@@ -9,17 +9,13 @@ from app.repos.device_config_repo import DeviceConfigRepo
 from app.repos.toolset_snapshots_repo import ToolsetSnapshotsRepo
 from app.repos.operations_repo import OperationsRepo
 from app.repos.operation_dependencies_repo import OperationDependenciesRepo
-from app.repos.modules_repo import ModulesRepo
-from app.repos.device_modules_repo import DeviceModulesRepo
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from app.repos.artifacts_repo import ArtifactsRepo
-from app.repos.module_rollout_repo import ModuleRolloutRepo
 from app.repos.notification_repo import NotificationRepo
 from app.repos.notification_prefs_repo import NotificationPrefsRepo
 from app.repos.problems_repo import ProblemsRepo
 from app.repos.change_links_repo import ChangeLinksRepo
 from app.repos.playbook_repo import PlaybookRepo
-from app.repos.device_desired_modules_repo import DeviceDesiredModulesRepo
 from app.repos.ticket_form_packs_repo import TicketFormPacksRepo
 from app.repos.registry_repo import RegistryRepo
 from app.repos.registration_repo import RegistrationRepo
@@ -39,17 +35,13 @@ __all__ = [
     "ToolsetSnapshotsRepo",
     "OperationsRepo",
     "OperationDependenciesRepo",
-    "ModulesRepo",
-    "DeviceModulesRepo",
     "AuthTokensRepo",
     "ArtifactsRepo",
-    "ModuleRolloutRepo",
     "NotificationRepo",
     "NotificationPrefsRepo",
     "ProblemsRepo",
     "ChangeLinksRepo",
     "PlaybookRepo",
-    "DeviceDesiredModulesRepo",
     "TicketFormPacksRepo",
     "RegistryRepo",
     "RegistrationRepo",

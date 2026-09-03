@@ -48,8 +48,6 @@ from app.db.models import (  # noqa: F401 - Import to register models
     RemoteAccessSession,
     RemoteAccessEvent,
     Operation,
-    Module,
-    DeviceModule,
     UiToken,
     UiUser,
     UiUserAudit,
@@ -62,7 +60,6 @@ from app.db.models import (  # noqa: F401 - Import to register models
     PlaybookStep,
     PlaybookRun,
     PlaybookStepRun,
-    DeviceDesiredModule,
 )
 
 # Alembic Config object

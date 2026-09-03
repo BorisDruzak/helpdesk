@@ -12,8 +12,6 @@ from app.db.engine import get_session_maker
 from access_control.service import resolve_effective_access
 from app.db.models import (
     Device,
-    DeviceDesiredModule,
-    DeviceModule,
     DiagnosticEvidence,
     DiagnosticFinding,
     Ticket,
@@ -153,30 +151,6 @@ def _device_platform(device: Device | None) -> str | None:
     if "linux" in raw:
         return "linux"
     return raw
-
-
-def _installed_module_map(items: list[DeviceModule]) -> dict:
-    result = {}
-    for item in items:
-        result[item.module_name] = {
-            "version": item.version,
-            "installed": item.installed,
-            "active": item.active,
-            "state": item.state,
-            "last_error_code": item.last_error_code,
-        }
-    return result
-
-
-def _desired_module_map(items: list[DeviceDesiredModule]) -> dict:
-    return {
-        item.module_name: {
-            "version": item.desired_version,
-            "state": item.state,
-            "reason": item.reason,
-        }
-        for item in items
-    }
 
 
 def _request_idempotency_key(request: web.Request, payload: dict) -> str | None:
@@ -565,24 +539,12 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
     async with get_session() as session:
         ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one_or_none()
         device = None
-        installed_modules = []
-        desired_modules = []
         if ticket is not None and getattr(ticket, "device_id", None):
             device = (
                 await session.execute(
                     select(Device).where(Device.device_id == ticket.device_id, Device.deleted_at.is_(None))
                 )
             ).scalar_one_or_none()
-            installed_modules = list(
-                (
-                    await session.execute(select(DeviceModule).where(DeviceModule.device_id == ticket.device_id))
-                ).scalars()
-            )
-            desired_modules = list(
-                (
-                    await session.execute(select(DeviceDesiredModule).where(DeviceDesiredModule.device_id == ticket.device_id))
-                ).scalars()
-            )
     if ticket is None:
         return web.json_response(
             {"status": "error", "error_code": "TICKET_NOT_FOUND", "error": "Ticket not found"},
@@ -609,8 +571,8 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         device_id=device_id,
         actor=auth_context,
         device_platform=_device_platform(device),
-        installed_modules=_installed_module_map(installed_modules),
-        desired_modules=_desired_module_map(desired_modules),
+        installed_modules={},
+        desired_modules={},
         integration_configs=_merge_maps(
             _state_mapping(state, "diagnostic_integration_configs", "integration_configs"),
             persisted_maps.integration_configs,
@@ -685,24 +647,12 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
     async with get_session() as session:
         ticket = (await session.execute(select(Ticket).where(Ticket.ticket_id == ticket_id))).scalar_one_or_none()
         device = None
-        installed_modules = []
-        desired_modules = []
         if ticket is not None and getattr(ticket, "device_id", None):
             device = (
                 await session.execute(
                     select(Device).where(Device.device_id == ticket.device_id, Device.deleted_at.is_(None))
                 )
             ).scalar_one_or_none()
-            installed_modules = list(
-                (
-                    await session.execute(select(DeviceModule).where(DeviceModule.device_id == ticket.device_id))
-                ).scalars()
-            )
-            desired_modules = list(
-                (
-                    await session.execute(select(DeviceDesiredModule).where(DeviceDesiredModule.device_id == ticket.device_id))
-                ).scalars()
-            )
     if ticket is None:
         return web.json_response(
             {"status": "error", "error_code": "TICKET_NOT_FOUND", "error": "Ticket not found"},
@@ -728,8 +678,8 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
             device_id=device_id,
             actor=request.get("auth_context"),
             device_platform=_device_platform(device),
-            installed_modules=_installed_module_map(installed_modules),
-            desired_modules=_desired_module_map(desired_modules),
+            installed_modules={},
+            desired_modules={},
             integration_configs=_merge_maps(
                 _state_mapping(state, "diagnostic_integration_configs", "integration_configs"),
                 persisted_maps.integration_configs,
