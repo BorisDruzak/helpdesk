@@ -28,7 +28,6 @@ from observer.service import ObserverOverlayService, TraceOverlayFilters
 from playbooks.catalog import DIAGNOSTIC_MODULE_CATALOG, SCENARIO_TEMPLATES, normalize_playbook_draft
 from diagnostics.capability_registry import CapabilityRegistry
 from playbooks.tool_catalog import normalize_capability_catalog_entry, normalize_tool_catalog_entry
-from tools.service import ToolExecutionService
 from auth.context import AuthContext
 from auth.middleware import require_auth
 from tickets.form_catalog import (
@@ -3329,17 +3328,11 @@ async def _build_admin_playbooks_payload(state: object | None = None) -> AdminPl
     block_catalog: list[dict] = [dict(item) for item in DIAGNOSTIC_MODULE_CATALOG]
     seen_catalog_tools = {str(item.get("tool") or "") for item in block_catalog if item.get("tool")}
     try:
-        for raw_tool in await ToolExecutionService(state).get_tools_from_server(None):
-            entry = normalize_tool_catalog_entry(raw_tool, source="server")
-            tool_name = str(entry.get("tool") or "")
-            if not tool_name or tool_name in seen_catalog_tools:
-                continue
-            seen_catalog_tools.add(tool_name)
-            block_catalog.append(entry)
-    except Exception as exc:
-        logger.warning(f"[web_admin_playbooks] failed to load server command catalog: {exc}")
-    try:
-        for capability in await CapabilityRegistry(tool_service=None, state=state).list_capabilities(device_id=None):
+        for capability in await CapabilityRegistry(
+            tool_service=None,
+            state=state,
+            endpoint_cutover_only=True,
+        ).list_capabilities(device_id=None):
             if capability.execution_target in {"agent_builtin", "agent_managed_module"}:
                 continue
             entry = normalize_capability_catalog_entry(capability, source=capability.source or "diagnostic_capability")
