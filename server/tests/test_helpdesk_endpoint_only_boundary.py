@@ -65,3 +65,12 @@ def test_helpdesk_ships_only_browser_ui_websocket_transport() -> None:
     }
 
     assert legacy_sources == set()
+
+
+def test_support_workspace_has_no_legacy_tool_dispatch_runtime() -> None:
+    support_handlers = ROOT / "server" / "web_api" / "support_handlers.py"
+    source = support_handlers.read_text(encoding="utf-8-sig")
+
+    assert "tools.service" not in _imports(support_handlers)
+    assert "handle_web_support_run_tool" not in source
+    assert "ToolExecutionService" not in source

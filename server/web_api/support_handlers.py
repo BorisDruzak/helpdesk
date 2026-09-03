@@ -47,8 +47,6 @@ from app.services.playbook_engine import start_run
 from auth.middleware import ensure_server_request_id, require_auth
 from consent.operation_consent import create_operation_user_consent
 from consent.service import ConsentAccessError
-from core.policy_engine import PolicyDecision, PolicyEngine
-from core.tool_metadata import ToolMetadata
 from customer_history.context_builder import CustomerHistoryContextBuilder
 from customer_history.projection_service import CustomerHistoryProjectionService
 from domain_ports import (
@@ -64,8 +62,7 @@ from domain_ports import (
 from observer.integrity_service import ObserverIntegrityService
 from observer.service import ObserverOverlayService
 from observer.web_event_writer import write_web_cabinet_observer_event
-from playbooks.tool_catalog import expand_preset_params, normalize_tool_catalog_entry
-from shared.tool_contracts import normalize_risk_level
+from diagnostics.capability_registry import CapabilityRegistry
 from tickets.handlers import (
     RESOLUTION_CONFIRMATION_TEXT,
     _build_resolution_confirmation_request,
@@ -114,7 +111,6 @@ from tickets.passport_service import TicketPassportService
 from tickets.purge_service import TicketPurgeBlockedError, TicketPurgeService
 from tickets.smart_views import matches_smart_view, normalize_smart_view_id, smart_view_options
 from tickets.workflow_service import TicketWorkflowService, validate_transition_for_ticket
-from tools.service import ToolExecutionService
 from support.operator_command_center import ApprovalBatchSource, DiagnosticBatchSource, build_operator_command_center_payload
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.support import (
@@ -198,12 +194,10 @@ from web_api.dto.support import (
     SupportWorkspaceCleanupResult,
     SupportPlaybookItem,
     SupportPlaybookRunActionResult,
-    SupportToolActionResult,
     SupportToolItem,
     SupportToolParameter,
-    SupportToolPreset,
 )
-from config import AGENT_BUILTIN_MODULES, ALLOW_REMOTE_CODE
+from config import AGENT_BUILTIN_MODULES
 
 
 
@@ -226,7 +220,6 @@ QUICK_STATUS_ACTIONS = [
     ("canceled", "Отменить"),
 ]
 
-HIGH_RISK_TOOL_LEVELS = {"high", "dangerous", "system_write", "code_exec"}
 SUPPORT_TIMELINE_RENDER_RESULT_MAX_BYTES = 128 * 1024
 WORKSPACE_SUMMARY_VIEW_ALIASES = {
     "needs_action": "my_action",
@@ -668,122 +661,12 @@ def _priority_request_to_inputs(data: dict[str, Any]) -> tuple[Any, Any, Any, An
     return data.get("urgency"), data.get("importance"), data.get("urgency_reason"), data.get("importance_reason")
 
 
-def _tool_risk_permission(risk_level: str | None) -> str:
-    normalized = str(risk_level or "").strip().lower()
-    if normalized in HIGH_RISK_TOOL_LEVELS:
-        return "module.tool.run.high_risk"
-    return "module.tool.run.low_risk"
-
-
 def _support_diagnostic_target_payload(ticket: object) -> dict[str, Any]:
     return resolve_ticket_diagnostic_target(ticket).payload()
 
 
 def _support_dispatch_device_id(ticket: object) -> str:
     return str(resolve_ticket_diagnostic_target(ticket).dispatch_device_id or "").strip()
-
-
-async def _resolve_tool_risk_level(
-    *,
-    tool_service: ToolExecutionService,
-    device_id: str,
-    tool_name: str,
-) -> str:
-    raw_sources: list[tuple[str, list[object]]] = []
-    for source, method_name in (("device", "get_tools_list"), ("server", "get_tools_from_server")):
-        method = getattr(tool_service, method_name, None)
-        if not callable(method):
-            continue
-        try:
-            raw_items = await method(device_id) or []
-        except Exception as exc:
-            logger.debug(
-                f"[web_support_run_tool] risk lookup skipped: device_id={device_id}, "
-                f"tool={tool_name}, source={source}, error={exc}"
-            )
-            raw_items = []
-        raw_sources.append((source, raw_items))
-    for source, raw_items in raw_sources:
-        raw_tool = _find_raw_tool_entry(raw_items, tool_name)
-        if raw_tool is None:
-            continue
-        normalized = _normalize_support_tool_entry(raw_tool, source=source)
-        if normalized is not None:
-            return normalized.risk_level
-    return "safe_read"
-
-
-def _tool_metadata_from_raw_tool(raw_tool: dict, tool_name: str) -> ToolMetadata:
-    spec = raw_tool.get("spec") if isinstance(raw_tool.get("spec"), dict) else {}
-    spec_metadata = spec.get("metadata") if isinstance(spec.get("metadata"), dict) else {}
-    raw_metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
-    metadata = dict(spec_metadata)
-    metadata.update(raw_metadata)
-
-    allow_roles = metadata.get("allow_roles")
-    if tool_name in ("screen.collect", "screen.record"):
-        screen_roles = ["user", "agent", "llm", "support", "admin"]
-        allow_roles = list(dict.fromkeys((allow_roles or []) + screen_roles))
-        metadata["requires_consent"] = False
-
-    return ToolMetadata(
-        domain=str(metadata.get("domain") or "system"),
-        platforms=metadata.get("platforms", ["any"]),
-        risk_level=normalize_risk_level(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
-        scopes=metadata.get("scopes", []),
-        requires_consent=bool(metadata.get("requires_consent")),
-        allow_roles=allow_roles,
-        timeout_sec=metadata.get("timeout_sec"),
-        idempotent=bool(metadata.get("idempotent")),
-        origin=str(metadata.get("origin") or "builtin"),
-        side_effects=bool(metadata.get("side_effects")),
-        tool_kind=metadata.get("tool_kind") or "diagnostic",
-    )
-
-
-async def _resolve_tool_policy_decision(
-    *,
-    tool_service: ToolExecutionService,
-    device_id: str,
-    tool_name: str,
-    actor_role: str,
-    params: dict,
-) -> PolicyDecision:
-    policy_engine = PolicyEngine(config={"allow_remote_code": ALLOW_REMOTE_CODE})
-    for source, method_name in (("device", "get_tools_list"), ("server", "get_tools_from_server")):
-        method = getattr(tool_service, method_name, None)
-        if not callable(method):
-            continue
-        try:
-            raw_items = await method(device_id) or []
-        except Exception as exc:
-            logger.debug(
-                f"[web_support_run_tool] policy lookup skipped: device_id={device_id}, "
-                f"tool={tool_name}, source={source}, error={exc}"
-            )
-            raw_items = []
-        raw_tool = _find_raw_tool_entry(raw_items, tool_name)
-        if raw_tool is not None:
-            return policy_engine.check_policy(
-                actor_role=actor_role,
-                tool_name=tool_name,
-                metadata=_tool_metadata_from_raw_tool(raw_tool, tool_name),
-                params=params,
-            )
-
-    fallback_metadata = ToolMetadata(risk_level="safe_read")
-    if tool_name in ("screen.collect", "screen.record"):
-        fallback_metadata = ToolMetadata(
-            risk_level="sensitive_read",
-            allow_roles=["user", "agent", "llm", "support", "admin"],
-            requires_consent=False,
-        )
-    return policy_engine.check_policy(
-        actor_role=actor_role,
-        tool_name=tool_name,
-        metadata=fallback_metadata,
-        params=params,
-    )
 
 
 def _build_ticket_item(ticket_data: dict) -> SupportQueueTicketItem:
@@ -2152,121 +2035,35 @@ def _normalize_tool_schema(raw_schema: object) -> list[SupportToolParameter]:
     return normalized
 
 
-def _normalize_tool_presets(raw_presets: object) -> list[SupportToolPreset]:
-    if not isinstance(raw_presets, list):
-        return []
-    presets: list[SupportToolPreset] = []
-    for preset in raw_presets:
-        if not isinstance(preset, dict):
-            continue
-        preset_id = str(
-            preset.get("preset_id") or preset.get("id") or preset.get("key") or ""
-        ).strip()
-        if not preset_id:
-            continue
-        label = str(preset.get("label") or preset.get("title") or preset.get("name") or preset_id).strip()
-        params = preset.get("params") if isinstance(preset.get("params"), dict) else {}
-        presets.append(
-            SupportToolPreset(
-                preset_id=preset_id,
-                label=label,
-                description=str(preset.get("description") or "").strip() or None,
-                params=params,
-            )
-        )
-    return presets
-
-
-def _support_tool_metadata(raw_tool: dict, tool_name: str) -> ToolMetadata:
-    try:
-        return _tool_metadata_from_raw_tool(raw_tool, tool_name)
-    except Exception as exc:
-        logger.debug(f"[web_support_tools] metadata fallback: tool={tool_name}, error={exc}")
-        spec = raw_tool.get("spec") if isinstance(raw_tool.get("spec"), dict) else {}
-        metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
-        return ToolMetadata(
-            domain=str(metadata.get("domain") or "system"),
-            platforms=metadata.get("platforms", ["any"]),
-            risk_level=normalize_risk_level(spec.get("risk_level") or metadata.get("risk_level") or "safe_read"),
-            scopes=metadata.get("scopes", []),
-            requires_consent=bool(metadata.get("requires_consent")),
-            allow_roles=metadata.get("allow_roles"),
-            timeout_sec=metadata.get("timeout_sec"),
-            idempotent=bool(metadata.get("idempotent")),
-            origin=str(metadata.get("origin") or "builtin"),
-            side_effects=bool(metadata.get("side_effects")),
-            tool_kind=metadata.get("tool_kind") or "diagnostic",
-        )
-
-
-def _support_tool_policy_labels(
-    *,
-    metadata: ToolMetadata,
-    required_permission: str,
-    install_required: bool,
-    requires_consent: bool,
-) -> list[str]:
-    labels = [f"permission:{required_permission}"]
-    if metadata.allow_roles:
-        labels.append("roles:" + ",".join(str(role) for role in metadata.allow_roles))
-    labels.append("consent:required" if requires_consent else "consent:not_required")
-    if install_required:
-        labels.append("install:required")
-    if metadata.scopes:
-        labels.append("scopes:" + ",".join(str(scope) for scope in metadata.scopes[:3]))
-    return labels
-
-
-def _normalize_support_tool_entry(raw_tool: object, *, source: str) -> SupportToolItem | None:
-    if not isinstance(raw_tool, dict):
-        return None
-    tool_name = str(raw_tool.get("tool") or raw_tool.get("name") or "").strip()
-    if not tool_name:
-        return None
-    spec = raw_tool.get("spec") if isinstance(raw_tool.get("spec"), dict) else {}
-    metadata = raw_tool.get("metadata") if isinstance(raw_tool.get("metadata"), dict) else {}
-    params_schema = spec.get("params_schema") if spec else raw_tool.get("params_schema")
-    presets = spec.get("presets") if spec else raw_tool.get("presets")
-    execution = raw_tool.get("execution") if isinstance(raw_tool.get("execution"), dict) else spec.get("execution", {})
-    deployment = raw_tool.get("deployment") if isinstance(raw_tool.get("deployment"), dict) else spec.get("deployment", {})
-    safety = raw_tool.get("safety") if isinstance(raw_tool.get("safety"), dict) else spec.get("safety", {})
-    readiness = raw_tool.get("readiness") if isinstance(raw_tool.get("readiness"), dict) else spec.get("readiness", {})
-    evidence = raw_tool.get("evidence") if isinstance(raw_tool.get("evidence"), dict) else spec.get("evidence", {})
-    artifacts = raw_tool.get("artifacts") if isinstance(raw_tool.get("artifacts"), dict) else spec.get("artifacts", {})
-    module_name = raw_tool.get("module")
-    if not module_name and "." in tool_name:
-        module_name = tool_name.split(".", 1)[0]
-    metadata_model = _support_tool_metadata(raw_tool, tool_name)
-    risk_level = str(spec.get("risk_level") or metadata_model.risk_level or "safe_read")
-    requires_consent = bool(safety.get("requires_consent", metadata.get("requires_consent")))
-    install_required = bool(raw_tool.get("install_required", deployment.get("install_required_on_agent", False)))
-    required_permission = _tool_risk_permission(risk_level)
+def _support_tool_from_capability(capability: object) -> SupportToolItem:
+    risk_level = str(getattr(capability, "risk_level", "low") or "low")
+    required_permission = getattr(capability, "required_permission", None)
+    execution_target = str(getattr(capability, "execution_target", "") or "")
+    provider_id = str(getattr(capability, "provider_id", "") or "")
+    requires_consent = bool(getattr(capability, "requires_consent", False))
+    install_required = bool(getattr(capability, "install_required_on_agent", False))
     return SupportToolItem(
-        tool_name=tool_name,
-        module_name=str(module_name).strip() if module_name else None,
-        description=str(raw_tool.get("description") or "").strip() or None,
-        domain=metadata_model.domain,
-        tool_kind=metadata_model.tool_kind,
+        tool_name=str(getattr(capability, "id", "") or ""),
+        module_name=provider_id or None,
+        description=str(getattr(capability, "description", "") or "") or None,
+        domain=provider_id or None,
+        tool_kind=str(getattr(capability, "tool_kind", "diagnostic") or "diagnostic"),
         risk_level=risk_level,
         requires_consent=requires_consent,
         install_required=install_required,
-        required_permission=required_permission,
-        allowed_roles=[str(role) for role in (metadata_model.allow_roles or [])],
-        policy_labels=_support_tool_policy_labels(
-            metadata=metadata_model,
-            required_permission=required_permission,
-            install_required=install_required,
-            requires_consent=requires_consent,
-        ),
-        source=source,
-        params_schema=_normalize_tool_schema(params_schema),
-        presets=_normalize_tool_presets(presets),
-        execution=dict(execution or {}),
-        deployment=dict(deployment or {}),
-        safety=dict(safety or {}),
-        readiness=dict(readiness or {}),
-        evidence=dict(evidence or {}),
-        artifacts=dict(artifacts or {}),
+        required_permission=str(required_permission) if required_permission else None,
+        policy_labels=[
+            f"execution:{execution_target}",
+            f"consent:{'required' if requires_consent else 'not_required'}",
+        ],
+        source=str(getattr(capability, "source", "external_endpoint") or "external_endpoint"),
+        params_schema=_normalize_tool_schema(getattr(capability, "params_schema", {})),
+        execution={"target": execution_target, "requires_device": bool(getattr(capability, "requires_device", False))},
+        deployment={"provider_id": provider_id},
+        safety={"side_effects": bool(getattr(capability, "side_effects", False)), "requires_consent": requires_consent},
+        readiness={"requires_agent_online": bool(getattr(capability, "requires_agent_online", False))},
+        evidence=dict(getattr(capability, "evidence", {}) or {}),
+        artifacts=dict(getattr(capability, "artifacts", {}) or {}),
     )
 
 
@@ -3049,18 +2846,17 @@ async def _build_support_recent_playbook_runs(session, ticket: object, *, limit:
 async def _playbook_available_tool_names(device_id: str | None, state: object | None = None) -> set[str]:
     if not device_id:
         return set()
-    tool_service = ToolExecutionService(state)
-    try:
-        device_tools_raw = await tool_service.get_tools_list(device_id) or []
-    except Exception as exc:
-        logger.debug(f"[support_playbooks] device tool preflight failed: device_id={device_id} error={exc}")
-        device_tools_raw = []
-    try:
-        server_tools_raw = await tool_service.get_tools_from_server(device_id) or []
-    except Exception as exc:
-        logger.debug(f"[support_playbooks] server tool preflight failed: device_id={device_id} error={exc}")
-        server_tools_raw = []
-    return _tool_names_from_raw_entries(device_tools_raw) | _tool_names_from_raw_entries(server_tools_raw)
+    registry = CapabilityRegistry(
+        tool_service=None,
+        state=state,
+        endpoint_diagnostic_execution_mode="endpoint",
+        endpoint_cutover_only=True,
+    )
+    return {
+        capability.id
+        for capability in await registry.list_capabilities(device_id=device_id)
+        if capability.execution_target == "endpoint_operation"
+    }
 
 
 async def _build_support_playbooks_payload(
@@ -3119,7 +2915,10 @@ async def _build_support_playbooks_payload(
     )
 
 
-async def _build_support_tools_payload(ticket: object, tool_service: ToolExecutionService) -> SupportTicketToolsPayload:
+async def _build_support_tools_payload(
+    ticket: object,
+    state: object | None = None,
+) -> SupportTicketToolsPayload:
     diagnostic_target = _support_diagnostic_target_payload(ticket)
     device_id = _support_dispatch_device_id(ticket)
     if not device_id:
@@ -3130,18 +2929,17 @@ async def _build_support_tools_payload(ticket: object, tool_service: ToolExecuti
             tools=[],
         )
 
-    device_tools_raw = await tool_service.get_tools_list(device_id) or []
-    server_tools_raw = await tool_service.get_tools_from_server(device_id) or []
-
-    tools: list[SupportToolItem] = []
-    seen: set[str] = set()
-    for source, raw_items in (("device", device_tools_raw), ("server", server_tools_raw)):
-        for raw_item in raw_items:
-            item = _normalize_support_tool_entry(raw_item, source=source)
-            if item is None or item.tool_name in seen:
-                continue
-            seen.add(item.tool_name)
-            tools.append(item)
+    registry = CapabilityRegistry(
+        tool_service=None,
+        state=state,
+        endpoint_diagnostic_execution_mode="endpoint",
+        endpoint_cutover_only=True,
+    )
+    tools = [
+        _support_tool_from_capability(capability)
+        for capability in await registry.list_capabilities(device_id=str(device_id))
+        if capability.execution_target == "endpoint_operation"
+    ]
 
     return SupportTicketToolsPayload(
         ticket_id=str(getattr(ticket, "ticket_id", "") or ""),
@@ -3149,49 +2947,6 @@ async def _build_support_tools_payload(ticket: object, tool_service: ToolExecuti
         diagnostic_target=diagnostic_target,
         tools=tools,
     )
-
-
-def _find_raw_tool_entry(raw_items: list[object], tool_name: str) -> dict | None:
-    for raw_item in raw_items:
-        if not isinstance(raw_item, dict):
-            continue
-        current = str(raw_item.get("tool") or raw_item.get("name") or "").strip()
-        aliases = raw_item.get("aliases") if isinstance(raw_item.get("aliases"), list) else []
-        if current == tool_name or tool_name in aliases:
-            return raw_item
-    return None
-
-
-async def _build_tool_params_for_dispatch(
-    *,
-    tool_service: ToolExecutionService,
-    device_id: str,
-    tool_name: str,
-    params: dict,
-    preset_id: str | None,
-    operation_id: str,
-) -> dict:
-    dispatch_params = {"_operation_id": operation_id}
-    if not preset_id:
-        dispatch_params.update(params)
-        return dispatch_params
-
-    device_tools_raw = await tool_service.get_tools_list(device_id) or []
-    server_tools_raw = await tool_service.get_tools_from_server(device_id) or []
-    raw_tool = _find_raw_tool_entry(device_tools_raw, tool_name)
-    source = "device"
-    if raw_tool is None:
-        raw_tool = _find_raw_tool_entry(server_tools_raw, tool_name)
-        source = "server"
-    if raw_tool is None:
-        dispatch_params.update(params)
-        dispatch_params["preset_id"] = preset_id
-        return dispatch_params
-
-    tool_entry = normalize_tool_catalog_entry(raw_tool, source=source)
-    dispatch_params.update(expand_preset_params(tool_entry, preset_id=preset_id, overrides=params))
-    dispatch_params["preset_id"] = preset_id
-    return dispatch_params
 
 
 async def _recent_ticket_operations(session, ticket: object, *, limit: int = 5) -> list[tuple[Operation, str]]:
@@ -3998,7 +3753,7 @@ def _mass_action_item(
     status: str,
     message: str,
     ticket_code: str | None = None,
-    result: SupportTicketMutationActionResult | SupportToolActionResult | None = None,
+    result: SupportTicketMutationActionResult | None = None,
 ) -> SupportQueueMassActionItem:
     return SupportQueueMassActionItem(
         ticket_id=ticket_id,
@@ -4265,7 +4020,6 @@ async def handle_web_support_queue_mass_action(request: web.Request):
         "change_queue",
         "change_priority",
         "internal_note",
-        "run_diagnostics",
         "link_mass_problem",
     }
     if action not in supported_actions:
@@ -4282,16 +4036,12 @@ async def handle_web_support_queue_mass_action(request: web.Request):
         return _support_json_error("Для смены очереди нужен queue_id", status=400, error_code="VALIDATION_ERROR")
     if action == "internal_note" and not (payload.internal_note or "").strip():
         return _support_json_error("Для внутренней заметки нужен текст", status=400, error_code="VALIDATION_ERROR")
-    if action == "run_diagnostics" and not (payload.tool_name or "").strip():
-        return _support_json_error("Для массовой диагностики нужно имя инструмента", status=400, error_code="VALIDATION_ERROR")
-
     permission_by_action = {
         "assign_self": "ticket.assign",
         "assign": "ticket.assign",
         "change_queue": "ticket.queue.change",
         "change_priority": "ticket.status.change",
         "internal_note": "ticket.comment.internal",
-        "run_diagnostics": "ticket.tool.run",
         "link_mass_problem": "ticket.comment.internal",
     }
     auth_context = request["auth_context"]
@@ -4317,8 +4067,6 @@ async def handle_web_support_queue_mass_action(request: web.Request):
                 if str(ticket_data.get("ticket_id") or "") in requested_set
             }
             repo = TicketEventsRepo(session)
-            tool_service = ToolExecutionService(request.app["state"])
-
             for ticket_id in ticket_ids:
                 if ticket_id not in accessible_ids:
                     results.append(_mass_action_item(ticket_id=ticket_id, action=action, status="skipped", message="Тикет недоступен текущей роли или очередям"))
@@ -4422,53 +4170,6 @@ async def handle_web_support_queue_mass_action(request: web.Request):
                         results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Связь с массовой проблемой добавлена", result=await _support_mutation_result(session, refreshed, action="link_mass_problem")))
                         continue
 
-                    if action == "run_diagnostics":
-                        diagnostic_target = _support_diagnostic_target_payload(ticket)
-                        device_id = _support_dispatch_device_id(ticket)
-                        if not device_id:
-                            results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="skipped", message="Тикет не привязан к устройству"))
-                            continue
-                        tool_name = (payload.tool_name or "").strip()
-                        risk_level = await _resolve_tool_risk_level(tool_service=tool_service, device_id=device_id, tool_name=tool_name)
-                        if not await can(session, auth_context, _tool_risk_permission(risk_level)):
-                            results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="skipped", message=f"Недостаточно прав для инструмента: {_tool_risk_permission(risk_level)}"))
-                            continue
-                        operation_id = str(uuid.uuid4())
-                        params = await _build_tool_params_for_dispatch(
-                            tool_service=tool_service,
-                            device_id=device_id,
-                            tool_name=tool_name,
-                            params=payload.params,
-                            preset_id=payload.preset_id,
-                            operation_id=operation_id,
-                        )
-                        dispatch = await tool_service.run_tool(
-                            device_id=device_id,
-                            ticket_id=ticket.ticket_id,
-                            tool_name=tool_name,
-                            params=params,
-                            call_id=str(uuid.uuid4()),
-                            auth_context=auth_context,
-                            wait_for_result=False,
-                        )
-                        dispatch_status = str(dispatch.get("status") or "accepted")
-                        if dispatch_status != "accepted":
-                            results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="error", message=str(dispatch.get("error") or "Инструмент не поставлен в очередь")))
-                            continue
-                        resolved_operation_id = str(dispatch.get("operation_id") or operation_id)
-                        tool_result = SupportToolActionResult(
-                            ticket_id=ticket.ticket_id,
-                            device_id=device_id,
-                            diagnostic_target=diagnostic_target,
-                            tool_name=tool_name,
-                            dispatch_status=dispatch_status,
-                            operation_id=resolved_operation_id,
-                            poll_url=str(dispatch.get("poll_url") or f"/api/operations/{resolved_operation_id}"),
-                            trace_id=dispatch.get("trace_id"),
-                            message="Инструмент поставлен в очередь выполнения",
-                        )
-                        results.append(_mass_action_item(ticket_id=ticket_id, ticket_code=ticket_code, action=action, status="success", message="Диагностика запущена", result=tool_result))
-                        continue
                 except Exception as exc:
                     await session.rollback()
                     logger.warning(f"[web_support_queue_mass_action] item failed: ticket_id={ticket_id} action={action} error={exc}")
@@ -5214,7 +4915,7 @@ async def handle_web_support_ticket_workspace(request: web.Request):
             detail = await _build_support_detail_payload(request, session, ticket, repo, auth_context)
             tools = await _build_support_tools_payload(
                 ticket,
-                ToolExecutionService(request.app["state"]),
+                request.app["state"],
             )
             playbooks = await _build_support_playbooks_payload(session, ticket, request.app["state"])
             passport = _passport_payload_model(await TicketPassportService(session).get_payload(ticket.ticket_id))
@@ -5259,7 +4960,7 @@ async def handle_web_support_ticket_tools(request: web.Request):
                 return error
             payload = await _build_support_tools_payload(
                 ticket,
-                ToolExecutionService(request.app["state"]),
+                request.app["state"],
             )
     except Exception as exc:
         logger.warning(
@@ -6596,188 +6297,6 @@ async def handle_web_support_approval_decision(request: web.Request):
             },
             status=503,
         )
-
-
-@require_auth("admin", "support", "auditor")
-async def handle_web_support_run_tool(request: web.Request):
-    try:
-        data = await request.json()
-    except Exception:
-        return web.json_response(
-            {"status": "error", "error": "Некорректный JSON"},
-            status=400,
-        )
-    if not isinstance(data, dict):
-        return web.json_response(
-            {"status": "error", "error": "Тело запроса должно быть объектом"},
-            status=400,
-        )
-
-    tool_name = str(data.get("tool_name") or "").strip()
-    if not tool_name:
-        return web.json_response(
-            {"status": "error", "error": "Нужно передать имя инструмента"},
-            status=400,
-        )
-
-    raw_params = data.get("params")
-    params = raw_params if isinstance(raw_params, dict) else {}
-    preset_id = str(data.get("preset_id") or "").strip() or None
-
-    try:
-        async with get_session() as session:
-            ticket, error, _repo, auth_context = await _get_ticket_or_response(request, session, write=False)
-            if error:
-                return error
-            denied = await _require_permission(session, auth_context, "ticket.tool.run")
-            if denied:
-                return denied
-
-            diagnostic_target = _support_diagnostic_target_payload(ticket)
-            device_id = _support_dispatch_device_id(ticket)
-            if not device_id:
-                return web.json_response(
-                    {
-                        "status": "error",
-                        "error": "Тикет не привязан к устройству, инструмент не запустить",
-                        "error_code": "DEVICE_REQUIRED",
-                        "diagnostic_target": diagnostic_target,
-                    },
-                    status=400,
-                )
-
-            operation_id = str(uuid.uuid4())
-            tool_service = ToolExecutionService(request.app["state"])
-            risk_level = await _resolve_tool_risk_level(
-                tool_service=tool_service,
-                device_id=device_id,
-                tool_name=tool_name,
-            )
-            denied = await _require_permission(session, auth_context, _tool_risk_permission(risk_level))
-            if denied:
-                return denied
-
-            policy_decision = await _resolve_tool_policy_decision(
-                tool_service=tool_service,
-                device_id=device_id,
-                tool_name=tool_name,
-                actor_role=auth_context.actor_role,
-                params=params,
-            )
-            if not policy_decision.allow:
-                return web.json_response(
-                    {
-                        "status": "error",
-                        "error": "Policy violation",
-                        "error_code": policy_decision.reason,
-                        "required_role": policy_decision.required_role,
-                        "actor_role": auth_context.actor_role,
-                    },
-                    status=403,
-                )
-
-            if policy_decision.requires_consent:
-                ui_publisher = request.app["state"].ui_publisher if hasattr(request.app["state"], "ui_publisher") else None
-                op_service = OperationService(session, publisher=ui_publisher)
-                operation = await op_service.enqueue_operation(
-                    operation_id=operation_id,
-                    device_id=device_id,
-                    kind="tool_call",
-                    tool_name=tool_name,
-                    ticket_id=ticket.ticket_id,
-                    job_id=None,
-                    actor_role=auth_context.actor_role,
-                    trace_id=str(uuid.uuid4()),
-                    initial_status="waiting_consent",
-                )
-                try:
-                    await create_operation_user_consent(
-                        session,
-                        operation=operation,
-                        ticket=ticket,
-                        requested_by_actor_id=auth_context.actor_id,
-                        requested_by_role=auth_context.actor_role,
-                        risk_level=risk_level,
-                        tool_name=tool_name,
-                        params=params,
-                        policy_decision=policy_decision,
-                    )
-                except ConsentAccessError as exc:
-                    await session.rollback()
-                    return web.json_response(
-                        {"status": "error", "error": str(exc), "error_code": exc.error_code},
-                        status=exc.status,
-                    )
-                await session.commit()
-                result = {
-                    "status": "waiting_consent",
-                    "operation_id": operation.operation_id,
-                    "poll_url": f"/api/operations/{operation.operation_id}",
-                    "trace_id": operation.trace_id,
-                }
-            else:
-                params_with_operation = await _build_tool_params_for_dispatch(
-                    tool_service=tool_service,
-                    device_id=device_id,
-                    tool_name=tool_name,
-                    params=params,
-                    preset_id=preset_id,
-                    operation_id=operation_id,
-                )
-
-                result = await tool_service.run_tool(
-                    device_id=device_id,
-                    ticket_id=ticket.ticket_id,
-                    tool_name=tool_name,
-                    params=params_with_operation,
-                    call_id=str(uuid.uuid4()),
-                    auth_context=auth_context,
-                    wait_for_result=False,
-                )
-    except Exception as exc:
-        logger.warning(
-            f"[web_support_run_tool] failed: ticket_id={request.match_info.get('ticket_id')}, error={exc}"
-        )
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Не удалось запустить инструмент из нового workspace",
-                "error_code": "TOOL_ACTION_FAILED",
-            },
-            status=503,
-        )
-
-    dispatch_status = str(result.get("status") or "accepted")
-    if dispatch_status not in {"accepted", "waiting_consent"}:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": str(result.get("error") or "Не удалось поставить инструмент в очередь"),
-                "error_code": str(result.get("error_code") or "TOOL_ACTION_FAILED"),
-            },
-            status=503,
-        )
-
-    resolved_operation_id = str(result.get("operation_id") or operation_id)
-    payload = SupportToolActionResult(
-        ticket_id=ticket.ticket_id,
-        device_id=device_id,
-        diagnostic_target=diagnostic_target,
-        tool_name=tool_name,
-        dispatch_status=dispatch_status,
-        operation_id=resolved_operation_id,
-        poll_url=str(result.get("poll_url") or f"/api/operations/{resolved_operation_id}"),
-        trace_id=result.get("trace_id"),
-        message=(
-            "Операция ожидает согласование"
-            if dispatch_status == "waiting_consent"
-            else "Инструмент поставлен в очередь выполнения"
-        ),
-    )
-    return json_model_response(
-        SuccessResponse[SupportToolActionResult](data=payload),
-        status=202,
-    )
 
 
 @require_auth("admin", "support", "auditor")
