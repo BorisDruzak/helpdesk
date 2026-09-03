@@ -45,6 +45,11 @@ def test_legacy_agent_control_routes_are_not_registered() -> None:
         "/api/web/admin/registry/devices/{device_id}/account-sessions",
         "/api/web/admin/registry/account-sessions/{session_id}/timeline",
         "/api/web/admin/registry/account-sessions/{session_id}/revoke",
+        "/api/web/admin/registry/account-login-requests",
+        "/api/web/admin/registry/account-login-requests/{request_id}/approve",
+        "/api/web/admin/registry/account-login-requests/{request_id}/reject",
+        "/api/web/admin/registry/devices/{device_id}/account-events",
+        "/api/web/admin/registry/identity/session/{session_id}/explain",
     }
 
     assert paths.isdisjoint(forbidden)
@@ -70,3 +75,12 @@ def test_legacy_account_session_admin_client_is_removed() -> None:
 
     assert "account-sessions" not in client_source
     assert "revoke_account_sessions" not in client_source
+
+
+def test_registry_snapshot_does_not_load_account_session_runtime() -> None:
+    server_root = Path(__file__).resolve().parents[1]
+    snapshot_source = (server_root / "registry" / "service.py").read_text(encoding="utf-8")
+
+    assert "AccountSessionService" not in snapshot_source
+    assert "account_sessions" not in snapshot_source
+    assert "account_login_requests" not in snapshot_source
