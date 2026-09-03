@@ -8,7 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import DeviceAccountSession, DeviceUserBinding, Ticket, UserConsentRequest
+from app.db.models import DeviceUserBinding, Ticket, UserConsentRequest
 from app.repos.operations_repo import OperationsRepo
 from app.repos.ticket_events_repo import TicketEventsRepo
 from app.repos.user_consent_repo import UserConsentRepo
@@ -516,7 +516,6 @@ class UserConsentService:
         return decided
 
     async def _ensure_active_scope(self, row: UserConsentRequest) -> None:
-        now = _now()
         if row.requester_binding_id:
             binding = await self.session.get(DeviceUserBinding, row.requester_binding_id)
             if binding is None or binding.status != "active":
@@ -525,16 +524,6 @@ class UserConsentService:
                 raise ConsentAccessError("requester binding mismatch", error_code="REQUESTER_BINDING_MISMATCH", status=403)
             if row.device_id and binding.device_id != row.device_id:
                 raise ConsentAccessError("requester binding device mismatch", error_code="REQUESTER_BINDING_MISMATCH", status=403)
-        if row.requester_account_session_id:
-            account_session = await self.session.get(DeviceAccountSession, row.requester_account_session_id)
-            if account_session is None or account_session.verification_status != "verified" or account_session.revoked_at:
-                raise ConsentAccessError("requester account session is not active", error_code="ACCOUNT_SESSION_INACTIVE", status=403)
-            if account_session.expires_at and account_session.expires_at <= now:
-                raise ConsentAccessError("requester account session expired", error_code="ACCOUNT_SESSION_EXPIRED", status=403)
-            if row.requester_person_id and account_session.person_id != row.requester_person_id:
-                raise ConsentAccessError("requester account session mismatch", error_code="ACCOUNT_SESSION_MISMATCH", status=403)
-            if row.device_id and account_session.device_id != row.device_id:
-                raise ConsentAccessError("requester account session device mismatch", error_code="ACCOUNT_SESSION_MISMATCH", status=403)
 
     async def _cancel_if_operation_no_longer_actionable(self, row: UserConsentRequest) -> UserConsentRequest | None:
         if row.subject_type not in OPERATION_SUBJECT_TYPES:
