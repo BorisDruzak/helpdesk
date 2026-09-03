@@ -54,3 +54,14 @@ def test_endpoint_execution_mode_has_no_legacy_fallback() -> None:
     config = (ROOT / "server" / "config.py").read_text(encoding="utf-8")
 
     assert "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE=legacy" not in config
+
+
+def test_helpdesk_ships_only_browser_ui_websocket_transport() -> None:
+    websocket_dir = ROOT / "server" / "websocket"
+    legacy_sources = {
+        path.name
+        for path in websocket_dir.glob("*.py")
+        if path.name not in {"__init__.py", "subscription_registry.py", "ui_handler.py", "ui_publisher.py"}
+    }
+
+    assert legacy_sources == {}

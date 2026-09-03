@@ -1,8 +1,4 @@
-"""
-Tools module - управление инструментами.
-"""
+"""Legacy tool execution package pending physical cleanup."""
 
-from .handlers import handle_get_tools, handle_tools_run
-
-__all__ = ['handle_get_tools', 'handle_tools_run']
+__all__: list[str] = []
 

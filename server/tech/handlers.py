@@ -45,7 +45,6 @@ from tech.dismiss_store import dismiss_alert, is_alert_dismissed
 from tech.locator import locate_tech_query
 from tech.log_buffer import list_log_records, remove_log_record
 from tech.snapshot import build_tech_panel_v2_snapshot
-from websocket.protocol import send_ws_command, send_ws_rpc_request
 from observer.service import ObserverOverlayService, TraceOverlayFilters
 from shared.redaction import redact_sensitive_payload
 
@@ -2284,48 +2283,9 @@ async def handle_tech_trace_detail(request: web.Request) -> web.Response:
             return web.json_response({"status": "error", "error": "Trace not found"}, status=404)
         await session.commit()
 
-    agent_actions: list[dict[str, Any]] = []
-    agent_actions_error: Optional[str] = None
-    if include_agent_actions:
-        device_id = detail["trace"].get("device_id")
-        if device_id:
-            try:
-                operation_source_refs = {
-                    str(span.get("source_ref") or "").strip()
-                    for span in detail.get("spans", [])
-                    if span.get("source_type") == "operation"
-                }
-                params = {
-                    "trace_id": trace_id,
-                    "ticket_id": detail["trace"].get("ticket_id"),
-                    "limit": action_limit,
-                }
-                if len(operation_source_refs) == 1:
-                    params["operation_id"] = next(iter(operation_source_refs))
-                response = await send_ws_rpc_request(
-                    state=request.app["state"],
-                    device_id=device_id,
-                    method="search_action_trace",
-                    params=params,
-                    actor_role="support",
-                    timeout=20,
-                )
-                agent_actions = [_compact_agent_action_entry(item) for item in _extract_action_trace_entries(response)]
-                if agent_actions and action_sync_enabled and sync_agent_actions:
-                    synced_detail = await _sync_agent_action_spans_with_timeout(
-                        trace_id=trace_id,
-                        agent_actions=agent_actions,
-                    )
-                    if synced_detail is not None:
-                        detail = synced_detail
-                elif agent_actions and action_sync_enabled:
-                    agent_actions_error = "Agent actions loaded without span sync; pass sync_agent_actions=1 to materialize them."
-            except Exception as exc:
-                agent_actions_error = str(exc)
-
     detail["status"] = "ok"
-    detail["agent_actions"] = agent_actions
-    detail["agent_actions_error"] = agent_actions_error
+    detail["agent_actions"] = []
+    detail["agent_actions_error"] = "Endpoint-owned agent traces are not fetched by Helpdesk."
     detail["observer_settings"] = {
         "action_sync_enabled": action_sync_enabled,
         "action_sync_limit": action_sync_limit,
