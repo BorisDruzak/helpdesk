@@ -52,6 +52,8 @@ def remote_install_command(
             f"sudo {release_venv}/bin/pip install --disable-pip-version-check --no-input -r {release}/server/requirements.txt",
             f"sudo chown -R root:root {release}",
             f"sudo chmod -R a-w {release}",
+            f"previous_release=$(sudo readlink -f {profile.root} 2>/dev/null || true)",
+            f"if [ -n \"$previous_release\" ]; then printf '%s\\n' \"$previous_release\" | sudo install -o root -g root -m 0644 /dev/stdin /etc/helpdesk/previous-release; fi",
             f"sudo ln -sfn {release} {profile.root}",
             "sudo systemctl daemon-reload",
             f"sudo systemctl start {profile.migrate_service}",
