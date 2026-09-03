@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceUserBinding,
     RegistryAdminEvent,
     RegistryAsset,
@@ -20,7 +19,6 @@ from app.db.models import (
 )
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from requester.identity_service import RequesterIdentityResolver
-from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 
 pytestmark = pytest.mark.db_cleanup("registry_access")
@@ -261,7 +259,7 @@ async def test_admin_ui_user_link_collision_does_not_steal_login(test_client, te
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("target_status", ["inactive", "archived"])
-async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_client, test_engine, target_status):
+async def test_admin_deactivates_person_and_revokes_bindings(test_client, test_engine, target_status):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
     user_login = f"status-user-{uuid.uuid4().hex[:8]}"
@@ -306,14 +304,9 @@ async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_c
             reviewed_by="admin-test",
             reason="initial owner",
         )
-        account = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=result["binding"]["binding_id"],
-        )
         await session.commit()
         person_id = person.person_id
         binding_id = result["binding"]["binding_id"]
-        session_id = account["session"]["session_id"]
 
     response = await test_client.patch(
         f"/api/web/admin/registry/people/{person_id}",
@@ -327,14 +320,11 @@ async def test_admin_deactivates_person_and_revokes_bindings_and_sessions(test_c
 
     async with session_maker() as session:
         binding = await session.get(DeviceUserBinding, binding_id)
-        account_session = await session.get(DeviceAccountSession, session_id)
         asset = await session.get(RegistryAsset, result["asset"]["asset_id"])
         ui_user = await session.get(UiUser, user_login)
         ui_token = await session.get(UiToken, token_hash)
 
     assert binding.status == "revoked"
-    assert account_session.verification_status == "revoked"
-    assert account_session.revoked_by == "admin-test"
     assert asset.assigned_person_id is None
     assert ui_user.is_active is False
     assert ui_token.revoked_at is not None

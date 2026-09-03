@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models import Device, DeviceRegistrationClaim, RegistryPerson, Ticket
-from registry.account_session_service import AccountSessionService
 from registry.registration_service import RegistrationService
 from tests.conftest import TEST_AGENT_PREFIX
 from tickets.create_flow import create_ticket_with_side_effects
@@ -318,6 +317,7 @@ async def test_ticket_with_conflict_claim_does_not_assign_requester_person(test_
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_confirmed_binding_account_context_uses_active_binding(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -375,6 +375,7 @@ async def test_confirmed_binding_account_context_uses_active_binding(test_engine
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_verified_other_account_session_marks_ticket_without_registration_claim(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -445,6 +446,7 @@ async def test_verified_other_account_session_marks_ticket_without_registration_
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_unapproved_other_account_request_cannot_create_verified_ticket(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -485,6 +487,7 @@ async def test_unapproved_other_account_request_cannot_create_verified_ticket(te
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_registration_pending_account_after_revoke_marks_pending_without_blocking(test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -532,6 +535,7 @@ async def test_registration_pending_account_after_revoke_marks_pending_without_b
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_agent_create_with_required_invalid_session_returns_403_before_ticket_create(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -560,6 +564,7 @@ async def test_agent_create_with_required_invalid_session_returns_403_before_tic
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_agent_create_without_account_session_returns_403_before_ticket_create(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

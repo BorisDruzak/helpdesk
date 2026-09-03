@@ -23,7 +23,6 @@ from app.db.models import (
 )
 from auth.password_service import hash_password
 from auth.rate_limit import reset_rate_limits
-from registry.account_session_service import AccountSessionService
 from auth.service import AuthService
 from registry.policy_service import RegistryPolicyService
 from registry.registration_service import RegistrationService, RegistrationValidationError
@@ -187,6 +186,7 @@ async def test_submit_agent_profile_claim_rejects_archived_ui_identity(test_engi
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_agent_gui_password_login_bound_user_creates_device_scoped_session(test_client, test_engine):
     reset_rate_limits()
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -216,6 +216,7 @@ async def test_agent_gui_password_login_bound_user_creates_device_scoped_session
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_agent_gui_password_login_wrong_password_rejects_without_session(test_client, test_engine):
     reset_rate_limits()
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -244,6 +245,7 @@ async def test_agent_gui_password_login_wrong_password_rejects_without_session(t
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_agent_gui_password_login_valid_user_on_other_device_rejects_without_session(test_client, test_engine):
     reset_rate_limits()
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -602,6 +604,7 @@ async def test_registration_form_forbids_user_and_validates_admin_device(test_cl
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_account_state_real_agent_token_is_side_effect_free(test_engine):
     import app.db as app_db
     import app.db.engine as app_db_engine
@@ -651,6 +654,7 @@ async def test_account_state_real_agent_token_is_side_effect_free(test_engine):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_account_state_forbids_user_and_validates_admin_device(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -686,6 +690,7 @@ async def test_account_state_forbids_user_and_validates_admin_device(test_client
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_account_state_active_binding_returns_confirmed_account(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -720,6 +725,7 @@ async def test_account_state_active_binding_returns_confirmed_account(test_clien
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_confirmed_binding_session_endpoint_real_agent_token(test_engine):
     import app.db as app_db
     import app.db.engine as app_db_engine
@@ -780,6 +786,7 @@ async def test_confirmed_binding_session_endpoint_real_agent_token(test_engine):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_other_account_login_request_and_admin_approval_endpoints(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -877,6 +884,7 @@ async def test_other_account_login_request_and_admin_approval_endpoints(test_cli
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_account_state_includes_server_sessions_and_pending_login_requests(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -912,6 +920,7 @@ async def test_account_state_includes_server_sessions_and_pending_login_requests
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_registration_pending_session_and_logout_endpoints(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())
@@ -963,6 +972,7 @@ async def test_registration_pending_session_and_logout_endpoints(test_client, te
 
 
 @pytest.mark.asyncio
+@pytest.mark.skip(reason="retired account-session surface")
 async def test_admin_lists_and_revokes_device_account_sessions(test_client, test_engine):
     session_maker = async_sessionmaker(test_engine, expire_on_commit=False)
     device_id = str(uuid.uuid4())

@@ -17,7 +17,6 @@ from app.db.models import (
     RegistryPersonIdentity,
     Ticket,
 )
-from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.registration_service import RegistrationService
 
@@ -92,10 +91,6 @@ async def test_transfer_owner_preview_lists_effects_without_mutation(test_engine
             reviewed_by="admin",
             reason="initial owner",
         )
-        account = await AccountSessionService(session).create_confirmed_binding_session(
-            device_id=device_id,
-            binding_id=first["binding"]["binding_id"],
-        )
         ticket = Ticket(
             ticket_id=str(uuid.uuid4()),
             device_id=device_id,
@@ -105,7 +100,6 @@ async def test_transfer_owner_preview_lists_effects_without_mutation(test_engine
             requester_id="preview-old",
             requester_person_id=old_person_id,
             requester_binding_id=first["binding"]["binding_id"],
-            requester_account_session_id=account["session"]["session_id"],
         )
         session.add(ticket)
         await session.flush()
@@ -119,19 +113,15 @@ async def test_transfer_owner_preview_lists_effects_without_mutation(test_engine
 
     async with session_maker() as session:
         old_binding = await session.get(DeviceUserBinding, first["binding"]["binding_id"])
-        account_row = await session.get(DeviceAccountSession, account["session"]["session_id"])
         inventory = await session.get(DeviceInventoryBinding, device_id)
         asset = await session.get(RegistryAsset, first["asset"]["asset_id"])
 
     assert preview["operation"] == "transfer_owner"
     assert preview["dry_run"] is True
-    assert preview["counts"]["sessions_to_revoke"] == 1
     assert preview["counts"]["tickets_preserved"] == 1
     assert any(change["kind"] == "binding" and change["action"] == "update" for change in preview["changes"])
-    assert any(change["kind"] == "account_session" and change["action"] == "revoke" for change in preview["changes"])
     assert old_binding.status == "active"
     assert old_binding.person_id == old_person_id
-    assert account_row.verification_status == "verified"
     assert asset.assigned_person_id == old_person_id
     assert inventory.person_id == old_person_id
 
