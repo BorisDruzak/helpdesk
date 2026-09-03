@@ -164,8 +164,7 @@ server/
 
 ## 🔐 Безопасность и аутентификация
 
-- **Агенты:** аутентификация по токену при WebSocket handshake (/ws) и при HTTP API. Agent self-provisioning uses `POST /api/connection_request`; `POST /api/login` is admin-only manual token issue. В БД хранится только SHA256 hash токена.
-- **UI:** логин/пароль через `POST /api/ui_login` → выдача UI токена. WebSocket /ws_ui требует первое сообщение `ui_hello` с токеном.
+- **UI:** логин/пароль через `POST /api/web/session/login` выдаёт httpOnly session cookie. WebSocket `/ws_ui` требует первое сообщение `ui_hello` с этой browser-сессией.
 - **HTTP API:** все маршруты `/api/*` (кроме whitelist) защищены middleware: требуется токен в заголовке `Authorization: Bearer <token>`, `Authorization: Token <token>` или `X-Auth-Token`. Whitelist no longer includes `POST /api/login`; legacy `/api/ui_login` is disabled by default.
 - **Роли:** `AuthContext` — единственный источник истины для `actor_id` и `actor_role`; данные из JSON/WebSocket payload **никогда** не доверяются для определения роли.
 
@@ -173,11 +172,9 @@ server/
 
 ---
 
-## 🔌 Protocol V3 (ws_ticket_v3)
+## 🔌 Browser realtime and Endpoint integration
 
-Protocol V3 — современный протокол WebSocket для общения между агентом и сервером. Обеспечивает надежную доставку, упорядочивание событий, идемпотентность команд и синхронизацию состояния.
-
-> **Документация протокола на стороне сервера:** [PROTOCOL_V3.md](PROTOCOL_V3.md). Полная спецификация протокола: `pc_agent/docs/PROTOCOL_V3.md`.
+`ws_ui` carries browser realtime updates. Agent execution is not a Helpdesk transport concern: diagnostic operations are created through the Endpoint Platform API and reconciled through its versioned contract.
 
 ### Ключевые концепции
 
@@ -581,20 +578,6 @@ Event replay endpoints для синхронизации.
 - `handle_get_ticket_events(request)` — обработчик получения событий тикета
 - `handle_get_device_events(request)` — обработчик получения событий устройства
 - `handle_ticket_messages(request)` — обработчик получения сообщений тикета
-
-#### `api/commands.py`
-
-Command endpoints для отправки команд агентам.
-
-**Endpoints:**
-- `POST /api/commands/send` — отправка команды агенту
-
-**Функции:**
-- `handle_send_command(request)` — обработчик отправки команды
-
-#### `api/protocol.py`
-
-Protocol documentation endpoint.
 
 **Endpoints:**
 - `GET /api/protocol` — документация протокола
