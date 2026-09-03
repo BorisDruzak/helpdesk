@@ -7,9 +7,9 @@
 
 > Security note 2026-05-23/24: `POST /api/login` is admin-only for manual agent-token issue; agent self-provisioning uses `POST /api/connection_request` and protected status polling with `request_id` + `poll_secret`. Manual approve no longer stores raw approved tokens in process memory; the token is generated only after a valid poll. New web UI login uses `/api/web/session/login` and an httpOnly cookie; legacy `/api/ui_login` is disabled unless explicitly enabled.
 
-> **WebSocket сервер для управления удалёнными PC агентами (relay-архитектура)**
+> **Helpdesk browser and Endpoint Platform integration service**
 
-PC Agent Server — это серверная часть системы управления удалёнными агентами. Сервер выступает в роли ретранслятора команд между веб-интерфейсом и агентами, обеспечивая надежную доставку, упорядочивание событий и синхронизацию состояния через Protocol V3 (ws_ticket_v3).
+Helpdesk owns ticket workflows and browser UI. Remote diagnostics and module execution are delegated through the versioned Endpoint Platform contract; Helpdesk has no direct agent WebSocket or command-dispatch runtime.
 
 ## 📊 Текущее состояние проекта
 
@@ -704,8 +704,7 @@ Protocol documentation endpoint.
 
 ### WebSocket Endpoints
 
-- `GET /ws` — WebSocket для агентов (Protocol V3, handshake с токеном обязателен)
-- `GET /ws_ui` — WebSocket для UI клиентов (первое сообщение — ui_hello с токеном)
+- `GET /ws_ui` — WebSocket для браузерных UI-клиентов (первое сообщение — ui_hello с токеном)
 
 ### Tickets API
 
@@ -722,14 +721,10 @@ Protocol documentation endpoint.
 - `GET /api/devices` — список устройств
 - `GET /api/devices/{device_id}/events` — получение событий устройства (replay)
 
-### Commands API
+### Endpoint diagnostics API
 
-- `POST /api/commands/send` — отправка команды агенту
-
-### Tools API
-
-- `GET /api/tools?device_id=...` — список инструментов с агента (`tools`) и с сервера (`tools_from_server`). Инструменты из `tools_from_server` помечаются в UI как «с установкой» (модуль установится при run_tool).
-- `POST /api/tools/run` — выполнение инструмента (тело: `device_id`, `ticket_id`, `tool_name`, опционально `params`, `preset_id`); при agent-token auth `device_id` обязан совпадать с `AuthContext.actor_id`, иначе 403 `DEVICE_CONTEXT_MISMATCH`; для всех ролей `ticket_id` должен принадлежать указанному `device_id`, иначе route возвращает `UNKNOWN_TICKET` или 403 `DEVICE_MISMATCH` до создания operation/device_outbox.
+- `GET /api/tickets/{ticket_id}/diagnostics/capabilities` — доступные диагностические возможности Endpoint Platform для тикета.
+- `POST /api/tickets/{ticket_id}/diagnostics/capabilities/{capability_id}/run` — создание Endpoint-операции; Helpdesk не отправляет команды агенту напрямую.
 
 ### Modules API
 
@@ -747,19 +742,6 @@ Protocol documentation endpoint.
 - `POST /api/install_module_package` — legacy endpoint (backward compatibility)
 
 **Подробнее:** [MODULES_API.md](MODULES_API.md)
-
-### Jobs API
-
-- `GET /api/job_events?job_id={job_id}` — получение событий job (query-параметр `job_id`)
-- `POST /api/start_job` — запуск job
-
-### Chat API
-
-- `POST /api/chat_start` — запуск чата
-- `POST /api/chat_raise` — создание чата от агента
-- `POST /api/chat_send` — отправка сообщения в чат
-- `GET /api/active_chats` — список активных чатов
-- `GET /api/chat_events?job_id={job_id}` — получение событий чата (query-параметр `job_id`)
 
 ### Artifacts API (скриншоты, запись экрана)
 
@@ -821,7 +803,7 @@ LOG_LEVEL = "DEBUG"
 1. Сервер запущен: `http://localhost:8666/` (порт по умолчанию — 8666)
 2. Админ панель: `http://localhost:8666/admin`
 3. Protocol docs: `http://localhost:8666/api/protocol`
-4. WebSocket для агентов: `ws://localhost:8666/ws`
+4. Browser realtime transport: `ws://localhost:8666/ws_ui`
 
 ---
 
@@ -868,9 +850,6 @@ SERVER_CAPABILITIES = [
 - [TICKET_SYSTEM.md](TICKET_SYSTEM.md) — тикетная система: маршрутизация, SLA, workflow, RBAC, уведомления, очереди, UI, календари, retention (этапы 2–12)
 - [SEGMENTATION_BOUNDARIES.md](SEGMENTATION_BOUNDARIES.md), [KNOWLEDGE_PLATFORM_API_V1.md](KNOWLEDGE_PLATFORM_API_V1.md), and [REGISTRY_PLATFORM_API_V1.md](REGISTRY_PLATFORM_API_V1.md) — external Knowledge and Registry ownership, unavailable/default composition rules and versioned integration contracts
 - [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — безопасность, аутентификация (токены, handshake, middleware)
-- [PROTOCOL_V3.md](PROTOCOL_V3.md) — требования сервера к Protocol V3 и ссылка на полную спецификацию
-- [Документация агента](../../pc_agent/docs/README.md) — общая документация агента
-- [Protocol V3 (агент)](../../pc_agent/docs/PROTOCOL_V3.md) — полная спецификация протокола V3
 - [Modules API](MODULES_API.md) — API для управления модулями (HTTP download)
 - [Modules Drift and Snapshots](MODULES_DRIFT_AND_SNAPSHOTS.md) — детекция drift и toolset snapshots
 
