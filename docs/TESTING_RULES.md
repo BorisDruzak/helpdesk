@@ -2,7 +2,7 @@
 
 Canonical testing flow for `pc_client`.
 
-For Live validation, debugging, Protocol V3, browser/admin UI, local agent GUI, account-session, operation lifecycle, module runtime or deployment/runtime-control bugfix work, also follow `docs/LIVE_TESTING_DEBUG_RULES.md`. That document is the stricter source for evidence, validation surfaces, contamination and milestone final gates.
+For live validation, debugging, browser/admin UI, Endpoint operation lifecycle or deployment/runtime-control work, also follow `docs/LIVE_TESTING_DEBUG_RULES.md`. That document is the stricter source for evidence, validation surfaces and milestone final gates.
 
 ## Always
 
