@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { AlertTriangle, ArrowUpRight, Fingerprint, KeyRound, Link2, LogOut, Monitor, ShieldCheck, UserCheck, Workflow } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, Fingerprint, KeyRound, Link2, Monitor, ShieldCheck, UserCheck, Workflow } from "lucide-react";
 
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
@@ -36,7 +36,6 @@ type ScenarioQueue = {
 };
 
 const pendingClaimStatuses = new Set(["pending_user_confirmation", "pending_admin_review", "user_confirmed", "self_reported"]);
-const activeSessionStatuses = new Set(["active", "verified", "admin_confirmed"]);
 
 function deviceLabel(device: AdminRegistryPayload["assets"][number]): string {
   return device.hostname ?? device.name ?? device.device_id ?? device.id;
@@ -48,24 +47,6 @@ function personLabel(person: AdminRegistryPayload["people"][number]): string {
 
 function claimLabel(claim: AdminRegistryPayload["registration_claims"][number]): string {
   return claim.person_name ?? String(claim.profile_snapshot.display_name ?? claim.profile_snapshot.login ?? claim.device_id);
-}
-
-function activeSessionNeedsRevocation(session: NonNullable<AdminRegistryPayload["account_sessions"]>[number], registry: AdminRegistryPayload): boolean {
-  const normalizedStatus = String(session.verification_status ?? "").trim().toLowerCase();
-  if (normalizedStatus === "revoked" || normalizedStatus === "expired") {
-    return false;
-  }
-  const bindingId = session.binding_id ?? session.base_binding_id;
-  if (!bindingId) {
-    return false;
-  }
-  const bindings = registry.bindings ?? registry.active_bindings;
-  const binding = bindings.find((item) => item.binding_id === bindingId);
-  if (binding) {
-    return binding.status !== "active";
-  }
-  const activeBindingIds = new Set(registry.active_bindings.filter((item) => item.status === "active").map((item) => item.binding_id));
-  return !activeBindingIds.has(bindingId);
 }
 
 function ScenarioQueueCard({ queue }: { queue: ScenarioQueue }) {
@@ -146,9 +127,6 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
     Boolean(person.profile_completion) && !person.profile_completion?.complete
   ));
   const duplicateIssues = registry.data_quality.filter((issue) => issue.kind === "duplicate_person");
-  const sessionsAfterTransfer = (registry.account_sessions ?? []).filter((session) => (
-    activeSessionStatuses.has(String(session.verification_status ?? "").trim().toLowerCase()) && activeSessionNeedsRevocation(session, registry)
-  ));
   const unlinkedUiUsers = (registry.ui_users ?? []).filter((user) => user.is_active && !user.linked_person_id);
   const uiUserIssues = registry.data_quality.filter((issue) => issue.kind === "ui_user_unlinked_registry_person");
 
@@ -281,25 +259,6 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
         open: () => onFixIssue(issue),
       })),
     },
-    {
-      key: "transferred-device-sessions",
-      title: "Сессии после передачи устройства",
-      description: "Активные аккаунт-сессии, привязанные к уже переданным или неактивным binding.",
-      count: sessionsAfterTransfer.length,
-      icon: <LogOut className="h-4 w-4" />,
-      tone: sessionsAfterTransfer.length ? "danger" : "success",
-      actions: ["Отозвать сессии", "Открыть session timeline", "Проверить владельца"],
-      emptyText: "Активных сессий на переданных устройствах нет.",
-      items: sessionsAfterTransfer.map((session) => ({
-        id: session.session_id,
-        title: session.display_name ?? session.login ?? session.person_id ?? session.session_id,
-        description: `${session.device_id} · binding ${session.binding_id ?? session.base_binding_id}`,
-        badge: registryStatusLabel(session.verification_status),
-        tone: statusTone(session.verification_status),
-        openLabel: `Открыть сессию ${session.session_id} из очереди Сессии после передачи устройства`,
-        open: () => onSelect({ kind: "session", id: session.session_id }),
-      })),
-    },
   ];
 
   const uiAccountQueue: ScenarioQueue = {
@@ -356,7 +315,7 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
             <p className="text-xs font-semibold uppercase text-brand-700">Администрирование</p>
             <h2 className="mt-1 text-lg font-semibold text-slate-950">Центр регистрации и привязок</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Очереди собраны по сценариям администратора: регистрация устройства, смена владельца, связь UI-аккаунта с персоной, качество профилей и отзыв сессий после передачи ПК.
+              Очереди собраны по сценариям администратора: регистрация устройства, смена владельца, связь UI-аккаунта с персоной и качество профилей.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -385,11 +344,9 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
         <StatTile label="Зарегистрировано" value={String(summary.devices_registered ?? summary.active_bindings)} helper="Есть активная связь" />
         <StatTile label="Без пользователя" value={String(summary.devices_unregistered ?? summary.unregistered_devices)} helper="Требуют действия" />
         <StatTile label="Ожидают подтверждения" value={String(summary.claims_pending ?? summary.registrations_pending)} helper="Заявки регистрации" />
-        <StatTile label="Аккаунт-сессии" value={String(summary.sessions_active ?? 0)} helper="Активные сессии пользователей" />
         <StatTile label="Конфликты" value={String(summary.claims_conflict ?? summary.registrations_conflicts)} helper="Нужна ручная проверка" />
         <StatTile label="Активные привязки" value={String(summary.bindings_active ?? summary.active_bindings)} helper="Основные, совместные и ответственные" />
         <StatTile label="Совместные устройства" value={String(summary.shared_devices ?? 0)} helper="Общие рабочие места" />
-        <StatTile label="Другой аккаунт" value={String(summary.other_account_requests ?? 0)} helper="Заявки на вход" />
         <StatTile label="Качество данных" value={String(summary.quality_issues ?? summary.data_quality_issues)} helper="Проблемы для обработки" />
       </div>
 
@@ -397,7 +354,7 @@ export function RegistryOverviewTab({ onFixIssue, onSelect, registry }: Props) {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-slate-950">Очереди по сценариям</h2>
-            <p className="text-sm text-slate-500">Карточки ведут в существующие заявки, устройства, пользователей, сессии и timeline.</p>
+            <p className="text-sm text-slate-500">Карточки ведут в существующие заявки, устройства, пользователей и timeline.</p>
           </div>
           <Badge tone="neutral">{scenarioQueues.reduce((total, queue) => total + queue.count, uiAccountQueue.count)} задач</Badge>
         </div>

@@ -12,12 +12,9 @@ import {
   applyAdminDeviceBindingSuggestion,
   collectAdminDeviceInventory,
   collectAdminDevicePresence,
-  fetchAdminDeviceAccountEvents,
-  fetchAdminDeviceAccountSessions,
   fetchAdminDeviceRegistrationTimeline,
   fetchAdminDeviceInventory,
   ignoreAdminDeviceBindingSuggestion,
-  revokeAdminDeviceAccountSession,
   revokeAdminDeviceUserBinding,
   saveAdminDeviceInventoryBinding,
   saveAdminDeviceInventoryRefreshPolicy,
@@ -169,18 +166,6 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
     enabled: Boolean(deviceId),
     retry: false,
   });
-  const accountSessionsQuery = useQuery({
-    queryKey: ["admin-device-account-sessions", deviceId],
-    queryFn: () => fetchAdminDeviceAccountSessions(deviceId!),
-    enabled: Boolean(deviceId),
-    retry: false,
-  });
-  const accountEventsQuery = useQuery({
-    queryKey: ["admin-device-account-events", deviceId],
-    queryFn: () => fetchAdminDeviceAccountEvents(deviceId!, 20),
-    enabled: Boolean(deviceId),
-    retry: false,
-  });
 
   const collectMutation = useMutation({
     mutationFn: () => collectAdminDeviceInventory(deviceId!),
@@ -247,25 +232,13 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
   const pendingSuggestions = suggestions.filter((item) => item.status === "pending");
   const presence = data?.presence ?? null;
   const registrationTimeline = registrationTimelineQuery.data?.items ?? [];
-  const accountSessions = accountSessionsQuery.data?.items ?? [];
-  const accountEvents = accountEventsQuery.data?.items ?? [];
 
   const revokeRegistrationMutation = useMutation({
     mutationFn: () => revokeAdminDeviceUserBinding(binding?.source_binding_id ?? "", "revoked from device card"),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin-device-inventory", deviceId] });
       void queryClient.invalidateQueries({ queryKey: ["admin-device-registration-timeline", deviceId] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-device-account-sessions", deviceId] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-device-account-events", deviceId] });
       void queryClient.invalidateQueries({ queryKey: ["admin-registry"] });
-    },
-  });
-  const revokeAccountSessionMutation = useMutation({
-    mutationFn: (sessionId: string) => revokeAdminDeviceAccountSession(sessionId, "revoked from device card"),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin-device-account-sessions", deviceId] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-device-account-events", deviceId] });
-      void queryClient.invalidateQueries({ queryKey: ["admin-device-inventory", deviceId] });
     },
   });
 
@@ -587,99 +560,6 @@ export function DeviceInventoryPanel({ deviceId, deviceLabel }: DeviceInventoryP
                     {revokeRegistrationMutation.isSuccess ? (
                       <span className="text-sm text-emerald-700">Регистрация отозвана</span>
                     ) : null}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-950">История аккаунт-сессий</h4>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Последние события входа, проверки, отзыва и создания обращений с аккаунт-сессией.
-                      </p>
-                    </div>
-                    <Badge tone={accountEvents.length ? "info" : "neutral"}>{accountEvents.length}</Badge>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    {accountEvents.length === 0 ? (
-                      <p className="text-sm text-slate-500">Событий аккаунт-сессий пока нет.</p>
-                    ) : (
-                      accountEvents.map((event) => (
-                        <div className="rounded-lg bg-surface-subtle px-3 py-2 text-sm" key={event.event_id}>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold text-slate-900">{event.event_type}</span>
-                            <span className="text-xs text-slate-500">{formatDateTime(event.event_at)}</span>
-                          </div>
-                          <p className="mt-1 break-all text-xs text-slate-500">
-                            {[event.session_id ? `session ${event.session_id.slice(0, 8)}` : null, event.request_id ? `request ${event.request_id.slice(0, 8)}` : null, event.ticket_id ? `ticket ${event.ticket_id.slice(0, 8)}` : null, event.actor_role ? `${event.actor_role}:${event.actor_id ?? ""}` : null].filter(Boolean).join(" · ") || "—"}
-                          </p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-semibold text-slate-950">Аккаунт-сессии агента</h4>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Серверные сессии, которыми агент подтверждает текущий аккаунт обращения.
-                      </p>
-                    </div>
-                    <Badge tone={accountSessions.some((item) => item.verification_status === "verified" || item.verification_status === "pending_verification") ? "info" : "neutral"}>
-                      {accountSessions.length}
-                    </Badge>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {accountSessions.length === 0 ? (
-                      <p className="text-sm text-slate-500">Сессии аккаунтов пока не создавались.</p>
-                    ) : (
-                      accountSessions.slice(0, 8).map((session) => (
-                        <div className="rounded-lg bg-surface-subtle px-3 py-3 text-sm" key={session.session_id}>
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="font-semibold text-slate-900">
-                              {session.display_name || session.full_name || session.login || session.session_id.slice(0, 8)}
-                            </span>
-                            <Badge tone={session.verification_status === "verified" ? "success" : session.verification_status === "revoked" ? "neutral" : "warning"}>
-                              {session.account_mode} / {session.verification_status}
-                            </Badge>
-                          </div>
-                          <div className="mt-2 grid gap-2 md:grid-cols-2">
-                            <div className="rounded-md bg-white px-3 py-2">
-                              <p className="text-xs uppercase text-slate-500">Session</p>
-                              <p className="mt-1 break-all text-slate-900">{session.session_id}</p>
-                            </div>
-                            <div className="rounded-md bg-white px-3 py-2">
-                              <p className="text-xs uppercase text-slate-500">Login / phone</p>
-                              <p className="mt-1 text-slate-900">{[session.login, session.phone].filter(Boolean).join(" · ") || "—"}</p>
-                            </div>
-                            <div className="rounded-md bg-white px-3 py-2">
-                              <p className="text-xs uppercase text-slate-500">Verification</p>
-                              <p className="mt-1 text-slate-900">{valueText(session.verification_method)}</p>
-                            </div>
-                            <div className="rounded-md bg-white px-3 py-2">
-                              <p className="text-xs uppercase text-slate-500">Base binding</p>
-                              <p className="mt-1 break-all text-slate-900">{valueText(session.base_binding_id || session.binding_id)}</p>
-                            </div>
-                          </div>
-                          {session.reason ? <p className="mt-2 text-slate-600">Причина: {session.reason}</p> : null}
-                          {session.warning_code ? <p className="mt-1 text-amber-700">{session.warning_code}</p> : null}
-                          <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <span className="text-xs text-slate-500">
-                              {formatDateTime(session.created_at)}
-                              {session.revoked_at ? ` · revoked ${formatDateTime(session.revoked_at)}` : ""}
-                            </span>
-                            <Button
-                              disabled={session.verification_status === "revoked" || revokeAccountSessionMutation.isPending}
-                              onClick={() => revokeAccountSessionMutation.mutate(session.session_id)}
-                              size="sm"
-                              variant="outline"
-                            >
-                              Отозвать сессию
-                            </Button>
-                          </div>
-                        </div>
-                      ))
-                    )}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-white p-4">

@@ -554,7 +554,6 @@ export type AdminRegistryPayload = {
   registration_claims: AdminRegistrationClaim[];
   active_bindings: AdminDeviceUserBinding[];
   bindings?: AdminDeviceUserBinding[];
-  account_sessions?: AdminDeviceAccountSession[];
   account_login_requests?: AdminAccountLoginRequest[];
   password_reset_requests?: AdminPasswordResetRequest[];
   ui_users?: AdminRegistryUiUser[];
@@ -803,44 +802,6 @@ export type AdminPasswordResetRequest = {
   resolution_note: string | null;
 };
 
-export type AdminDeviceAccountSession = {
-  session_id: string;
-  account_mode: string;
-  verification_status: string;
-  verification_method: string | null;
-  device_id: string;
-  person_id: string | null;
-  binding_id: string | null;
-  claim_id: string | null;
-  base_binding_id: string | null;
-  base_person_id: string | null;
-  display_name: string | null;
-  full_name: string | null;
-  login: string | null;
-  email: string | null;
-  phone: string | null;
-  reason: string | null;
-  warning_code: string | null;
-  created_at: string | null;
-  verified_at: string | null;
-  expires_at: string | null;
-  revoked_at: string | null;
-  revoked_by: string | null;
-};
-
-export type AdminDeviceAccountEvent = {
-  event_id: string;
-  device_id: string;
-  session_id: string | null;
-  request_id: string | null;
-  ticket_id: string | null;
-  event_type: string;
-  actor_id: string | null;
-  actor_role: string | null;
-  event_at: string | null;
-  payload: Record<string, unknown>;
-};
-
 export type AdminRegistryPolicyPayload = {
   defaults: Record<string, Record<string, unknown>>;
   effective: {
@@ -854,15 +815,6 @@ export type AdminRegistryPolicyPayload = {
       stale_after_days: number;
       department_mode: "allow_pending_request" | "optional" | "required_existing";
       location_mode: "allow_pending_request" | "optional" | "required_existing";
-    };
-    account_sessions: {
-      confirmed_binding_ttl_hours: number | null;
-      verified_other_account_ttl_hours: number;
-      registration_pending_ttl_hours: number;
-      allow_other_account_login: boolean;
-      other_account_requires_reason: boolean;
-      other_account_requires_admin_approval: boolean;
-      allow_other_account_on_shared_or_responsible: boolean;
     };
     ticket_visibility: {
       owner_can_see_historical_tickets: boolean;
@@ -1176,53 +1128,6 @@ export async function completeAdminPasswordResetRequest(
     body: JSON.stringify(payload),
   });
   return readSuccessResponse(response, "Не удалось сменить пароль по заявке");
-}
-
-export async function fetchAdminDeviceAccountSessions(deviceId: string): Promise<{ items: AdminDeviceAccountSession[] }> {
-  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(deviceId)}/account-sessions`, {
-    credentials: "same-origin"
-  });
-  return readSuccessResponse(response, "Не удалось загрузить сессии аккаунтов устройства");
-}
-
-export async function fetchAdminRegistryAccountSessions(params?: {
-  device_id?: string;
-  person_id?: string;
-  verification_status?: string;
-}): Promise<{ items: AdminDeviceAccountSession[] }> {
-  const searchParams = new URLSearchParams();
-  if (params?.device_id) {
-    searchParams.set("device_id", params.device_id);
-  }
-  if (params?.person_id) {
-    searchParams.set("person_id", params.person_id);
-  }
-  if (params?.verification_status) {
-    searchParams.set("verification_status", params.verification_status);
-  }
-  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
-  const response = await fetch(`/api/web/admin/registry/account-sessions${suffix}`, {
-    credentials: "same-origin"
-  });
-  return readSuccessResponse(response, "Не удалось загрузить account sessions");
-}
-
-export async function fetchAdminDeviceAccountEvents(deviceId: string, limit = 50): Promise<{ items: AdminDeviceAccountEvent[] }> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  const response = await fetch(`/api/web/admin/registry/devices/${encodeURIComponent(deviceId)}/account-events?${params}`, {
-    credentials: "same-origin"
-  });
-  return readSuccessResponse(response, "Не удалось загрузить историю аккаунт-сессий устройства");
-}
-
-export async function revokeAdminDeviceAccountSession(sessionId: string, reason: string): Promise<void> {
-  const response = await fetch(`/api/web/admin/registry/account-sessions/${encodeURIComponent(sessionId)}/revoke`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason })
-  });
-  await readSuccessResponse(response, "Не удалось отозвать сессию аккаунта");
 }
 
 export async function createAdminRegistryPerson(payload: {
@@ -1584,7 +1489,7 @@ export async function previewAdminRegistryPeopleMerge(payload: {
 }
 
 export async function previewAdminRegistryBulk(payload: {
-  operation: "devices.assign_location" | "devices.assign_department" | "devices.revoke_account_sessions" | "people.assign_department" | "account_sessions.revoke";
+  operation: "devices.assign_location" | "devices.assign_department" | "people.assign_department";
   ids: string[];
   payload?: Record<string, unknown>;
 }): Promise<AdminRegistryOperationPreview> {
@@ -1637,26 +1542,6 @@ export async function bulkAssignAdminRegistryPeopleDepartment(payload: {
     body: JSON.stringify({ ids: payload.ids, payload: { department_id: payload.department_id }, reason: payload.reason }),
   });
   return readSuccessResponse(response, "Не удалось массово назначить подразделение пользователям");
-}
-
-export async function bulkRevokeAdminRegistryAccountSessions(ids: string[], reason: string): Promise<AdminRegistryBulkResponse> {
-  const response = await fetch("/api/web/admin/registry/bulk/account-sessions/revoke", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, reason }),
-  });
-  return readSuccessResponse(response, "Не удалось массово отозвать account sessions");
-}
-
-export async function bulkRevokeAdminRegistryDeviceAccountSessions(ids: string[], reason: string): Promise<AdminRegistryBulkResponse> {
-  const response = await fetch("/api/web/admin/registry/bulk/devices/revoke-account-sessions", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids, reason }),
-  });
-  return readSuccessResponse(response, "Не удалось массово отозвать account sessions устройств");
 }
 
 export async function fetchAdminRegistryTimeline(objectType: string, objectId: string): Promise<{ items: AdminRegistryTimelineItem[] }> {

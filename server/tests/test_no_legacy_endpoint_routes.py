@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from aiohttp import web
 import pytest
 
@@ -37,6 +39,12 @@ def test_legacy_agent_control_routes_are_not_registered() -> None:
         "/api/registry/agent/account-state",
         "/api/registry/agent/browser-pairings",
         "/api/web/registry/browser-pairings/lookup",
+        "/api/web/admin/registry/account-sessions",
+        "/api/web/admin/registry/bulk/account-sessions/revoke",
+        "/api/web/admin/registry/bulk/devices/revoke-account-sessions",
+        "/api/web/admin/registry/devices/{device_id}/account-sessions",
+        "/api/web/admin/registry/account-sessions/{session_id}/timeline",
+        "/api/web/admin/registry/account-sessions/{session_id}/revoke",
     }
 
     assert paths.isdisjoint(forbidden)
@@ -48,3 +56,17 @@ def test_endpoint_operation_routes_remain_but_module_authority_is_absent() -> No
 
     assert "/api/web/support/operations/{operation_id}/cancel" in paths
     assert all("endpoint-modules" not in path for path in paths)
+
+
+def test_legacy_account_session_admin_client_is_removed() -> None:
+    client_source = (
+        Path(__file__).resolve().parents[2]
+        / "webapp"
+        / "src"
+        / "features"
+        / "admin"
+        / "api.ts"
+    ).read_text(encoding="utf-8")
+
+    assert "account-sessions" not in client_source
+    assert "revoke_account_sessions" not in client_source

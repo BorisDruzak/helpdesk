@@ -1,6 +1,6 @@
 # Registry Management Center
 
-`/app/admin/registry` is the admin workspace for device ownership, people identities, account sessions and lightweight CMDB operations.
+`/app/admin/registry` is the admin workspace for device ownership, people identities and lightweight CMDB operations.
 
 Registry visibility, effective identity and audience groups are tracked in [REGISTRY_VISIBILITY_FOUNDATION.md](REGISTRY_VISIBILITY_FOUNDATION.md). That document keeps organization structure, RBAC/access groups and content audiences separate while extending this Management Center; Knowledge audience-rule enforcement remains a later phase.
 
@@ -12,7 +12,6 @@ Registry visibility, effective identity and audience groups are tracked in [REGI
 - UI login to registry-person links are represented only as verified `registry_person_identities(provider='ui_login')`; `ui_users` rows are not duplicated into person records.
 - `GET /api/web/admin/registry` person rows include schema-aware `profile_completion` for moderation visibility. It exposes status and missing field labels only; requester profile storage internals, tokens, sessions and secret values stay hidden.
 - Departments are organization structure. Access groups are RBAC/queue permissions. Audience groups are content/service targeting objects and must not grant permissions by themselves.
-- Account sessions are revoked through `AccountSessionService` when bindings are revoked or transferred.
 - Location, department, policy, merge and bulk admin actions write `registry_admin_events`.
 - Person and identity admin mutations write `registry_admin_events` (`person_created`, `person_updated`, `identity_added`, `identity_verified`, `identity_deleted`).
 - Dangerous admin operations expose read-only preview/dry-run endpoints before apply. Preview endpoints must not mutate state, write events or commit; the web UI requires preview before transfer/merge/import apply.
@@ -63,9 +62,7 @@ Registry visibility, effective identity and audience groups are tracked in [REGI
   - `POST /api/web/admin/registry/bulk/preview`
   - `POST /api/web/admin/registry/bulk/devices/assign-location`
   - `POST /api/web/admin/registry/bulk/devices/assign-department`
-  - `POST /api/web/admin/registry/bulk/devices/revoke-account-sessions`
   - `POST /api/web/admin/registry/bulk/people/assign-department`
-  - `POST /api/web/admin/registry/bulk/account-sessions/revoke`
   - `GET /api/web/admin/registry/export?type=devices|people|bindings|sessions|locations|departments|quality|audience_groups|audience_group_members|knowledge_audience_rules&format=csv`
   - `POST /api/web/admin/registry/import/preview`
   - `POST /api/web/admin/registry/import/apply`
@@ -75,15 +72,15 @@ Registry visibility, effective identity and audience groups are tracked in [REGI
   - `POST /api/web/admin/registry/quality/{issue_key}/snooze`
   - `POST /api/web/admin/registry/quality/{issue_key}/resolve`
 
-Registry import is CSV-only and intentionally excludes direct binding and account-session import. Supported import types are `people`, `locations`, `departments`, `device_inventory_mapping`, `audience_groups` and `audience_group_members`.
+Registry import is CSV-only and intentionally excludes direct binding import. Supported import types are `people`, `locations`, `departments`, `device_inventory_mapping`, `audience_groups` and `audience_group_members`.
 
 ## Visibility Foundation Boundary
 
 The Registry Visibility Foundation extends this management center without changing existing source-of-truth rules:
 
-- effective identity is a read model over verified `ui_login` identities, registry people, primary department/location, active bindings, account sessions and access groups;
+- effective identity is a read model over verified `ui_login` identities, registry people, primary department/location, active bindings and access groups;
 - Phase 1 admin explain/read APIs live under `/api/web/admin/registry/identity/*` and are read-only;
-- agent machine identity remains technical device identity and must not identify the requester without a valid server account session;
+- agent machine identity remains technical device identity and must not identify the requester without an active device-user binding;
 - `registry_audience_groups` may include people, departments, department trees, locations, roles, access groups or services, but they do not grant RBAC permissions;
 - `/app/admin/registry` exposes `Группы доступа · P1` as a read-only RBAC summary and deep link to `/app/admin/access`; access-group mutations stay in the canonical Access Control Center;
 - `/app/admin/registry` exposes the first audience-group management UI in the `Аудитории · P1` tab and keeps member save behind preview plus required reason;
@@ -100,13 +97,13 @@ The admin registry is the web-first registration moderation center:
 - pending device-link claims are approved/rejected from typed registry APIs with Russian action labels and admin reasons;
 - person, UI-account and identity links remain explicit verified identities rather than copied user rows;
 - duplicate people and conflicting identities use preview/apply flows before mutation;
-- device transfer, account-session revoke, merge, bulk and import operations require preview before apply and return normalized operation reports;
+- device transfer, merge, bulk and import operations require preview before apply and return normalized operation reports;
 - `people[].profile_completion` is computed from the active requester profile schema so operators can see whether a requester profile is complete and which labels are missing;
-- the timeline drawer is the audit surface for profile, device, binding, account-session and claim changes.
+- the timeline drawer is the audit surface for profile, device, binding and claim changes.
 
 ## Timeline Contract
 
-`GET /api/web/admin/registry/timeline/{object_type}/{object_id}` is the drawer timeline source for `device`, `person`, `binding`, `account_session` and `claim`. It merges `registry_admin_events`, `device_registration_events` and `device_account_events` into a common item shape:
+`GET /api/web/admin/registry/timeline/{object_type}/{object_id}` is the drawer timeline source for `device`, `person`, `binding` and `claim`. It merges `registry_admin_events` and `device_registration_events` into a common item shape:
 
 - `source`: `registry_admin`, `registration` or `account`.
 - `event_type` plus `canonical_event_type` for UI labels such as `binding_created`, `shared_user_added`, `responsible_assigned`, `people_merged`, `policy_changed` and `bulk_action_applied`.
@@ -115,7 +112,7 @@ The admin registry is the web-first registration moderation center:
 - `related` with affected ids (`device_id`, `person_id`, `binding_id`, `claim_id`, `session_id`, `ticket_id`, `identity_id`, `location_id`, `department_id` when known).
 - `changes`, derived from explicit `payload.changes` or `before`/`after` payloads.
 
-The drawer must render who changed what, when, why and which entities were affected. New registry admin actions should either write a domain event through `RegistrationService`/`AccountSessionService` or a `RegistryAdminEvent` through `RegistryAdminOperationsService.append_event`.
+The drawer must render who changed what, when, why and which entities were affected. New registry admin actions should either write a domain event through `RegistrationService` or a `RegistryAdminEvent` through `RegistryAdminOperationsService.append_event`.
 
 ## Preview Contract
 
@@ -137,10 +134,10 @@ Preview responses use a shared shape:
 
 Implemented preview operations:
 
-- `transfer_owner`: shows old binding action, new primary binding creation, derived asset/inventory sync, account sessions that will be revoked and ticket references that stay preserved.
-- `people_merge`: shows field winners, identity moves/conflicts, bindings, sessions, account login requests, claims, tickets, asset owner and inventory rows that will move to the master person.
+- `transfer_owner`: shows old binding action, new primary binding creation, derived asset/inventory sync and ticket references that stay preserved.
+- `people_merge`: shows field winners, identity moves/conflicts, bindings, claims, tickets, asset owner and inventory rows that will move to the master person.
 - `location_merge` and `department_merge`: show people/assets/inventory rows that will be moved plus duplicate object archival as `merged`.
-- `bulk`: supports `devices.assign_location`, `devices.assign_department`, `devices.revoke_account_sessions`, `people.assign_department` and `account_sessions.revoke` with per-item results.
+- `bulk`: supports `devices.assign_location`, `devices.assign_department` and `people.assign_department` with per-item results.
 
 ## Dangerous Apply Result Contract
 
@@ -154,20 +151,20 @@ Transfer owner, people merge, location merge, department merge, bulk actions and
   "summary": {"success": 4, "failed": 0, "warnings": 0},
   "items": [
     {"id": "binding-old", "entity_type": "binding", "status": "success", "message": "transferred"},
-    {"id": "session-1", "entity_type": "account_session", "status": "success", "message": "revoked"}
+    {"id": "binding-new", "entity_type": "binding", "status": "success", "message": "created"}
   ],
   "events": ["binding_transferred"],
   "report_url": null
 }
 ```
 
-`status` is `success`, `partial_success` or `error`. `items` is the operational audit/report surface: transfer reports old/new bindings, derived asset/inventory sync and revoked sessions; merge reports moved/skipped entities; bulk and import report one row per selected object or CSV row. Domain-specific fields such as `binding`, `asset`, `master`, `duplicate`, `moved`, `bulk_operation_id` and legacy `results` are preserved for compatibility.
+`status` is `success`, `partial_success` or `error`. `items` is the operational audit/report surface: transfer reports old/new bindings and derived asset/inventory sync; merge reports moved/skipped entities; bulk and import report one row per selected object or CSV row. Domain-specific fields such as `binding`, `asset`, `master`, `duplicate`, `moved`, `bulk_operation_id` and legacy `results` are preserved for compatibility.
 
 ## Policy Safety Contract
 
 `GET /api/web/admin/registry/policies`, `POST /api/web/admin/registry/policies/preview`, `PATCH /api/web/admin/registry/policies` and `POST /api/web/admin/registry/policies/reset` return the same cautious policy envelope:
 
-- `defaults`: server defaults for every registration, account-session and ticket-visibility policy.
+- `defaults`: server defaults for every registration and ticket-visibility policy.
 - `effective`: validated effective policy after applying defaults.
 - `changed_from_defaults`: field-level default/effective drift.
 - `warnings`: non-default policy warnings. Automatic first-device approval is the default and does not emit a dangerous-setting warning.
@@ -185,11 +182,11 @@ Bulk apply endpoints return both the legacy `results` list and a normalized oper
 {
   "operation_id": "uuid",
   "bulk_operation_id": "uuid",
-  "operation": "devices.revoke_account_sessions",
+  "operation": "devices.assign_department",
   "status": "partial_success",
   "summary": {"selected": 47, "success": 42, "failed": 5},
   "items": [
-    {"id": "device-1", "status": "success", "affected_sessions": 2},
+    {"id": "device-1", "status": "success"},
     {"id": "device-2", "status": "error", "error_code": "NOT_FOUND"}
   ],
   "results": [],
@@ -198,7 +195,7 @@ Bulk apply endpoints return both the legacy `results` list and a normalized oper
 }
 ```
 
-`items` is one row per selected object, not one row per affected child record. Device-level session revoke therefore reports selected devices and includes `affected_sessions`. The registry UI shows selected count, success/failed totals, failed rows, copyable errors and CSV export of the report. CSV report generation escapes formula-leading values (`=`, `+`, `-`, `@`) before download.
+`items` is one row per selected object. The registry UI shows selected count, success/failed totals, failed rows, copyable errors and CSV export of the report. CSV report generation escapes formula-leading values (`=`, `+`, `-`, `@`) before download.
 
 ## Import Contract
 
@@ -224,7 +221,7 @@ Preview parses and validates the file without mutating state. It returns `previe
 - `people`: create/update people by `person_id`, validate required display name, duplicate emails and location/department ids.
 - `locations`: create/update locations and block exact duplicate building/floor/room keys.
 - `departments`: create/update departments and block duplicate department codes.
-- `device_inventory_mapping`: update registry asset location/department and non-binding lifecycle inventory card fields for existing devices. It does not import `device_user_bindings`, `assigned_person_id`, `person_id`, `source_binding_id` or account-session state.
+- `device_inventory_mapping`: update registry asset location/department and non-binding lifecycle inventory card fields for existing devices. It does not import `device_user_bindings`, `assigned_person_id`, `person_id` or `source_binding_id`.
 - `audience_groups`: create/update audience group code, name, description, source and status with duplicate code detection.
 - `audience_group_members`: create/update group members by group code/id, member type, member id and include-children flag. For `member_type=department`, `include_children=true` intentionally imports the same subtree/path targeting contract as `member_type=department_tree`; with `include_children=false` it targets only the direct primary department. It imports audience targeting membership only; it does not grant RBAC permissions or create Registry people/bindings.
 
@@ -250,7 +247,7 @@ For the full workflow smoke, deploy the current commit to the Linux stand and ru
 python scripts/registry_workflow_smoke.py --base-url https://example.test:9443 --insecure-tls
 ```
 
-The script issues short-lived admin/agent tokens through `AuthService`, drives admin and agent HTTP APIs, creates unique smoke objects, and verifies the database invariants below without printing raw tokens. It revokes smoke account sessions during cleanup and leaves audit/history records intact.
+The script issues short-lived admin/agent tokens through `AuthService`, drives admin and agent HTTP APIs, creates unique smoke objects, and verifies the database invariants below without printing raw tokens. It cleans up smoke bindings and leaves audit/history records intact.
 
 1. Create a user.
 2. Add and verify an identity.
@@ -259,25 +256,22 @@ The script issues short-lived admin/agent tokens through `AuthService`, drives a
 5. Add a shared user.
 6. Assign a responsible person.
 7. Transfer owner.
-8. Confirm old sessions are revoked.
-9. Create an account session after transfer.
-10. Revoke a binding.
-11. Confirm account sessions become invalid.
-12. Open the device drawer and check timeline/history.
-13. Open the person drawer and check identities/devices/sessions.
-14. Create/edit/archive/merge a location.
-15. Create/edit/archive/merge a department.
-16. Change a safe policy value and verify account-session TTL behavior.
-17. Export devices, people, bindings, sessions, locations, departments and quality CSV.
-18. Open Quality tab and use fix actions for missing user, stale binding, missing identity and duplicate person.
+8. Revoke a binding.
+9. Open the device drawer and check timeline/history.
+10. Open the person drawer and check identities/devices.
+11. Create/edit/archive/merge a location.
+12. Create/edit/archive/merge a department.
+13. Change a safe registration policy value.
+14. Export devices, people, bindings, locations, departments and quality CSV.
+15. Open Quality tab and use fix actions for missing user, stale binding, missing identity and duplicate person.
 
 `scripts/registry_workflow_smoke.py` covers the high-risk operational scenarios:
 
 - Scenario A: create person, add email/windows identities, verify identity, update person, confirm snapshot/drawer identity payload.
-- Scenario B: bind person as `primary_user`, confirm `device_user_bindings`, `registry_assets`, `device_inventory_bindings`, registration event and confirmed account-session creation.
+- Scenario B: bind person as `primary_user`, confirm `device_user_bindings`, `registry_assets`, `device_inventory_bindings` and registration event creation.
 - Scenario C: add `shared_user` and `responsible`, confirm primary stays active and agent account-state exposes all relationships.
-- Scenario D: transfer owner, confirm old binding status, new primary, derived asset/inventory state, old session revocation and denied ticket access with the old session.
-- Scenario E: merge duplicate people and confirm identities, bindings, tickets, account sessions and derived owner state move to the master.
+- Scenario D: transfer owner, confirm old binding status, new primary and derived asset/inventory state.
+- Scenario E: merge duplicate people and confirm identities, bindings, tickets and derived owner state move to the master.
 - Scenario F: create/assign/merge locations and departments and confirm people/assets/inventory are updated.
 
 ## Validation

@@ -256,32 +256,6 @@ const registryPayload: AdminRegistryPayload = {
       confirmed_by_admin: "admin",
     },
   ],
-  account_sessions: [
-    {
-      session_id: "session-old",
-      account_mode: "confirmed_binding",
-      verification_status: "verified",
-      verification_method: "confirmed_binding",
-      device_id: "device-owned",
-      person_id: "person-no-primary",
-      binding_id: "binding-old",
-      claim_id: null,
-      base_binding_id: "binding-old",
-      base_person_id: "person-no-primary",
-      display_name: "No Primary User",
-      full_name: "No Primary User",
-      login: "no-primary",
-      email: null,
-      phone: null,
-      reason: null,
-      warning_code: null,
-      created_at: "2026-06-16T09:00:00Z",
-      verified_at: "2026-06-16T09:00:00Z",
-      expires_at: null,
-      revoked_at: null,
-      revoked_by: null,
-    },
-  ],
   account_login_requests: [],
   ui_users: [
     {
@@ -315,7 +289,6 @@ describe("RegistryOverviewTab", () => {
       "Устройства без владельца",
       "Профиль не заполнен",
       "Дубли идентичностей",
-      "Сессии после передачи устройства",
     ];
     for (const queue of expectedQueues) {
       expect(screen.getByRole("heading", { name: queue })).toBeInTheDocument();
@@ -325,9 +298,10 @@ describe("RegistryOverviewTab", () => {
     expect(screen.getByText("Связать UI-аккаунт с персоной")).toBeInTheDocument();
     expect(screen.getByText("Сброс / смена UI-пароля")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Открыть RBAC-пользователей" })).toHaveAttribute("href", "/app/admin/access");
+    expect(screen.queryByText("Сессии после передачи устройства")).not.toBeInTheDocument();
   });
 
-  it("opens device, person, claim, session and duplicate detail targets from queues", () => {
+  it("opens device, person, claim and duplicate detail targets from queues", () => {
     const onSelect = vi.fn();
     const onFixIssue = vi.fn();
     render(<RegistryOverviewTab registry={registryPayload} onFixIssue={onFixIssue} onSelect={onSelect} />);
@@ -340,9 +314,6 @@ describe("RegistryOverviewTab", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Открыть устройство device-orphan из очереди Устройства без владельца" }));
     expect(onSelect).toHaveBeenCalledWith({ kind: "device", id: "device-orphan" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Открыть сессию session-old из очереди Сессии после передачи устройства" }));
-    expect(onSelect).toHaveBeenCalledWith({ kind: "session", id: "session-old" });
 
     fireEvent.click(screen.getByRole("button", { name: "Открыть проблему duplicate-person-1 из очереди Дубли идентичностей" }));
     expect(onFixIssue).toHaveBeenCalledWith(expect.objectContaining({ issue_key: "duplicate-person-1" }));

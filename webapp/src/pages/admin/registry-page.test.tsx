@@ -144,7 +144,6 @@ const registryPayload = {
   registration_claims: [],
   active_bindings: [],
   bindings: [],
-  account_sessions: [],
   account_login_requests: [],
   ui_users: [
     {
@@ -298,15 +297,6 @@ const registryPoliciesPayload = {
       department_mode: "allow_pending_request",
       location_mode: "allow_pending_request",
     },
-    account_sessions: {
-      confirmed_binding_ttl_hours: null,
-      verified_other_account_ttl_hours: 24,
-      registration_pending_ttl_hours: 72,
-      allow_other_account_login: true,
-      other_account_requires_reason: true,
-      other_account_requires_admin_approval: true,
-      allow_other_account_on_shared_or_responsible: true,
-    },
     ticket_visibility: {
       owner_can_see_historical_tickets: true,
       other_account_only_own_session_tickets: true,
@@ -327,15 +317,6 @@ const registryPoliciesPayload = {
       department_mode: "allow_pending_request",
       location_mode: "allow_pending_request",
     },
-    account_sessions: {
-      confirmed_binding_ttl_hours: null,
-      verified_other_account_ttl_hours: 24,
-      registration_pending_ttl_hours: 72,
-      allow_other_account_login: true,
-      other_account_requires_reason: true,
-      other_account_requires_admin_approval: true,
-      allow_other_account_on_shared_or_responsible: true,
-    },
     ticket_visibility: {
       owner_can_see_historical_tickets: true,
       other_account_only_own_session_tickets: true,
@@ -351,9 +332,6 @@ const registryPoliciesPayload = {
     "registration.stale_after_days": { type: "integer", minimum: 1, maximum: 3650, nullable: false },
     "registration.department_mode": { type: "enum", values: ["allow_pending_request", "optional", "required_existing"] },
     "registration.location_mode": { type: "enum", values: ["allow_pending_request", "optional", "required_existing"] },
-    "account_sessions.confirmed_binding_ttl_hours": { type: "integer", minimum: 1, maximum: 87600, nullable: true },
-    "account_sessions.verified_other_account_ttl_hours": { type: "integer", minimum: 1, maximum: 8760, nullable: false },
-    "account_sessions.registration_pending_ttl_hours": { type: "integer", minimum: 1, maximum: 8760, nullable: false },
     "diagnostic_target.allow_single_active_binding_fallback": { type: "boolean", nullable: false },
   },
   requires_restart: false,

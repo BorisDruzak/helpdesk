@@ -7,7 +7,6 @@ export type RegistryTabKey =
   | "bindings"
   | "requests"
   | "password_reset"
-  | "account_sessions"
   | "quality"
   | "locations"
   | "departments"
@@ -20,7 +19,6 @@ export type RegistrySelection =
   | { kind: "device"; id: string }
   | { kind: "person"; id: string }
   | { kind: "binding"; id: string }
-  | { kind: "session"; id: string }
   | { kind: "claim"; id: string }
   | null;
 
@@ -283,9 +281,6 @@ export function filterRegistryPayload(value: AdminRegistryPayload, query: string
     ),
     bindings: (value.bindings ?? value.active_bindings).filter((binding) =>
       includes(binding.binding_id, binding.device_id, binding.hostname, binding.person_id, binding.person_name, binding.relationship_type, binding.status)
-    ),
-    account_sessions: (value.account_sessions ?? []).filter((session) =>
-      includes(session.session_id, session.device_id, session.person_id, session.display_name, session.login, session.account_mode, session.verification_status, session.base_binding_id)
     ),
     account_login_requests: (value.account_login_requests ?? []).filter((request) =>
       includes(request.request_id, request.device_id, request.matched_person_id, request.base_binding_id, request.status, String(request.requested_account?.login ?? ""))
