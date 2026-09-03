@@ -1,3 +1,41 @@
+# Active: 2026-09-03 Helpdesk / Endpoint legacy cutover
+
+## Goal
+
+Complete the cross-repository cutover in
+`2026-09-03-helpdesk-endpoint-legacy-cutover-plan.md`: Endpoint Platform is
+the only endpoint-agent control plane; Helpdesk retains ticket/process and
+browser UI responsibilities only.
+
+## Scope and constraints
+
+- Execute the E1–E4 and H1–H5 atomic release train, preserving the Endpoint
+  headless runtime and the managed Remote Assist module source.
+- Keep the legacy Helpdesk schema as non-runtime historical residue; no
+  destructive schema drops or automatic downgrades.
+- Produce exact-SHA, contract-digest, package-digest, targeted-test and
+  real-agent release evidence.  The historical full suite is intentionally
+  not a gate.
+- Existing user changes outside this isolated worktree are out of scope.
+
+## Current state
+
+- Helpdesk source baseline is `79374b715350ac42d7e35eb4ca8a010c29d9ce44`;
+  it does not yet include the required UI-removal commit
+  `e88022956e4670278d151d0af1238f806b1a231a`.
+- Endpoint source baseline is
+  `d4a7797afc6c87b9ec5409ce96f0e47a26bc2434`; it has create/read operations
+  but no public cancel contract or `operations.cancel` scope.
+
+## Next steps
+
+1. Establish the accepted Helpdesk base including UI removal and map direct
+   consumers of legacy operation, agent and Remote Assist surfaces.
+2. Add and verify the Endpoint cancel contract, then refresh generated
+   contract artifacts and the Helpdesk lock.
+3. Delete legacy source incrementally behind retained-boundary checks; update
+   docs and targeted release evidence as each atomic commit completes.
+
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
