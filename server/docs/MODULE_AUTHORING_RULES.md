@@ -80,7 +80,6 @@ Example `zabbix.problems.lookup` placeholder:
 Non-agent capabilities now route through server-side providers:
 
 - `observer.ticket.summary` and `observer.trace.bundle` call existing observer overlay services and return evidence previews.
-- `remote_assist.request_view` and `remote_assist.session.summary` call existing Remote Assist session services; they are not ordinary `run_tool` calls.
 - `manual.visual_check` and `manual.vendor_response` create auditable passport/evidence items through the existing evidence repository.
 - Zabbix server connector capabilities validate integration/config/credential/mapping readiness and return a bounded unavailable response until a real external client is configured.
 
@@ -124,7 +123,7 @@ Non-agent capabilities now route through server-side providers:
 
 ## Observer SDK is mandatory
 
-- Каждый новый module tool обязан быть instrumented через `pc_agent.modules.base_module.BaseCollector`.
+- Endpoint-owned module tools are instrumented and executed by Endpoint Platform; Helpdesk records only safe ticket evidence.
 - Минимальный обязательный слой:
   - один верхнеуровневый `with self.trace_span("tool.entry", details={"tool_name": "<canonical id>"})`
   - `self.trace_event(...)` или вложенные `self.trace_span(...)` на опасных шагах

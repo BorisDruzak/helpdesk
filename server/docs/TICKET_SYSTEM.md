@@ -452,7 +452,7 @@ API: POST status, assign, queue, priority, reroute, close, worklogs, read; GET t
 
 ## Этап 10.6: Единая рабочая очередь + профиль инициатора
 
-Целевая бизнес-модель без изменения Protocol V3 wire-контракта:
+Целевая бизнес-модель тикетного workflow:
 
 - Канонические статусы тикетов хранятся в snake_case: `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`.
 - `queued` означает маршрутизированную заявку без исполнителя, `assigned` — исполнитель есть, но активная работа ещё не начата.
