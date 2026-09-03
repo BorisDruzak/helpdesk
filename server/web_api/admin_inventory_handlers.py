@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import uuid
 
 from aiohttp import web
 from loguru import logger
@@ -10,20 +9,16 @@ from pydantic import ValidationError
 from app.db import get_session
 from auth.middleware import require_auth
 from inventory.service import DeviceInventoryService
-from presence.service import DevicePresenceService, PRESENCE_TOOL_ID
-from tools.service import ToolExecutionService
+from presence.service import DevicePresenceService
 from web_api.dto.admin import (
     AdminBindingSuggestionApplyRequest,
     AdminBindingSuggestionItem,
     AdminBindingSuggestionReviewRequest,
     AdminBulkOperationsPayload,
     AdminBulkOperationSummary,
-    AdminBulkRefreshRequest,
-    AdminBulkRefreshResult,
     AdminDeviceInventoryBinding,
     AdminDeviceInventoryBindingHistoryItem,
     AdminDeviceInventoryBindingUpdateRequest,
-    AdminDeviceInventoryCollectPayload,
     AdminDeviceInventoryHistoryItem,
     AdminDeviceInventoryLatestSnapshot,
     AdminDeviceInventoryPayload,
@@ -781,80 +776,6 @@ async def handle_web_admin_device_inventory_refresh_policy_update(request: web.R
 
 
 @require_auth("admin")
-async def handle_web_admin_device_inventory_collect(request: web.Request):
-    device_id = str(request.match_info.get("device_id") or "").strip()
-    if not device_id:
-        return web.json_response(
-            {"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"},
-            status=400,
-        )
-    auth_context = request.get("auth_context")
-    operation_id = str(uuid.uuid4())
-    requested_at = datetime.now(timezone.utc)
-    try:
-        tool_service = ToolExecutionService(request.app["state"])
-        result = await tool_service.run_tool(
-            device_id=device_id,
-            ticket_id="",
-            tool_name="inventory.collect",
-            params={"_operation_id": operation_id},
-            call_id=str(uuid.uuid4()),
-            auth_context=auth_context,
-            wait_for_result=False,
-        )
-    except Exception as exc:
-        logger.warning(f"[web_admin_device_inventory_collect] dispatch failed: device_id={device_id} error={exc}")
-        async with get_session() as session:
-            await DeviceInventoryService(session).record_refresh_run(
-                device_id=device_id,
-                requested_at=requested_at,
-                requested_by=_actor_id(request),
-                status="failed",
-                error=str(exc),
-            )
-            await session.commit()
-        return web.json_response(
-            {
-                "status": "error",
-                "error": "Не удалось отправить команду inventory.collect",
-                "error_code": "ADMIN_DEVICE_INVENTORY_COLLECT_FAILED",
-            },
-            status=503,
-        )
-
-    status = str(result.get("status") or "accepted")
-    accepted = status in {"accepted", "queued", "sent", "waiting_consent"}
-    async with get_session() as session:
-        await DeviceInventoryService(session).record_refresh_run(
-            device_id=device_id,
-            requested_at=requested_at,
-            requested_by=_actor_id(request),
-            status="dispatched" if accepted else "failed",
-            job_id=str(result.get("operation_id") or operation_id) if accepted else None,
-            error=None if accepted else str(result.get("error") or status or "dispatch rejected"),
-        )
-        await session.commit()
-    if not accepted:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": str(result.get("error") or "Не удалось поставить inventory.collect в очередь"),
-                "error_code": str(result.get("error_code") or "ADMIN_DEVICE_INVENTORY_COLLECT_FAILED"),
-            },
-            status=503,
-        )
-    payload = AdminDeviceInventoryCollectPayload(
-        device_id=device_id,
-        tool_name="inventory.collect",
-        operation_id=str(result.get("operation_id") or operation_id),
-        status=status,
-        message="Команда inventory.collect отправлена",
-        poll_url=f"/api/operations/{result.get('operation_id') or operation_id}",
-    )
-    return json_model_response(SuccessResponse[AdminDeviceInventoryCollectPayload](data=payload))
-
-
-@require_auth("admin")
 async def handle_web_admin_device_presence(request: web.Request):
     device_id = str(request.match_info.get("device_id") or "").strip()
     if not device_id:
@@ -869,46 +790,3 @@ async def handle_web_admin_device_presence(request: web.Request):
             status=500,
         )
     return json_model_response(SuccessResponse[AdminDevicePresencePayload](data=payload))
-
-
-@require_auth("admin")
-async def handle_web_admin_device_presence_collect(request: web.Request):
-    device_id = str(request.match_info.get("device_id") or "").strip()
-    if not device_id:
-        return web.json_response({"status": "error", "error": "device_id is required", "error_code": "VALIDATION_ERROR"}, status=400)
-    operation_id = str(uuid.uuid4())
-    try:
-        result = await ToolExecutionService(request.app["state"]).run_tool(
-            device_id=device_id,
-            ticket_id="",
-            tool_name=PRESENCE_TOOL_ID,
-            params={"_operation_id": operation_id},
-            call_id=str(uuid.uuid4()),
-            auth_context=request.get("auth_context"),
-            wait_for_result=False,
-        )
-    except Exception as exc:
-        logger.warning(f"[web_admin_device_presence_collect] dispatch failed: device_id={device_id} error={exc}")
-        return web.json_response(
-            {"status": "error", "error": "Не удалось отправить presence.collect", "error_code": "ADMIN_DEVICE_PRESENCE_COLLECT_FAILED"},
-            status=503,
-        )
-    status = str(result.get("status") or "accepted")
-    if status not in {"accepted", "queued", "sent", "waiting_consent"}:
-        return web.json_response(
-            {
-                "status": "error",
-                "error": str(result.get("error") or "Не удалось поставить presence.collect в очередь"),
-                "error_code": str(result.get("error_code") or "ADMIN_DEVICE_PRESENCE_COLLECT_FAILED"),
-            },
-            status=503,
-        )
-    payload = AdminDeviceInventoryCollectPayload(
-        device_id=device_id,
-        tool_name=PRESENCE_TOOL_ID,
-        operation_id=str(result.get("operation_id") or operation_id),
-        status=status,
-        message="Команда presence.collect отправлена",
-        poll_url=f"/api/operations/{result.get('operation_id') or operation_id}",
-    )
-    return json_model_response(SuccessResponse[AdminDeviceInventoryCollectPayload](data=payload))
