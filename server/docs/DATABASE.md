@@ -176,15 +176,12 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 ---
 
-### Сборки агента (self-update)
+### Historical agent-control-plane schema
 
-| Таблица | Назначение | Где используется |
-|--------|------------|-------------------|
-| **agent_builds** | Реестр загруженных сборок pc_agent (ZIP/tar.gz) по target/channel/version. | `AgentBuildsRepo`: загрузка, список, получение по target/channel/version, скачивание. |
-| **agent_build_download_audit** | Аудит скачивания сборок агента. | Запись при GET download сборки. |
-
-**agent_builds:** `target`, `channel`, `version` (PK composite), `sha256`, `size`, `storage_path`, `created_at`, `uploaded_by`, `notes`, `artifact_filename`, `archive_type`, `mime_type`.  
-**agent_build_download_audit:** `id` (PK), `token_hash`, `token_prefix`, `target`, `channel`, `version`, `downloaded_at`, `ip_address`, `user_agent`.
+Legacy agent build, module, token, outbox and recipe tables can remain in an
+existing database as rollback history. They are deliberately not mapped by the
+active Helpdesk ORM and no Helpdesk runtime writes to them. Endpoint Platform
+owns active agent lifecycle and package delivery.
 
 ---
 
@@ -194,17 +191,11 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 |------------|---------|
 | `ticket_events_repo.py` | tickets, ticket_events |
 | `device_events_repo.py` | device_events |
-| `device_outbox_repo.py` | device_outbox |
 | `operations_repo.py` | operations, consent_decisions |
 | `devices_repo.py` | devices |
 | `device_config_repo.py` | device_config |
-| `toolset_snapshots_repo.py` | device_toolset_snapshots |
-| `modules_repo.py` | modules |
-| `device_modules_repo.py` | device_modules |
-| `auth_tokens_repo.py` | agent_tokens, ui_tokens |
 | `artifacts_repo.py` | artifacts |
 | `job_events_repo.py` | job_events |
-| `agent_builds_repo.py` | agent_builds |
 
 Тикеты создаются/читаются через `TicketEventsRepo` (модель `Ticket` в том же модуле).
 
