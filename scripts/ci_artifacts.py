@@ -13,7 +13,7 @@ DEFAULT_ARTIFACTS_ROOT = Path("artifacts") / "ci"
 DEFAULT_WEBAPP_BUNDLE_DIRNAME = "webapp-dist"
 DEFAULT_WEBAPP_BUNDLE_ARCHIVE_NAME = "webapp-dist.tar.gz"
 SERVER_DB_GATE_LAYER_PREFIX = "server_pytest_db_"
-SERVER_DB_GATE_LAYER_NAMES = {"server_pytest_agent_ws"}
+SERVER_DB_GATE_LAYER_NAMES: set[str] = set()
 SHARED_DB_FALLBACK_MARKERS = (
     "shared test DB fallback",
     "PC_CLIENT_ALLOW_SHARED_TEST_DB=1",

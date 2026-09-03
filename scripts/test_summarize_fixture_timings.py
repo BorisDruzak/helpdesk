@@ -23,7 +23,7 @@ def test_summarize_artifact_dir_groups_fixture_phase_stats(tmp_path):
         ],
     )
     _write_jsonl(
-        artifact_dir / "fixture-timings" / "server_pytest_agent_ws.jsonl",
+        artifact_dir / "fixture-timings" / "server_pytest_db_agent_runtime.jsonl",
         [
             {"fixture": "test_agent", "phase": "setup", "duration_seconds": 10.0},
             {"fixture": "test_agent", "phase": "teardown", "duration_seconds": 4.0},
