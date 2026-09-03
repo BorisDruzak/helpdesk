@@ -249,7 +249,6 @@ class DeviceOperationsService:
             links=DeviceOperationsLinks(
                 inventory=f"/app/admin/inventory?device={quote(device_id)}",
                 device_card=f"/app/admin/device?device={quote(device_id)}",
-                agent_updates=f"/app/admin/agent-updates?device={quote(device_id)}",
                 modules=f"/app/admin/modules?device={quote(device_id)}",
                 observer=f"/app/admin/observer?device_id={quote(device_id)}",
                 tickets=f"/app/tickets?search={quote(device_id)}",

@@ -8,7 +8,6 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { PageHeading } from "../../components/ui/page-heading";
 import { Select } from "../../components/ui/select";
-import { DeviceUpdatePanel } from "../../features/agent-updates/device-update-panel";
 import { fetchAdminDevices } from "../../features/admin/api";
 import { DeviceInventoryPanel } from "../../features/admin/device-inventory-panel";
 import { ObserverQuickPanel } from "../../features/tech/observer-quick-panel";
@@ -48,7 +47,7 @@ function getUpdateTone(value: string | null | undefined): "danger" | "info" | "n
   return "warning";
 }
 
-type DeviceDrilldownTab = "inventory" | "observer" | "status" | "updates";
+type DeviceDrilldownTab = "inventory" | "observer" | "status";
 
 
 export function AdminDevicePage() {
@@ -241,7 +240,6 @@ export function AdminDevicePage() {
                 ["status", "Status"],
                 ["inventory", "Inventory"],
                 ["observer", "Observer"],
-                ["updates", "Updates"],
               ].map(([value, label]) => (
                 <button
                   aria-selected={deviceDrilldownTab === value}
@@ -291,18 +289,6 @@ export function AdminDevicePage() {
                   deviceLabel={selectedDevice?.hostname ?? selectedDevice?.device_id ?? "selected device"}
                 />
               ) : null}
-              {deviceDrilldownTab === "updates" ? (
-                <DeviceUpdatePanel
-                  device={
-                    selectedDevice
-                      ? {
-                          device_id: selectedDevice.device_id,
-                          hostname: selectedDevice.hostname,
-                        }
-                      : null
-                  }
-                />
-              ) : null}
             </div>
           </section>
 
@@ -338,25 +324,6 @@ export function AdminDevicePage() {
               <CardTitle>Быстрые переходы</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <button
-                className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
-                onClick={() => {
-                  startTransition(() => {
-                    const query = new URLSearchParams();
-                    if (selectedDevice?.device_id) {
-                      query.set("device", selectedDevice.device_id);
-                    }
-                    if (selectedDevice?.target) {
-                      query.set("target", selectedDevice.target);
-                    }
-                    navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
-                  });
-                }}
-                type="button"
-              >
-                <span className="font-medium text-slate-900">Обновления агента и rollout</span>
-                <ArrowUpRight className="h-4 w-4 text-brand-700" />
-              </button>
               <button
                 className="flex w-full items-center justify-between rounded-[1.1rem] bg-surface-subtle px-4 py-4 text-left"
                 onClick={() => {

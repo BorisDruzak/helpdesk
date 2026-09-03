@@ -5,7 +5,6 @@
   BellRing,
   CheckCircle2,
   ClipboardList,
-  DownloadCloud,
   KeyRound,
   Layers3,
   Monitor,
@@ -596,16 +595,6 @@ export function AdminInventoryPage() {
             {activePanel === "rollout" ? (
               <RolloutPanel
                 assignments={devicesQuery.data?.rollout ?? []}
-                onOpenAgentUpdates={() => {
-                  const query = new URLSearchParams();
-                  if (selectedDevice?.device_id) {
-                    query.set("device", selectedDevice.device_id);
-                  }
-                  if (selectedDevice?.target) {
-                    query.set("target", selectedDevice.target);
-                  }
-                  navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
-                }}
                 onOpenModules={() => navigate("/app/admin/modules")}
                 selectedDevice={selectedDevice}
               />
@@ -667,16 +656,6 @@ export function AdminInventoryPage() {
           }}
           onCleanupPreview={() => cleanupMutation.mutate(false)}
           onCleanupApply={() => cleanupMutation.mutate(true)}
-          onOpenAgentUpdates={() => {
-            const query = new URLSearchParams();
-            if (selectedDevice?.device_id) {
-              query.set("device", selectedDevice.device_id);
-            }
-            if (selectedDevice?.target) {
-              query.set("target", selectedDevice.target);
-            }
-            navigate(`/app/admin/agent-updates${query.toString() ? `?${query.toString()}` : ""}`);
-          }}
           onOpenDeviceCard={openDeviceCard}
           onOpenDeviceOperations={openDeviceOperations}
           onOpenPlaybooks={() => navigate("/app/admin/playbooks")}
@@ -1215,12 +1194,10 @@ function FleetInventoryPanel({
 
 function RolloutPanel({
   assignments,
-  onOpenAgentUpdates,
   onOpenModules,
   selectedDevice,
 }: {
   assignments: AdminDevicesPayload["rollout"];
-  onOpenAgentUpdates: () => void;
   onOpenModules: () => void;
   selectedDevice: DeviceItem | null;
 }) {
@@ -1232,9 +1209,6 @@ function RolloutPanel({
           <p className="mt-1 text-sm text-slate-500">Контекст обновления агента и target выбранного устройства.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button leadingIcon={<DownloadCloud className="h-4 w-4" />} onClick={onOpenAgentUpdates} size="sm">
-            Agent Updates
-          </Button>
           <Button leadingIcon={<Layers3 className="h-4 w-4" />} onClick={onOpenModules} size="sm" variant="outline">
             Модули
           </Button>
@@ -1286,7 +1260,6 @@ function AgentDetailsPanel({
   onArchive,
   onCleanupApply,
   onCleanupPreview,
-  onOpenAgentUpdates,
   onOpenDeviceCard,
   onOpenDeviceOperations,
   onOpenPlaybooks,
@@ -1304,7 +1277,6 @@ function AgentDetailsPanel({
   onArchive: () => void;
   onCleanupApply: () => void;
   onCleanupPreview: () => void;
-  onOpenAgentUpdates: () => void;
   onOpenDeviceCard: () => void;
   onOpenDeviceOperations: () => void;
   onOpenPlaybooks: () => void;
@@ -1439,15 +1411,6 @@ function AgentDetailsPanel({
                   Восстановить агента
                 </Button>
               ) : null}
-              <Button
-                className="w-full justify-start"
-                disabled={device.is_deleted}
-                leadingIcon={<DownloadCloud className="h-4 w-4" />}
-                onClick={onOpenAgentUpdates}
-                size="sm"
-              >
-                Обновления агента
-              </Button>
               <Button
                 className="w-full justify-start"
                 leadingIcon={<ArrowUpRight className="h-4 w-4" />}

@@ -267,7 +267,6 @@ export type TechPanelV2Snapshot = {
     observer: string;
     inventory: string;
     device_operations?: string | null;
-    agent_updates: string;
     command_center: string;
     approval_center: string;
     logs?: string | null;
@@ -288,7 +287,6 @@ export type TechLocatorLink = {
     | "approval_center"
     | "command_center"
     | "inventory"
-    | "agent_updates"
     | "logs";
 };
 

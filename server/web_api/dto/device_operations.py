@@ -226,7 +226,6 @@ class DeviceOperationsLinks(BaseModel):
 
     inventory: str | None = None
     device_card: str | None = None
-    agent_updates: str | None = None
     modules: str | None = None
     observer: str | None = None
     tickets: str | None = None

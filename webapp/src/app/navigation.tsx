@@ -316,17 +316,6 @@ export const appNavigation: AppNavItem[] = [
     requiresDeviceContext: true,
   },
   {
-    label: "Обновления агента",
-    description: "Build registry и rollout policy",
-    icon: MonitorCog,
-    section: "admin",
-    workspace: "admin",
-    domainId: "devices-agents",
-    to: "/app/admin/agent-updates",
-    permission: "admin.inventory.view",
-    order: 40,
-  },
-  {
     label: "Observer",
     description: "Трассы и деградации",
     icon: Radar,

@@ -600,17 +600,6 @@ def _build_alerts_from_metrics(
                 details={"window_seconds": invalid_burst_window_sec},
             )
         )
-    if update_waiting_confirm > 0:
-        alerts.append(
-            _alert(
-                severity="warning",
-                kind="update_waiting_handshake_confirm_too_long",
-                entity_type="operation",
-                entity_id="agent_update",
-                summary=f"Обновления слишком долго ждут подтверждения handshake: {update_waiting_confirm} шт.",
-                link="/admin#agent-updates",
-            )
-        )
     if queued_stuck > 0:
         alerts.append(_alert(severity="warning", kind="operation_queued_too_long", entity_type="operation", entity_id="queued", summary=f"Операции слишком долго стоят в очереди: {queued_stuck} шт."))
     if sent_stuck > 0:

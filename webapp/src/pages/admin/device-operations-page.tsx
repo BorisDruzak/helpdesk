@@ -273,7 +273,6 @@ function OverviewTab({ data }: { data: DeviceOperationsPayload }) {
         <CardContent className="space-y-3">
           <ExternalLinkButton href={data.links.inventory} label="Открыть Inventory" />
           <ExternalLinkButton href={data.links.device_card} label="Открыть карточку устройства" />
-          <ExternalLinkButton href={data.links.agent_updates} label="Открыть обновления агента" />
           <ExternalLinkButton href={data.links.modules} label="Открыть модули" />
           <ExternalLinkButton href={data.links.observer} label="Открыть Observer" />
           <ExternalLinkButton href={data.links.tickets} label="Тикеты по устройству" />
@@ -344,9 +343,6 @@ function AgentTab({ data }: { data: DeviceOperationsPayload }) {
         <FieldRow label="Update status" value={data.agent.update_status} />
         <FieldRow label="Доступно обновление" value={data.agent.update_available ? "Да" : "Нет"} />
         <FieldRow label="Ожидает restart" value={data.agent.pending_restart ? "Да" : "Нет"} />
-        <div className="pt-4">
-          <ExternalLinkButton href={data.links.agent_updates} label="Открыть Agent Updates" />
-        </div>
       </CardContent>
     </Card>
   );

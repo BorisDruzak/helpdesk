@@ -26,7 +26,6 @@ describe("fetchTechPanelV2Snapshot", () => {
         links: {
           observer: "/app/admin/observer",
           inventory: "/app/admin/inventory",
-          agent_updates: "/app/admin/agent-updates",
           command_center: "/app/support",
           approval_center: "/app/support/approvals",
         },

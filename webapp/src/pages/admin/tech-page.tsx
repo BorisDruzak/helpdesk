@@ -389,7 +389,6 @@ function OverviewTab({ snapshot }: { snapshot: TechPanelV2Snapshot }) {
           <SafeLink href={snapshot.links.observer}>Открыть Observer</SafeLink>
           <SafeLink href={snapshot.links.inventory}>Открыть inventory</SafeLink>
           <SafeLink href={snapshot.links.device_operations}>Открыть Device Operations</SafeLink>
-          <SafeLink href={snapshot.links.agent_updates}>Открыть agent updates</SafeLink>
           <SafeLink href={snapshot.links.command_center}>Открыть command center</SafeLink>
           <SafeLink href={snapshot.links.approval_center}>Открыть approvals</SafeLink>
           <SafeLink href={snapshot.links.logs}>Открыть логи</SafeLink>

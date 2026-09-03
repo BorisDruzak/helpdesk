@@ -4,7 +4,6 @@ import { Link, Navigate, Outlet, useLocation, type RouteObject } from "react-rou
 import { AppShell } from "./layouts/app-shell";
 import {
   AdminCenterPage,
-  AdminAgentUpdatesPage,
   AdminAiIntegrationPage,
   AdminChangesPage,
   AdminDeviceOperationsPage,
@@ -498,14 +497,6 @@ export const appRoutes: RouteObject[] = [
             element: (
               <WorkspaceAccessGate workspace="admin">
                 <AdminOperationDetailPage />
-              </WorkspaceAccessGate>
-            )
-          },
-          {
-            path: "admin/agent-updates",
-            element: (
-              <WorkspaceAccessGate workspace="admin">
-                <AdminAgentUpdatesPage />
               </WorkspaceAccessGate>
             )
           },

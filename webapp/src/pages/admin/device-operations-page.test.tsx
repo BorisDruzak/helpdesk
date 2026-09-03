@@ -180,7 +180,6 @@ function payload(overrides: Partial<DeviceOperationsPayload> = {}): DeviceOperat
     links: {
       inventory: "/app/admin/inventory?device=device-1",
       device_card: "/app/admin/device?device=device-1",
-      agent_updates: "/app/admin/agent-updates?device=device-1",
       modules: "/app/admin/modules?device=device-1",
       observer: "/app/admin/observer?device_id=device-1",
       tickets: "/app/tickets?search=device-1",

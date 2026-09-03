@@ -38,7 +38,6 @@ def test_alert_rules_empty_metrics():
         ({"stale_count": 2}, "device_stale"),
         ({"old_pending": 1}, "connection_request_stuck_pending"),
         ({"invalid_recent": 7}, "invalid_token_burst"),
-        ({"update_waiting_confirm": 1}, "update_waiting_handshake_confirm_too_long"),
         ({"queued_stuck": 1}, "operation_queued_too_long"),
         ({"sent_stuck": 1}, "operation_sent_too_long"),
         ({"in_progress_stuck": 1}, "operation_in_progress_too_long"),

@@ -14,10 +14,6 @@ vi.mock("../../features/admin/api", async (importOriginal) => {
   };
 });
 
-vi.mock("../../features/agent-updates/device-update-panel", () => ({
-  DeviceUpdatePanel: () => <section data-testid="device-update-panel">update panel</section>,
-}));
-
 vi.mock("../../features/admin/device-inventory-panel", () => ({
   DeviceInventoryPanel: () => <section data-testid="device-inventory-panel">inventory panel</section>,
 }));

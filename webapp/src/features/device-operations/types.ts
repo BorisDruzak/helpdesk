@@ -170,7 +170,6 @@ export type DeviceOperationsPayload = {
   links: {
     inventory?: string | null;
     device_card?: string | null;
-    agent_updates?: string | null;
     modules?: string | null;
     observer?: string | null;
     tickets?: string | null;

@@ -1,7 +1,6 @@
 import { useDeferredValue, useEffect, useState, startTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { DeviceUpdatePanel } from "../agent-updates/device-update-panel";
 import { FormsBuilderPanel } from "../forms-builder/forms-builder-panel";
 import { ModulesPanel } from "../modules/modules-panel";
 import { ObserverQuickPanel } from "../tech/observer-quick-panel";
@@ -327,13 +326,6 @@ export function AdminWorkspace() {
                   <p>Тот же shell показывает быстрый trace-срез и drilldown без legacy tech panel.</p>
                 </article>
               </div>
-
-              <DeviceUpdatePanel
-                device={{
-                  device_id: selectedDevice.device_id,
-                  hostname: selectedDevice.hostname,
-                }}
-              />
 
               <ObserverQuickPanel
                 deviceId={selectedDevice.device_id}

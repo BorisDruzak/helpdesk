@@ -88,10 +88,6 @@ export const AdminOperationDetailPage = lazy(() =>
   import("../../pages/admin/operation-detail-page").then((module) => ({ default: module.AdminOperationDetailPage })),
 );
 
-export const AdminAgentUpdatesPage = lazy(() =>
-  import("../../pages/admin/agent-updates-page").then((module) => ({ default: module.AdminAgentUpdatesPage })),
-);
-
 export const AdminAiIntegrationPage = lazy(() =>
   import("../../pages/admin/ai-integration-page").then((module) => ({ default: module.AdminAiIntegrationPage })),
 );

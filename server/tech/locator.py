@@ -138,7 +138,6 @@ def _device_match(request: web.Request, device: Device, *, failed_count: int, st
         "links": [
             _safe_link("Device Operations", f"/app/admin/device-operations/{device.device_id}", "device_operations"),
             _safe_link("Inventory", f"/app/admin/inventory?device_id={quote(device.device_id)}", "inventory"),
-            _safe_link("Agent Updates", f"/app/admin/agent-updates?device_id={quote(device.device_id)}", "agent_updates"),
             _safe_link("Observer", f"/app/admin/observer?device_id={quote(device.device_id)}", "observer"),
         ],
     }

@@ -312,8 +312,6 @@ def build_readiness_gates(
             "critical" if baseline_status == "blocked" else ("warning" if baseline_status != "ok" else "info"),
             "Пилот должен понимать, сколько агентов ниже минимальной версии.",
             evidence=evidence,
-            action_label="Открыть agent updates",
-            action_href="/app/admin/agent-updates",
         )
     )
 
@@ -793,7 +791,6 @@ def _links() -> dict[str, Any]:
         "observer": "/app/admin/observer",
         "inventory": "/app/admin/inventory",
         "device_operations": "/app/admin/device-operations",
-        "agent_updates": "/app/admin/agent-updates",
         "command_center": "/app/support",
         "approval_center": "/app/support/approvals",
         "logs": "/app/admin/tech?tab=logs",
