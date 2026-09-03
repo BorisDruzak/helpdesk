@@ -9,7 +9,7 @@ Use it for:
 - server routes/endpoints
 - backend services
 - auth/actor/role logic
-- server-side Protocol V3 handling
+- Endpoint integration and ticket-facing operation projections
 - persistence/database-facing behavior
 - server startup/runtime behavior
 - server logs/smoke checks
@@ -43,7 +43,7 @@ Use repo-local skills when applicable:
 - Keep error handling explicit and observable without leaking secrets.
 - Keep server changes minimal and contract-aware.
 - If public routes, payloads, lifecycle behavior, startup behavior, or deployment-relevant code changes, update relevant docs and CODEMAP in the same change.
-- For Protocol V3 producer/consumer changes, check both server and `pc_agent` sides using protocol docs and targeted searches.
+- Helpdesk is not an agent control plane: preserve the Endpoint contract boundary and do not reintroduce local agent transport, DeviceOutbox dispatch, or local endpoint execution.
 
 ## Verification
 
@@ -52,7 +52,7 @@ Before claiming completion for server work:
 - Run workspace sanity when available:
   - `python scripts/verify_workspace.py`
 - Run targeted server tests/checks relevant to the changed files.
-- For HTTP/API pytest files, consider `test_client_light` only as an explicit per-file opt-in under `docs/TESTING_RULES.md`; keep runtime, outbox, WebSocket, `test_agent`, and agent update tests on the regular `test_client`.
+- For HTTP/API pytest files, consider `test_client_light` only as an explicit per-file opt-in under `docs/TESTING_RULES.md`; keep browser `/ws_ui` tests on the regular `test_client`.
 - For API/route changes, run the project-approved smoke or route-level check when available.
 - For runtime changes, inspect relevant logs through project scripts rather than ad-hoc remote patching.
 - For release/deploy-sensitive changes, use `.agents/skills/pc-client-release-gate/SKILL.md`.
@@ -64,7 +64,7 @@ Use `.agents/skills/pc-client-docs-drift/SKILL.md` when server work changes:
 - routes/endpoints
 - service boundaries
 - auth/actor behavior
-- Protocol V3 behavior
+- Endpoint contract or operation-projection behavior
 - startup/runtime behavior
 - deploy/release assumptions
 - test/check commands
