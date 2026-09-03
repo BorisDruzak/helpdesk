@@ -873,7 +873,6 @@ SERVER_CAPABILITIES = [
 - [Protocol V3 (агент)](../../pc_agent/docs/PROTOCOL_V3.md) — полная спецификация протокола V3
 - [Modules API](MODULES_API.md) — API для управления модулями (HTTP download)
 - [Modules Drift and Snapshots](MODULES_DRIFT_AND_SNAPSHOTS.md) — детекция drift и toolset snapshots
-- [V3 Migration Complete](../V3_MIGRATION_COMPLETE.md) — статус миграции на Protocol V3
 
 ---
 
