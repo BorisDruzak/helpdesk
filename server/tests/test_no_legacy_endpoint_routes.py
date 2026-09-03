@@ -30,6 +30,9 @@ def test_legacy_agent_control_routes_are_not_registered() -> None:
         "/api/modules/ping",
         "/api/install_module_package",
         "/api/web/admin/modules",
+        "/api/registry/agent/account-state",
+        "/api/registry/agent/browser-pairings",
+        "/api/web/registry/browser-pairings/lookup",
     }
 
     assert paths.isdisjoint(forbidden)
