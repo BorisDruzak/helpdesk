@@ -2431,16 +2431,7 @@ class RegistryAdminOperationsService:
                     select(DeviceRegistrationEvent).where(DeviceRegistrationEvent.device_id == object_id).order_by(desc(DeviceRegistrationEvent.event_at)).limit(limit)
                 )
             ).scalars().all()
-            account_rows = (
-                await self.session.execute(
-                    select(DeviceAccountEvent)
-                    .where(DeviceAccountEvent.device_id == object_id)
-                    .order_by(desc(DeviceAccountEvent.event_at))
-                    .limit(limit)
-                )
-            ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
-            items.extend(self.serialize_event(row) for row in account_rows)
         elif object_type == "person":
             admin_stmt = select(RegistryAdminEvent).where(or_(RegistryAdminEvent.object_id == object_id, RegistryAdminEvent.related_person_id == object_id))
             registration_rows = (
