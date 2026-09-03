@@ -104,7 +104,7 @@ export type SupportWorkspaceSummaryPayload = {
   smart_view_options: SupportFilterOption[];
 };
 
-export type SupportQueueMassAction = "assign_self" | "assign" | "change_queue" | "change_priority" | "internal_note" | "run_diagnostics" | "link_mass_problem";
+export type SupportQueueMassAction = "assign_self" | "assign" | "change_queue" | "change_priority" | "internal_note" | "link_mass_problem";
 
 export type SupportQueueMassActionRequest = {
   action: SupportQueueMassAction;
@@ -1982,30 +1982,45 @@ export async function postSupportTicketToolRun(
     params: Record<string, unknown>;
   }
 ): Promise<SupportToolActionResult> {
-  const response = await fetch(`/api/web/support/tickets/${encodeURIComponent(ticketId)}/tools/run`, {
+  const response = await fetch(
+    `/api/web/support/tickets/${encodeURIComponent(ticketId)}/diagnostics/capabilities/${encodeURIComponent(payload.toolName)}/run`,
+    {
     method: "POST",
     credentials: "same-origin",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      tool_name: payload.toolName,
-      preset_id: payload.presetId,
       params: payload.params
     })
-  });
-  const result = await readJson<SuccessResponse<SupportToolActionResult> | ErrorResponse>(response);
+    }
+  );
+  const result = await readJson<{
+    status?: string;
+    error?: string;
+    error_code?: string;
+    operation_id?: string;
+    trace_id?: string | null;
+  }>(response);
 
-  if (!response.ok || !result || result.status !== "success") {
-    const errorPayload = result && result.status === "error" ? result : null;
+  if (!response.ok || !result || result.status === "error" || !result.operation_id) {
     throw new SupportBootstrapApiError(
-      errorPayload?.error ?? "Не удалось запустить инструмент",
+      result?.error ?? "Не удалось запустить Endpoint-диагностику",
       response.status,
-      errorPayload?.error_code
+      result?.error_code
     );
   }
 
-  return result.data;
+  return {
+    ticket_id: ticketId,
+    device_id: "",
+    tool_name: payload.toolName,
+    dispatch_status: result.status ?? "queued",
+    operation_id: result.operation_id,
+    poll_url: `/api/operations/${result.operation_id}`,
+    trace_id: result.trace_id ?? null,
+    message: "Endpoint-диагностика поставлена в очередь выполнения."
+  };
 }
 
 export async function postSupportTicketPlaybookRun(
