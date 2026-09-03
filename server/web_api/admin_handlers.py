@@ -2998,8 +2998,6 @@ async def _build_admin_playbooks_payload(state: object | None = None) -> AdminPl
             state=state,
             endpoint_cutover_only=True,
         ).list_capabilities(device_id=None):
-            if capability.execution_target in {"agent_builtin", "agent_managed_module"}:
-                continue
             entry = normalize_capability_catalog_entry(capability, source=capability.source or "diagnostic_capability")
             capability_id = str(entry.get("capability_id") or entry.get("tool") or "")
             if not capability_id or capability_id in seen_catalog_tools:

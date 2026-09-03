@@ -38,8 +38,6 @@ class CapabilityDescriptor:
     side_effects: bool = False
     requires_consent: bool = False
     requires_device: bool = False
-    requires_agent_online: bool = False
-    supports_auto_install: bool = False
     requires_integration: bool = False
     integration_key: Optional[str] = None
     requires_credentials: bool = False
@@ -48,7 +46,6 @@ class CapabilityDescriptor:
     required_permission: Optional[str] = None
     policy_key: Optional[str] = None
     mapping_key: Optional[str] = None
-    install_required_on_agent: bool = False
     platforms: List[str] = field(default_factory=list)
     params_schema: Dict[str, Any] = field(default_factory=dict)
     output_schema: Dict[str, Any] = field(default_factory=dict)

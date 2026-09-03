@@ -123,3 +123,31 @@ def test_readiness_has_no_agent_execution_or_recipe_runner_path() -> None:
     assert "def _agent_recipe_readiness" not in readiness_source
     assert "agent_recipe_runner" not in readiness_source
     assert "agent_recipe" not in dependencies_source
+
+
+def test_active_capability_and_playbook_sources_have_no_agent_runtime_fields() -> None:
+    for relative_path in (
+        "server/diagnostics/capability_models.py",
+        "server/diagnostics/capability_registry.py",
+        "server/diagnostics/providers/endpoint_platform.py",
+        "server/diagnostics/providers/server_builtin.py",
+        "server/diagnostics/providers/static_providers.py",
+        "server/diagnostics/providers/zabbix_provider.py",
+        "server/app/services/playbook_engine.py",
+        "server/inventory/service.py",
+        "server/playbooks/catalog.py",
+        "server/playbooks/tool_catalog.py",
+        "server/web_api/admin_handlers.py",
+        "server/web_api/support_handlers.py",
+    ):
+        source = (ROOT / relative_path).read_text(encoding="utf-8-sig")
+        for legacy_token in (
+            "agent_builtin",
+            "agent_managed_module",
+            "agent_recipe_runner",
+            "install_required_on_agent",
+            "requires_agent_online",
+            "supports_auto_install",
+            "min_agent_version",
+        ):
+            assert legacy_token not in source

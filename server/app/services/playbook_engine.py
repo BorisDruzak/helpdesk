@@ -25,9 +25,8 @@ from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
 TOOL_BACKED_STEP_TYPES = frozenset({"run_tool", "collect", "enrich", "remediate"})
 LOCAL_STEP_TYPES = frozenset({"transform", "decision", "report"})
 PLAYBOOK_TOOL_ACTOR_ROLE = "support"
-AGENT_CAPABILITY_TARGETS = frozenset({"agent_builtin", "agent_managed_module"})
-NON_AGENT_CAPABILITY_TARGETS = frozenset(
-    {"server_builtin", "server_connector", "observer_query", "remote_assist", "manual"}
+PLAYBOOK_CAPABILITY_TARGETS = frozenset(
+    {"server_builtin", "server_connector", "observer_query", "manual", "endpoint_operation"}
 )
 
 
@@ -71,7 +70,7 @@ def _context_permissions(context: dict) -> set[str] | None:
     return {str(raw)}
 
 
-async def _resolve_non_agent_capability(state, capability_id: str):
+async def _resolve_playbook_capability(state, capability_id: str):
     if not capability_id:
         return None
     try:
@@ -80,7 +79,7 @@ async def _resolve_non_agent_capability(state, capability_id: str):
     except Exception as exc:
         logger.debug(f"[PlaybookEngine] Capability resolve skipped id={capability_id}: {exc}")
         return None
-    if capability and capability.execution_target in NON_AGENT_CAPABILITY_TARGETS:
+    if capability and capability.execution_target in PLAYBOOK_CAPABILITY_TARGETS:
         return capability
     return None
 
@@ -100,7 +99,7 @@ def _readiness_dict(readiness: Any) -> dict[str, Any]:
     return dict(readiness) if isinstance(readiness, dict) else {}
 
 
-async def _execute_non_agent_capability_step(
+async def _execute_capability_step(
     session,
     state,
     repo: PlaybookRepo,
@@ -368,15 +367,15 @@ async def _start_group_steps(
             continue
         # Этап 9: Capability Gate — проверка до enqueue (отключается CAPABILITY_GATE_STRICT=false)
         params = _step_params(step, context, prev_steps)
-        non_agent_capability = await _resolve_non_agent_capability(state, _step_executable_id(step))
-        if non_agent_capability is not None:
-            step_run = await _execute_non_agent_capability_step(
+        capability = await _resolve_playbook_capability(state, _step_executable_id(step))
+        if capability is not None:
+            step_run = await _execute_capability_step(
                 session,
                 state,
                 repo,
                 run,
                 step,
-                non_agent_capability,
+                capability,
                 context,
                 params,
             )

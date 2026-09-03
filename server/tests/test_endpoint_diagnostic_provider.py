@@ -236,8 +236,6 @@ def test_endpoint_capability_descriptor_is_exact_and_mode_gated():
     assert capability.side_effects is False
     assert capability.requires_consent is False
     assert capability.requires_device is True
-    assert capability.requires_agent_online is False
-    assert capability.supports_auto_install is False
     assert capability.source == "external_endpoint"
     assert capability.params_schema == {"type": "object", "additionalProperties": False, "maxProperties": 0}
     assert capability.aliases == []

@@ -71,7 +71,6 @@ def list_static_capabilities() -> List[CapabilityDescriptor]:
             provider_type="observer_provider",
             execution_target="observer_query",
             requires_device=False,
-            requires_agent_online=False,
             required_permission="observer.trace.view",
             source="observer",
             params_schema={
@@ -122,7 +121,6 @@ def list_static_capabilities() -> List[CapabilityDescriptor]:
             provider_type="observer_provider",
             execution_target="observer_query",
             requires_device=False,
-            requires_agent_online=False,
             required_permission="observer.trace.view",
             source="observer",
             params_schema={

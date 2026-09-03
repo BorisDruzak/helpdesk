@@ -1166,7 +1166,6 @@ class AdminPlaybookBlockCatalogItem(BaseModel):
     install_policy: str | None = None
     supported_platforms: list[str] = Field(default_factory=list)
     platforms: list[str] = Field(default_factory=list)
-    min_agent_version: str | None = None
     risk_level: str | None = None
     params_schema: dict[str, Any] = Field(default_factory=dict)
     output_schema: dict[str, Any] = Field(default_factory=dict)

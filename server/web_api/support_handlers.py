@@ -197,10 +197,6 @@ from web_api.dto.support import (
     SupportToolItem,
     SupportToolParameter,
 )
-from config import AGENT_BUILTIN_MODULES
-
-
-
 
 SCOPE_OPTIONS = [
     SupportFilterOption(value="all", label="Все доступные"),
@@ -2040,7 +2036,6 @@ def _support_tool_from_capability(capability: object) -> SupportToolItem:
     execution_target = str(getattr(capability, "execution_target", "") or "")
     provider_id = str(getattr(capability, "provider_id", "") or "")
     requires_consent = bool(getattr(capability, "requires_consent", False))
-    install_required = bool(getattr(capability, "install_required_on_agent", False))
     return SupportToolItem(
         tool_name=str(getattr(capability, "id", "") or ""),
         module_name=provider_id or None,
@@ -2049,7 +2044,7 @@ def _support_tool_from_capability(capability: object) -> SupportToolItem:
         tool_kind=str(getattr(capability, "tool_kind", "diagnostic") or "diagnostic"),
         risk_level=risk_level,
         requires_consent=requires_consent,
-        install_required=install_required,
+        install_required=False,
         required_permission=str(required_permission) if required_permission else None,
         policy_labels=[
             f"execution:{execution_target}",
@@ -2060,7 +2055,7 @@ def _support_tool_from_capability(capability: object) -> SupportToolItem:
         execution={"target": execution_target, "requires_device": bool(getattr(capability, "requires_device", False))},
         deployment={"provider_id": provider_id},
         safety={"side_effects": bool(getattr(capability, "side_effects", False)), "requires_consent": requires_consent},
-        readiness={"requires_agent_online": bool(getattr(capability, "requires_agent_online", False))},
+        readiness={},
         evidence=dict(getattr(capability, "evidence", {}) or {}),
         artifacts=dict(getattr(capability, "artifacts", {}) or {}),
     )
@@ -2086,61 +2081,8 @@ def _parse_optional_datetime(value: str | None) -> datetime | None:
 
 
 def _required_tools_from_manifest(manifest_json: object) -> list[str]:
-    if not isinstance(manifest_json, dict):
-        return []
-    tools: list[str] = []
-    for raw_item in manifest_json.get("required_tools") or []:
-        if not isinstance(raw_item, dict):
-            continue
-        tool_name = str(raw_item.get("tool") or raw_item.get("tool_name") or "").strip()
-        if tool_name and tool_name not in tools:
-            tools.append(tool_name)
-    for raw_block in manifest_json.get("blocks") or []:
-        if not isinstance(raw_block, dict):
-            continue
-        execution_target = str(raw_block.get("execution_target") or "").strip()
-        if execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}:
-            continue
-        tool_name = str(raw_block.get("tool") or raw_block.get("tool_name") or "").strip()
-        if tool_name and tool_name not in tools:
-            tools.append(tool_name)
-    return tools
-
-
-def _required_capabilities_from_manifest(manifest_json: object) -> list[dict[str, str | None]]:
-    if not isinstance(manifest_json, dict):
-        return []
-    capabilities: list[dict[str, str | None]] = []
-    seen: set[str] = set()
-    for raw_item in manifest_json.get("required_capabilities") or []:
-        if not isinstance(raw_item, dict):
-            continue
-        capability_id = str(raw_item.get("capability_id") or raw_item.get("id") or "").strip()
-        if not capability_id or capability_id in seen:
-            continue
-        seen.add(capability_id)
-        capabilities.append(
-            {
-                "capability_id": capability_id,
-                "execution_target": str(raw_item.get("execution_target") or "").strip() or None,
-            }
-        )
-    for raw_block in manifest_json.get("blocks") or []:
-        if not isinstance(raw_block, dict):
-            continue
-        capability_id = str(
-            raw_block.get("capability_id") or raw_block.get("capability") or raw_block.get("tool") or ""
-        ).strip()
-        if not capability_id or capability_id in seen:
-            continue
-        seen.add(capability_id)
-        capabilities.append(
-            {
-                "capability_id": capability_id,
-                "execution_target": str(raw_block.get("execution_target") or "").strip() or None,
-            }
-        )
-    return capabilities
+    del manifest_json
+    return []
 
 
 @dataclass(frozen=True)
@@ -2228,7 +2170,6 @@ def _build_playbook_launch_readiness(
     manifest_json: object,
     *,
     device_id: str | None,
-    available_tool_names: set[str],
 ) -> PlaybookLaunchReadiness:
     if not device_id:
         return PlaybookLaunchReadiness(
@@ -2238,24 +2179,7 @@ def _build_playbook_launch_readiness(
             missing_params=[],
         )
 
-    required_tools = _required_tools_from_manifest(manifest_json)
-    required_capabilities = _required_capabilities_from_manifest(manifest_json)
-    missing_tools = []
-    for tool in required_tools:
-        builtin_prefix = tool.split(".", 1)[0].lower() if "." in tool else ""
-        if tool in available_tool_names or builtin_prefix in AGENT_BUILTIN_MODULES:
-            continue
-        missing_tools.append(tool)
-    for capability in required_capabilities:
-        capability_id = str(capability.get("capability_id") or "").strip()
-        execution_target = str(capability.get("execution_target") or "").strip()
-        if execution_target and execution_target not in {"agent_builtin", "agent_managed_module"}:
-            continue
-        builtin_prefix = capability_id.split(".", 1)[0].lower() if "." in capability_id else ""
-        if capability_id in available_tool_names or builtin_prefix in AGENT_BUILTIN_MODULES:
-            continue
-        if capability_id not in missing_tools:
-            missing_tools.append(capability_id)
+    missing_tools: list[str] = []
     missing_params = _required_param_gaps_from_manifest(manifest_json)
     label_parts: list[str] = []
     if missing_tools:
@@ -2842,21 +2766,6 @@ async def _build_support_recent_playbook_runs(session, ticket: object, *, limit:
     ]
 
 
-async def _playbook_available_tool_names(device_id: str | None, state: object | None = None) -> set[str]:
-    if not device_id:
-        return set()
-    registry = CapabilityRegistry(
-        state=state,
-        endpoint_diagnostic_execution_mode="endpoint",
-        endpoint_cutover_only=True,
-    )
-    return {
-        capability.id
-        for capability in await registry.list_capabilities(device_id=device_id)
-        if capability.execution_target == "endpoint_operation"
-    }
-
-
 async def _build_support_playbooks_payload(
     session,
     ticket: object,
@@ -2864,7 +2773,6 @@ async def _build_support_playbooks_payload(
 ) -> SupportTicketPlaybooksPayload:
     diagnostic_target = _support_diagnostic_target_payload(ticket)
     device_id = _support_dispatch_device_id(ticket) or None
-    available_tool_names = await _playbook_available_tool_names(device_id, state)
     rows = await session.execute(
         select(Playbook, PlaybookVersion, func.count(PlaybookStep.id))
         .join(PlaybookVersion, PlaybookVersion.playbook_id == Playbook.id)
@@ -2883,7 +2791,6 @@ async def _build_support_playbooks_payload(
         readiness = _build_playbook_launch_readiness(
             version.manifest_json,
             device_id=device_id,
-            available_tool_names=available_tool_names,
         )
         playbooks.append(
             SupportPlaybookItem(
@@ -6341,7 +6248,6 @@ async def handle_web_support_run_playbook(request: web.Request):
             readiness = _build_playbook_launch_readiness(
                 version.manifest_json,
                 device_id=device_id,
-                available_tool_names=await _playbook_available_tool_names(device_id, request.app["state"]),
             )
             if not readiness.can_run:
                 return web.json_response(

@@ -7,9 +7,9 @@ from web_api.support_handlers import (
 import pytest
 
 
-pytestmark = pytest.mark.db_cleanup("tickets")
+pytestmark = pytest.mark.no_db
 
-def test_playbook_readiness_blocks_missing_tools_and_required_params():
+def test_playbook_readiness_blocks_missing_required_params():
     manifest = {
         "blocks": [
             {
@@ -24,38 +24,26 @@ def test_playbook_readiness_blocks_missing_tools_and_required_params():
                 },
             }
         ],
-        "required_tools": [
-            {"tool": "network.ping", "params_schema": {"type": "object"}},
-            {"tool": "ip_address.get_ip"},
-            {"tool": "diag.logs.collect"},
-        ],
     }
 
     readiness = _build_playbook_launch_readiness(
         manifest,
         device_id="device-1",
-        available_tool_names={"network.ping"},
     )
 
     assert readiness.can_run is False
-    assert readiness.missing_tools == ["ip_address.get_ip"]
+    assert readiness.missing_tools == []
     assert readiness.missing_params == ["network.ping.target"]
-    assert "Недоступны инструменты" in readiness.label
     assert "Не заполнены параметры" in readiness.label
 
 
 def test_playbook_readiness_allows_server_installable_tools():
     manifest = {
-        "required_tools": [
-            {"tool": "network.ping"},
-            {"tool": "system.collect"},
-        ],
     }
 
     readiness = _build_playbook_launch_readiness(
         manifest,
         device_id="device-1",
-        available_tool_names={"network.ping", "system.collect"},
     )
 
     assert readiness.can_run is True
@@ -63,7 +51,7 @@ def test_playbook_readiness_allows_server_installable_tools():
     assert readiness.label == "Готов к запуску"
 
 
-def test_playbook_readiness_does_not_require_agent_toolset_for_non_agent_capabilities():
+def test_playbook_readiness_does_not_require_local_toolset_for_endpoint_capabilities():
     manifest = {
         "required_capabilities": [
             {"capability_id": "server.http.request", "execution_target": "server_builtin"},
@@ -89,11 +77,10 @@ def test_playbook_readiness_does_not_require_agent_toolset_for_non_agent_capabil
     readiness = _build_playbook_launch_readiness(
         manifest,
         device_id="device-1",
-        available_tool_names=set(),
     )
 
     assert readiness.can_run is False
-    assert readiness.missing_tools == ["endpoint.http.request"]
+    assert readiness.missing_tools == []
     assert readiness.missing_params == ["server.http.request.url"]
 
 

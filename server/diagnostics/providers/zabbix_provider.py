@@ -32,8 +32,6 @@ def list_zabbix_capabilities() -> List[CapabilityDescriptor]:
         "tool_kind": "diagnostic",
         "risk_level": "low",
         "requires_device": False,
-        "requires_agent_online": False,
-        "supports_auto_install": False,
         "requires_integration": True,
         "integration_key": "zabbix",
         "requires_credentials": True,
@@ -42,7 +40,6 @@ def list_zabbix_capabilities() -> List[CapabilityDescriptor]:
         "required_permission": "monitoring.zabbix.view",
         "policy_key": "monitoring.zabbix.enabled",
         "mapping_key": "zabbix.host",
-        "install_required_on_agent": False,
         "platforms": ["any"],
         "source": "server_connector",
         "evidence": {

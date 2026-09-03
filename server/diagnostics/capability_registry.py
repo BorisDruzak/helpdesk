@@ -48,8 +48,6 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
         side_effects=bool(safety.get("side_effects", metadata.get("side_effects", False))),
         requires_consent=bool(safety.get("requires_consent", metadata.get("requires_consent", False))),
         requires_device=bool(execution.get("requires_device", False)),
-        requires_agent_online=bool(execution.get("requires_agent_online", False)),
-        supports_auto_install=bool(execution.get("supports_auto_install", False)),
         requires_integration=bool(execution.get("requires_integration", False)),
         integration_key=execution.get("integration_key"),
         requires_credentials=bool(readiness.get("requires_credentials", False)),
@@ -58,9 +56,6 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
         required_permission=readiness.get("required_permission"),
         policy_key=readiness.get("policy_key"),
         mapping_key=readiness.get("mapping_key"),
-        install_required_on_agent=bool(
-            raw_tool.get("install_required", deployment.get("install_required_on_agent", False))
-        ),
         platforms=list(metadata.get("platforms") or spec.get("platforms") or ["any"]),
         params_schema=dict(raw_tool.get("params_schema") or spec.get("params_schema") or {}),
         output_schema=dict(raw_tool.get("output_schema") or spec.get("output_schema") or {}),

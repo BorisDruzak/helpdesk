@@ -9,7 +9,6 @@ from typing import Any
 from playbooks.tool_catalog import (
     build_condition_hints,
     build_required_capabilities_manifest,
-    build_required_tools_manifest,
     expand_preset_params,
 )
 
@@ -30,90 +29,8 @@ DIAGNOSTIC_OUTPUT_CONTRACT = {
 def _diagnostic_condition_hints(error_codes: list[str] | None = None) -> dict[str, Any]:
     return build_condition_hints(DIAGNOSTIC_OUTPUT_CONTRACT, error_codes or [])
 
-DIAGNOSTIC_MODULE_CATALOG: list[dict[str, Any]] = [
-    {
-        "id": "system.collect",
-        "label": "Системный снимок",
-        "tool": "system.collect",
-        "block_type": "diagnostic",
-        "module_kind": "diagnostic",
-        "description": "ОС, hostname, сеть, ресурсы и базовая идентичность агента.",
-        "default_params": {"preset": "network"},
-        "changes_device": False,
-        "requires_confirmation": False,
-        "output_contract": deepcopy(DIAGNOSTIC_OUTPUT_CONTRACT),
-        "condition_hints": _diagnostic_condition_hints(),
-    },
-    {
-        "id": "ip_address.get_ip",
-        "label": "IP-адрес",
-        "tool": "ip_address.get_ip",
-        "block_type": "diagnostic",
-        "module_kind": "diagnostic",
-        "description": "Публичный/локальный IP и быстрая проверка сетевой видимости.",
-        "default_params": {},
-        "changes_device": False,
-        "requires_confirmation": False,
-        "output_contract": deepcopy(DIAGNOSTIC_OUTPUT_CONTRACT),
-        "condition_hints": _diagnostic_condition_hints(),
-    },
-    {
-        "id": "diag.logs.collect",
-        "label": "Сбор логов",
-        "tool": "diag.logs.collect",
-        "block_type": "diagnostic",
-        "module_kind": "diagnostic",
-        "description": "Безопасный пакет логов агента для прикрепления к тикету.",
-        "default_params": {"preset": "agent", "tail_lines": 500},
-        "changes_device": False,
-        "requires_confirmation": True,
-        "output_contract": {
-            **deepcopy(DIAGNOSTIC_OUTPUT_CONTRACT),
-            "compact_fields": [
-                {"path": "result.output.logs_bundle", "label": "logs_bundle", "type": "artifact"}
-            ],
-        },
-        "condition_hints": _diagnostic_condition_hints(["LOG_ACCESS_DENIED"]),
-    },
-]
-
-SCENARIO_TEMPLATES: list[dict[str, Any]] = [
-    {
-        "key": "site_not_opening",
-        "title": "Сайт не открывается",
-        "problem": "Проверить сетевой контекст, IP и логи агента перед ручной эскалацией.",
-        "recommended_form_keys": ["site_system", "network"],
-        "block_ids": ["system.collect", "ip_address.get_ip", "diag.logs.collect"],
-    },
-    {
-        "key": "printer_not_printing",
-        "title": "Не печатает принтер",
-        "problem": "Собрать системный снимок и окружение рабочего места.",
-        "recommended_form_keys": ["printer"],
-        "block_ids": ["system.collect", "diag.logs.collect"],
-    },
-    {
-        "key": "access_issue",
-        "title": "Нет доступа в систему",
-        "problem": "Зафиксировать форму обращения и состояние агента без изменения устройства.",
-        "recommended_form_keys": ["access", "site_system"],
-        "block_ids": ["system.collect", "diag.logs.collect"],
-    },
-    {
-        "key": "agent_offline",
-        "title": "Агент не выходит на сервер",
-        "problem": "Собрать локальный статус и последние логи агента.",
-        "recommended_form_keys": ["breakage"],
-        "block_ids": ["system.collect", "diag.logs.collect"],
-    },
-    {
-        "key": "internet_not_working",
-        "title": "Не работает интернет",
-        "problem": "Проверить сетевые признаки, IP и базовые логи.",
-        "recommended_form_keys": ["network"],
-        "block_ids": ["system.collect", "ip_address.get_ip", "diag.logs.collect"],
-    },
-]
+DIAGNOSTIC_MODULE_CATALOG: list[dict[str, Any]] = []
+SCENARIO_TEMPLATES: list[dict[str, Any]] = []
 
 
 def _require_key(value: Any, *, field: str) -> str:
@@ -149,7 +66,6 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
 
     normalized_blocks: list[dict[str, Any]] = []
     steps: list[dict[str, Any]] = []
-    catalog_by_tool: dict[str, dict[str, Any]] = {}
     catalog_by_capability: dict[str, dict[str, Any]] = {}
     for index, raw_block in enumerate(blocks, start=1):
         if not isinstance(raw_block, dict):
@@ -180,8 +96,6 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
         if not isinstance(params, dict):
             raise ValueError(f"block {block_id!r} params must be an object")
         preset_id = str(raw_block.get("preset_id") or "").strip() or None
-        if tool and tool_manifest:
-            catalog_by_tool[tool] = deepcopy(tool_manifest)
         if capability_id and tool_manifest:
             catalog_by_capability[capability_id] = deepcopy(tool_manifest)
         if preset_id and tool_manifest:
@@ -234,7 +148,7 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
             or (
                 "lazy"
                 if tool_manifest and tool_manifest.get("install_required")
-                else ("server" if execution_target and execution_target not in {"agent_builtin", "agent_managed_module"} else "preinstalled")
+                else "server"
             ),
             "condition": step["if_expr"],
             "timeout_sec": step["timeout_sec"],
@@ -246,7 +160,6 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
         normalized_blocks.append(normalized_block)
         steps.append(step)
 
-    required_tools = build_required_tools_manifest(normalized_blocks, catalog_by_tool)
     required_capabilities = build_required_capabilities_manifest(normalized_blocks, catalog_by_capability)
 
     return {
@@ -261,7 +174,7 @@ def normalize_playbook_draft(raw: Any) -> dict[str, Any]:
             "schema": "pc_client.playbook.self_healing.v2",
             "scenario_class": "diagnostic",
             "blocks": normalized_blocks,
-            "required_tools": required_tools,
+            "required_tools": [],
             "required_capabilities": required_capabilities,
             "source": "admin_low_code_builder",
         },
