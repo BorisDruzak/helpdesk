@@ -6,7 +6,6 @@ command_result (success/error). Этап 6: deferred run (pending + scheduled_at
 Этап 7: if_expr, params_template (context + prev_steps), retry_policy, timeout_sec.
 Этап 8: parallel_group — fan-out/fan-in, лимит параллелизма per run.
 """
-import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Optional, Tuple, Any, List
@@ -17,7 +16,6 @@ import config
 from app.repos.playbook_repo import PlaybookRepo
 from app.db.models import PlaybookStep
 from app.utils.playbook_step_eval import evaluate_if_expr, resolve_params_template
-from app.services.playbook_capability import check_tool_available
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.execution_router import CapabilityExecutionRouter
 from diagnostics.observability import RuntimeAuditCapabilityExecutionObserver
@@ -284,48 +282,6 @@ async def _fail_tool_step_before_enqueue(
     )
 
 
-async def _ensure_tool_step_ready(state, run, step: PlaybookStep) -> tuple[bool, str | None, str | None, bool]:
-    from tools.service import DB_AVAILABLE, ToolExecutionService
-
-    tool_name = str(step.tool or "")
-    ensure_err = await ToolExecutionService(state)._ensure_module_installed(
-        run.device_id,
-        tool_name,
-        auth_context=None,
-    )
-    if ensure_err:
-        return (
-            False,
-            str(ensure_err.get("error_code") or "TOOL_PRECHECK_FAILED"),
-            str(ensure_err.get("error") or "Tool dispatch precheck failed"),
-            False,
-        )
-    builtin_prefix = tool_name.split(".", 1)[0].lower() if "." in tool_name else ""
-    preflight_authoritative = bool(DB_AVAILABLE or builtin_prefix in config.AGENT_BUILTIN_MODULES)
-    return (True, None, None, preflight_authoritative)
-
-
-def _retry_allowed(step: PlaybookStep, step_run, error_code: Optional[str]) -> bool:
-    """Этап 7: Проверка retry_policy: max_attempts, retry_on_codes."""
-    policy = step.retry_policy_json if isinstance(step.retry_policy_json, dict) else None
-    if not policy:
-        return False
-    max_attempts = policy.get("max_attempts")
-    if max_attempts is None:
-        return False
-    try:
-        max_attempts = int(max_attempts)
-    except (TypeError, ValueError):
-        return False
-    if step_run.attempt >= max_attempts:
-        return False
-    retry_on_codes = policy.get("retry_on_codes")
-    if retry_on_codes is not None and isinstance(retry_on_codes, list) and len(retry_on_codes) > 0:
-        if not error_code or error_code not in retry_on_codes:
-            return False
-    return True
-
-
 def _group_steps_by_parallel(steps: List[PlaybookStep]) -> List[List[Tuple[PlaybookStep, int]]]:
     """
     Этап 8: Разбивает шаги на группы по parallel_group.
@@ -393,10 +349,6 @@ async def _start_group_steps(
     Этап 8: Запускает до max_to_start шагов из группы (step_run + operation + enqueue).
     Возвращает (количество запущенных, first_operation_id или None).
     """
-    from app.services.operation_service import OperationService
-    from websocket.protocol import enqueue_command_async
-
-    op_service = OperationService(session, publisher=getattr(state, "ui_publisher", None))
     started_tools = 0
     processed_steps = 0
     first_op_id: Optional[str] = None
@@ -435,76 +387,19 @@ async def _start_group_steps(
             if getattr(run, "status", None) != "running":
                 break
             continue
-        ready, err_code, err_msg, preflight_authoritative = await _ensure_tool_step_ready(state, run, step)
-        if not ready:
-            step_run_fail = await _fail_tool_step_before_enqueue(
-                repo,
-                run,
-                step,
-                code=err_code or "TOOL_PRECHECK_FAILED",
-                message=err_msg or "Tool dispatch precheck failed",
-                stage="module_install",
-                input_json=params,
-            )
-            processed_steps += 1
-            await _process_run_after_step_terminal(session, state, repo, run, step, step_run_fail)
-            if getattr(run, "status", None) != "running":
-                break
-            continue
-        if config.CAPABILITY_GATE_STRICT and not preflight_authoritative:
-            ok, err_code, err_msg = await check_tool_available(session, run.device_id, step.tool)
-            if not ok:
-                step_run_fail = await _fail_tool_step_before_enqueue(
-                    repo,
-                    run,
-                    step,
-                    code=err_code or "UNSUPPORTED_CAPABILITY",
-                    message=err_msg or "Tool not available",
-                    stage="capability_gate",
-                    input_json=params,
-                )
-                processed_steps += 1
-                await _process_run_after_step_terminal(session, state, repo, run, step, step_run_fail)
-                if getattr(run, "status", None) != "running":
-                    break
-                continue
-        operation_id = str(uuid.uuid4())
-        if first_op_id is None:
-            first_op_id = operation_id
-        await op_service.enqueue_operation(
-            operation_id=operation_id,
-            device_id=run.device_id,
-            kind="tool_call",
-            actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
-            trace_id=str(uuid.uuid4()),
-            ticket_id=None,
-            job_id=None,
-            tool_name=step.tool,
-            timeout_override_sec=step.timeout_sec,
-            playbook_run_id=run.id,
-        )
-        await repo.create_step_run(
-            playbook_run_id=run.id,
-            playbook_step_id=step.id,
-            operation_id=operation_id,
-            attempt=1,
+        step_run_fail = await _fail_tool_step_before_enqueue(
+            repo,
+            run,
+            step,
+            code="ENDPOINT_ONLY_CAPABILITY_REQUIRED",
+            message="Playbook steps must resolve to an Endpoint or server capability after cutover",
+            stage="capability_resolution",
             input_json=params,
         )
-        await session.commit()
-        await enqueue_command_async(
-            state,
-            device_id=run.device_id,
-            command="run_tool",
-            params={"tool_name": step.tool, "params": params},
-            actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
-            operation_id=operation_id,
-            require_online=False,
-        )
-        started_tools += 1
         processed_steps += 1
-        logger.info(
-            f"[PlaybookEngine] Started run_id={run.id} step_key={step.step_key} operation_id={operation_id}"
-        )
+        await _process_run_after_step_terminal(session, state, repo, run, step, step_run_fail)
+        if getattr(run, "status", None) != "running":
+            break
     return (processed_steps, first_op_id)
 
 
@@ -580,9 +475,6 @@ async def start_run(
     Returns:
         (playbook_run_id, first_operation_id или None если шагов нет / отложенный run / idempotency)
     """
-    from app.services.operation_service import OperationService
-    from websocket.protocol import enqueue_command_async
-
     repo = PlaybookRepo(session)
     now = datetime.now(timezone.utc)
 
@@ -664,9 +556,6 @@ async def advance_after_terminal(
     Returns:
         True если операция была привязана к playbook_step_run и обработка выполнена.
     """
-    from app.services.operation_service import OperationService
-    from websocket.protocol import enqueue_command_async
-
     repo = PlaybookRepo(session)
     triple = await repo.get_step_run_by_operation_id(operation_id)
     if not triple:
@@ -687,51 +576,8 @@ async def advance_after_terminal(
         error_json=error_json,
     )
 
-    # Этап 7: retry по policy при failed
+    # Legacy agent operations cannot be retried after the Endpoint-only cutover.
     if status == "failed":
-        error_code = None
-        if error_json and isinstance(error_json, dict):
-            error_code = error_json.get("code") or (error_json.get("error") or {}).get("code")
-        if _retry_allowed(step, step_run, error_code):
-            next_attempt = step_run.attempt + 1
-            next_operation_id = str(uuid.uuid4())
-            op_service = OperationService(session, publisher=getattr(state, "ui_publisher", None))
-            await op_service.enqueue_operation(
-                operation_id=next_operation_id,
-                device_id=run.device_id,
-                kind="tool_call",
-                actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
-                trace_id=str(uuid.uuid4()),
-                ticket_id=None,
-                job_id=None,
-                tool_name=step.tool,
-                timeout_override_sec=step.timeout_sec,
-                playbook_run_id=run.id,
-            )
-            context = run.context_json or {}
-            prev_steps = await repo.get_prev_steps_for_run(run.id)
-            params = _step_params(step, context, prev_steps)
-            await repo.create_step_run(
-                playbook_run_id=run.id,
-                playbook_step_id=step.id,
-                operation_id=next_operation_id,
-                attempt=next_attempt,
-                input_json=params,
-            )
-            await session.commit()
-            await enqueue_command_async(
-                state,
-                device_id=run.device_id,
-                command="run_tool",
-                params={"tool_name": step.tool, "params": params},
-                actor_role=PLAYBOOK_TOOL_ACTOR_ROLE,
-                operation_id=next_operation_id,
-                require_online=False,
-            )
-            logger.info(
-                f"[PlaybookEngine] Retry run_id={run.id} step_key={step.step_key} attempt={next_attempt} operation_id={next_operation_id}"
-            )
-            return True
         if not step.continue_on_error:
             await repo.finish_run(
                 run.id,
@@ -776,9 +622,6 @@ async def start_first_step_for_run(session, state, run_id: int) -> Optional[str]
     Этап 6: переводит pending run в running и ставит в очередь первый шаг.
     Вызывается планировщиком для due runs. Возвращает operation_id первого шага или None.
     """
-    from app.services.operation_service import OperationService
-    from websocket.protocol import enqueue_command_async
-
     from app.db.models import PlaybookRun
 
     repo = PlaybookRepo(session)
