@@ -323,5 +323,4 @@ Security update 2026-06-26:
 ## 9. Связанные документы
 
 - [README.md](README.md) — обзор сервера и API.
-- [PROTOCOL_V3.md](PROTOCOL_V3.md) — протокол V3 на стороне сервера.
-- Документация агента: `pc_agent/docs/PROTOCOL_V3.md` — полное описание протокола V3.
+- [ENDPOINT_OPERATION_CONTRACT.md](ENDPOINT_OPERATION_CONTRACT.md) — граница операций Endpoint Platform.

@@ -16,7 +16,7 @@
 
 ## По областям
 
-- Protocol V3: `server/docs/PROTOCOL_V3.md`, `pc_agent/docs/PROTOCOL_V3.md`.
+- Endpoint diagnostics: `server/docs/ENDPOINT_OPERATION_CONTRACT.md`.
 - Auth/security: `server/docs/SECURITY_AND_AUTH.md`, `pc_agent/docs/AUTHENTICATION.md`.
 - Tickets/chat/forms: `server/docs/TICKET_SYSTEM.md`, `server/docs/CHAT_MESSAGE_CONTRACT.md`, `server/docs/REQUEST_FORM_BUILDER.md`.
 - External Knowledge/Registry boundaries: `server/docs/SEGMENTATION_BOUNDARIES.md`, `server/docs/KNOWLEDGE_PLATFORM_API_V1.md`, and `server/docs/REGISTRY_PLATFORM_API_V1.md` — Helpdesk consumes versioned ports; local Knowledge is removed/unavailable, while Registry uses a temporary local adapter behind a redacted `RegistryPort` during cutover.

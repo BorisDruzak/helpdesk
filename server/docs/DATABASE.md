@@ -324,5 +324,4 @@ rollback is application rollback plus a tested database restore.
 - [ARTIFACTS_API.md](ARTIFACTS_API.md) — upload/download артефактов, таблица artifacts.
 - [MODULES_API.md](MODULES_API.md) — модули, tables modules, device_modules.
 - [MODULES_DRIFT_AND_SNAPSHOTS.md](MODULES_DRIFT_AND_SNAPSHOTS.md) — device_toolset_snapshots, device_modules.
-- [COMMAND_RESULT_LIFECYCLE.md](COMMAND_RESULT_LIFECYCLE.md) — device_outbox, operations, ticket_events.
-- [TOOL_CALL_STARTED_INVARIANT.md](TOOL_CALL_STARTED_INVARIANT.md) — tool_call_started, operations.
+- [ENDPOINT_OPERATION_CONTRACT.md](ENDPOINT_OPERATION_CONTRACT.md) — Endpoint operation links and reconciliation.

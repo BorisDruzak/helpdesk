@@ -312,12 +312,8 @@ subprocess.run(['./venv/bin/alembic', 'upgrade', 'head'], env=env, cwd=os.getcwd
 
 ## 14. Связанные документы
 
-- `PROTOCOL_V3.md` — протокол WebSocket.
-- `COMMAND_RESULT_LIFECYCLE.md` — жизненный цикл команд и операций.
 - `MODULES_API.md`, `MODULES_DRIFT_AND_SNAPSHOTS.md` — модули и дрифт.
-- `TOOL_CALL_STARTED_INVARIANT.md` — инварианты tool_call_started.
-- `pc_agent/docs/MODULES.md`, `pc_agent/docs/PROTOCOL_V3.md` — агент.
-- `pc_agent/docs/TOOLS_CONTRACT.md` — контракт list_tools/run_tool (module.tool, коды ошибок).
+- `ENDPOINT_OPERATION_CONTRACT.md` — жизненный цикл операций Endpoint Platform.
 - `PLAYBOOK_API.md` — API POST /api/playbooks/runs (Этап 4).
 - **`PLAYBOOK_STAGES_7_12.md`** — этапы 7–12: семантика шагов, parallel, capability gate, drift, каталог, наблюдаемость.
 
