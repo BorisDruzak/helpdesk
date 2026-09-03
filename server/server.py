@@ -143,19 +143,6 @@ async def housekeeping_cleanup_task(app: web.Application):
             if trimmed_count > 0:
                 logger.info(f"[HOUSEKEEPING] Trimmed {trimmed_count} ticket_seen_message_ids caches")
 
-            # Repair device_outbox: status='sent' без соответствующей операции → failed (ORPHAN_SENT)
-            try:
-                from app.db import get_session
-                from app.repos.device_outbox_repo import DeviceOutboxRepo
-                async with get_session() as session:
-                    repo = DeviceOutboxRepo(session)
-                    repaired = await repo.repair_sent_without_operation(limit=100)
-                    if repaired > 0:
-                        await session.commit()
-                        logger.info(f"[HOUSEKEEPING] device_outbox repair: {repaired} entries marked ORPHAN_SENT")
-            except Exception as outbox_err:
-                logger.warning(f"[HOUSEKEEPING] device_outbox repair skipped: {outbox_err}")
-        
         except Exception as e:
             logger.error(f"[HOUSEKEEPING] Cleanup error: {e}", exc_info=True)
 
