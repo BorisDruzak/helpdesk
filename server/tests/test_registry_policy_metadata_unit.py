@@ -4,7 +4,7 @@ from registry.policy_service import build_registry_policy_response
 import pytest
 
 
-pytestmark = pytest.mark.db_cleanup("registry_access")
+pytestmark = pytest.mark.no_db
 
 def test_policy_response_defaults_to_automatic_first_binding_without_warning():
     response = build_registry_policy_response(
