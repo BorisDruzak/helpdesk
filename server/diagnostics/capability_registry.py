@@ -33,14 +33,9 @@ def _descriptor_from_tool(raw_tool: Dict[str, Any], *, default_source: str) -> C
     capability_id = str(raw_tool.get("tool") or raw_tool.get("tool_name") or "").strip()
     module_name = str(raw_tool.get("module") or raw_tool.get("module_name") or "").strip()
     provider_id = str(deployment.get("provider_id") or module_name or capability_id.split(".", 1)[0]).strip()
-    execution_target = str(execution.get("target") or "agent_managed_module").strip()
+    execution_target = str(execution.get("target") or "endpoint_operation").strip()
     source = str(raw_tool.get("source") or default_source)
-    if execution_target == "agent_builtin":
-        provider_type = "agent_builtin"
-    elif execution_target == "agent_managed_module":
-        provider_type = "agent_managed_module"
-    else:
-        provider_type = execution_target
+    provider_type = execution_target
     return CapabilityDescriptor(
         id=capability_id,
         title=str(raw_tool.get("title") or spec.get("title") or spec.get("description") or capability_id),

@@ -177,19 +177,9 @@ def _result_should_persist_as_evidence(capability, result: dict) -> bool:
         return False
     if result.get("error_code") in {"CAPABILITY_NOT_FOUND", "CAPABILITY_NOT_READY", "CAPABILITY_TARGET_UNSUPPORTED"}:
         return False
-    if capability.execution_target in {"agent_builtin", "agent_managed_module"}:
-        return False
     if capability.execution_target == "endpoint_operation":
         # The reconciler owns terminal safe-result projection.  A queued local
         # facade must not create premature diagnostic evidence.
-        return False
-    if capability.execution_target == "agent_recipe" and result.get("status") in {
-        "queued",
-        "accepted",
-        "running",
-        "waiting_dependency",
-        "installing_dependency",
-    }:
         return False
     if capability.execution_target == "manual" and result.get("evidence_id"):
         return False

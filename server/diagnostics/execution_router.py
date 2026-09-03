@@ -11,14 +11,10 @@ from diagnostics.observability import NullCapabilityExecutionObserver, monotonic
 
 
 TARGET_EXECUTION_KIND = {
-    "agent_builtin": "operation",
-    "agent_managed_module": "operation",
-    "agent_recipe": "operation",
     "server_builtin": "query",
     "server_connector": "query",
     "observer_query": "query",
     "manual": "manual_evidence",
-    "hybrid": "session",
     "endpoint_operation": "operation",
 }
 
@@ -146,31 +142,6 @@ class CapabilityExecutionRouter:
         if readiness_error is not None:
             return readiness_error
         target = capability.execution_target
-        if target in {"agent_builtin", "agent_managed_module"}:
-            return {
-                "status": "error",
-                "error_code": "ENDPOINT_ONLY_CAPABILITY_REQUIRED",
-                "capability_id": capability.id,
-                "execution_target": target,
-            }
-        if target == "agent_recipe":
-            result = await self.route_agent_recipe(
-                capability,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                params=params,
-                actor=actor,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
-            return self._envelope(
-                capability,
-                result,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
         if target == "server_builtin":
             result = await self.route_server_builtin(
                 capability,
@@ -265,14 +236,6 @@ class CapabilityExecutionRouter:
 
     async def route_server_builtin(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_builtin_provider, capability, **kwargs)
-
-    async def route_agent_recipe(self, capability, **kwargs) -> Dict[str, Any]:
-        return {
-            "status": "error",
-            "error_code": "ENDPOINT_ONLY_CAPABILITY_REQUIRED",
-            "error": "Helpdesk no longer executes agent recipes.",
-            "capability_id": capability.id,
-        }
 
     async def route_server_connector(self, capability, **kwargs) -> Dict[str, Any]:
         return await self._route_query_provider(self.server_connector_provider, capability, **kwargs)

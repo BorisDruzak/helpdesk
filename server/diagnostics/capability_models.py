@@ -5,30 +5,15 @@ from typing import Any, Dict, List, Optional
 
 
 EXECUTION_TARGETS = {
-    "agent_builtin",
-    "agent_managed_module",
-    "agent_recipe",
     "server_builtin",
     "server_connector",
     "observer_query",
     "manual",
-    "hybrid",
     "endpoint_operation",
 }
 
 READINESS_STATUSES = {
     "available",
-    "install_required",
-    "installing",
-    "unsupported_platform",
-    "agent_offline",
-    "runner_not_installed",
-    "runner_install_required",
-    "runner_installing",
-    "runner_outdated",
-    "primitive_not_supported",
-    "recipe_not_published",
-    "missing_dependency",
     "consent_required",
     "integration_not_configured",
     "credentials_missing",
@@ -47,7 +32,7 @@ class CapabilityDescriptor:
     description: str = ""
     provider_id: str = ""
     provider_type: str = ""
-    execution_target: str = "agent_managed_module"
+    execution_target: str = "endpoint_operation"
     tool_kind: str = "diagnostic"
     risk_level: str = "low"
     side_effects: bool = False
@@ -75,14 +60,7 @@ class CapabilityDescriptor:
     evidence: Dict[str, Any] = field(default_factory=dict)
     artifacts: Dict[str, Any] = field(default_factory=dict)
     aliases: List[str] = field(default_factory=list)
-    source: str = "managed_module"
-    runner_provider_id: Optional[str] = None
-    min_runner_version: Optional[str] = None
-    primitive_id: Optional[str] = None
-    primitive_version: Optional[str] = None
-    recipe_version_id: Optional[str] = None
-    capability_version_id: Optional[str] = None
-    supports_auto_install_runner: bool = False
+    source: str = "external_endpoint"
 
     def __post_init__(self) -> None:
         module_default = self.presentation_schema if isinstance(self.presentation_schema, dict) else {}
