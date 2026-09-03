@@ -199,7 +199,6 @@ from tickets.handlers import (
     handle_ticket_change_links_list,
     handle_ticket_change_links_delete,
 )
-from tools.handlers import handle_get_tools, handle_tools_run
 from playbook_handlers import handle_start_playbook_run
 from websocket.ui_handler import websocket_ui_handler
 from uploads.handlers import handle_upload, handle_artifact_download
@@ -1198,11 +1197,6 @@ def setup_routes(app: web.Application) -> None:
         # Operations API
         # ============================================================================
         
-        # ============================================================================
-        # Tools API
-        # ============================================================================
-        web.get('/api/tools', handle_get_tools),
-        web.post('/api/tools/run', handle_tools_run),
         web.get('/api/diagnostics/capabilities', handle_diagnostics_capabilities),
         web.get('/api/diagnostics/providers/configs', handle_diagnostics_provider_configs),
         web.get('/api/diagnostics/providers/configs/{provider_id}', handle_diagnostics_provider_config_get),
