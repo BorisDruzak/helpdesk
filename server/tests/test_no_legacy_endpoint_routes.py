@@ -21,6 +21,7 @@ def test_legacy_agent_control_routes_are_not_registered() -> None:
     forbidden = {
         "/ws",
         "/api/tools/run",
+        "/api/web/support/tickets/{ticket_id}/tools/run",
         "/api/chat_start",
         "/api/chat_send",
         "/api/active_chats",
