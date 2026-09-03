@@ -49,10 +49,14 @@ class CapabilityReadinessService:
         common = self._common_readiness(capability, context)
         if common is not None:
             return common
-        if target == "agent_recipe":
-            return self._agent_recipe_readiness(capability, context)
-        if target in {"agent_builtin", "agent_managed_module"}:
-            return self._agent_readiness(capability, context)
+        if target in {"agent_recipe", "agent_builtin", "agent_managed_module"}:
+            return self._status(
+                capability,
+                "unavailable",
+                "Helpdesk no longer owns agent capability execution.",
+                [],
+                reason_code="ENDPOINT_ONLY_CAPABILITY_REQUIRED",
+            )
         if target == "server_builtin":
             if capability.requires_consent:
                 return self._consent_required(capability)
