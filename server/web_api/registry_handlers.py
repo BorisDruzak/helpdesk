@@ -14,7 +14,6 @@ from auth.password_service import PasswordPolicyError
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from observer.web_event_writer import write_web_cabinet_observer_event
-from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.audience_group_service import RegistryAudienceService
