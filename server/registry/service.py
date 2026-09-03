@@ -117,28 +117,11 @@ class RegistryProfileIngestResult:
 
 
 class RegistryIngestionService:
-    """Converts discovered/self-reported agent data into registry records."""
+    """Converts requester self-reported data into registry records."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
         self.repo = RegistryRepo(session)
-
-    async def ingest_agent_handshake(
-        self,
-        *,
-        device_id: str,
-        hostname: str | None,
-        os_name: str | None,
-        agent_version: str | None,
-        metadata: dict[str, Any] | None = None,
-    ):
-        return await self.repo.upsert_agent_asset(
-            device_id=device_id,
-            hostname=_clean(hostname),
-            os_name=_clean(os_name),
-            agent_version=_clean(agent_version),
-            metadata=metadata or {},
-        )
 
     async def ingest_requester_profile(
         self,

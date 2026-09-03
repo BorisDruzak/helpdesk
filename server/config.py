@@ -150,7 +150,6 @@ WEB_CSRF_TRUSTED_ORIGINS = os.getenv("WEB_CSRF_TRUSTED_ORIGINS", "").strip()
 LEGACY_UI_TOKEN_LOGIN_ENABLED = os.getenv("LEGACY_UI_TOKEN_LOGIN_ENABLED", "false").lower() == "true"
 ACCOUNT_SESSION_ALLOW_QUERY_TOKEN = os.getenv("ACCOUNT_SESSION_ALLOW_QUERY_TOKEN", "false").lower() == "true"
 ACCOUNT_SESSION_DELIVERY_SECRET = os.getenv("ACCOUNT_SESSION_DELIVERY_SECRET", "").strip()
-AGENT_TOKEN_MAX_ACTIVE_TOKENS = int(os.getenv("AGENT_TOKEN_MAX_ACTIVE_TOKENS", "2"))
 TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "false").lower() == "true"
 TRUSTED_PROXY_CIDRS = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
 TECH_BACKUP_STATUS_PATH = os.getenv("TECH_BACKUP_STATUS_PATH", "").strip()
@@ -326,28 +325,6 @@ MAX_TICKET_MESSAGES_UI = 200
 
 # TTL для кеша tools (секунды)
 TOOLS_CACHE_TTL = 20.0
-
-# Таймаут для WebSocket команд (секунды)
-WS_COMMAND_TIMEOUT = 60.0
-
-# Лимиты конкурентности send_ws_command (очередь не переполняется, при исчерпании — 429)
-WS_COMMAND_MAX_INFLIGHT_GLOBAL = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_GLOBAL", "200"))
-WS_COMMAND_MAX_INFLIGHT_PER_DEVICE = int(os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE", "10"))
-WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL = int(
-    os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL", "1")
-)
-
-# Internal dispatch runtime mode for server->agent outbox delivery:
-# - poll: compatibility/rollback poll-all sender loop
-# - sharded: per-device queue + shard workers + reconcile sweep
-DEVICE_DISPATCH_MODE = (os.getenv("DEVICE_DISPATCH_MODE", "sharded") or "sharded").strip().lower()
-DEVICE_DISPATCH_SHARDS = int(os.getenv("DEVICE_DISPATCH_SHARDS", "4"))
-DEVICE_DISPATCH_FETCH_LIMIT = int(os.getenv("DEVICE_DISPATCH_FETCH_LIMIT", "50"))
-DEVICE_DISPATCH_RECONCILE_SECONDS = int(os.getenv("DEVICE_DISPATCH_RECONCILE_SECONDS", "30"))
-DEVICE_DISPATCH_LEASE_SECONDS = int(os.getenv("DEVICE_DISPATCH_LEASE_SECONDS", "30"))
-
-# Protocol V3 ingest guardrails (post-handshake only)
-OUTBOX_INGEST_RATE_LIMIT_PER_SEC = int(os.getenv("OUTBOX_INGEST_RATE_LIMIT_PER_SEC", "150"))
 
 # Таймаут для tool execution (секунды)
 TOOL_EXECUTION_TIMEOUT = 120.0
@@ -537,26 +514,3 @@ def validate_security_config() -> None:
             errors.append("ACCOUNT_SESSION_DELIVERY_SECRET must be set in pilot/prod mode")
     if errors:
         raise RuntimeError("Insecure security configuration: " + "; ".join(errors))
-
-# ============================================================================
-# Protocol V3 Configuration
-# ============================================================================
-
-# Server capabilities advertised to agents in handshake_ack
-SERVER_CAPABILITIES = [
-    "protocol_v3",
-    "envelope_v3",
-    "outbox_ack_v3",
-    "outbox_nack",
-    "trace_correlation",
-    "ticket_context",
-    "job_context",
-    "device_outbox",
-    "event_replay",
-    "batch_ack",
-    "outbox_batch_v1",
-    "device_binding_validation",
-    "device_registry",
-    "toolset_snapshots",
-    "config_management"
-]
