@@ -2449,24 +2449,6 @@ class RegistryAdminOperationsService:
                 )
             ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
-            session_rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession)
-                    .where(or_(DeviceAccountSession.person_id == object_id, DeviceAccountSession.base_person_id == object_id))
-                    .limit(limit)
-                )
-            ).scalars().all()
-            session_ids = [row.session_id for row in session_rows]
-            if session_ids:
-                account_rows = (
-                    await self.session.execute(
-                        select(DeviceAccountEvent)
-                        .where(DeviceAccountEvent.session_id.in_(session_ids))
-                        .order_by(desc(DeviceAccountEvent.event_at))
-                        .limit(limit)
-                    )
-                ).scalars().all()
-                items.extend(self.serialize_event(row) for row in account_rows)
         elif object_type == "binding":
             registration_rows = (
                 await self.session.execute(
@@ -2474,34 +2456,6 @@ class RegistryAdminOperationsService:
                 )
             ).scalars().all()
             items.extend(self.serialize_event(row) for row in registration_rows)
-            session_rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession)
-                    .where(or_(DeviceAccountSession.binding_id == object_id, DeviceAccountSession.base_binding_id == object_id))
-                    .limit(limit)
-                )
-            ).scalars().all()
-            session_ids = [row.session_id for row in session_rows]
-            if session_ids:
-                account_rows = (
-                    await self.session.execute(
-                        select(DeviceAccountEvent)
-                        .where(DeviceAccountEvent.session_id.in_(session_ids))
-                        .order_by(desc(DeviceAccountEvent.event_at))
-                        .limit(limit)
-                    )
-                ).scalars().all()
-                items.extend(self.serialize_event(row) for row in account_rows)
-        elif object_type == "account_session":
-            rows = (
-                await self.session.execute(
-                    select(DeviceAccountEvent)
-                    .where(DeviceAccountEvent.session_id == object_id)
-                    .order_by(desc(DeviceAccountEvent.event_at))
-                    .limit(limit)
-                )
-            ).scalars().all()
-            items.extend(self.serialize_event(row) for row in rows)
         elif object_type == "claim":
             registration_rows = (
                 await self.session.execute(
