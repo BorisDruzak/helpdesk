@@ -119,7 +119,6 @@ def build_runtime_snapshot_payload(
     state = app.get("state") if hasattr(app, "get") else None
     connected_agents = _safe_connected_agents(state)
     observer_refresh = _runtime_status_snapshot(app, "observer_refresh_runtime")
-    inventory_refresh = _runtime_status_snapshot(app, "inventory_refresh_runtime")
     collected_at = _now()
     return {
         "process_kind": process_kind,
@@ -142,7 +141,6 @@ def build_runtime_snapshot_payload(
         "connected_agents": connected_agents,
         "runtimes": {
             "observer_refresh_runtime": observer_refresh,
-            "inventory_refresh_runtime": inventory_refresh,
         },
         "mcp": {
             "server": "helpdesk-server-debug",

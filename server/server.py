@@ -183,20 +183,6 @@ def _endpoint_operation_ui_publisher(state: StateManager):
     return publish
 
 
-async def start_inventory_refresh_runtime(app: web.Application) -> None:
-    """Start the inventory scheduler once per aiohttp application lifecycle."""
-    if app.get("inventory_refresh_runtime") is not None:
-        logger.warning("Inventory refresh runtime already initialized; skipping duplicate start")
-        return
-
-    from inventory.scheduler import InventoryRefreshRuntime
-
-    inventory_refresh_runtime = InventoryRefreshRuntime(state=app["state"])
-    await inventory_refresh_runtime.start()
-    app["inventory_refresh_runtime"] = inventory_refresh_runtime
-    logger.success("Inventory refresh runtime initialized")
-
-
 async def on_startup(app: web.Application):
     """
     Обработчик события запуска приложения.
@@ -315,7 +301,6 @@ async def on_startup(app: web.Application):
                 legacy_name="observer_refresh_runtime",
                 value=observer_refresh_runtime,
             )
-            await start_inventory_refresh_runtime(app)
             logger.success("✅ Observer refresh runtime started")
 
             from observer.runtime_snapshot_writer import ServerRuntimeSnapshotWriter
@@ -426,11 +411,6 @@ async def on_cleanup(app: web.Application):
         logger.info("⏹️ Stopping observer refresh runtime...")
         await observer_refresh_runtime.stop()
         logger.success("✅ Observer refresh runtime stopped")
-
-    if 'inventory_refresh_runtime' in app:
-        logger.info("Stopping inventory refresh runtime...")
-        await app['inventory_refresh_runtime'].stop()
-        logger.success("Inventory refresh runtime stopped")
 
     if ENABLE_DB_PERSISTENCE:
         try:

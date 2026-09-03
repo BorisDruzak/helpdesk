@@ -447,28 +447,6 @@ def _runtime_state_name(value: bool | None) -> str:
 
 def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], config_values: dict[str, Any]) -> dict[str, Any]:
     service_health = overview.get("service_health") if isinstance(overview.get("service_health"), dict) else {}
-    inventory_runtime = request.app.get("inventory_refresh_runtime")
-    inventory_enabled = bool(config_values.get("INVENTORY_REFRESH_SCHEDULER_ENABLED"))
-    inventory_runtime_snapshot = None
-    if inventory_runtime is not None and callable(getattr(inventory_runtime, "status_snapshot", None)):
-        try:
-            inventory_runtime_snapshot = inventory_runtime.status_snapshot()
-        except Exception:
-            inventory_runtime_snapshot = None
-    inventory_running = (
-        bool(inventory_runtime_snapshot.get("running"))
-        if isinstance(inventory_runtime_snapshot, dict)
-        else (bool(getattr(inventory_runtime, "_running", False)) if inventory_runtime is not None else False)
-    )
-    if not inventory_enabled:
-        inventory_status = "disabled"
-    elif inventory_running:
-        inventory_status = "running"
-    elif inventory_runtime is None:
-        inventory_status = "unknown"
-    else:
-        inventory_status = "enabled_not_running"
-
     def service(key: str, title: str, status: str | None, details: str | None = None) -> dict[str, Any]:
         mapped = str(status or "unknown").lower()
         if mapped in {"ok", "running", "healthy", "success"}:
@@ -485,18 +463,8 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
         "operation_watchdog": _runtime_state_name(bool(getattr(request.app.get("operation_watchdog"), "_running", False))),
         "ticket_sla_watchdog": _runtime_state_name(bool(getattr(request.app.get("ticket_sla_watchdog"), "_running", False))),
         "ticket_auto_close_watchdog": _runtime_state_name(bool(getattr(request.app.get("ticket_auto_close_watchdog"), "_running", False))),
-        "inventory_scheduler": inventory_status,
         "observer_refresh_runtime": str(service_health.get("observer_refresh_runtime") or "unknown"),
     }
-    if not isinstance(inventory_runtime_snapshot, dict):
-        inventory_runtime_snapshot = {
-            "enabled": inventory_enabled,
-            "running": inventory_running,
-            "active_task_count": 0,
-            "duplicate_task_detected": False,
-            "last_tick_at": None,
-            "last_error": None,
-        }
     return {
         "services": [
             service("api", "API", str(service_health.get("api") or "unknown")),
@@ -506,7 +474,6 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
             service("operation_watchdog", "Operation watchdog", schedulers["operation_watchdog"]),
             service("ticket_sla_watchdog", "Ticket SLA watchdog", schedulers["ticket_sla_watchdog"]),
             service("ticket_auto_close_watchdog", "Ticket auto-close watchdog", schedulers["ticket_auto_close_watchdog"]),
-            service("inventory_scheduler", "Inventory scheduler", inventory_status),
             service("observer_refresh_runtime", "Observer refresh runtime", schedulers["observer_refresh_runtime"]),
         ],
         "web_sockets": {
@@ -514,7 +481,7 @@ def build_runtime_snapshot(request: web.Request, overview: dict[str, Any], confi
             "agent_connections": _safe_int(service_health.get("agent_ws_connections")),
         },
         "schedulers": schedulers,
-        "scheduler_details": {"inventory_scheduler": inventory_runtime_snapshot},
+        "scheduler_details": {},
     }
 
 
