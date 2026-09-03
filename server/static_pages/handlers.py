@@ -42,7 +42,7 @@ def _webapp_ticket_target_path(request: web.Request) -> str:
 
 
 async def handle_index(request):
-    return _text_file_response(BASE_DIR / "web_interface.html", "text/html")
+    raise _retired_shell_redirect(request, "/app/support")
 
 
 async def handle_admin_page(request):
@@ -70,14 +70,6 @@ async def handle_ticket_page_by_id(request):
     raise _retired_shell_redirect(request, _webapp_ticket_target_path(request))
 
 
-async def handle_chat_debug(request):
-    return _text_file_response(BASE_DIR / "chat_debug.html", "text/html")
-
-
-async def handle_chat_ws(request):
-    return _text_file_response(BASE_DIR / "chat_ws.html", "text/html")
-
-
 async def handle_test_simple(request):
     html_path = BASE_DIR / "test_web_simple.html"
     if html_path.exists():
@@ -87,10 +79,6 @@ async def handle_test_simple(request):
 
 async def handle_ws_ui_test(request):
     return _text_file_response(BASE_DIR / "ws_ui_test.html", "text/html")
-
-
-async def handle_modules_page(request):
-    return _text_file_response(BASE_DIR / "modules.html", "text/html", no_cache=True)
 
 
 async def handle_public_queue_page(request):
