@@ -1,6 +1,6 @@
 # База данных PostgreSQL
 
-Документ описывает схему и использование PostgreSQL на сервере PC Agent.
+Документ описывает схему и использование PostgreSQL в Helpdesk.
 
 **Требования:** PostgreSQL 12+. Подключение: `DATABASE_URL` (формат `postgresql+asyncpg://user:password@host/dbname`).  
 **Миграции:** Alembic, каталог `server/app/db/migrations/versions/`.  
@@ -10,18 +10,14 @@
 
 ## Роль PostgreSQL (Source of Truth)
 
-После миграции на Protocol V3 PostgreSQL является **единственным источником истины** для:
+PostgreSQL является **единственным источником истины** для:
 
 - тикетов и истории событий тикетов;
-- событий устройств (без привязки к тикету);
-- очереди команд к агентам (device outbox);
-- реестра устройств, конфигураций и снапшотов toolset;
-- операций (run_tool, cancel и т.д.) и решений consent;
-- артефактов (скриншоты, запись экрана);
-- модулей (реестр ZIP) и состояния модулей на устройствах;
-- аутентификации (токены агентов и UI, сессии, аудит скачиваний).
+- исторических снимков устройств и привязок;
+- тикетных операций, решений consent и доказательств;
+- артефактов и UI-аутентификации.
 
-Runtime-данные (подключённые агенты, UI-сессии, кэши) хранятся в **StateManager** в памяти, не в БД.
+Runtime-данные браузерского интерфейса и кэши хранятся в **StateManager** в памяти, не в БД. Управление агентами, transport и delivery принадлежат Endpoint Platform.
 
 ---
 
@@ -32,11 +28,11 @@ Runtime-данные (подключённые агенты, UI-сессии, к
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
 | **tickets** | Тикет поддержки, привязан к устройству. | `TicketEventsRepo`: создание/получение/обновление тикета, список тикетов. API: создание тикета, получение тикета, закрытие. |
-| **ticket_events** | События тикета: сообщения чата, command lifecycle (tool_call_started, tool_call_result и т.д.). Упорядочивание по `agent_seq` в рамках тикета. | `TicketEventsRepo`: добавление событий, replay по тикету, дедупликация по `(device_id, ticket_id, agent_seq)`. Проверка доступа к артефактам: `ticket_contains_artifact()`. Пайплайн WS агента (`agent_outbox_ingest`, `agent_command_result`) при сохранении событий от агента и сервера. |
+| **ticket_events** | События тикета: сообщения, процессный lifecycle и исторические доказательства. | `TicketEventsRepo`: добавление, replay и доступ к артефактам. Источником управления агентскими операциями служит Endpoint Platform. |
 
 **tickets:** `ticket_id` (PK), `ticket_code` (UNIQUE, формат T-000001, миграция 031), `device_id`, `title`, `description`, `status`, `created_at`, `updated_at`; расширенные поля (миграция 018); `ticket_type` (`varchar(64)`, миграция 061, используется как `request_kind` для маршрутизации форм), `priority`, `impact`, `urgency`, `importance`, `urgency_reason`, `importance_reason`, `requester_id`, `assignee_id`, `queue_id`, `category_id`, `service_id`, `subcategory_id`, `resolved_at`, `closed_at`, `sla_policy_id`, таймеры FRT/Resolution, `tags` (JSONB), `custom_fields` (JSONB), `external_ref`, `resolution_code`, `root_cause`, `reopen_count`, `parent_ticket_id`. Stage 10.2 (миграция 032): `manual_rank` (BIGINT NULL), `manual_rank_updated_at`, `manual_rank_updated_by` — ручной порядок в очереди. P0 contract hardening (migration 081): `status` is constrained by `ck_tickets_status_canonical` to `new`, `queued`, `assigned`, `in_progress`, `waiting_on_user`, `waiting_on_internal_team`, `waiting_on_vendor`, `waiting_on_approval`, `scheduled`, `resolved`, `closed`, `canceled`; legacy `triaged` is only an input/backfill alias and is never stored. `requester_id` is `NOT NULL` and guarded by `ck_tickets_requester_id_non_empty`; legacy null/blank rows are backfilled as `device:<device_id>` or `legacy:<ticket_id>`, and the SQLAlchemy `Ticket` model applies the same fallback before direct ORM inserts/updates.
 P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields: `catalog_service_id`, `catalog_offering_id`, `service_code`, `offering_code`, `request_type`, `business_criticality`, `reporting_category`, `service_owner_actor_id`, `support_group_code`. These fields are separate from legacy `tickets.service_id`; `custom_fields.service_catalog` stores the selected catalog/policy snapshot.
-**ticket_events:** `id` (PK), `ticket_id`, `device_id`, `agent_seq` (nullable для server-originated), `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. UNIQUE `(device_id, ticket_id, agent_seq)` WHERE `agent_seq IS NOT NULL`. Canonical timeline/replay ordering is deterministic: `ORDER BY created_at ASC, id ASC`. Migration 081 adds `ix_ticket_events_ticket_created_id` and `ix_ticket_events_ticket_type_created_id` while preserving the partial unique idempotency constraint for agent-originated events.
+**ticket_events:** `id` (PK), `ticket_id`, `device_id`, `agent_seq` (nullable historical correlation), `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. Canonical timeline/replay ordering is deterministic: `ORDER BY created_at ASC, id ASC`.
 
 **Service Catalog (migration 082, Request Studio hardening migration 106):** `helpdesk_services`, `helpdesk_service_offerings`, `helpdesk_service_catalog_audit`, `request_studio_publish_tokens`. Catalog services are requester-facing process objects and may link to CMDB `registry_services`; offerings link services to `request_templates` / form schemas and policy overrides. Request Studio publish tokens store only `token_hash` and `nonce_hash` for one-time HMAC/nonce confirmation, plus draft hash, actor binding, TTL and used-at metadata; raw confirmation tokens are never persisted. Indexes cover lifecycle/visibility, offering full code, offering template key, token lookup/expiry/actor binding and ticket service/offering/reporting dimensions. P1.1 adds no schema migration; baseline catalog data is managed by the idempotent `scripts/seed_service_catalog.py` setup command and should be retired, not deleted, if tickets reference it. See [SERVICE_CATALOG.md](SERVICE_CATALOG.md).
 
@@ -87,7 +83,7 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **device_events** | События устройства без привязки к тикету (tools_changed, метрики и т.д.). Упорядочивание по `device_seq` в рамках устройства. | `DeviceEventsRepo`: добавление событий, replay по device_id. Пайплайн WS агента при сохранении device events от агента. |
+| **device_events** | Исторические события устройства без привязки к тикету. | Read-only evidence for Helpdesk diagnostics; current device telemetry belongs to Endpoint Platform. |
 
 **device_events:** `id` (PK), `device_id`, `device_seq`, `event_type`, `payload` (JSONB), `trace_id`, `event_id`, `operation_id`, `created_at`. UNIQUE `(device_id, device_seq)`.
 
@@ -97,10 +93,8 @@ P1 Service Catalog (migration 082) adds explicit ticket reporting/process fields
 
 | Таблица | Назначение | Где используется |
 |--------|------------|-------------------|
-| **device_outbox** | Серверная outbox: команды к агентам до доставки по WebSocket. Жизненный цикл: pending → sent → delivered/failed. | `DeviceOutboxRepo`: вставка команды, выборка pending по device_id, обновление status/sent_at/delivered_at. Отправка команд агенту через outbox sender (`device_outbox_sender`) и доставка по WS. |
-| **operations** | Материализованное состояние операций (run_tool, cancel, agent_recipe и т.д.) для быстрого запроса и отображения. | `OperationsRepo`: создание/обновление операции по этапам (queued, sent, accepted, running, waiting_consent, succeeded/failed и т.д.) плюс nullable `phase` для runtime dependency substate. Связь с consent_decisions и operation_dependencies. Tools API, WebSocket, отмена операций. |
-| **operation_dependencies** | Явная связь parent operation с runtime dependency operation/resource. | `OperationDependenciesRepo` / `diagnostics.runtime_dependencies`: runner/module dependency status, target version, timeout, resume attempts and dependency operation linkage. |
-| **runner_rollout_plans / waves / targets / events** | Admin-managed canary/wave rollout and rollback state for `agent_recipe_runner`. | `diagnostics.runner_rollout.RunnerRolloutService`: create plan, start canary, promote waves, pause/resume, refresh status, rollback via desired modules + reconcile. |
+| **device_outbox** | Историческая таблица снятого Helpdesk delivery. | Сохраняется как schema residue; Helpdesk runtime не импортирует модель, не читает и не пишет её. |
+| **operations** | Процессное состояние операций и Endpoint evidence. | Helpdesk отображает ticket lifecycle; command delivery и отмена принадлежат Endpoint Platform. |
 
 **device_outbox:** `id` (PK), `device_id`, `command_id`, `command`, `params` (JSONB), `status`, `request_id`, `trace_id`, `operation_id`, `actor_role`, `retry_count`, `max_retries`, `created_at`, `sent_at`, `delivered_at`, `failed_at`, `error_code`, `error_message`.  
 **operations:** `operation_id` (PK), `device_id`, `ticket_id`, `job_id`, `kind`, `tool_name`, `actor_role`, `trace_id`, `status`, `phase`, `deadline_at`, `queued_at`, `sent_at`, `accepted_at`, `started_at`, `finished_at`, `retry_count`, `max_retries`, `retry_of_operation_id`, `error_code`, `error_message`, `result_summary`, `result_event_id`, поля отмены (`cancel_target_operation_id`, `canceled_at` и др.).
@@ -320,9 +314,9 @@ rollback is application rollback plus a tested database restore.
 
 ## Связанные документы
 
-- [README.md](README.md) — раздел «База данных», конфигурация DATABASE_URL.
+- [RUNBOOK_BACKUP_RESTORE.md](RUNBOOK_BACKUP_RESTORE.md) — конфигурация и восстановление PostgreSQL.
 - [RUNBOOK_POSTGRES_EXTERNAL_READONLY.md](RUNBOOK_POSTGRES_EXTERNAL_READONLY.md) — доступ к PostgreSQL извне (listen_addresses, pg_hba, firewall, read-only пользователь для другого агента).
-- [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — хранение и проверка agent_tokens, ui_tokens.
+- [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) — UI-аутентификация и защищённые browser-сеансы.
 - [ARTIFACTS_API.md](ARTIFACTS_API.md) — upload/download артефактов, таблица artifacts.
 - [MODULES_API.md](MODULES_API.md) — модули, tables modules, device_modules.
 - [MODULES_DRIFT_AND_SNAPSHOTS.md](MODULES_DRIFT_AND_SNAPSHOTS.md) — device_toolset_snapshots, device_modules.

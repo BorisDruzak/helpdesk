@@ -322,5 +322,5 @@ Security update 2026-06-26:
 
 ## 9. Связанные документы
 
-- [README.md](README.md) — обзор сервера и API.
+- [CODEMAP.md](CODEMAP.md) — обзор серверных модулей и маршрутов.
 - [ENDPOINT_OPERATION_CONTRACT.md](ENDPOINT_OPERATION_CONTRACT.md) — граница операций Endpoint Platform.
