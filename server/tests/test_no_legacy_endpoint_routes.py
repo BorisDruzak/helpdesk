@@ -84,3 +84,10 @@ def test_registry_snapshot_does_not_load_account_session_runtime() -> None:
     assert "AccountSessionService" not in snapshot_source
     assert "account_sessions" not in snapshot_source
     assert "account_login_requests" not in snapshot_source
+
+
+def test_retired_account_session_runtime_files_are_absent() -> None:
+    server_root = Path(__file__).resolve().parents[1]
+
+    assert not (server_root / "registry" / "account_session_service.py").exists()
+    assert not (server_root / "app" / "repos" / "account_session_repo.py").exists()
