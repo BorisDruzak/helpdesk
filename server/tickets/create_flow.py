@@ -76,7 +76,6 @@ def build_agent_raise_description(
 
 def _safe_account_payload(account: dict[str, Any]) -> dict[str, Any]:
     allowed = {
-        "account_session_id",
         "account_mode",
         "person_id",
         "binding_id",
@@ -86,7 +85,6 @@ def _safe_account_payload(account: dict[str, Any]) -> dict[str, Any]:
         "email",
         "phone",
         "reason",
-        "session_id",
         "verification_status",
         "verification_method",
         "validation",
@@ -104,14 +102,6 @@ def _safe_account_payload(account: dict[str, Any]) -> dict[str, Any]:
         elif value is not None:
             result[key] = str(value).strip()[:320]
     return result
-
-
-def _declared_account_payload(account: dict[str, Any]) -> dict[str, Any]:
-    return {
-        key: value
-        for key, value in _safe_account_payload(account).items()
-        if key in {"display_name", "full_name", "login", "email", "phone", "reason", "account_session_id", "session_id"}
-    }
 
 
 def _requester_create_marker_payload(
@@ -491,53 +481,7 @@ async def create_ticket_with_side_effects(
             submitted_registration if isinstance(submitted_registration, dict) else None,
         )
         active_binding = registration_status.get("active_binding") if isinstance(registration_status, dict) else None
-        if account_mode == "account_session_invalid":
-            requester_registration_status = "account_session_invalid"
-            requester_account_context = {
-                "account_mode": "none",
-                "validation": "server_session_invalid",
-                "error_code": "ACCOUNT_SESSION_RETIRED",
-            }
-        elif account_mode in {"other_account", "verified_other_account", "unverified_other_account"}:
-            verified = account_mode == "verified_other_account"
-            requester_registration_status = "other_account" if verified else "unverified_other_account"
-            requester_binding_id = None
-            if verified:
-                requester_person_id = str((requester_account or {}).get("person_id") or "").strip() or None
-                verified_requester_person_id = requester_person_id
-            if isinstance(active_binding, dict) and active_binding.get("binding_id"):
-                asset_id = active_binding.get("asset_id") or asset_id
-                requester_account_context = {
-                    "account_mode": account_mode,
-                    "account_session_id": str((requester_account or {}).get("account_session_id") or (requester_account or {}).get("session_id") or ""),
-                    "created_from_other_account": True,
-                    "declared_account": _declared_account_payload(requester_account or requester_profile or {}),
-                    "active_device_binding_id": active_binding.get("binding_id"),
-                    "active_device_person_id": active_binding.get("person_id"),
-                    "active_device_person_name": (
-                        (registration_status.get("active_person") or {}).get("display_name")
-                        if isinstance(registration_status.get("active_person"), dict)
-                        else None
-                    ),
-                    "verification_status": "verified" if verified else "unverified",
-                    "verification_method": (requester_account or {}).get("verification_method"),
-                    "validation": (requester_account or {}).get("validation") or ("legacy_payload_unverified" if not verified else "server_session_verified"),
-                    "warning": "ticket_created_from_other_account_on_registered_device"
-                    if verified
-                    else "unverified_other_account_legacy_payload",
-                }
-            else:
-                requester_account_context = {
-                    "account_mode": account_mode,
-                    "account_session_id": str((requester_account or {}).get("account_session_id") or (requester_account or {}).get("session_id") or ""),
-                    "created_from_other_account": True,
-                    "declared_account": _declared_account_payload(requester_account or requester_profile or {}),
-                    "verification_status": "verified" if verified else "unverified",
-                    "verification_method": (requester_account or {}).get("verification_method"),
-                    "validation": (requester_account or {}).get("validation") or ("legacy_payload_unverified" if not verified else "server_session_verified"),
-                    "warning": "ticket_created_from_other_account" if verified else "unverified_other_account_legacy_payload",
-                }
-        elif account_mode == "browser_no_device":
+        if account_mode == "browser_no_device":
             requester_person_id = str((requester_account or {}).get("person_id") or "").strip() or None
             requester_binding_id = None
             requester_registration_status = "no_device"
@@ -552,67 +496,6 @@ async def create_ticket_with_side_effects(
                 "person_id": requester_person_id,
                 "validation": (requester_account or {}).get("validation") or "web_requester_identity_resolved",
             }
-        elif account_mode == "registration_pending":
-            pending_claim = registration_status.get("pending_claim") if isinstance(registration_status, dict) else None
-            requester_registration_status = str(
-                (pending_claim or {}).get("status")
-                or (requester_account or {}).get("registration_status")
-                or (requester_account or {}).get("verification_status")
-                or "registration_pending"
-            )
-            requester_person_id = (pending_claim or {}).get("person_id") or (requester_account or {}).get("person_id")
-            requester_binding_id = None
-            if isinstance(registration_status, dict):
-                active_asset = registration_status.get("asset") if isinstance(registration_status.get("asset"), dict) else None
-                asset_id = (active_asset or {}).get("asset_id") or asset_id
-            requester_account_context = {
-                **_safe_account_payload(requester_account or {}),
-                "account_mode": "registration_pending",
-                "validation": "accepted_pending_registration",
-            }
-        elif account_mode == "confirmed_binding":
-            requested_binding_id = str((requester_account or {}).get("binding_id") or "").strip()
-            requested_person_id = str((requester_account or {}).get("person_id") or "").strip()
-            account_validation = str((requester_account or {}).get("validation") or "").strip()
-            session_binding = None
-            if requested_binding_id and (
-                account_validation == "web_requester_identity_resolved"
-            ):
-                from app.repos.registration_repo import RegistrationRepo
-
-                session_binding = await RegistrationRepo(session).get_active_binding_for_device(device_id, requested_binding_id)
-                if session_binding is not None and requested_person_id and session_binding.person_id != requested_person_id:
-                    session_binding = None
-            if session_binding is not None or (
-                isinstance(active_binding, dict) and active_binding.get("binding_id") == requested_binding_id
-            ):
-                binding_payload = (
-                    {
-                        "person_id": session_binding.person_id,
-                        "binding_id": session_binding.binding_id,
-                        "asset_id": session_binding.asset_id,
-                    }
-                    if session_binding is not None
-                    else active_binding
-                )
-                requester_person_id = binding_payload.get("person_id")
-                requester_binding_id = binding_payload.get("binding_id")
-                verified_requester_person_id = requester_person_id
-                asset_id = binding_payload.get("asset_id") or asset_id
-                requester_registration_status = "admin_confirmed"
-                requester_account_context = {
-                    **_safe_account_payload(requester_account or {}),
-                    "account_mode": "confirmed_binding",
-                    "validation": (requester_account or {}).get("validation")
-                    or "active_binding_confirmed",
-                }
-            else:
-                requester_registration_status = "no_account"
-                requester_account_context = {
-                    **_safe_account_payload(requester_account or {}),
-                    "account_mode": "confirmed_binding",
-                    "validation": "active_binding_not_found",
-                }
         elif isinstance(active_binding, dict) and active_binding.get("binding_id"):
             requester_person_id = active_binding.get("person_id")
             requester_binding_id = active_binding.get("binding_id")
@@ -622,7 +505,7 @@ async def create_ticket_with_side_effects(
             if legacy_agent_only:
                 requester_account_context = {
                     "account_mode": "agent_legacy_or_device_only",
-                    "validation": "agent_token_without_account_session",
+                    "validation": "agent_token_with_active_binding",
                     "context_scope": "limited",
                     "profile_completion_evidence": False,
                 }
@@ -636,7 +519,7 @@ async def create_ticket_with_side_effects(
             if legacy_agent_only:
                 requester_account_context = {
                     "account_mode": "agent_legacy_or_device_only",
-                    "validation": "agent_token_without_account_session",
+                    "validation": "agent_token_without_active_binding",
                     "context_scope": "limited",
                     "profile_completion_evidence": False,
                 }
