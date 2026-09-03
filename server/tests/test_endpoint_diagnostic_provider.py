@@ -146,17 +146,6 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
         async def build_readiness_maps(self):
             return DiagnosticReadinessMaps({}, {}, {}, {}, {})
 
-    class _RemoteAccessRepo:
-        def __init__(self, _session) -> None:
-            pass
-
-        async def active_for_ticket_device(self, *_args):
-            return None
-
-    class _BombToolService:
-        def __init__(self, _state) -> None:
-            raise AssertionError("Endpoint handler must not construct ToolExecutionService")
-
     async def _bomb(*_args, **_kwargs):
         raise AssertionError("Endpoint handler must not dispatch legacy agent work")
 
@@ -164,9 +153,7 @@ def _install_handler_fakes(monkeypatch, *, ticket, endpoint_port, operation_serv
     monkeypatch.setattr(handlers, "get_session", fake_get_session)
     monkeypatch.setattr(handlers, "get_session_maker", fake_get_session_maker)
     monkeypatch.setattr(handlers, "DiagnosticProviderConfigService", _ProviderConfigService)
-    monkeypatch.setattr(handlers, "RemoteAccessRepo", _RemoteAccessRepo)
     monkeypatch.setattr(handlers, "RuntimeAuditCapabilityExecutionObserver", _NoopExecutionObserver)
-    monkeypatch.setattr(handlers, "ToolExecutionService", _BombToolService)
     monkeypatch.setattr(
         handlers,
         "_build_endpoint_platform_provider",
@@ -365,13 +352,8 @@ async def test_endpoint_readiness_requires_cutover_config_mapping_and_capability
 def test_endpoint_handler_runtime_composition_does_not_construct_tool_service(monkeypatch):
     import diagnostics.handlers as handlers
 
-    class _BombToolService:
-        def __init__(self, _state):
-            raise AssertionError("Endpoint handler must not construct ToolExecutionService")
-
     marker = object()
     monkeypatch.setattr(handlers.config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
-    monkeypatch.setattr(handlers, "ToolExecutionService", _BombToolService)
     monkeypatch.setattr(handlers, "_build_endpoint_platform_provider", lambda ticket_id: (marker, marker))
 
     runtime = handlers._build_diagnostic_runtime(state=object(), ticket_id="ticket-1")
@@ -380,6 +362,8 @@ def test_endpoint_handler_runtime_composition_does_not_construct_tool_service(mo
     assert runtime.endpoint_port is marker
     assert runtime.endpoint_platform_provider is marker
     assert runtime.registry.endpoint_diagnostic_execution_mode == "endpoint"
+    assert not hasattr(handlers, "ToolExecutionService")
+    assert not hasattr(handlers, "RemoteAccessRepo")
 
 
 def test_handler_uses_only_stored_endpoint_device_ref_for_readiness():
