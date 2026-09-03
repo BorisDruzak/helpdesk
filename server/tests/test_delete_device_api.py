@@ -13,7 +13,6 @@ from app.db.models import (
     AgentToken,
     ConnectionRequest,
     Device,
-    DeviceOutbox,
     DispatchReadyDevice,
     Operation,
 )
@@ -128,18 +127,6 @@ async def _seed_device_with_related_rows(device_id: str) -> None:
                 status="queued",
                 command_name="get_status",
                 queued_at=now,
-            )
-        )
-        session.add(
-            DeviceOutbox(
-                device_id=device_id,
-                command_id=operation_id,
-                command="get_status",
-                params={},
-                status="pending",
-                operation_id=operation_id,
-                actor_role="admin",
-                created_at=now,
             )
         )
         await session.commit()
@@ -350,9 +337,6 @@ async def test_delete_device_archives_device_and_preserves_history(test_client):
             await session.execute(select(AgentRuntimeAudit).where(AgentRuntimeAudit.device_id == device_id))
         ).scalars().all()
         dispatch_row = await session.get(DispatchReadyDevice, device_id)
-        outbox_rows = (
-            await session.execute(select(DeviceOutbox).where(DeviceOutbox.device_id == device_id))
-        ).scalars().all()
         operation_rows = (
             await session.execute(select(Operation).where(Operation.device_id == device_id))
         ).scalars().all()
@@ -375,11 +359,6 @@ async def test_delete_device_archives_device_and_preserves_history(test_client):
     assert audit_rows[0].event_type == "handshake_ok"
 
     assert dispatch_row is None
-
-    assert len(outbox_rows) == 1
-    assert outbox_rows[0].status == "failed"
-    assert outbox_rows[0].error_code == "DEVICE_ARCHIVED"
-    assert outbox_rows[0].failed_at is not None
 
     assert len(operation_rows) == 1
     assert operation_rows[0].status == "canceled"

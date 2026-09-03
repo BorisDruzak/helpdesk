@@ -10,7 +10,6 @@ from loguru import logger
 from app.db.models import (
     Device,
     AgentToken,
-    DeviceOutbox,
     DispatchReadyDevice,
     Operation,
     DeviceModule,
@@ -441,20 +440,6 @@ class DevicesRepo:
             if delete_reason:
                 meta["archive_reason"] = delete_reason
             row.request_metadata = meta
-
-        active_outbox_rows = (
-            await self.session.execute(
-                select(DeviceOutbox).where(
-                    DeviceOutbox.device_id == device_id,
-                    DeviceOutbox.status.in_(["pending", "sent"]),
-                )
-            )
-        ).scalars().all()
-        for row in active_outbox_rows:
-            row.status = "failed"
-            row.failed_at = row.failed_at or now
-            row.error_code = row.error_code or "DEVICE_ARCHIVED"
-            row.error_message = row.error_message or "Команда остановлена: агент архивирован"
 
         active_operations = (
             await self.session.execute(
