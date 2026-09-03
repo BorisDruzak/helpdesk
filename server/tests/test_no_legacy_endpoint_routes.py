@@ -105,3 +105,9 @@ def test_retired_account_session_runtime_files_are_absent() -> None:
 
     assert not (server_root / "registry" / "account_session_service.py").exists()
     assert not (server_root / "app" / "repos" / "account_session_repo.py").exists()
+
+
+def test_retired_agent_telemetry_ingest_repository_is_absent() -> None:
+    server_root = Path(__file__).resolve().parents[1]
+
+    assert not (server_root / "app" / "repos" / "agent_observer_events_repo.py").exists()
