@@ -487,31 +487,9 @@ async def test_web_session_register_rejects_login_longer_than_db_limit(monkeypat
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_web_session_register_rejects_invalid_device_link_code_before_creating_user(monkeypatch):
+async def test_web_session_register_rejects_retired_device_link_code(monkeypatch):
     monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
     monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
-    created = False
-
-    class FakeBrowserPairingService:
-        def __init__(self, session):
-            self.session = session
-
-        async def lookup_by_pairing_code(self, pairing_code):
-            assert pairing_code == "BAD-CODE"
-            return None
-
-    class FakeUiUsersRepo:
-        def __init__(self, session):
-            self.session = session
-
-        async def create_user(self, *args, **kwargs):
-            nonlocal created
-            created = True
-            raise AssertionError("user must not be created for an invalid device-link code")
-
-    monkeypatch.setattr(session_handlers_module, "BrowserPairingService", FakeBrowserPairingService)
-    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
-
     app = web.Application()
     app["state"] = SimpleNamespace(users={})
     setup_routes(app)
@@ -523,74 +501,13 @@ async def test_web_session_register_rejects_invalid_device_link_code_before_crea
                 "login": "new.requester",
                 "password": "VeryStrong123!",
                 "password_repeat": "VeryStrong123!",
-                "device_link_code": "BAD-CODE",
+                "device_link_code": "retired",
             },
         )
         payload = await response.json()
 
     assert response.status == 400
-    assert payload["error_code"] == "DEVICE_LINK_CODE_INVALID"
-    assert created is False
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_session_register_accepts_registration_device_link_code_without_confirming(monkeypatch):
-    monkeypatch.setattr(session_handlers_module.config_module, "WEB_SELF_REGISTRATION_ENABLED", True, raising=False)
-    monkeypatch.setattr(session_handlers_module, "get_session", lambda: _FakeSessionContext())
-    confirmed = False
-
-    class FakeBrowserPairingService:
-        def __init__(self, session):
-            self.session = session
-
-        async def lookup_by_pairing_code(self, pairing_code):
-            assert pairing_code == "PAIR-1234"
-            return {
-                "pairing_id": "pair-1",
-                "purpose": "registration",
-                "status": "pending",
-                "expires_at": "2026-06-15T19:30:00+05:00",
-            }
-
-        async def confirm_registration_pairing_for_web_user(self, *args, **kwargs):
-            nonlocal confirmed
-            confirmed = True
-            raise AssertionError("registration must not confirm the device link")
-
-    class FakeUiUsersRepo:
-        def __init__(self, session):
-            self.session = session
-
-        async def create_user(self, user_login, password_hash, actor_role="user", actor_id=None):
-            return SimpleNamespace(user_login=user_login, actor_role=actor_role, is_active=True)
-
-    monkeypatch.setattr(session_handlers_module, "BrowserPairingService", FakeBrowserPairingService)
-    monkeypatch.setattr(session_handlers_module, "UiUsersRepo", FakeUiUsersRepo)
-
-    app = web.Application()
-    app["state"] = SimpleNamespace(users={})
-    setup_routes(app)
-
-    async with TestClient(TestServer(app)) as client:
-        response = await client.post(
-            "/api/web/session/register",
-            json={
-                "login": "new.requester",
-                "password": "VeryStrong123!",
-                "password_repeat": "VeryStrong123!",
-                "device_link_code": "PAIR-1234",
-            },
-        )
-        payload = await response.json()
-
-    assert response.status == 201
-    assert payload["data"]["device_link"] == {
-        "accepted": True,
-        "purpose": "registration",
-        "expires_at": "2026-06-15T19:30:00+05:00",
-    }
-    assert confirmed is False
+    assert payload["error_code"] == "VALIDATION_ERROR"
 
 
 @pytest.mark.asyncio

@@ -18,7 +18,6 @@ from registry.account_state_service import build_agent_account_state
 from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.audience_group_service import RegistryAudienceService
-from registry.browser_pairing_service import BrowserPairingService
 from registry.effective_identity_service import EffectiveIdentityService
 from registry.password_reset_service import PasswordResetRequestService
 from registry.registration_form_service import build_lightweight_registry_options, build_registration_form_payload
@@ -277,11 +276,6 @@ def _requester_profile_incomplete_response(completion: dict) -> web.Response:
         },
         status=403,
     )
-
-
-def _browser_pairing_next_url(payload: dict) -> str:
-    route_purpose = "register" if payload.get("purpose") == "registration" else "login"
-    return f"/app/device/{route_purpose}?pairing_id={payload['pairing_id']}"
 
 
 async def _resolve_submit_device_id(request: web.Request, data: dict, *, legacy: bool = False) -> str | web.Response:

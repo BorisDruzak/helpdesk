@@ -16,11 +16,9 @@ from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from config import WEB_SESSION_COOKIE_HTTPONLY, WEB_SESSION_COOKIE_SAMESITE, WEB_SESSION_COOKIE_SECURE
 from observer.web_event_writer import write_web_cabinet_observer_event
-from registry.browser_pairing_service import BrowserPairingService
 from registry.password_reset_service import PasswordResetRequestService
 from web_api.dto.common import SuccessResponse, json_model_response
 from web_api.dto.session import (
-    WebSessionRegisterDeviceLinkPayload,
     WebSessionLoginRequest,
     WebSessionLogoutPayload,
     WebSessionPayload,
@@ -328,19 +326,7 @@ async def handle_web_session_register(request):
     if not check_rate_limit("web_session_register", f"{client_ip(request)}:{login}", limit=5, window_seconds=60):
         return rate_limited_response()
 
-    device_link_payload: WebSessionRegisterDeviceLinkPayload | None = None
     async with get_session() as session:
-        device_link_code = str(payload.device_link_code or "").strip()
-        if device_link_code:
-            pairing = await BrowserPairingService(session).lookup_by_pairing_code(device_link_code)
-            if not pairing or pairing.get("purpose") != "registration":
-                return _error("Код подключения не найден или истек.", "DEVICE_LINK_CODE_INVALID", status=400)
-            device_link_payload = WebSessionRegisterDeviceLinkPayload(
-                accepted=True,
-                purpose="registration",
-                expires_at=pairing.get("expires_at"),
-            )
-
         try:
             user = await UiUsersRepo(session).create_user(
                 login,
@@ -362,8 +348,6 @@ async def handle_web_session_register(request):
         actor_role="user",
         payload={
             "next_path": "/app/login?registered=1",
-            "device_link_accepted": bool(device_link_payload and device_link_payload.accepted),
-            "device_link_purpose": device_link_payload.purpose if device_link_payload else None,
         },
     )
     return json_model_response(
@@ -372,7 +356,6 @@ async def handle_web_session_register(request):
                 user_login=user.user_login,
                 actor_role="user",
                 next_path="/app/login?registered=1",
-                device_link=device_link_payload,
             )
         ),
         status=201,
