@@ -1,5 +1,10 @@
 from pathlib import Path
 
+import pytest
+
+
+pytestmark = pytest.mark.no_db
+
 
 def test_control_plane_reads_bind_address_from_environment() -> None:
     source = (Path(__file__).resolve().parents[1] / "control_plane.py").read_text(encoding="utf-8")

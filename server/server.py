@@ -38,6 +38,8 @@ from config import (
     DATABASE_URL,
     ENABLE_DB_PERSISTENCE,
     ENDPOINT_DIAGNOSTIC_EXECUTION_MODE,
+    ENDPOINT_MODULE_EXECUTION_MODE,
+    ENDPOINT_MODULE_PORT_MODE,
     ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE,
     ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
     ENDPOINT_PORT_MODE,
@@ -285,6 +287,32 @@ async def on_startup(app: web.Application):
                 runner.start()
                 app["endpoint_operation_reconciler"] = runner
                 logger.success("✅ Endpoint operation reconciler started")
+
+            if (
+                ENDPOINT_MODULE_PORT_MODE == "external"
+                and ENDPOINT_MODULE_EXECUTION_MODE == "endpoint"
+            ):
+                from app.services.endpoint_module_operation_reconciler import (
+                    EndpointModuleOperationReconciler,
+                    EndpointModuleOperationReconcilerRunner,
+                    SqlAlchemyEndpointModuleOperationReconcileStore,
+                )
+                from domain_ports.container import DomainPortContainer
+
+                runner = EndpointModuleOperationReconcilerRunner(
+                    EndpointModuleOperationReconciler(
+                        endpoint_port=DomainPortContainer.from_config().endpoint_modules,
+                        store=SqlAlchemyEndpointModuleOperationReconcileStore(get_session_maker()),
+                        mode=ENDPOINT_MODULE_PORT_MODE,
+                        execution_mode=ENDPOINT_MODULE_EXECUTION_MODE,
+                        owner="helpdesk-endpoint-module-reconciler",
+                    ),
+                    interval_seconds=ENDPOINT_OPERATION_RECONCILE_INTERVAL_SECONDS,
+                    batch_size=ENDPOINT_OPERATION_RECONCILE_BATCH_SIZE,
+                )
+                runner.start()
+                app["endpoint_module_operation_reconciler"] = runner
+                logger.success("✅ Endpoint module operation reconciler started")
             
             # Этап 2: Ticket SLA Watchdog (breach + reminders)
             from app.services.ticket_sla_watchdog import get_ticket_sla_watchdog
@@ -404,6 +432,11 @@ async def on_cleanup(app: web.Application):
         logger.info("⏹️ Stopping Endpoint operation reconciler...")
         await app["endpoint_operation_reconciler"].stop()
         logger.success("✅ Endpoint operation reconciler stopped")
+
+    if "endpoint_module_operation_reconciler" in app:
+        logger.info("⏹️ Stopping Endpoint module operation reconciler...")
+        await app["endpoint_module_operation_reconciler"].stop()
+        logger.success("✅ Endpoint module operation reconciler stopped")
 
     if 'operation_watchdog' in app:
         logger.info("⏹️ Stopping operation watchdog...")
@@ -526,9 +559,9 @@ def main():
     logger.info("🚀 PC Agent WebSocket Server (Restructured)")
     logger.info(f"📡 WebSocket (Agents): ws://{SERVER_HOST}:{SERVER_PORT}/ws")
     logger.info(f"📡 WebSocket (UI): ws://{SERVER_HOST}:{SERVER_PORT}/ws_ui")
-    logger.info(f"🌐 Web Interface: http://{SERVER_HOST}:{SERVER_PORT}/")
-    logger.info(f"🔧 Admin Panel: http://{SERVER_HOST}:{SERVER_PORT}/admin")
-    logger.info(f"📋 Tickets: http://{SERVER_HOST}:{SERVER_PORT}/ticket.html")
+    logger.info(f"🌐 Web Interface: http://{SERVER_HOST}:{SERVER_PORT}/app")
+    logger.info(f"🔧 Admin Panel: http://{SERVER_HOST}:{SERVER_PORT}/app/admin")
+    logger.info(f"📋 Tickets: http://{SERVER_HOST}:{SERVER_PORT}/app/tickets")
     logger.info(f"🔧 API: http://{SERVER_HOST}:{SERVER_PORT}/api/")
     logger.info(f"📤 File Upload: http://{SERVER_HOST}:{SERVER_PORT}/api/upload")
     logger.info(f"📂 Uploaded Files: http://{SERVER_HOST}:{SERVER_PORT}/uploads/")

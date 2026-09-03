@@ -57,6 +57,31 @@ ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").s
 ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
     os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy") or "legacy"
 ).strip().lower()
+# Endpoint Module Platform is an independent typed boundary.  It must never
+# inherit the diagnostic provider's execution mode or legacy fallback.
+ENDPOINT_MODULE_PORT_MODE = (
+    os.getenv("ENDPOINT_MODULE_PORT_MODE", "unavailable") or "unavailable"
+).strip().lower()
+# Module Platform credentials are deliberately separate from diagnostic access.
+# A module-only service client must not inherit the diagnostic client's scopes.
+ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN = os.getenv(
+    "ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN", ""
+) or ""
+# The legacy Python-module workbench remains authoritative unless a reviewed
+# deployment explicitly selects Endpoint-native recipes.  This flag is
+# declarative only: it cannot enable execution by itself.
+MODULE_WORKBENCH_AUTHORITY = (
+    os.getenv("MODULE_WORKBENCH_AUTHORITY", "legacy") or "legacy"
+).strip().lower()
+# Module operations have a separate cutover from the read-only module port.
+# Keep the established diagnostic execution path intact until the module
+# reconciler has explicit acceptance in a pilot environment.
+ENDPOINT_MODULE_EXECUTION_MODE = (
+    os.getenv("ENDPOINT_MODULE_EXECUTION_MODE", "disabled") or "disabled"
+).strip().lower()
+LEGACY_MODULE_EXECUTION_ENABLED = (
+    os.getenv("LEGACY_MODULE_EXECUTION_ENABLED", "true") or "true"
+).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _bounded_endpoint_external_timeout() -> float:
@@ -513,16 +538,8 @@ AUTH_UI_CONFIG_FALLBACK_ENABLED = os.getenv("AUTH_UI_CONFIG_FALLBACK_ENABLED", "
 AUTH_UI_MAX_FAILED_ATTEMPTS = int(os.getenv("AUTH_UI_MAX_FAILED_ATTEMPTS", "5"))
 AUTH_UI_LOCK_MINUTES = int(os.getenv("AUTH_UI_LOCK_MINUTES", "15"))
 PUBLIC_TICKET_SESSION_MINUTES = int(os.getenv("PUBLIC_TICKET_SESSION_MINUTES", "15"))
-WEBAPP_CUTOVER_LOGIN_ENABLED = os.getenv("WEBAPP_CUTOVER_LOGIN_ENABLED", "true").lower() == "true"
-WEBAPP_CUTOVER_SUPPORT_ENABLED = os.getenv("WEBAPP_CUTOVER_SUPPORT_ENABLED", "true").lower() == "true"
-WEBAPP_CUTOVER_ADMIN_ENABLED = os.getenv("WEBAPP_CUTOVER_ADMIN_ENABLED", "true").lower() == "true"
-WEBAPP_CUTOVER_HELP_ENABLED = os.getenv("WEBAPP_CUTOVER_HELP_ENABLED", "false").lower() == "true"
-WEBAPP_CUTOVER_TICKET_ENABLED = os.getenv("WEBAPP_CUTOVER_TICKET_ENABLED", "false").lower() == "true"
 WEB_SELF_REGISTRATION_ENABLED = os.getenv("WEB_SELF_REGISTRATION_ENABLED", "false").lower() == "true"
 PROFILE_COMPLETION_REQUIRED = os.getenv("PROFILE_COMPLETION_REQUIRED", "true").lower() == "true"
-# Operational rule: support/admin cutover becomes active only when the web bundle is built
-# and login cutover is also enabled. The route handlers enforce those prerequisites at runtime.
-# Explicit WEBAPP_CUTOVER_*=false in server/.env remains the rollback path.
 
 # Stage 11: SLA Calendar + OLA
 TICKET_SLA_CALENDAR_ENABLED = os.getenv("TICKET_SLA_CALENDAR_ENABLED", "false").lower() == "true"

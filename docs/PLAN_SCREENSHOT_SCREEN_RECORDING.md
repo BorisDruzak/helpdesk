@@ -124,10 +124,10 @@
 
 | Шаг | Действие | Где | Зависимости |
 |-----|----------|-----|-------------|
-| 6.1 | В ленте событий ticket.html: при `command_result` с `artifacts` — рендерить карточки артефактов | `server/ticket.html` | 2.5 |
-| 6.2 | Для `kind=screenshot` или `mime=image/*`: `<img src="/api/artifacts/{id}/download" />` с передачей токена (cookie или ?token=) | `server/ticket.html` | 6.1 |
-| 6.3 | Для `kind=screen_recording` или `mime=video/mp4`: `<video controls preload="metadata" src="...">` | `server/ticket.html` | 6.1 |
-| 6.4 | Проверить, что ticket.html получает events с artifacts (GET /api/tickets/{id}/events или WebSocket) | `server/ticket.html` | — |
+| 6.1 | В React-ленте тикета: при `command_result` с `artifacts` — рендерить карточки артефактов | `webapp/src/pages/tickets/detail-page.tsx` | 2.5 |
+| 6.2 | Для `kind=screenshot` или `mime=image/*`: отобразить image download URL через cookie-session | `webapp/src/pages/tickets/detail-page.tsx` | 6.1 |
+| 6.3 | Для `kind=screen_recording` или `mime=video/mp4`: отобразить video download URL | `webapp/src/pages/tickets/detail-page.tsx` | 6.1 |
+| 6.4 | Проверить, что React ticket detail получает events с artifacts (typed API или WebSocket bridge) | `webapp/src/pages/tickets/detail-page.tsx` | — |
 
 **DoD:** Screenshot и видео отображаются в тикете, воспроизведение и перемотка работают.
 

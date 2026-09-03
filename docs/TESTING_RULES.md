@@ -20,7 +20,6 @@ Use these layers instead of the old single long `server/tests` run when you need
 
 ```powershell
 python -m pytest server/tests -m "not manual and no_db" -vv --durations=80
-python -m pytest server/tests/test_knowledge_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
 python -m pytest server/tests/test_ticket_*.py server/tests/test_helpdesk_*.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
 python -m pytest server/tests/test_migration_schema_contract.py -m "not manual and not no_db and not agent_ws" -vv --durations=80
 python -m pytest server/tests -m "not manual and agent_ws" -vv --durations=80
@@ -30,7 +29,7 @@ Layer meanings:
 
 - `no_db`: pure unit/contract checks that must not require PostgreSQL setup or cleanup.
 - `migration_schema`: fresh PostgreSQL Alembic contract for empty-DB upgrade, exact heads, idempotent upgrade, actual schema cleanup audit, required constraints/indexes/defaults and smoke DML. This layer must run with template DB disabled.
-- DB/API domain layers: DB/API/server contract tests without the in-process WS agent, split into knowledge, tickets/helpdesk, observer/diagnostics, agent runtime, and web/API catch-all layers by the canonical `quality/test_suites.toml` catalog. `scripts/run_ci_suite.py` and `scripts/audit_test_inventory.py` load the same catalog for filename ownership, affected-suite source-prefix routing, layer order and DB/WS parallel grouping.
+- DB/API domain layers: DB/API/server contract tests without the in-process WS agent, split into tickets/helpdesk, observer/diagnostics, agent runtime, and web/API catch-all layers by the canonical `quality/test_suites.toml` catalog. `scripts/run_ci_suite.py` and `scripts/audit_test_inventory.py` load the same catalog for filename ownership, affected-suite source-prefix routing, layer order and DB/WS parallel grouping.
 - `agent_ws`: tests that use the in-process WS agent runtime. This marker is auto-applied to tests that request the `test_agent` fixture.
 
 Pure server tests that do not request `test_client`, `test_app`, `test_engine`, `patched_get_session`, `test_database_url`, `test_database_admin_url` or `run_migrations` should set module-level `pytestmark = pytest.mark.no_db`. This keeps them out of the DB/API layer and avoids paying the migration/cleanup cost for tests that do not touch PostgreSQL.
@@ -41,8 +40,9 @@ The full local CI runner executes these same layers. It is an important final re
 python scripts/run_ci_suite.py
 ```
 
-The runner is sequential by default. For server DB/WS runtime measurements or an explicit CI-speed check, use bounded
-layer-level parallelism instead of `pytest-xdist`:
+The runner is sequential by default. The temporary-workspace full-CI wrapper always uses bounded layer-level
+parallelism with two workers. For a direct server DB/WS runtime measurement or an explicit CI-speed check, use the
+same bounded mode instead of `pytest-xdist`:
 
 ```powershell
 python scripts/run_ci_suite.py --parallel --max-workers 2
@@ -62,6 +62,13 @@ On Windows, parallel DB/WS mode is guarded against child pytest processes owning
 For CI, prefer leaving the configured local tunnel port free so the runner owns the tunnel lifecycle; reusing an
 already-open tunnel is a compatibility path and the runner cannot keep that external process alive.
 
+`run_ci_in_temp_workspace.py` always enables the stricter parent-owned policy for a full gate. It accepts either an
+explicit `TEST_DATABASE_ADMIN_URL` supplied by the protected runner environment, or a parent-owned tunnel configured
+with `PC_CLIENT_TEST_DB_SSH_TARGET` (and the associated runtime-only tunnel settings). It rejects an already-open
+external tunnel instead of silently depending on it, starts the owned tunnel before the migration layer, and closes it
+when the gate ends. Configure those values in the approved secret channel or runner profile; never put connection
+credentials in a command line, repository file, or CI artifact.
+
 Parallel layer output is intentionally high-level in the terminal; detailed pytest output remains in each
 `artifacts/ci/<sha>/logs/<layer>.log`. `summary.json` preserves the `steps` list and adds `parallel_enabled`,
 `max_workers`, and `parallel_groups` metadata. When `--parallel-measurements` is supplied, the runner reads a prior
@@ -71,7 +78,7 @@ layers run sequentially until timings recover. The decision is recorded as `summ
 To run a single canonical layer:
 
 ```powershell
-python scripts/run_ci_suite.py --layer server_pytest_db_knowledge
+python scripts/run_ci_suite.py --layer server_pytest_db_tickets
 python scripts/run_ci_suite.py --layer test_inventory_audit
 python scripts/run_ci_suite.py --layer db_cleanup_profile_audit
 python scripts/run_ci_suite.py --layer fixture_builder_audit
@@ -137,7 +144,7 @@ Route selection must match the changed surface: `/admin` for admin/tech-panel, `
 
 `scripts/run_ci_suite.py` uses:
 
-- 45 minutes per server pytest layer.
+- 8 hours per DB-backed or agent-WS server pytest layer. Measured parallel isolated staging PostgreSQL profiles can exceed the former four-hour limit; the separate idle timeout and fixture-timing budget gates remain active. Audits, mutation smoke, script pytest and the no-DB server layer retain their 45-minute fail-fast ceiling.
 - The configured idle timeout for all CI steps, including server and pc_agent pytest layers.
 - `-vv --durations=80` for each server layer and `pc_agent_pytest`.
 - `PC_CLIENT_PYTEST_WATCHDOG_SECONDS=120` for server pytest.
@@ -230,20 +237,18 @@ $env:PC_CLIENT_TEST_DB_TEMPLATE_REBUILD = "1"  # force rebuild for the current f
 Use a narrower profile only after a focused run proves the file does not leak data outside that profile. Prefer module-level markers so the audit/reporting tools can see the file assignment:
 
 ```python
-pytestmark = pytest.mark.db_cleanup("knowledge")
 pytestmark = pytest.mark.db_cleanup("observer_diagnostics")
 pytestmark = pytest.mark.db_cleanup("tickets")
 pytestmark = pytest.mark.db_cleanup("registration")
 pytestmark = pytest.mark.db_cleanup("web_support")
 ```
 
-Supported profiles are `full`, `tickets`, `knowledge`, `observer_diagnostics`, `agent_runtime`, `registry_access`, `policies_config`, `registration`, and `web_support`. Unknown profiles and multiple `db_cleanup` markers on one test fail fast.
+Supported profiles are `full`, `tickets`, `observer_diagnostics`, `agent_runtime`, `registry_access`, `policies_config`, `registration`, and `web_support`. Unknown profiles and multiple `db_cleanup` markers on one test fail fast.
 
 Profile selection guide:
 
 | Profile | Use for |
 | --- | --- |
-| `knowledge` | `test_knowledge_*.py` and clear Knowledge-only provider/repo/API tests. |
 | `observer_diagnostics` | observer, diagnostics, tech/admin control-plane and trace-overlay tests. |
 | `tickets` | ticket/helpdesk/form/service-catalog/requester-timeline/support-playbook tests. |
 | `registry_access` | registry/access/audience/group/user-permission tests. |

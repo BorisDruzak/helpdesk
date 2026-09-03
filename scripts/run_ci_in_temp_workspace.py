@@ -73,7 +73,18 @@ def main() -> None:
             cwd=checkout_dir,
         )
         run(
-            [str(ci_python), str(checkout_dir / "scripts" / "run_ci_suite.py"), "--workspace", str(checkout_dir), "--commit", commit],
+            [
+                str(ci_python),
+                str(checkout_dir / "scripts" / "run_ci_suite.py"),
+                "--workspace",
+                str(checkout_dir),
+                "--commit",
+                commit,
+                "--parallel",
+                "--max-workers",
+                "2",
+                "--require-parent-owned-db-tunnel",
+            ],
             cwd=checkout_dir,
         )
 

@@ -45,7 +45,7 @@ Security update 2026-06-26:
 ## Обзор
 
 - **Агенты:** аутентификация по токену (agent token) при WebSocket handshake и при HTTP API.
-- **UI:** legacy shell-страницы используют логин/пароль с выдачей UI токена; новый `webapp` под `/app/*` использует тот же UI token storage на сервере, но выдаёт его клиенту только как httpOnly cookie-session.
+- **UI:** React `webapp` под `/app/*` использует server-side UI token storage, но выдаёт клиенту только httpOnly cookie-session. Former `/login`, `/admin`, `/support`, `/help` and `/ticket` URLs only redirect into that UI.
 - **HTTP API:** все `/api/*` маршруты (кроме whitelist) защищены middleware по токену (Bearer/Token/X-Auth-Token), а cookie `pc_client_web_session` используется не только на `/api/web/*`, но и на canonical React bridges для нового webapp: `/api/modules/*`, `/api/admin/tech/*`, `/api/admin/settings/observer`, `/api/ticket_forms/*`, `/api/registry/options`, `/api/upload` и `/api/artifacts/*`.
 - **Control-plane:** отдельный сервис на порту `8667` использует те же Bearer UI/agent токены, но имеет собственный middleware, CORS-ограничение по origin и отдельный RBAC для runtime actions.
 - **Роли и контекст:** `AuthContext` — единственный источник истины для `actor_id` и `actor_role`; данные из JSON/WebSocket payload **никогда** не доверяются для роли.
@@ -298,15 +298,14 @@ Security update 2026-06-26:
 
 ## 7. Интерфейс тикета (Stage 10.4, 10.5)
 
-- Страница тикета (/ticket/{id}) использует тот же UI-токен (admin_auth_token), что и админка; WebSocket /ws_ui — ui_hello с этим токеном, затем subscribe_ticket.
-- Отдельная страница `/login` остаётся единым входом для legacy shell-страниц: admin логин ведёт в `/admin`, support логин — в `/support`. Сами shell-страницы проверяют `GET /api/ui_session` и при несоответствии роли перенаправляют обратно на `/login`.
+- Support ticket UI uses the React session boundary; WebSocket `/ws_ui` begins with `ui_hello` and then `subscribe_ticket` where that realtime bridge is required.
+- `/app/login` is the sole login UI. `/login` is retained only as a redirect into `/app/login`.
 - Новый React `webapp` живёт на `/app/support` и `/app/admin`, использует `/app/login` и проверяет сессию через `/api/web/session/me`.
 - `/app` теперь считается role-aware точкой входа: после логина или прямого захода индекс выбирает `default_workspace` из session payload и уводит пользователя в допустимую рабочую область.
 - Если пользователь без доступа к `/app/admin` идёт туда напрямую, access gate обязан вернуть его в допустимую workspace-зону, а не оставлять на частично загруженном экране.
-- Cutover legacy shell управляется флагами `WEBAPP_CUTOVER_LOGIN_ENABLED`, `WEBAPP_CUTOVER_SUPPORT_ENABLED`, `WEBAPP_CUTOVER_ADMIN_ENABLED` в `server/config.py`; после финального переключения эти флаги включены по умолчанию, а старые `/login`, `/support`, `/admin` редиректят в `/app/*`. Requester cutover is separate: `WEBAPP_CUTOVER_HELP_ENABLED` and `WEBAPP_CUTOVER_TICKET_ENABLED` default to false and only redirect `/help` and `/ticket/{id}` to `/app/help` and `/app/ticket/{id}` when explicitly enabled. Явный escape на legacy shell сохраняется через `?legacy=1`, а rollback возможен через `WEBAPP_CUTOVER_*=false` в `server/.env`.
-- Operational prerequisite для cutover: redirect в новый shell активируется только если built bundle реально присутствует в `webapp/dist`; для `/support` и `/admin` дополнительно обязателен включённый login cutover, иначе route остаётся на legacy shell.
-- Каноничный preflight перед полным переключением: `python scripts/check_webapp_cutover.py --json`; каноничный live signoff после release: `pnpm --dir webapp run check:remote:webapp -- --base-url http://example.test:8666`, который подтверждает и raw redirects `/login|/admin|/support`, и `?legacy=1` escape.
-- Support workspace в work-режиме не дублирует composer/timeline вручную, а встраивает `ticket.html?embed=1`. Это сохраняет RBAC, вложения, reply-to, скриншоты и прочие возможности ticket chat без расхождения поведения между страницами.
+- `/login`, `/support`, `/admin`, `/help`, `/ticket.html` and `/ticket/{id}` unconditionally redirect into the matching `/app/*` route. They discard only `legacy` and `_shell` query keys; no legacy escape or UI rollback flag exists. If the React bundle is unavailable, `/app/*` fails closed with its existing typed 503 response rather than reviving a weaker legacy UI.
+- The canonical live signoff after release is `pnpm --dir webapp run check:remote:webapp -- --base-url https://example.test:9443`; it verifies React routes and every retired entry URL, including `?legacy=1` variants.
+- Support workspace owns its React composer and timeline; it no longer embeds `ticket.html`.
 - **Видимость сообщений:** в composer переключатель «Внутренняя заметка» (internal); по умолчанию сообщения — public. Только роли support/admin могут отправлять internal; requester не видит внутренние сообщения (фильтрация в snapshot и в API).
 - **Stage 10.5 — Action Dock:** управление тикетом через панель кнопок (Статус, Назначить, Очередь, Приоритет, Инструменты ПК, Трудозатраты, Закрыть, Перемаршрутизация) и inline-панели; slash-команды из UI убраны. **RBAC в UI:** snapshot возвращает `actor_role`; для роли **auditor** кнопки Action Dock отображаются в состоянии disabled (read-only); admin/support — полный доступ к действиям. Серверная проверка прав остаётся источником истины. См. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-105-action-dock--inline-panels). Подход со slash-командами (Stage 10.4) deprecated, см. [TICKET_SYSTEM.md](TICKET_SYSTEM.md#этап-104-chat-first-deprecated).
 

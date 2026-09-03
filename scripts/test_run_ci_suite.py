@@ -8,6 +8,12 @@ import pytest
 from scripts import run_ci_suite
 
 
+def test_server_pytest_timeout_allows_the_measured_parallel_db_layer_budget() -> None:
+    args = run_ci_suite.parse_args([])
+
+    assert args.server_pytest_timeout == 8 * 60 * 60
+
+
 def test_run_and_capture_times_out_and_writes_partial_log(tmp_path):
     log_path = tmp_path / "ci-step.log"
     started = time.monotonic()
@@ -198,7 +204,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     scripts_dir.mkdir(parents=True)
     (scripts_dir / "test_ci_helper.py").write_text("def test_placeholder(): pass\n", encoding="utf-8")
     for filename in (
-        "test_knowledge_api.py",
         "test_ticket_closure_policy.py",
         "test_observer_diagnostics_api.py",
         "test_agent_services_pipeline.py",
@@ -258,7 +263,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "scripts_pytest_no_db",
         "server_pytest_no_db",
         "migration_schema",
-        "server_pytest_db_knowledge",
         "server_pytest_db_tickets",
         "server_pytest_db_observer_diagnostics",
         "server_pytest_db_agent_runtime",
@@ -292,7 +296,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     assert idle_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["migration_schema"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
-    assert idle_by_step["server_pytest_db_knowledge"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
     assert idle_by_step["pc_agent_pytest"] == run_ci_suite.DEFAULT_IDLE_TIMEOUT_SECONDS
@@ -385,21 +388,9 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "--junitxml",
         str(summary_path.parent / "junit-migration-schema.xml"),
     ]
-    assert command_by_step["server_pytest_db_knowledge"][-6:] == [
-        "-m",
-        "not manual and not no_db and not agent_ws",
-        "-vv",
-        "--durations=80",
-        "--junitxml",
-        str(summary_path.parent / "junit-server-db-knowledge.xml"),
-    ]
-    expected_knowledge_path = (
-        "server\\tests\\test_knowledge_api.py" if sys.platform == "win32" else "server/tests/test_knowledge_api.py"
-    )
     expected_web_api_path = (
         "server\\tests\\test_web_admin_api.py" if sys.platform == "win32" else "server/tests/test_web_admin_api.py"
     )
-    assert command_by_step["server_pytest_db_knowledge"][3] == expected_knowledge_path
     assert command_by_step["server_pytest_db_web_api"][3] == expected_web_api_path
     assert command_by_step["server_pytest_agent_ws"][-6:] == [
         "-m",
@@ -448,17 +439,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
         "PC_CLIENT_TEST_DB_DOMAIN": "migration_schema",
         "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
     }
-    assert env_by_step["server_pytest_db_knowledge"] == {
-        "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
-        "PC_CLIENT_TEST_TIMING": "1",
-        "PC_CLIENT_TEST_TIMING_PATH": str(
-            summary_path.parent / "fixture-timings" / "server_pytest_db_knowledge.jsonl"
-        ),
-        "PC_CLIENT_TEST_DB_TEMPLATE": "1",
-        "PC_CLIENT_TEST_DB_TEMPLATE_KEEP": "1",
-        "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
-        "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
-    }
     assert env_by_step["server_pytest_db_web_api"] == {
         "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
         "PC_CLIENT_TEST_TIMING": "1",
@@ -485,19 +465,18 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert timeout_by_step["webapp_unit_tests"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
     assert timeout_by_step["webapp_fixture_e2e"] == run_ci_suite.DEFAULT_WEB_TEST_TIMEOUT_SECONDS
-    assert timeout_by_step["test_inventory_audit"] == 45 * 60
-    assert timeout_by_step["db_cleanup_profile_audit"] == 45 * 60
-    assert timeout_by_step["fixture_builder_audit"] == 45 * 60
-    assert timeout_by_step["active_risk_audit"] == 45 * 60
-    assert timeout_by_step["observer_contamination_audit"] == 45 * 60
-    assert timeout_by_step["branch_coverage_audit"] == 45 * 60
-    assert timeout_by_step["mutation_smoke"] == 45 * 60
-    assert timeout_by_step["scripts_pytest_no_db"] == 45 * 60
-    assert timeout_by_step["server_pytest_no_db"] == 45 * 60
-    assert timeout_by_step["migration_schema"] == 45 * 60
-    assert timeout_by_step["server_pytest_db_knowledge"] == 45 * 60
-    assert timeout_by_step["server_pytest_db_web_api"] == 45 * 60
-    assert timeout_by_step["server_pytest_agent_ws"] == 45 * 60
+    assert timeout_by_step["test_inventory_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["db_cleanup_profile_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["fixture_builder_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["active_risk_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["observer_contamination_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["branch_coverage_audit"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["mutation_smoke"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["scripts_pytest_no_db"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["server_pytest_no_db"] == run_ci_suite.DEFAULT_FAST_CHECK_TIMEOUT_SECONDS
+    assert timeout_by_step["migration_schema"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["server_pytest_db_web_api"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
+    assert timeout_by_step["server_pytest_agent_ws"] == run_ci_suite.DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS
 
     summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["evidence_layers"]["webapp_fixture_e2e"] == {
@@ -508,9 +487,6 @@ def test_main_runs_webapp_bundle_step_before_layered_pytests(tmp_path, monkeypat
     }
     assert summary["baseline_artifacts"]["junit"]["scripts_pytest_no_db"] == str(
         summary_path.parent / "junit-scripts-no-db.xml"
-    )
-    assert summary["baseline_artifacts"]["junit"]["server_pytest_db_api_layers"]["server_pytest_db_knowledge"] == str(
-        summary_path.parent / "junit-server-db-knowledge.xml"
     )
     assert summary["baseline_artifacts"]["junit"]["migration_schema"] == str(
         summary_path.parent / "junit-migration-schema.xml"
@@ -564,7 +540,6 @@ def test_server_db_api_layer_paths_groups_every_test_file_once(tmp_path):
     names = [name for name, _paths in layers]
     flattened = [path for _name, paths in layers for path in paths]
     assert names == [
-        "server_pytest_db_knowledge",
         "server_pytest_db_tickets",
         "server_pytest_db_observer_diagnostics",
         "server_pytest_db_agent_runtime",
@@ -583,9 +558,9 @@ def test_server_db_api_layer_paths_uses_workspace_suite_catalog(tmp_path):
     (tmp_path / "quality" / "test_suites.toml").write_text(
         """
 [[suites]]
-name = "server_pytest_db_knowledge"
+name = "server_pytest_db_custom"
 runner = "pytest"
-server_db_api_patterns = ["test_custom_knowledge_*.py"]
+server_db_api_patterns = ["test_custom_api_*.py"]
 
 [[suites]]
 name = "server_pytest_db_tickets"
@@ -610,15 +585,15 @@ server_db_api_catch_all = true
         + "\n",
         encoding="utf-8",
     )
-    (tests_dir / "test_custom_knowledge_contract.py").write_text(
+    (tests_dir / "test_custom_api_contract.py").write_text(
         "def test_placeholder(): pass\n",
         encoding="utf-8",
     )
 
     layers = dict(run_ci_suite._server_db_api_layer_paths(tmp_path))
 
-    assert Path("server/tests/test_custom_knowledge_contract.py") in layers["server_pytest_db_knowledge"]
-    assert Path("server/tests/test_custom_knowledge_contract.py") not in layers.get(
+    assert Path("server/tests/test_custom_api_contract.py") in layers["server_pytest_db_custom"]
+    assert Path("server/tests/test_custom_api_contract.py") not in layers.get(
         "server_pytest_db_web_api", []
     )
 
@@ -627,7 +602,7 @@ def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
     summary_path = tmp_path / "artifacts" / "ci" / "deadbeef" / "summary.json"
     tests_dir = tmp_path / "server" / "tests"
     tests_dir.mkdir(parents=True)
-    (tests_dir / "test_knowledge_api.py").write_text("def test_placeholder(): pass\n", encoding="utf-8")
+    (tests_dir / "test_web_admin_api.py").write_text("def test_placeholder(): pass\n", encoding="utf-8")
     steps_seen: list[str] = []
 
     monkeypatch.setattr(run_ci_suite, "detect_commit", lambda workspace, commit: "deadbeef")
@@ -642,7 +617,7 @@ def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
             "--commit",
             "deadbeef",
             "--layer",
-            "server_pytest_db_knowledge",
+            "server_pytest_db_web_api",
             "--keep-test-db",
         ],
     )
@@ -663,11 +638,11 @@ def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
             "PC_CLIENT_PYTEST_WATCHDOG_SECONDS": "120",
             "PC_CLIENT_TEST_TIMING": "1",
             "PC_CLIENT_TEST_TIMING_PATH": str(
-                summary_path.parent / "fixture-timings" / "server_pytest_db_knowledge.jsonl"
+                summary_path.parent / "fixture-timings" / "server_pytest_db_web_api.jsonl"
             ),
             "PC_CLIENT_TEST_DB_TEMPLATE": "1",
             "PC_CLIENT_TEST_DB_TEMPLATE_KEEP": "1",
-            "PC_CLIENT_TEST_DB_DOMAIN": "knowledge",
+            "PC_CLIENT_TEST_DB_DOMAIN": "web_api",
             "PC_CLIENT_TEST_DB_RUN_ID": "deadbeef",
             "PC_CLIENT_KEEP_TEST_DB": "1",
         }
@@ -688,9 +663,9 @@ def test_main_can_run_single_layer_by_name(tmp_path, monkeypatch):
 
     run_ci_suite.main()
 
-    assert steps_seen == ["server_pytest_db_knowledge"]
+    assert steps_seen == ["server_pytest_db_web_api"]
     summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
-    assert summary["requested_layers"] == ["server_pytest_db_knowledge"]
+    assert summary["requested_layers"] == ["server_pytest_db_web_api"]
     assert "webapp_bundle" in summary["available_layers"]
 
 
@@ -711,7 +686,7 @@ def test_main_can_run_affected_gate_for_changed_server_domain(tmp_path, monkeypa
             "--commit",
             "deadbeef",
             "--changed-path",
-            "server/knowledge/search_service.py",
+            "server/customer_history/projection_service.py",
         ],
     )
 
@@ -746,17 +721,17 @@ def test_main_can_run_affected_gate_for_changed_server_domain(tmp_path, monkeypa
         "mutation_smoke",
         "scripts_pytest_no_db",
         "server_pytest_no_db",
-        "server_pytest_db_knowledge",
+        "server_pytest_db_web_api",
     ]
     summary = run_ci_suite.json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["gate_mode"] == "affected"
     assert summary["full_merge_gate_required"] is True
     assert summary["full_merge_gate_satisfied"] is False
     assert summary["effective_layers"] == steps_seen
-    assert summary["affected_selection"]["changed_paths"] == ["server/knowledge/search_service.py"]
+    assert summary["affected_selection"]["changed_paths"] == ["server/customer_history/projection_service.py"]
     assert summary["affected_selection"]["affected_layers"] == steps_seen
-    assert "server/knowledge/search_service.py" in summary["affected_selection"]["selection_reasons"][
-        "server_pytest_db_knowledge"
+    assert "server/customer_history/projection_service.py" in summary["affected_selection"]["selection_reasons"][
+        "server_pytest_db_web_api"
     ]
 
 
@@ -777,9 +752,9 @@ def test_main_rejects_combining_layer_and_affected_selection(tmp_path, monkeypat
             "--commit",
             "deadbeef",
             "--changed-path",
-            "server/knowledge/search_service.py",
+            "server/customer_history/projection_service.py",
             "--layer",
-            "server_pytest_db_knowledge",
+            "server_pytest_db_web_api",
         ],
     )
 
@@ -793,7 +768,6 @@ def _write_layer_test_files(tmp_path: Path) -> None:
     tests_dir = tmp_path / "server" / "tests"
     tests_dir.mkdir(parents=True)
     for filename in (
-        "test_knowledge_api.py",
         "test_ticket_closure_policy.py",
         "test_observer_diagnostics_api.py",
         "test_agent_services_pipeline.py",
@@ -940,7 +914,7 @@ def test_parallel_mode_stops_launching_queued_db_layers_after_first_failure(tmp_
             "--layer",
             "server_pytest_db_tickets",
             "--layer",
-            "server_pytest_db_knowledge",
+            "server_pytest_db_agent_runtime",
             "--layer",
             "server_pytest_db_observer_diagnostics",
         ],
@@ -981,8 +955,8 @@ def test_parallel_mode_stops_launching_queued_db_layers_after_first_failure(tmp_
     assert summary["status"] == "red"
     assert summary["parallel_groups"][0]["status"] == "red"
     assert summary["parallel_groups"][0]["skipped_layers"] == [
-        "server_pytest_db_knowledge",
         "server_pytest_db_observer_diagnostics",
+        "server_pytest_db_agent_runtime",
     ]
 
 
@@ -1226,7 +1200,7 @@ def test_flaky_summary_allows_registry_match_without_clean_green(tmp_path):
                         "node_id": "webapp/tests/requester-workspace.spec.ts::*",
                         "owner": "webapp",
                         "reason": "documented fixture retry while live gate remains separate",
-                        "expires": "2026-07-31",
+                        "expires": "2099-07-31",
                     }
                 ],
             }
@@ -1279,6 +1253,46 @@ def test_windows_parallel_tunnel_uses_existing_port_without_owning_it(monkeypatc
         "PC_CLIENT_TEST_DB_TUNNEL_PARENT_OWNED": "existing",
     }
     tunnel.close()
+
+
+def test_windows_parallel_tunnel_rejects_external_tunnel_when_parent_ownership_required(monkeypatch):
+    monkeypatch.setattr(run_ci_suite.os, "name", "nt")
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_SSH_TARGET", "ci@example")
+    monkeypatch.setattr(run_ci_suite, "_is_tcp_port_open", lambda host, port: True)
+
+    with pytest.raises(RuntimeError, match="requires a parent-owned DB tunnel"):
+        run_ci_suite._prepare_windows_parallel_db_tunnel(require_parent_owned=True)
+
+
+def test_windows_parallel_tunnel_requires_explicit_runtime_target_when_parent_ownership_required(monkeypatch):
+    monkeypatch.setattr(run_ci_suite.os, "name", "nt")
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.setenv("PC_CLIENT_TEST_DB_SSH_TARGET", "")
+    monkeypatch.setattr(run_ci_suite, "_is_tcp_port_open", lambda host, port: False)
+    monkeypatch.setattr(
+        run_ci_suite.subprocess,
+        "Popen",
+        lambda *args, **kwargs: pytest.fail("missing runtime target must fail before starting ssh"),
+    )
+
+    with pytest.raises(RuntimeError, match="PC_CLIENT_TEST_DB_SSH_TARGET"):
+        run_ci_suite._prepare_windows_parallel_db_tunnel(require_parent_owned=True)
+
+
+def test_windows_parallel_tunnel_requires_runtime_target_before_starting_ssh(monkeypatch):
+    monkeypatch.setattr(run_ci_suite.os, "name", "nt")
+    monkeypatch.delenv("TEST_DATABASE_ADMIN_URL", raising=False)
+    monkeypatch.delenv("PC_CLIENT_TEST_DB_SSH_TARGET", raising=False)
+    monkeypatch.setattr(run_ci_suite, "_is_tcp_port_open", lambda host, port: False)
+    monkeypatch.setattr(
+        run_ci_suite.subprocess,
+        "Popen",
+        lambda *args, **kwargs: pytest.fail("missing runtime target must fail before starting ssh"),
+    )
+
+    with pytest.raises(RuntimeError, match="PC_CLIENT_TEST_DB_SSH_TARGET"):
+        run_ci_suite._prepare_windows_parallel_db_tunnel()
 
 
 def test_windows_parallel_tunnel_starts_ssh_from_env_defaults(monkeypatch):

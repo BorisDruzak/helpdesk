@@ -29,6 +29,9 @@ from scripts.rehearse_registry_retirement import (
 from scripts import rehearse_registry_retirement as retirement_preflight
 
 
+pytestmark = pytest.mark.no_db
+
+
 def _immutable_id(number: int) -> str:
     return str(uuid5(NAMESPACE_URL, f"registry-retirement-evidence-{number}"))
 

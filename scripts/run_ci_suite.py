@@ -46,7 +46,8 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 DEFAULT_VERIFY_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_WEB_BUILD_TIMEOUT_SECONDS = 20 * 60
 DEFAULT_WEB_TEST_TIMEOUT_SECONDS = 20 * 60
-DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 45 * 60
+DEFAULT_FAST_CHECK_TIMEOUT_SECONDS = 45 * 60
+DEFAULT_SERVER_PYTEST_TIMEOUT_SECONDS = 8 * 60 * 60
 DEFAULT_PC_AGENT_PYTEST_TIMEOUT_SECONDS = 30 * 60
 DEFAULT_IDLE_TIMEOUT_SECONDS = 10 * 60
 DEFAULT_PYTEST_WATCHDOG_SECONDS = 120
@@ -100,6 +101,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--parallel",
         action="store_true",
         help="Run independent server DB/WS pytest layers in a bounded parallel group.",
+    )
+    parser.add_argument(
+        "--require-parent-owned-db-tunnel",
+        action="store_true",
+        help=(
+            "For Windows full gates, require TEST_DATABASE_ADMIN_URL or a parent-owned "
+            "DB tunnel configured by runtime environment."
+        ),
     )
     parser.add_argument(
         "--max-workers",
@@ -425,15 +434,19 @@ def _is_tcp_port_open(host: str, port: int) -> bool:
         return False
 
 
-def _windows_parallel_db_tunnel_settings() -> tuple[str, int, str, str, str]:
+def _windows_parallel_db_tunnel_settings(*, require_parent_owned: bool = False) -> tuple[str, int, str, str, str]:
     host = os.getenv("PC_CLIENT_TEST_DB_TUNNEL_HOST", "127.0.0.1")
     port = int(os.getenv("PC_CLIENT_TEST_DB_TUNNEL_PORT", "55432"))
-    target = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "altserver@example.test")
+    target = os.getenv("PC_CLIENT_TEST_DB_SSH_TARGET", "")
     remote_bind = os.getenv("PC_CLIENT_TEST_DB_REMOTE_BIND", "127.0.0.1:5432")
     ssh_key = os.getenv(
         "PC_CLIENT_TEST_DB_SSH_KEY",
         r"C:\Users\admin-2\.ssh\pc_client_altserver_ed25519",
     )
+    if require_parent_owned and not target:
+        raise RuntimeError(
+            "Full CI requires PC_CLIENT_TEST_DB_SSH_TARGET when TEST_DATABASE_ADMIN_URL is not set"
+        )
     return host, port, target, remote_bind, ssh_key
 
 
@@ -441,7 +454,7 @@ def _windows_parallel_db_admin_url(host: str, port: int) -> str:
     return f"postgresql+asyncpg://chatbot:chatbot@{host}:{port}/postgres"
 
 
-def _prepare_windows_parallel_db_tunnel() -> WindowsParallelDbTunnel:
+def _prepare_windows_parallel_db_tunnel(*, require_parent_owned: bool = False) -> WindowsParallelDbTunnel:
     if os.name != "nt":
         return WindowsParallelDbTunnel(env_overrides={})
 
@@ -449,15 +462,27 @@ def _prepare_windows_parallel_db_tunnel() -> WindowsParallelDbTunnel:
         print("[ci-db-tunnel] using explicit TEST_DATABASE_ADMIN_URL", flush=True)
         return WindowsParallelDbTunnel(env_overrides={})
 
-    host, port, target, remote_bind, ssh_key = _windows_parallel_db_tunnel_settings()
+    host, port, target, remote_bind, ssh_key = _windows_parallel_db_tunnel_settings(
+        require_parent_owned=require_parent_owned
+    )
     admin_url = _windows_parallel_db_admin_url(host, port)
     if _is_tcp_port_open(host, port):
+        if require_parent_owned:
+            raise RuntimeError(
+                "Full CI requires a parent-owned DB tunnel; set TEST_DATABASE_ADMIN_URL "
+                "or leave the configured local tunnel port free"
+            )
         print(f"[ci-db-tunnel] using existing tunnel {host}:{port}", flush=True)
         return WindowsParallelDbTunnel(
             env_overrides={
                 "TEST_DATABASE_ADMIN_URL": admin_url,
                 "PC_CLIENT_TEST_DB_TUNNEL_PARENT_OWNED": "existing",
             }
+        )
+
+    if not target:
+        raise RuntimeError(
+            "Windows DB-backed CI requires PC_CLIENT_TEST_DB_SSH_TARGET when TEST_DATABASE_ADMIN_URL is not set"
         )
 
     cmd = [
@@ -475,10 +500,7 @@ def _prepare_windows_parallel_db_tunnel() -> WindowsParallelDbTunnel:
         target,
         "-N",
     ]
-    print(
-        f"[ci-db-tunnel] starting parent-owned tunnel {host}:{port} -> {target} {remote_bind}",
-        flush=True,
-    )
+    print("[ci-db-tunnel] starting parent-owned Windows test DB tunnel", flush=True)
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.DEVNULL,
@@ -520,6 +542,10 @@ def _is_server_db_ws_parallel_layer(step_name: str) -> bool:
     return step_name in SERVER_DB_WS_PARALLEL_LAYER_ORDER
 
 
+def _is_db_backed_server_layer(step_name: str) -> bool:
+    return step_name == "migration_schema" or _is_server_db_ws_parallel_layer(step_name)
+
+
 def _merge_step_env(step: Step, env_overrides: dict[str, str]) -> Step:
     step_name, command, log_path, timeout_seconds, idle_timeout_seconds, step_env = step
     if not env_overrides:
@@ -527,6 +553,13 @@ def _merge_step_env(step: Step, env_overrides: dict[str, str]) -> Step:
     merged_env = dict(step_env or {})
     merged_env.update(env_overrides)
     return step_name, command, log_path, timeout_seconds, idle_timeout_seconds, merged_env
+
+
+def _merge_db_tunnel_env(steps: list[Step], env_overrides: dict[str, str]) -> list[Step]:
+    return [
+        _merge_step_env(step, env_overrides) if _is_db_backed_server_layer(step[0]) else step
+        for step in steps
+    ]
 
 
 def _split_steps_for_parallel(steps: list[Step]) -> tuple[list[Step], list[Step], list[Step]]:
@@ -1410,7 +1443,7 @@ def main() -> None:
             "test_inventory_audit",
             _test_inventory_audit_command(args.workspace),
             logs_dir / "test_inventory_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1418,7 +1451,7 @@ def main() -> None:
             "db_cleanup_profile_audit",
             _db_cleanup_profile_audit_command(args.workspace),
             logs_dir / "db_cleanup_profile_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1426,7 +1459,7 @@ def main() -> None:
             "fixture_builder_audit",
             _fixture_builder_audit_command(args.workspace),
             logs_dir / "fixture_builder_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1434,7 +1467,7 @@ def main() -> None:
             "active_risk_audit",
             _active_risk_audit_command(args.workspace),
             logs_dir / "active_risk_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1442,7 +1475,7 @@ def main() -> None:
             "observer_contamination_audit",
             _observer_contamination_audit_command(args.workspace),
             logs_dir / "observer_contamination_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1450,7 +1483,7 @@ def main() -> None:
             "branch_coverage_audit",
             _branch_coverage_audit_command(args.workspace),
             logs_dir / "branch_coverage_audit.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1458,7 +1491,7 @@ def main() -> None:
             "mutation_smoke",
             _mutation_smoke_command(args.workspace),
             logs_dir / "mutation_smoke.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1466,7 +1499,7 @@ def main() -> None:
             "scripts_pytest_no_db",
             _scripts_pytest_no_db_command(args.workspace, artifact_dir / "junit-scripts-no-db.xml"),
             logs_dir / "scripts_pytest_no_db.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             None,
         ),
@@ -1474,7 +1507,7 @@ def main() -> None:
             "server_pytest_no_db",
             _server_pytest_command("not manual and no_db", artifact_dir / "junit-server-no-db.xml"),
             logs_dir / "server_pytest_no_db.log",
-            float(args.server_pytest_timeout),
+            float(DEFAULT_FAST_CHECK_TIMEOUT_SECONDS),
             float(args.idle_timeout),
             _server_pytest_env(
                 layer_name="server_pytest_no_db",
@@ -1563,6 +1596,7 @@ def main() -> None:
     runner_error: str | None = None
     fixture_timings_error: str | None = None
     flaky_gate_error: str | None = None
+    tunnel: WindowsParallelDbTunnel | None = None
     try:
         if args.parallel:
             before_steps, parallel_steps, after_steps = _split_steps_for_parallel(steps)
@@ -1574,6 +1608,11 @@ def main() -> None:
             parallel_steps = []
             after_steps = []
 
+        if args.require_parent_owned_db_tunnel:
+            tunnel = _prepare_windows_parallel_db_tunnel(require_parent_owned=True)
+            before_steps = _merge_db_tunnel_env(before_steps, tunnel.env_overrides)
+            parallel_steps = _merge_db_tunnel_env(parallel_steps, tunnel.env_overrides)
+
         for step in before_steps:
             result = _run_step(step, workspace=args.workspace, mirror_output=True)
             results.append(result)
@@ -1582,21 +1621,19 @@ def main() -> None:
                 break
 
         if status == "green" and parallel_steps:
-            tunnel = _prepare_windows_parallel_db_tunnel()
-            try:
-                parallel_env = tunnel.env_overrides
-                prepared_parallel_steps = [_merge_step_env(step, parallel_env) for step in parallel_steps]
-                group_results, group_metadata = _run_parallel_steps(
-                    prepared_parallel_steps,
-                    workspace=args.workspace,
-                    max_workers=max_workers,
-                )
-                results.extend(group_results)
-                parallel_groups.append(group_metadata)
-                if group_metadata["status"] != "green":
-                    status = "red"
-            finally:
-                tunnel.close()
+            if tunnel is None:
+                tunnel = _prepare_windows_parallel_db_tunnel()
+            parallel_env = tunnel.env_overrides
+            prepared_parallel_steps = [_merge_step_env(step, parallel_env) for step in parallel_steps]
+            group_results, group_metadata = _run_parallel_steps(
+                prepared_parallel_steps,
+                workspace=args.workspace,
+                max_workers=max_workers,
+            )
+            results.extend(group_results)
+            parallel_groups.append(group_metadata)
+            if group_metadata["status"] != "green":
+                status = "red"
 
         if status == "green":
             for step in after_steps:
@@ -1614,6 +1651,8 @@ def main() -> None:
         runner_error = f"{type(exc).__name__}: {exc}"
         print(f"[ci] runner error: {runner_error}", file=sys.stderr)
     finally:
+        if tunnel is not None:
+            tunnel.close()
         try:
             summarize_artifact_dir(artifact_dir)
         except Exception as exc:  # pragma: no cover - defensive CI artifact path.

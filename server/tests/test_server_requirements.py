@@ -1,5 +1,10 @@
 from pathlib import Path
 
+import pytest
+
+
+pytestmark = pytest.mark.no_db
+
 
 def test_server_requirements_include_database_engine_runtime_logger() -> None:
     requirements = {
@@ -23,3 +28,4 @@ def test_ci_requirements_include_cross_repository_acceptance_websocket_client() 
     }
 
     assert "websockets" in requirements
+    assert "uvicorn" in requirements

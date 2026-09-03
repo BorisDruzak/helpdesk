@@ -13,6 +13,7 @@ from pydantic import TypeAdapter
 
 from app.db.models import EndpointOperationLink
 from domain_ports.endpoint import EndpointDeviceRef, OpaqueEndpointRef
+from domain_ports.endpoint_modules import EndpointModuleRef, EndpointModuleVersionRef
 
 
 _OPAQUE_ENDPOINT_REF = TypeAdapter(OpaqueEndpointRef)
@@ -131,6 +132,72 @@ class EndpointOperationLinksRepo:
         raise EndpointOperationLinkConflict(
             "Endpoint operation link immutable identity conflicts with an existing link"
         )
+
+    async def create_module_pending(
+        self,
+        *,
+        operation_id: str,
+        endpoint_device_ref: str,
+        module_key: str,
+        module_version: str,
+        inputs: dict[str, str | int],
+        create_idempotency_key: str,
+        caller_actor_id: str,
+        caller_idempotency_key: str,
+        next_attempt_at: datetime,
+    ) -> EndpointOperationLink:
+        """Persist a module link in the shared facade lifecycle, never a second table."""
+
+        device_ref = EndpointDeviceRef(external_id=endpoint_device_ref).external_id
+        idempotency_key = _OPAQUE_ENDPOINT_REF.validate_python(create_idempotency_key)
+        module = EndpointModuleRef(module_key=module_key)
+        version = EndpointModuleVersionRef(module=module, version=module_version)
+        if next_attempt_at.tzinfo is None or next_attempt_at.utcoffset() is None:
+            raise ValueError("next_attempt_at must be timezone-aware")
+        values = {
+            "link_id": str(uuid.uuid4()), "operation_id": operation_id,
+            "endpoint_device_ref": device_ref, "capability_code": "endpoint.module.recipe",
+            "module_key": module.module_key, "module_version": version.version,
+            "module_inputs_snapshot_json": dict(inputs),
+            "create_idempotency_key": idempotency_key, "caller_actor_id": caller_actor_id,
+            "caller_idempotency_key": caller_idempotency_key, "remote_status": "create_pending",
+            "next_attempt_at": next_attempt_at,
+        }
+        statement = (
+            insert(EndpointOperationLink).values(**values)
+            .on_conflict_do_nothing(index_elements=["create_idempotency_key"])
+            .returning(EndpointOperationLink)
+        )
+        try:
+            async with self.session.begin_nested():
+                created = (await self.session.execute(statement)).scalar_one_or_none()
+        except IntegrityError as exc:
+            if self._constraint_name(exc) not in {
+                "uq_endpoint_operation_links_operation_id", "uq_endpoint_operation_links_caller_key",
+            }:
+                raise
+            created = None
+        if created is not None:
+            return created
+        existing_by_operation = await self.get_by_operation_id(operation_id)
+        existing_by_key = await self.get_by_idempotency_key(idempotency_key)
+        existing_by_caller_key = await self.get_by_caller_idempotency_key(
+            actor_id=caller_actor_id, key=caller_idempotency_key
+        )
+        for existing in (existing_by_operation, existing_by_key, existing_by_caller_key):
+            if existing is not None and self._matches_module_identity(existing, values):
+                return existing
+        raise EndpointOperationLinkConflict(
+            "Endpoint module link immutable identity conflicts with an existing link"
+        )
+
+    @staticmethod
+    def _matches_module_identity(link: EndpointOperationLink, values: dict[str, object]) -> bool:
+        return all(getattr(link, field) == values[field] for field in (
+            "operation_id", "endpoint_device_ref", "capability_code", "module_key", "module_version",
+            "module_inputs_snapshot_json", "create_idempotency_key", "caller_actor_id",
+            "caller_idempotency_key",
+        ))
 
     @staticmethod
     def _matches_immutable_identity(

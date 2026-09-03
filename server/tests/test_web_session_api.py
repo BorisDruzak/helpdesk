@@ -683,6 +683,9 @@ async def test_web_session_me_accepts_web_cookie_auth(monkeypatch):
         "/api/registry/options",
         "/api/notifications/preferences",
         "/api/notifications",
+        "/api/admin/tickets/queues",
+        "/api/admin/users",
+        "/api/tickets",
     ],
 )
 async def test_web_session_cookie_auth_bridges_react_workbench_paths(monkeypatch, path: str):
@@ -817,17 +820,17 @@ async def test_web_session_cookie_auth_unsafe_requests_require_same_origin(monke
 
     app = web.Application(middlewares=[auth_middleware])
     app["state"] = SimpleNamespace(users={})
-    app.router.add_post("/api/web/requester/tickets", protected_handler)
+    app.router.add_post("/api/admin/users", protected_handler)
 
     async with TestClient(TestServer(app)) as client:
         missing_origin = await client.post(
-            "/api/web/requester/tickets",
+            "/api/admin/users",
             headers={"Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token"},
             json={"title": "csrf check"},
         )
         missing_payload = await missing_origin.json()
         wrong_origin = await client.post(
-            "/api/web/requester/tickets",
+            "/api/admin/users",
             headers={
                 "Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token",
                 "Origin": "https://evil.example.test",
@@ -836,7 +839,7 @@ async def test_web_session_cookie_auth_unsafe_requests_require_same_origin(monke
         )
         wrong_payload = await wrong_origin.json()
         same_origin = await client.post(
-            "/api/web/requester/tickets",
+            "/api/admin/users",
             headers={
                 "Cookie": f"{WEB_SESSION_COOKIE_NAME}=cookie-token",
                 "Origin": str(client.make_url("/")).rstrip("/"),

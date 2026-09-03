@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { chromium } from "playwright";
 
@@ -15,7 +16,7 @@ const DEFAULT_BASE_URL =
 const DEFAULT_LOGIN = process.env.PC_CLIENT_UI_LOGIN ?? "admin";
 const DEFAULT_PASSWORD = process.env.PC_CLIENT_UI_PASSWORD ?? "admin123";
 const DEFAULT_OUT_DIR = path.resolve("..", "artifacts", "browser_checks", "live-webapp-signoff");
-const DEFAULT_EXPECT_ROUTE_MODE = "auto";
+const DEFAULT_EXPECT_ROUTE_MODE = "webapp";
 
 const LOGIN_HEADING = "Вход в рабочие места";
 const ADMIN_HEADING = "Центр администрирования";
@@ -38,22 +39,19 @@ const SUPPORT_REQUIRED_TEXT = [
   "Настройки",
 ];
 
-const CUTOVER_REDIRECTS = [
+export const RETIRED_SHELL_REDIRECTS = [
   { path: "/login", expectedLocation: "/app/login" },
   { path: "/admin", expectedLocation: "/app/admin" },
   { path: "/support", expectedLocation: "/app/support" },
-];
-
-const LEGACY_DEFAULT_REDIRECTS = [
-  { path: "/login", expectedPrefix: "/login?_shell=" },
-  { path: "/admin", expectedPrefix: "/admin?_shell=" },
-  { path: "/support", expectedPrefix: "/support?_shell=" },
-];
-
-const LEGACY_ESCAPE_REDIRECTS = [
-  { path: "/login?legacy=1", expectedPrefix: "/login?legacy=1&_shell=" },
-  { path: "/admin?legacy=1", expectedPrefix: "/admin?legacy=1&_shell=" },
-  { path: "/support?legacy=1", expectedPrefix: "/support?legacy=1&_shell=" },
+  { path: "/help", expectedLocation: "/app/help" },
+  { path: "/ticket.html", expectedLocation: "/app/ticket" },
+  { path: "/ticket/T-100", expectedLocation: "/app/ticket/T-100" },
+  { path: "/login?legacy=1", expectedLocation: "/app/login" },
+  { path: "/admin?legacy=1", expectedLocation: "/app/admin" },
+  { path: "/support?legacy=1", expectedLocation: "/app/support" },
+  { path: "/help?legacy=1", expectedLocation: "/app/help" },
+  { path: "/ticket.html?legacy=1", expectedLocation: "/app/ticket" },
+  { path: "/ticket/T-100?legacy=1", expectedLocation: "/app/ticket/T-100" },
 ];
 
 
@@ -100,31 +98,14 @@ function parseArgs(argv) {
 
 
 function matchesExpectedLocation(entry, expectedLocation) {
-  return entry.status === 302 && entry.location === expectedLocation;
+  return entry.status === 308 && entry.location === expectedLocation;
 }
 
 
-function matchesExpectedPrefix(entry, expectedPrefix) {
-  return entry.status === 302 && entry.location?.startsWith(expectedPrefix);
-}
-
-
-function resolveRouteMode(defaultRedirects) {
-  const isWebappMode = defaultRedirects.every((entry, index) =>
-    matchesExpectedLocation(entry, CUTOVER_REDIRECTS[index].expectedLocation)
+export function redirectsMatchRetiredShellContract(redirects) {
+  return redirects.length === RETIRED_SHELL_REDIRECTS.length && redirects.every((entry, index) =>
+    matchesExpectedLocation(entry, RETIRED_SHELL_REDIRECTS[index].expectedLocation)
   );
-  if (isWebappMode) {
-    return "webapp";
-  }
-
-  const isLegacyMode = defaultRedirects.every((entry, index) =>
-    matchesExpectedPrefix(entry, LEGACY_DEFAULT_REDIRECTS[index].expectedPrefix)
-  );
-  if (isLegacyMode) {
-    return "legacy";
-  }
-
-  return "mixed";
 }
 
 
@@ -221,26 +202,20 @@ async function inspectRedirect(baseUrl, pathName) {
 
 
 async function collectCutoverChecks(baseUrl) {
-  const defaultRedirects = [];
-  for (const entry of CUTOVER_REDIRECTS) {
-    defaultRedirects.push(await inspectRedirect(baseUrl, entry.path));
-  }
-
-  const legacyEscapes = [];
-  for (const entry of LEGACY_ESCAPE_REDIRECTS) {
-    legacyEscapes.push(await inspectRedirect(baseUrl, entry.path));
+  const retiredShellRedirects = [];
+  for (const entry of RETIRED_SHELL_REDIRECTS) {
+    retiredShellRedirects.push(await inspectRedirect(baseUrl, entry.path));
   }
 
   return {
-    defaultRedirects,
-    legacyEscapes,
+    retiredShellRedirects,
   };
 }
 
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (!["auto", "legacy", "webapp"].includes(options.expectRouteMode)) {
+  if (options.expectRouteMode !== "webapp") {
     throw new Error(`Unsupported --expect-route-mode: ${options.expectRouteMode}`);
   }
   await fs.mkdir(options.outDir, { recursive: true });
@@ -271,7 +246,7 @@ async function main() {
   await page.goto("/app/admin", { waitUntil: "domcontentloaded" });
   await ensureLoggedIn(page, options.login, options.password);
   const cutoverChecks = await collectCutoverChecks(options.baseUrl);
-  const routeMode = resolveRouteMode(cutoverChecks.defaultRedirects);
+  const routeMode = redirectsMatchRetiredShellContract(cutoverChecks.retiredShellRedirects) ? "webapp" : "mixed";
 
   await page.goto("/app", { waitUntil: "networkidle" });
   await page.waitForTimeout(1000);
@@ -320,10 +295,7 @@ async function main() {
 
   const hasFailures =
     routeMode === "mixed" ||
-    (options.expectRouteMode !== "auto" && routeMode !== options.expectRouteMode) ||
-    cutoverChecks.legacyEscapes.some((entry, index) =>
-      !matchesExpectedPrefix(entry, LEGACY_ESCAPE_REDIRECTS[index].expectedPrefix)
-    ) ||
+    routeMode !== options.expectRouteMode ||
     sessionPayload.status !== 200 ||
     sessionData?.default_workspace !== "admin" ||
     !Array.isArray(sessionData?.available_workspaces) ||
@@ -348,4 +320,6 @@ async function main() {
 }
 
 
-await main();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

@@ -6,6 +6,9 @@ from pathlib import Path
 from scripts import audit_fixture_builders
 
 
+WORKSPACE = Path(__file__).resolve().parents[1]
+
+
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -180,3 +183,13 @@ def test_audit_fixture_builders_reports_schema_and_reference_errors(tmp_path):
         "missing_test_ref",
         "unknown_data_ref",
     }
+
+
+def test_repository_fixture_builders_do_not_reference_deleted_tests() -> None:
+    report = audit_fixture_builders.audit_fixture_builders(WORKSPACE)
+
+    assert not [
+        issue
+        for issue in report["issues"]
+        if issue["code"] == "missing_test_ref"
+    ]

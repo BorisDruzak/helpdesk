@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import ssl
 from urllib.parse import urlsplit
 
 from .endpoint import EndpointPort
+from .endpoint_modules import EndpointModulePort
 from .knowledge import KnowledgePort
 from .registry import RegistryPort
-from .unavailable import UnavailableEndpointPort, UnavailableKnowledgePort, UnavailableRegistryPort
+from .unavailable import (
+    UnavailableEndpointModulePort,
+    UnavailableEndpointPort,
+    UnavailableKnowledgePort,
+    UnavailableRegistryPort,
+)
 
 
 def _configured_knowledge_port_mode() -> str:
@@ -49,6 +55,15 @@ def _configured_endpoint_diagnostic_execution_mode() -> str:
     return str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "").strip().lower()
 
 
+def _configured_endpoint_module_port_mode() -> str:
+    try:
+        import config
+    except ModuleNotFoundError:  # Package import from the repository root.
+        from server import config  # type: ignore[no-redef]
+
+    return str(config.ENDPOINT_MODULE_PORT_MODE or "").strip().lower()
+
+
 def _configured_endpoint_external_settings() -> tuple[str, str, str, float]:
     try:
         import config
@@ -58,6 +73,20 @@ def _configured_endpoint_external_settings() -> tuple[str, str, str, float]:
     return (
         str(config.ENDPOINT_EXTERNAL_BASE_URL or ""),
         str(config.ENDPOINT_EXTERNAL_SERVICE_TOKEN or ""),
+        str(config.ENDPOINT_EXTERNAL_CA_FILE or ""),
+        float(config.ENDPOINT_EXTERNAL_TIMEOUT_SECONDS),
+    )
+
+
+def _configured_endpoint_module_external_settings() -> tuple[str, str, str, float]:
+    try:
+        import config
+    except ModuleNotFoundError:  # Package import from the repository root.
+        from server import config  # type: ignore[no-redef]
+
+    return (
+        str(config.ENDPOINT_EXTERNAL_BASE_URL or ""),
+        str(config.ENDPOINT_MODULE_EXTERNAL_SERVICE_TOKEN or ""),
         str(config.ENDPOINT_EXTERNAL_CA_FILE or ""),
         float(config.ENDPOINT_EXTERNAL_TIMEOUT_SECONDS),
     )
@@ -117,6 +146,7 @@ class DomainPortContainer:
     knowledge: KnowledgePort
     registry: RegistryPort
     endpoint: EndpointPort
+    endpoint_modules: EndpointModulePort = field(default_factory=UnavailableEndpointModulePort)
 
     @classmethod
     def from_config(
@@ -125,6 +155,7 @@ class DomainPortContainer:
         knowledge: KnowledgePort | None = None,
         registry: RegistryPort | None = None,
         endpoint: EndpointPort | None = None,
+        endpoint_modules: EndpointModulePort | None = None,
         knowledge_mode: str | None = None,
         registry_mode: str | None = None,
         registry_session: object | None = None,
@@ -221,8 +252,43 @@ class DomainPortContainer:
             else:
                 raise ValueError(f"unsupported ENDPOINT_PORT_MODE: {endpoint_mode!r}")
 
+        if endpoint_modules is None:
+            module_mode = _configured_endpoint_module_port_mode()
+            if module_mode == "unavailable":
+                endpoint_modules = UnavailableEndpointModulePort()
+            elif module_mode == "external":
+                base_url, service_token, ca_file, timeout_seconds = (
+                    _configured_endpoint_module_external_settings()
+                )
+                unavailable_code = _endpoint_external_unavailable_code(
+                    base_url=base_url,
+                    service_token=service_token,
+                    ca_file=ca_file,
+                )
+                if unavailable_code is not None:
+                    endpoint_modules = UnavailableEndpointModulePort(
+                        code=f"endpoint_module_{unavailable_code.removeprefix('endpoint_')}",
+                    )
+                else:
+                    try:
+                        from endpoint_adapter import ExternalEndpointModuleHttpAdapter
+                    except ModuleNotFoundError as exc:
+                        if exc.name != "endpoint_adapter":
+                            raise
+                        from server.endpoint_adapter import ExternalEndpointModuleHttpAdapter
+
+                    endpoint_modules = ExternalEndpointModuleHttpAdapter(
+                        base_url=base_url,
+                        service_token=service_token,
+                        ca_file=ca_file,
+                        timeout_seconds=timeout_seconds,
+                    )
+            else:
+                raise ValueError(f"unsupported ENDPOINT_MODULE_PORT_MODE: {module_mode!r}")
+
         return cls(
             knowledge=knowledge,
             registry=registry,
             endpoint=endpoint,
+            endpoint_modules=endpoint_modules,
         )

@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 import inspect
+import uuid
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +25,15 @@ test_harness = _load_test_harness()
 
 
 pytestmark = pytest.mark.no_db
+
+
+def test_agent_ws_machine_identity_is_unique_for_each_data_root():
+    first = test_harness._agent_ws_machine_identity(Path("C:/Temp/agent-ws-one"))
+    second = test_harness._agent_ws_machine_identity(Path("C:/Temp/agent-ws-two"))
+
+    assert first != second
+    assert str(uuid.UUID(first)) == first
+    assert str(uuid.UUID(second)) == second
 
 
 @pytest.mark.asyncio
@@ -623,7 +633,7 @@ def test_agent_runtime_cleanup_profile_covers_shared_runtime_catalogs():
 def test_full_cleanup_profile_preserves_current_table_scope():
     full_tables = test_harness.CLEANUP_TABLES_BY_PROFILE["full"]
 
-    assert len(full_tables) == 168
+    assert len(full_tables) == 169
     assert full_tables[:4] == (
         "observer_integrity_check_runs",
         "observer_integrity_events",
@@ -631,6 +641,7 @@ def test_full_cleanup_profile_preserves_current_table_scope():
         "observer_error_occurrences",
     )
     assert {
+        "registry_person_identities",
         "ticket_kb_links",
         "ticket_admin_audit_archive",
         "ticket_events_archive",

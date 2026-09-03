@@ -117,6 +117,7 @@ jobs:
         run: |
           python -m pytest \
             server/tests/acceptance/test_endpoint_operations_v1_acceptance.py \
+            server/tests/acceptance/test_endpoint_module_platform_v1.py \
             -m cross_repo_acceptance -q --tb=short \
             --junitxml=artifacts/endpoint-contract-acceptance.xml
 
@@ -135,9 +136,10 @@ jobs:
               "helpdesk_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
               "endpoint_commit": os.environ["ENDPOINT_COMMIT"],
               "openapi_sha256": lock["openapi_sha256"],
-              "tests_passed": 2,
+              "tests_passed": 3,
               "provider_app": "real",
               "gateway_wss": "real",
+              "module_provider_catalog": "real",
               "agent_client": "protocol_test_client",
               "production_changed": False,
           }

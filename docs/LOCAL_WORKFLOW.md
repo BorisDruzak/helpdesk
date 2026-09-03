@@ -25,7 +25,7 @@ python scripts/release_candidate_preflight.py
 Preflight показывает текущий `HEAD`, проверяет `artifacts/ci/<HEAD>/summary.json`, совпадение `summary.commit == HEAD`, `status == green`, наличие webapp bundle, passing `artifacts/live/release-summary.json` для exact commit/environment и release-relevant dirty workspace. Сгенерированные `artifacts/*` не блокируют preflight. Если artifact отсутствует, это сигнал не запускать full gate: сначала freeze commit, `python scripts/run_ci_suite.py`, полный live behavior pack + `python scripts/build_live_release_summary.py --commit <HEAD> --environment <name> --release-run-id <id> --expected-schema-head <head> --output artifacts/live/release-summary.json`, либо продолжить итерации через `--gate quick`.
 - Для длинных задач состояние держать в `PLANS.md`, а не пытаться восстанавливать его по истории чата.
 - Разовая синхронизация от 17 марта 2026 года уже втянула более новую Linux-версию в локальный Windows-репозиторий. После этого локальная Windows-копия считается главным источником истины.
-- Helpdesk release не использует отдельный Git remote или рабочую копию на хосте: точный локальный commit передаётся архивом через `scripts/deploy_helpdesk_release.py`.
+- Helpdesk release не использует отдельный Git remote или рабочую копию на хосте: точный локальный commit передаётся архивом через `scripts/deploy_helpdesk_release.py`. Скрипт строит `webapp/dist` из временного source snapshot того же commit и добавляет его в этот immutable archive; bundle из незакоммиченной рабочей папки не используется.
 - Для изолированного staging Helpdesk тот же скрипт получает только профильные
   переменные `HELPDESK_REMOTE`, `HELPDESK_REMOTE_ROOT`, `HELPDESK_ENV_FILE`,
   `HELPDESK_MIGRATE_SERVICE`, `HELPDESK_SERVER_SERVICE` и, при отсутствии
@@ -57,12 +57,6 @@ python scripts/bootstrap_web_toolchain.py
 ```
 
 Каноничный frontend toolchain: локально и в CI использовать `Node.js 24.15.0 + corepack + pnpm 10.33.0`. Linux-хост остаётся runtime host и не считается canonical frontend build host.
-
-Если задача включает фактический cutover legacy `/login`, `/support`, `/admin` на новый shell, перед release дополнительно прогнать:
-
-```powershell
-python scripts/check_webapp_cutover.py --json
-```
 
 4. Если задача длинная или многосоставная, обновить `PLANS.md`.
 
@@ -158,15 +152,13 @@ Stand-specific remote defaults are profile/env driven, with the current stand ke
 For the Tech Panel business marker on a self-signed HTTPS stand, run `scripts/business_smoke.py` with `--require-https --require-secure-cookie --insecure-tls` or set `BUSINESS_SMOKE_INSECURE_TLS=true`; the marker still must not include the smoke password or session cookie value.
 
 `manage_remote_stack.py status server` и `scripts/runtime_stack.py status server` теперь дополнительно показывают `external_listener`, если порт `8666` занят не тем процессом, который считает своим systemd-unit. Для `start server` и `stop server` canonical runtime сначала вычищает stray `server.py` из этого workspace, чтобы ручной запуск в shell не ломал transient-unit.
-`scripts/run_server.py` и `scripts/run_control_plane.py` считаются единственными canonical wrappers для server/control-plane runtime: они прокидывают repo root в import path/PYTHONPATH, чтобы sibling-пакет `shared/*` был доступен и на Linux, и в локальных repro.
+`scripts/run_server.py` и `scripts/run_control_plane.py` считаются единственными canonical wrappers для server/control-plane runtime: они прокидывают repo root в import path/PYTHONPATH, чтобы sibling-пакет `shared/*` был доступен и на Linux, и в локальных repro. `scripts/run_server.py` и `scripts/stop_server.py` используют один PID directory: явный `HELPDESK_RUNTIME_DIR` имеет приоритет, иначе это `PC_CLIENT_SERVER_DATA_ROOT/run` (и только без обоих значений сохраняется platform default).
 
 13. Если менялся GUI сервера, дополнительно проверить:
 
-- [admin](http://192.168.100.19:8080/admin)
-- [help](http://192.168.100.19:8080/help)
-- React workspace routes under `http://192.168.100.19:8080/app/*` when that workspace is the changed surface.
+- React workspace routes under `http://192.168.100.19:8080/app/*`; `/admin` and `/help` are compatibility redirects, not separate shells.
 - Web-first requester/web-agent routes: `/app/requester`, `/app/requester/devices`, and compatible `/app/device/*` linking routes. These checks must verify browser-visible profile/device binding state, not only local agent GUI/UIA.
-- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.19:8080` — helper проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и теперь ожидает полноценный webapp-mode как каноническое состояние после финального cutover
+- если менялся `webapp` или retired-route redirect, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.19:8080` — helper проверяет `/app`, все retired entry routes и их `?legacy=1` варианты как redirects в React
 - Для техпанели дополнительно проверить status/health/full logs и confirm-модалку для `stop/restart`.
 
 14. После проверок остановить процессы:

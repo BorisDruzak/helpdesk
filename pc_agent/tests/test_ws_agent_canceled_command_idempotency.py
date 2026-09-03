@@ -13,6 +13,47 @@ from pc_agent.ws_agent import WSAgent
 
 
 @pytest.mark.asyncio
+async def test_command_execution_reports_running_before_terminal_result(tmp_path):
+    agent = WSAgent(data_root=tmp_path)
+    command_id = "00000000-0000-0000-0000-00000000c000"
+    sent = []
+
+    async def fake_execute_command(*_args, **_kwargs):
+        return {"status": "success", "data": {"ok": True}, "error": None, "meta": {}}
+
+    async def fake_send_envelope(
+        _ws,
+        msg_type,
+        request_id,
+        payload,
+        **_kwargs,
+    ):
+        sent.append((msg_type, request_id, payload))
+
+    agent.execute_command = fake_execute_command
+    agent.send_envelope = fake_send_envelope
+
+    await agent._execute_command_and_send_result(
+        None,
+        command="run_tool",
+        params={"tool": "screen.record", "params": {}},
+        request_id=command_id,
+        command_id=command_id,
+        device_id="device-1",
+        actor_role="support",
+        trace_id="trace-running",
+        ticket_id_ctx="ticket-1",
+        job_id_ctx=None,
+        actor_role_meta="agent",
+    )
+
+    assert sent == [
+        ("command_ack", command_id, {"status": "running"}),
+        ("command_result", command_id, {"status": "success", "data": {"ok": True}, "error": None, "meta": {}}),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_canceled_background_command_is_terminal_and_reported(tmp_path):
     db_path = tmp_path / "storage.db"
     DatabaseManager._instance = None
@@ -76,6 +117,15 @@ async def test_canceled_background_command_is_terminal_and_reported(tmp_path):
     assert cached_payload["error"]["code"] == "OPERATION_CANCELED"
 
     assert sent == [
+        {
+            "msg_type": "command_ack",
+            "request_id": command_id,
+            "payload": {"status": "running"},
+            "trace_id": "trace-cancel",
+            "ticket_id": "ticket-1",
+            "job_id": None,
+            "actor_role": "agent",
+        },
         {
             "msg_type": "command_result",
             "request_id": command_id,

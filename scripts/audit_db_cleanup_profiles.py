@@ -16,7 +16,6 @@ DEFAULT_TESTS_DIR = REPO_ROOT / "server" / "tests"
 
 KNOWN_PROFILES = {
     "full",
-    "knowledge",
     "observer_diagnostics",
     "tickets",
     "agent_runtime",
@@ -46,13 +45,6 @@ LAYER_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "test_p0_workbench_update_contracts.py",
             "test_requester_workspace_api.py",
             "test_web_support_api.py",
-        ),
-    ),
-    (
-        "knowledge",
-        (
-            "test_knowledge_*.py",
-            "test_support_knowledge_provider.py",
         ),
     ),
     (

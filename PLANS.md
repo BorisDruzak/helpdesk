@@ -38,6 +38,195 @@ browser UI responsibilities only.
 
 # Helpdesk Bug Remediation and Live Detection Master Plan
 
+## 2026-08-31 Staging secure admin-session access
+
+- **Goal:** make the isolated Helpdesk staging admin login usable through the
+  approved HTTPS origin without weakening the `httpOnly; Secure` session
+  cookie, and prevent direct HTTP access from misleading future operators.
+- **Scope:** only `osn-admin@192.168.101.118` staging. Production and the
+  Endpoint repository are excluded.
+- **Status:** `root-cause-confirmed` (auth/account-session + deployment
+  configuration).
+- **Evidence:** the staging login endpoint accepted the account and created a
+  UI session, while browser access through `http://192.168.101.118:8666`
+  returned to the login form. The TLS listener presents a certificate for
+  `helpdesk-staging.sosnadmin.local`; the hostname resolves to the staging
+  host and the same login page opens there with no browser console errors.
+  The direct `:8666` listener remains externally reachable even though the
+  versioned deployment template requires loopback application binding behind
+  Nginx.
+- **Root cause:** a secure cookie cannot be persisted by a browser on the
+  direct HTTP origin. This is not a credential failure and must not be
+  “fixed” by disabling secure cookies.
+- **Fix policy:** keep secure cookies enabled; publish the HTTPS FQDN as the
+  sole admin origin, bind the application port to loopback, and have the
+  staging Nginx vhost redirect HTTP to the FQDN. Apply the environment/unit/
+  Nginx change only through the reviewed staging release procedure, then
+  verify a fresh browser login and the absence of an external `:8666`
+  listener. Root privilege is currently required for those staging resources.
+- **Blocking impact:** this blocks the real locked Endpoint acceptance and
+  ALT/Windows staging canaries because the required admin browser session
+  cannot be established safely through the current direct HTTP endpoint.
+- **Latest verification:** the administrator successfully opened the legacy
+  admin workspace through the HTTPS FQDN. The Endpoint Recipes screen then
+  returned the fail-closed state
+  `endpoint_module_external_service_token_missing`; no Endpoint recipe
+  operation was created and no canary was started.
+- **Next steps:** obtain approved staging-operator execution for the
+  environment/systemd/Nginx change and the temporary scoped Endpoint module
+  credential/feature configuration, run the browser login regression through
+  the HTTPS FQDN, then resume the locked acceptance and canary sequence.
+
+## 2026-08-31 Product webapp staging cutover
+
+- **Goal:** serve the product React `/app/admin` route from the immutable
+  Helpdesk staging release, keeping `?legacy=1` only as a rollback escape.
+- **Status:** `implementation-verified-locally`; the release archive now builds
+  the bundle from an exact Git commit snapshot and packages it under
+  `webapp/dist`, so dirty local files cannot diverge from the released server
+  source.
+- **Verification:** archive-layout regression plus exact-commit/dirty-worktree
+  regression passed; static cutover handlers passed.
+- **Remaining gate:** commit, push and reviewed staging deployment through
+  `scripts/deploy_helpdesk_release.py`, followed by the configured cutover
+  flags and a browser check at `/app/admin`. Deployment needs the approved
+  staging-operator privilege; no manual staging patch is permitted.
+
+## 2026-08-31 Fixture-builder release-gate baseline
+
+- **Goal:** restore a truthful, executable critical-behavior fixture pack so
+  the full CI release gate can validate its test references.
+- **Scope:** Helpdesk test-data pack and its audit regression only; no runtime,
+  route, database, Endpoint Platform, staging, or production change.
+- **Root cause:** `critical_behavior_v1.json` still named five tests from the
+  retired local Knowledge runtime and UI. The strict fixture audit failed on
+  base `2d355954`, proving the defect predates the immutable webapp release.
+- **Decision:** keep the product webapp release as separate PR #26 and replace
+  the stale references with the current external-Knowledge boundary contract
+  tests. The pack therefore validates fail-closed external-port behavior,
+  removal of local lookup/fallback, and documented redacted historical
+  projections instead of claiming a removed local Knowledge UI.
+- **Verification:** targeted audit regression and strict fixture audit are
+  green. Re-run the full isolated CI on the release PR after this separate
+  baseline PR merges.
+
+## 2026-08-28 Endpoint Read-only Capability Batch v2 — Helpdesk
+
+- **Goal:** consume the Endpoint-owned versioned capability catalog through a fail-closed typed port, project only bounded capability-specific evidence, replace the Endpoint Recipe Workbench allowlist with the catalog, and freeze fully replaced legacy network-module rollouts only after real ALT and Windows acceptance.
+- **Scope:** Helpdesk PR-HD1 (`codex/module-capability-projections-v2`), PR-HD2 (`codex/module-workbench-capability-catalog-v2`) and PR-HD3 (`codex/legacy-module-freeze-v1`). Endpoint Platform is read-only in this session; production is excluded.
+- **Constraints:** Browser calls only Helpdesk BFF. No shared database/FK, DeviceOutbox, ToolService, Helpdesk WebSocket, legacy fallback, dual dispatch, raw service name, raw result, code, command, path, URL or credential may cross this boundary.
+- **Decisions:** Closure PR #23 merged as `4fc93772`; all three Helpdesk branches start at that SHA. HD1/HD2 wait for Endpoint PR-EP1/EP2 contract merge SHA and an updated immutable lock. HD3 implementation/freeze waits for successful ALT and Windows canaries.
+- **Current State:** HD1 is implemented locally against the immutable provider
+  lock: `integration/endpoint_contract.lock.json` pins Endpoint
+  `dcd2d5287fa53b7ae61d582344d231d7384599c9` and OpenAPI digest
+  `dce611029f974a0442d0f04b7d4f54fa805b1e73f9831edf0f1f8c955a4a74b5`.
+  Succeeded operation-detail projections require the provider-authoritative
+  `expected_step_count` and complete zero-based child sequences. The
+  fixed `GET /api/v1/module-capabilities` adapter accepts only the six locked,
+  fail-closed DTO descriptors and the authenticated typed BFF is web-only
+  (there is deliberately no `/api/admin/endpoint-modules/capabilities` alias).
+  Its closed result projector writes `endpoint_module_result_snapshot_v2` while
+  retaining existing v1 snapshots and historical evidence unchanged.
+- **Next Steps:** execute HD2 against the typed BFF, followed by real
+  acceptance, canaries and HD3. Do not enable endpoint execution before those
+  separate gates.
+- **Handoff:** preserve the fixed catalog route and provider lock; do not add a
+  generic proxy, browser-to-Endpoint call, catalog mock, hardcoded capability
+  authority, ToolService/DeviceOutbox/legacy-WebSocket fallback or dual dispatch.
+
+## 2026-08-27 Module Platform Canary Closure v1
+
+- **Goal:** close the staging-only Module Platform canary: merge the 15 Endpoint
+  canary fixes into Endpoint `main`, harden Helpdesk reconciliation, deploy both
+  mainlines, run one published ticket recipe, prove the exact cross-repository
+  invariants, then restore flags and revoke the scoped service credential.
+- **Scope:** Endpoint and Helpdesk staging only (`192.168.101.118`), with the
+  designated ALT and Windows agents. Production `192.168.100.19` is excluded.
+- **Constraints:** no direct Endpoint operation creation from the acceptance
+  runner, no shared database/FK, no DeviceOutbox, ToolService, legacy WebSocket,
+  dual dispatch, fallback, raw credential, or raw agent-output evidence.
+- **Decisions:** retain newly deployed mainline releases after closure; rollback
+  restores only temporary module flags and access. Credential revocation is
+  verified before the root-only token file is removed. Evidence is redacted and
+  copied from staging to the operator workstation outside Git.
+- **Current State:** Endpoint `main` is now `59b1e7e` after a conflict-free
+  merge of exactly 15 canary commits; full CI passed `1970 passed, 36 skipped`.
+  Helpdesk lease/retry/monotonicity hardening and its focused suite (`30
+  passed`) are ready. At the time of this historical canary record, its
+  provider lock pinned that Endpoint SHA; it is not the current shared
+  `integration/endpoint_contract.lock.json` value, which is recorded in the
+  2026-08-28 HD1 state above. Local real-provider acceptance is fail-closed by
+  its stale Windows `example.test` DB-tunnel setting and moves to isolated
+  staging rather than using a fallback.
+- **Next Steps:** merge Helpdesk hardening into its default mainline, deploy
+  both verified SHAs to staging, then run the one ticket recipe and close the
+  rollback, credential, backup, and acceptance-document gates.
+- **Verification:** required commands and evidence schema are in
+  `docs/superpowers/plans/2026-08-27-module-platform-canary-closure-v1.md`.
+- **Handoff:** do not claim closure until the repeated reconciliation has zero
+  delta, credential revocation is proven, and the off-host manifest digest is
+  recorded in the final Helpdesk document.
+
+## 2026-08-26 Endpoint Module Platform v1
+
+- **Status:** Endpoint EP1 is complete locally: typed contracts, independent
+  server/agent policy foundations, bounded agent primitives, a closed runtime
+  registry, default-false feature gates and safe capability discovery
+  projection. EP2 is now executable locally behind its default-false Endpoint
+  gate: immutable published recipe versions expand only on Endpoint into
+  durable parent/child operations; Gateway WSS delivers one typed primitive at
+  a time, accepts safe typed child results, stops on failure, and expires every
+  pending child at the parent deadline. HTTP pull never materializes these
+  commands. No production flag, migration, deployment, or Helpdesk-native
+  execution path has been enabled.
+- **Goal:** move declarative module ownership/execution to Endpoint while
+  retaining the legacy Workbench/runtime until explicitly migrated.
+- **Constraints:** no Endpoint direct browser call, shared DB/FK, DeviceOutbox,
+  ToolService, legacy WebSocket, dual dispatch, automatic fallback, arbitrary
+  code, or production deployment.
+- **Decisions:** Endpoint is canonical for recipe/module lifecycle and commands;
+  Helpdesk is canonical for actors/tickets/facade/evidence. The exact boundary
+  is `docs/segmentation/MODULE_PLATFORM_BOUNDARY.md`; legacy classifications
+  live in `docs/segmentation/LEGACY_MODULE_MIGRATION_MATRIX.csv`.
+- **Current Helpdesk boundary:** commits `4f1a82db` and `53e3041b` add a
+  separate frozen `EndpointModulePort`, default-false composition and a typed
+  HTTPS catalog/version/operation adapter. It does not retain recipes or use
+  diagnostics, ToolService, DeviceOutbox, legacy WebSocket or an automatic
+  fallback. Commits `71d4592c`, `4b49fe22` and `73606573` add the forward-only
+  local operation-link schema and nullable-device facade exception; they have
+  not been applied to any database. Revision `142` unifies that temporary
+  staging schema into the established `EndpointOperationLink` lifecycle and
+  removes the unused second table. The module reconciler remains default-off
+  until both external port and explicit `ENDPOINT_MODULE_EXECUTION_MODE=endpoint`
+  are set; it stores only safe completed results and creates one idempotent
+  `endpoint.module.recipe` evidence record. The authorized Module Workbench
+  BFF now exposes admin authoring/version lifecycle and support ticket-run
+  routes through that port; it keeps the legacy Workbench separate, gives
+  auditors metadata-only access, and creates the local facade using only the
+  server-owned ticket mapping. The legacy Admin shell now has a separate
+  `Endpoint recipes` subtab that builds only declarative allowlisted recipes
+  and uses only the BFF; it does not expose `user_function_body` or any
+  legacy module API. Real-browser and cross-repository acceptance remain
+  pending.
+- **Next steps:** complete Endpoint compatibility/lab-evidence wiring, then
+  execute staged browser and real-agent acceptance for the already-wired
+  Helpdesk reconciler, audit/ticket evidence projection, RBAC and browser
+  workbench.
+  Keep legacy paths isolated; no endpoint-native BFF fallback or dual dispatch
+  is permitted.
+- **Verification:** Helpdesk Windows acceptance is already in mainline at
+  `62b734ddf5b65a9978524c1c0af31bdf9ad53d2d`. Endpoint contracts and server
+  policy foundations passed `tests/contracts tests/operations` (335 passed,
+  4 skipped) before Gateway contract expansion; the refreshed Gateway contract
+  suite passed (280 passed). The current EP1 capability/configuration gate
+  passed 391 tests with 1 skipped, and the agent-policy runtime/transport gate
+  passed 49 tests. No Module Platform runtime or canary verification has run
+  yet. The current Endpoint module Gateway/operation suites passed 40 tests;
+  Gateway child-delivery/result/reconnect coverage passed separately. Full
+  canary and Helpdesk browser verification remain pending. The new Helpdesk
+  port/adapter boundary passed its targeted contract/HTTP suite (46 passed)
+  and `python scripts/verify_workspace.py` completed locally without errors.
+
 > For agentic workers: execute this plan task-by-task. Keep this file as the active source of truth, update it after each meaningful checkpoint, and store detailed proof under `artifacts/live/<run_id>/`.
 
 ## 2026-08-26 Endpoint Operations cross-platform real-agent acceptance

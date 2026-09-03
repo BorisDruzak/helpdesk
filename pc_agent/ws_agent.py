@@ -1817,6 +1817,16 @@ class WSAgent:
                 command_result_payload.setdefault("meta", {})
                 command_result_payload["meta"]["cached"] = True
             else:
+                await self.send_envelope(
+                    ws,
+                    "command_ack",
+                    request_id,
+                    {"status": "running"},
+                    trace_id=trace_id,
+                    ticket_id=ticket_id_ctx,
+                    job_id=job_id_ctx,
+                    actor_role=actor_role_meta,
+                )
                 tool_response = await self.execute_command(
                     command,
                     params,
