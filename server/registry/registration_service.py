@@ -364,13 +364,7 @@ class RegistrationService:
         revoked_by: str | None,
         reason: str,
     ) -> list[dict[str, Any]]:
-        from registry.account_session_service import AccountSessionService
-
-        return await AccountSessionService(self.session).revoke_sessions_for_binding(
-            binding_id=binding_id,
-            revoked_by=revoked_by,
-            reason=reason,
-        )
+        return []
 
     async def _cancel_account_login_requests_for_binding(
         self,
@@ -379,13 +373,7 @@ class RegistrationService:
         canceled_by: str | None,
         reason: str,
     ) -> list[dict[str, Any]]:
-        from registry.account_session_service import AccountSessionService
-
-        return await AccountSessionService(self.session).cancel_pending_login_requests_for_binding(
-            binding_id=binding_id,
-            canceled_by=canceled_by,
-            reason=reason,
-        )
+        return []
 
     async def _revoke_registration_pending_sessions_for_claim(
         self,
@@ -394,13 +382,7 @@ class RegistrationService:
         revoked_by: str | None,
         reason: str,
     ) -> list[dict[str, Any]]:
-        from registry.account_session_service import AccountSessionService
-
-        return await AccountSessionService(self.session).revoke_registration_pending_sessions_for_claim(
-            claim_id=claim_id,
-            revoked_by=revoked_by,
-            reason=reason,
-        )
+        return []
 
     async def _create_admin_binding(
         self,
