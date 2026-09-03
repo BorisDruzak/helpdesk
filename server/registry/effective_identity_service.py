@@ -7,7 +7,6 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    DeviceAccountSession,
     RegistryAudienceGroup,
     RegistryAudienceGroupMember,
     RegistryDepartment,
@@ -18,11 +17,9 @@ from app.db.models import (
 )
 from app.repos.access_control_repo import AccessControlRepo
 from app.repos.registration_repo import normalize_identifier
-from registry.account_session_service import AccountSessionService
 from registry.audience_contracts import EffectiveAudience, EffectiveIdentity, WarningItem
 
 
-TOKEN_FIELD_FRAGMENTS = ("token", "secret", "password", "hash")
 REQUESTER_IDENTITY_PERSON_STATUSES = {"active", "self_reported"}
 
 
@@ -35,22 +32,8 @@ def _warning(code: str, message: str, *, source: str = "effective_identity") -> 
     return {"code": code, "message": message, "source": source}
 
 
-def _redact_sensitive(value: Any) -> Any:
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, item in value.items():
-            key_text = str(key)
-            if any(fragment in key_text.lower() for fragment in TOKEN_FIELD_FRAGMENTS):
-                continue
-            redacted[key_text] = _redact_sensitive(item)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_sensitive(item) for item in value]
-    return value
-
-
 class EffectiveIdentityService:
-    """Resolve the registry/person side of UI actors and account sessions."""
+    """Resolve the registry/person side of authenticated UI actors."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -112,75 +95,6 @@ class EffectiveIdentityService:
                 "person_identity": self._identity_source(identity),
                 "access_groups": access_groups,
             },
-        )
-
-    async def resolve_account_session_identity(
-        self,
-        device_id: str,
-        session_id: str,
-        session_token: str | None,
-    ) -> EffectiveIdentity:
-        validation = await AccountSessionService(self.session).validate_session(
-            device_id=str(device_id or "").strip(),
-            session_id=str(session_id or "").strip(),
-            session_token=session_token,
-            touch=False,
-        )
-        session_payload = _redact_sensitive(dict(validation.get("session") or {}))
-        account_session = {
-            "valid": bool(validation.get("valid")),
-            **session_payload,
-        }
-        if validation.get("error_code"):
-            account_session["error_code"] = str(validation.get("error_code"))
-
-        warnings: list[WarningItem] = []
-        if not validation.get("valid"):
-            warnings.append(
-                _warning(
-                    str(validation.get("error_code") or "ACCOUNT_SESSION_INVALID").lower(),
-                    "Account session did not validate.",
-                    source="account_session",
-                )
-            )
-            return EffectiveIdentity(
-                actor_id=str(device_id or "").strip(),
-                actor_role="user",
-                identity_source="account_session",
-                account_session=account_session,
-                warnings=warnings,
-                sources={"account_session": "validate_session"},
-            )
-
-        account_mode = str(account_session.get("account_mode") or "")
-        person_id = str(account_session.get("person_id") or "").strip() or None
-        if account_mode == "verified_other_account" and not person_id:
-            warnings.append(
-                _warning(
-                    "declared_account_unlinked_registry_person",
-                    "Verified other-account session has no matched registry person; base owner is not requester identity.",
-                    source="account_session",
-                )
-            )
-        if account_mode == "registration_pending":
-            warnings.append(
-                _warning(
-                    "registration_pending_not_authoritative",
-                    "Registration-pending account sessions are not authoritative requester identities.",
-                    source="account_session",
-                )
-            )
-
-        person = await self.session.get(RegistryPerson, person_id) if person_id else None
-        return await self._identity_from_person(
-            actor_id=str(account_session.get("login") or person_id or device_id or "").strip() or None,
-            actor_role="user",
-            identity_source="account_session",
-            person=person,
-            access_groups=[],
-            account_session=account_session,
-            warnings=warnings,
-            sources={"account_session": "validate_session", "person": "device_account_sessions.person_id"},
         )
 
     async def resolve_person_audience(
@@ -263,7 +177,6 @@ class EffectiveIdentityService:
         access_groups: list[str],
         warnings: list[WarningItem],
         sources: dict[str, Any],
-        account_session: dict[str, Any] | None = None,
     ) -> EffectiveIdentity:
         department_path = await self._department_path(getattr(person, "department_id", None))
         location = await self._location_payload(getattr(person, "location_id", None))
@@ -283,7 +196,6 @@ class EffectiveIdentityService:
             location=location,
             access_groups=access_groups,
             audience_groups=audience_groups,
-            account_session=account_session,
             warnings=warnings,
             sources={**sources, "audience_groups": audience_groups},
         )

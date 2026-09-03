@@ -7,14 +7,13 @@ from loguru import logger
 from sqlalchemy import select
 
 from app.db import get_session
-from app.db.models import Device, DeviceAccountSession, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
+from app.db.models import Device, DeviceUserBinding, RegistryPerson, RegistryPersonIdentity, UiUser, UiUserAudit
 from app.repos.auth_tokens_repo import AuthTokensRepo
 from auth.middleware import ensure_server_request_id, require_auth
 from auth.password_service import PasswordPolicyError
 from auth.rate_limit import check_rate_limit, client_ip, rate_limited_response
 from auth.service import AuthService
 from observer.web_event_writer import write_web_cabinet_observer_event
-from registry.account_session_service import AccountSessionService
 from registry.admin_operations_service import RegistryAdminOperationsService
 from registry.audience_group_service import RegistryAudienceService
 from registry.effective_identity_service import EffectiveIdentityService
@@ -428,35 +427,6 @@ async def handle_web_admin_registry_person_audience(request: web.Request) -> web
 
 
 @require_auth("admin")
-async def handle_web_admin_registry_account_session_identity_explain(request: web.Request) -> web.Response:
-    session_id = str(request.match_info.get("session_id") or "").strip()
-    if not session_id:
-        return web.json_response(
-            {"status": "error", "error": "session_id is required", "error_code": "VALIDATION_ERROR"},
-            status=400,
-        )
-    device_id = str(request.query.get("device_id") or "").strip()
-    session_token = str(
-        request.headers.get("X-Account-Session-Token") or request.query.get("session_token") or ""
-    ).strip() or None
-    async with get_session() as session:
-        if not device_id:
-            row = await session.get(DeviceAccountSession, session_id)
-            if row is None:
-                return web.json_response(
-                    {"status": "error", "error": "account session not found", "error_code": "NOT_FOUND"},
-                    status=404,
-                )
-            device_id = str(row.device_id)
-        identity = await EffectiveIdentityService(session).resolve_account_session_identity(
-            device_id=device_id,
-            session_id=session_id,
-            session_token=session_token,
-        )
-    return _success({"identity": identity.to_dict()})
-
-
-@require_auth("admin")
 async def handle_web_admin_registry_audience_groups(request: web.Request) -> web.Response:
     auth_context = request["auth_context"]
     async with get_session() as session:
@@ -583,19 +553,6 @@ async def handle_registry_agent_registration_form(request: web.Request) -> web.R
             return web.json_response({"status": "error", "error": "device not found", "error_code": "DEVICE_NOT_FOUND"}, status=404)
         payload = await build_registration_form_payload(session, device_id)
     return _success(payload)
-
-
-@require_auth("admin")
-async def handle_web_admin_registry_account_login_requests(request: web.Request) -> web.Response:
-    status = str(request.query.get("status") or "").strip() or None
-    try:
-        limit = int(request.query.get("limit") or "100")
-    except ValueError:
-        limit = 100
-    async with get_session() as session:
-        items = await AccountSessionService(session).list_login_requests(status=status, limit=limit)
-        await session.commit()
-    return _success({"items": items})
 
 
 @require_auth("admin")
@@ -1096,25 +1053,6 @@ async def handle_web_admin_registry_device_responsible(request: web.Request) -> 
 
 
 @require_auth("admin")
-async def handle_web_admin_registry_account_sessions(request: web.Request) -> web.Response:
-    device_id = str(request.query.get("device_id") or "").strip() or None
-    person_id = str(request.query.get("person_id") or "").strip() or None
-    status = str(request.query.get("verification_status") or request.query.get("status") or "").strip() or None
-    try:
-        limit = int(request.query.get("limit") or "200")
-    except ValueError:
-        limit = 200
-    async with get_session() as session:
-        items = await AccountSessionService(session).list_sessions_admin(
-            device_id=device_id,
-            person_id=person_id,
-            verification_status=status,
-            limit=limit,
-        )
-    return _success({"items": items})
-
-
-@require_auth("admin")
 async def handle_web_admin_registry_people_create(request: web.Request) -> web.Response:
     data = await request.json() if request.can_read_body else {}
     auth_context = request["auth_context"]
@@ -1328,7 +1266,6 @@ async def handle_web_admin_registry_person_archive(request: web.Request) -> web.
                 )
             )
         ).scalars().all()
-        revoked_sessions: list[dict[str, object]] = []
         for binding in active_bindings:
             result = await service.revoke_binding(
                 binding.binding_id,
@@ -1336,29 +1273,6 @@ async def handle_web_admin_registry_person_archive(request: web.Request) -> web.
                 reason=reason,
             )
             revoked_bindings.append(result["binding"])
-            events = result.get("events") if isinstance(result.get("events"), dict) else {}
-            for revoked_session in events.get("revoked_sessions") or []:
-                if isinstance(revoked_session, dict):
-                    revoked_sessions.append(revoked_session)
-
-        account_service = AccountSessionService(session)
-        revoked_session_ids = {str(row.get("session_id")) for row in revoked_sessions if row.get("session_id")}
-        active_sessions = (
-            await session.execute(
-                select(DeviceAccountSession).where(
-                    DeviceAccountSession.person_id == person.person_id,
-                    DeviceAccountSession.verification_status.in_(["verified", "pending_verification"]),
-                    ~DeviceAccountSession.session_id.in_(revoked_session_ids or [""]),
-                )
-            )
-        ).scalars().all()
-        for account_session in active_sessions:
-            revoked = await account_service.revoke_session(
-                session_id=account_session.session_id,
-                revoked_by=auth_context.actor_id,
-                reason=reason,
-            )
-            revoked_sessions.append(revoked)
         disabled_ui_users = await _disable_linked_requester_ui_users(
             session,
             person_id=person.person_id,
@@ -1369,7 +1283,6 @@ async def handle_web_admin_registry_person_archive(request: web.Request) -> web.
         payload = {
             "person": {"person_id": person.person_id, "display_name": person.display_name, "status": person.status},
             "revoked_bindings": revoked_bindings,
-            "revoked_sessions": revoked_sessions,
             "disabled_ui_users": disabled_ui_users,
         }
         await RegistryAdminOperationsService(session).append_event(
@@ -1964,32 +1877,6 @@ async def handle_web_admin_registry_bulk_people_assign_department(request: web.R
             payload = await RegistryAdminOperationsService(session).bulk_assign_department(data, actor_id=auth_context.actor_id, target="people")
             await session.commit()
     except (LookupError, ValueError) as exc:
-        return _registry_admin_error(exc)
-    return _success(payload)
-
-
-@require_auth("admin")
-async def handle_web_admin_registry_bulk_devices_revoke_account_sessions(request: web.Request) -> web.Response:
-    auth_context = request["auth_context"]
-    data = await request.json() if request.can_read_body else {}
-    try:
-        async with get_session() as session:
-            payload = await RegistryAdminOperationsService(session).bulk_revoke_sessions(data, actor_id=auth_context.actor_id, by_device=True)
-            await session.commit()
-    except ValueError as exc:
-        return _registry_admin_error(exc)
-    return _success(payload)
-
-
-@require_auth("admin")
-async def handle_web_admin_registry_bulk_account_sessions_revoke(request: web.Request) -> web.Response:
-    auth_context = request["auth_context"]
-    data = await request.json() if request.can_read_body else {}
-    try:
-        async with get_session() as session:
-            payload = await RegistryAdminOperationsService(session).bulk_revoke_sessions(data, actor_id=auth_context.actor_id)
-            await session.commit()
-    except ValueError as exc:
         return _registry_admin_error(exc)
     return _success(payload)
 
