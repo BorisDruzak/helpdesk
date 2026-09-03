@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
     Device,
-    DeviceAccountSession,
     DeviceInventoryBinding,
     DeviceInventoryBindingHistory,
     DeviceRegistrationClaim,
@@ -814,35 +813,10 @@ class RegistrationService:
                     "severity": "destructive" if old_binding_action != "keep_as_shared" else "warning",
                 }
             )
-            session_rows = (
-                await self.session.execute(
-                    select(DeviceAccountSession).where(
-                        or_(
-                            DeviceAccountSession.binding_id == active_primary.binding_id,
-                            DeviceAccountSession.base_binding_id == active_primary.binding_id,
-                        ),
-                        DeviceAccountSession.verification_status == "verified",
-                    )
-                )
-            ).scalars().all()
-            sessions_to_revoke = list({row.session_id: row for row in session_rows}.values())
-            for row in sessions_to_revoke:
-                changes.append(
-                    {
-                        "kind": "account_session",
-                        "action": "revoke",
-                        "object_id": row.session_id,
-                        "before": {"verification_status": row.verification_status, "person_id": row.person_id},
-                        "after": {"verification_status": "revoked", "revoked_at": "now"},
-                        "severity": "destructive",
-                    }
-                )
             ticket_filters = [
                 Ticket.requester_person_id == active_primary.person_id,
                 Ticket.requester_binding_id == active_primary.binding_id,
             ]
-            if sessions_to_revoke:
-                ticket_filters.append(Ticket.requester_account_session_id.in_([row.session_id for row in sessions_to_revoke]))
             tickets_preserved = (
                 await self.session.execute(select(Ticket).where(or_(*ticket_filters)))
             ).scalars().unique().all()
