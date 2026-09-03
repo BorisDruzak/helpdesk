@@ -358,7 +358,7 @@ class RegistryHistorySource:
 
         events: list[CustomerHistoryEvent] = []
         for item in outcome.items:
-            if item.event_type not in {"device_binding", "account_session"}:
+            if item.event_type != "device_binding":
                 return RegistryHistorySourceResult(
                     events=[],
                     source_state={"status": "invalid", "code": "registry_projection_invalid"},
@@ -373,8 +373,7 @@ class RegistryHistorySource:
                 }.items()
                 if value is not None
             }
-            is_binding = item.event_type == "device_binding"
-            summary_parts = [item.relationship_type, item.status] if is_binding else [item.status]
+            summary_parts = [item.relationship_type, item.status]
             summary = ":".join(str(value) for value in summary_parts if value) or item.event_type
             event_ref = _registry_history_event_ref(
                 person=person,

@@ -481,7 +481,6 @@ async def create_ticket_with_side_effects(
     requester_account_context: dict[str, Any] = {
         "account_mode": "agent_legacy_or_device_only" if legacy_agent_only else (account_mode or "none")
     }
-    requester_account_session_id: str | None = None
     requester_account_mode: str | None = None
     requester_account_warning: str | None = None
     try:
@@ -665,9 +664,6 @@ async def create_ticket_with_side_effects(
             )
 
     if isinstance(requester_account_context, dict):
-        requester_account_session_id = str(
-            requester_account_context.get("account_session_id") or requester_account_context.get("session_id") or ""
-        ).strip() or None
         requester_account_mode = str(requester_account_context.get("account_mode") or "").strip() or None
         requester_account_warning = str(requester_account_context.get("warning") or "").strip() or None
 
@@ -746,7 +742,7 @@ async def create_ticket_with_side_effects(
         requester_person_id=requester_person_id,
         requester_binding_id=requester_binding_id,
         requester_registration_status=requester_registration_status,
-        requester_account_session_id=requester_account_session_id,
+        requester_account_session_id=None,
         requester_account_mode=requester_account_mode,
         requester_account_warning=requester_account_warning,
         requester_ref=requester_ref,
@@ -886,7 +882,6 @@ async def create_ticket_with_side_effects(
                 "is_initial": True,
                 "text": initial_message_text,
                 "visibility": "public",
-                "requester_account_session_id": requester_account_session_id,
                 "requester_account_mode": requester_account_mode,
                 "requester_person_id": requester_person_id,
                 "requester_binding_id": requester_binding_id,

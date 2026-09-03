@@ -3189,7 +3189,6 @@ async def _build_support_detail_payload(request: web.Request, session, ticket, r
             status_reason=ticket_data.get("status_reason"),
             requester_display_name=ticket_data.get("requester_display_name"),
             requester_registration_status=ticket_data.get("requester_registration_status"),
-            requester_account_session_id=ticket_data.get("requester_account_session_id"),
             requester_account_mode=ticket_data.get("requester_account_mode"),
             requester_account_context=requester_account_context,
             requester_account_warning=requester_account_warning,

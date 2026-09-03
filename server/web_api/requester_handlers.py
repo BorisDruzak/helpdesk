@@ -1173,7 +1173,6 @@ async def handle_web_requester_ticket_message(request: web.Request) -> web.Respo
             "visibility": "public",
             "requester_person_id": getattr(ticket, "requester_person_id", None),
             "requester_binding_id": getattr(ticket, "requester_binding_id", None),
-            "requester_account_session_id": getattr(ticket, "requester_account_session_id", None),
             "requester_account_mode": getattr(ticket, "requester_account_mode", None),
         }
         if metadata:
