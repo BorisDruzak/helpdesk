@@ -3,7 +3,6 @@
 import asyncio
 import faulthandler
 import hashlib
-import importlib
 import json
 import os
 import re
@@ -12,7 +11,6 @@ import subprocess
 import sys
 import threading
 import time
-import types
 import uuid
 import warnings
 from contextlib import asynccontextmanager, contextmanager
@@ -40,7 +38,6 @@ sys.path.insert(0, str(server_dir))
 os.environ.setdefault("TICKET_ADMIN_CONFIG_WRITE_ENABLED", "true")
 
 from server import create_app
-from app_keys import OUTBOX_SENDER_APP_KEY, bind_app_value
 from app.db import engine as db_engine_module
 from tech.dismiss_store import clear_dismissed_alerts
 from tech.log_buffer import clear_log_records
@@ -66,14 +63,11 @@ TEST_UI_SUPPORT_TOKEN = "test-ui-support-token"
 TEST_UI_ADMIN_TOKEN = "test-ui-admin-token"
 TEST_UI_AUDITOR_TOKEN = "test-ui-auditor-token"
 TEST_UI_USER_PREFIX = "test-ui-user:"
-TEST_AGENT_PREFIX = "test-agent:"
 
 _WINDOWS_TEST_DB_TUNNEL_PROCESS = None
 _WINDOWS_TEST_DB_TUNNEL_OWNED = False
 _SHARED_TEST_DB_TERMINATE_UNAVAILABLE = False
-_AGENT_WS_FIXTURES = {"test_agent"}
 _TEST_TIMING_WRITE_FAILED = False
-_AGENT_WS_IDENTITY_NAMESPACE = uuid.UUID("cd754a2b-5fd4-46ae-b7f0-20b3b7bdf0a4")
 
 
 class TestDbTemplateConfigError(RuntimeError):
@@ -158,10 +152,7 @@ def _pytest_watchdog_seconds() -> float | None:
 
 
 def _apply_ci_layer_markers(item) -> None:
-    fixture_names = set(getattr(item, "fixturenames", ()) or ())
-    if fixture_names & _AGENT_WS_FIXTURES:
-        item.add_marker("agent_ws")
-        item.add_marker("integration")
+    return None
 
 
 def _is_migration_clone_test(node) -> bool:
@@ -171,7 +162,6 @@ def _is_migration_clone_test(node) -> bool:
 
 
 def pytest_configure(config) -> None:
-    config.addinivalue_line("markers", "agent_ws: tests that start the in-process WS agent fixture")
     config.addinivalue_line("markers", "db_cleanup(profile): select an explicit DB cleanup table profile")
     config.addinivalue_line("markers", "light_app: tests that opt into test_app_light/test_client_light")
     config.addinivalue_line(
@@ -267,61 +257,6 @@ def _default_runtime_database_url() -> str:
 
 def _default_test_database_url(database_name: str) -> str:
     return _render_url(make_url(_default_runtime_database_url()).set(database=database_name))
-
-
-def _clear_agent_runtime_modules() -> None:
-    prefixes = (
-        "modules.",
-        "config.",
-        "pc_agent.",
-        "ui_bridge",
-        "ui_gui",
-        "network.",
-        "utils.",
-        "core.",
-    )
-    exact = {
-        "modules",
-        "config",
-        "pc_agent",
-        "ws_agent",
-        "network",
-        "utils",
-        "core",
-    }
-    for mod_name in list(sys.modules.keys()):
-        if mod_name in exact or mod_name.startswith(prefixes):
-            sys.modules.pop(mod_name, None)
-
-
-def _agent_ws_machine_identity(data_root: Path) -> str:
-    """Return a deterministic synthetic machine identity for one in-process agent."""
-    return str(uuid.uuid5(_AGENT_WS_IDENTITY_NAMESPACE, str(data_root.resolve())))
-
-
-def _snapshot_agent_shadowed_modules() -> dict[str, object]:
-    prefixes = (
-        "modules.",
-        "config.",
-        "utils.",
-        "core.",
-    )
-    exact = {
-        "modules",
-        "config",
-        "utils",
-        "core",
-    }
-    return {
-        mod_name: module
-        for mod_name, module in sys.modules.items()
-        if mod_name in exact or mod_name.startswith(prefixes)
-    }
-
-
-def _restore_module_snapshot(snapshot: dict[str, object]) -> None:
-    for mod_name, module in snapshot.items():
-        sys.modules[mod_name] = module
 
 
 def _shared_test_db_allowed() -> bool:
@@ -2018,15 +1953,6 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
     from auth import middleware as auth_middleware_module
     from auth.context import AuthContext, AuthType
     from auth.service import AuthService
-    import config as server_config
-    import tools.service as tools_service_module
-    from websocket.device_outbox_sender import DeviceOutboxSender, recover_pending_commands
-
-    test_builtin_modules = set(server_config.AGENT_BUILTIN_MODULES) | {
-        "test_echo",
-        "test_fail",
-        "test_slow_echo",
-    }
 
     async def fake_verify_ui_token(self, token: str):
         if token == TEST_UI_SUPPORT_TOKEN:
@@ -2056,13 +1982,6 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
                 "actor_role": "user",
                 "created_at": "2026-01-01T00:00:00+00:00",
                 "type": "ui",
-            }
-        if token.startswith(TEST_AGENT_PREFIX):
-            return {
-                "user_login": token.split(":", 1)[1],
-                "actor_role": "agent",
-                "created_at": "2026-01-01T00:00:00+00:00",
-                "type": "agent",
             }
         return None
 
@@ -2101,13 +2020,6 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
                 auth_type=AuthType.UI_TOKEN,
                 token=token,
             )
-        if token and token.startswith(TEST_AGENT_PREFIX):
-            return AuthContext(
-                actor_id=token.split(":", 1)[1],
-                actor_role="agent",
-                auth_type=AuthType.AGENT_TOKEN,
-                token=token,
-            )
         return AuthContext(
             actor_id="support-test",
             actor_role="support",
@@ -2117,27 +2029,12 @@ async def test_app(patched_get_session, test_engine, test_database_url: str):
 
     try:
         with patch.object(AuthService, "verify_ui_token", fake_verify_ui_token), \
-             patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context), \
-             patch.object(server_config, "AGENT_BUILTIN_MODULES", test_builtin_modules), \
-             patch.object(tools_service_module, "AGENT_BUILTIN_MODULES", test_builtin_modules):
+             patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context):
             app = create_app()
             verify_test_database(test_database_url)
 
-            state = app["state"]
-            await recover_pending_commands(state)
-
-            sender = DeviceOutboxSender(state, poll_interval=0.5)
-            await sender.start_async()
-            bind_app_value(app, key=OUTBOX_SENDER_APP_KEY, legacy_name="outbox_sender", value=sender)
-
             app.on_startup.clear()
             app.on_cleanup.clear()
-
-            async def test_cleanup(app):
-                if "outbox_sender" in app:
-                    await app["outbox_sender"].stop_async()
-
-            app.on_cleanup.append(test_cleanup)
             _record_test_timing("test_app", "setup", setup_timing_started)
             setup_timing_recorded = True
             try:
@@ -2159,14 +2056,6 @@ async def test_app_light(patched_get_session, test_engine, test_database_url: st
     from auth import middleware as auth_middleware_module
     from auth.context import AuthContext, AuthType
     from auth.service import AuthService
-    import config as server_config
-    import tools.service as tools_service_module
-
-    test_builtin_modules = set(server_config.AGENT_BUILTIN_MODULES) | {
-        "test_echo",
-        "test_fail",
-        "test_slow_echo",
-    }
 
     async def fake_verify_ui_token(self, token: str):
         if token == TEST_UI_SUPPORT_TOKEN:
@@ -2196,13 +2085,6 @@ async def test_app_light(patched_get_session, test_engine, test_database_url: st
                 "actor_role": "user",
                 "created_at": "2026-01-01T00:00:00+00:00",
                 "type": "ui",
-            }
-        if token.startswith(TEST_AGENT_PREFIX):
-            return {
-                "user_login": token.split(":", 1)[1],
-                "actor_role": "agent",
-                "created_at": "2026-01-01T00:00:00+00:00",
-                "type": "agent",
             }
         return None
 
@@ -2241,13 +2123,6 @@ async def test_app_light(patched_get_session, test_engine, test_database_url: st
                 auth_type=AuthType.UI_TOKEN,
                 token=token,
             )
-        if token and token.startswith(TEST_AGENT_PREFIX):
-            return AuthContext(
-                actor_id=token.split(":", 1)[1],
-                actor_role="agent",
-                auth_type=AuthType.AGENT_TOKEN,
-                token=token,
-            )
         return AuthContext(
             actor_id="support-test",
             actor_role="support",
@@ -2257,9 +2132,7 @@ async def test_app_light(patched_get_session, test_engine, test_database_url: st
 
     try:
         with patch.object(AuthService, "verify_ui_token", fake_verify_ui_token), \
-             patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context), \
-             patch.object(server_config, "AGENT_BUILTIN_MODULES", test_builtin_modules), \
-             patch.object(tools_service_module, "AGENT_BUILTIN_MODULES", test_builtin_modules):
+             patch.object(auth_middleware_module, "extract_auth_context", fake_extract_auth_context):
             app = create_app()
             verify_test_database(test_database_url)
 
@@ -2302,8 +2175,6 @@ async def test_client(test_app):
                         except Exception:
                             pass
                 await client.close()
-
-
 @pytest_asyncio.fixture
 async def test_client_light(test_app_light):
     """aiohttp test client backed by test_app_light for HTTP/API tests."""
@@ -2328,188 +2199,3 @@ async def test_client_light(test_app_light):
                         except Exception:
                             pass
                 await client.close()
-
-
-@pytest_asyncio.fixture
-async def test_agent(tmp_path, test_client):
-    """Запускает WSAgent in-process с временным SQLite."""
-    setup_timing_started = _test_timing_start()
-    setup_timing_recorded = False
-    import sys
-    from pathlib import Path
-    from unittest.mock import patch
-
-    agent_db = tmp_path / "agent_test.db"
-    test_modules_path = Path(__file__).parent / "test_modules"
-    project_root = Path(__file__).resolve().parent.parent.parent
-    pc_agent_dir = project_root / "pc_agent"
-    server_dir = Path(__file__).resolve().parent.parent
-    shadowed_modules = _snapshot_agent_shadowed_modules()
-
-    server_path_str = str(server_dir)
-    server_in_path = server_path_str in sys.path
-    project_root_str = str(project_root)
-    project_root_in_path = project_root_str in sys.path
-    pc_agent_dir_str = str(pc_agent_dir)
-    pc_agent_dir_in_path = pc_agent_dir_str in sys.path
-    if server_in_path:
-        sys.path.remove(server_path_str)
-
-    import importlib
-
-    _clear_agent_runtime_modules()
-
-    try:
-        if project_root_str not in sys.path:
-            sys.path.insert(0, project_root_str)
-        if pc_agent_dir_str not in sys.path:
-            sys.path.insert(0, pc_agent_dir_str)
-
-        sys.modules.pop("core", None)
-        for mod_name in [name for name in list(sys.modules.keys()) if name.startswith("core.")]:
-            sys.modules.pop(mod_name, None)
-        core_namespace = types.ModuleType("core")
-        core_namespace.__path__ = [str(pc_agent_dir / "core")]
-        core_namespace.__package__ = "core"
-        core_namespace.__spec__ = importlib.machinery.ModuleSpec("core", loader=None, is_package=True)
-        sys.modules["core"] = core_namespace
-        server_config_path = server_dir / "config.py"
-        config_spec = importlib.util.spec_from_file_location("config", server_config_path)
-        if config_spec and config_spec.loader:
-            config_module = importlib.util.module_from_spec(config_spec)
-            config_spec.loader.exec_module(config_module)
-            sys.modules["config"] = config_module
-
-        test_api_url = str(test_client.make_url("/api")).rstrip("/")
-        test_ws_url = str(test_client.make_url("/ws")).replace("http://", "ws://", 1).replace("https://", "wss://", 1)
-
-        import pc_agent.config.config_loader as config_loader_module
-
-        config_loader_module.ConfigLoader._instance = None
-        config_loader_module.ConfigLoader._config = None
-
-        from auth.service import AuthService
-        from ws_agent import WSAgent
-        from pc_agent.config.config_loader import ConfigLoader, init_config
-
-        original_load = ConfigLoader.load
-
-        def patched_load(self, config_path, create_dirs=True):
-            """Return config overridden for the in-process test agent."""
-            config = original_load(self, config_path, create_dirs=create_dirs)
-            config.paths.data_dir = str(tmp_path)
-            config.enabled_modules = ["echo", "fail", "slow_echo"]
-            if not hasattr(config, "modules"):
-                from types import SimpleNamespace
-
-                config.modules = SimpleNamespace()
-            config.modules.extra_paths = [str(test_modules_path)]
-            config.ui.port = 0
-            config.server.ws_url = test_ws_url
-            config.server.api_url = test_api_url
-            return config
-
-        with patch.dict(
-            os.environ,
-            {
-                "PC_AGENT_WS_URL": test_ws_url,
-                "PC_AGENT_API_URL": test_api_url,
-                "PC_AGENT_UI_PORT": "0",
-                "PC_AGENT_DATA_DIR": str(tmp_path),
-                "PC_AGENT_MACHINE_ID": _agent_ws_machine_identity(tmp_path),
-            },
-        ), patch.object(ConfigLoader, "load", patched_load):
-            loader = ConfigLoader()
-            if loader._config is None:
-                init_config(tmp_path)
-            cfg = loader._config
-            if cfg is not None:
-                cfg.server.ws_url = test_ws_url
-                cfg.server.api_url = test_api_url
-                cfg.paths.data_dir = str(tmp_path)
-                cfg.enabled_modules = ["echo", "fail", "slow_echo"]
-                if not hasattr(cfg, "modules"):
-                    from types import SimpleNamespace
-
-                    cfg.modules = SimpleNamespace()
-                cfg.modules.extra_paths = [str(test_modules_path)]
-                cfg.ui.port = 0
-
-            if cfg is not None and not hasattr(cfg, "modules"):
-                from types import SimpleNamespace
-
-                cfg.modules = SimpleNamespace()
-            if cfg is not None:
-                cfg.modules.extra_paths = [str(test_modules_path)]
-
-            from pc_agent.core.database import DatabaseManager
-
-            DatabaseManager._instance = None
-
-            agent = WSAgent(data_root=tmp_path)
-            await agent.initialize()
-
-            auth_service = AuthService(test_client.app["state"])
-            agent_token = await auth_service.generate_agent_token(device_id=agent.device_id, expires_hours=24)
-            os.environ["AUTH_TOKEN"] = agent_token
-
-            if agent.db_manager:
-                expected_db_path = Path(tmp_path) / "storage.db"
-                if agent.db_manager._db_path != expected_db_path:
-                    agent.db_manager._db_path = expected_db_path
-                    agent.db_manager._initialized = False
-                    await agent.db_manager.init_db()
-                await agent.db_manager.save_auth_token(agent_token, agent.device_id)
-
-            if hasattr(agent, "http") and agent.http:
-                agent.http.base_url = test_api_url
-
-            agent_task = asyncio.create_task(agent.run())
-
-            from loguru import logger
-
-            max_wait = 10
-            waited = 0
-            while waited < max_wait:
-                if agent._agent_ws and not agent._agent_ws.closed:
-                    logger.info(f"Agent connected to test server after {waited:.1f}s")
-                    break
-                await asyncio.sleep(0.5)
-                waited += 0.5
-            else:
-                logger.warning(f"Agent did not connect within {max_wait}s, continuing test")
-
-            _record_test_timing("test_agent", "setup", setup_timing_started)
-            setup_timing_recorded = True
-            try:
-                yield agent
-            finally:
-                with _test_timing_span("test_agent", "teardown"):
-                    close_agent_ws = getattr(agent, "_close_agent_ws", None)
-                    if callable(close_agent_ws):
-                        try:
-                            await close_agent_ws(reason="test_fixture_shutdown", message=b"test_shutdown")
-                            await asyncio.sleep(0)
-                        except Exception:
-                            pass
-
-                    agent_task.cancel()
-                    try:
-                        await agent_task
-                    except asyncio.CancelledError:
-                        pass
-                    await agent.cleanup()
-                    _clear_agent_runtime_modules()
-    finally:
-        if not setup_timing_recorded:
-            _record_test_timing("test_agent", "setup", setup_timing_started)
-        _clear_agent_runtime_modules()
-        _restore_module_snapshot(shadowed_modules)
-        if not pc_agent_dir_in_path:
-            while pc_agent_dir_str in sys.path:
-                sys.path.remove(pc_agent_dir_str)
-        if not project_root_in_path:
-            while project_root_str in sys.path:
-                sys.path.remove(project_root_str)
-        if server_in_path and server_path_str not in sys.path:
-            sys.path.insert(0, server_path_str)

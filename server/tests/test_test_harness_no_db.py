@@ -1,7 +1,6 @@
 import asyncio
 import importlib.util
 import inspect
-import uuid
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -25,15 +24,6 @@ test_harness = _load_test_harness()
 
 
 pytestmark = pytest.mark.no_db
-
-
-def test_agent_ws_machine_identity_is_unique_for_each_data_root():
-    first = test_harness._agent_ws_machine_identity(Path("C:/Temp/agent-ws-one"))
-    second = test_harness._agent_ws_machine_identity(Path("C:/Temp/agent-ws-two"))
-
-    assert first != second
-    assert str(uuid.UUID(first)) == first
-    assert str(uuid.UUID(second)) == second
 
 
 @pytest.mark.asyncio
@@ -194,35 +184,9 @@ class _FakeApp(dict):
         self.on_cleanup = [object()]
 
 
-def _patch_fake_app_runtime(monkeypatch, *, fail_outbox: bool = False):
-    events = []
-
-    async def fake_recover_pending_commands(state):
-        if fail_outbox:
-            raise AssertionError("light app must not recover pending commands")
-        events.append(("recover", state))
-
-    class FakeSender:
-        def __init__(self, state, *, poll_interval):
-            if fail_outbox:
-                raise AssertionError("light app must not construct DeviceOutboxSender")
-            events.append(("sender_init", state, poll_interval))
-            self.stopped = False
-
-        async def start_async(self):
-            events.append(("sender_start",))
-
-        async def stop_async(self):
-            self.stopped = True
-            events.append(("sender_stop",))
-
-    import websocket.device_outbox_sender as device_outbox_sender
-
+def _patch_fake_app_runtime(monkeypatch):
     monkeypatch.setattr(test_harness, "create_app", _FakeApp)
     monkeypatch.setattr(test_harness, "verify_test_database", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(device_outbox_sender, "recover_pending_commands", fake_recover_pending_commands)
-    monkeypatch.setattr(device_outbox_sender, "DeviceOutboxSender", FakeSender)
-    return events
 
 
 async def _yield_fixture_once(fixture_func):
@@ -269,32 +233,14 @@ def test_auto_fallback_to_shared_db_when_admin_db_unavailable(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_test_app_light_skips_outbox_runtime(monkeypatch):
-    events = _patch_fake_app_runtime(monkeypatch, fail_outbox=True)
+async def test_test_app_light_has_no_legacy_dispatch_runtime(monkeypatch):
+    _patch_fake_app_runtime(monkeypatch)
 
     app = await _yield_fixture_once(test_harness.test_app_light.__wrapped__)
 
-    assert events == []
     assert "outbox_sender" not in app
     assert app.on_startup == []
     assert app.on_cleanup == []
-
-
-@pytest.mark.asyncio
-async def test_regular_test_app_still_starts_outbox_runtime(monkeypatch):
-    events = _patch_fake_app_runtime(monkeypatch)
-
-    fixture = test_harness.test_app.__wrapped__(None, object(), "postgresql+asyncpg://example/test")
-    app = await fixture.__anext__()
-
-    assert [event[0] for event in events] == ["recover", "sender_init", "sender_start"]
-    assert app["outbox_sender"] is not None
-    assert len(app.on_cleanup) == 1
-
-    await app.on_cleanup[0](app)
-    with pytest.raises(StopAsyncIteration):
-        await fixture.__anext__()
-    assert events[-1] == ("sender_stop",)
 
 
 def test_test_client_light_depends_on_test_app_light():
@@ -305,7 +251,7 @@ def test_test_client_light_depends_on_test_app_light():
 
 @pytest.mark.asyncio
 async def test_test_app_light_timing_uses_distinct_fixture_name(monkeypatch):
-    _patch_fake_app_runtime(monkeypatch, fail_outbox=True)
+    _patch_fake_app_runtime(monkeypatch)
     records = []
     monkeypatch.setattr(test_harness, "_test_timing_start", lambda: 1.0)
     monkeypatch.setattr(

@@ -248,13 +248,6 @@ async def test_module_recipe_real_provider_wss_and_helpdesk_evidence(
             session.add(Ticket(ticket_id=ticket_id, device_id="helpdesk-module-device", endpoint_device_ref=str(device.id),
                 title="Module acceptance", description="Module acceptance", status="in_progress", requester_id="module-requester"))
             await session.commit()
-        from tools.service import ToolService
-        from websocket import protocol as websocket_protocol
-        async def _legacy_called(*_args, **_kwargs) -> None:
-            raise AssertionError("Endpoint module execution must not use Helpdesk legacy dispatch")
-        monkeypatch.setattr(ToolService, "run_tool", _legacy_called)
-        monkeypatch.setattr(websocket_protocol, "send_ws_command", _legacy_called)
-        monkeypatch.setattr(websocket_protocol, "enqueue_command_async", _legacy_called)
         facade = EndpointModuleOperationService(access_service=_Access(),
             device_resolver=StoredTicketEndpointModuleDeviceResolver(session_factory),
             store=SqlAlchemyEndpointModuleOperationStore(session_factory))
