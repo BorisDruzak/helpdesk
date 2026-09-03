@@ -257,17 +257,12 @@ Vendor/public модули должны использовать свой namesp
 
 Если вы не core/platform-owner, не используйте reserved namespace.
 
-### Шаг 4. Откройте admin workbench
+### Шаг 4. Откройте React workbench
 
 Основной UI:
 
-- `http://example.test:8666/admin`
-- вкладка `Модули`
-
-Workbench построен вокруг:
-
-- `server/admin_modules_workbench.html`
-- `server/admin_modules_workbench.js`
+- `http://example.test:8666/app/admin/modules`
+- React-панель `webapp/src/features/modules/modules-panel.tsx`
 
 Backend:
 

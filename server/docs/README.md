@@ -157,7 +157,7 @@ server/
 ├── modules/                  # Управление модулями
 ├── auth/                     # Аутентификация
 ├── uploads/                  # Загрузка файлов
-└── static_pages/             # HTML страницы (admin.html, ticket.html, support_console.html)
+└── static_pages/             # retired-entry redirects, public queue and React asset handlers
 ```
 
 ---
@@ -770,11 +770,9 @@ Protocol documentation endpoint.
 
 ### Static Pages
 
-- `GET /` — главная страница
-- `GET /admin` — админ панель
-- `GET /ticket.html` — страница тикета
-- `GET /ticket/{ticket_id}` — страница тикета по ID
-- `GET /support_console.html` — консоль поддержки
+- `GET /app/*` — React browser interface
+- `GET /login`, `/admin`, `/support`, `/help`, `/ticket.html`, `/ticket/{ticket_id}` — redirects into their matching React routes
+- `GET /queue` — public queue (separate static surface)
 
 ---
 

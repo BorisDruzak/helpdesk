@@ -122,7 +122,7 @@ export function LoginPage() {
               {
                 icon: LockKeyhole,
                 title: "Безопасный доступ",
-                description: "Одна cookie-сессия без ручного переключения legacy shell."
+                description: "Одна cookie-сессия без ручного переключения интерфейса."
               }
             ].map((item) => {
               const Icon = item.icon;

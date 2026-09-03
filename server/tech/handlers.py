@@ -438,7 +438,7 @@ def _lifecycle_links(
         {
             "rel": "ticket",
             "label": "Тикет",
-            "href": f"/ticket.html?ticket_id={ticket_id}",
+            "href": f"/app/tickets/{ticket_id}",
         }
     ]
     if device_id:
@@ -446,7 +446,7 @@ def _lifecycle_links(
             {
                 "rel": "device",
                 "label": "Устройство",
-                "href": f"/admin#device-{device_id}",
+                "href": f"/app/admin/device-operations/{device_id}",
             }
         )
     if operation_id:
@@ -457,7 +457,7 @@ def _lifecycle_links(
             {
                 "rel": "operation",
                 "label": f"Операция {short}{suffix}",
-                "href": f"/ticket.html?ticket_id={ticket_id}",
+                "href": f"/app/admin/operations/{oid}",
             }
         )
     return links

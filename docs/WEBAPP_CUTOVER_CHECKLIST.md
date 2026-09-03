@@ -1,103 +1,51 @@
-# Webapp Cutover Checklist
+# Webapp route-retirement checklist
 
-Финальный operational cutover для нового `webapp` не должен зависеть от ручной памяти. Этот документ фиксирует, по каким правилам legacy `/login`, `/admin`, `/support` вообще могут стать default entrypoints для `/app/*`, и что нужно проверить перед полным переключением.
+The server-rendered Helpdesk shells have been retired. React `/app/*` is the
+only browser UI; there is no feature flag, bundle-presence fallback, or
+`?legacy=1` escape hatch that can restore a legacy shell.
 
-## Правила активации
+## Unconditional entry-route contract
 
-- `/login` переключается на `/app/login` только если:
-  - `WEBAPP_CUTOVER_LOGIN_ENABLED=true`;
-  - собранный bundle реально присутствует в `webapp/dist`.
-- `/support` переключается на `/app/support` только если:
-  - `WEBAPP_CUTOVER_SUPPORT_ENABLED=true`;
-  - `WEBAPP_CUTOVER_LOGIN_ENABLED=true`;
-  - собранный bundle реально присутствует в `webapp/dist`.
-- `/admin` переключается на `/app/admin` только если:
-  - `WEBAPP_CUTOVER_ADMIN_ENABLED=true`;
-  - `WEBAPP_CUTOVER_LOGIN_ENABLED=true`;
-  - собранный bundle реально присутствует в `webapp/dist`.
-- `?legacy=1` всегда имеет приоритет над cutover и должен оставлять доступ к legacy shell.
-- Если prerequisites не выполнены, сервер не делает half-switch и оставляет legacy route рабочим.
-- Начиная с финального cutover `WEBAPP_CUTOVER_*` включены по умолчанию в `server/config.py`; для rollback используйте явный `WEBAPP_CUTOVER_LOGIN_ENABLED=false`, `WEBAPP_CUTOVER_SUPPORT_ENABLED=false`, `WEBAPP_CUTOVER_ADMIN_ENABLED=false` в `server/.env`.
+| Former URL | React destination |
+|---|---|
+| `/login` | `/app/login` |
+| `/admin` | `/app/admin` |
+| `/support` | `/app/support` |
+| `/help` | `/app/help` |
+| `/ticket.html` | `/app/ticket` |
+| `/ticket/{ticket_id}` | `/app/ticket/{ticket_id}` |
 
-Каноничный preflight:
+Every route responds with HTTP 308. Query parameters are preserved except the
+retired `legacy` and `_shell` keys. Thus `/admin?legacy=1&tab=queue` redirects
+to `/app/admin?tab=queue`.
 
-```powershell
-python scripts/check_webapp_cutover.py --json
-```
+Former shell assets such as `/admin.js`, `/support.js`, `/ticket.js` and the
+embedded legacy module/form workbenches are deliberately unregistered and must
+return HTTP 404.
 
-## Локальный signoff перед выкладкой
-
-1. Поднять frontend toolchain:
+## Local verification
 
 ```powershell
 python scripts/bootstrap_web_toolchain.py
-```
-
-2. Пересобрать bundle:
-
-```powershell
 pnpm --dir webapp run build
-```
-
-3. Прогнать релевантные локальные проверки:
-
-```powershell
-python -m pytest server/tests/test_static_pages_handlers.py -v --tb=short
+python -m pytest server/tests/test_static_pages_handlers.py -q --tb=short
+node --test webapp/scripts/remote-browser-signoff.test.mjs
 python scripts/verify_workspace.py
 ```
 
-4. Проверить preflight отчёт:
-
-```powershell
-python scripts/check_webapp_cutover.py --json
-```
-
-## Remote signoff после release
-
-1. Выложить текущий commit штатным release flow.
-2. Прогнать live signoff helper:
+## Remote signoff after release
 
 ```powershell
 pnpm --dir webapp run check:remote:webapp -- --base-url https://example.test:9443
 ```
 
-If `--base-url` is omitted, the helper reads `PC_CLIENT_BROWSER_BASE_URL`, then `REMOTE_SMOKE_BASE_URL`, and finally falls back to `https://example.test:9443`. Do not rely on the old `http://example.test:8666` default for pilot-like stands.
+The helper verifies every retired entry route, including `?legacy=1` variants,
+opens `/app`, `/app/admin` and `/app/support`, checks Russian UI text, and
+fails on console or page errors. A browser MCP check remains required whenever
+a visible workflow changes.
 
-3. Убедиться, что helper подтвердил:
-  - `/app -> /app/admin`;
-  - `GET /api/web/session/me`;
-  - рабочие `/app/admin` и `/app/support`;
-  - raw redirects `/login`, `/admin`, `/support` находятся в согласованном режиме:
-    - либо ещё legacy shell до полного cutover;
-    - либо уже `/app/*` после полного cutover;
-  - raw escape `/login?legacy=1`, `/admin?legacy=1`, `/support?legacy=1`;
-  - русский `lang/title`;
-  - отсутствие `console/page errors`.
-4. Поверх helper сделать browser MCP-check, если менялся UI.
-5. После проверки остановить remote server, если не нужен живой стенд.
+## Out of scope
 
-## Targeted legacy cleanup
-
-- Пока `/ticket`, публичная очередь и публичный browser ticket не перенесены, legacy shell полностью не удаляется.
-- Новые внутренние entrypoints не должны жёстко прибивать пользователя к `_shell=...`; они должны идти через логические `/admin` или `/support`, чтобы default-route switch уважал текущую cutover policy.
-- Уже нормализованный пример: `server/ticket.html` теперь ведёт в `/admin`, а не в pinned legacy shell.
-- Сами legacy shell-ссылки теперь должны использовать `?legacy=1`, а не version-pinned `_shell=...`, чтобы fallback оставался стабильным даже после следующего deploy.
-- Удаление `server/login.js`, `server/support.js`, `server/admin.js` и связанных HTML/CSS допустимо только после стабильного remote signoff и явного решения о завершении migration window.
-
-## Requester Cutover
-
-- `/help` switches to `/app/help` only when `WEBAPP_CUTOVER_HELP_ENABLED=true` and the built bundle is present.
-- `/ticket` and `/ticket/{ticket_id}` switch to `/app/ticket` / `/app/ticket/{ticket_id}` only when `WEBAPP_CUTOVER_TICKET_ENABLED=true` and the built bundle is present.
-- `?legacy=1` remains the escape hatch for requester pages too.
-
-## React API Boundary Matrix
-
-| Owner | Old endpoint used by React | Decision | Typed target |
-|------|-----------------------------|----------|--------------|
-| Observer workbench | `/api/admin/tech/observer/*`, `/api/admin/tech/traces*`, `/api/admin/settings/observer` | alias | `/api/web/admin/observer/*` |
-| Tech alerts | `/api/admin/tech/alerts` | alias | `/api/web/admin/tech/alerts` |
-| Notifications | `/api/notifications*` | alias | `/api/web/notifications*` |
-| Module workbench | `/api/modules/workbench*`, `/api/modules/authoring/*`, `/api/modules/upload`, `/api/modules/{name}/{version}/live_*` | alias | `/api/web/admin/modules/workbench/*` |
-| Module preferred policy | `/api/modules/rollout_settings`, `/api/modules/{name}/preferred` | alias | `/api/web/admin/modules/rollout_settings`, `/api/web/admin/modules/{name}/preferred` |
-| Public requester intake | `/public_api/ticket_forms/current`, `/public_api/tickets/create`, `/public_api/tickets/{id}/authorize` | keep | intentionally public, not session-bound |
-| Ticket runtime | `/api/tickets/{id}` and ticket message/close endpoints | keep for now | requester page uses public token bearer auth until a dedicated `/api/web/requester/*` boundary lands |
+Public queue and technical/debug static pages are not part of the retired
+shell set. Their deletion requires an independent inventory and migration
+decision.

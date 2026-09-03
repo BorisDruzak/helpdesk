@@ -401,7 +401,7 @@ UI-пользователи и роли в PostgreSQL (dual-mode: БД + fallbac
 
 ### Hotfix
 
-- admin.js: queueReloadLock при ticket_event_committed.
+- React support queue: invalidation after `ticket_event_committed`.
 - POST /api/tickets/{id}/queue: валидация queue_id (существует, is_active). GET /public_api/queues: по умолчанию только с open_count &gt; 0; include_empty; сортировка open_count desc, queue_code asc.
 
 ### API
@@ -426,7 +426,7 @@ UI-пользователи и роли в PostgreSQL (dual-mode: БД + fallbac
 
 Единое окно чата с таймлайном, WebSocket, переключатель public/internal. **С Stage 10.5 управление тикетом переведено на Action Dock и inline-панели; slash-команды из UI убраны.**
 
-- ticket.html/css/js: верхняя панель, таймлайн (сообщения + system events + tool_call), composer с переключателем «Внутренняя заметка». Realtime через /ws_ui (subscribe_ticket, ticket_event_committed), fallback polling 25 с.
+- React ticket detail: верхняя панель, таймлайн (сообщения + system events + tool_call) и composer с переключателем «Внутренняя заметка». Realtime через `/ws_ui` (`subscribe_ticket`, `ticket_event_committed`) where the typed bridge is active.
 - Slash-команды (исторически): /status, /assign, /queue, /priority, /reroute, /close, /worklog, /tool — в Stage 10.5 заменены на Action Dock.
 
 ---
@@ -558,7 +558,7 @@ alembic current   # ожидаемая ревизия 030 (или выше с у
 **GET /api/tickets/{id}, GET /api/tickets/{id}/messages:**
 - В messages возвращаются `attachments` (по умолчанию пустой массив), нормализация sender: from → from_role → sender_role; в /messages — `attachment_refs`.
 
-**Сценарий:** загрузка файла POST /api/upload (ticket_id, kind=file) → artifact_id → отправка сообщения с attachment_refs. В ticket.html отображаются превью изображений/видео и карточка скачивания; URL скачивания — attachment.url или /api/artifacts/{id}/download.
+**Сценарий:** загрузка файла POST /api/upload (ticket_id, kind=file) → artifact_id → отправка сообщения с attachment_refs. React ticket detail отображает превью изображений/видео и карточку скачивания; URL скачивания — attachment.url или /api/artifacts/{id}/download.
 
 См. также [ARTIFACTS_API.md](ARTIFACTS_API.md).
 

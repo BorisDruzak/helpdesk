@@ -123,12 +123,10 @@ Provider config persistence starts at migration `075`. Runtime capability descri
 - Zabbix runtime config supports URL, TLS verification flag, timeout and mapping fields; credential refs remain internal runtime inputs and are redacted from admin/API payloads
 - permission, policy and integration blockers return generic human reasons while preserving detail through stable `reason_code`, preventing support/admin projections from exposing raw provider config or credential data
 
-## Admin workbench
+## React admin workbench
 
-`/admin` embeds a dedicated module-development workbench loaded from:
-
-- `server/admin_modules_workbench.html`
-- `server/admin_modules_workbench.js`
+`/app/admin/modules` is the dedicated module-development workbench, implemented
+by `webapp/src/features/modules/modules-panel.tsx`.
 
 Workbench API:
 

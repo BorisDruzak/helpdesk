@@ -58,12 +58,6 @@ python scripts/bootstrap_web_toolchain.py
 
 Каноничный frontend toolchain: локально и в CI использовать `Node.js 24.15.0 + corepack + pnpm 10.33.0`. Linux-хост остаётся runtime host и не считается canonical frontend build host.
 
-Если задача включает фактический cutover legacy `/login`, `/support`, `/admin` на новый shell, перед release дополнительно прогнать:
-
-```powershell
-python scripts/check_webapp_cutover.py --json
-```
-
 4. Если задача длинная или многосоставная, обновить `PLANS.md`.
 
 5. Перед синхронизацией прогнать быстрые проверки:
@@ -162,11 +156,9 @@ For the Tech Panel business marker on a self-signed HTTPS stand, run `scripts/bu
 
 13. Если менялся GUI сервера, дополнительно проверить:
 
-- [admin](http://192.168.100.19:8080/admin)
-- [help](http://192.168.100.19:8080/help)
-- React workspace routes under `http://192.168.100.19:8080/app/*` when that workspace is the changed surface.
+- React workspace routes under `http://192.168.100.19:8080/app/*`; `/admin` and `/help` are compatibility redirects, not separate shells.
 - Web-first requester/web-agent routes: `/app/requester`, `/app/requester/devices`, and compatible `/app/device/*` linking routes. These checks must verify browser-visible profile/device binding state, not only local agent GUI/UIA.
-- если менялся новый `webapp` или cutover-логика, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.19:8080` — helper проверяет `/app`, raw redirects `/login|/admin|/support`, `?legacy=1` и теперь ожидает полноценный webapp-mode как каноническое состояние после финального cutover
+- если менялся `webapp` или retired-route redirect, дополнительно `pnpm --dir webapp run check:remote:webapp -- --base-url http://192.168.100.19:8080` — helper проверяет `/app`, все retired entry routes и их `?legacy=1` варианты как redirects в React
 - Для техпанели дополнительно проверить status/health/full logs и confirm-модалку для `stop/restart`.
 
 14. После проверок остановить процессы:
