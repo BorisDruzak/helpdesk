@@ -72,8 +72,6 @@ def test_permission_catalog_has_stable_role_defaults():
     assert "knowledge.metadata.manage" not in admin_permissions
     assert "workspace.support.view" in support_permissions
     assert "knowledge.metadata.manage" not in support_permissions
-    assert "remote_assist.clipboard" in support_permissions
-    assert "remote_assist.file_transfer" in support_permissions
     assert "workspace.admin.view" not in support_permissions
     assert "ticket.status.change" not in auditor_permissions
     assert "observer.trace.view" in auditor_permissions
@@ -88,8 +86,6 @@ def test_session_payload_exposes_effective_permissions_and_version():
     assert dumped["available_workspaces"] == ["support"]
     assert "workspace.support.view" in dumped["permissions"]
     assert "ticket.tool.run" in dumped["permissions"]
-    assert "remote_assist.clipboard" in dumped["permissions"]
-    assert "remote_assist.file_transfer" in dumped["permissions"]
     assert "workspace.admin.view" not in dumped["permissions"]
     assert dumped["permissions_version"]
 

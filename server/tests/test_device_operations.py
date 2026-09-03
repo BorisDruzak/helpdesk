@@ -267,7 +267,6 @@ async def test_device_operations_returns_compact_context(test_client, test_engin
     success_operation = next(item for item in data["operations"]["items"] if item["tool_name"] == "system.collect")
     assert success_operation["error_summary"] is None
     assert data["observer"]["trace_count"] == 1
-    assert data["remote_assist"]["availability"] == "requires_consent"
     assert data["provisioning"]["state"] == "pending"
     assert data["signals"]["failed_recent_operation"] is True
     assert data["signals"]["outbox_backlog"] is True
@@ -304,7 +303,6 @@ async def test_device_operations_handles_missing_inventory_and_offline_agent(tes
     assert data["inventory"]["can_request_refresh"] is False
     assert data["agent"]["connection_state"] == "offline"
     assert data["signals"]["agent_offline"] is True
-    assert data["remote_assist"]["availability"] == "offline"
 
 
 @pytest.mark.asyncio

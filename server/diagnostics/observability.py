@@ -29,12 +29,11 @@ PRIVATE_RUNTIME_KEYS = frozenset(
 )
 
 INTEGRATION_TARGETS = frozenset({"server_connector"})
-EXTERNAL_TARGETS = frozenset({"server_connector", "observer_query", "remote_assist"})
+EXTERNAL_TARGETS = frozenset({"server_connector", "observer_query"})
 SOURCE_BY_TARGET = {
     "server_builtin": "diagnostic_server_builtin",
     "server_connector": "diagnostic_server_connector",
     "observer_query": "diagnostic_observer_query",
-    "remote_assist": "diagnostic_remote_assist",
     "manual": "diagnostic_manual",
 }
 

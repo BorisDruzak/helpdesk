@@ -11,7 +11,6 @@ EXECUTION_TARGETS = {
     "server_builtin",
     "server_connector",
     "observer_query",
-    "remote_assist",
     "manual",
     "hybrid",
     "endpoint_operation",

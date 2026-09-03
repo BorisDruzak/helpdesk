@@ -17,12 +17,10 @@ from app.db.models import (
     DeviceOutbox,
     Operation,
     ObserverTrace,
-    RemoteAccessSession,
     Ticket,
 )
 from app.repos.devices_repo import DevicesRepo
 from app.repos.observer_integrity_repo import ObserverIntegrityRepo
-from app.repos.remote_access_repo import ACTIVE_REMOTE_ACCESS_STATUSES
 from inventory.service import DeviceInventoryService
 from web_api.dto.device_operations import (
     DeviceOperationsAgent,
@@ -43,7 +41,6 @@ from web_api.dto.device_operations import (
     DeviceOperationsProvisioning,
     DeviceOperationsRefreshPolicy,
     DeviceOperationsRefreshRun,
-    DeviceOperationsRemoteAssist,
     DeviceOperationsSignals,
 )
 
@@ -188,7 +185,6 @@ class DeviceOperationsService:
         outbox = await self._build_outbox(device_id, include_outbox=include_outbox, limit=outbox_limit)
         operations = await self._build_operations(device_id, limit=operation_limit)
         observer = await self._build_observer(device_id, include_traces=include_traces, limit=trace_limit)
-        remote_assist = await self._build_remote_assist(device_id, connection_state=connection_state)
         provisioning = await self._build_provisioning(device_id)
         inventory = self._build_inventory(
             latest_inventory,
@@ -225,7 +221,6 @@ class DeviceOperationsService:
                 any((item.status or "").lower() in {"failed", "error"} or item.error_summary for item in observer.items)
                 or observer.critical_integrity_count > 0
             ),
-            remote_assist_unavailable=remote_assist.availability in {"unavailable", "offline", "unknown"},
         )
         return DeviceOperationsPayload(
             generated_at=now.isoformat(),
@@ -250,7 +245,6 @@ class DeviceOperationsService:
             outbox=outbox,
             operations=operations,
             observer=observer,
-            remote_assist=remote_assist,
             signals=signals,
             links=DeviceOperationsLinks(
                 inventory=f"/app/admin/inventory?device={quote(device_id)}",
@@ -259,7 +253,6 @@ class DeviceOperationsService:
                 modules=f"/app/admin/modules?device={quote(device_id)}",
                 observer=f"/app/admin/observer?device_id={quote(device_id)}",
                 tickets=f"/app/tickets?search={quote(device_id)}",
-                remote_assist=f"/app/tickets?search={quote(device_id)}",
             ),
         )
 
@@ -538,41 +531,6 @@ class DeviceOperationsService:
             )
             for row in rows
         ]
-
-    async def _build_remote_assist(self, device_id: str, *, connection_state: str) -> DeviceOperationsRemoteAssist:
-        result = await self.session.execute(
-            select(RemoteAccessSession)
-            .where(RemoteAccessSession.device_id == device_id)
-            .order_by(RemoteAccessSession.created_at.desc())
-            .limit(1)
-        )
-        latest = result.scalar_one_or_none()
-        active = None
-        if latest and latest.status in ACTIVE_REMOTE_ACCESS_STATUSES:
-            active = latest
-        if active and active.consent_status == "pending":
-            availability = "requires_consent"
-            reason = "Ожидается согласие пользователя."
-        elif connection_state == "offline":
-            availability = "offline"
-            reason = "Агент устройства offline."
-        elif active:
-            availability = "available"
-            reason = "Есть активная или запускаемая сессия."
-        elif connection_state == "online":
-            availability = "available"
-            reason = "Агент online; запуск доступен из тикета с consent workflow."
-        else:
-            availability = "unknown"
-            reason = "Статус агента неизвестен."
-        return DeviceOperationsRemoteAssist(
-            availability=availability,
-            reason=reason,
-            active_session_id=active.id if active and active.status == "active" else None,
-            pending_consent_id=active.id if active and active.consent_status == "pending" else None,
-            last_session_at=_iso(getattr(latest, "created_at", None)),
-            can_request=False,
-        )
 
     async def _build_provisioning(self, device_id: str) -> DeviceOperationsProvisioning:
         connection_result = await self.session.execute(

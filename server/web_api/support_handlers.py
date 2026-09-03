@@ -2560,7 +2560,7 @@ def _operation_retryable(status: str | None, retry_count: int | None, max_retrie
     return bool(status in {"failed", "timed_out", "timeout"} and max_retries is not None and (retry_count or 0) < max_retries)
 
 
-_OPERATION_CANCELABLE_STATUSES = {"accepted", "in_progress", "queued", "running", "sent", "waiting_consent"}
+_OPERATION_CANCELABLE_STATUSES = {"queued"}
 _OPERATION_FAILED_STATUSES = {"failed", "timed_out", "timeout"}
 
 

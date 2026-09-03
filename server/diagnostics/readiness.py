@@ -30,7 +30,6 @@ class ReadinessContext:
     policy_flags: Dict[str, Any] | None = None
     permissions: set[str] | list[str] | tuple[str, ...] | None = None
     has_root_trace: Optional[bool] = None
-    remote_assist: Dict[str, Any] | None = None
     has_permission: Optional[bool] = True
     endpoint_execution_mode: Optional[str] = None
     endpoint_port: Any = None
@@ -70,8 +69,6 @@ class CapabilityReadinessService:
                     reason_code="OBSERVER_TRACE_MISSING",
                 )
             return self._status(capability, "available", None, ["run"])
-        if target == "remote_assist":
-            return self._remote_assist_readiness(capability, context)
         if target == "manual":
             return self._status(capability, "available", None, ["create_manual_evidence"])
         if target == "endpoint_operation":
@@ -83,7 +80,7 @@ class CapabilityReadinessService:
         capability: CapabilityDescriptor,
         context: ReadinessContext,
     ) -> CapabilityReadiness:
-        if str(context.endpoint_execution_mode or "legacy").strip().lower() != "endpoint":
+        if str(context.endpoint_execution_mode or "endpoint").strip().lower() != "endpoint":
             return self._status(
                 capability,
                 "disabled_by_policy",
@@ -399,49 +396,6 @@ class CapabilityReadinessService:
         if capability.requires_consent:
             return self._consent_required(capability)
         return self._status(capability, "available", None, ["run"])
-
-    def _remote_assist_readiness(
-        self,
-        capability: CapabilityDescriptor,
-        context: ReadinessContext,
-    ) -> CapabilityReadiness:
-        if capability.requires_device and not context.device_id:
-            return self._status(
-                capability,
-                "unavailable",
-                "Device is required",
-                [],
-                reason_code="DEVICE_REQUIRED",
-            )
-        if capability.requires_agent_online and context.device_id and not self._is_agent_online(context.device_id):
-            return self._status(
-                capability,
-                "agent_offline",
-                "Agent is offline",
-                [],
-                reason_code="AGENT_OFFLINE",
-            )
-        if context.has_permission is False:
-            return self._status(
-                capability,
-                "permission_denied",
-                "Operator lacks permission",
-                [],
-                reason_code="PERMISSION_DENIED",
-            )
-        remote_assist = context.remote_assist or {}
-        active_session = remote_assist.get("active_session") if isinstance(remote_assist, dict) else None
-        if capability.id in {"remote_assist.request_view", "remote_assist.request_control"} and active_session:
-            return self._status(
-                capability,
-                "unavailable",
-                "Remote Assist session is already active for this ticket/device",
-                ["open_remote_assist"],
-                reason_code="REMOTE_ASSIST_SESSION_ACTIVE",
-            )
-        if capability.requires_consent:
-            return self._consent_required(capability)
-        return self._status(capability, "available", None, ["open_remote_assist"])
 
     def _consent_required(self, capability: CapabilityDescriptor) -> CapabilityReadiness:
         return self._status(

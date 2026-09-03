@@ -23,7 +23,6 @@ class ApprovalConsentBlocking(BaseModel):
     blocks_ticket_progress: bool = False
     blocks_sla: bool = False
     blocks_operation: bool = False
-    blocks_remote_assist: bool = False
     blocks_closure: bool = False
     blocks_change: bool = False
 
@@ -57,7 +56,6 @@ class ApprovalConsentItem(BaseModel):
     change_id: str | None = None
     change_number: str | None = None
     operation_id: str | None = None
-    remote_assist_session_id: str | None = None
     device_id: str | None = None
     requester_name: str | None = None
     requested_by: str | None = None
@@ -96,7 +94,6 @@ class ApprovalConsentSummary(BaseModel):
     ticket_approvals_count: int
     change_approvals_count: int
     risky_tool_consents_count: int
-    remote_assist_consents_count: int
     closure_approvals_count: int
     policy_overrides_count: int
 

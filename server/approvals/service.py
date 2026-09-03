@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Change, ChangeApproval, Operation, RemoteAccessSession, Ticket, TicketApproval
+from app.db.models import Change, ChangeApproval, Operation, Ticket, TicketApproval
 from web_api.dto.approvals import (
     ApprovalConsentAction,
     ApprovalConsentBlocking,
@@ -92,7 +92,7 @@ def _kind_matches(kind_filter: str | None, item: ApprovalConsentItem) -> bool:
     if normalized == "pending_approval":
         return item.kind in {"ticket_approval", "change_approval", "closure_approval", "policy_override"}
     if normalized == "pending_consent":
-        return item.kind in {"risky_tool_consent", "remote_assist_consent"}
+        return item.kind == "risky_tool_consent"
     return item.kind == normalized
 
 
@@ -127,7 +127,6 @@ class ApprovalConsentCenterService:
         items.extend(await self._ticket_approvals())
         items.extend(await self._change_approvals())
         items.extend(await self._risky_tool_consents())
-        items.extend(await self._remote_assist_consents())
 
         filtered = [
             item
@@ -358,86 +357,19 @@ class ApprovalConsentCenterService:
             )
         return items
 
-    async def _remote_assist_consents(self) -> list[ApprovalConsentItem]:
-        rows = (
-            await self._session.execute(
-                select(RemoteAccessSession, Ticket)
-                .outerjoin(Ticket, Ticket.ticket_id == RemoteAccessSession.ticket_id)
-                .where(RemoteAccessSession.consent_required.is_(True))
-                .where(RemoteAccessSession.consent_status == "pending")
-                .where(RemoteAccessSession.status.in_(("requested", "waiting_consent")))
-                .order_by(RemoteAccessSession.requested_at.desc())
-                .limit(500)
-            )
-        ).all()
-        items: list[ApprovalConsentItem] = []
-        for session, ticket in rows:
-            actions = []
-            if ticket is not None:
-                actions.append(
-                    ApprovalConsentAction(
-                        key="open_ticket",
-                        label="Открыть тикет",
-                        href=f"/app/tickets/{ticket.ticket_id}",
-                        enabled=True,
-                    )
-                )
-            actions.append(
-                ApprovalConsentAction(
-                    key="open_device_operations",
-                    label="Открыть устройство",
-                    href=f"/app/admin/device-operations/{session.device_id}",
-                    enabled=True,
-                )
-            )
-            items.append(
-                ApprovalConsentItem(
-                    id=f"remote_assist_consent:{session.id}",
-                    kind="remote_assist_consent",
-                    status="pending",
-                    title="Удалённая помощь ждёт согласия пользователя",
-                    reason=session.reason or "Remote Assist сессия ожидает согласия пользователя",
-                    object_type="remote_assist",
-                    object_id=session.id,
-                    ticket_id=ticket.ticket_id if ticket else session.ticket_id,
-                    ticket_number=ticket.ticket_code if ticket else None,
-                    remote_assist_session_id=session.id,
-                    device_id=session.device_id,
-                    requester_name=session.requester_id or (ticket.requester_id if ticket else None),
-                    requested_by=session.operator_id,
-                    approver=session.requester_id,
-                    risk=_risk_from_priority(ticket.priority if ticket else None),
-                    due_at=_iso(session.expires_at),
-                    created_at=_iso(session.requested_at),
-                    updated_at=_iso(session.updated_at),
-                    blocking=ApprovalConsentBlocking(
-                        blocks_ticket_progress=ticket is not None,
-                        blocks_remote_assist=True,
-                    ),
-                    context=ApprovalConsentContext(
-                        queue=_ticket_queue(ticket),
-                        assignee=ticket.assignee_id if ticket else None,
-                        service_code=ticket.service_code if ticket else None,
-                        offering_code=ticket.offering_code if ticket else None,
-                    ),
-                    actions=actions,
-                )
-            )
-        return items
-
     def _summary(self, items: list[ApprovalConsentItem], now: datetime) -> ApprovalConsentSummary:
         return ApprovalConsentSummary(
             total_count=len(items),
             pending_count=sum(1 for item in items if item.status == "pending"),
             overdue_count=sum(1 for item in items if _is_overdue(item, now)),
             high_risk_count=sum(1 for item in items if item.risk in HIGH_RISKS),
-            waiting_user_count=sum(1 for item in items if item.kind in {"risky_tool_consent", "remote_assist_consent"}),
+            waiting_user_count=sum(1 for item in items if item.kind == "risky_tool_consent"),
             waiting_approver_count=sum(1 for item in items if item.kind in {"ticket_approval", "change_approval", "closure_approval", "policy_override"}),
             blocking_sla_count=sum(1 for item in items if item.blocking.blocks_sla),
             ticket_approvals_count=sum(1 for item in items if item.kind == "ticket_approval"),
             change_approvals_count=sum(1 for item in items if item.kind == "change_approval"),
             risky_tool_consents_count=sum(1 for item in items if item.kind == "risky_tool_consent"),
-            remote_assist_consents_count=sum(1 for item in items if item.kind == "remote_assist_consent"),
+            remote_assist_consents_count=0,
             closure_approvals_count=sum(1 for item in items if item.kind == "closure_approval"),
             policy_overrides_count=sum(1 for item in items if item.kind == "policy_override"),
         )
@@ -445,13 +377,12 @@ class ApprovalConsentCenterService:
     def _sections(self, items: list[ApprovalConsentItem], now: datetime, actor_id: str) -> list[ApprovalConsentSection]:
         specs = [
             ("waiting_me", "Ждёт меня", "Согласования, где текущий оператор указан исполнителем или согласующим.", lambda i: actor_id in {i.approver, i.context.assignee}, "warning"),
-            ("waiting_user", "Ждёт пользователя", "Consent-запросы, которые должен подтвердить пользователь.", lambda i: i.kind in {"risky_tool_consent", "remote_assist_consent"}, "warning"),
+            ("waiting_user", "Ждёт пользователя", "Consent-запросы, которые должен подтвердить пользователь.", lambda i: i.kind == "risky_tool_consent", "warning"),
             ("overdue", "Просрочено", "Срок согласования или consent-запроса уже истёк.", lambda i: _is_overdue(i, now), "critical"),
             ("high_risk", "Высокий риск", "High/critical согласования и consent-запросы.", lambda i: i.risk in HIGH_RISKS, "critical"),
             ("ticket_approvals", "Тикеты", "Согласования в тикетном workflow.", lambda i: i.kind == "ticket_approval", "info"),
             ("change_approvals", "Изменения", "Согласования Change Enablement.", lambda i: i.kind == "change_approval", "info"),
             ("risky_tool_consents", "Рискованные команды", "Операции, ожидающие consent перед запуском.", lambda i: i.kind == "risky_tool_consent", "warning"),
-            ("remote_assist_consents", "Удалённая помощь", "Remote Assist сессии, ожидающие согласия пользователя.", lambda i: i.kind == "remote_assist_consent", "warning"),
             ("closure_approvals", "Закрытие", "Approval-like блокеры закрытия тикета.", lambda i: i.kind == "closure_approval", "warning"),
             ("policy_overrides", "Policy overrides", "Pending override-запросы политик, если источник существует.", lambda i: i.kind == "policy_override", "info"),
         ]

@@ -10,21 +10,6 @@ from loguru import logger
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from agents.agent_builds_handlers import (
-    AgentUpdateRequestError,
-    _infer_release_channel,
-    _is_release_build,
-    _resolve_recommended_build,
-    _resolve_target_for_device,
-    _sanitize_update_reason,
-    enqueue_device_agent_update,
-    handle_delete_agent_build as _handle_legacy_delete_agent_build,
-    handle_download_agent_build as _handle_legacy_download_agent_build,
-    handle_get_agent_rollout_policy as _handle_legacy_get_agent_rollout_policy,
-    handle_list_agent_builds as _handle_legacy_list_agent_builds,
-    handle_patch_agent_rollout_policy as _handle_legacy_patch_agent_rollout_policy,
-    handle_upload_agent_build as _handle_legacy_upload_agent_build,
-)
 from app.db import get_session
 from app.db.models import AgentToken, Device, DeviceToolsetSnapshot, Operation, Playbook, PlaybookStep, PlaybookVersion, Ticket, TicketEvent, TicketQueue
 from app.repos.agent_rollout_repo import AgentRolloutRepo

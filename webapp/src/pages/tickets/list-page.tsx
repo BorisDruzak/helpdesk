@@ -112,7 +112,6 @@ import type {
 } from "../../features/queues/support-workspace-model";
 import { useSession } from "../../features/auth/session-provider";
 import { fetchTicketProblemLinks } from "../../features/problems/api";
-import { RemoteAssistPanel } from "../../features/remote-assist/remote-assist-panel";
 import { ExpandedWorkspaceHeader } from "./components/expanded-workspace-header";
 import { OperationsTable } from "./components/operations-table";
 import { QueueExplorer } from "./components/queue-explorer";
@@ -145,7 +144,7 @@ type SupportWorkspaceTheme = "dark" | "light";
 type OperatorActionKind = "status" | "assign_self" | "queue" | "priority" | "reroute";
 type AutomationCatalogFilter = "all" | "runnable" | "playbook" | "tool" | "disabled";
 type WorkspaceResizePane = "left" | "right";
-type ToolsWorkspaceTab = "diagnostics" | "quick" | "playbook" | "remote" | "operations" | "history";
+type ToolsWorkspaceTab = "diagnostics" | "quick" | "playbook" | "operations" | "history";
 type SlaWorkspaceTab = "overview" | "ola" | "escalations" | "history";
 type PassportWorkspaceTab = "sections" | "evidence" | "operations" | "readiness";
 type WorkspaceColumnSizes = { left: number; right: number };
@@ -367,7 +366,6 @@ const toolsWorkspaceTabs: Array<{ value: ToolsWorkspaceTab; label: string }> = [
   { value: "diagnostics", label: "Диагностика" },
   { value: "quick", label: "Быстрые" },
   { value: "playbook", label: "Playbook" },
-  { value: "remote", label: "Удалённая помощь" },
   { value: "operations", label: "Операции" },
   { value: "history", label: "История" },
 ];
@@ -3951,18 +3949,6 @@ export function TicketListPage() {
 
             {selectedTicket && sidebarTab === "tools" ? (
               <div className="space-y-3">
-                {workspaceMode !== "tools" ? (
-                  <RemoteAssistPanel
-                    deviceId={viewModel.right.context?.device.id ?? null}
-                    deviceOnline={viewModel.right.context?.device.online ?? false}
-                    onChanged={() => {
-                      void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
-                      void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
-                    }}
-                    permissions={session?.permissions ?? []}
-                    ticketId={selectedTicket.id}
-                  />
-                ) : null}
                 {workspaceMode === "tools" ? (
                   <section className="rounded-xl border border-white/10 bg-[#111f33] p-4">
                     <div aria-label="Режим инструментов" className="mb-4 flex flex-wrap gap-2" role="tablist">
@@ -4040,18 +4026,6 @@ export function TicketListPage() {
                           </p>
                         ) : null}
                       </div>
-                    ) : null}
-                    {toolsWorkspaceTab === "remote" ? (
-                      <RemoteAssistPanel
-                        deviceId={viewModel.right.context?.device.id ?? null}
-                        deviceOnline={viewModel.right.context?.device.online ?? false}
-                        onChanged={() => {
-                          void queryClient.invalidateQueries({ queryKey: ["tickets-workspace", selectedTicket.id] });
-                          void queryClient.invalidateQueries({ queryKey: ["tickets-workspace-timeline", selectedTicket.id] });
-                        }}
-                        permissions={session?.permissions ?? []}
-                        ticketId={selectedTicket.id}
-                      />
                     ) : null}
                     {toolsWorkspaceTab === "operations" ? (
                       <OperationsTable

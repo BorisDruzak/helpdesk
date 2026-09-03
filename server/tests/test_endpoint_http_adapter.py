@@ -402,7 +402,7 @@ def test_container_rejects_invalid_pem_ca_before_composing_http_adapter(
     ca_file = tmp_path / "endpoint-ca.pem"
     ca_file.write_text("test-only-placeholder", encoding="utf-8")
     monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
-    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.invalid")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "service-token")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", str(ca_file))
@@ -430,7 +430,7 @@ def test_container_rejects_ca_file_that_ssl_context_cannot_read(
 
     monkeypatch.setattr(container_module.ssl, "create_default_context", fail_ca_read)
     monkeypatch.setattr(config, "ENDPOINT_PORT_MODE", "external")
-    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy")
+    monkeypatch.setattr(config, "ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_BASE_URL", "https://endpoint.invalid")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_SERVICE_TOKEN", "service-token")
     monkeypatch.setattr(config, "ENDPOINT_EXTERNAL_CA_FILE", str(ca_file))

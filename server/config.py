@@ -55,7 +55,7 @@ ENDPOINT_EXTERNAL_BASE_URL = (os.getenv("ENDPOINT_EXTERNAL_BASE_URL", "") or "")
 ENDPOINT_EXTERNAL_SERVICE_TOKEN = os.getenv("ENDPOINT_EXTERNAL_SERVICE_TOKEN", "") or ""
 ENDPOINT_EXTERNAL_CA_FILE = (os.getenv("ENDPOINT_EXTERNAL_CA_FILE", "") or "").strip()
 ENDPOINT_DIAGNOSTIC_EXECUTION_MODE = (
-    os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "legacy") or "legacy"
+    os.getenv("ENDPOINT_DIAGNOSTIC_EXECUTION_MODE", "endpoint") or "endpoint"
 ).strip().lower()
 # Endpoint Module Platform is an independent typed boundary.  It must never
 # inherit the diagnostic provider's execution mode or legacy fallback.
@@ -346,51 +346,6 @@ WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL = int(
     os.getenv("WS_COMMAND_MAX_INFLIGHT_PER_DEVICE_RUN_TOOL", "1")
 )
 
-# ============================================================================
-# Remote Assist
-# ============================================================================
-
-REMOTE_ASSIST_ENABLED = os.getenv("REMOTE_ASSIST_ENABLED", "true").lower() == "true"
-REMOTE_ASSIST_DEFAULT_DURATION_MINUTES = int(os.getenv("REMOTE_ASSIST_DEFAULT_DURATION_MINUTES", "15"))
-REMOTE_ASSIST_MAX_DURATION_MINUTES = int(os.getenv("REMOTE_ASSIST_MAX_DURATION_MINUTES", "30"))
-REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES = int(os.getenv("REMOTE_ASSIST_CONSENT_TIMEOUT_MINUTES", "3"))
-REMOTE_ASSIST_REQUIRE_CONSENT_FOR_USER_DEVICES = (
-    os.getenv("REMOTE_ASSIST_REQUIRE_CONSENT_FOR_USER_DEVICES", "true").lower() == "true"
-)
-REMOTE_ASSIST_ALLOW_UNATTENDED = os.getenv("REMOTE_ASSIST_ALLOW_UNATTENDED", "false").lower() == "true"
-REMOTE_ASSIST_INTERACTIVE_CONTROL_ENABLED = os.getenv("REMOTE_ASSIST_INTERACTIVE_CONTROL_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_FILE_TRANSFER_ENABLED = os.getenv("REMOTE_ASSIST_FILE_TRANSFER_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_CLIPBOARD_ENABLED = os.getenv("REMOTE_ASSIST_CLIPBOARD_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_ELEVATED_ADMIN_ENABLED = os.getenv("REMOTE_ASSIST_ELEVATED_ADMIN_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_MANAGED_UNATTENDED_ENABLED = os.getenv("REMOTE_ASSIST_MANAGED_UNATTENDED_ENABLED", "false").lower() == "true"
-REMOTE_ASSIST_CONTROL_RATE_LIMIT_PER_SEC = int(os.getenv("REMOTE_ASSIST_CONTROL_RATE_LIMIT_PER_SEC", "60"))
-REMOTE_ASSIST_FILE_TRANSFER_MAX_BYTES = int(os.getenv("REMOTE_ASSIST_FILE_TRANSFER_MAX_BYTES", str(25 * 1024 * 1024)))
-REMOTE_ASSIST_CLIPBOARD_MAX_BYTES = int(os.getenv("REMOTE_ASSIST_CLIPBOARD_MAX_BYTES", str(256 * 1024)))
-REMOTE_ASSIST_ALLOWED_MODES = {
-    mode.strip().lower()
-    for mode in os.getenv("REMOTE_ASSIST_ALLOWED_MODES", "view_only").split(",")
-    if mode.strip()
-}
-REMOTE_ASSIST_SIGNALING_TOKEN_TTL_SECONDS = int(os.getenv("REMOTE_ASSIST_SIGNALING_TOKEN_TTL_SECONDS", "900"))
-
-
-def _parse_remote_assist_ice_servers() -> list[dict]:
-    raw = os.getenv("REMOTE_ASSIST_ICE_SERVERS_JSON", "").strip()
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-    except (TypeError, ValueError) as exc:
-        logger.warning(f"Invalid REMOTE_ASSIST_ICE_SERVERS_JSON: {exc}")
-        return []
-    if not isinstance(parsed, list):
-        logger.warning("REMOTE_ASSIST_ICE_SERVERS_JSON must be a JSON list")
-        return []
-    return [item for item in parsed if isinstance(item, dict)]
-
-
-REMOTE_ASSIST_ICE_SERVERS = _parse_remote_assist_ice_servers()
-REMOTE_ASSIST_TURN_SHARED_SECRET = os.getenv("REMOTE_ASSIST_TURN_SHARED_SECRET", "")
 # Internal dispatch runtime mode for server->agent outbox delivery:
 # - poll: compatibility/rollback poll-all sender loop
 # - sharded: per-device queue + shard workers + reconcile sweep

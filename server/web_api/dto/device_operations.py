@@ -206,17 +206,6 @@ class DeviceOperationsObserver(BaseModel):
     integrity_events: list[DeviceOperationsIntegrityEvent] = Field(default_factory=list)
 
 
-class DeviceOperationsRemoteAssist(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    availability: str
-    reason: str | None = None
-    active_session_id: str | None = None
-    pending_consent_id: str | None = None
-    last_session_at: str | None = None
-    can_request: bool
-
-
 class DeviceOperationsSignals(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -230,7 +219,6 @@ class DeviceOperationsSignals(BaseModel):
     outbox_backlog: bool
     failed_recent_operation: bool
     observer_errors: bool
-    remote_assist_unavailable: bool
 
 
 class DeviceOperationsLinks(BaseModel):
@@ -242,7 +230,6 @@ class DeviceOperationsLinks(BaseModel):
     modules: str | None = None
     observer: str | None = None
     tickets: str | None = None
-    remote_assist: str | None = None
 
 
 class DeviceOperationsPayload(BaseModel):
@@ -258,6 +245,5 @@ class DeviceOperationsPayload(BaseModel):
     outbox: DeviceOperationsOutbox
     operations: DeviceOperationsOperations
     observer: DeviceOperationsObserver
-    remote_assist: DeviceOperationsRemoteAssist
     signals: DeviceOperationsSignals
     links: DeviceOperationsLinks

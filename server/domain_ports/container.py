@@ -216,7 +216,7 @@ class DomainPortContainer:
 
         if endpoint is None:
             diagnostic_mode = _configured_endpoint_diagnostic_execution_mode()
-            if diagnostic_mode not in {"legacy", "endpoint"}:
+            if diagnostic_mode != "endpoint":
                 raise ValueError(
                     "unsupported ENDPOINT_DIAGNOSTIC_EXECUTION_MODE: "
                     f"{diagnostic_mode!r}"

@@ -5,7 +5,7 @@
 from aiohttp import web
 
 # Import handlers from modules
-from auth.handlers import handle_login, handle_ui_login, handle_ui_session, handle_get_device_tokens, handle_revoke_device_token
+from auth.handlers import handle_login, handle_ui_login, handle_ui_session
 from auth.connection_request_handlers import (
     handle_connection_request,
     handle_connection_request_status,
@@ -23,26 +23,6 @@ from auth.admin_users_handlers import (
     handle_admin_users_password_post,
     handle_admin_users_deactivate_post,
     handle_users_me_password_post,
-)
-from agents.handlers import (
-    handle_get_agents,
-    handle_get_devices,
-    handle_get_device,
-    handle_get_device_update_diagnostics,
-    handle_get_pending_connections,
-    handle_device_check,
-    handle_delete_device,
-)
-from agents.agent_builds_handlers import (
-    handle_upload_agent_build,
-    handle_list_agent_builds,
-    handle_delete_agent_build,
-    handle_download_agent_build,
-    handle_get_agent_rollout_policy,
-    handle_patch_agent_rollout_policy,
-    handle_get_device_update_recommendation,
-    handle_update_device_agent,
-    handle_bulk_update_agents,
 )
 from tickets.public_queue_handlers import (
     handle_public_queues,
@@ -279,16 +259,10 @@ from tickets.admin_config_handlers import (
 )
 from api.protocol import handle_protocol
 from api.commands import handle_send_command, handle_check_functions, handle_smoke_run
-from api.events import handle_get_ticket_events, handle_get_device_events, handle_ticket_messages
-from api.operations import (
-    handle_get_operations,
-    handle_get_operation,
-    handle_web_admin_get_operation,
-    handle_cancel_operation,
-    handle_web_support_cancel_operation,
-    handle_retry_operation,
-    handle_approve_consent,
-    handle_deny_consent
+from api.events import handle_get_ticket_events, handle_ticket_messages
+from web_api.endpoint_operation_handlers import (
+    handle_web_admin_endpoint_operation_get,
+    handle_web_support_endpoint_operation_cancel,
 )
 from web_api.session_handlers import (
     handle_web_session_login,
@@ -350,15 +324,7 @@ from web_api.support_handlers import (
     handle_web_support_unhide_ticket,
 )
 from web_api.admin_handlers import (
-    handle_web_admin_agent_build_delete,
-    handle_web_admin_agent_build_download,
-    handle_web_admin_agent_build_upload,
-    handle_web_admin_agent_builds,
-    handle_web_admin_agent_rollout_policy,
-    handle_web_admin_agent_rollout_policy_patch,
     handle_web_admin_bootstrap,
-    handle_web_admin_device_update_run,
-    handle_web_admin_device_updates,
     handle_web_admin_device_token_revoke,
     handle_web_admin_device_tokens_list,
     handle_web_admin_device_tokens,
@@ -811,7 +777,7 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/web/support/tickets/{ticket_id}/approvals/{approval_id}/decision', handle_web_support_approval_decision),
         web.post('/api/web/support/tickets/{ticket_id}/tools/run', handle_web_support_run_tool),
         web.post('/api/web/support/tickets/{ticket_id}/playbooks/run', handle_web_support_run_playbook),
-        web.post('/api/web/support/operations/{operation_id}/cancel', handle_web_support_cancel_operation),
+        web.post('/api/web/support/operations/{operation_id}/cancel', handle_web_support_endpoint_operation_cancel),
         web.get('/api/web/admin/bootstrap', handle_web_admin_bootstrap),
         web.post('/api/web/admin/tickets/purge/preview', handle_web_admin_ticket_purge_preview),
         web.post('/api/web/admin/tickets/purge', handle_web_admin_ticket_purge),
@@ -872,11 +838,10 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/tech/users/audit', handle_tech_users_audit),
         web.get('/api/web/admin/tech/operations/stuck', handle_tech_operations_stuck),
         web.get('/api/web/admin/ai-integration/mcp', handle_ai_integration_mcp_status),
-        web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_get_operation),
+        web.get('/api/web/admin/operations/{operation_id}', handle_web_admin_endpoint_operation_get),
         web.get('/api/web/admin/devices', handle_web_admin_devices),
         web.post('/api/web/admin/devices/cleanup_env_duplicates', handle_web_admin_devices_cleanup_env_duplicates),
         web.post('/api/web/admin/devices/{device_id}/restore', handle_web_admin_device_restore),
-        web.delete('/api/web/admin/devices/{device_id}', handle_delete_device),
         web.get('/api/web/admin/inventory/dashboard', handle_web_admin_inventory_dashboard),
         web.post('/api/web/admin/inventory/bindings/import', handle_web_admin_inventory_bindings_import),
         web.get('/api/web/admin/inventory/bindings/export.csv', handle_web_admin_inventory_bindings_export_csv),
@@ -991,12 +956,6 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/support/tickets/{ticket_id}/endpoint-modules/{module_key}/{version}/run', handle_endpoint_module_run),
         web.patch('/api/web/admin/modules/rollout_settings', handle_web_admin_patch_modules_rollout_settings),
         web.patch('/api/web/admin/modules/{module_name}/preferred', handle_web_admin_set_module_preferred_version),
-        web.get('/api/web/admin/agent-builds', handle_web_admin_agent_builds),
-        web.post('/api/web/admin/agent-builds/upload', handle_web_admin_agent_build_upload),
-        web.delete('/api/web/admin/agent-builds/{target}/{channel}/{version}', handle_web_admin_agent_build_delete),
-        web.get('/api/web/admin/agent-builds/{target}/{channel}/{version}/download', handle_web_admin_agent_build_download),
-        web.get('/api/web/admin/agent-updates/rollout-policy', handle_web_admin_agent_rollout_policy),
-        web.patch('/api/web/admin/agent-updates/rollout-policy', handle_web_admin_agent_rollout_policy_patch),
         web.get('/api/web/admin/modules/workbench', handle_list_modules_workbench),
         web.get('/api/web/admin/modules/workbench/{module_name}/{version}', handle_get_module_workbench_detail),
         web.post('/api/web/admin/modules/workbench/authoring/validate', handle_validate_module_authoring),
@@ -1005,8 +964,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/web/admin/modules/workbench/{module_name}/{version}/live_test_candidates', handle_list_module_live_test_candidates),
         web.post('/api/web/admin/modules/workbench/{module_name}/{version}/live_tests', handle_run_module_live_test),
         web.delete('/api/web/admin/modules/workbench/{module_name}/{version}', handle_delete_module),
-        web.get('/api/web/admin/devices/{device_id}/updates', handle_web_admin_device_updates),
-        web.post('/api/web/admin/devices/{device_id}/updates/run', handle_web_admin_device_update_run),
         web.get('/api/registry/options', handle_registry_options),
         web.post('/api/registry/profile', handle_registry_profile_upsert),
         web.post('/api/registry/agent/profile', handle_registry_agent_profile),
@@ -1217,33 +1174,6 @@ def setup_routes(app: web.Application) -> None:
         web.get('/api/connection_request/status', handle_connection_request_status),
 
         # ============================================================================
-        # Agents API
-        # ============================================================================
-        web.get('/api/agents', handle_get_agents),
-        web.get('/api/pending_connections', handle_get_pending_connections),
-        web.get('/api/devices', handle_get_devices),
-        web.get('/api/list_devices', handle_get_devices),  # Alias for compatibility
-        web.get('/api/devices/{device_id}', handle_get_device),  # Single device (agent page)
-        web.get('/api/devices/{device_id}/agent/update_diagnostics', handle_get_device_update_diagnostics),
-        web.get('/api/devices/{device_id}/agent/update_recommendation', handle_get_device_update_recommendation),
-        web.post('/api/devices/{device_id}/check', handle_device_check),  # Force check (list_tools)
-        web.delete('/api/devices/{device_id}', handle_delete_device),  # Delete device from DB
-        web.get('/api/devices/{device_id}/tokens', handle_get_device_tokens),  # Get device tokens
-        web.post('/api/devices/{device_id}/tokens/revoke', handle_revoke_device_token),  # Revoke device token
-
-        # ============================================================================
-        # Agent Builds (Remote Self-Update)
-        # ============================================================================
-        web.post('/api/agent_builds/upload', handle_upload_agent_build),
-        web.get('/api/agent_builds', handle_list_agent_builds),
-        web.delete('/api/agent_builds/{target}/{channel}/{version}', handle_delete_agent_build),
-        web.get('/api/agent_builds/{target}/{channel}/{version}/download', handle_download_agent_build),
-        web.get('/api/agent_updates/rollout_policy', handle_get_agent_rollout_policy),
-        web.patch('/api/agent_updates/rollout_policy', handle_patch_agent_rollout_policy),
-        web.post('/api/devices/{device_id}/agent/update', handle_update_device_agent),
-        web.post('/api/agents/update_bulk', handle_bulk_update_agents),
-
-        # ============================================================================
         # Tickets API (static paths before {ticket_id} to avoid "resolution_codes" as ticket_id)
         # ============================================================================
         web.post('/api/tickets/create/preview', handle_tickets_create_preview),
@@ -1334,18 +1264,10 @@ def setup_routes(app: web.Application) -> None:
         web.post('/api/problems/{problem_id}/status', handle_problem_status_post),
         web.post('/api/problems/{problem_id}/tickets', handle_problem_tickets_post),
         web.delete('/api/problems/{problem_id}/tickets/{ticket_id}', handle_problem_tickets_delete),
-        web.get('/api/devices/{device_id}/events', handle_get_device_events),
         
         # ============================================================================
         # Operations API
         # ============================================================================
-        web.get('/api/operations', handle_get_operations),
-        web.get('/api/operations/{operation_id}', handle_get_operation),
-        web.post('/api/operations/{operation_id}/cancel', handle_cancel_operation),
-        web.post('/api/operations/{operation_id}/retry', handle_retry_operation),
-        web.post('/api/tickets/{ticket_id}/operations/{operation_id}/retry', handle_retry_operation),
-        web.post('/api/operations/{operation_id}/approve', handle_approve_consent),
-        web.post('/api/operations/{operation_id}/deny', handle_deny_consent),
         
         # ============================================================================
         # Tools API

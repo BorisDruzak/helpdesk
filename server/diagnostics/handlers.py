@@ -23,7 +23,6 @@ from app.db.models import (
     DiagnosticFinding,
     Ticket,
 )
-from app.repos.remote_access_repo import RemoteAccessRepo
 from app.repos.diagnostics_repo import DiagnosticRepo
 from app.services.endpoint_device_reference_service import (
     EndpointDeviceMappingRequestV1,
@@ -64,9 +63,7 @@ from diagnostics.readiness import CapabilityReadinessService, ReadinessContext
 from diagnostics.runner_rollout import RunnerRolloutError, RunnerRolloutService, RunnerRolloutStateError
 from diagnostics.serialization import bundle_to_dict, evidence_to_dict, finding_to_dict, session_to_dict, ticket_evidence_to_dict
 from diagnostics.service import DiagnosticOverviewService
-from remote_assist.policy import is_remote_assist_mode_enabled
 from diagnostics.sessions import DiagnosticSessionService
-from tools.service import ToolExecutionService
 from domain_ports.container import DomainPortContainer
 
 
@@ -103,26 +100,17 @@ def _build_endpoint_platform_provider(ticket_id: str) -> tuple[object, EndpointP
 
 
 def _build_diagnostic_runtime(*, state: object, ticket_id: str) -> _DiagnosticRuntime:
-    mode = str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy").strip().lower()
-    if mode == "endpoint":
-        endpoint_port, endpoint_platform_provider = _build_endpoint_platform_provider(ticket_id)
-        return _DiagnosticRuntime(
-            registry=CapabilityRegistry(
-                tool_service=None,
-                state=state,
-                endpoint_diagnostic_execution_mode="endpoint",
-                endpoint_cutover_only=True,
-            ),
-            tool_service=None,
-            endpoint_port=endpoint_port,
-            endpoint_platform_provider=endpoint_platform_provider,
-        )
-    tool_service = ToolExecutionService(state)
+    endpoint_port, endpoint_platform_provider = _build_endpoint_platform_provider(ticket_id)
     return _DiagnosticRuntime(
-        registry=CapabilityRegistry(tool_service=tool_service, state=state),
-        tool_service=tool_service,
-        endpoint_port=None,
-        endpoint_platform_provider=None,
+        registry=CapabilityRegistry(
+            tool_service=None,
+            state=state,
+            endpoint_diagnostic_execution_mode="endpoint",
+            endpoint_cutover_only=True,
+        ),
+        tool_service=None,
+        endpoint_port=endpoint_port,
+        endpoint_platform_provider=endpoint_platform_provider,
     )
 
 
@@ -169,27 +157,6 @@ def _merge_maps(*maps: dict) -> dict:
         if isinstance(item, dict):
             result.update(item)
     return result
-
-
-def _remote_assist_policy_flags() -> dict:
-    return {
-        "remote_assist.enabled": bool(config.REMOTE_ASSIST_ENABLED),
-        "remote_assist.interactive_control.enabled": is_remote_assist_mode_enabled("interactive_control"),
-        "remote_assist.file_transfer.enabled": is_remote_assist_mode_enabled("file_transfer"),
-        "remote_assist.elevated_admin.enabled": is_remote_assist_mode_enabled("elevated_admin"),
-    }
-
-
-def _remote_assist_context(active_session) -> dict:
-    if active_session is None:
-        return {}
-    return {
-        "active_session": {
-            "session_id": active_session.id,
-            "status": active_session.status,
-            "mode": active_session.mode,
-        }
-    }
 
 
 def _device_platform(device: Device | None) -> str | None:
@@ -308,8 +275,12 @@ def _with_provider_runtime_params(params: dict, capability, persisted_maps) -> d
 @require_auth("admin", "support", "auditor")
 async def handle_diagnostics_capabilities(request: web.Request) -> web.Response:
     state = request.app.get("state")
-    tool_service = ToolExecutionService(state)
-    registry = CapabilityRegistry(tool_service=tool_service, state=state)
+    registry = CapabilityRegistry(
+        tool_service=None,
+        state=state,
+        endpoint_diagnostic_execution_mode="endpoint",
+        endpoint_cutover_only=True,
+    )
     device_id = request.query.get("device_id")
     capabilities = await registry.list_capabilities(device_id=device_id)
     existing_ids = {capability.id for capability in capabilities}
@@ -621,7 +592,12 @@ def _auth_actor_label(request: web.Request) -> str:
 
 async def _resolve_tool_presentation_descriptor(request: web.Request, session, tool_id: str):
     state = request.app.get("state")
-    registry = CapabilityRegistry(tool_service=ToolExecutionService(state), state=state)
+    registry = CapabilityRegistry(
+        tool_service=None,
+        state=state,
+        endpoint_diagnostic_execution_mode="endpoint",
+        endpoint_cutover_only=True,
+    )
     descriptor = await registry.resolve_capability(tool_id, device_id=request.query.get("device_id"))
     service = ToolPresentationOverrideService(session)
     if descriptor is None:
@@ -835,7 +811,6 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
         device = None
         installed_modules = []
         desired_modules = []
-        active_remote_assist_session = None
         if ticket is not None and getattr(ticket, "device_id", None):
             device = (
                 await session.execute(
@@ -851,10 +826,6 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
                 (
                     await session.execute(select(DeviceDesiredModule).where(DeviceDesiredModule.device_id == ticket.device_id))
                 ).scalars()
-            )
-            active_remote_assist_session = await RemoteAccessRepo(session).active_for_ticket_device(
-                ticket.ticket_id,
-                ticket.device_id,
             )
     if ticket is None:
         return web.json_response(
@@ -897,14 +868,12 @@ async def handle_ticket_diagnostics_capabilities(request: web.Request) -> web.Re
             persisted_maps.mappings,
         ),
         policy_flags=_merge_maps(
-            _remote_assist_policy_flags(),
             _state_mapping(state, "diagnostic_policy_flags", "policy_flags"),
             persisted_maps.policy_flags,
         ),
         permissions=set(access.permissions),
         has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
-        remote_assist=_remote_assist_context(active_remote_assist_session),
-        endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
+        endpoint_execution_mode="endpoint",
         endpoint_port=runtime.endpoint_port,
         endpoint_device_ref=endpoint_device_ref,
     )
@@ -962,7 +931,6 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
         device = None
         installed_modules = []
         desired_modules = []
-        active_remote_assist_session = None
         if ticket is not None and getattr(ticket, "device_id", None):
             device = (
                 await session.execute(
@@ -978,10 +946,6 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
                 (
                     await session.execute(select(DeviceDesiredModule).where(DeviceDesiredModule.device_id == ticket.device_id))
                 ).scalars()
-            )
-            active_remote_assist_session = await RemoteAccessRepo(session).active_for_ticket_device(
-                ticket.ticket_id,
-                ticket.device_id,
             )
     if ticket is None:
         return web.json_response(
@@ -1023,14 +987,12 @@ async def handle_ticket_diagnostics_capability_run(request: web.Request) -> web.
                 persisted_maps.mappings,
             ),
             policy_flags=_merge_maps(
-                _remote_assist_policy_flags(),
                 _state_mapping(state, "diagnostic_policy_flags", "policy_flags"),
                 persisted_maps.policy_flags,
             ),
             permissions=set(access.permissions),
             has_root_trace=bool(getattr(ticket, "observer_root_trace_id", None)),
-            remote_assist=_remote_assist_context(active_remote_assist_session),
-            endpoint_execution_mode=str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy"),
+            endpoint_execution_mode="endpoint",
             endpoint_port=runtime.endpoint_port,
             endpoint_device_ref=endpoint_device_ref,
         )
@@ -1260,7 +1222,12 @@ async def handle_ticket_diagnostics_manual_evidence(request: web.Request) -> web
     if capability_id not in {"manual.visual_check", "manual.vendor_response", "manual.operator_note", "manual.customer_confirmation"}:
         capability_id = "manual.visual_check"
     state = request.app.get("state")
-    capability = await CapabilityRegistry(tool_service=ToolExecutionService(state), state=state).resolve_capability(capability_id)
+    capability = await CapabilityRegistry(
+        tool_service=None,
+        state=state,
+        endpoint_diagnostic_execution_mode="endpoint",
+        endpoint_cutover_only=True,
+    ).resolve_capability(capability_id)
     if capability is None:
         return web.json_response({"status": "error", "error_code": "CAPABILITY_NOT_FOUND"}, status=404)
     result = await ManualCapabilityProvider().run(

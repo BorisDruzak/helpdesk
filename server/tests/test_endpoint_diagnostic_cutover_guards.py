@@ -73,6 +73,19 @@ def test_legacy_agent_and_remote_assist_routes_are_not_registered():
     assert "/remote-assist/" not in routes
 
 
+def test_remote_assist_runtime_and_configuration_are_removed():
+    remote_assist_source = ROOT / "server" / "remote_assist"
+    assert list(remote_assist_source.glob("*.py")) == []
+
+    config_source = (ROOT / "server" / "config.py").read_text(encoding="utf-8")
+    assert "REMOTE_ASSIST_" not in config_source
+
+
+def test_helpdesk_does_not_ship_agent_runtime_sources():
+    assert list((ROOT / "server" / "agents").glob("*.py")) == []
+    assert list((ROOT / "pc_agent").rglob("*.py")) == []
+
+
 def test_server_lifecycle_does_not_start_device_outbox_runtime():
     source = (ROOT / "server" / "server.py").read_text(encoding="utf-8")
 

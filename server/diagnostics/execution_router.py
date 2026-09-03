@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional
 from diagnostics.capability_registry import CapabilityRegistry
 from diagnostics.providers.manual_provider import ManualCapabilityProvider
 from diagnostics.providers.observer_provider import ObserverCapabilityProvider
-from diagnostics.providers.remote_assist_provider import RemoteAssistCapabilityProvider
 from diagnostics.providers.server_builtin import ServerBuiltinProvider
 from diagnostics.providers.server_connector import ServerConnectorProvider
 from diagnostics.observability import NullCapabilityExecutionObserver, monotonic_ms
@@ -19,7 +18,6 @@ TARGET_EXECUTION_KIND = {
     "server_builtin": "query",
     "server_connector": "query",
     "observer_query": "query",
-    "remote_assist": "session",
     "manual": "manual_evidence",
     "hybrid": "session",
     "endpoint_operation": "operation",
@@ -37,7 +35,6 @@ class CapabilityExecutionRouter:
         server_builtin_provider: Any = None,
         server_connector_provider: Any = None,
         observer_provider: Any = None,
-        remote_assist_provider: Any = None,
         manual_provider: Any = None,
         endpoint_platform_provider: Any = None,
         observability: Any = None,
@@ -47,7 +44,6 @@ class CapabilityExecutionRouter:
         self.server_builtin_provider = server_builtin_provider or ServerBuiltinProvider()
         self.server_connector_provider = server_connector_provider or ServerConnectorProvider()
         self.observer_provider = observer_provider or ObserverCapabilityProvider()
-        self.remote_assist_provider = remote_assist_provider or RemoteAssistCapabilityProvider()
         self.manual_provider = manual_provider or ManualCapabilityProvider()
         self.endpoint_platform_provider = endpoint_platform_provider
         self.observability = observability or NullCapabilityExecutionObserver()
@@ -231,18 +227,6 @@ class CapabilityExecutionRouter:
                 idempotency_key=idempotency_key,
                 timeout_ms=timeout_ms,
             )
-        if target == "remote_assist":
-            result = await self.route_remote_assist(
-                capability, ticket_id=ticket_id, device_id=device_id, params=params, actor=actor, state=self.capability_registry.state
-            )
-            return self._envelope(
-                capability,
-                result,
-                ticket_id=ticket_id,
-                device_id=device_id,
-                idempotency_key=idempotency_key,
-                timeout_ms=timeout_ms,
-            )
         if target == "manual":
             result = await self.route_manual(
                 capability, ticket_id=ticket_id, device_id=device_id, params=params, actor=actor, state=self.capability_registry.state
@@ -353,9 +337,6 @@ class CapabilityExecutionRouter:
     async def route_observer_query(self, capability, **kwargs) -> Dict[str, Any]:
         return await self.observer_provider.run(capability, **kwargs)
 
-    async def route_remote_assist(self, capability, **kwargs) -> Dict[str, Any]:
-        return await self.remote_assist_provider.run(capability, **kwargs)
-
     async def route_manual(self, capability, **kwargs) -> Dict[str, Any]:
         return await self.manual_provider.run(capability, **kwargs)
 
@@ -405,7 +386,7 @@ class CapabilityExecutionRouter:
             return True
         if (
             readiness_status == "consent_required"
-            and capability.execution_target in {"agent_builtin", "agent_managed_module", "remote_assist"}
+            and capability.execution_target in {"agent_builtin", "agent_managed_module"}
             and "request_consent" in set(readiness.get("actions") or [])
         ):
             return True

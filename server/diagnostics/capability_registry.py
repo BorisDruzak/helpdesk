@@ -116,7 +116,7 @@ class CapabilityRegistry:
             import config
         except ModuleNotFoundError:
             from server import config  # type: ignore[no-redef]
-        return str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "legacy").strip().lower()
+        return str(config.ENDPOINT_DIAGNOSTIC_EXECUTION_MODE or "endpoint").strip().lower()
 
     async def resolve_capability(
         self,
