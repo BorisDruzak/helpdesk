@@ -40,11 +40,34 @@ CASCADE_SAFE_ACTIONS = {"CASCADE", "SET NULL", "SET DEFAULT"}
 # synthesized as migration-only current tables.
 RETIRED_LOCAL_KNOWLEDGE_MIGRATION_TABLES = RETIRED_KNOWLEDGE_AI_TABLES
 
+# The endpoint-only cutover removes these Helpdesk control-plane models and
+# runtime writers, but revision 143 intentionally preserves their historical
+# rows for code rollback.  They are schema residue, not current ORM tables.
+# Keep the list explicit: a later destructive cleanup migration must remove
+# entries here together with the physical tables.
+RETIRED_AGENT_CONTROL_PLANE_MIGRATION_TABLES = {
+    "agent_build_download_audit",
+    "agent_builds",
+    "agent_recipe_primitives",
+    "agent_recipe_test_runs",
+    "agent_recipe_versions",
+    "agent_tokens",
+    "connection_requests",
+    "device_desired_modules",
+    "device_modules",
+    "device_outbox",
+    "modules",
+    "runner_rollout_events",
+    "runner_rollout_plans",
+    "runner_rollout_targets",
+    "runner_rollout_waves",
+}
+
 MIGRATION_ONLY_TABLES = {
     "ticket_admin_audit_archive",
     "ticket_events_archive",
     "ticket_retention_runs",
-}
+} | RETIRED_AGENT_CONTROL_PLANE_MIGRATION_TABLES
 
 
 @dataclass(frozen=True)

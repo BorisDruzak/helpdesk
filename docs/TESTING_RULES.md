@@ -254,7 +254,7 @@ python scripts/run_ci_suite.py --layer migration_schema
 ```
 
 The audit report prints `file`, inferred domain layer, explicit profile or `missing`, module/file-level `no_db`, and a summary. Normal mode is report-only; `--strict` returns non-zero for DB-backed files that still have no explicit profile.
-The schema audit verifies every table is classified exactly once, runtime tables are covered by static/full cleanup and dynamic reset policy, cleanup lists have no stale tables, and FK cleanup blockers are visible.
+The schema audit verifies every table is classified exactly once, runtime tables are covered by static/full cleanup and dynamic reset policy, cleanup lists have no stale tables, and FK cleanup blockers are visible. Its migration-only allowlist is deliberately narrow: it includes only archival tables and the explicitly named retired agent control-plane tables retained by revision 143 for non-destructive cutover rollback. Remove those entries only with a future destructive schema-cleanup migration that drops the corresponding tables.
 
 For contamination checks on a small focused sample, enable audit mode:
 
