@@ -154,6 +154,8 @@ def test_remote_install_command_supports_isolated_staging_service_profile() -> N
     command = remote_install_command(profile, "abc123", "/tmp/helpdesk-abc123.tar")
 
     assert "test -f /etc/helpdesk-staging/helpdesk.env" in command
+    assert "/etc/helpdesk-staging/previous-release" in command
+    assert "/etc/helpdesk/previous-release" not in command
     assert "sudo systemctl start helpdesk-staging-migrate.service" in command
     assert "sudo systemctl restart helpdesk-staging.service" in command
     assert "helpdesk-control.service" not in command
