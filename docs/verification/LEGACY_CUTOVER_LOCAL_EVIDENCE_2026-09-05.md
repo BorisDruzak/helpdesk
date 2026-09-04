@@ -8,7 +8,7 @@ acceptance and does not replace
 
 | Item | Value |
 | --- | --- |
-| Helpdesk checkout and remote branch | `82f9c899e124ea68fd518e36e8eb75ffc1913fdc` on `codex/helpdesk-process-model` |
+| Helpdesk final commit / canonical main branch | `97b96b39d98fc8b70faec5643115cd50e591b09e` on `codex/helpdesk-process-model` |
 | Endpoint Platform checkout | `22060e2bd3eae9fff874a64d01d80d18be9ff576` on `main` |
 | Lock provider commit | `22060e2bd3eae9fff874a64d01d80d18be9ff576` |
 | Locked canonical OpenAPI SHA-256 | `2982924427c731b83cfbd203e2fc86533c6e7b0fb4ec234cacd2d96f838fc04f` |
@@ -76,9 +76,8 @@ is valid for the final checkout, subject to real-canary verification.
   Linux build environment and no WSL distribution is installed).
 - No Helpdesk DB-backed gate was run after the final lock update: the
   parent-owned staging test tunnel lacks current runner SSH authentication.
-- No ALT or Windows real-agent canary, immutable tag/main creation, production
-  Endpoint release, Helpdesk release, production smoke, or production E2E was
-  performed.
+- No ALT or Windows real-agent canary, production Endpoint release, Helpdesk
+  release, production smoke, or production E2E was performed.
 - No destructive legacy schema drop was performed.
 
 ## Readiness matrix
@@ -95,7 +94,7 @@ is valid for the final checkout, subject to real-canary verification.
 | Windows package artifact and manifest | Local MSI digest and binding-manifest scan | Verified locally; no canary |
 | ALT RPM artifact and manifest | No local Linux builder | Not run |
 | Entire Helpdesk targeted integration gate | DB-backed cases require an authenticated parent-owned staging tunnel | Partial: no-DB portion only |
-| Immutable Helpdesk `main` or release tag | Remote has neither on the final SHA | Pending release-reference choice |
+| Canonical Helpdesk main release branch | `codex/helpdesk-process-model` maps to the final SHA | Verified: the repository's main branch is intentionally named `codex/helpdesk-process-model` |
 | ALT and Windows real-agent canaries | No authorized canary execution or evidence | Not run |
 | Endpoint and Helpdesk immutable production releases | No deployment was authorized or performed | Not run |
 | Production ticket-to-agent exactly-once and zero-outbox evidence | Requires the preceding production/canary gates | Not run |
