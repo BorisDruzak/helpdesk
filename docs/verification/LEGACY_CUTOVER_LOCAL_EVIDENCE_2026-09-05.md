@@ -64,6 +64,12 @@ schema-5 retained runtime stage and its evidence. Its release sidecar records
 the runtime-stage source revision above; this record does not assert that a
 real Windows canary has accepted the package.
 
+`git diff --name-only 58cace… 22060e…` over the headless runtime, launcher,
+Windows payload specs and packaging inputs found no runtime-payload changes;
+the only changed package-side paths were `build-msi.ps1` and the reviewed
+`initial-runtime-3.2.37.json` manifest. This is why the retained runtime stage
+is valid for the final checkout, subject to real-canary verification.
+
 ## Not yet proven
 
 - No ALT RPM was built: the local host has no Linux builder (Git Bash is not a
