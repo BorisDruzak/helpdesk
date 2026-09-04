@@ -80,3 +80,22 @@ is valid for the final checkout, subject to real-canary verification.
   Endpoint release, Helpdesk release, production smoke, or production E2E was
   performed.
 - No destructive legacy schema drop was performed.
+
+## Readiness matrix
+
+| Cutover requirement | Current evidence | Status |
+| --- | --- | --- |
+| Exact Helpdesk and Endpoint revisions recorded | This record's revision table and clean checkouts | Verified locally |
+| Helpdesk lock pins final Endpoint revision | Lock validator against `22060e…` | Verified locally |
+| Endpoint create/read/cancel contract | Endpoint contracts/operations/gateway gate | Verified locally |
+| Helpdesk agent runtime, legacy routes and local fallback absent | Focused no-DB boundary and route tests | Verified locally |
+| `/ws_ui` remains registered | Focused no-DB boundary test | Verified locally |
+| Endpoint GUI/Ticket API/old-WS sources absent | Headless/package gate and static scan | Verified locally |
+| Helpdesk Remote Assist runtime/UI absent; Endpoint managed source retained | Focused no-DB boundary tests | Verified locally |
+| Windows package artifact and manifest | Local MSI digest and binding-manifest scan | Verified locally; no canary |
+| ALT RPM artifact and manifest | No local Linux builder | Not run |
+| Entire Helpdesk targeted integration gate | DB-backed cases require an authenticated parent-owned staging tunnel | Partial: no-DB portion only |
+| Immutable Helpdesk `main` or release tag | Remote has neither on the final SHA | Pending release-reference choice |
+| ALT and Windows real-agent canaries | No authorized canary execution or evidence | Not run |
+| Endpoint and Helpdesk immutable production releases | No deployment was authorized or performed | Not run |
+| Production ticket-to-agent exactly-once and zero-outbox evidence | Requires the preceding production/canary gates | Not run |
