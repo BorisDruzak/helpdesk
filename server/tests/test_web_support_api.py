@@ -2573,7 +2573,7 @@ async def test_build_support_detail_payload_projects_requester_account_context(m
     payload = await support_handlers_module._build_support_detail_payload(request, object(), ticket, object(), auth_context)
 
     assert payload.ticket.requester_registration_status == "other_account_verified"
-    assert payload.ticket.requester_account_session_id == "session-other"
+    assert not hasattr(payload.ticket, "requester_account_session_id")
     assert payload.ticket.requester_account_mode == "verified_other_account"
     assert payload.ticket.requester_account_warning == "ticket_created_from_other_account_on_registered_device"
     assert payload.ticket.requester_account_context == account_context

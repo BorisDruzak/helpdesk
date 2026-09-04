@@ -617,7 +617,6 @@ async def test_web_session_cookie_auth_bridges_react_workbench_paths(monkeypatch
         }
 
     monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
-    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_agent_token", lambda _self, _token: None)
 
     async def protected_handler(request: web.Request):
         auth_context = request["auth_context"]
@@ -935,11 +934,7 @@ async def test_bearer_ui_token_unsafe_request_is_not_origin_gated(monkeypatch):
             "type": "ui",
         }
 
-    async def fake_verify_agent_token(_self, _token: str):
-        return None
-
     monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
-    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_agent_token", fake_verify_agent_token)
 
     async def protected_handler(request: web.Request):
         return web.json_response({"status": "ok", "actor_id": request["auth_context"].actor_id})
@@ -963,9 +958,6 @@ async def test_bearer_ui_token_unsafe_request_is_not_origin_gated(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.no_db
 async def test_public_ticket_token_auth_bridges_artifact_download(monkeypatch):
-    async def fake_verify_agent_token(_self, token: str):
-        return None
-
     async def fake_verify_ui_token(_self, token: str):
         return None
 
@@ -979,7 +971,6 @@ async def test_public_ticket_token_auth_bridges_artifact_download(monkeypatch):
             "type": "public_ticket",
         }
 
-    monkeypatch.setattr(auth_middleware_module.AuthService, "verify_agent_token", fake_verify_agent_token)
     monkeypatch.setattr(auth_middleware_module.AuthService, "verify_ui_token", fake_verify_ui_token)
     monkeypatch.setattr(
         auth_middleware_module.AuthService,

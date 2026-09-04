@@ -4,6 +4,9 @@
 
 - `server/server.py` builds the Helpdesk aiohttp application.
 - `server/web_api/` provides authenticated Helpdesk browser and support APIs.
+- `server/tech/snapshot.py` builds the read-only Tech Panel readiness model;
+  the `endpoint_platform` connection-policy state is valid after the legacy
+  Helpdesk agent runtime is retired.
 - `server/control_plane.py` controls the independent Helpdesk server lifecycle.
 - `server/runtime_control.py` manages only the Helpdesk server and control
   plane units.

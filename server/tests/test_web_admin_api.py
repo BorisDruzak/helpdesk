@@ -1,7 +1,6 @@
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
-from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from auth.context import AuthContext, AuthType
@@ -44,15 +43,6 @@ from web_api.dto.admin import (
     AdminObserverTracesPayload,
     AdminObserverTracesQuery,
     AdminObserverTracesSummary,
-    AdminModuleFamilyItem,
-    AdminModulePreferredRolloutSummary,
-    AdminModulePreferredVersionActionPayload,
-    AdminModulePreferredVersionRequest,
-    AdminModulesPayload,
-    AdminModulesRolloutSettings,
-    AdminModulesRolloutSettingsUpdateRequest,
-    AdminModulesSummary,
-    AdminModuleVersionItem,
 )
 
 
@@ -571,136 +561,30 @@ def test_web_admin_device_item_marks_env_uuid_duplicates():
             "install_id": "44444444-4444-4444-8444-444444444444",
         },
     )
-    state = SimpleNamespace(is_agent_online=lambda device_id: device_id == stable_device.device_id)
-
-    duplicate_index = admin_handlers._build_duplicate_index([stable_device, env_device], state=state)
+    duplicate_index = admin_handlers._build_duplicate_index([stable_device, env_device])
     stable_item = admin_handlers._build_device_item(stable_device, online=True, duplicate_index=duplicate_index)
     env_item = admin_handlers._build_device_item(env_device, online=False, duplicate_index=duplicate_index)
 
     assert stable_item.identity_summary.source_label == "Windows MachineGuid"
     assert stable_item.identity_summary.is_stable is True
     assert stable_item.duplicate_warning.kind == "hostname_has_env_uuid_duplicates"
-    assert stable_item.duplicate_warning.cleanup_available is True
+    assert stable_item.duplicate_warning.cleanup_available is False
 
     assert env_item.identity_summary.source_label == "Тестовый ENV UUID"
     assert env_item.identity_summary.is_stable is False
     assert env_item.duplicate_warning.kind == "env_uuid_duplicate"
-    assert env_item.duplicate_warning.cleanup_available is True
+    assert env_item.duplicate_warning.cleanup_available is False
 
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_web_admin_modules_returns_typed_fallback_payload_when_db_is_unavailable(web_admin_client):
-    response = await web_admin_client.get("/api/web/admin/modules")
-
-    assert response.status == 200
-    payload = await response.json()
-
-    assert payload["status"] == "success"
-    assert payload["data"]["query"] == ""
-    assert payload["data"]["summary"] == {
-        "visible_count": 0,
-        "preferred_count": 0,
-        "invalid_count": 0,
-        "missing_files_count": 0,
-    }
-    assert payload["data"]["rollout_settings"] == {
-        "preferred_version_rollout_mode": "manual",
-        "preferred_version_rollout_mode_label": "Только вручную",
-        "sync_after_preferred_change": True,
-    }
-    assert payload["data"]["modules"] == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_admin_modules_returns_typed_registry_payload(web_admin_client, monkeypatch):
-    async def fake_build_payload(*, query: str):
-        assert query == "network"
-        return AdminModulesPayload(
-            query=query,
-            summary=AdminModulesSummary(
-                visible_count=1,
-                preferred_count=1,
-                invalid_count=1,
-                missing_files_count=0,
-            ),
-            rollout_settings=AdminModulesRolloutSettings(
-                preferred_version_rollout_mode="installed_devices",
-                preferred_version_rollout_mode_label="Обновлять установленные устройства",
-                sync_after_preferred_change=False,
-            ),
-            modules=[
-                AdminModuleFamilyItem(
-                    module_name="network_ping",
-                    preferred_version="1.2.0",
-                    preferred_assigned=True,
-                    latest_version="1.2.1",
-                    owner_scope="vendor",
-                    module_api_version="2.0.0",
-                    validation_status="warning",
-                    validation_status_label="Есть предупреждения",
-                    version_count=2,
-                    tools_count=2,
-                    platforms=["windows_amd64", "linux_alt_x86_64"],
-                    tool_ids=["network_ping.ping", "network_ping.trace"],
-                    warnings_count=1,
-                    has_missing_files=False,
-                    versions=[
-                        AdminModuleVersionItem(
-                            version="1.2.1",
-                            created_at="2026-04-20T11:10:00+05:00",
-                            uploaded_by="admin",
-                            manifest_version=2,
-                            module_api_version="2.0.0",
-                            owner_scope="vendor",
-                            validation_status="warning",
-                            validation_status_label="Есть предупреждения",
-                            preflight_status="passed",
-                            preflight_status_label="Проверен",
-                            is_preferred=False,
-                            tools_count=2,
-                            platforms=["windows_amd64", "linux_alt_x86_64"],
-                            tool_ids=["network_ping.ping", "network_ping.trace"],
-                            warnings_count=1,
-                            file_exists=True,
-                        ),
-                        AdminModuleVersionItem(
-                            version="1.2.0",
-                            created_at="2026-04-19T10:00:00+05:00",
-                            uploaded_by="admin",
-                            manifest_version=2,
-                            module_api_version="2.0.0",
-                            owner_scope="vendor",
-                            validation_status="passed",
-                            validation_status_label="Проверен",
-                            preflight_status="passed",
-                            preflight_status_label="Проверен",
-                            is_preferred=True,
-                            tools_count=2,
-                            platforms=["windows_amd64", "linux_alt_x86_64"],
-                            tool_ids=["network_ping.ping", "network_ping.trace"],
-                            warnings_count=0,
-                            file_exists=True,
-                        ),
-                    ],
-                )
-            ],
-        )
-
-    monkeypatch.setattr(admin_handlers, "_build_admin_modules_payload", fake_build_payload)
-
-    response = await web_admin_client.get("/api/web/admin/modules?query=network")
-
-    assert response.status == 200
-    payload = await response.json()
-
-    assert payload["status"] == "success"
-    assert payload["data"]["summary"]["visible_count"] == 1
-    assert payload["data"]["rollout_settings"]["preferred_version_rollout_mode"] == "installed_devices"
-    assert payload["data"]["modules"][0]["module_name"] == "network_ping"
-    assert payload["data"]["modules"][0]["versions"][1]["is_preferred"] is True
-    assert payload["data"]["modules"][0]["tool_ids"] == ["network_ping.ping", "network_ping.trace"]
+async def test_web_admin_legacy_module_routes_are_not_registered(web_admin_client):
+    for method, path in [
+        (web_admin_client.get, "/api/web/admin/modules"),
+        (web_admin_client.get, "/api/web/admin/modules?query=network"),
+    ]:
+        response = await method(path)
+        assert response.status == 404
 
 
 @pytest.mark.asyncio
@@ -1492,125 +1376,13 @@ async def test_web_admin_forms_save_rejects_invalid_payload(web_admin_client):
 
 @pytest.mark.asyncio
 @pytest.mark.no_db
-async def test_web_admin_patch_modules_rollout_settings_returns_typed_payload(web_admin_client, monkeypatch):
-    async def fake_patch_settings(*, preferred_version_rollout_mode: str | None, sync_after_preferred_change: bool | None):
-        assert preferred_version_rollout_mode == "manual"
-        assert sync_after_preferred_change is True
-        return AdminModulesRolloutSettings(
-            preferred_version_rollout_mode="manual",
-            preferred_version_rollout_mode_label="Только вручную",
-            sync_after_preferred_change=True,
-        )
-
-    monkeypatch.setattr(admin_handlers, "_patch_admin_modules_rollout_settings", fake_patch_settings)
-
-    response = await web_admin_client.patch(
-        "/api/web/admin/modules/rollout_settings",
-        json={"preferred_version_rollout_mode": "manual", "sync_after_preferred_change": True},
-    )
-
-    assert response.status == 200
-    payload = await response.json()
-
-    assert payload["status"] == "success"
-    assert payload["data"]["preferred_version_rollout_mode"] == "manual"
-    assert payload["data"]["preferred_version_rollout_mode_label"] == "Только вручную"
-    assert payload["data"]["sync_after_preferred_change"] is True
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_admin_set_module_preferred_version_returns_typed_payload(web_admin_client, monkeypatch):
-    async def fake_set_preferred(*, request, auth_context, module_name: str, version: str | None):
-        assert request.path == "/api/web/admin/modules/network_ping/preferred"
-        assert auth_context.actor_role == "admin"
-        assert module_name == "network_ping"
-        assert version == "1.2.1"
-        return AdminModulePreferredVersionActionPayload(
-            module_name=module_name,
-            preferred_version=version,
-            updated_at="2026-04-21T10:15:00+05:00",
-            updated_by="admin1",
-            message="Preferred-версия для network_ping обновлена на 1.2.1.",
-            rollout_summary=AdminModulePreferredRolloutSummary(
-                mode="installed_devices",
-                should_sync=True,
-                desired_updates=3,
-                sync_enqueued=3,
-                refresh_enqueued=3,
-            ),
-        )
-
-    monkeypatch.setattr(admin_handlers, "_set_admin_module_preferred_version", fake_set_preferred)
-
-    response = await web_admin_client.patch(
-        "/api/web/admin/modules/network_ping/preferred",
-        json={"version": "1.2.1"},
-    )
-
-    assert response.status == 200
-    payload = await response.json()
-
-    assert payload["status"] == "success"
-    assert payload["data"]["module_name"] == "network_ping"
-    assert payload["data"]["preferred_version"] == "1.2.1"
-    assert payload["data"]["updated_by"] == "admin1"
-    assert payload["data"]["rollout_summary"]["desired_updates"] == 3
-    assert payload["data"]["message"] == "Preferred-версия для network_ping обновлена на 1.2.1."
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
-async def test_web_admin_set_windows_module_preferred_requires_live_test(web_admin_client, monkeypatch):
-    async def fake_set_preferred(*, request, auth_context, module_name: str, version: str | None):
-        assert request.path == "/api/web/admin/modules/win_diag/preferred"
-        assert auth_context.actor_role == "admin"
-        assert module_name == "win_diag"
-        assert version == "1.0.0"
-        raise ValueError("MODULE_WINDOWS_LIVE_TEST_REQUIRED")
-
-    monkeypatch.setattr(admin_handlers, "_set_admin_module_preferred_version", fake_set_preferred)
-
-    response = await web_admin_client.patch(
-        "/api/web/admin/modules/win_diag/preferred",
-        json={"version": "1.0.0"},
-    )
-
-    assert response.status == 409
-    payload = await response.json()
-    assert payload["status"] == "error"
-    assert payload["error_code"] == "MODULE_WINDOWS_LIVE_TEST_REQUIRED"
-    assert payload["module_name"] == "win_diag"
-    assert payload["version"] == "1.0.0"
-
-
-@pytest.mark.asyncio
-@pytest.mark.no_db
 async def test_web_admin_legacy_device_update_routes_are_not_registered(web_admin_client):
     for method, path in [
         (web_admin_client.get, "/api/web/admin/devices/device-1/updates"),
         (web_admin_client.post, "/api/web/admin/devices/device-1/updates/run"),
+        (web_admin_client.patch, "/api/web/admin/modules/rollout_settings"),
+        (web_admin_client.patch, "/api/web/admin/modules/network_ping/preferred"),
+        (web_admin_client.patch, "/api/web/admin/modules/win_diag/preferred"),
     ]:
         response = await method(path)
         assert response.status == 404
-
-
-@pytest.mark.no_db
-def test_web_admin_device_token_item_serializes_datetimes():
-    created_at = datetime(2026, 4, 24, 12, 0, tzinfo=timezone.utc)
-    last_used_at = datetime(2026, 4, 24, 12, 30, tzinfo=timezone.utc)
-
-    item = admin_handlers._device_token_item(
-        SimpleNamespace(
-            token_hash="hash-1",
-            token_prefix="pc1_",
-            created_at=created_at,
-            expires_at=None,
-            revoked_at=None,
-            last_used_at=last_used_at,
-        )
-    )
-
-    assert item.created_at == created_at.isoformat()
-    assert item.last_used_at == last_used_at.isoformat()
-    assert item.is_active is True

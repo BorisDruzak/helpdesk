@@ -220,7 +220,7 @@ def build_readiness_gates(
 
     policy = security.get("agent_connection_policy", {}) if isinstance(security.get("agent_connection_policy"), dict) else {}
     mode = str(policy.get("mode") or "").strip().lower()
-    policy_ok = mode in {POLICY_MANUAL, POLICY_REJECT_ALL, "controlled"}
+    policy_ok = mode in {"endpoint_platform", "controlled"}
     policy_status = "ok" if policy_ok else ("unknown" if not mode else pilot_status)
     gates.append(
         _gate(
