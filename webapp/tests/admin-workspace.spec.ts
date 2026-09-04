@@ -34,9 +34,9 @@ test("администратор видит отдельные пункты admi
   await expect(page).toHaveURL(/\/app\/admin\/device(?:\?.*)?$/);
   await expect(page.getByRole("heading", { name: "Карточка устройства" })).toBeVisible();
 
-  await page.goto("/app/admin/modules");
-  await expect(page).toHaveURL(/\/app\/admin\/modules$/);
-  await expect(page.getByRole("heading", { name: "Модули" })).toBeVisible();
+  await page.goto("/app/admin/capabilities");
+  await expect(page).toHaveURL(/\/app\/admin\/capabilities$/);
+  await expect(page.getByRole("heading", { name: "Capabilities" })).toBeVisible();
 
   await page.goto("/app/admin/forms");
   await expect(page).toHaveURL(/\/app\/admin\/forms$/);
