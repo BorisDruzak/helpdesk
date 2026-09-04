@@ -29,3 +29,13 @@ def test_ci_requirements_include_cross_repository_acceptance_websocket_client() 
 
     assert "websockets" in requirements
     assert "uvicorn" in requirements
+
+
+def test_ci_requirements_reference_the_helpdesk_server_entrypoint() -> None:
+    root = Path(__file__).parents[2]
+    requirements_path = root / "requirements-ci.txt"
+    requirements = requirements_path.read_text(encoding="utf-8")
+
+    assert "-r server/requirements.txt" in requirements
+    assert "-r pc_agent/requirements.txt" not in requirements
+    assert (root / "server" / "requirements.txt").is_file()
