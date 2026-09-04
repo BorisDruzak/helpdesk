@@ -47,7 +47,7 @@ describe("AppSidebar", () => {
     fireEvent.click(screen.getByRole("button", { name: /Система/ }));
 
     expect(screen.getByRole("link", { name: /Доступ/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Модули/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Возможности/ })).toBeInTheDocument();
   });
 
   it("shows only support navigation while the active route belongs to support", () => {
@@ -109,20 +109,20 @@ describe("AppSidebar", () => {
 
   it("keeps collapsed admin sidebar accessible through labels and titles", () => {
     render(
-      <MemoryRouter initialEntries={["/app/admin/modules"]}>
+      <MemoryRouter initialEntries={["/app/admin/capabilities"]}>
         <AppSidebar collapsed hasAdminAccess hasSupportAccess={false} permissions={fullPermissions} />
       </MemoryRouter>,
     );
 
     expect(screen.getByRole("button", { name: /Автоматизация/ })).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("link", { name: /Модули/ })).toHaveAttribute("title", expect.stringContaining("Модули"));
+    expect(screen.getByRole("link", { name: /Возможности/ })).toHaveAttribute("title", expect.stringContaining("Возможности"));
   });
 
   it("collapses after expanded admin navigation and expands before using collapsed icons", () => {
     const handleCollapsedChange = vi.fn();
     const handleNavigate = vi.fn();
     const { rerender } = render(
-      <MemoryRouter initialEntries={["/app/admin/modules"]}>
+      <MemoryRouter initialEntries={["/app/admin/capabilities"]}>
         <AppSidebar
           hasAdminAccess
           hasSupportAccess={false}

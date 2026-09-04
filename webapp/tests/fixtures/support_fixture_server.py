@@ -2615,8 +2615,6 @@ async def handle_admin_bootstrap(request: web.Request) -> web.Response:
             "workspace": "admin",
             "features": [
                 "devices_inventory",
-                "agent_rollout",
-                "modules_workbench",
                 "forms_builder",
                 "tech_panel",
             ],

@@ -19,6 +19,9 @@
 - `server/app/repos/` persists ticket, operation and Endpoint facade state.
 - `server/web_api/support_handlers.py` exposes the canonical support
   diagnostic route and its browser compatibility alias.
+- `server/web_api/admin_handlers.py` supplies the browser admin bootstrap;
+  its active feature catalog is limited to inventory, forms and the Tech Panel
+  and does not advertise retired agent rollout or module-workbench surfaces.
 - `server/tickets/handlers.py` projects requester and support UI presence;
   the retired Helpdesk agent runtime is always reported as offline.
 

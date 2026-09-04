@@ -66,13 +66,18 @@ describe("navigation helpers", () => {
     expect(findFirstVisibleDomainItem("catalog-intake", [])).toBeNull();
   });
 
-  it("keeps device operations last in the devices domain", () => {
+  it("removes device operations while keeping the remaining devices navigation ordered", () => {
     const devicesDomain = getVisibleNavigationDomains("admin", fullAdminPermissions).find(
       (domain) => domain.id === "devices-agents",
     );
 
-    expect(devicesDomain?.items.map((item) => item.to)).toContain("/app/admin/tech");
-    expect(devicesDomain?.items.at(-1)?.label).toBe("Операции устройства");
+    expect(devicesDomain?.items.map((item) => item.to)).toEqual([
+      "/app/admin/inventory",
+      "/app/admin/device",
+      "/app/admin/observer",
+      "/app/admin/tech",
+    ]);
+    expect(devicesDomain?.items.map((item) => item.label)).not.toContain("Операции устройства");
   });
 
   it("recognizes the migrated tech panel as an admin navigation item", () => {

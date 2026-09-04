@@ -3221,8 +3221,6 @@ async def handle_web_admin_bootstrap(_request):
         workspace="admin",
         features=[
             "devices_inventory",
-            "agent_rollout",
-            "modules_workbench",
             "forms_builder",
             "tech_panel",
         ],

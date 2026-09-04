@@ -74,8 +74,11 @@ async def test_web_admin_bootstrap_exposes_tech_and_observer_features(web_admin_
 
     assert payload["status"] == "success"
     assert payload["data"]["workspace"] == "admin"
-    assert "forms_builder" in payload["data"]["features"]
-    assert "tech_panel" in payload["data"]["features"]
+    assert payload["data"]["features"] == [
+        "devices_inventory",
+        "forms_builder",
+        "tech_panel",
+    ]
     assert payload["data"]["observer"]["quick_endpoint"] == "/api/web/admin/observer/quick"
     assert payload["data"]["observer"]["traces_endpoint"] == "/api/web/admin/observer/traces"
 

@@ -639,8 +639,6 @@ describe("AdminWorkspacePage", () => {
               workspace: "admin",
               features: [
                 "devices_inventory",
-                "agent_rollout",
-                "modules_workbench",
                 "forms_builder",
                 "tech_panel",
               ],
@@ -1610,16 +1608,12 @@ describe("AdminWorkspacePage", () => {
 
     expect(await screen.findByRole("heading", { name: "Рабочее место администрирования" })).toBeInTheDocument();
     expect(await screen.findByText("Всего в инвентаре")).toBeInTheDocument();
-    expect((await screen.findAllByText("Назначения rollout")).length).toBeGreaterThan(0);
     expect(await screen.findByRole("button", { name: /WS-01/i })).toBeInTheDocument();
-    expect((await screen.findAllByText("Устройство на шаг позади rollout")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Доступно обновление")).toBeInTheDocument();
-    expect(await screen.findByText("Назначенный rollout новее текущей версии.")).toBeInTheDocument();
-
-    expect(await screen.findByRole("heading", { name: "Реестр модулей" })).toBeInTheDocument();
-    expect(await screen.findByText("Рабочий реестр")).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /network_ping/i })).toBeInTheDocument();
-    expect((await screen.findAllByText("Обновлять установленные устройства")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: "Карточка устройства" })).toBeInTheDocument();
+    expect(screen.queryByText("Назначения rollout")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Реестр модулей" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Запустить обновление" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/agent_rollout|modules_workbench/)).not.toBeInTheDocument();
 
     expect(await screen.findByRole("heading", { name: "Observer для WS-01" })).toBeInTheDocument();
     expect((await screen.findAllByText("Горячие traces")).length).toBeGreaterThan(0);
@@ -1635,26 +1629,6 @@ describe("AdminWorkspacePage", () => {
     expect(await screen.findByText("Span timeline")).toBeInTheDocument();
     expect((await screen.findAllByText("Agent actions")).length).toBeGreaterThan(0);
     expect(await screen.findByText("operation_id_bridge")).toBeInTheDocument();
-
-    fireEvent.change(screen.getByRole("combobox", { name: "Режим preferred-rollout" }), {
-      target: { value: "manual" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить политику" }));
-
-    expect(await screen.findByText("Политика preferred-rollout сохранена: Только вручную.")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getAllByText("Только вручную").length).toBeGreaterThan(0);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Сделать preferred для 1.2.1" }));
-    expect(await screen.findByText(/Preferred-версия.*network_ping.*1\.2\.1/)).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByText(/latest 1\.2\.1 .* preferred 1\.2\.1/i)).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /observer_canary/i }));
-    expect((await screen.findAllByText("Ошибка валидации")).length).toBeGreaterThan(0);
-    expect((await screen.findAllByText(/Архив отсутствует, нужен повторный upload/i)).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Новая форма" }));
     fireEvent.change(screen.getByLabelText("Название формы"), {
@@ -1677,16 +1651,9 @@ describe("AdminWorkspacePage", () => {
     expect(await screen.findByText(/Каталог опубликован как версия 1.0.4/)).toBeInTheDocument();
     expect(saveCalls).toHaveLength(1);
 
-    fireEvent.change(screen.getByLabelText("Причина запуска"), {
-      target: { value: "canary после smoke" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Запустить обновление" }));
-    expect(await screen.findByText("Операция op-admin-update-001 поставлена в очередь.")).toBeInTheDocument();
-
     fireEvent.click(screen.getByRole("button", { name: /LT-02/i }));
-    expect(await screen.findByText(/Платформа:/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "LT-02" })).toBeInTheDocument();
     expect((await screen.findAllByText("linux_alt_x86_64")).length).toBeGreaterThan(0);
-    expect(await screen.findByRole("button", { name: "Ожидает связи" })).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "72 часа" }));
     await waitFor(() => {
