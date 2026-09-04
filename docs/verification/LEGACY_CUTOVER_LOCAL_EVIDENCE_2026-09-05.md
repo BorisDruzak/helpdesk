@@ -8,7 +8,7 @@ acceptance and does not replace
 
 | Item | Value |
 | --- | --- |
-| Helpdesk final commit / canonical main branch | `97b96b39d98fc8b70faec5643115cd50e591b09e` on `codex/helpdesk-process-model` |
+| Helpdesk CI candidate / canonical main branch | `8e1bff3d1f9b0659b8b8eca013b3ee8ebdf6b50c` on `codex/helpdesk-process-model` |
 | Endpoint Platform checkout | `22060e2bd3eae9fff874a64d01d80d18be9ff576` on `main` |
 | Lock provider commit | `22060e2bd3eae9fff874a64d01d80d18be9ff576` |
 | Locked canonical OpenAPI SHA-256 | `2982924427c731b83cfbd203e2fc86533c6e7b0fb4ec234cacd2d96f838fc04f` |
@@ -40,6 +40,16 @@ the final tree (`test_endpoint_modules_http_adapter.py` and
 `test_endpoint_module_operation_service.py`); they were not silently
 substituted. The no-DB command therefore records its precise present-file
 scope above.
+
+## GitHub cross-repository acceptance
+
+[Endpoint contract acceptance run 33920319078](https://github.com/BorisDruzak/helpdesk/actions/runs/33920319078)
+completed successfully for Helpdesk commit `8e1bff3d1f9b0659b8b8eca013b3ee8ebdf6b50c`
+with the locked Endpoint commit above and a disposable PostgreSQL service. It
+validated exact provider bytes and ran `132 passed` integration guards plus
+`2 passed` true-provider/Gateway WSS acceptance tests. This is CI evidence for
+the documented cross-repository subset; it does not substitute for the entire
+planned Helpdesk DB-backed integration gate.
 
 ## Static deletion checks
 
@@ -74,8 +84,10 @@ is valid for the final checkout, subject to real-canary verification.
 
 - No ALT RPM was built: the local host has no Linux builder (Git Bash is not a
   Linux build environment and no WSL distribution is installed).
-- No Helpdesk DB-backed gate was run after the final lock update: the
-  parent-owned staging test tunnel lacks current runner SSH authentication.
+- The entire planned Helpdesk DB-backed integration gate remains unproven: the
+  local parent-owned staging test tunnel lacks current runner SSH
+  authentication. The CI cross-repository DB subset above is passing evidence,
+  not a substitute for that broader gate.
 - No ALT or Windows real-agent canary, production Endpoint release, Helpdesk
   release, production smoke, or production E2E was performed.
 - No destructive legacy schema drop was performed.
@@ -93,7 +105,8 @@ is valid for the final checkout, subject to real-canary verification.
 | Helpdesk Remote Assist runtime/UI absent; Endpoint managed source retained | Focused no-DB boundary tests | Verified locally |
 | Windows package artifact and manifest | Local MSI digest and binding-manifest scan | Verified locally; no canary |
 | ALT RPM artifact and manifest | No local Linux builder | Not run |
-| Entire Helpdesk targeted integration gate | DB-backed cases require an authenticated parent-owned staging tunnel | Partial: no-DB portion only |
+| CI cross-repository DB acceptance subset | GitHub Actions run 33920319078: exact lock, guard suite and true-provider acceptance | Verified: 132 guard + 2 acceptance tests passed |
+| Entire Helpdesk targeted integration gate | Broader DB-backed cases still require an authenticated parent-owned staging tunnel | Partial: no-DB plus CI cross-repository subset |
 | Canonical Helpdesk main release branch | `codex/helpdesk-process-model` maps to the final SHA | Verified: the repository's main branch is intentionally named `codex/helpdesk-process-model` |
 | ALT and Windows real-agent canaries | No authorized canary execution or evidence | Not run |
 | Endpoint and Helpdesk immutable production releases | No deployment was authorized or performed | Not run |
